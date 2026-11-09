@@ -88,6 +88,8 @@ public sealed record WorkflowSchemaDefinition
 {
     public required WorkflowSchemaValueType Type { get; init; }
 
+    public string? Description { get; init; }
+
     public string? Format { get; init; }
 
     public string? Unit { get; init; }

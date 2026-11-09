@@ -56,17 +56,17 @@ internal static class McpToolSchemas
           "properties": {
             "connectionId": {
               "type": "string",
-              "description": "Secure-connection identifier whose table is published. Required: the canonical service.publish operation resolves the target database connection from it."
+              "description": "Connection id from honua_admin_connections_list; inspect its tables with honua_admin_connection_tables_list."
             },
             "schema": {
               "type": "string",
               "minLength": 1,
-              "description": "Source schema containing the table to publish."
+              "description": "Source schema from honua_admin_connection_tables_list for this connectionId."
             },
             "table": {
               "type": "string",
               "minLength": 1,
-              "description": "Source table to publish as a layer."
+              "description": "Source table from honua_admin_connection_tables_list for this connectionId."
             },
             "layerName": {
               "type": "string",
@@ -365,15 +365,15 @@ internal static class McpToolSchemas
               "description": "Dataset-import source kind. Only server-job-artifact is admitted. browser-file and local-process-artifact are recognized and refused; they are not a substitute for a job artifact."
             },
             "targetId": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Deployment target the job reference is bound to." },
-            "jobId": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Completed built-in job id. Not a URL or filesystem path." },
-            "resultPackageId": { "type": "string", "minLength": 1, "description": "Result package id from the job results resource, shaped {jobId}:v{version}." },
-            "artifactId": { "type": "string", "minLength": 1, "description": "Artifact id from the job results resource, shaped {jobId}:artifact:{ordinal}." },
+            "jobId": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Succeeded built-in job id from honua_list_jobs; read artifacts with honua_get_job_results." },
+            "resultPackageId": { "type": "string", "minLength": 1, "description": "resultPackageId from honua_get_job_results, shaped {jobId}:v{version}." },
+            "artifactId": { "type": "string", "minLength": 1, "description": "artifactId from honua_get_job_results, shaped {jobId}:artifact:{ordinal}." },
             "referenceSha256": {
               "type": "string",
               "minLength": 64,
               "maxLength": 64,
               "pattern": "^[a-f0-9]{64}$",
-              "description": "Lowercase SHA-256 of the server-stored artifact reference string. Not a digest of caller-supplied bytes."
+              "description": "Lowercase SHA-256 of the exact UTF-8 artifact uri string from honua_get_job_results (inline features or shared feature stream). Do not normalize it or hash downloaded bytes."
             },
             "schema": { "type": "string", "minLength": 1, "maxLength": 63, "description": "Destination schema in the catalog database." },
             "table": { "type": "string", "minLength": 1, "maxLength": 63, "description": "Destination table name." },
@@ -408,8 +408,8 @@ internal static class McpToolSchemas
             ? """["planId", "steps"]"""
             : "[]";
         var planIdSchema = requireExecutableShape
-            ? """{ "type": "string", "minLength": 1 }"""
-            : """{ "type": "string" }""";
+            ? """{ "type": "string", "minLength": 1, "description": "Plan id from honua_plan_analysis, or a caller-chosen id for a hand-authored plan." }"""
+            : """{ "type": "string", "description": "Plan id from honua_plan_analysis, or a caller-chosen id for a hand-authored plan." }""";
         var stepsMinItems = requireExecutableShape
             ? "\"minItems\": 1,\n                      "
             : string.Empty;
@@ -430,11 +430,12 @@ internal static class McpToolSchemas
                     "intentId": { "type": "string" },
                     "steps": {
                       "type": "array",
+                      "description": "Steps from honua_plan_analysis, or caller-authored steps using the advertised kinds and process inputs.",
                       {{stepsMinItems}}"items": {
                         "type": "object",
                         "required": ["stepId", "kind"],
                         "properties": {
-                          "stepId": { "type": "string" },
+                          "stepId": { "type": "string", "description": "Caller-chosen id unique within this plan; dependsOn refers to these ids." },
                           "kind": {
                             "type": "string",
                             "enum": {{stepKindEnum}},

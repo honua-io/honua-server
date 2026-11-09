@@ -281,15 +281,15 @@ Select a view four ways, highest precedence first:
 3. **Per HTTP request** — use `/mcp?view=configure` or `X-Honua-Workflow-View: configure`. A nonblank query selector takes precedence over the header. These selectors are fallbacks on each request and do not replace session `_meta`.
 4. **Per server profile** — set `Mcp:WorkflowViews:DefaultView`. The default is the server-authored `default` view, capped at 12 meta/workflow tools. The quickstart package and repository Compose forward `HONUA_MCP_DEFAULT_VIEW` to this setting; set `HONUA_MCP_DEFAULT_VIEW=configure` in `.env` and recreate the server containers to change their default.
 
-The curated prompts select `configure` or `analyze`, not `setup`. Each view is budget-bounded (at most 48 descriptors, 128 KiB of aggregate canonical descriptor JSON, 16 KiB per descriptor), so the whole view arrives in one page with no `nextCursor`.
+The curated prompts select the view that owns each stage. Dashboard authoring uses `setup`; setup-and-publish switches from `configure` to `setup` for Studio authoring. Each view is budget-bounded (at most 48 descriptors, 128 KiB of aggregate canonical descriptor JSON, 16 KiB per descriptor), so the whole view arrives in one page with no `nextCursor`.
 
 | View | What an admin selects it for |
 |---|---|
-| `configure` | The closed admin roster (server status, API-key reads, connection create and test, import from URL, layer publish, access policy), inline ingest, service publish, layer reads, style and render, and the Studio composition, save, get-version, and publication tools. |
+| `configure` | The closed admin roster (server status, API-key reads, connection create and test, import from URL, layer publish, access policy), inline ingest, service publish, layer reads, style and render. Studio authoring and publication use `setup`. |
 | `operate` | Health, findings, events, alerts, platform-release status, deploy operations, and `honua_propose_finding`. |
 | `analyze` | Grounding, geocoding, layer reads, and the plan / validate / execute / job tools. A published-layer buffer is process `analytics.buffer-aggregate` (`layerId`). `geometry.buffer` accepts one WKB and does not read a published layer. |
 | `review` | Read-only package review (`review.v1`): `honua_validate_package` and `honua_preview_package`. Anonymous listing returns an empty tools array. These two descriptors are not on `setup`; together they exceed that view's 128 KiB aggregate ceiling. |
-| `setup` | The bounded terminal path (`setup.v6`): readiness, inline ingest and completed job-artifact ingest, publish, verify, style and render, bounded GP, Studio composition and lifecycle (including `honua_studio_get_version`), map and app package composition (`honua_create_map_package`, `honua_create_app_package`; anonymous calls are still refused), and publication submit. `honua_studio_propose_publication` stays in the publication stage. Curated prompts select `configure` or `analyze` instead, because those views also carry the admin roster or the analysis path. |
+| `setup` | The bounded terminal path (`setup.v7`): readiness, read-only connection and table discovery, inline ingest and completed job-artifact ingest, publish, verify, style and render, bounded GP, Studio composition and lifecycle (including `honua_studio_get_version`), map and app package composition (`honua_create_map_package`, `honua_create_app_package`; anonymous calls are still refused), and publication submit. `honua_studio_propose_publication` stays in the publication stage. The setup-and-publish prompt uses `configure` for the admin roster and switches here for Studio authoring. |
 | `default` | The 12-tool discovery surface. It does not contain the admin roster. |
 
 A view is **discovery, not authority**:
@@ -442,7 +442,7 @@ A second, independent axis *does* change the advertised roster: several tools an
 | Job-artifact ingest (`honua_ingest_job_artifact`) | Import service composed | Advertised. `kind` must be `server-job-artifact`. `browser-file` and `local-process-artifact` are recognized and refused. Inline bytes, URLs, and filesystem paths are not sources. `honua_publish_result` still requires a materialized table | Omitted without an import-capable provider |
 | Platform-ops observability + deploy tools (`honua_ops_health`, `honua_ops_findings`, `honua_deploy_operations`, …) | Ops-observability / platform-ops readers composed | Advertised | Omitted in minimal hosts |
 
-To publish data already present in a database, select `configure` (or `full`) and call
+To publish data already present in a database, select `configure`, `setup`, or `full` and call
 `honua_admin_connections_list`. Its `data` rows contain only `id`, `name`, `provider`,
 and `status` (connection health). Pass the selected `id` as `connectionId` to
 `honua_admin_connection_tables_list`; its `tables` rows contain `schema`, `table`,

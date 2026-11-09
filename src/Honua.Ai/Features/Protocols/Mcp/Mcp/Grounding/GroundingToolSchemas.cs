@@ -107,6 +107,7 @@ internal static class GroundingToolSchemas
                 ,
                     "response": {
                       "type": "object",
+                      "description": "Caller answers to the questions returned by honua_ground_candidates; copy each question id into answers.",
                       "required": ["answers"],
                       "properties": {
                         "answers": {

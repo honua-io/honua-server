@@ -141,7 +141,7 @@ public sealed class McpPromptCatalogTests
         var cases = new (string Prompt, string View, string? ConfigureOnly, Dictionary<string, string> Arguments)[]
         {
             ("setup_and_publish", McpWorkflowViewCatalog.ConfigureViewName, null, new() { ["source"] = "parcels.geojson" }),
-            ("dashboard_scaffolding", McpWorkflowViewCatalog.ConfigureViewName, null, new() { ["topic"] = "outages" }),
+            ("dashboard_scaffolding", McpWorkflowViewCatalog.SetupViewName, null, new() { ["topic"] = "outages" }),
             ("site_selection_analysis", McpWorkflowViewCatalog.AnalyzeViewName, null, new()
             {
                 ["objective"] = "a fire station",
@@ -172,6 +172,14 @@ public sealed class McpPromptCatalogTests
                 .Distinct(StringComparer.Ordinal);
             foreach (var name in named)
             {
+                if (prompt == "setup_and_publish" && name.StartsWith("honua_studio_", StringComparison.Ordinal))
+                {
+                    McpWorkflowViewCatalog.Setup.FindStageIndex(name).Should().BeGreaterThanOrEqualTo(0,
+                        $"'{prompt}' switches to setup for Studio authoring");
+                    text.Should().Contain("view \"setup\"");
+                    continue;
+                }
+
                 if (configureOnly is not null && string.Equals(name, configureOnly, StringComparison.Ordinal))
                 {
                     McpWorkflowViewCatalog.Configure.FindStageIndex(name).Should().BeGreaterThanOrEqualTo(0,

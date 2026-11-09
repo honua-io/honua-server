@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
-public sealed class McpConnectionDiscoveryIntegrationTests : IAsyncLifetime
+public sealed partial class McpConnectionDiscoveryIntegrationTests : IAsyncLifetime
 {
     private readonly RedisFixture _redis = new();
 
@@ -66,7 +66,7 @@ public sealed class McpConnectionDiscoveryIntegrationTests : IAsyncLifetime
             await fixture.Postgres.ApplyGlobalSeedSqlAsync(
                 $"CREATE TABLE public.{name} (id integer, geom geometry(Point,4326)); INSERT INTO public.{name} VALUES (1, ST_SetSRID(ST_MakePoint(1,2),4326)); ANALYZE public.{name};");
 
-            foreach (var view in new[] { "configure", "full" })
+            foreach (var view in new[] { "configure", "setup", "full" })
                 (await ListToolNamesAsync(admin, view)).Should().Contain(
                     ["honua_admin_connections_list", "honua_admin_connection_tables_list"], view);
 
@@ -146,8 +146,9 @@ public sealed class McpConnectionDiscoveryIntegrationTests : IAsyncLifetime
     private static async Task<List<string>> ListToolNamesAsync(HttpClient client, string view)
     {
         var names = new List<string>();
+        var cursors = new HashSet<string>(StringComparer.Ordinal);
         string? cursor = null;
-        do
+        for (var page = 0; page < 100; page++)
         {
             using var response = await client.PostAsJsonAsync("/mcp", new
             {
@@ -162,7 +163,15 @@ public sealed class McpConnectionDiscoveryIntegrationTests : IAsyncLifetime
             names.AddRange(result.GetProperty("tools").EnumerateArray()
                 .Select(tool => tool.GetProperty("name").GetString()!));
             cursor = result.TryGetProperty("nextCursor", out var next) ? next.GetString() : null;
-        } while (cursor != null);
+            if (cursor is null)
+            {
+                return names;
+            }
+
+            cursors.Add(cursor).Should().BeTrue($"{view} must not repeat a pagination cursor");
+        }
+
+        cursor.Should().BeNull($"{view} discovery must finish within 100 pages");
         return names;
     }
 

@@ -538,11 +538,7 @@ internal sealed class PublishedOperationTool : IMcpTool
                 }
 
                 writer.WriteStartObject(parameter.Name);
-                WriteSchema(writer, parameter.Schema);
-                if (!string.IsNullOrWhiteSpace(parameter.Title))
-                {
-                    writer.WriteString("description", parameter.Title);
-                }
+                WriteSchema(writer, parameter.Schema, parameter.Title);
 
                 writer.WriteEndObject();
             }
@@ -575,8 +571,10 @@ internal sealed class PublishedOperationTool : IMcpTool
         && !name.EndsWith("Reference", StringComparison.Ordinal)
         && !name.EndsWith("Type", StringComparison.Ordinal);
 
-    private static void WriteSchema(Utf8JsonWriter writer, Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaDefinition schema)
+    private static void WriteSchema(Utf8JsonWriter writer, Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaDefinition schema, string? description = null)
     {
+        var schemaDescription = string.IsNullOrWhiteSpace(description) ? schema.Description : description;
+        if (!string.IsNullOrWhiteSpace(schemaDescription)) writer.WriteString("description", schemaDescription);
         writer.WriteString("type", schema.Type switch
         {
             Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.WholeNumber => "integer",

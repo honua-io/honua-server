@@ -21,18 +21,20 @@ internal static class StudioMcpSchemas
 {
     public static readonly JsonElement SaveVersionArgumentSchema = Parse("""
         {"type":"object","required":["draftId","generation"],"additionalProperties":false,"properties":{
-          "draftId":{"type":"string","format":"uuid"},"generation":{"type":"integer","minimum":1},
+          "draftId":{"type":"string","format":"uuid","description":"Draft id from honua_studio_create_draft or honua_studio_get_draft."},
+          "generation":{"type":"integer","minimum":1,"description":"Current generation from honua_studio_get_draft; refresh after each edit."},
           "changeNote":{"type":["string","null"],"maxLength":2000}}}
         """);
     public static readonly JsonElement ReopenVersionArgumentSchema = Parse("""
         {"type":"object","required":["itemId","versionId"],"additionalProperties":false,"properties":{
-          "itemId":{"type":"string","format":"uuid"},"versionId":{"type":"string","format":"uuid"}}}
+          "itemId":{"type":"string","format":"uuid","description":"version.itemId from honua_studio_save_version."},
+          "versionId":{"type":"string","format":"uuid","description":"version.versionId from honua_studio_save_version."}}}
         """);
 
     public static readonly JsonElement GetVersionArgumentSchema = Parse("""
         {"type":"object","required":["itemId","versionId"],"additionalProperties":false,"properties":{
-          "itemId":{"type":"string","format":"uuid","description":"Studio content item id."},
-          "versionId":{"type":"string","format":"uuid","description":"Saved version id."}}}
+          "itemId":{"type":"string","format":"uuid","description":"version.itemId from honua_studio_save_version."},
+          "versionId":{"type":"string","format":"uuid","description":"version.versionId from honua_studio_save_version."}}}
         """);
 
     /// <summary>Maximum accepted length for free-text fields (packageKey, ids, titles, notes).</summary>
@@ -74,6 +76,7 @@ internal static class StudioMcpSchemas
     private static readonly string LayerInputSchemaJson = $$"""
         {
           "type": "object",
+          "description": "Caller-authored layer; copy studioSourceId from honua_list_layers into sourceId.",
           "required": ["id"],
           "additionalProperties": false,
           "properties": {
@@ -95,6 +98,7 @@ internal static class StudioMcpSchemas
     private static readonly string ViewInputSchemaJson = $$"""
         {
           "type": "object",
+          "description": "Caller-selected camera settings; inspect the existing view with honua_studio_get_draft.",
           "additionalProperties": false,
           "properties": {
             "bbox": { "type": "array", "minItems": {{StudioCompositionViewBounds.BboxOrdinateCount}}, "maxItems": {{StudioCompositionViewBounds.BboxOrdinateCount}}, "items": { "type": "number" }, "description": "Viewport bounding box [minX, minY, maxX, maxY]." },
@@ -110,6 +114,7 @@ internal static class StudioMcpSchemas
     private const string WidgetInputSchemaJson = """
         {
           "type": "object",
+          "description": "Caller-authored widget; inspect existing composition ids with honua_studio_get_draft.",
           "required": ["id", "kind"],
           "additionalProperties": false,
           "properties": {
@@ -130,6 +135,7 @@ internal static class StudioMcpSchemas
     private static readonly string InteractionInputSchemaJson = $$"""
         {
           "type": "object",
+          "description": "Caller-authored binding between component ids returned by honua_studio_get_draft.",
           "required": ["id", "on", "do"],
           "additionalProperties": false,
           "properties": {
@@ -166,8 +172,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "interaction"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_get_draft (map/app/dashboard)." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
             "interaction": {{InteractionInputSchemaJson}}
           }
         }
@@ -179,8 +185,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "interactionId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_get_draft (map/app/dashboard)." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
             "interactionId": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "\\S", "description": "Id of the interaction to remove. Removing an unknown id is an error, not a no-op." }
           }
         }
@@ -193,6 +199,7 @@ internal static class StudioMcpSchemas
     private static readonly string ControlInputSchemaJson = $$"""
         {
           "type": "object",
+          "description": "Caller-authored control; inspect layer/source ids with honua_studio_get_draft.",
           "required": ["id", "kind"],
           "additionalProperties": false,
           "properties": {
@@ -211,8 +218,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "control"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_get_draft (map/app/dashboard)." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
             "control": {{ControlInputSchemaJson}}
           }
         }
@@ -224,8 +231,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "controlId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_get_draft (map/app/dashboard)." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
             "controlId": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxControlIdLength}}, "pattern": "\\S", "description": "Id of the control to remove. Removing an unknown id is an error, not a no-op." },
             "cascadeInteractions": { "type": "boolean", "default": false, "description": "When true, interactions whose on.ref or do.ref is 'control:{controlId}' are removed with the control. When false (default), the call fails while any interaction still references it, so the document never retains a dangling binding." }
           }
@@ -272,7 +279,7 @@ internal static class StudioMcpSchemas
           "additionalProperties": false,
           "properties": {
             "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency). A mismatch surfaces a failed_precondition error; re-fetch with honua_studio_get_draft and retry." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail. A mismatch surfaces a failed_precondition error; re-fetch with honua_studio_get_draft and retry." },
             "packageKey": {{PackageKeyPropertyJson}},
             "schemaVersion": { "type": "string", "minLength": 1, "maxLength": 50, "description": "Envelope schema version for the family." },
             "format": { "type": "string", "maxLength": 100, "description": "Family-specific package format." },
@@ -289,8 +296,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "layer"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_get_draft (map/app/dashboard)." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
             "layer": {{LayerInputSchemaJson}},
             "beforeId": { "type": "string", "maxLength": 200, "description": "Optional layer id before which to insert the new layer; appended when omitted or unmatched." }
           }
@@ -303,8 +310,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "layerId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_get_draft (map/app/dashboard)." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
             "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Id of the layer to remove." }
           }
         }
@@ -316,8 +323,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "layerId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_get_draft (map/app/dashboard)." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
             "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Id of the layer to style." },
             "styleRef": { "type": ["string", "null"], "maxLength": 200, "description": "Style reference (catalog styleId or inline style key). Omit or set null to clear the binding." },
             "styleBody": { "type": "object", "description": "Inline paint/layout overrides keyed by layerId or '<layerId>__outline'. Not with styleRef." }
@@ -331,8 +338,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "mapSpec"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_get_draft (map/app/dashboard)." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
             "mapSpec": { "type": "object", "description": "Edited MapLibre v8 style; only layers, name, metadata, transition, light, lights and fog may change." }
           }
         }
@@ -344,8 +351,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "layerId", "visible"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_get_draft (map/app/dashboard)." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
             "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Id of the layer to show or hide." },
             "visible": { "type": "boolean", "description": "Whether the layer is visible in the composition." }
           }
@@ -358,8 +365,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "view"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_get_draft (map/app/dashboard)." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
             "view": {{ViewInputSchemaJson}}
           }
         }
@@ -371,8 +378,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "widget"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_get_draft (map/app/dashboard)." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
             "widget": {{WidgetInputSchemaJson}}
           }
         }
@@ -384,8 +391,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "widgetId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_get_draft (map/app/dashboard)." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
             "widgetId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Id of the widget to remove." }
           }
         }

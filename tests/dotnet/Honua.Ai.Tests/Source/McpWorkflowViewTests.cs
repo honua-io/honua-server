@@ -40,7 +40,7 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 /// source list.
 /// </summary>
 [Protocol(TestProtocols.Mcp)]
-public sealed class McpWorkflowViewTests
+public sealed partial class McpWorkflowViewTests
 {
     private readonly ITestOutputHelper _output;
 
@@ -138,7 +138,7 @@ public sealed class McpWorkflowViewTests
         anonymous.Names.Should().BeEmpty();
         authenticated.Names.Should().Contain(["honua_create_map_package", "honua_create_app_package"]);
         authenticated.Names.Should().NotContain(["honua_validate_package", "honua_preview_package"]);
-        McpWorkflowViewCatalog.Setup.Revision.Should().Be("setup.v6");
+        McpWorkflowViewCatalog.Setup.Revision.Should().Be("setup.v7");
 
         foreach (var name in new[] { "honua_create_map_package", "honua_create_app_package" })
         {
@@ -1087,7 +1087,7 @@ public sealed class McpWorkflowViewTests
     [UnitTest]
     public async Task ConfigureOperateAndAnalyze_SelectTheOperatorPath_WithinBudget()
     {
-        McpWorkflowViewCatalog.Configure.FindStageIndex("honua_studio_get_version").Should().BeGreaterThanOrEqualTo(0);
+        McpWorkflowViewCatalog.Configure.FindStageIndex("honua_studio_get_version").Should().Be(-1);
         McpWorkflowViewCatalog.Setup.FindStageIndex("honua_studio_get_version").Should().BeGreaterThanOrEqualTo(0,
             "the terminal setup view includes the saved-version read the map path calls");
         McpWorkflowViewCatalog.Setup.FindStageIndex("honua_studio_add_layer").Should().BeGreaterThanOrEqualTo(0);
@@ -1099,6 +1099,7 @@ public sealed class McpWorkflowViewTests
         foreach (var definition in new[]
                  {
                      McpWorkflowViewCatalog.Configure,
+                     McpWorkflowViewCatalog.Setup,
                      McpWorkflowViewCatalog.Operate,
                      McpWorkflowViewCatalog.Analyze,
                  })
@@ -1123,12 +1124,19 @@ public sealed class McpWorkflowViewTests
             "honua_admin_connections_list",
             "honua_admin_connection_tables_list",
             "honua_admin_layer_publish",
-            "honua_studio_add_layer",
-            "honua_studio_get_version",
-            "honua_studio_propose_publication",
             "honua_publish_service",
             "honua_ingest_dataset",
             "honua_ingest_job_artifact",
+        ]);
+        configure.Members.Should().NotContain(member => member.ToolName.StartsWith("honua_studio_", StringComparison.Ordinal));
+        var setup = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Setup, catalog);
+        setup.Members.Select(member => member.ToolName).Should().Contain(
+        [
+            "honua_studio_add_layer",
+            "honua_studio_get_version",
+            "honua_studio_propose_publication",
+            "honua_admin_connections_list",
+            "honua_admin_connection_tables_list",
         ]);
         var operate = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Operate, catalog);
         operate.Members.Select(member => member.ToolName).Should().Contain(["honua_ops_health", "honua_propose_finding"]);
