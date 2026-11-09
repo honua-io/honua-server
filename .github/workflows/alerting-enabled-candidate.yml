@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/alerting-enabled-candidate.yml'
-      - 'src/Honua.Core/Features/Alerts/**'
+      - 'src/Honua.Core/Core/Features/Alerts/**'
       - 'src/Honua.Db/Postgres/Features/Alerts/**'
       - 'src/Honua.Server/Features/Alerts/**'
       - 'src/Honua.Server/Migrations/**'

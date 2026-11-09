@@ -11,11 +11,11 @@ parity roster, and honua-samples all resolve against this file's `key` values.
 ## Why two key lists exist
 
 This repo already has an edition-gated entitlement vocabulary,
-[`FeatureCatalog`](../../src/Honua.Core/Features/Licensing/Domain/FeatureCatalog.cs)
-(`docs generator`: `src/Honua.Core/Features/Licensing/Domain/FeatureCatalog.cs`),
+[`FeatureCatalog`](../../src/Honua.Core/Core/Features/Licensing/Domain/FeatureCatalog.cs)
+(`docs generator`: `src/Honua.Core/Core/Features/Licensing/Domain/FeatureCatalog.cs`),
 which enumerates only the Pro/Enterprise keys `LicenseGate` enforces.
 `capability-keys.v1.json` is generated from a strictly broader C# type,
-[`CapabilityKeyCatalog`](../../src/Honua.Core/Features/Licensing/Domain/CapabilityKeyCatalog.cs)
+[`CapabilityKeyCatalog`](../../src/Honua.Core/Core/Features/Licensing/Domain/CapabilityKeyCatalog.cs)
 (`CapabilityKeyCatalog.All = CapabilityKeyCatalog.CommunityKeys ++
 CapabilityKeyCatalog.DescriptiveKeys ++ FeatureCatalog.All`). Community keys
 describe capabilities that ship ungated. Descriptive keys capture minimum
@@ -33,7 +33,7 @@ Both lists share one naming rule: every key is dot-namespaced lowercase,
 ```json
 {
   "schemaVersion": "1.1.0",
-  "generator": "src/Honua.Core/Features/Licensing/Domain/CapabilityKeyCatalog.cs",
+  "generator": "src/Honua.Core/Core/Features/Licensing/Domain/CapabilityKeyCatalog.cs",
   "trackingIssue": "#2893",
   "description": "...",
   "capabilities": [

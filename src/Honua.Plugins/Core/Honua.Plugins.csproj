@@ -16,8 +16,8 @@
       Deliberately free of ASP.NET Core: the plugin health check lives in Honua.Server next
       to the other production health checks.
     -->
-    <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
-    <ProjectReference Include="..\Honua.Plugins.Abstractions\Honua.Plugins.Abstractions.csproj" />
+    <ProjectReference Include="..\..\Honua.Core\Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\Abstractions\Honua.Plugins.Abstractions.csproj" />
   </ItemGroup>
 
   <ItemGroup>
