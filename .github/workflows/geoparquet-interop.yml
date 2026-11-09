@@ -2,6 +2,7 @@ name: GeoParquet Interop Evidence
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches: [trunk]
     paths:
       - '.github/workflows/geoparquet-interop.yml'
@@ -58,6 +59,7 @@ env:
 
 jobs:
   evidence:
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     name: GeoParquet execution evidence
     runs-on: ubuntu-latest
     timeout-minutes: 35
