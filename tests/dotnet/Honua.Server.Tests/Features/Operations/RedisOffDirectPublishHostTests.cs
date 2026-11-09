@@ -15,6 +15,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Services;
+using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Operations;
@@ -99,6 +100,7 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
             })
             .ReplaceService(_publishing)
             .ReplaceService(resolver)
+            .ReplaceService(Substitute.For<IPublishedServiceStore>())
             .ReplaceService<IMetadataV2GraphProvider>(PublishedLayerGraphProvider());
         await _fixture.InitializeAsync();
     }
@@ -178,13 +180,13 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
     }
 
     private static TestMetadataV2GraphProvider PublishedLayerGraphProvider() => new TestMetadataV2GraphBuilder()
-            .AddResource("res-parcels", "Parcels")
-            .AddStorageBinding("bind-parcels", "res-parcels", "public.parcels", storageLayerId: 321)
-            .AddService("svc-parcels", "default")
-            .AddPublication("pub-parcels", "svc-parcels", "res-parcels",
-                layerIndex: 3, storageBindingId: "bind-parcels",
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
-            .BuildProvider();
+        .AddResource("res-parcels", "Parcels")
+        .AddStorageBinding("bind-parcels", "res-parcels", "public.parcels", storageLayerId: 321)
+        .AddService("svc-parcels", "default")
+        .AddPublication("pub-parcels", "svc-parcels", "res-parcels",
+            layerIndex: 3, storageBindingId: "bind-parcels",
+            publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+        .BuildProvider();
 
     private void AssertCanonicalDirectPublish(JsonElement output)
     {
@@ -201,7 +203,8 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
         output.GetProperty("evidenceRefs").EnumerateArray().Select(item => item.GetString())
             .Should().Contain(NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef);
         output.GetProperty("storageLayerId").GetString().Should().Be("321");
-        output.GetProperty("serviceLayerIndex").GetString().Should().Be("3");
+        output.TryGetProperty("serviceLayerIndex", out var serviceLayerIndex).Should().BeTrue(output.GetRawText());
+        serviceLayerIndex.GetString().Should().Be("3");
         output.TryGetProperty("layerId", out _).Should().BeFalse();
     }
 
