@@ -71,12 +71,21 @@ wait_for_url() {
 }
 
 assert_all_health_checks() {
-  curl -fsS -H "X-API-Key: ${ADMIN_PASSWORD}" \
-    "http://127.0.0.1:${HONUA_HTTP_PORT}/monitoring/health/comprehensive" \
-    | jq -e '.status == "Healthy" and (.entries | type == "object")
-        and (.entries | has("audit-chain-integrity"))
-        and (.entries | all(.status == "Healthy"))' >/dev/null
-  echo "all registered health checks: Healthy"
+  local attempts="${1:-60}"
+  for _ in $(seq 1 "${attempts}"); do
+    if curl -fsS -H "X-API-Key: ${ADMIN_PASSWORD}" \
+      "http://127.0.0.1:${HONUA_HTTP_PORT}/monitoring/health/comprehensive" \
+      | jq -e '.status == "Healthy" and (.entries | type == "object")
+          and (.entries | has("audit-chain-integrity"))
+          and (.entries["audit-chain-integrity"].data.last_verified_at | type == "string" and length > 0)
+          and (.entries | all(.status == "Healthy"))' >/dev/null; then
+      echo "all registered health checks: Healthy (audit chain verified)"
+      return 0
+    fi
+    sleep 2
+  done
+  echo "health checks: timed out waiting for Healthy and verified audit chain" >&2
+  return 1
 }
 
 assert_proposal_roundtrip() {
@@ -130,6 +139,8 @@ cat >"${SMOKE_OVERRIDE_FILE}" <<'YAML'
 services:
   honua:
     environment:
+      AuditLog__ChainVerification__InitialDelay: "00:00:02"
+      AuditLog__ChainVerification__Interval: "00:00:02"
       ControlPlane__PlatformRelease__Version: "2026.07.0-smoke"
       ControlPlane__PlatformRelease__ServingArtifactReference: "ghcr.io/honua-io/honua-server:quickstart-smoke"
       ControlPlane__PlatformRelease__Workers__0__ArtifactReference: "ghcr.io/honua-io/honua-worker:quickstart-smoke"
@@ -144,8 +155,8 @@ compose_down
 compose up -d --build postgres redis honua console
 
 wait_for_url "http://127.0.0.1:${HONUA_HTTP_PORT}/healthz/ready" "honua ready" 90
-assert_all_health_checks
 assert_proposal_roundtrip
+assert_all_health_checks
 wait_for_url "http://127.0.0.1:${HONUA_CONSOLE_PORT}/version.json" "console version" 60
 wait_for_url "http://127.0.0.1:${HONUA_CONSOLE_PORT}/operate" "console operate" 60
 wait_for_url "http://127.0.0.1:${HONUA_CONSOLE_PORT}/operate/health" "console operate health" 60

@@ -79,6 +79,14 @@ class QuickstartTests(unittest.TestCase):
             self.assertTrue(env_file.read_text().startswith(existing))
             self.assertIn("AuditLog__ChainVerification__Key=", env_file.read_text())
 
+    def test_copied_environment_template_initializes(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {}, clear=True):
+            env_file = Path(directory) / ".env"
+            env_file.write_text((ROOT / ".env.docker.example").read_text())
+            initialize(env_file)
+            key = self.render(env_file)["honua"]["environment"]["AuditLog__ChainVerification__Key"]
+            self.assertGreaterEqual(len(base64.b64decode(key, validate=True)), 32)
+
     def test_invalid_audit_keys_are_rejected_without_changing_saved_secrets(self):
         for value in ("", "not-base64!", base64.b64encode(b"short").decode()):
             with self.subTest(value=value), tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {}, clear=True):
@@ -106,8 +114,10 @@ class QuickstartTests(unittest.TestCase):
         source = (ROOT / "scripts/ci/smoke-quickstart-console.sh").read_text()
         self.assertIn("assert_all_health_checks() {", source)
         function = source.split("assert_all_health_checks() {", 1)[1].split("\n}\n", 1)[0]
-        healthy = {"status": "Healthy", "entries": {"audit-chain-integrity": {"status": "Healthy"}}}
+        healthy = {"status": "Healthy", "entries": {"audit-chain-integrity": {
+            "status": "Healthy", "data": {"last_verified_at": "2026-11-09T19:00:00Z"}}}}
         reports = [healthy, {**healthy, "status": "Unhealthy"},
+                   {"status": "Healthy", "entries": {"audit-chain-integrity": {"status": "Healthy"}}},
                    {"status": "Healthy", "entries": {}},
                    {"status": "Healthy", "entries": {"database": {"status": "Healthy"}}}]
         for status in ("Unhealthy", "Degraded"):
@@ -119,8 +129,8 @@ class QuickstartTests(unittest.TestCase):
                 report_file.write_text(json.dumps(report))
                 result = subprocess.run(["bash", "-c",
                     'set -euo pipefail; curl() { cat "$REPORT_FILE"; }; '
-                    'HONUA_HTTP_PORT=18080; ADMIN_PASSWORD=unused; '
-                    'assert_all_health_checks() {' + function + '\n}; assert_all_health_checks'],
+                    'HONUA_HTTP_PORT=18080; ADMIN_PASSWORD=unused; sleep() { :; }; '
+                    'assert_all_health_checks() {' + function + '\n}; assert_all_health_checks 1'],
                     env={**os.environ, "REPORT_FILE": str(report_file)}, capture_output=True)
                 self.assertEqual(result.returncode == 0, index == 0, "Smoke must reject unhealthy or incomplete health")
 
