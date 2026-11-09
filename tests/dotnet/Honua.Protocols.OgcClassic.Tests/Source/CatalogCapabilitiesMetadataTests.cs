@@ -116,7 +116,8 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
             Folders = [new() { Metadata = new() { Id = "survey-folder", Name = "survey", Title = "Folder survey" } }],
             Services = snapshot.Graph.Services.Select(service => service with
             {
-                FolderId = "survey-folder", Metadata = new() { Id = service.Metadata.Id, Name = service.Metadata.Name }
+                FolderId = "survey-folder",
+                Metadata = new() { Id = service.Metadata.Id, Name = service.Metadata.Name }
             }).ToArray()
         };
         ((TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>()).SetGraph(graph, schema: _fixture.CurrentSchema);
@@ -182,10 +183,14 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
         var graph = snapshot.Graph with
         {
             Metadata = new() { Id = snapshot.Graph.Metadata.Id, Name = snapshot.Graph.Metadata.Name },
-            Folders = [], Resources = [], Publications = [], StorageBindings = [],
+            Folders = [],
+            Resources = [],
+            Publications = [],
+            StorageBindings = [],
             Services = snapshot.Graph.Services.Select(service => service with
             {
-                FolderId = null, Metadata = new() { Id = service.Metadata.Id, Name = service.Metadata.Name }
+                FolderId = null,
+                Metadata = new() { Id = service.Metadata.Id, Name = service.Metadata.Name }
             }).ToArray()
         };
         ((TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>()).SetGraph(graph, schema: _fixture.CurrentSchema);
