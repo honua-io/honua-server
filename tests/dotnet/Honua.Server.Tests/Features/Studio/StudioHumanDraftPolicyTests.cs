@@ -18,7 +18,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 
-namespace Honua.Server.Tests.Features.Operations;
+namespace Honua.Server.Tests.Features.Studio;
 
 public sealed class StudioHumanDraftPolicyTests
 {
