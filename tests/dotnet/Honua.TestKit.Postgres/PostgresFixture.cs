@@ -23,7 +23,7 @@ public sealed class PostgresFixture : IAsyncLifetime
     private static readonly PostgresSharedState SharedState = new();
     private static readonly string[] SharedStoreMigrations =
         ["113_AddDurableQuerySnapshots.sql", "119_CreateGeoprocessingWorkspaces.sql", "122_CreateWorkflowPackages.sql",
-            "141_CreateImportedDatasetSpatialMetadata.sql"];
+            "141_CreateImportedDatasetSpatialMetadata.sql", "147_CreateOperationInstances.sql"];
 
     // Upload tests run with HONUA_SKIP_MIGRATIONS and a seed that mirrors older import
     // functions, not this script. The importer calls these after every committed load.

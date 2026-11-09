@@ -124,6 +124,7 @@ internal static class WebAppFixturePostgresWiringMixin
     internal static void RemovePostgresBackedServices(IServiceCollection services)
     {
         services.RemoveAll<NpgsqlDataSource>();
+        services.RemoveAll<Honua.Core.Features.Operations.Abstractions.IOperationInstanceStore>();
         services.RemoveAll<IFeatureReader>();
         services.RemoveAll<IFeatureWriter>();
         services.RemoveAll<ITileProvider>();
