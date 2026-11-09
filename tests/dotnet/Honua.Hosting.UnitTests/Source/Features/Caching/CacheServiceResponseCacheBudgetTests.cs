@@ -6,6 +6,7 @@ using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Middleware;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using NSubstitute;
@@ -210,6 +211,84 @@ public sealed class CacheServiceResponseCacheBudgetTests
         Assert.Null(await cache.GetAsync<CachedResponse>(prefix + "second"));
     }
 
+    [UnitTheory]
+    [InlineData(1, 65_536)]
+    [InlineData(20, 11_000)]
+    [Operation(Operations.Cache)]
+    public async Task RemoveByPatternAsync_OtherSchema_KeepsReadableReservation(int maxEntries, int maxBytes)
+    {
+        var backend = new RecordingCache();
+        var cache = ResponseCache(backend, maxEntries, maxBytes);
+        var schema = new SchemaContext();
+        const string prefix = "query:featureserver:service:alpha:layer:1:";
+        var payload = new CachedResponse(new byte[10_000], "application/json");
+        try
+        {
+            schema.CurrentSchema = "schema_b";
+            await cache.SetAsync(await cache.BindKeyAsync(prefix + "first"), payload, Lifetime);
+            schema.CurrentSchema = "schema_a";
+            await cache.RemoveByPatternAsync(prefix + "*");
+            schema.CurrentSchema = "schema_b";
+            Assert.Same(payload, await cache.GetAsync<CachedResponse>(prefix + "first"));
+            await cache.SetAsync(await cache.BindKeyAsync(prefix + "second"), payload, Lifetime);
+            Assert.Equal(1, backend.ResponseWrites);
+            Assert.Null(await cache.GetAsync<CachedResponse>(prefix + "second"));
+        }
+        finally { schema.CurrentSchema = null; }
+    }
+
+    [UnitTheory]
+    [InlineData(1, 65_536)]
+    [InlineData(20, 11_000)]
+    [Operation(Operations.Cache)]
+    public async Task SetAsync_SameKeyInDifferentSchemas_ReservesEachPayload(int maxEntries, int maxBytes)
+    {
+        var backend = new RecordingCache();
+        var cache = ResponseCache(backend, maxEntries, maxBytes);
+        var schema = new SchemaContext();
+        const string key = "query:featureserver:service:alpha:layer:1:first";
+        var payload = new CachedResponse(new byte[10_000], "application/json");
+        try
+        {
+            schema.CurrentSchema = "schema_b";
+            await cache.SetAsync(await cache.BindKeyAsync(key), payload, Lifetime);
+            schema.CurrentSchema = "schema_a";
+            await cache.SetAsync(await cache.BindKeyAsync(key), payload, Lifetime);
+            Assert.Equal(1, backend.ResponseWrites);
+            Assert.Null(await cache.GetAsync<CachedResponse>(key));
+            schema.CurrentSchema = "schema_b";
+            Assert.Same(payload, await cache.GetAsync<CachedResponse>(key));
+        }
+        finally { schema.CurrentSchema = null; }
+    }
+
+    [UnitTheory]
+    [InlineData(1, 65_536)]
+    [InlineData(20, 11_000)]
+    [Operation(Operations.Cache)]
+    public async Task BindKeyAsync_OtherSchemaRecovery_KeepsReadableReservation(int maxEntries, int maxBytes)
+    {
+        var backend = new RecordingCache();
+        var cache = ResponseCache(backend, maxEntries, maxBytes);
+        var schema = new SchemaContext();
+        const string prefix = "query:featureserver:service:alpha:layer:1:";
+        var payload = new CachedResponse(new byte[10_000], "application/json");
+        try
+        {
+            schema.CurrentSchema = "schema_b";
+            await cache.SetAsync(await cache.BindKeyAsync(prefix + "first"), payload, Lifetime);
+            schema.CurrentSchema = "schema_a";
+            await backend.Service.SetAsync(ResponseCacheVersionKeys.Prefix + ResponseCacheVersionKeys.RecoveryNamespace,
+                "schema-a-recovery", Lifetime);
+            await cache.SetAsync(await cache.BindKeyAsync(prefix + "second"), payload, Lifetime);
+            Assert.Equal(1, backend.ResponseWrites);
+            Assert.Null(await cache.GetAsync<CachedResponse>(prefix + "second"));
+            schema.CurrentSchema = "schema_b";
+            Assert.Same(payload, await cache.GetAsync<CachedResponse>(prefix + "first"));
+        }
+        finally { schema.CurrentSchema = null; }
+    }
+
     private static CacheServiceResponseCache ResponseCache(RecordingCache backend,
         int maxEntries = 20, int maxBytes = 65_536)
         => new(backend.Service, new CacheOptions
@@ -230,21 +309,24 @@ public sealed class CacheServiceResponseCacheBudgetTests
         public Func<string, string?, Task<string?>>? ReadVersion { get; set; }
         public int ResponseWrites => Volatile.Read(ref _responseWrites);
 
+        private static string ScopedKey(string key) => SchemaContext.AmbientCurrentSchema is { } schema
+            ? CacheScopeKeys.EnsureScoped(key, schema) : key;
+
         public RecordingCache()
         {
             Service.GetAsync<string>(Arg.Any<string>(), Arg.Any<CancellationToken>())
                 .Returns(async call =>
                 {
-                    var key = call.ArgAt<string>(0);
+                    var key = ScopedKey(call.ArgAt<string>(0));
                     var version = _versions.GetValueOrDefault(key);
                     return ReadVersion is { } readVersion ? await readVersion(key, version) : version;
                 });
             Service.GetAsync<CachedResponse>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-                .Returns(call => Task.FromResult(Responses.GetValueOrDefault(call.ArgAt<string>(0))));
+                .Returns(call => Task.FromResult(Responses.GetValueOrDefault(ScopedKey(call.ArgAt<string>(0)))));
             Service.SetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
                 .Returns(async call =>
                 {
-                    var key = call.ArgAt<string>(0);
+                    var key = ScopedKey(call.ArgAt<string>(0));
                     _versions[key] = call.ArgAt<string>(1);
                     if (AfterVersionWrite is { } afterWrite)
                     {
@@ -254,7 +336,7 @@ public sealed class CacheServiceResponseCacheBudgetTests
             Service.SetAsync(Arg.Any<string>(), Arg.Any<CachedResponse>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
                 .Returns(async call =>
                 {
-                    var key = call.ArgAt<string>(0);
+                    var key = ScopedKey(call.ArgAt<string>(0));
                     if (BeforeResponseWrite is { } beforeWrite)
                     {
                         await beforeWrite(key);
@@ -264,7 +346,7 @@ public sealed class CacheServiceResponseCacheBudgetTests
                 });
             Service.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(call =>
             {
-                Responses.TryRemove(call.ArgAt<string>(0), out _);
+                Responses.TryRemove(ScopedKey(call.ArgAt<string>(0)), out _);
                 return Task.CompletedTask;
             });
         }
