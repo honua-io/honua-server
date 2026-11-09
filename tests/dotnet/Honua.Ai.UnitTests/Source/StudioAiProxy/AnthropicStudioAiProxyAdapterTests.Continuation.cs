@@ -68,14 +68,14 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
             NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
         var identity = AiExecutionContext.Create("test", "person-a", "studio-chat");
 
-        var events = await CollectAsync(adapter, ContinuationRequest(identity, false));
+        var events = await CollectAsync(adapter, InitialContinuationRequest(identity));
 
         events.Should().NotContain(e => e.Type == StudioAiChatEventType.Error);
         events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.ToolCallStop);
         events.Last().Type.Should().Be(StudioAiChatEventType.MessageStop);
         events.Last().StopReason.Should().Be(StudioAiStopReason.ToolCall);
         JsonSerializer.Serialize(events).Should().NotContain("PRIVATE_");
-        var continueTurn = () => CollectAsync(adapter, ContinuationRequest(identity, true));
+        var continueTurn = () => CollectAsync(adapter, ToolResultContinuationRequest(identity));
         await continueTurn.Should().ThrowAsync<InvalidOperationException>();
         handler.SendCount.Should().Be(1);
     }
@@ -90,10 +90,10 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
         var adapter = new AnthropicStudioAiProxyAdapter(clients, new StudioAiProxyApiKeyResolver(),
             NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
         var identity = AiExecutionContext.Create("test", "person-a", "studio-chat");
-        await CollectAsync(adapter, ContinuationRequest(identity, false));
+        await CollectAsync(adapter, InitialContinuationRequest(identity));
         var options = DefaultOptions();
         if (changed == "credential") options.ApiKey = "other-test-key";
-        var prior = ContinuationRequest(identity, true);
+        var prior = ToolResultContinuationRequest(identity);
         var request = new StudioAiChatRequest
         {
             Provider = changed == "provider" ? "other-provider" : prior.Provider,
@@ -120,8 +120,8 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
             NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
         var identity = AiExecutionContext.Create("test", "person-a", "studio-chat");
 
-        var first = await CollectAsync(adapter, ContinuationRequest(identity, false));
-        var second = await CollectAsync(adapter, ContinuationRequest(identity, true));
+        var first = await CollectAsync(adapter, InitialContinuationRequest(identity));
+        var second = await CollectAsync(adapter, ToolResultContinuationRequest(identity));
 
         first.Concat(second).Should().NotContain(e => e.Type == StudioAiChatEventType.Error);
         handler.SendCount.Should().Be(2);
@@ -153,10 +153,10 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
         var adapter = new AnthropicStudioAiProxyAdapter(clients, new StudioAiProxyApiKeyResolver(),
             NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
         var identity = AiExecutionContext.Create("test", "person-a", "studio-chat");
-        var events = await CollectAsync(adapter, ContinuationRequest(identity, false));
+        var events = await CollectAsync(adapter, InitialContinuationRequest(identity));
         events.Should().Contain(e => e.Type == StudioAiChatEventType.Error);
 
-        var continueTurn = () => CollectAsync(adapter, ContinuationRequest(identity, true));
+        var continueTurn = () => CollectAsync(adapter, ToolResultContinuationRequest(identity));
 
         await continueTurn.Should().ThrowAsync<InvalidOperationException>();
         handler.SendCount.Should().Be(1);
@@ -178,7 +178,7 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
         var adapter = new AnthropicStudioAiProxyAdapter(clients, new StudioAiProxyApiKeyResolver(),
             NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
         var identity = AiExecutionContext.Create("test", "person-a", "studio-chat");
-        await CollectAsync(adapter, ContinuationRequest(identity, false));
+        await CollectAsync(adapter, InitialContinuationRequest(identity));
         var nextIdentity = changed switch
         {
             "actor" => AiExecutionContext.Create("test", "person-b", "studio-chat"),
@@ -191,8 +191,12 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
         if (changed == "endpoint") options.Endpoint = "https://other.invalid";
 
         var continueTurn = () => CollectAsync(adapter, options,
-            ContinuationRequest(nextIdentity, true, changed == "transcript" ? "different" : "list open incidents",
-                changed == "system" ? "different system" : null, changed == "tools"));
+            ToolResultContinuationRequest(nextIdentity, new ContinuationScenario
+            {
+                Prompt = changed == "transcript" ? "different" : "list open incidents",
+                System = changed == "system" ? "different system" : null,
+                Tools = changed == "tools" ? null : ToolRequest().Tools
+            }));
 
         await continueTurn.Should().ThrowAsync<InvalidOperationException>();
         handler.SendCount.Should().Be(1);
@@ -207,8 +211,8 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
         var adapter = new AnthropicStudioAiProxyAdapter(clients, new StudioAiProxyApiKeyResolver(),
             NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
         var identity = AiExecutionContext.Create("test", "person-a", "studio-chat");
-        await CollectAsync(adapter, ContinuationRequest(identity, false));
-        var prior = ContinuationRequest(identity, true);
+        await CollectAsync(adapter, InitialContinuationRequest(identity));
+        var prior = ToolResultContinuationRequest(identity);
         var next = new StudioAiChatRequest
         {
             ExecutionContext = identity,
@@ -224,25 +228,39 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
         handler.CapturedRequestBody.Should().NotContain("PRIVATE_");
     }
 
-    private static StudioAiChatRequest ContinuationRequest(AiExecutionContext identity, bool includeResult,
-        string prompt = "list open incidents", string? system = null, bool omitTools = false)
+    private static StudioAiChatRequest InitialContinuationRequest(AiExecutionContext identity, ContinuationScenario? scenario = null)
     {
-        List<StudioAiMessage> messages = [new() { Role = StudioAiRole.User, Content = prompt }];
-        if (includeResult)
-        {
-            messages.Add(new StudioAiMessage
-            {
-                Role = StudioAiRole.Assistant,
-                ToolCalls = [new() { Id = "toolu_1", Name = "list_incidents", Arguments = JsonDocument.Parse("{\"status\":\"open\"}").RootElement.Clone() }]
-            });
-            messages.Add(new StudioAiMessage { Role = StudioAiRole.Tool, ToolCallId = "toolu_1", Content = "[]" });
-        }
+        scenario ??= new ContinuationScenario();
         return new StudioAiChatRequest
         {
             ExecutionContext = identity,
-            Messages = messages,
-            System = system,
-            Tools = omitTools ? null : ToolRequest().Tools
+            Messages = [new() { Role = StudioAiRole.User, Content = scenario.Prompt }],
+            System = scenario.System,
+            Tools = scenario.Tools
         };
+    }
+
+    private static StudioAiChatRequest ToolResultContinuationRequest(AiExecutionContext identity, ContinuationScenario? scenario = null)
+    {
+        var initial = InitialContinuationRequest(identity, scenario);
+        using var arguments = JsonDocument.Parse("{\"status\":\"open\"}");
+        return new StudioAiChatRequest
+        {
+            ExecutionContext = identity,
+            System = initial.System,
+            Tools = initial.Tools,
+            Messages = [.. initial.Messages, new()
+            {
+                Role = StudioAiRole.Assistant,
+                ToolCalls = [new() { Id = "toolu_1", Name = "list_incidents", Arguments = arguments.RootElement.Clone() }]
+            }, new() { Role = StudioAiRole.Tool, ToolCallId = "toolu_1", Content = "[]" }]
+        };
+    }
+
+    private sealed record ContinuationScenario
+    {
+        internal string Prompt { get; init; } = "list open incidents";
+        internal string? System { get; init; }
+        internal IReadOnlyList<StudioAiToolDefinition>? Tools { get; init; } = ToolRequest().Tools;
     }
 }

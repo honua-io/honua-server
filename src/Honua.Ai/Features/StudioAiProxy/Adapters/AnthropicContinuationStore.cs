@@ -4,6 +4,7 @@
 using System.Buffers;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text;
 using Honua.Ai.StudioAiProxy.Domain;
 using Honua.Core.Features.Security.Admission;
 
@@ -12,17 +13,18 @@ namespace Honua.Ai.StudioAiProxy.Adapters;
 internal sealed class AnthropicContinuationStore(TimeProvider clock)
 {
     internal const int MaximumTurnCharacters = 262_144;
+    internal const string UnavailableMessage = "The provider continuation is unavailable; start a new conversation.";
     private const int MaximumStoredCharacters = 4_194_304;
     private const int MaximumTurns = 128;
     private readonly Lock _lock = new();
     private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
     private int _storedCharacters;
 
-    internal JsonElement? Restore(string? key)
+    internal Turn? Restore(string? key)
         => key is null ? null : TryRestore(key)
-            ?? throw new InvalidOperationException("The provider continuation is unavailable; start a new conversation.");
+            ?? throw new InvalidOperationException(UnavailableMessage);
 
-    internal JsonElement? TryRestore(string? key)
+    internal Turn? TryRestore(string? key)
     {
         if (key is null) return null;
         lock (_lock)
@@ -33,14 +35,14 @@ internal sealed class AnthropicContinuationStore(TimeProvider clock)
                 return null;
             }
             using var document = JsonDocument.Parse(entry.Content);
-            return document.RootElement.Clone();
+            return new Turn(document.RootElement.Clone(), entry.CredentialFingerprint);
         }
     }
 
-    internal void Save(string? key, JsonElement content)
+    internal void Save(string? key, Turn turn)
     {
         if (key is null) return;
-        var serialized = content.GetRawText();
+        var serialized = turn.Content.GetRawText();
         if (serialized.Length > MaximumTurnCharacters) return;
         lock (_lock)
         {
@@ -50,7 +52,7 @@ internal sealed class AnthropicContinuationStore(TimeProvider clock)
             Remove(key);
             while (_entries.Count >= MaximumTurns || _storedCharacters + serialized.Length > MaximumStoredCharacters)
                 Remove(_entries.MinBy(pair => pair.Value.ExpiresAt).Key);
-            _entries.Add(key, new Entry(serialized, now.AddMinutes(15)));
+            _entries.Add(key, new Entry(serialized, now.AddMinutes(15), turn.CredentialFingerprint));
             _storedCharacters += serialized.Length;
         }
     }
@@ -73,44 +75,31 @@ internal sealed class AnthropicContinuationStore(TimeProvider clock)
             writer.WriteStringValue(model);
             writer.WriteStringValue(request.System);
             foreach (var tool in request.Tools ?? [])
-                WriteCanonical(writer, JsonSerializer.SerializeToElement(tool, StudioAiProxyJsonContext.Default.StudioAiToolDefinition));
+                JsonSerializer.Serialize(writer, tool, StudioAiProxyJsonContext.Default.StudioAiToolDefinition);
             writer.WriteStartArray();
             foreach (var message in request.Messages.Take(assistantIndex).Append(assistant))
-                WriteCanonical(writer, JsonSerializer.SerializeToElement(message, StudioAiProxyJsonContext.Default.StudioAiMessage));
+                JsonSerializer.Serialize(writer, message, StudioAiProxyJsonContext.Default.StudioAiMessage);
             writer.WriteEndArray();
             writer.WriteEndArray();
         }
-        return Convert.ToHexStringLower(SHA256.HashData(buffer.WrittenSpan));
+        return Convert.ToHexStringLower(SHA256.HashData(StudioAiTranscriptSigner.Canonicalize(buffer.WrittenSpan)));
     }
 
-    private static void WriteCanonical(Utf8JsonWriter writer, JsonElement element)
-    {
-        if (element.ValueKind == JsonValueKind.Object)
-        {
-            writer.WriteStartObject();
-            foreach (var property in element.EnumerateObject().OrderBy(property => property.Name, StringComparer.Ordinal))
-            {
-                writer.WritePropertyName(property.Name);
-                WriteCanonical(writer, property.Value);
-            }
-            writer.WriteEndObject();
-        }
-        else if (element.ValueKind == JsonValueKind.Array)
-        {
-            writer.WriteStartArray();
-            foreach (var item in element.EnumerateArray()) WriteCanonical(writer, item);
-            writer.WriteEndArray();
-        }
-        else element.WriteTo(writer);
-    }
+    internal static string CredentialFingerprint(string credential)
+        => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(credential)));
 
     private void Remove(string key)
     {
         if (_entries.Remove(key, out var entry)) _storedCharacters -= entry.Content.Length;
     }
 
-    private sealed record Entry(string Content, DateTimeOffset ExpiresAt);
+    private sealed record Entry(string Content, DateTimeOffset ExpiresAt, string CredentialFingerprint);
+
+    internal sealed record Turn(JsonElement Content, string CredentialFingerprint);
 
     internal sealed record Scope(StudioAiProxyProviderOptions Options, StudioAiChatRequest Request,
-        string Model, AiExecutionContext? Identity);
+        string Model, AiExecutionContext? Identity)
+    {
+        internal HashSet<string> RestoredCredentials { get; } = new(StringComparer.Ordinal);
+    }
 }
