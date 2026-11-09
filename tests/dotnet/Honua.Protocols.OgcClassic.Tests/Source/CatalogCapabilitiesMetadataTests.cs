@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Xml.Linq;
@@ -95,6 +96,32 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
         metadataUrl.Descendants().Single(element => element.Name.LocalName == "OnlineResource")
             .Attribute(XName.Get("href", "http://www.w3.org/1999/xlink"))!.Value.Should().Be("https://example.com/catalog/roads");
         text.Should().Contain("/ogc/services/test/wms").And.NotContain("/MapServer/WMS");
+    }
+
+    [IntegrationTheory]
+    [InlineData("1.3.0", 37, -123)]
+    [InlineData("1.1.1", -123, 37)]
+    [Endpoint("GET /ogc/services/{serviceId}/wms")]
+    [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
+    [InterfaceOperation(TestProtocols.Wms111, "GetCapabilities")]
+    public async Task WmsCapabilities_GeographicCrs_BoundingBoxMatchesVersionAxisOrder(string version, double minX, double minY)
+    {
+        var resource = _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[1];
+        _fixture.UpdateV2ResourceMetadata(1, spatial: resource.Spatial! with
+        {
+            SpatialReference = MetadataV2SpatialReference.Wgs84,
+            Bbox = new MetadataV2Bbox { West = -123, South = 37, East = -122, North = 38 },
+            SupportedCrs = [new MetadataV2SpatialReference { Srid = 4258, Crs = "EPSG:4258" }]
+        });
+        using var response = await _fixture.Client.GetAsync($"/ogc/services/test/wms?SERVICE=WMS&REQUEST=GetCapabilities&VERSION={version}");
+        var text = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, text);
+        var document = XDocument.Parse(text);
+        var bounds = document.Descendants().Single(element => element.Name.LocalName == "BoundingBox" &&
+            element.Attributes().Any(attribute => attribute.Name.LocalName is "CRS" or "SRS" && attribute.Value == "EPSG:4258"));
+
+        double.Parse(bounds.Attribute("minx")!.Value, CultureInfo.InvariantCulture).Should().BeApproximately(minX, 0.001);
+        double.Parse(bounds.Attribute("miny")!.Value, CultureInfo.InvariantCulture).Should().BeApproximately(minY, 0.001);
     }
 
     [IntegrationTheory]
