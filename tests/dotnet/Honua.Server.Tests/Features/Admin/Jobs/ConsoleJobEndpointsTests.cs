@@ -36,8 +36,9 @@ namespace Honua.Server.Tests.Features.Admin.Jobs;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.OperationsProgress)]
-public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
+public sealed partial class ConsoleJobEndpointsTests : IAsyncLifetime
 {
+    private readonly RetentionTestClock _retentionClock = new();
     private readonly InMemoryJobStore _jobStore = new();
     private readonly InMemoryLogStore _logStore = new();
     private readonly RecordingJobQueue _jobQueue = new();
@@ -52,6 +53,8 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         _fixture = new WebAppFixture()
             .ConfigureServices(services =>
             {
+                services.RemoveAll<TimeProvider>();
+                services.AddSingleton<TimeProvider>(_retentionClock);
                 services.RemoveAll<IExecutionJobStore>();
                 services.RemoveAll<IExecutionLogStore>();
                 services.RemoveAll<IJobQueue>();
