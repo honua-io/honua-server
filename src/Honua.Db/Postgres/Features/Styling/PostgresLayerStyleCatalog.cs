@@ -26,21 +26,39 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _layersTable;
+    private readonly string _stylesTable;
+    private readonly string _refsTable;
 
     public PostgresLayerStyleCatalog(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
 
         _layersTable = Infrastructure.SchemaSearchPath.QualifyTable("layers", schemaName);
+        _stylesTable = Infrastructure.SchemaSearchPath.QualifyTable("styles", schemaName);
+        _refsTable = Infrastructure.SchemaSearchPath.QualifyTable("layer_style_refs", schemaName);
     }
 
     /// <inheritdoc />
     public async Task<LayerStyleDefinition?> GetLayerStyleAsync(int layerId, CancellationToken cancellationToken = default)
     {
         string sql = $"""
-            SELECT {SelectColumns}
-            FROM {_layersTable}
-            WHERE layer_id = @layerId
+            SELECT layers.layer_id,
+                COALESCE(primary_style.maplibre_style, layers.maplibre_style),
+                CASE WHEN primary_style.style_id IS NULL THEN layers.geoservices_drawing_info ELSE primary_style.drawing_info END,
+                COALESCE(primary_style.style_version, layers.style_version),
+                CASE WHEN primary_style.style_id IS NULL THEN layers.style_revised_at ELSE primary_style.updated_at END,
+                CASE WHEN primary_style.style_id IS NULL THEN layers.style_revised_by ELSE primary_style.revised_by END,
+                CASE WHEN primary_style.style_id IS NULL THEN layers.style_change_summary ELSE primary_style.change_summary END
+            FROM {_layersTable} layers
+            LEFT JOIN LATERAL (
+                SELECT styles.*
+                FROM {_refsTable} refs
+                JOIN {_stylesTable} styles ON styles.style_id = refs.style_id
+                WHERE refs.layer_id = layers.layer_id AND refs.ordinal = 0
+                ORDER BY styles.style_id
+                LIMIT 1
+            ) primary_style ON TRUE
+            WHERE layers.layer_id = @layerId
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
