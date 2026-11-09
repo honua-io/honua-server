@@ -75,8 +75,11 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
         }
 
         var style = ReadStyle(reader);
-        return style with { MapLibreStyleJson = CatalogStyleSourceProjection.ForLayer(style.MapLibreStyleJson, layerId,
-            reader.IsDBNull(7) ? [] : reader.GetFieldValue<int[]>(7)) };
+        return style with
+        {
+            MapLibreStyleJson = CatalogStyleSourceProjection.ForLayer(style.MapLibreStyleJson, layerId,
+            reader.IsDBNull(7) ? [] : reader.GetFieldValue<int[]>(7))
+        };
     }
 
     /// <inheritdoc />
