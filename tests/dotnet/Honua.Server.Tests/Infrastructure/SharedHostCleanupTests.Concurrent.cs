@@ -5,6 +5,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Mixins;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Honua.Server.Tests.Infrastructure;
 
@@ -21,33 +22,35 @@ public sealed partial class SharedHostCleanupTests
         var acquired = 0;
         var factoriesBuilt = 0;
         Task[] waiters = [];
+        var timeout = TimeSpan.FromSeconds(30);
+        WebApplicationFactory<Program> BuildGatedFactory(string connection, string password)
+        {
+            Interlocked.Increment(ref factoriesBuilt);
+            return WebAppFixtureSharedBootstrapMixin.BuildSharedFactory(connection, password)
+                .WithWebHostBuilder(builder => builder.ConfigureServices(_ =>
+                {
+                    startupEntered.TrySetResult();
+                    if (!finishStartup.Wait(timeout))
+                    {
+                        throw new TimeoutException("Controlled startup was not released.");
+                    }
+                }));
+        }
         var owner = Task.Run(async () =>
         {
-            await WebAppFixtureSharedBootstrapMixin.EnsureInitializedAsync(WebAppFixture.SharedAdminPassword,
-                (connection, password) =>
-                {
-                    Interlocked.Increment(ref factoriesBuilt);
-                    return WebAppFixtureSharedBootstrapMixin.BuildSharedFactory(connection, password)
-                        .WithWebHostBuilder(builder => builder.ConfigureServices(_ =>
-                        {
-                            startupEntered.TrySetResult();
-                            if (!finishStartup.Wait(TimeSpan.FromSeconds(30)))
-                            {
-                                throw new TimeoutException("Controlled startup was not released.");
-                            }
-                        }));
-                });
+            await WebAppFixtureSharedBootstrapMixin.EnsureInitializedAsync(
+                WebAppFixture.SharedAdminPassword, BuildGatedFactory);
             Interlocked.Increment(ref acquired);
             return WebAppFixtureSharedBootstrapMixin.Factory.Services;
         });
         try
         {
-            await startupEntered.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            await startupEntered.Task.WaitAsync(timeout);
             waiters = Enumerable.Range(0, 3).Select(_ =>
-                WebAppFixtureSharedBootstrapMixin.EnsureInitializedAsync(WebAppFixture.SharedAdminPassword)).ToArray();
+                WebAppFixtureSharedBootstrapMixin.EnsureInitializedAsync(WebAppFixture.SharedAdminPassword, BuildGatedFactory)).ToArray();
             Assert.All(waiters, waiter => Assert.False(waiter.IsCompleted));
             finishStartup.Set();
-            var provider = await owner.WaitAsync(TimeSpan.FromSeconds(30));
+            var provider = await owner.WaitAsync(timeout);
             var providers = await Task.WhenAll(waiters.Select(async waiter =>
             {
                 await waiter;
@@ -62,8 +65,8 @@ public sealed partial class SharedHostCleanupTests
             finishStartup.Set();
             try
             {
-                await owner.WaitAsync(TimeSpan.FromSeconds(30));
-                await Task.WhenAll(waiters).WaitAsync(TimeSpan.FromSeconds(30));
+                await owner.WaitAsync(timeout);
+                await Task.WhenAll(waiters).WaitAsync(timeout);
             }
             finally
             {
