@@ -16,6 +16,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: mcp-inspector-pagination-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   controls:
     name: Installed public Inspector pagination controls
