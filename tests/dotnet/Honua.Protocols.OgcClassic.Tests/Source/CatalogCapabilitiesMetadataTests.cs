@@ -88,6 +88,7 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
             .Should().Contain("EPSG:26910");
         var declaredCrs = layer.Elements().Where(element => element.Name.LocalName == "CRS").Select(element => element.Value).ToArray();
         declaredCrs.Should().Equal("EPSG:26910");
+        layer.Elements().Where(element => element.Name.LocalName == "BoundingBox").Should().NotBeEmpty();
         foreach (var bounds in layer.Elements().Where(element => element.Name.LocalName == "BoundingBox"))
             declaredCrs.Should().Contain(bounds.Attribute("CRS")!.Value);
         var metadataUrl = layer.Elements().Single(element => element.Name.LocalName == "MetadataURL");
