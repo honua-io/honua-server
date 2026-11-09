@@ -1444,3 +1444,27 @@ Both budgets match the original shard. These class-interval estimates are not
 fresh post-split runtime measurements. The method-level partition guard rejects
 missing, overlapping or leaking ownership. Package, form and temporal source
 paths select their executing child within the unchanged six-family PR cap.
+
+## Capabilities budget
+
+The `Server Features Capabilities` test-step history is:
+
+| Full CI run | Test-step seconds | Outcome |
+|---|---:|---|
+| [42518262877](https://github.com/honua-io/honua-server/actions/runs/42518262877) | 1028 | Passed |
+| [42524495976](https://github.com/honua-io/honua-server/actions/runs/42524495976) | 922 | Passed |
+| [42532577743](https://github.com/honua-io/honua-server/actions/runs/42532577743) | 1072 | Passed |
+| [42575571107](https://github.com/honua-io/honua-server/actions/runs/42575571107/job/129039342167) | 1323 | Capacity exhausted at the 22-minute cap |
+
+The completed-run nearest-rank p90 is 17.9 minutes. The failed batch produced
+output two seconds before termination and no final TRX; its 22.1-minute duration
+is censored and does not establish the time needed to finish. Including that
+lower bound, `audit-shard-headroom.py` recommends a 32-minute inner cap:
+`ceil(22.1 / 0.7)`. The 42-minute outer cap preserves ten minutes for setup and
+artifact upload. Test selection and the five-minute silence detector stay the same.
+
+Release coordination authorized this provisional capacity rebase for #7210 as
+an exception to policy rule 4. A passing combined batch must confirm
+that the completed test step uses at most 70% of the new cap (22.4 minutes), or
+supply a new measured basis for splitting or rebudgeting. The old successful runs
+and the timeout alone cannot establish that completion headroom under contention.
