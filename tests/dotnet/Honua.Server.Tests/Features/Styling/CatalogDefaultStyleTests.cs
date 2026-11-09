@@ -179,7 +179,10 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
             {
                 extent = new
                 {
-                    xmin = -123, ymin = 37, xmax = -122, ymax = 38,
+                    xmin = -123,
+                    ymin = 37,
+                    xmax = -122,
+                    ymax = 38,
                     spatialReference = new { wkid = 4326 }
                 }
             },
@@ -188,7 +191,9 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
         });
         using var form = new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            ["Web_Map_as_JSON"] = webMap, ["Format"] = "PNG32", ["Layout_Template"] = "MAP_ONLY"
+            ["Web_Map_as_JSON"] = webMap,
+            ["Format"] = "PNG32",
+            ["Layout_Template"] = "MAP_ONLY"
         });
 
         using var response = await _fixture.Client.PostAsync(
