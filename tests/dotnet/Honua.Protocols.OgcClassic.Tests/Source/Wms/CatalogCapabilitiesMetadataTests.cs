@@ -14,7 +14,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
 
-namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic;
+namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Wms13)]
