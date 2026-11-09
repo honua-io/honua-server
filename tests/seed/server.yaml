@@ -2307,6 +2307,9 @@ sql:
   - "DELETE FROM honua.relationships WHERE layer_id NOT IN (68910, 68920) AND related_layer_id NOT IN (68910, 68920);"
   - "DELETE FROM honua.service_layers WHERE service_name <> 'mobile_offline_demo' AND layer_id NOT IN (68910, 68920);"
   - "DELETE FROM honua.layer_fields WHERE layer_id NOT IN (68910, 68920);"
+  # Reset mirrored styles with their fixture layers so repeated hosts start at revision zero.
+  # Deleting layers alone cascades references but leaves independent catalog revisions behind.
+  - "DELETE FROM honua.styles WHERE style_id IN ('style-layer-0', 'style-layer-1', 'style-layer-2', 'style-layer-9');"
   - "DELETE FROM honua.layers WHERE layer_id NOT IN (68910, 68920);"
   - "DELETE FROM honua.services WHERE service_name <> 'mobile_offline_demo';"
   - "DELETE FROM features WHERE layer_id IN (0, 1, 2, 9);"
