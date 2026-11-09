@@ -72,7 +72,8 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
             return null;
         }
 
-        return ReadStyle(reader);
+        var style = ReadStyle(reader);
+        return style with { MapLibreStyleJson = CatalogStyleSourceProjection.ForLayer(style.MapLibreStyleJson, layerId) };
     }
 
     /// <inheritdoc />
@@ -175,22 +176,20 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
             RETURNING {SelectColumns}
             """;
 
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
-        _ = command.Parameters.AddWithValue("@layerId", layerId);
-        _ = command.Parameters.Add(new NpgsqlParameter("@drawingInfo", NpgsqlDbType.Jsonb)
+        await using (var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false))
         {
-            Value = drawingInfoJson
-        });
+            await using var command = new NpgsqlCommand(sql, connection);
+            _ = command.Parameters.AddWithValue("@layerId", layerId);
+            _ = command.Parameters.Add(new NpgsqlParameter("@drawingInfo", NpgsqlDbType.Jsonb)
+            {
+                Value = drawingInfoJson
+            });
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            await reader.CloseAsync().ConfigureAwait(false);
-            return await GetLayerStyleAsync(layerId, cancellationToken).ConfigureAwait(false);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                return ReadStyle(reader);
         }
-
-        return ReadStyle(reader);
+        return await GetLayerStyleAsync(layerId, cancellationToken).ConfigureAwait(false);
     }
 
     private static void AddNullableText(NpgsqlCommand command, string name, string? value)

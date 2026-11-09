@@ -103,7 +103,7 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
         using var projected = JsonDocument.Parse(style!.MapLibreStyleJson!);
 
         projected.RootElement.GetProperty("layers").EnumerateArray().Select(layer => layer.GetProperty("source").GetString())
-            .Should().Equal("layer-1", "other target symbolizers must not be rendered against this layer's features");
+            .Should().Equal(new[] { "layer-1" }, "other target symbolizers must not be rendered against this layer's features");
         projected.RootElement.GetProperty("sources").EnumerateObject().Select(source => source.Name)
             .Should().Equal("layer-1");
     }
