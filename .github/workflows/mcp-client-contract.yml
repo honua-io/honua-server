@@ -64,6 +64,7 @@ jobs:
               'LiveWorkflowViews_RemovedDraftReadback_IsRejected',
               'InputRefusals_MissingArguments_NameFieldsAndValueSources',
               'InputRefusals_InvalidJobIdType_NamesFieldAndProducer',
+              'InputRefusals_UnexpectedEvidence_PreservesAuthorityRefusalBeforeInputGuidance',
               'ConnectionDiscovery_AdminAndNonAdminKeys_MatchRestPermissionsAndReturnOnlySafeFields',
               'LiveWorkflowViews_ConnectionPublication_ProvidesReadOnlyConnectionAndTableDiscovery',
               'LiveWorkflowViews_JobConsumers_ProvideReadOnlyJobDiscovery',
