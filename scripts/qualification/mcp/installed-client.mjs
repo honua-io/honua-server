@@ -8,11 +8,10 @@ import { dirname, resolve } from 'node:path';
 export const CLIENT_SOURCE = '372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4';
 export const SDK_VERSION = '1.32.1';
 
-export async function openInstalledClient({ baseUrl, apiKey, name, view, timeoutMs = 20_000 }) {
+export async function openInstalledClient({ baseUrl, apiKey, name, timeoutMs = 20_000 }) {
   const endpoint = new URL('/mcp', baseUrl);
   if (endpoint.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(endpoint.hostname)
     || endpoint.username || endpoint.password || !apiKey) throw new Error('invalid-owned-target');
-  if (view) endpoint.searchParams.set('view', view);
   const require = createRequire(import.meta.url);
   // SDK package exports do not expose its root package.json.
   let packageRoot = dirname(require.resolve('@modelcontextprotocol/sdk/client/index.js'));
