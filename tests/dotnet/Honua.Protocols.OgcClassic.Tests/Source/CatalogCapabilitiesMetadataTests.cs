@@ -162,6 +162,42 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
         layer.Elements().Where(element => element.Name.LocalName == "MetadataURL").Should().BeEmpty();
     }
 
+    [IntegrationTheory]
+    [InlineData("/ogc/services/test/wms?SERVICE=WMS&REQUEST=GetCapabilities")]
+    [InlineData("/ogc/services/test/wmts?SERVICE=WMTS&REQUEST=GetCapabilities")]
+    [InlineData("/ogc/services/test/wcs?SERVICE=WCS&REQUEST=GetCapabilities")]
+    [InlineData("/wfs?SERVICE=WFS&REQUEST=GetCapabilities")]
+    [Endpoint("GET /ogc/services/{serviceId}/wms")]
+    [Endpoint("GET /ogc/services/{serviceId}/wmts")]
+    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
+    [InterfaceOperation(TestProtocols.Wmts10, "GetCapabilities")]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCapabilities")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
+    public async Task GetCapabilities_NoPublishedResourcesOrStatements_ReturnsAnEmptyDocumentWithoutPlaceholders(string path)
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var graph = snapshot.Graph with
+        {
+            Metadata = new() { Id = snapshot.Graph.Metadata.Id, Name = snapshot.Graph.Metadata.Name },
+            Folders = [], Resources = [], Publications = [], StorageBindings = [],
+            Services = snapshot.Graph.Services.Select(service => service with
+            {
+                FolderId = null, Metadata = new() { Id = service.Metadata.Id, Name = service.Metadata.Name }
+            }).ToArray()
+        };
+        ((TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>()).SetGraph(graph, schema: _fixture.CurrentSchema);
+        using var response = await _fixture.Client.GetAsync(path);
+        var text = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, text);
+        var document = XDocument.Parse(text);
+        document.Root!.Name.LocalName.Should().BeOneOf("Capabilities", "WMS_Capabilities", "WFS_Capabilities");
+        document.Descendants().Where(element => element.Name.LocalName is "Fees" or "AccessConstraints")
+            .Should().OnlyContain(element => element.Value == string.Empty);
+        text.Should().NotContain("1 Honua Way").And.NotContain("Honua Support").And.NotContain("support@honua.local");
+    }
+
     private void SeedMetadata()
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
