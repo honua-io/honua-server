@@ -4,12 +4,32 @@
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp.Views;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
 public sealed partial class McpWorkflowViewTests
 {
+    [UnitTest]
+    public async Task LiveWorkflowViews_ServiceWrites_ProvideReadOnlyServiceDiscovery()
+    {
+        var catalog = await LiveCatalogAsync();
+        var sourceName = PublishedOperationTool.ProjectName("admin.services.list");
+        catalog.Single(entry => entry.Descriptor.Name == sourceName).Descriptor.Annotations!.ReadOnlyHint.Should().BeTrue();
+        var consumers = new[]
+        {
+            "admin.services.access-policy.set", "admin.services.layer-metadata.set",
+            "admin.services.protocols.set", "admin.services.timeinfo.set", "service.move"
+        }.Select(PublishedOperationTool.ProjectName).ToHashSet(StringComparer.Ordinal);
+        foreach (var view in McpWorkflowViewCatalog.All.Values)
+        {
+            var members = McpWorkflowViewProjector.Project(view, catalog).Members;
+            if (members.Any(member => consumers.Contains(member.ToolName)))
+                members.Should().Contain(member => member.ToolName == sourceName && member.Descriptor.Annotations!.ReadOnlyHint == true, view.Name);
+        }
+    }
+
     [UnitTest]
     public async Task LiveWorkflowViews_NativeLayerWrites_ExposeStorageLayerDiscovery()
     {

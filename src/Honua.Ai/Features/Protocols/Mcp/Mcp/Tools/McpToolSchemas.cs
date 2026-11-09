@@ -36,7 +36,7 @@ internal static class McpToolSchemas
           "properties": {
             "jobId": {
               "type": "string",
-              "description": "Execution job identifier to request cancellation for."
+              "description": "Job id from honua_execute_plan or honua_list_jobs."
             }
           }
         }
@@ -71,7 +71,7 @@ internal static class McpToolSchemas
             "layerName": {
               "type": "string",
               "minLength": 1,
-              "description": "Display name for the published layer."
+              "description": "Caller-supplied. Display name for the published layer."
             },
             "serviceName": {
               "type": "string",
@@ -236,7 +236,7 @@ internal static class McpToolSchemas
             "intent": {
               "type": "string",
               "minLength": 1,
-              "description": "Natural-language intent to compile into an analysis plan or canonical spec draft."
+              "description": "Caller-supplied. Natural-language intent to compile into an analysis plan or canonical spec draft."
             },
             "context": {
               "type": "object",
@@ -310,19 +310,19 @@ internal static class McpToolSchemas
             "format": {
               "type": "string",
               "enum": ["csv", "geojson"],
-              "description": "Inline data format: \"csv\" (text with a header row) or \"geojson\" (a GeoJSON FeatureCollection document)."
+              "description": "Caller-supplied. Inline data format: \"csv\" (text with a header row) or \"geojson\" (a GeoJSON FeatureCollection document)."
             },
             "data": {
               "type": "string",
               "minLength": 1,
-              "description": "The dataset content, inline. Capped at 4 MB; use the REST import upload (POST /api/v1/admin/import/upload) for larger files."
+              "description": "Caller-supplied. The dataset content, inline. Capped at 4 MB; use the REST import upload (POST /api/v1/admin/import/upload) for larger files."
             },
             "datasetName": {
               "type": "string",
               "minLength": 1,
               "maxLength": 63,
               "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-              "description": "Target dataset/table name (letters, digits, underscores; must not start with a digit)."
+              "description": "Caller-supplied. Target dataset/table name (letters, digits, underscores; must not start with a digit)."
             },
             "sourceSrid": {
               "type": "integer",
@@ -357,14 +357,14 @@ internal static class McpToolSchemas
               "type": "string",
               "minLength": 1,
               "maxLength": 128,
-              "description": "Persist this before the call. Reuse the same value to recover the original import after a lost response."
+              "description": "Caller-chosen durable idempotency id. Persist it before calling; reuse it to recover the original import after a lost response."
             },
             "kind": {
               "type": "string",
               "enum": ["browser-file", "local-process-artifact", "server-job-artifact"],
-              "description": "Dataset-import source kind. Only server-job-artifact is admitted. browser-file and local-process-artifact are recognized and refused; they are not a substitute for a job artifact."
+              "description": "Caller-supplied. Dataset-import source kind. Only server-job-artifact is admitted. browser-file and local-process-artifact are recognized and refused; they are not a substitute for a job artifact."
             },
-            "targetId": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Deployment target the job reference is bound to." },
+            "targetId": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Caller-selected target id persisted in the import reference; reuse the same value on replay." },
             "jobId": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Succeeded built-in job id from honua_list_jobs; read artifacts with honua_get_job_results." },
             "resultPackageId": { "type": "string", "minLength": 1, "description": "resultPackageId from honua_get_job_results, shaped {jobId}:v{version}." },
             "artifactId": { "type": "string", "minLength": 1, "description": "artifactId from honua_get_job_results, shaped {jobId}:artifact:{ordinal}." },
@@ -375,9 +375,9 @@ internal static class McpToolSchemas
               "pattern": "^[a-f0-9]{64}$",
               "description": "Lowercase SHA-256 of the exact UTF-8 artifact uri string from honua_get_job_results (inline features or shared feature stream). Do not normalize it or hash downloaded bytes."
             },
-            "schema": { "type": "string", "minLength": 1, "maxLength": 63, "description": "Destination schema in the catalog database." },
-            "table": { "type": "string", "minLength": 1, "maxLength": 63, "description": "Destination table name." },
-            "targetSrid": { "type": "integer", "minimum": 1, "description": "SRID stored on the imported table. A known producer CRS is transformed when this differs." },
+            "schema": { "type": "string", "minLength": 1, "maxLength": 63, "description": "Caller-supplied. Destination schema in the catalog database." },
+            "table": { "type": "string", "minLength": 1, "maxLength": 63, "description": "Caller-supplied. Destination table name." },
+            "targetSrid": { "type": "integer", "minimum": 1, "description": "Caller-supplied. SRID stored on the imported table. A known producer CRS is transformed when this differs." },
             "sourceSrid": { "type": "integer", "minimum": 1, "description": "Required only when the producer did not record a CRS. A conflicting value cannot relabel a known producer CRS." }
           }
         }
@@ -423,7 +423,7 @@ internal static class McpToolSchemas
               "properties": {
                 "plan": {
                   "type": "object",
-                  "description": "Canonical analysis plan expressed as MCP plan input.",
+                  "description": "Caller-authored canonical analysis plan.",
                   "required": {{planRequired}},
                   "properties": {
                     "planId": {{planIdSchema}},

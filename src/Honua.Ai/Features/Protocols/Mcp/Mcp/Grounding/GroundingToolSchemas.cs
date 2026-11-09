@@ -41,12 +41,12 @@ internal static class GroundingToolSchemas
                 "goal": {
                   "type": "string",
                   "minLength": 1,
-                  "description": "Freeform natural-language description of the operator's goal."
+                  "description": "Caller-supplied. Freeform natural-language description of the operator's goal."
                 },
                 "intentId": {
                   "type": "string",
                   "minLength": 1,
-                  "description": "Intent identifier. Required for clarification turns; optional on the initial grounding call. On the initial grounding call a whitespace-only value is treated as omitted and the server allocates a fresh id; on a clarification turn a missing or whitespace-only value is rejected with invalid_argument."
+                  "description": "Intent id from honua_ground_candidates. Required on clarification turns; optional initially, when the server allocates it. Missing or blank ids on clarification turns fail invalid_argument."
                 },
                 "workflowFamilyHint": {
                   "type": "string",

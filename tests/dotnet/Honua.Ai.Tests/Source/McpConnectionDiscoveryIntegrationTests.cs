@@ -163,7 +163,7 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests : IAsyncLifet
         finally
         {
             Environment.SetEnvironmentVariable(SecretVariable, previousSecret);
-            await fixture.Postgres.ApplyGlobalSeedSqlAsync($"DROP TABLE IF EXISTS public.{name}; DELETE FROM honua.data_connections WHERE name = @name;",
+            await fixture.Postgres.ApplyGlobalSeedSqlAsync($"DROP TABLE IF EXISTS public.{name}; DELETE FROM honua.services WHERE service_name = @name; DELETE FROM honua.data_connections WHERE name = @name;",
                 command => command.Parameters.AddWithValue("name", name));
         }
     }

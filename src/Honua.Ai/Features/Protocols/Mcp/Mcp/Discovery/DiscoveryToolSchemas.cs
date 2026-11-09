@@ -19,7 +19,7 @@ internal static class DiscoveryToolSchemas
             "text": {
               "type": "string",
               "minLength": 1,
-              "description": "Natural-language name or phrase to resolve to catalog entities (e.g. \"parcels\", \"flood zones\", \"roads\"). The server lexically grounds it against the live published catalog and returns ranked service/layer references."
+              "description": "Caller-supplied. Natural-language name or phrase to resolve to catalog entities (e.g. \"parcels\", \"flood zones\", \"roads\"). The server lexically grounds it against the live published catalog and returns ranked service/layer references."
             },
             "entityType": {
               "type": "string",

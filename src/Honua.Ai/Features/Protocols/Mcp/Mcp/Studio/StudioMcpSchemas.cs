@@ -69,7 +69,7 @@ internal static class StudioMcpSchemas
           "minLength": 1,
           "maxLength": 200,
           "pattern": "^[A-Za-z0-9_.-]+$",
-          "description": "Machine-friendly package key (letters, numbers, dash, underscore, dot only)."
+          "description": "Caller-supplied. Machine-friendly package key (letters, numbers, dash, underscore, dot only)."
         }
         """;
 
@@ -187,7 +187,7 @@ internal static class StudioMcpSchemas
           "properties": {
             "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_create_draft." },
             "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
-            "interactionId": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "\\S", "description": "Id of the interaction to remove. Removing an unknown id is an error, not a no-op." }
+            "interactionId": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "\\S", "description": "interaction.id from honua_studio_get_draft; unknown ids fail." }
           }
         }
         """;
@@ -233,7 +233,7 @@ internal static class StudioMcpSchemas
           "properties": {
             "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_create_draft." },
             "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
-            "controlId": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxControlIdLength}}, "pattern": "\\S", "description": "Id of the control to remove. Removing an unknown id is an error, not a no-op." },
+            "controlId": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxControlIdLength}}, "pattern": "\\S", "description": "control.id from honua_studio_get_draft; unknown ids fail." },
             "cascadeInteractions": { "type": "boolean", "default": false, "description": "When true, interactions whose on.ref or do.ref is 'control:{controlId}' are removed with the control. When false (default), the call fails while any interaction still references it, so the document never retains a dangling binding." }
           }
         }
@@ -249,9 +249,9 @@ internal static class StudioMcpSchemas
             "family": {
               "type": "string",
               "enum": {{FamilyEnumJson}},
-              "description": "Studio package family."
+              "description": "Caller-supplied. Studio package family."
             },
-            "schemaVersion": { "type": "string", "minLength": 1, "maxLength": 50, "description": "Envelope schema version for the family." },
+            "schemaVersion": { "type": "string", "minLength": 1, "maxLength": 50, "description": "Caller-supplied. Envelope schema version for the family." },
             "workspaceId": { "type": "string", "maxLength": 200, "description": "Workspace identifier." },
             "ownerId": { "type": "string", "maxLength": 200, "description": "Admin-only owner principal identifier. Non-admin callers must omit this field and become the owner automatically." },
             "body": { "type": "object", "description": "Optional initial composition/family body. Omit to start empty." },
@@ -281,7 +281,7 @@ internal static class StudioMcpSchemas
             "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_create_draft." },
             "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
             "packageKey": {{PackageKeyPropertyJson}},
-            "schemaVersion": { "type": "string", "minLength": 1, "maxLength": 50, "description": "Envelope schema version for the family." },
+            "schemaVersion": { "type": "string", "minLength": 1, "maxLength": 50, "description": "Caller-supplied. Envelope schema version for the family." },
             "format": { "type": "string", "maxLength": 100, "description": "Family-specific package format." },
             "workspaceId": { "type": "string", "maxLength": 200, "description": "Workspace identifier." },
             "ownerId": { "type": "string", "maxLength": 200, "description": "Admin-only owner principal identifier. Non-admin callers must omit this field; explicit non-admin assignment is rejected." },
@@ -312,7 +312,7 @@ internal static class StudioMcpSchemas
           "properties": {
             "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_create_draft." },
             "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
-            "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Id of the layer to remove." }
+            "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "layer.id from honua_studio_get_draft." }
           }
         }
         """;
@@ -325,7 +325,7 @@ internal static class StudioMcpSchemas
           "properties": {
             "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_create_draft." },
             "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
-            "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Id of the layer to style." },
+            "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "layer.id from honua_studio_get_draft." },
             "styleRef": { "type": ["string", "null"], "maxLength": 200, "description": "Style reference (catalog styleId or inline style key). Omit or set null to clear the binding." },
             "styleBody": { "type": "object", "description": "Inline paint/layout overrides keyed by layerId or '<layerId>__outline'. Not with styleRef." }
           }
@@ -340,7 +340,7 @@ internal static class StudioMcpSchemas
           "properties": {
             "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_create_draft." },
             "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
-            "mapSpec": { "type": "object", "description": "Edited MapLibre v8 style; only layers, name, metadata, transition, light, lights and fog may change." }
+            "mapSpec": { "type": "object", "description": "Caller-edited mapSpec from honua_studio_get_draft; only layers, name, metadata, transition, light, lights and fog may change." }
           }
         }
         """;
@@ -353,8 +353,8 @@ internal static class StudioMcpSchemas
           "properties": {
             "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_create_draft." },
             "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
-            "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Id of the layer to show or hide." },
-            "visible": { "type": "boolean", "description": "Whether the layer is visible in the composition." }
+            "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "layer.id from honua_studio_get_draft." },
+            "visible": { "type": "boolean", "description": "Caller-supplied. Whether the layer is visible in the composition." }
           }
         }
         """;
@@ -393,7 +393,7 @@ internal static class StudioMcpSchemas
           "properties": {
             "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_create_draft." },
             "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
-            "widgetId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Id of the widget to remove." }
+            "widgetId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "widget.id from honua_studio_get_draft; unknown ids fail." }
           }
         }
         """;
@@ -404,11 +404,11 @@ internal static class StudioMcpSchemas
           "required": ["itemId", "versionId", "contentHash", "route", "visibility"],
           "additionalProperties": false,
           "properties": {
-            "itemId": { "type": "string", "format": "uuid", "description": "Studio content item id." },
-            "versionId": { "type": "string", "format": "uuid", "description": "Exact immutable saved version id." },
-            "contentHash": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Exact content hash returned when the version was saved." },
-            "route": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Requested target route key." },
-            "visibility": { "type": "string", "minLength": 1, "maxLength": 100, "description": "Requested visibility target." },
+            "itemId": { "type": "string", "format": "uuid", "description": "version.itemId from honua_studio_save_version." },
+            "versionId": { "type": "string", "format": "uuid", "description": "version.versionId from honua_studio_save_version." },
+            "contentHash": { "type": "string", "minLength": 1, "maxLength": 128, "description": "version.contentHash from honua_studio_save_version." },
+            "route": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Caller-supplied. Requested target route key." },
+            "visibility": { "type": "string", "minLength": 1, "maxLength": 100, "description": "Caller-supplied. Requested visibility target." },
             "note": { "type": "string", "maxLength": 2000, "description": "Human-readable rationale recorded for reviewer context." }
           }
         }

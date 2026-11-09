@@ -138,7 +138,7 @@ internal static class MapToolSchemas
               "type": "array",
               "minItems": 1,
               "maxItems": 16,
-              "description": "Ordered layers to draw, bottom-to-top.",
+              "description": "Published layer references from honua_list_layers, ordered bottom to top.",
               "items": {
                 "type": "object",
                 "required": ["serviceId", "layerId"],
@@ -161,7 +161,7 @@ internal static class MapToolSchemas
               "minItems": 4,
               "maxItems": 4,
               "items": { "type": "number" },
-              "description": "Map extent as [minX, minY, maxX, maxY]."
+              "description": "Caller-supplied. Map extent as [minX, minY, maxX, maxY]."
             },
             "bboxSrid": {
               "type": "integer",
