@@ -6,13 +6,14 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.Styling.Domain;
 using Honua.Server.Features.Styling;
 using Honua.TestKit;
-using Microsoft.Extensions.Logging.Abstractions;
-using NSubstitute;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.Styling;
@@ -28,8 +29,7 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
-    [Operation(Operations.Update)]
-    public async Task GetLayerStyleAsync_CatalogPromotionAndEdit_ReplaceCachedLayerStyle()
+    public async Task GetLayerStyleAsync_CatalogDefault_ReadsCurrentStyleAndPreservesFallback()
     {
         var layerStyles = _fixture.GetService<ILayerStyleCatalog>();
         await layerStyles.SetStyleAsync(LayerId, CircleStyle("#0000ff"), "{}");
@@ -48,14 +48,13 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
         edited.StyleRevisedBy.Should().Be("operator");
         var resource = _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[LayerId];
         _ = await _fixture.GetService<ILayerStyleService>().GetStyleAsync(resource, LayerId);
-        (await catalog.DeleteStyleAsync(styleId)).Status.Should().Be(Honua.Core.Features.Styling.Domain.StyleCatalogDeleteStatus.Deleted);
+        (await catalog.DeleteStyleAsync(styleId)).Status.Should().Be(StyleCatalogDeleteStatus.Deleted);
         var fallback = (await layerStyles.GetLayerStyleAsync(LayerId))!;
         fallback.MapLibreStyleJson.Should().Contain("#0000ff");
         fallback.DrawingInfoJson.Should().Be("{}");
     }
 
     [IntegrationTest]
-    [Operation(Operations.Metadata)]
     public async Task GetLayerStyleAsync_AlternateAssociation_DoesNotReplaceLayerFallback()
     {
         var layerStyles = _fixture.GetService<ILayerStyleCatalog>();
@@ -100,14 +99,13 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
         "/static/test/bbox/-123,37,-122,38/256x256.png?layers=1");
 
     [IntegrationTest]
-    [Operation(Operations.Update)]
     public async Task UpdateStyle_CatalogWriteFails_DoesNotReportSuccess()
     {
         var layerStyles = _fixture.GetService<ILayerStyleCatalog>();
         var failing = Substitute.For<IStyleCatalog>();
         failing.UpsertStyleAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string?>(),
             Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<Honua.Core.Features.Styling.Domain.StyleCatalogRecord>(new InvalidOperationException("Catalog unavailable.")));
+            .Returns(Task.FromException<StyleCatalogRecord>(new InvalidOperationException("Catalog unavailable.")));
         var service = new LayerStyleService(layerStyles, NullLogger<LayerStyleService>.Instance, independentStyleCatalog: failing);
         var resource = _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[LayerId];
         using var document = JsonDocument.Parse(CircleStyle("#00ff00").Replace("\"source\":\"features\",", string.Empty, StringComparison.Ordinal));
@@ -116,7 +114,40 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
             .Should().BeTrue("the catalog failure must be reached after style validation");
         var update = () => service.UpdateStyleAsync(resource, LayerId, document.RootElement, null);
 
-        await update.Should().ThrowAsync<InvalidOperationException>();
+        await update.Should().ThrowAsync<InvalidOperationException>().WithMessage("Catalog unavailable.");
+    }
+
+    [IntegrationTheory]
+    [InlineData("maplibre")]
+    [InlineData("drawingInfo")]
+    public async Task UpdateStyle_CatalogRevisionDiffersFromLayerRow_ReturnsTheFollowingGetRevision(string input)
+    {
+        var layerStyles = _fixture.GetService<ILayerStyleCatalog>();
+        await layerStyles.SetMapLibreStyleAsync(LayerId, CircleStyle("#0000ff"));
+        var layerRow = (await layerStyles.SetMapLibreStyleAsync(LayerId, CircleStyle("#ff0000")))!;
+        var service = _fixture.GetService<ILayerStyleService>();
+        var resource = _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[LayerId];
+        using var map = JsonDocument.Parse(CircleStyle("#00ff00").Replace("\"source\":\"features\",", string.Empty, StringComparison.Ordinal));
+        using var drawing = JsonDocument.Parse("""{"renderer":{"type":"simple","symbol":{"type":"esriSMS","color":[0,255,0,255],"size":10}}}""");
+
+        var update = await service.UpdateStyleAsync(resource, LayerId,
+            mapLibreStyle: input == "maplibre" ? map.RootElement : null,
+            drawingInfo: input == "drawingInfo" ? drawing.RootElement : null, revisedBy: "operator");
+
+        update.Status.Should().Be(LayerStyleUpdateStatus.Updated);
+        var read = (await service.GetStyleAsync(resource, LayerId))!;
+        layerRow.StyleVersion.Should().BeGreaterThan(read.StyleVersion, "the catalog and fallback revisions must differ to expose a stale PUT response");
+        update.Style!.StyleVersion.Should().Be(read.StyleVersion);
+        update.Style.RevisedAt.Should().Be(read.RevisedAt).And.NotBeNull();
+        update.Style.RevisedBy.Should().Be(read.RevisedBy).And.Be("operator");
+    }
+
+    [IntegrationTest]
+    public async Task GetLayerStyleAsync_UnknownLayer_ReturnsNull()
+    {
+        var catalog = _fixture.GetService<ILayerStyleCatalog>();
+        (await catalog.GetLayerStyleAsync(int.MaxValue)).Should().BeNull();
+        (await catalog.SetDrawingInfoAsync(int.MaxValue, "{}")).Should().BeNull();
     }
 
     private async Task RenderAsync(string path)
