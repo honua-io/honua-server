@@ -6,10 +6,13 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Security.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Admin;
@@ -173,6 +176,67 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
         using var response = await PutAsync(client, path, JsonSerializer.Serialize(new { displayField = input }));
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         (await ReadAsync(client, path)).GetProperty("displayField").GetString().Should().Be(expected);
+    }
+
+    [IntegrationTheory]
+    [InlineData("GET", "/api/v1/admin/metadata/layers/999999/display")]
+    [InlineData("GET", "/api/v1/admin/metadata/layers/999999/spatial")]
+    [InlineData("GET", "/api/v1/admin/services/test/layers/999999/metadata")]
+    [InlineData("PUT", "/api/v1/admin/metadata/layers/999999/display")]
+    [InlineData("PUT", "/api/v1/admin/metadata/layers/999999/spatial")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/display")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/spatial")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/display")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/spatial")]
+    public async Task LayerConfiguration_UnpublishedLayer_ReturnsNotFoundWithoutMutation(string method, string path)
+    {
+        using var client = _fixture.CreateAdminClient();
+        var before = _fixture.GetCurrentV2GraphSnapshot().Etag;
+        using var response = method == "GET" ? await client.GetAsync(path) : await PutAsync(client, path, "{}");
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        _fixture.GetCurrentV2GraphSnapshot().Etag.Should().Be(before);
+    }
+
+    [IntegrationTheory]
+    [InlineData("GET", "/api/v1/admin/metadata/layers/0/display")]
+    [InlineData("GET", "/api/v1/admin/metadata/layers/0/spatial")]
+    [InlineData("GET", "/api/v1/admin/services/test/layers/0/metadata")]
+    [InlineData("PUT", "/api/v1/admin/metadata/layers/0/display")]
+    [InlineData("PUT", "/api/v1/admin/metadata/layers/0/spatial")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/display")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/spatial")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/display")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/spatial")]
+    public async Task LayerConfiguration_AmbiguousLayer_ReturnsConflictWithoutMutation(string method, string path)
+    {
+        SeedAmbiguousLayer();
+        using var client = _fixture.CreateAdminClient();
+        var before = _fixture.GetCurrentV2GraphSnapshot().Etag;
+        using var response = method == "GET" ? await client.GetAsync(path) : await PutAsync(client, path, "{}");
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        _fixture.GetCurrentV2GraphSnapshot().Etag.Should().Be(before);
+    }
+
+    private void SeedAmbiguousLayer()
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var publication = snapshot.Graph.Publications.First(candidate =>
+            candidate.LayerIndex == 1 && candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
+        var service = snapshot.Index.ServicesById[publication.ServiceId];
+        var duplicate = service with { Metadata = service.Metadata with { Id = "other-feature-service" } };
+        var competing = publication with
+        {
+            Metadata = publication.Metadata with { Id = "competing-feature-publication" },
+            ServiceId = duplicate.Metadata.Id, LayerIndex = 0, ServiceLocalId = "0", IsPrimary = false
+        };
+        ((TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>()).SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Services = snapshot.Graph.Services.Append(duplicate).ToArray(),
+            Publications = snapshot.Graph.Publications.Append(competing).ToArray()
+        }, schema: _fixture.CurrentSchema);
     }
 
     private async Task<HttpClient> CreateReaderClientAsync()
