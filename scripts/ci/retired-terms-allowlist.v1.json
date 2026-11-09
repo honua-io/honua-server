@@ -36,6 +36,18 @@
       "rule": "graph-resource",
       "line": "            Temporal = new MetadataV2ResourceTemporal { StartTimeField = \"start\", EndTimeField = \"end\" },",
       "reason": "Uses the existing canonical graph contract before the scheduled vocabulary migration; the shared-graph rename must land after this robustness batch."
+    },
+    {
+      "path": "tests/python/unit/test_postgis_metadata_snapshot.py",
+      "rule": "layer-type",
+      "line": "                           if publication[\"publicationType\"] == \"stac-collection\")",
+      "reason": "Seed regression reads the current Metadata v2 wire key literally to verify the storage mapping and STAC declaration. Preserve that contract until the deferred vocabulary migration replaces it; no alternate key is introduced."
+    },
+    {
+      "path": "tests/python/unit/test_postgis_metadata_snapshot.py",
+      "rule": "dataset-reference",
+      "line": "        assert publication[\"resourceId\"] == resource[\"metadata\"][\"id\"]",
+      "reason": "Seed regression reads the current Metadata v2 wire key literally to verify the storage mapping and STAC declaration. Preserve that contract until the deferred vocabulary migration replaces it; no alternate key is introduced."
     }
   ]
 }
