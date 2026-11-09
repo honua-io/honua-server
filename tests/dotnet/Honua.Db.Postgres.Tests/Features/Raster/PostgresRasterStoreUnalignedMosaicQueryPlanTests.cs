@@ -2,9 +2,9 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using FluentAssertions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Db.Postgres.Features.Raster;
-using Honua.TestKit;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
@@ -14,7 +14,7 @@ public sealed partial class PostgresRasterStoreUnalignedMosaicTests
     [IntegrationTest]
     public async Task CreateIdentifyContributorArraySql_UnalignedInputs_BoundsCompilationWork()
     {
-        const int MaximumCompiledFunctions = 512;
+        const int MaximumCompiledFunctions = 64;
         var schemaName = await CreateSchemaAsync();
         try
         {
@@ -26,8 +26,11 @@ public sealed partial class PostgresRasterStoreUnalignedMosaicTests
             settings.Transaction = transaction;
             settings.CommandText = "SET LOCAL jit = on";
             await settings.ExecuteNonQueryAsync();
+            settings.CommandText = "SELECT pg_jit_available()";
+            ((bool)(await settings.ExecuteScalarAsync())!).Should().BeTrue("the regression requires a JIT-capable database");
             var contributors = RasterMosaicSql.CreateIdentifyContributorArraySql(RasterMergeStrategy.Newest,
                 RasterMosaicOrdering.AcquisitionNewest, null, "ST_SetSRID(ST_MakePoint(2.5, 1.5), 4326)");
+            // The materialized source stands in for the production mosaic source.
             var query = $"""
                 WITH source AS MATERIALIZED (
                     SELECT raster AS rast, id, created_at,
@@ -44,15 +47,10 @@ public sealed partial class PostgresRasterStoreUnalignedMosaicTests
             using var plan = JsonDocument.Parse((string)(await command.ExecuteScalarAsync())!);
             var summary = plan.RootElement[0];
             var functions = summary.TryGetProperty("JIT", out var jit) ? jit.GetProperty("Functions").GetInt32() : 0;
-            var output = RepositoryPaths.Resolve("artifacts", "raster-investigation");
-            Directory.CreateDirectory(output);
-            var metrics = FormattableString.Invariant(
-                $"{{\"CompiledFunctions\":{functions},\"PlanningMilliseconds\":{summary.GetProperty("Planning Time").GetDouble()},\"ExecutionMilliseconds\":{summary.GetProperty("Execution Time").GetDouble()}}}");
-            await File.WriteAllTextAsync(Path.Combine(output, "contributor-summary.json"), metrics);
-            Assert.True(functions <= MaximumCompiledFunctions,
-                $"Compilation budget exceeded: {functions} > {MaximumCompiledFunctions}");
+            functions.Should().BeLessThanOrEqualTo(MaximumCompiledFunctions,
+                "the contributor probe must avoid excessive alignment compilation");
             command.CommandText = query;
-            Assert.Equal(new[] { unsigned }, (long[])(await command.ExecuteScalarAsync())!);
+            ((long[])(await command.ExecuteScalarAsync())!).Should().Equal(unsigned);
             await transaction.RollbackAsync();
         }
         finally
