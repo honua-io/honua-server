@@ -175,7 +175,7 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wmts10, "GetCapabilities")]
     [InterfaceOperation(TestProtocols.Wcs201, "GetCapabilities")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
-    public async Task GetCapabilities_NoPublishedResourcesOrStatements_ReturnsAnEmptyDocumentWithoutPlaceholders(string path)
+    public async Task GetCapabilities_NoPublishedResourcesOrStatements_ReturnsCapabilitiesWithoutPlaceholders(string path)
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var graph = snapshot.Graph with
