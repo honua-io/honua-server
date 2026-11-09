@@ -3,7 +3,6 @@
 
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
-using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
@@ -17,17 +16,17 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
 {
     private readonly ConfigurableOperationPolicyDecisionPoint _typedPolicy;
     private readonly IGuardrailLadder _legacyGuardrails;
-    private readonly IOperationInitiationResolver? _initiationResolver;
+    private readonly Func<CancellationToken, Task<(OperationInitiationKind Kind, OperationInitiationChannel Channel)>>? _resolveInitiation;
 
     public CanonicalOperationPolicyDecisionPoint(
         IOptions<OperationPolicyOptions> options,
         IGuardrailLadder legacyGuardrails,
         bool productionEnvironment = false,
-        IOperationInitiationResolver? initiationResolver = null)
+        Func<CancellationToken, Task<(OperationInitiationKind Kind, OperationInitiationChannel Channel)>>? resolveInitiation = null)
     {
         _typedPolicy = new ConfigurableOperationPolicyDecisionPoint(options, productionEnvironment);
         _legacyGuardrails = legacyGuardrails;
-        _initiationResolver = initiationResolver;
+        _resolveInitiation = resolveInitiation;
     }
 
     public OperationPolicyComposition TypedPolicy => _typedPolicy.Composition;
@@ -94,8 +93,8 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
 
     private async Task<bool> IsInteractiveHumanAsync(CancellationToken cancellationToken)
     {
-        if (_initiationResolver is null) return false;
-        var initiation = await _initiationResolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
+        if (_resolveInitiation is null) return false;
+        var initiation = await _resolveInitiation(cancellationToken).ConfigureAwait(false);
         return initiation is (OperationInitiationKind.Human, OperationInitiationChannel.InteractiveOidc);
     }
 

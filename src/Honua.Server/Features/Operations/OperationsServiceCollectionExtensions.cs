@@ -274,11 +274,14 @@ internal static class OperationsServiceCollectionExtensions
         // rules (OperationPolicyBuiltInRules); the startup validator still requires an enabled,
         // fail-closed default so every other caller is denied without an operator rule.
         var productionEnvironment = environment.IsProduction();
-        services.TryAddSingleton<IOperationPolicyDecisionPoint>(sp => new CanonicalOperationPolicyDecisionPoint(
-            sp.GetRequiredService<IOptions<OperationPolicyOptions>>(),
-            sp.GetRequiredService<Honua.Core.Features.Guardrails.Abstractions.IGuardrailLadder>(),
-            productionEnvironment,
-            sp.GetService<OperationInitiationResolver>()));
+        services.TryAddSingleton<IOperationPolicyDecisionPoint>(sp =>
+        {
+            var initiation = sp.GetService<OperationInitiationResolver>();
+            return new CanonicalOperationPolicyDecisionPoint(
+                sp.GetRequiredService<IOptions<OperationPolicyOptions>>(),
+                sp.GetRequiredService<Honua.Core.Features.Guardrails.Abstractions.IGuardrailLadder>(),
+                productionEnvironment, initiation is null ? null : initiation.ResolveAsync);
+        });
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHostedService, OperationPolicyStartupReporter>());
 

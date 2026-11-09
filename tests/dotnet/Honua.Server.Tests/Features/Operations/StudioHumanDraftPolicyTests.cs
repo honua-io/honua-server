@@ -3,7 +3,6 @@
 
 using FluentAssertions;
 using Honua.ControlPlane;
-using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
@@ -80,11 +79,8 @@ public sealed class StudioHumanDraftPolicyTests
         var guardrail = new GuardrailDecision(tier, OperationClass.StudioDraftMutation, HonuaEdition.Enterprise, source);
         ladder.Resolve(OperationClass.StudioDraftMutation).Returns(guardrail);
         ladder.Resolve(OperationClass.StudioDraftMutation, Arg.Any<string?>()).Returns(guardrail);
-        var resolver = Substitute.For<IOperationInitiationResolver>();
-        resolver.ResolveAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(
-            (OperationInitiationKind.Human, OperationInitiationChannel.InteractiveOidc)));
         var policy = new CanonicalOperationPolicyDecisionPoint(Options.Create(new OperationPolicyOptions()),
-            ladder, initiationResolver: resolver);
+            ladder, resolveInitiation: _ => Task.FromResult((OperationInitiationKind.Human, OperationInitiationChannel.InteractiveOidc)));
         return policy.EvaluateAsync(StudioDraftOperations.BuildDescriptors().Single(item => item.OperationId == operationId),
             new OperationRequest
             {
