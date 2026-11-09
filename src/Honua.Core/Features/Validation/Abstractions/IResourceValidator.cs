@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
 using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Validation.Abstractions;
@@ -53,6 +54,9 @@ public sealed class ResourceValidationResult<T>
 
     public T? Resource { get; }
 
+    [JsonIgnore]
+    public MetadataV2GraphSnapshot? Snapshot { get; init; }
+
     public ResourceValidationError? ErrorCode { get; }
 
     public string? ErrorMessage { get; }
@@ -69,6 +73,9 @@ public sealed class ResourceValidationResult<T>
 public static class ResourceValidationResult
 {
     public static ResourceValidationResult<T> Success<T>(T resource) => new(true, resource, null, null);
+
+    public static ResourceValidationResult<T> Success<T>(T resource, MetadataV2GraphSnapshot snapshot) =>
+        new(true, resource, null, null) { Snapshot = snapshot };
 
     public static ResourceValidationResult<T> NotFound<T>(string message) =>
         new(false, default, ResourceValidationError.NotFound, message);

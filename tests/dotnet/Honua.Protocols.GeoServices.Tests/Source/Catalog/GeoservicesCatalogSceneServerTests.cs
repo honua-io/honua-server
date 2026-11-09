@@ -4,6 +4,8 @@
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.TestKit;
@@ -100,6 +102,51 @@ public sealed class GeoservicesCatalogSceneServerTests
 
             hasSceneServer.Should().BeFalse(
                 "SceneServer is Enterprise-gated and must be omitted from the open-core catalog.");
+        }
+        finally
+        {
+            await ResetSceneRegistryAsync(fixture);
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{folderName}")]
+    public async Task ParentDirectory_SceneIdentityCollidesWithGraphService_PreservesCallerVisibility(bool restrictedFeatures)
+    {
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Enterprise);
+        await fixture.InitializeAsync();
+        try
+        {
+            await ResetSceneRegistryAsync(fixture);
+            await RegisterSceneAsync(fixture);
+            var provider = (TestMetadataV2GraphProvider)fixture.GetService<IMetadataV2GraphProvider>();
+            var graph = fixture.GetCurrentV2GraphSnapshot().Graph;
+            foreach (var parent in new[] { SceneId, SceneName })
+            {
+                var policy = ServiceRbacTestFixture.CreateServiceMetadata(allowAnonymous: !restrictedFeatures,
+                    readRoles: restrictedFeatures ? ["catalog-reader"] : null);
+                provider.SetGraph(graph with
+                {
+                    Services = graph.Services.Select(service => service.Metadata.Name == WebAppFixture.TestServiceId
+                        ? service with { PublicName = parent, AccessPolicy = policy } : service).ToArray(),
+                    Resources = graph.Resources.Select(resource => resource with { AccessPolicy = policy }).ToArray()
+                }, schema: fixture.CurrentSchema);
+                foreach (var mount in new[] { "", "/arcgis" })
+                {
+                    using var response = await fixture.Client.GetAsync($"{mount}/rest/services/{Uri.EscapeDataString(parent)}?f=json");
+                    response.Be200Ok();
+                    using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                    var entries = payload.RootElement.GetProperty("services").EnumerateArray().ToArray();
+                    var entry = entries.Should().ContainSingle().Which;
+                    entry.GetProperty("type").GetString().Should().Be("SceneServer");
+                    entry.GetProperty("name").GetString().Should().Be(SceneName);
+                    entry.GetProperty("url").GetString().Should().EndWith($"/rest/services/{SceneId}/SceneServer");
+                }
+            }
         }
         finally
         {

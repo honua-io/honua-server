@@ -8,7 +8,6 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
@@ -160,8 +159,11 @@ internal static class WmtsRequestHandlers
                 return StandardErrorHelpers.CreateNotFound(context, $"{WmtsProtocolName} is not enabled for this service.");
             }
 
-            var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
-            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            if (serviceResult.Snapshot is not { } snapshot)
+            {
+                return StandardErrorHelpers.CreateServiceUnavailable(context,
+                    ServiceResourceValidationHelpers.ServiceCatalogUnavailableMessage, retryable: true);
+            }
 
             // Resolve all WMTS layers on the service up-front: walk publications, dedupe by
             // resource (prefer IsPrimary), drop those without a usable storage layer id, and

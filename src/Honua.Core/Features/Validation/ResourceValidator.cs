@@ -142,7 +142,7 @@ public sealed class ResourceValidator : IResourceValidator
         {
             var protocolService = ResolveServiceForProtocol(snapshot, serviceId, requiredProtocol);
             return protocolService is not null
-                ? ResourceValidationResult.Success(protocolService)
+                ? ResourceValidationResult.Success(protocolService, snapshot)
                 : ResourceValidationResult.NotFound<MetadataV2Service>(
                     ErrorMessages.NotFound.FormatService(serviceId));
         }
@@ -150,13 +150,13 @@ public sealed class ResourceValidator : IResourceValidator
         if (snapshot.Index.ServicesById.TryGetValue(serviceId, out var byId))
         {
             return byId.IsRoutable()
-                ? ResourceValidationResult.Success(byId)
+                ? ResourceValidationResult.Success(byId, snapshot)
                 : ResourceValidationResult.NotFound<MetadataV2Service>(
                     ErrorMessages.NotFound.FormatService(serviceId));
         }
         if (snapshot.Index.ServicesByName.TryGetValue(serviceId, out var byName) && byName.IsRoutable())
         {
-            return ResourceValidationResult.Success(byName);
+            return ResourceValidationResult.Success(byName, snapshot);
         }
         return ResourceValidationResult.NotFound<MetadataV2Service>(
             ErrorMessages.NotFound.FormatService(serviceId));

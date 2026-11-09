@@ -81,4 +81,50 @@ public sealed class WmtsAdvertisedResourceTests : IAsyncLifetime
             provider.SetGraph(original, schema: _fixture.CurrentSchema);
         }
     }
+
+    [IntegrationTheory]
+    [InlineData("")]
+    [InlineData("/arcgis")]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /ogc/services/{serviceId}/wmts")]
+    [InterfaceOperation(TestProtocols.Wmts10, "GetCapabilities")]
+    public async Task GetCapabilities_FolderDeletedAfterServiceValidation_UsesOneGraphRevision(string mount)
+    {
+        var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var graph = original with
+        {
+            Revision = original.Revision + 1,
+            Folders = [new() { Metadata = new() { Id = "wmts-folder", Name = "Public" } }],
+            Services = original.Services.Select(service => service.Metadata.Name == WebAppFixture.TestServiceId
+                ? service with { PublicName = "Parcels", FolderId = "wmts-folder" }
+                : service).ToArray()
+        };
+        var provider = (TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>();
+        provider.SetGraph(graph, schema: _fixture.CurrentSchema);
+        provider.ActivateAfterNextRead(graph with
+        {
+            Revision = graph.Revision + 1,
+            Folders = [],
+            Services = graph.Services.Select(service => service.FolderId == "wmts-folder"
+                ? service with { FolderId = null } : service).ToArray()
+        });
+        try
+        {
+            using var response = await _fixture.Client.GetAsync(
+                $"{mount}/ogc/services/{WebAppFixture.TestServiceId}/wmts?SERVICE=WMTS&REQUEST=GetCapabilities");
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            var document = XDocument.Parse(body);
+            XNamespace wmts = "http://www.opengis.net/wmts/1.0";
+            XNamespace xlink = "http://www.w3.org/1999/xlink";
+            var metadataUrl = document.Descendants(wmts + "ServiceMetadataURL").Single().Attribute(xlink + "href")!.Value;
+            new Uri(metadataUrl).AbsolutePath.Should().Contain("/rest/services/Public/Parcels/");
+            document.Descendants(wmts + "Layer").Should().NotBeEmpty();
+        }
+        finally
+        {
+            provider.SetGraph(original, schema: _fixture.CurrentSchema);
+        }
+    }
+
 }
