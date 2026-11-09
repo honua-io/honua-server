@@ -66,7 +66,7 @@ public static partial class OgcMapsEndpoints
         }
 
         var collection = await BuildCollectionInfoAsync(
-            context, resolution.Resource!, resolution.Publication!, BuildMapCollectionIds(snapshot)[resolution.Publication!.Metadata.Id], outputFormat,
+            context, resolution.Resource!, resolution.Publication!, MetadataV2CollectionIds.ForMaps(snapshot)[resolution.Publication!.Metadata.Id], outputFormat,
             coordinateTransformService, true, cancellationToken).ConfigureAwait(false);
         return OgcCommon.OgcCommonUtilities.FormatMetadataResponse(
             collection,
@@ -91,13 +91,13 @@ public static partial class OgcMapsEndpoints
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var collections = ImmutableArray.CreateBuilder<OgcCommon.CollectionInfo>();
         var seenResources = new HashSet<string>(StringComparer.Ordinal);
-        var collectionIds = BuildMapCollectionIds(snapshot);
+        var collectionIds = MetadataV2CollectionIds.ForMaps(snapshot);
         foreach (var publication in snapshot.Graph.Publications
                      .OrderByDescending(publication => ServiceProtocols.IsPreferredPublicationType(
                          ServiceProtocols.OgcApiMaps, publication.PublicationType))
                      .ThenByDescending(publication => publication.IsPrimary))
         {
-            if (!snapshot.IsRoutable(publication) ||
+            if (!snapshot.IsDiscoverable(publication) ||
                 !snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) ||
                 !ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.OgcApiMaps))
             {
@@ -112,12 +112,12 @@ public static partial class OgcMapsEndpoints
             }
 
             var id = collectionIds[publication.Metadata.Id];
-            var resolution = await ResolveCollectionAsync(context, id, snapshot, cancellationToken).ConfigureAwait(false);
-            if (resolution.Error is null && resolution.Resource?.Metadata.Id == resource.Metadata.Id &&
-                seenResources.Add(resource.Metadata.Id))
+            var access = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
+                context, resource, service, Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false);
+            if (access.IsAllowed && seenResources.Add(resource.Metadata.Id))
             {
                 collections.Add(await BuildCollectionInfoAsync(
-                    context, resolution.Resource!, resolution.Publication!, id, OgcCommon.MediaTypes.Json,
+                    context, resource, publication, id, OgcCommon.MediaTypes.Json,
                     coordinateTransformService, false, cancellationToken).ConfigureAwait(false));
             }
         }
@@ -198,51 +198,6 @@ public static partial class OgcMapsEndpoints
             Extent = await BuildCollectionExtentAsync(resource, coordinateTransformService, cancellationToken)
         };
 
-    }
-
-    private static Dictionary<string, string> BuildMapCollectionIds(MetadataV2GraphSnapshot snapshot)
-    {
-        var publications = snapshot.Graph.Publications.Where(candidate =>
-            snapshot.IsRoutable(candidate) &&
-            snapshot.Index.ServicesById.TryGetValue(candidate.ServiceId, out var service) &&
-            ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.OgcApiMaps)).ToArray();
-        var aliases = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var publication in publications)
-        {
-            var resource = snapshot.ResolveResource(publication)!;
-            // Mirror the shared resolver's alias matching, including names and titles.
-            foreach (var alias in new[] { publication.ServiceLocalId, publication.Path,
-                         publication.Metadata.Name, publication.Metadata.Title, publication.Metadata.Id,
-                         resource.Metadata.Name, resource.Metadata.Title, resource.Metadata.Id })
-            {
-                if (alias is null)
-                {
-                    continue;
-                }
-
-                if (!aliases.TryGetValue(alias, out var resources))
-                {
-                    resources = new HashSet<string>(StringComparer.Ordinal);
-                    aliases.Add(alias, resources);
-                }
-
-                resources.Add(resource.Metadata.Id);
-            }
-        }
-
-        // Exact publication IDs take precedence across the entire graph, including
-        // other protocols and retired publications. Never emit another publication's
-        // ID as this collection's alias.
-        var publicationIds = snapshot.Graph.Publications.Select(publication => publication.Metadata.Id)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return publications.ToDictionary(publication => publication.Metadata.Id, publication =>
-        {
-            var resource = snapshot.ResolveResource(publication)!;
-            var alias = publication.ServiceLocalId ?? publication.Path ?? resource.Metadata.Name;
-            var shadowsPublicationId = publicationIds.Contains(alias) &&
-                !string.Equals(alias, publication.Metadata.Id, StringComparison.OrdinalIgnoreCase);
-            return shadowsPublicationId || aliases[alias].Count > 1 ? publication.Metadata.Id : alias;
-        }, StringComparer.Ordinal);
     }
 
     private static async Task<OgcCommon.Extent?> BuildCollectionExtentAsync(

@@ -152,7 +152,8 @@ internal sealed class CapabilityManifestService(
             Limits = BuildLimits(batchCapabilities),
             Policies = BuildPolicies(snapshot, callerCapabilities),
             DeploymentProfile = options.DeploymentProfile,
-            Links = BuildLinks()
+            Links = BuildLinks(),
+            ProtocolEndpoints = CapabilityManifestProtocolEndpoints.Build(capabilities, options.DeploymentProfile, runtimeInventory.RoutedCapabilities)
         };
 
         activity?.SetTag("honua.license.edition", snapshot.Edition.ToString());
@@ -477,6 +478,7 @@ internal sealed class CapabilityManifestService(
             Capability("serve.sensorthings", "realtime", context,
                 maturity: CapabilityMaturity.Preview,
                 configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("serve.sensorthings")),
+            .. BuildCatalogProtocolCapabilities(context),
             Capability("serve.geoservices-imageserver", "raster", context,
                 maturity: CapabilityMaturity.Implemented),
             Capability("serve.wmts", "raster", context,
@@ -551,6 +553,13 @@ internal sealed class CapabilityManifestService(
             .. BuildOperationCapabilities(context, operationCapabilities)
         ];
     }
+
+    private IEnumerable<CapabilityManifestCapability> BuildCatalogProtocolCapabilities(CapabilityPolicyContext context)
+        => CapabilityManifestProtocolEndpoints.CapabilityIds(runtimeInventory.RoutedCapabilities)
+            .Select(capabilityRegistry.Find)
+            .OfType<CapabilityDescriptor>()
+            .Where(descriptor => descriptor.Category == "serve")
+            .Select(descriptor => Capability(descriptor.Id, descriptor.Category, context, maturity: descriptor.Maturity));
 
     private CapabilityManifestCapability[] BuildCapabilitiesFromRegistry(
         CapabilityPolicyContext context,

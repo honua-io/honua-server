@@ -104,6 +104,7 @@ internal sealed class DeploymentCapabilityRouteCatalog
 {
     private const string CatalogResourceName = "Honua.Server.DeploymentProfiles.feature-catalog.json";
     private readonly Dictionary<string, RouteCapability[]> _routesByMethod;
+    private readonly Dictionary<string, (string Path, string Capability)> _getRoutesById = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<Endpoint, RouteResolution> _endpointCache = new();
 
     public DeploymentCapabilityRouteCatalog()
@@ -123,6 +124,9 @@ internal sealed class DeploymentCapabilityRouteCatalog
                 throw new InvalidOperationException("Embedded capability route catalog contains an incomplete entry.");
             }
 
+            if (string.Equals(method, HttpMethods.Get, StringComparison.OrdinalIgnoreCase))
+                _getRoutesById.Add(entry.GetProperty("id").GetString()!, (route, capability));
+
             routed.Add(capability);
             routes.Add(new RouteCapability(
                 method.ToUpperInvariant(),
@@ -141,6 +145,9 @@ internal sealed class DeploymentCapabilityRouteCatalog
     }
 
     public IReadOnlySet<string> RoutedCapabilities { get; }
+
+    public (string Path, string Capability)? GetRoute(string id)
+        => _getRoutesById.TryGetValue(id, out var route) ? route : null;
 
     public RouteResolution Resolve(HttpContext context)
     {
@@ -191,15 +198,19 @@ internal sealed class ManifestRoutedCapabilityIndex
 {
     private const string CrosswalkResourceName = "Honua.Server.DeploymentProfiles.capability-manifest-crosswalk.v1.json";
 
+    private readonly DeploymentCapabilityRouteCatalog _routes;
     private readonly IReadOnlySet<string> _routed;
     private readonly Dictionary<string, string?> _byManifestId;
 
     public ManifestRoutedCapabilityIndex(DeploymentCapabilityRouteCatalog routes)
     {
         ArgumentNullException.ThrowIfNull(routes);
+        _routes = routes;
         _routed = routes.RoutedCapabilities;
         _byManifestId = LoadCrosswalk();
     }
+
+    public (string Path, string Capability)? GetRoute(string id) => _routes.GetRoute(id);
 
     public bool TryGetRoutedCapability(string manifestId, out string capability)
     {

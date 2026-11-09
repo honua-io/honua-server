@@ -56,7 +56,7 @@ internal sealed partial class Wfs20Handler
 
         try
         {
-            var featureTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken);
+            var featureTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken, selectPublication: static (snapshot, publication) => snapshot.IsDiscoverable(publication));
             var wfsUrl = BaseUrlResolver.PreserveToken(context.Request, $"{baseUrl}/wfs");
 
             var capabilities = new WfsCapabilities
@@ -111,7 +111,7 @@ internal sealed partial class Wfs20Handler
         try
         {
             var requestedTypes = Wfs20Utilities.ParseTypeNames(typeNames);
-            var publishedTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken);
+            var publishedTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken, selectPublication: requestedTypes.Length == 0 ? static (snapshot, publication) => snapshot.IsDiscoverable(publication) : null);
             var selectedTypes = ResolveRequestedFeatureTypes(publishedTypes, requestedTypes);
             if (selectedTypes.Length == 0 && requestedTypes.Length > 0)
             {
@@ -135,7 +135,8 @@ internal sealed partial class Wfs20Handler
     private async Task<ImmutableArray<WfsFeatureTypeDescriptor>> GetPublishedFeatureTypesAsync(
         HttpContext context,
         CancellationToken cancellationToken,
-        bool enforceAccess = true)
+        bool enforceAccess = true,
+        Func<MetadataV2GraphSnapshot, MetadataV2Publication, bool>? selectPublication = null)
     {
         var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var candidates = new List<(int StorageLayerId, MetadataV2Resource Resource, MetadataV2Publication Publication, MetadataV2Service Service)>();
@@ -148,7 +149,7 @@ internal sealed partial class Wfs20Handler
             }
 
             var resource = snapshot.ResolveResource(publication);
-            if (!snapshot.IsRoutable(publication) ||
+            if (!(selectPublication?.Invoke(snapshot, publication) ?? snapshot.IsRoutable(publication)) ||
                 !TenantScopeHelpers.IsTenantVisible(context, publication, resource, service) ||
                 (enforceAccess && !await AccessPolicyHelpers.IsResourceAccessibleAsync(
                     context,

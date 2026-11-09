@@ -303,10 +303,7 @@ internal static class LayerValidationHelpers
             context, collectionId, true, scope, requiredProtocol, cancellationToken: cancellationToken);
 
     internal static string? AdvertisedCollectionId(MetadataV2Publication publication, MetadataV2Resource? resource)
-    {
-        var collectionId = publication.ServiceLocalId ?? publication.Path ?? resource?.Metadata.Name;
-        return string.IsNullOrWhiteSpace(collectionId) ? resource?.Metadata.Id : collectionId;
-    }
+        => MetadataV2CollectionIds.Advertised(publication, resource);
 
     internal static int QueryCacheLayerId(MetadataV2Publication publication, int storageLayerId)
         => publication.LayerIndex ?? storageLayerId;

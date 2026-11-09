@@ -35,7 +35,7 @@ internal static class ODataV2Lookups
 
         var snapshot = await GetSnapshotAsync(context, cancellationToken).ConfigureAwait(false);
         var resolved = new List<ResolvedODataPublication>();
-        var publications = TenantScopeHelpers.FilterVisiblePublications(context, snapshot, snapshot.Graph.Publications).ToArray();
+        var publications = TenantScopeHelpers.FilterVisiblePublications(context, snapshot, snapshot.Graph.Publications.Where(snapshot.IsDiscoverable)).ToArray();
         var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMapV2(snapshot, ODataProtocolConstants.ProtocolName, publications);
         var selectedPublicationIds = SelectODataPublicationIds(snapshot, primaryServices, publications);
 

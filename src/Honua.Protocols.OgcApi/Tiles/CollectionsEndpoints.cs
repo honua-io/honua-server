@@ -32,7 +32,6 @@ internal static class CollectionsEndpoints
             .WithSummary("Get OGC API Tiles collections")
             .WithDescription("Lists all available collections with tile links")
             .WithTags("OGC API Tiles")
-            .CacheOutput("OgcTilesCollections")
             .Produces<Collections>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html);
 
@@ -82,7 +81,7 @@ internal static class CollectionsEndpoints
             var byResource = new Dictionary<string, (MetadataV2Publication Publication, MetadataV2Service Service, MetadataV2Resource Resource)>(StringComparer.Ordinal);
             var requiresAuth = false;
             var hasDenied = false;
-            var totalPublications = snapshot.Graph.Publications.Count(snapshot.IsRoutable);
+            var totalPublications = snapshot.Graph.Publications.Count(snapshot.IsDiscoverable);
 
             foreach (var publication in snapshot.Graph.Publications)
             {
@@ -95,7 +94,7 @@ internal static class CollectionsEndpoints
                     continue;
                 }
                 var resource = snapshot.ResolveResource(publication);
-                if (!snapshot.IsRoutable(publication))
+                if (!snapshot.IsDiscoverable(publication))
                 {
                     continue;
                 }

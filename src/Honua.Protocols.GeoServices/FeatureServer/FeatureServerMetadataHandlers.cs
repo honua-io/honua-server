@@ -76,7 +76,8 @@ internal static partial class FeatureServerEndpoints
         var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-        var allPairs = GetRoutableFeaturePublicationsV2(service, snapshot, context);
+        var allPairs = GetRoutableFeaturePublicationsV2(service, snapshot, context)
+            .Where(pair => snapshot.IsDiscoverable(pair.Publication)).ToArray();
 
         if (RequiresDefaultMetadataAuthenticationV2(
                 context,

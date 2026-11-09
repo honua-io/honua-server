@@ -76,7 +76,7 @@ internal static partial class MapServerEndpoints
 
             var (visibleLayers, accessError) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
                 context,
-                publishedLayers,
+                publishedLayers.Where(layer => snapshot.IsDiscoverable(layer.Publication)).ToArray(),
                 static layer => layer.Resource,
                 service,
                 AuthorizationOperation.Metadata,

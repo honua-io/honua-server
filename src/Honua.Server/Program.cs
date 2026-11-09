@@ -32,6 +32,7 @@ using Honua.Server.Features.Admin.Share;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Features.CloudDemo;
+using Honua.Server.Features.Catalog;
 using Honua.Server.Features.Collaboration;
 using Honua.Server.Features.Console;
 using Honua.Server.Features.Console.Collaboration;
@@ -1048,6 +1049,7 @@ builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleO
 builder.Services.AddSingleton(Honua.Core.Features.Console.Domain.ConsolePersistenceNotice.InMemory);
 builder.Services.AddHostedService<Honua.Server.Features.Console.ConsoleInMemoryStoreStartupGuard>();
 // Discovery is a scoped projection: an explicit workspace mapping never replaces caller authorization.
+builder.Services.AddCatalogDiscovery();
 builder.Services.AddOptions<Honua.Server.Features.Console.Services.CatalogDiscoveryOptions>()
     .BindConfiguration(Honua.Server.Features.Console.Services.CatalogDiscoveryOptions.SectionName)
     .ValidateOnStart();
@@ -2040,6 +2042,7 @@ app.MapConsoleActionEndpoints();
 // Console Share access public-link + embed API (#1215)
 app.MapConsoleShareEndpoints();
 app.MapCatalogDiscoveryEndpoints();
+app.MapCatalogReadEndpoints();
 app.MapConsoleSharePublicEndpoints();
 // Console open-data DCAT + STAC publication API (#1214)
 app.MapConsoleOpenDataEndpoints();

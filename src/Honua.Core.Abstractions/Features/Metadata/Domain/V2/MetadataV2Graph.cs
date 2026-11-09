@@ -487,6 +487,9 @@ public sealed record MetadataV2ServiceSettings : ExtensibleJsonRecord
 
 public sealed record MetadataV2Publication : ExtensibleJsonRecord
 {
+    [JsonPropertyName("advertised")]
+    public bool Advertised { get; init; } = true;
+
     private int? _layerIndex;
     private string? _path;
     private string? _serviceLocalId;
@@ -571,6 +574,10 @@ public sealed record MetadataV2Publication : ExtensibleJsonRecord
 
 public sealed record MetadataV2Catalog : ExtensibleJsonRecord
 {
+    [JsonPropertyName("configuration")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public MetadataV2CatalogConfiguration? Configuration { get; init; }
+
     [JsonPropertyName("metadata")]
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
 

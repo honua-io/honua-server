@@ -59,7 +59,6 @@ internal static class CollectionsEndpoints
             .WithSummary("Get OGC API Features collections")
             .WithDescription("Lists all available feature collections")
             .WithTags("OGC API Features")
-            .CacheOutput("OgcCollections")
             .Produces<Collections>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html)
             .Produces(404);
@@ -119,6 +118,7 @@ internal static class CollectionsEndpoints
                 return OgcCommonUtilities.CreateFormatError(context, formatError);
             }
 
+            context.Response.Headers.CacheControl = "no-store";
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
@@ -168,7 +168,7 @@ internal static class CollectionsEndpoints
                     continue;
                 }
                 var resource = snapshot.ResolveResource(publication);
-                if (!snapshot.IsRoutable(publication))
+                if (!snapshot.IsDiscoverable(publication))
                 {
                     continue;
                 }

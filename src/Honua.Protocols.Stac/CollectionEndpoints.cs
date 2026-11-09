@@ -31,7 +31,6 @@ internal static class CollectionEndpoints
             .WithSummary("Get all STAC collections")
             .WithDescription("Lists all available STAC collections")
             .WithTags("STAC")
-            .CacheOutput("StacCollections")
             .WithETag()
             .Produces<StacCollectionsResponse>(200, MediaTypes.Json)
             .Produces(404);
@@ -95,12 +94,14 @@ internal static class CollectionEndpoints
 
         try
         {
+            context.Response.Headers.CacheControl = "no-store";
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var stacBase = $"{baseUrl}/stac";
 
-            var visible = await StacV2Lookups.ResolveVisibleStacPublicationsAsync(context, cancellationToken)
+            var routable = await StacV2Lookups.ResolveVisibleStacPublicationsAsync(context, cancellationToken)
                 .ConfigureAwait(false);
+            var visible = routable.Where(resolved => resolved.Snapshot.IsDiscoverable(resolved.Publication)).ToArray();
 
             var collections = await OgcCommonUtilities.ProjectWithLimitedConcurrencyAsync(
                 visible,

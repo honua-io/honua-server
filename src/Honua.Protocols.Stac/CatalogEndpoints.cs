@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
@@ -23,7 +24,6 @@ internal static class CatalogEndpoints
             .WithSummary("Get the STAC root catalog")
             .WithDescription("Returns the root STAC catalog with links to child collections and search")
             .WithTags("STAC")
-            .CacheOutput("StacCatalog")
             .WithETag()
             .Produces<StacCatalog>(200, MediaTypes.Json)
             .Produces(404);
@@ -72,12 +72,14 @@ internal static class CatalogEndpoints
 
         try
         {
+            context.Response.Headers.CacheControl = "no-store";
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var stacBase = $"{baseUrl}/stac";
 
-            var visible = await StacV2Lookups.ResolveVisibleStacPublicationsAsync(context, cancellationToken)
+            var routable = await StacV2Lookups.ResolveVisibleStacPublicationsAsync(context, cancellationToken)
                 .ConfigureAwait(false);
+            var visible = routable.Where(resolved => resolved.Snapshot.IsDiscoverable(resolved.Publication)).ToArray();
 
             var links = ImmutableArray.CreateBuilder<Link>();
 

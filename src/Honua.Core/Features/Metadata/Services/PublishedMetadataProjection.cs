@@ -31,12 +31,15 @@ public sealed class PublishedMetadataProjection(
             .Where(publication => ReferenceEquals(publication, snapshot.Index.PublicationsById[publication.Metadata.Id]))
             .Where(publication => readAuthorizer.Evaluate(
                 request.Principal, snapshot.ResolveResource(publication), service, publication).IsAllowed)
+            .Where(publication => request.ReadCeiling is null || readAuthorizer.Evaluate(
+                request.ReadCeiling, snapshot.ResolveResource(publication), service, publication).IsAllowed)
             .ToArray();
         if (publications.Count > 0 && visible.Length == 0)
         {
             return null;
         }
-        if (publications.Count == 0 && !readAuthorizer.Evaluate(request.Principal, null, service).IsAllowed)
+        if (publications.Count == 0 && (!readAuthorizer.Evaluate(request.Principal, null, service).IsAllowed ||
+            request.ReadCeiling is not null && !readAuthorizer.Evaluate(request.ReadCeiling, null, service).IsAllowed))
         {
             return null;
         }
@@ -49,6 +52,27 @@ public sealed class PublishedMetadataProjection(
             Access = DeriveAccessTier(firstResource?.AccessPolicy, service.AccessPolicy),
             FirstResource = firstResource,
             Url = ServiceUrl(request, service)
+        };
+    }
+
+    public PublishedMetadataService? ProjectDiscoverableService(PublishedMetadataRequest request, MetadataV2Service service)
+    {
+        var published = ProjectService(request, service);
+        if (published is null)
+        {
+            return null;
+        }
+        var publications = published.Publications.Where(request.Snapshot.IsDiscoverable).ToArray();
+        if (published.Publications.Count > 0 && publications.Length == 0)
+        {
+            return null;
+        }
+        var firstResource = publications.Length == 0 ? null : request.Snapshot.ResolveResource(publications[0]);
+        return published with
+        {
+            Publications = publications,
+            FirstResource = firstResource,
+            Access = DeriveAccessTier(firstResource?.AccessPolicy, service.AccessPolicy)
         };
     }
 
@@ -93,7 +117,10 @@ public sealed class PublishedMetadataProjection(
         => string.IsNullOrWhiteSpace(metadata.Publisher) ? "honua" : metadata.Publisher;
 }
 
-public sealed record PublishedMetadataRequest(MetadataV2GraphSnapshot Snapshot, ClaimsPrincipal Principal, string BaseUrl);
+public sealed record PublishedMetadataRequest(MetadataV2GraphSnapshot Snapshot, ClaimsPrincipal Principal, string BaseUrl)
+{
+    public ClaimsPrincipal? ReadCeiling { get; init; }
+}
 
 public sealed record PublishedMetadataService
 {

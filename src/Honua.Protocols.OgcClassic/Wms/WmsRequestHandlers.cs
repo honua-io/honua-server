@@ -209,7 +209,7 @@ internal static partial class WmsRequestHandlers
                 }
 
                 OgcClassicLog.WmsRequested(logger, serviceId, "GetCapabilities");
-                var xml = await BuildWmsCapabilities(context, svcDef, accessibleLayers, capabilitiesVersion).ConfigureAwait(false);
+                var xml = await BuildWmsCapabilities(context, svcDef, accessibleLayers.Where(layer => layer.Publication.Advertised).ToArray(), capabilitiesVersion).ConfigureAwait(false);
                 return Results.Content(xml, GetWmsCapabilitiesMimeType(capabilitiesVersion), Encoding.UTF8, StatusCodes.Status200OK);
             }
 

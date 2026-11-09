@@ -10,6 +10,7 @@ using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Licensing;
 using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.OutputCaching;
 
 namespace Honua.Infrastructure.Caching;
 
@@ -99,7 +100,7 @@ internal static class OutputCachingRegistration
             }, excludeDefaultPolicy: true);
 
             // Service metadata caching policy
-            options.AddPolicy("ServiceMetadata", policy =>
+            AddGraphMetadataPolicy(options, "ServiceMetadata", policy =>
             {
                 policy.Expire(ttl.ServiceMetadata);
                 policy.SetVaryByRouteValue("serviceId");
@@ -121,7 +122,7 @@ internal static class OutputCachingRegistration
             });
 
             // MapServer legend caching policy
-            options.AddPolicy("MapServerLegend", policy =>
+            AddGraphMetadataPolicy(options, "MapServerLegend", policy =>
             {
                 policy.Expire(ttl.ServiceMetadata);
                 policy.SetVaryByRouteValue("serviceId");
@@ -138,7 +139,7 @@ internal static class OutputCachingRegistration
             });
 
             // GeoServices service directory caching policy
-            options.AddPolicy("ServiceDirectory", policy =>
+            AddGraphMetadataPolicy(options, "ServiceDirectory", policy =>
             {
                 policy.Expire(ttl.ServiceDirectory);
                 policy.SetVaryByQuery("f");
@@ -146,7 +147,7 @@ internal static class OutputCachingRegistration
             });
 
             // Layer metadata caching policy
-            options.AddPolicy("LayerMetadata", policy =>
+            AddGraphMetadataPolicy(options, "LayerMetadata", policy =>
             {
                 policy.Expire(ttl.LayerMetadata);
                 policy.SetVaryByRouteValue("serviceId", "layerId");
@@ -173,7 +174,7 @@ internal static class OutputCachingRegistration
             });
 
             // OGC API Features collections list caching policy
-            options.AddPolicy("OgcCollections", policy =>
+            AddGraphMetadataPolicy(options, "OgcCollections", policy =>
             {
                 policy.Expire(ttl.OgcCollections);
                 policy.SetVaryByQuery("f");
@@ -182,7 +183,7 @@ internal static class OutputCachingRegistration
             });
 
             // OGC API Features single collection caching policy
-            options.AddPolicy("OgcCollection", policy =>
+            AddGraphMetadataPolicy(options, "OgcCollection", policy =>
             {
                 policy.Expire(ttl.OgcCollection);
                 policy.SetVaryByRouteValue("collectionId");
@@ -321,7 +322,7 @@ internal static class OutputCachingRegistration
             });
 
             // OGC API Tiles collections list caching policy
-            options.AddPolicy("OgcTilesCollections", policy =>
+            AddGraphMetadataPolicy(options, "OgcTilesCollections", policy =>
             {
                 policy.Expire(ttl.OgcTilesCollections);
                 policy.SetVaryByQuery("f");
@@ -330,7 +331,7 @@ internal static class OutputCachingRegistration
             });
 
             // OGC API Tiles single collection caching policy
-            options.AddPolicy("OgcTilesCollection", policy =>
+            AddGraphMetadataPolicy(options, "OgcTilesCollection", policy =>
             {
                 policy.Expire(ttl.OgcTilesCollection);
                 policy.SetVaryByRouteValue("collectionId");
@@ -448,7 +449,7 @@ internal static class OutputCachingRegistration
             });
 
             // TileJSON metadata caching policy
-            options.AddPolicy("TileJson", policy =>
+            AddGraphMetadataPolicy(options, "TileJson", policy =>
             {
                 policy.Expire(ttl.TileJson);
                 policy.SetVaryByRouteValue("layerId");
@@ -524,7 +525,7 @@ internal static class OutputCachingRegistration
             });
 
             // Image Server service metadata caching policy
-            options.AddPolicy("ImageServerMetadata", policy =>
+            AddGraphMetadataPolicy(options, "ImageServerMetadata", policy =>
             {
                 policy.Expire(ttl.ImageServerMetadata);
                 policy.SetVaryByRouteValue("id");
@@ -544,7 +545,7 @@ internal static class OutputCachingRegistration
             });
 
             // STAC catalog (root landing page) caching policy
-            options.AddPolicy("StacCatalog", policy =>
+            AddGraphMetadataPolicy(options, "StacCatalog", policy =>
             {
                 policy.Expire(ttl.StacCatalog);
                 policy.SetVaryByQuery("f");
@@ -553,7 +554,7 @@ internal static class OutputCachingRegistration
             });
 
             // STAC collections list caching policy
-            options.AddPolicy("StacCollections", policy =>
+            AddGraphMetadataPolicy(options, "StacCollections", policy =>
             {
                 policy.Expire(ttl.StacCollections);
                 policy.SetVaryByQuery("f");
@@ -562,7 +563,7 @@ internal static class OutputCachingRegistration
             });
 
             // STAC single collection caching policy
-            options.AddPolicy("StacCollection", policy =>
+            AddGraphMetadataPolicy(options, "StacCollection", policy =>
             {
                 policy.Expire(ttl.StacCollection);
                 policy.SetVaryByRouteValue("collectionId");
@@ -587,6 +588,13 @@ internal static class OutputCachingRegistration
             });
         }
     }
+
+    private static void AddGraphMetadataPolicy(OutputCacheOptions options, string name, Action<OutputCachePolicyBuilder> configure)
+        => options.AddPolicy(name, policy =>
+        {
+            policy.AddPolicy<MetadataGraphOutputCachePolicy>();
+            configure(policy);
+        });
 
     internal static bool ShouldUseRedisOutputCache(
         bool redisCacheEntitled,

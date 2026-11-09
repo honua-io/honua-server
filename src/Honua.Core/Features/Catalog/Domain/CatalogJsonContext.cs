@@ -7,6 +7,10 @@ using System.Text.Json;
 namespace Honua.Core.Features.Catalog.Domain;
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(CatalogPage))]
+[JsonSerializable(typeof(CatalogItem))]
+[JsonSerializable(typeof(CatalogView))]
+[JsonSerializable(typeof(IReadOnlyList<CatalogSummary>))]
 [JsonSerializable(typeof(FieldDomainDefinition))]
 [JsonSerializable(typeof(DomainCodedValueDefinition))]
 [JsonSerializable(typeof(DomainCodedValueDefinition[]))]
