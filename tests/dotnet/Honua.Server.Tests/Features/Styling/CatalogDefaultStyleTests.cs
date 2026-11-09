@@ -124,6 +124,7 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
     {
         var layerStyles = _fixture.GetService<ILayerStyleCatalog>();
         await layerStyles.SetMapLibreStyleAsync(LayerId, CircleStyle("#0000ff"));
+        await layerStyles.SetMapLibreStyleAsync(LayerId, CircleStyle("#0000ff"));
         var layerRow = (await layerStyles.SetMapLibreStyleAsync(LayerId, CircleStyle("#ff0000")))!;
         var service = _fixture.GetService<ILayerStyleService>();
         var resource = _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[LayerId];
