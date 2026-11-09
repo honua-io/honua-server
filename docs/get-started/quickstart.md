@@ -10,7 +10,8 @@ See the [Honua vocabulary](../concepts/domain/README.md) for the meanings of Con
 
 The customer Compose package runs Honua beside PostGIS and Redis, plus a stable
 management service and a separate Compose executor. The executor only executes
-approved proposals; a different principal must approve the proposer's request.
+approved proposals after one authorized human reviews the exact plan in a verified
+interactive session. The requester may approve their own proposal.
 The serving container has no Docker access.
 
 ## Install the customer package
@@ -46,9 +47,11 @@ Keep `secrets/`, `.env` and the manager's durable Postgres and Redis volumes.
 The serving API is at `http://localhost:18080`; the stable management API and MCP
 are at `http://localhost:18082`. Its bootstrap credential is the private
 `secrets/honua_manager_admin_password` file, distinct from the serving admin
-credential in `secrets/honua_admin_password`. Create distinct proposer and approver API keys on the management
-service. Propose through its MCP endpoint, then approve with the other principal.
-Self approval is refused. The operation handle records execution and final readback;
+credential in `secrets/honua_admin_password`. Give the MCP client a scoped proposer key.
+Configure the management service's OIDC provider and sign in to that service through
+Console to review and approve the exact proposal. The requester may approve; API
+keys and MCP bearers cannot. See [human operation approval](../guides/secure/authentication.md#human-operation-approval).
+The operation handle records execution and final readback;
 an awaiting-approval proposal has not changed the serving stack.
 
 The executor runs as uid 1002, separately from the servers' uid 1001. Only it gets
@@ -474,7 +477,8 @@ deployment actually exposes, rather than what the list above assumes.
 The customer package includes [`compose.executor.yaml`](compose.executor.yaml) by
 default. The manager has its own database and credentials so its startup cannot
 migrate the serving database before approval. Its durable state survives serving
-container replacement. Proposals execute only after a different principal approves.
+container replacement. Proposals execute only after one authorized human approves
+through the verified interactive review flow; the requester may be that human.
 The executor accepts no arbitrary shell command, project, or service from a model.
 
 The package initializes the project directory and backup directory for private group

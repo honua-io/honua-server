@@ -44,16 +44,21 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
     private readonly StoreBackedAlertDispatchHealth _dispatchHealth = new();
     private WebAppFixture? _fixture;
     private HttpClient? _client;
+    private HumanApprovalHttpClient? _human;
+    private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identity = AdminAuthEndpointsTests.CreateStubFactory();
 
     public async Task InitializeAsync()
     {
         await DeleteControlPlaneKeysAsync(redis.ConnectionString);
 
-        _fixture = new WebAppFixture()
+        _fixture = HumanApprovalHttpClient.Configure(new WebAppFixture(), _identity)
             .ConfigureWebHost(builder =>
             {
                 // Host settings are required because Program decides whether Redis-backed
                 // durable control-plane services are wired before ConfigureAppConfiguration runs.
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
                 builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
             })
@@ -83,11 +88,14 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
             .GetService<IAlertDispatchStore>()
             .GetBacklogAsync(cancellationToken);
         _client = _fixture.CreateAdminClient();
+        _human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identity, tenantId: "public");
     }
 
     public async Task DisposeAsync()
     {
         _client?.Dispose();
+        _human?.Dispose();
+        _identity.Dispose();
 
         if (_fixture is not null)
         {
@@ -152,12 +160,12 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
             proposalAuditCount,
             "an idempotent proposal replay must not append another proposal audit event");
 
-        var approved = await ApproveProposalAsync(client, proposalId!);
+        var approved = await ApproveProposalAsync(proposalId!);
         // Ruling 1: only queued/running work awaits reconciler finalization; the
         // synchronous redrive replay is terminal when approval returns.
         approved.GetProperty("status").GetString().Should().Be("Succeeded", approved.GetRawText());
         approved.GetProperty("requestedByAgent").GetString().Should().Be("ops-findings");
-        approved.GetProperty("resolvedBy").GetString().Should().Be(WebAppFixture.DevelopmentBypassActorId);
+        approved.GetProperty("resolvedBy").GetString().Should().Be(_human!.ActorId);
 
         var changeId = approved.GetProperty("executionOperationId").GetString();
         changeId.Should().StartWith("opsaction-");
@@ -415,9 +423,9 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
         return document.RootElement.Clone();
     }
 
-    private static async Task<JsonElement> ApproveProposalAsync(HttpClient client, string proposalId)
+    private async Task<JsonElement> ApproveProposalAsync(string proposalId)
     {
-        using var response = await client.PostAsync($"/api/v1/admin/proposals/{proposalId}/approve", null);
+        using var response = await _human!.ApproveAsync(proposalId);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return document.RootElement.Clone();

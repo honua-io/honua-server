@@ -507,6 +507,11 @@ public sealed partial class ComposeProposalExecutorTests
         var prior = Digest('b');
         var client = new RecordingClient { Response = Ready(prior) };
         var store = new MemoryWorkflows();
+        var payload = new DeployExecutionPayload { TargetId = "compose-local", DesiredRevision = release, CurrentRevision = prior };
+        using var human = new OperationHumanApprovalTestHost();
+        var proposal = await DeployHumanApprovalReplayTests.CreateApprovedProposalAsync(human, false, payload);
+        var proposals = Substitute.For<IOperationProposalStore>();
+        proposals.GetAsync(proposal.ProposalId, Arg.Any<CancellationToken>()).Returns(proposal);
         var service = new DeployWorkflowService(new MemoryTargets(new DeployTargetDefinition
         {
             TargetId = "compose-local",
@@ -517,21 +522,17 @@ public sealed partial class ComposeProposalExecutorTests
             ArtifactReference = release,
             RequiresApproval = false
         }), [store], [Backend(client, release, "/tmp/compose-test.sock")],
-            new NotRequiredApproval(), NullLogger<DeployWorkflowService>.Instance);
+            new NotRequiredApproval(), NullLogger<DeployWorkflowService>.Instance, proposalStore: proposals);
         var executor = new DeployOperationExecutor(service);
-        var payload = new DeployExecutionPayload { TargetId = "compose-local", DesiredRevision = release, CurrentRevision = prior };
-        var request = new OperationGatewayRequest
+        var request = DeployHumanApprovalReplayTests.CreateExecutionRequest(proposal) with
         {
-            Kind = OperationClass.Deploy,
-            RequestedBy = "proposer",
-            ApprovedBy = "approver",
             IdempotencyKey = "compose-immediate-approval",
             ExecutionPayload = payload.Serialize()
         };
         var id = await executor.ExecuteAsync(request, payload.Serialize());
         var workflow = await service.GetAsync(id!);
         Assert.Equal(WorkflowOperationStatus.Reconciling, workflow!.Status);
-        Assert.Equal("approver", workflow.Audit.ApprovedBy);
+        Assert.Equal(proposal.ResolvedBy, workflow.Audit.ApprovedBy);
         Assert.Contains("converge", client.Ops);
     }
 
@@ -653,6 +654,18 @@ public sealed partial class ComposeProposalExecutorTests
         var backup = "backup-" + new string('c', 32);
         var client = new RecordingClient { Response = Ready(prior) };
         var store = new MemoryWorkflows();
+        var payload = new DeployExecutionPayload
+        {
+            TargetId = "compose-local",
+            DesiredRevision = prior,
+            CurrentRevision = release,
+            Rollback = true,
+            BackupId = backup
+        };
+        using var human = new OperationHumanApprovalTestHost();
+        var proposal = await DeployHumanApprovalReplayTests.CreateApprovedProposalAsync(human, false, payload);
+        var proposals = Substitute.For<IOperationProposalStore>();
+        proposals.GetAsync(proposal.ProposalId, Arg.Any<CancellationToken>()).Returns(proposal);
         var service = new DeployWorkflowService(
             new MemoryTargets(new DeployTargetDefinition
             {
@@ -665,21 +678,10 @@ public sealed partial class ComposeProposalExecutorTests
                 RequiresApproval = true
             }),
             [store], [Backend(client, release, "/tmp/compose-test.sock")],
-            new NotRequiredApproval(), NullLogger<DeployWorkflowService>.Instance);
+            new NotRequiredApproval(), NullLogger<DeployWorkflowService>.Instance, proposalStore: proposals);
         var executor = new DeployOperationExecutor(service);
-        var payload = new DeployExecutionPayload
+        var request = DeployHumanApprovalReplayTests.CreateExecutionRequest(proposal) with
         {
-            TargetId = "compose-local",
-            DesiredRevision = prior,
-            CurrentRevision = release,
-            Rollback = true,
-            BackupId = backup
-        };
-        var request = new OperationGatewayRequest
-        {
-            Kind = OperationClass.Deploy,
-            RequestedBy = "agent",
-            ApprovedBy = "approver",
             IdempotencyKey = "compose-sealed-backup",
             ExecutionPayload = payload.Serialize()
         };
@@ -694,7 +696,7 @@ public sealed partial class ComposeProposalExecutorTests
         Assert.Equal(backup, operation!.Deploy!.PreMigrationBackupId);
         Assert.Equal(backup, client.Requests.Single(value => value.Op == "rollback").BackupId);
 
-        await Assert.ThrowsAsync<ResourceConflictException>(() => executor.ExecuteAsync(
+        await Assert.ThrowsAsync<InvalidOperationException>(() => executor.ExecuteAsync(
             request, (payload with { BackupId = "backup-" + new string('d', 32) }).Serialize()));
         Assert.Single(client.Requests, value => value.Op == "rollback");
     }

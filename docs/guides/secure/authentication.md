@@ -149,20 +149,20 @@ policies, field masks and row-level filters apply to wildcard reads exactly as t
 a named `read:` grant. The full grammar is in
 [Users, roles and licensing](../../reference/admin-api/users-roles-licensing.md#grant-grammar).
 
-For the focused Console read/approve client, mint a named key with:
+For a focused read/reject automation client, mint a named key with:
 
 ```json
 {
-  "name": "console-read-approve",
+  "name": "proposal-read-reject",
   "permissions": ["admin:read", "admin:approve"],
   "expiresAt": null
 }
 ```
 
-`admin:approve` remains read-level on the general admin surface and adds only
-`POST /api/v1/admin/proposals/{proposalId}/approve` and
-`POST /api/v1/admin/proposals/{proposalId}/reject`. It does not grant other
-mutations. In particular, some read-like workflows use POST and are unavailable
+`admin:approve` remains read-level on the general admin surface and permits
+`POST /api/v1/admin/proposals/{proposalId}/reject`. The approval route additionally
+requires a verified interactive human session and private review capability;
+an API key cannot approve. This grant does not permit other mutations. In particular, some read-like workflows use POST and are unavailable
 to this key: `connections/test`, `external-services/discover`, and
 `import/geoservices/start`. It also grants no service or layer data reads; add
 `read:{service}` or `read:*` grants if the client must read data. This scope
@@ -172,8 +172,9 @@ policies for composite sign-in but preserves scoped API-key permission
 enforcement. Console users who sign in with an operator bearer
 token are authorized by operator RBAC instead of this API-key recipe.
 
-Approval and execution remain separate authorities. The Console sends the
-read/approve key only to the proposal decision endpoint. After approval, Honua
+Approval and execution remain separate authorities. Console uses its private
+verified human session and review capability for approval, retaining ordinary
+read/reject grants for those actions. After approval, Honua
 mints a short-lived, single-use credential bound to the exact approved Admin API
 method, path, and sealed tenant, uses it for the replay, and revokes it immediately.
 The tenant binding is restored from the persisted credential during authentication
@@ -182,7 +183,7 @@ issuer-supplied copy of the internal tenant claim is removed; a caller-supplied
 tenant header cannot change the binding. Credentials without an explicit
 tenant binding are rejected. An explicit empty binding preserves an invocation
 accepted with tenant resolution disabled. The
-approver's key and identity headers are never forwarded as execution authority;
+approver's session, capability and identity headers are never forwarded as execution authority;
 `admin:operation:*` grants are server-reserved and cannot be requested through
 the API-key creation endpoint. Internal replay credentials are excluded from
 public key listings and permission inspection, and cannot be rotated into a
@@ -261,6 +262,44 @@ When `Oidc:TokenValidation:EnableTokenReplayProtection` is enabled, replay regis
 Existing cached registrations keep their original expiration. Renew access tokens after upgrading all replay-tracking nodes to obtain the full retention window for new admissions.
 
 Redis shares replay registrations across nodes. When a configured Redis connection is disconnected or faults, the default fallback is per-node memory; `Oidc:TokenValidation:ReplayProtectionFailClosed=true` refuses that fallback. Without a Redis connection, memory tracks registrations on the current node. Independent replicas need the same shared replay store for cross-node isolation.
+
+#### Human operation approval
+
+A pending operation proposal requires one authorized person using a live
+interactive OIDC session in Console. The requester may approve their own proposal.
+Sign in to the server that owns the proposal, open its current review, and use
+**Approve**. Existing operation permissions, tenant restrictions and the original
+requester's current authority remain required. API keys, generic or operator
+bearers, service credentials and model transports cannot approve, even when they
+have an approval grant or name the same user.
+
+Console keeps its upstream server session and the short-lived review capability
+in its private server-side session partition. The browser receives the review
+and decision controls. A review binds the exact proposal version, plan, actor,
+tenant and server; the capability expires within five minutes and no later than
+the session or applicable proposal evidence. Changing environment, changing the
+plan, logging out or losing authority requires a new review. A lost decision
+response requires reading the durable proposal status before deciding again.
+
+Configure the server's canonical `Public:BaseUrl`, the existing OIDC provider,
+and shared protected keys and session storage for replicas. Approval refuses
+when live shared-session authority cannot be verified. Copying bearer claims
+such as an authentication-method or session claim does not create an interactive
+session. Keep capability values, upstream cookies and one-time operation secrets
+out of browser storage, model context, logs and transcripts.
+
+For rollout, drain older proposal writers and workers before enabling the new
+approval boundary. Deploy Server first, then the matching Console. Earlier
+Console versions and bearer-only approval clients refuse safely until upgraded.
+The declared `operation-initiation` and `operation-human-approval` schemas are
+versioned independently. Pending legacy proposals without the new initiation
+binding need fresh proposals; retain the old records as history. Already claimed
+legacy executions keep their recorded recovery authority, and resolved history
+is not rewritten to claim a new approval channel. Do not roll old writers or
+workers back into the active approval deployment.
+
+This flow does not establish MRTR or installed-client interoperability. A client
+accepting an elicitation or opening a URL grants no approval by itself.
 
 ### 4. Issue GeoServices REST-compatible tokens
 

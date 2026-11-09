@@ -123,6 +123,8 @@ public sealed class RequestLogRedactionTests
     [InlineData("Cookie")]
     [InlineData("Set-Cookie")]
     [InlineData("CustomSecret")]
+    [InlineData("X-Honua-Approval-Capability")]
+    [InlineData("Capability")]
     public void StructuredProperties_RedactCredentialHeadersIncludingNestedValues(string header)
     {
         var sink = new CaptureSink();

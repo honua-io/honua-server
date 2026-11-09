@@ -1,4 +1,17 @@
 {
   "version": 1,
-  "entries": []
+  "entries": [
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/ProposalEndpointsTests.HumanApproval.cs",
+      "rule": "dataset-reference",
+      "line": "                ResourceId = proposal.ProposalId,",
+      "reason": "AuditLogFilter.ResourceId is the current audit query contract; its API rename belongs to the planned Admin contract migration."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Monitoring/ProposalEvidenceSecurityJourneyTests.cs",
+      "rule": "dataset-reference",
+      "line": "            new AuditLogFilter { ResourceId = proposal.ProposalId, PageSize = 20 });",
+      "reason": "AuditLogFilter.ResourceId is the current audit query contract; its API rename belongs to the planned Admin contract migration."
+    }
+  ]
 }

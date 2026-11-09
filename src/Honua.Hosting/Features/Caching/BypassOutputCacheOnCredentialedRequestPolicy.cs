@@ -8,7 +8,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
-using Microsoft.Net.Http.Headers;
 
 namespace Honua.Infrastructure.Caching;
 
@@ -16,22 +15,6 @@ namespace Honua.Infrastructure.Caching;
 internal sealed class BypassOutputCacheOnCredentialedRequestPolicy : IOutputCachePolicy
 {
     internal const string CredentialedRequestVaryKey = "honua-credentialed-request";
-
-    // Authorization and X-API-Key count as credentials even when no authentication handler ran for the route.
-    private static readonly string[] CredentialHeaders =
-    [
-        HeaderNames.Authorization,
-        "X-API-Key",
-        "X-Esri-Authorization",
-        "X-Honua-Embed-Key",
-        "X-Honua-Token",
-    ];
-
-    private static readonly string[] CredentialQueryParameters =
-    [
-        "token",
-        "key",
-    ];
 
     private static readonly string[] CredentialCookies =
     [
@@ -75,21 +58,7 @@ internal sealed class BypassOutputCacheOnCredentialedRequestPolicy : IOutputCach
     {
         var request = context.Request;
 
-        foreach (var header in CredentialHeaders)
-        {
-            if (!StringValues.IsNullOrEmpty(request.Headers[header]))
-            {
-                return true;
-            }
-        }
-
-        foreach (var parameter in CredentialQueryParameters)
-        {
-            if (request.Query.TryGetValue(parameter, out var values) && !StringValues.IsNullOrEmpty(values))
-            {
-                return true;
-            }
-        }
+        if (RequestCredentialCatalog.HasNonEmptyCredential(request)) return true;
 
         foreach (var cookieName in CredentialCookies)
         {

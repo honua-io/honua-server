@@ -6287,7 +6287,7 @@
           "Compliance"
         ],
         "summary": "Advance Compliance Key-Version Posture",
-        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event \u2014 it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
+        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event — it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
         "operationId": "rotateComplianceEncryptionKey",
         "responses": {
           "200": {
@@ -6722,7 +6722,7 @@
           "Import"
         ],
         "summary": "List GeoServer Import Jobs",
-        "description": "Returns the GeoServer import jobs that are still active \u2014 that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
+        "description": "Returns the GeoServer import jobs that are still active — that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
         "operationId": "listGeoServerImportJobs",
         "responses": {
           "200": {
@@ -7025,7 +7025,7 @@
           "Import"
         ],
         "summary": "List GeoServices Import Jobs",
-        "description": "Returns the GeoServices import jobs that are still active \u2014 that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
+        "description": "Returns the GeoServices import jobs that are still active — that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
         "operationId": "listGeoservicesImportJobs",
         "responses": {
           "200": {
@@ -9710,7 +9710,7 @@
           "Deploy"
         ],
         "summary": "Approve Coordinated Release Gate",
-        "description": "Approves the container-swap or data-affecting gate so the coordinated-release conductor can advance past it. The request body is optional and only carries an operator reason.",
+        "description": "Approves the exact reviewed container-swap or data-affecting gate so the coordinated-release conductor can advance. The optional request body carries only an operator reason. Requires one authorized human in a verified interactive OIDC code/PKCE session and the private X-Honua-Approval-Capability from a fresh review of this target version and plan. The requester may approve. API keys, ordinary bearers and MCP tokens cannot approve and receive 403. A changed or expired review requires a fresh review; unavailable approval authority returns 503.",
         "operationId": "approveCoordinatedReleaseGate",
         "parameters": [
           {
@@ -9769,8 +9769,17 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "description": "Approval authority or durable control-plane storage is temporarily unavailable."
           }
-        }
+        },
+        "security": [
+          {
+            "HumanApprovalSession": [],
+            "HumanApprovalCapability": []
+          }
+        ]
       }
     },
     "/metadata/coordinated-releases/operations/{operationId}/rollback": {
@@ -10572,7 +10581,7 @@
           "Proposals"
         ],
         "summary": "Approve Operation Proposal",
-        "description": "Approves the proposal and applies the underlying operation through the gateway. API keys require full admin authority or the narrow `admin:approve` grant; operator-bearer callers use RBAC `approve`. Separation of duties is enforced: the requester of a proposal cannot approve it. A proposal that cannot be applied in its current state returns 409. Takes no request body.",
+        "description": "Approves the exact reviewed proposal and applies its underlying operation through the gateway. Requires one authorized human in a verified interactive OIDC code/PKCE session and the private X-Honua-Approval-Capability from a fresh review of this target version and plan. The requester may approve. API keys, ordinary bearers and MCP tokens cannot approve and receive 403. A changed or expired review requires a fresh review; unavailable approval authority returns 503. A proposal state conflict returns 409. Takes no request body.",
         "operationId": "approveOperationProposal",
         "parameters": [
           {
@@ -10601,8 +10610,20 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "description": "Approval authority or durable control-plane storage is temporarily unavailable."
+          },
+          "422": {
+            "description": "The approved operation cannot be executed with the sealed evidence."
           }
-        }
+        },
+        "security": [
+          {
+            "HumanApprovalSession": [],
+            "HumanApprovalCapability": []
+          }
+        ]
       }
     },
     "/proposals/{id}/reject": {
@@ -21271,7 +21292,7 @@
             "name": "events",
             "in": "query",
             "required": false,
-            "description": "Maximum number of recent events. Values outside 1\u2013500 are rejected.",
+            "description": "Maximum number of recent events. Values outside 1–500 are rejected.",
             "schema": {
               "type": "integer",
               "minimum": 1,
@@ -22256,6 +22277,18 @@
         "type": "http",
         "scheme": "basic",
         "description": "Optional HTTP Basic compatibility mode for legacy clients (requires HTTPS in production). Basic is used only when compatibility mode is enabled and API key auth did not succeed."
+      },
+      "HumanApprovalSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "honua_admin_session",
+        "description": "Verified interactive OIDC code/PKCE session for human approval. API keys and bearer tokens cannot substitute for this session."
+      },
+      "HumanApprovalCapability": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Honua-Approval-Capability",
+        "description": "One-use capability from the private review flow, bound to the human session, exact target version and sealed plan. Keep it outside model context."
       }
     },
     "parameters": {
@@ -26509,7 +26542,7 @@
           },
           "permissions": {
             "type": "array",
-            "description": "Permission labels assigned to the key. Admin grants are `admin:read` (safe-method reads), `admin:approve` (read plus proposal approve/reject only), `admin:write`/`admin:manage` (write), and `admin:*` (full admin). Layer-scoped write grants use write:{service} or write:{service}/{layer}. Data read grants use read:{service}, read:{service}/{layer}, read:{service}/* (every layer of the service) or read:* (every service); a key without a full-admin grant reads no service or layer data without a matching read grant, and wildcards are rejected on write grants. The recommended agent key is [`admin:read`, `admin:write`, `read:*`]. The focused Console recipe is [`admin:read`, `admin:approve`].",
+            "description": "Permission labels assigned to the key. Admin grants are `admin:read` (safe-method reads), `admin:approve` (read plus proposal rejection; approval requires a verified interactive human session and private review capability), `admin:write`/`admin:manage` (write), and `admin:*` (full admin). Layer-scoped write grants use write:{service} or write:{service}/{layer}. Data read grants use read:{service}, read:{service}/{layer}, read:{service}/* (every layer of the service) or read:* (every service); a key without a full-admin grant reads no service or layer data without a matching read grant, and wildcards are rejected on write grants. The recommended agent key is [`admin:read`, `admin:write`, `read:*`]. The focused read/reject recipe is [`admin:read`, `admin:approve`]; an API key cannot approve.",
             "items": {
               "type": "string",
               "minLength": 1,
@@ -38345,7 +38378,10 @@
           "blockingReasons",
           "warnings",
           "createdAt",
-          "updatedAt"
+          "updatedAt",
+          "version",
+          "initiation",
+          "requiresReproposal"
         ],
         "properties": {
           "proposalId": {
@@ -38482,6 +38518,34 @@
             "format": "date-time",
             "nullable": true,
             "description": "Resolution timestamp."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Optimistic-concurrency version of the proposal reviewed for approval."
+          },
+          "planHash": {
+            "type": "string",
+            "nullable": true,
+            "description": "Digest of the exact persisted proposal plan."
+          },
+          "initiation": {
+            "type": "string",
+            "description": "Server-recorded initiation classification; missing legacy evidence is Unknown."
+          },
+          "approvalChannel": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verified human approval channel recorded with the execution claim."
+          },
+          "requiresReproposal": {
+            "type": "boolean",
+            "description": "Whether a legacy pending proposal needs a fresh proposal before approval."
+          },
+          "approvalRemediation": {
+            "type": "string",
+            "nullable": true,
+            "description": "Guidance for obtaining a fresh proposal when required."
           }
         }
       },

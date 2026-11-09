@@ -22,6 +22,7 @@ internal sealed class OperationApprovalReplayVerifier(IOperationProposalStore pr
             Status: OperationProposalStatus.Executing,
             SealedPlanHash: not null,
         }
+            && Honua.ControlPlane.OperationHumanApprovalEvidenceValidation.HasExecutionAuthority(proposal)
             && string.Equals(
                 proposal.Audit.OperationInstanceId,
                 operationInstanceId,

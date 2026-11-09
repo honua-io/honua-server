@@ -45,7 +45,7 @@ public sealed class OperationGatewayAutonomyTests
 
         var result = await sut.CreateApprovalProposalAsync(request.OperationInstanceId!, request);
         var proposal = await store.GetAsync(result.ProposalId!);
-        await sut.ApplyApprovedProposalAsync(result.ProposalId!, "human-approver");
+        await sut.ApplyApprovedProposalAsync(result.ProposalId!, new OperationProposalApprovalContext { ApprovedBy = "human-approver", TenantId = string.Empty });
 
         proposal!.AutonomyMetadata.Should().BeNull();
         proposal.ActionDiscriminator.Should().Be(RedriveAction);
@@ -127,7 +127,7 @@ public sealed class OperationGatewayAutonomyTests
         proposal.AutonomyMetadata.EvidenceRefs.Should().Equal("test");
         proposal.Plan.ExecutionPayload.Should().NotBeNull();
 
-        var approved = await sut.ApplyApprovedProposalAsync(result.ProposalId!, "human-approver");
+        var approved = await sut.ApplyApprovedProposalAsync(result.ProposalId!, new OperationProposalApprovalContext { ApprovedBy = "human-approver", TenantId = string.Empty });
         approved.Should().NotBeNull();
         evaluator.ProposalApprovedCount.Should().Be(1);
         evaluator.ProposalRejectedCount.Should().Be(0);
@@ -171,12 +171,12 @@ public sealed class OperationGatewayAutonomyTests
         var sut = BuildGateway(store, evaluator, new RecordingExecutor(), RecordingConvergence.Converged());
         var routed = await sut.RouteAsync(Request());
 
-        var first = () => sut.ApplyApprovedProposalAsync(routed.ProposalId!, "human-approver");
+        var first = () => sut.ApplyApprovedProposalAsync(routed.ProposalId!, new OperationProposalApprovalContext { ApprovedBy = "human-approver", TenantId = string.Empty });
         await first.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("simulated proposal counter outage");
         (await store.GetAsync(routed.ProposalId!))!.Status.Should().Be(OperationProposalStatus.Succeeded);
 
-        var retry = () => sut.ApplyApprovedProposalAsync(routed.ProposalId!, "human-approver");
+        var retry = () => sut.ApplyApprovedProposalAsync(routed.ProposalId!, new OperationProposalApprovalContext { ApprovedBy = "human-approver", TenantId = string.Empty });
         await retry.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*cannot be approved*");
         evaluator.ProposalApprovedCount.Should().Be(2,

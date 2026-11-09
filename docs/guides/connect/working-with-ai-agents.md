@@ -68,8 +68,9 @@ conflicts with a rule, stop and ask.
 
 ## 3. Use the approval flow; never go around it
 
-- A change that needs approval returns a proposal (`AwaitingApproval` and a `proposalId`). A different
-  person approves it, in the Console inbox or with the Admin CLI. Report the proposal id and who
+- A change that needs approval returns a proposal (`AwaitingApproval` and a `proposalId`). A person
+  approves it in the Console inbox with a live interactive OIDC session. The human requester may
+  approve their own proposal. API keys and agent tokens cannot approve. Report the proposal id and who
   needs to act.
 - Never approve your own proposal. Don't create or borrow a second credential to approve it. Don't
   change the operation policy or the approval settings to get past a refusal.
@@ -113,7 +114,7 @@ conflicts with a rule, stop and ask.
    with `honua_platform_release_status` that the declared `releaseVersion` is now the target. Until
    it is, a convergence proposal is rejected with `platform_release_version_mismatch`.
 5. Propose the upgrade with `honua_propose_platform_release_convergence` and the target version. A
-   separate approver approves it. Poll `honua://proposals/{id}` until it reads
+   person reviews and approves it in Console. Poll `honua://proposals/{id}` until it reads
    `Succeeded` or `Completed` (success), or `Failed`, `Rejected` or `Cancelled` (stop).
 6. To roll back, use `honua_propose_rollback`. Review the selected revision and backup in the
    proposal's `diff` and `dryRun` before it goes to the approver.

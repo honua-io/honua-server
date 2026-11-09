@@ -5,6 +5,7 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Policy;
@@ -35,6 +36,7 @@ internal static class CanonicalOperationGatewayTestComposition
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IAuditLog, TestAuditLog>();
+        services.AddSingleton<IOperationHumanApprovalVerifier, StateMachineHumanApprovalVerifier>();
 
         var bridge = new ForwardingApprovalBridge();
         // Legacy proposal fixtures predate operation-instance identity. This explicit
@@ -66,12 +68,56 @@ internal static class CanonicalOperationGatewayTestComposition
         var gateway = new OperationGateway(
             ladder,
             proposalStore,
-            actuatorArray,
             provider.GetRequiredService<IServiceScopeFactory>(),
             notifier ?? new NullProposalNotifier(),
-            NullLogger<OperationGateway>.Instance);
+            NullLogger<OperationGateway>.Instance,
+            humanApprovalVerifier: provider.GetRequiredService<IOperationHumanApprovalVerifier>());
         bridge.Gateway = gateway;
         return gateway;
+    }
+
+    internal static OperationProposal WithVersionedInitiation(OperationProposal proposal)
+    {
+        var policy = proposal.GuardrailDecision ?? new GuardrailDecision(
+            GuardrailTier.RequiresApproval, proposal.Kind,
+            Honua.Core.Features.Licensing.Domain.HonuaEdition.Community, "state-machine-fixture");
+        return proposal with
+        {
+            GuardrailDecision = policy,
+            Initiation = new OperationInitiationEvidence
+            {
+                Version = OperationInitiationEvidence.CurrentVersion,
+                Kind = OperationInitiationKind.Unknown,
+                Channel = OperationInitiationChannel.Unknown,
+                PrincipalId = proposal.RequestedBy,
+                TenantId = proposal.TenantId,
+                PlanHash = proposal.SealedPlanHash!,
+                PolicyRevision = OperationGateway.ComputePolicyRevision(policy),
+                AcceptedAt = proposal.CreatedAt,
+            }
+        };
+    }
+
+    internal sealed class StateMachineHumanApprovalVerifier : IOperationHumanApprovalVerifier
+    {
+        public Task<OperationHumanApprovalEvidence> VerifyAsync(
+            OperationProposal proposal, OperationProposalApprovalContext approval, CancellationToken cancellationToken = default)
+        {
+            if (proposal.Initiation is null) throw new InvalidOperationException("The state-machine fixture requires versioned initiation.");
+            return Task.FromResult(new OperationHumanApprovalEvidence
+            {
+                Version = OperationHumanApprovalEvidence.CurrentVersion,
+                ActorId = approval.ApprovedBy,
+                Channel = OperationHumanApprovalEvidence.InteractiveOidcChannel,
+                SessionReference = new string('a', 64),
+                CapabilityReference = new string('b', 64),
+                PlanHash = proposal.SealedPlanHash!,
+                InitiationDigest = OperationHumanApprovalAuthority.ComputeInitiationDigest(proposal.Initiation),
+                BindingDigest = OperationHumanApprovalAuthority.ComputeBindingDigest(proposal),
+                ProposalVersion = proposal.Version,
+                ApprovedAt = DateTimeOffset.UtcNow,
+            });
+        }
     }
 
     private sealed class ForwardingApprovalBridge : IOperationApprovalBridge

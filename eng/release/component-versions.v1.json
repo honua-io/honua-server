@@ -13,6 +13,9 @@
     "certification-evidence-receipt": "2.0",
     "inspector-pagination-observer": "v2",
     "metadata": "2.0.0-alpha.1",
+    "operation-initiation": "v1",
+    "operation-human-approval": "v1",
+    "coordinated-release-human-approval": "v1",
     "normalization-envelope": "v3"
   }
 }
