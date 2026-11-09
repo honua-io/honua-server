@@ -130,6 +130,10 @@ public sealed partial class PostgresProposalPersistenceTests : IAsyncLifetime
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Store.TryCreateAsync(proposal, cancellationToken: cancellation.Token));
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Store.GetAsync(proposal.ProposalId, cancellation.Token));
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Store.ListActiveAsync(cancellationToken: cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Store.TrySetAsync(proposal, cancellationToken: cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Store.TryAcquireLeaseAsync(proposal.ProposalId, "owner", TimeSpan.FromMinutes(1), cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Store.RenewLeaseAsync(proposal.ProposalId, "owner", TimeSpan.FromMinutes(1), cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Store.ReleaseLeaseAsync(proposal.ProposalId, "owner", cancellation.Token));
         Assert.Null(await Store.GetAsync(proposal.ProposalId));
     }
 
