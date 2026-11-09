@@ -9,6 +9,7 @@ using Honua.Core.Features.Guardrails;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Studio.Abstractions;
+using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Server.Tests.Features.Admin;
 using Honua.TestKit;
@@ -73,6 +74,30 @@ public sealed class StudioHumanDraftMutationTests : IAsyncLifetime
         var stored = await _fixture.Services.GetRequiredService<IStudioPackageStore>().GetDraftAsync(draftId);
         stored.Should().NotBeNull();
         response.Headers.GetValues("X-Honua-Operation-Instance-Id").Should().ContainSingle();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/content-items/{itemId}/versions/{versionId}/reopen")]
+    public async Task ReopenVersion_UntrustedBrowserOrigin_DoesNotCreateDraftDirectly()
+    {
+        using var human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider);
+        using var create = await CreateDraftAsync(human.Client);
+        create.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var body = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
+        var store = _fixture.Services.GetRequiredService<IStudioPackageStore>();
+        var draft = await store.GetDraftAsync(body.RootElement.GetProperty("data").GetProperty("draftId").GetGuid());
+        var version = await store.CreateVersionAsync(draft!, null, human.ActorId);
+        var before = await store.ListDraftsAsync(new StudioPackageDraftQuery());
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            $"/api/v1/studio/content-items/{version.ItemId:D}/versions/{version.VersionId:D}/reopen");
+        request.Headers.Add("Sec-Fetch-Site", "same-site");
+        request.Headers.Add("Origin", "https://untrusted.example");
+
+        using var response = await human.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var after = await store.ListDraftsAsync(new StudioPackageDraftQuery());
+        after.Items.Count.Should().Be(before.Items.Count);
     }
 
     [IntegrationTest]
