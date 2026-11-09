@@ -20,6 +20,65 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests
     [Endpoint("POST /api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approve/{gate}")]
     [InlineData(CoordinatedReleaseStep.ContainerRollout, "container")]
     [InlineData(CoordinatedReleaseStep.MetadataAndSchema, "data")]
+    public async Task ApproveGate_UnchangedReconciliation_PreservesHumanReview(CoordinatedReleaseStep gate, string route)
+    {
+        var operation = await PrepareHumanGateAsync(gate);
+        var reconciler = _fixture.Services.GetRequiredService<ICoordinatedReleaseReconciler>();
+        await reconciler.ReconcileCoordinatedReleaseAsync(operation.OperationId);
+        var reviewed = (await _workflowStore.GetAsync(operation.OperationId))!;
+        using var human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identity);
+        var review = await human.OpenGateReviewAsync(operation.OperationId, route);
+
+        for (var poll = 0; poll < 3; poll++)
+        {
+            await reconciler.ReconcileCoordinatedReleaseAsync(operation.OperationId);
+        }
+
+        (await _workflowStore.GetAsync(operation.OperationId)).Should().BeEquivalentTo(reviewed);
+        using var response = await human.SubmitGateReviewAsync(operation.OperationId, route, review);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await reconciler.ReconcileCoordinatedReleaseAsync(operation.OperationId);
+        _container.StartCalls.Should().Be(gate == CoordinatedReleaseStep.ContainerRollout ? 1 : 0);
+        _metadata.StartCalls.Should().Be(gate == CoordinatedReleaseStep.MetadataAndSchema ? 1 : 0);
+    }
+
+    [IntegrationTheory]
+    [Endpoint("GET /api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approval-review/{gate}")]
+    [Endpoint("POST /api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approve/{gate}")]
+    [InlineData(CoordinatedReleaseStep.ContainerRollout, "container")]
+    [InlineData(CoordinatedReleaseStep.MetadataAndSchema, "data")]
+    public async Task ApproveGate_PlanChangesDuringReview_RefusesStaleReview(CoordinatedReleaseStep gate, string route)
+    {
+        var operation = await PrepareHumanGateAsync(gate);
+        var reconciler = _fixture.Services.GetRequiredService<ICoordinatedReleaseReconciler>();
+        await reconciler.ReconcileCoordinatedReleaseAsync(operation.OperationId);
+        var reviewed = (await _workflowStore.GetAsync(operation.OperationId))!;
+        using var human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identity);
+        var review = await human.OpenGateReviewAsync(operation.OperationId, route);
+        var changed = reviewed with
+        {
+            CoordinatedRelease = reviewed.CoordinatedRelease! with
+            {
+                Container = reviewed.CoordinatedRelease.Container with { DesiredImage = "honua/server:changed" },
+            },
+        };
+        (await _workflowStore.TrySetAsync(changed)).Should().BeTrue();
+        var revised = (await _workflowStore.GetAsync(operation.OperationId))!;
+
+        await reconciler.ReconcileCoordinatedReleaseAsync(operation.OperationId);
+        using var response = await human.SubmitGateReviewAsync(operation.OperationId, route, review);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await _workflowStore.GetAsync(operation.OperationId)).Should().BeEquivalentTo(revised);
+        _container.StartCalls.Should().Be(0);
+        _metadata.StartCalls.Should().Be(0);
+    }
+
+    [IntegrationTheory]
+    [Endpoint("GET /api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approval-review/{gate}")]
+    [Endpoint("POST /api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approve/{gate}")]
+    [InlineData(CoordinatedReleaseStep.ContainerRollout, "container")]
+    [InlineData(CoordinatedReleaseStep.MetadataAndSchema, "data")]
     public async Task ApproveGate_ConcurrentHumanReviews_OnlyOneVersionWins(CoordinatedReleaseStep gate, string route)
     {
         var operation = await PrepareHumanGateAsync(gate);
