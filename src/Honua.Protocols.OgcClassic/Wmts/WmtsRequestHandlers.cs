@@ -31,6 +31,8 @@ using static Honua.Infrastructure.Helpers.DelimitedParameterHelpers;
 using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;
 using static Honua.Protocols.Ogc.Classic.OgcClassicRequestHelpers;
 
+using Honua.Core.Features.Metadata.Services;
+
 namespace Honua.Protocols.Ogc.Classic.Wmts;
 
 internal static class WmtsRequestHandlers
@@ -1254,6 +1256,7 @@ internal static class WmtsRequestHandlers
         ILogger logger,
         CancellationToken cancellationToken)
     {
+        service = service with { Metadata = PublishedMetadataProjection.ForCapabilities(graph, service) };
         var sb = new StringBuilder(4096);
         var includeServiceIdentification = sections.HasFlag(WmtsCapabilitiesSections.ServiceIdentification);
         var includeServiceProvider = sections.HasFlag(WmtsCapabilitiesSections.ServiceProvider);
@@ -1292,21 +1295,18 @@ internal static class WmtsRequestHandlers
                 sb.Append("    <ows:Abstract>").Append(EscapeXml(service.Metadata.Description)).AppendLine("</ows:Abstract>");
             }
 
+            foreach (var keywords in CatalogCapabilitiesXml.Keywords(service.Metadata, "http://www.opengis.net/ows/1.1"))
+                sb.AppendLine(keywords.ToString());
             sb.AppendLine("    <ows:ServiceType>OGC WMTS</ows:ServiceType>");
             sb.AppendLine("    <ows:ServiceTypeVersion>1.0.0</ows:ServiceTypeVersion>");
+            sb.Append("    <ows:Fees>").Append(EscapeXml(service.Metadata.License ?? string.Empty)).AppendLine("</ows:Fees>");
+            sb.Append("    <ows:AccessConstraints>").Append(EscapeXml(service.Metadata.License ?? string.Empty)).AppendLine("</ows:AccessConstraints>");
             sb.AppendLine("  </ows:ServiceIdentification>");
         }
 
         if (includeServiceProvider)
         {
-            sb.AppendLine("  <ows:ServiceProvider>");
-            sb.AppendLine("    <ows:ProviderName>Honua Server</ows:ProviderName>");
-            sb.Append("    <ows:ProviderSite xlink:href=\"").Append(EscapeXml(normalizedBaseUrl)).AppendLine("/\" />");
-            sb.AppendLine("    <ows:ServiceContact>");
-            sb.AppendLine("      <ows:IndividualName>Honua Support</ows:IndividualName>");
-            sb.AppendLine("      <ows:PositionName>Support Engineer</ows:PositionName>");
-            sb.AppendLine("    </ows:ServiceContact>");
-            sb.AppendLine("  </ows:ServiceProvider>");
+            sb.AppendLine(CatalogCapabilitiesXml.Provider(service.Metadata, "http://www.opengis.net/ows/1.1").ToString());
         }
 
         if (includeOperationsMetadata)

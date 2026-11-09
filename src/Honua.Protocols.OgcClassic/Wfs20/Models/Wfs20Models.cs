@@ -83,7 +83,7 @@ public sealed class ServiceProvider
     public string ProviderName { get; set; } = "Honua";
 
     [XmlElement("ProviderSite", Namespace = Wfs20Utilities.OwsNamespace)]
-    public ProviderSite ProviderSite { get; set; } = new() { Href = "https://honua.io" };
+    public ProviderSite? ProviderSite { get; set; } = new() { Href = "https://honua.io" };
 
     [XmlElement("ServiceContact", Namespace = Wfs20Utilities.OwsNamespace)]
     public ServiceContact ServiceContact { get; set; } = new();

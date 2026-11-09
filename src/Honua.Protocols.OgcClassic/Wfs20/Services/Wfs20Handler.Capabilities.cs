@@ -57,16 +57,25 @@ internal sealed partial class Wfs20Handler
         try
         {
             var featureTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken);
+            var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var metadata = snapshot.Graph.Metadata;
             var wfsUrl = BaseUrlResolver.PreserveToken(context.Request, $"{baseUrl}/wfs");
 
             var capabilities = new WfsCapabilities
             {
                 UpdateSequence = Wfs20Utilities.CurrentUpdateSequence,
                 ServiceIdentification = ShouldIncludeCapabilitiesSection(requestedSections, "ServiceIdentification")
-                    ? new ServiceIdentification()
+                    ? new ServiceIdentification
+                    {
+                        Title = metadata.Title ?? "Honua WFS 2.0",
+                        Abstract = metadata.Description ?? string.Empty,
+                        Keywords = metadata.Keywords.ToArray(),
+                        Fees = metadata.License ?? string.Empty,
+                        AccessConstraints = metadata.License ?? string.Empty
+                    }
                     : null,
                 ServiceProvider = ShouldIncludeCapabilitiesSection(requestedSections, "ServiceProvider")
-                    ? new Models.ServiceProvider()
+                    ? CreateCatalogServiceProvider(metadata)
                     : null,
                 OperationsMetadata = ShouldIncludeCapabilitiesSection(requestedSections, "OperationsMetadata")
                     ? BuildOperationsMetadata(wfsUrl)
@@ -93,6 +102,22 @@ internal sealed partial class Wfs20Handler
         }
     }
 
+
+    private static Models.ServiceProvider CreateCatalogServiceProvider(MetadataV2ObjectMetadata metadata) => new()
+    {
+        ProviderName = metadata.Publisher ?? string.Empty,
+        ProviderSite = string.IsNullOrWhiteSpace(metadata.ContactPoint?.Url)
+            ? null : new ProviderSite { Href = metadata.ContactPoint.Url },
+        ServiceContact = new ServiceContact
+        {
+            IndividualName = metadata.ContactPoint?.Name,
+            ContactInfo = metadata.ContactPoint is { } contact ? new ContactInfo
+            {
+                Address = string.IsNullOrWhiteSpace(contact.Email) ? null : new Address { ElectronicMailAddress = contact.Email },
+                OnlineResource = string.IsNullOrWhiteSpace(contact.Url) ? null : new OnlineResource { Href = contact.Url }
+            } : null
+        }
+    };
 
     public async Task<string> HandleDescribeFeatureTypeAsync(
         HttpContext context,

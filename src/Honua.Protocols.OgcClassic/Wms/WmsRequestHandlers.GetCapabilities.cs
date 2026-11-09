@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text;
+using Honua.Core.Features.Metadata.Services;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -360,13 +361,11 @@ internal static partial class WmsRequestHandlers
         string version)
     {
         var isWms111 = IsWms111Version(version);
-        var responseVersion = isWms111 ? Wms111Version : Wms13Version;
         var crsElementName = isWms111 ? "SRS" : "CRS";
         var wmsEndpoint = BaseUrlResolver.PreserveToken(
             context.Request,
             GeoServicesServiceUrls.RequestedProtocol(context, "WMS"));
         var wmsUrlPrefix = $"{wmsEndpoint}{(wmsEndpoint.Contains('?') ? '&' : '?')}";
-        var metadataUrl = $"{wmsUrlPrefix}SERVICE=WMS&REQUEST=GetCapabilities&VERSION={responseVersion}";
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var coordinateTransformService = context.RequestServices.GetService<ICoordinateTransformService>();
         var serviceTitle = service.Metadata.Title ?? service.EffectivePublicName;
@@ -403,24 +402,11 @@ internal static partial class WmsRequestHandlers
         AppendWmsKeywords(sb, service.Metadata.Keywords
             .Prepend(service.EffectivePublicName).Prepend("OGC").Prepend("WMS"), "    ");
         AppendWmsOnlineResource(sb, "    ", wmsEndpoint, isWms111);
-        sb.AppendLine("    <ContactInformation>");
-        sb.AppendLine("      <ContactPersonPrimary>");
-        sb.AppendLine("        <ContactPerson>Honua Support</ContactPerson>");
-        sb.AppendLine("        <ContactOrganization>Honua</ContactOrganization>");
-        sb.AppendLine("      </ContactPersonPrimary>");
-        sb.AppendLine("      <ContactPosition>Support Engineer</ContactPosition>");
-        sb.AppendLine("      <ContactAddress>");
-        sb.AppendLine("        <AddressType>postal</AddressType>");
-        sb.AppendLine("        <Address>1 Honua Way</Address>");
-        sb.AppendLine("        <City>Honolulu</City>");
-        sb.AppendLine("        <StateOrProvince>HI</StateOrProvince>");
-        sb.AppendLine("        <PostCode>96815</PostCode>");
-        sb.AppendLine("        <Country>US</Country>");
-        sb.AppendLine("      </ContactAddress>");
-        sb.AppendLine("      <ContactVoiceTelephone>+1-555-0100</ContactVoiceTelephone>");
-        sb.AppendLine("      <ContactFacsimileTelephone>+1-555-0101</ContactFacsimileTelephone>");
-        sb.AppendLine("      <ContactElectronicMailAddress>support@honua.local</ContactElectronicMailAddress>");
-        sb.AppendLine("    </ContactInformation>");
+        var contact = CatalogCapabilitiesXml.WmsContact(service.Metadata);
+        if (contact is not null)
+            sb.AppendLine(contact.ToString());
+        sb.Append("    <Fees>").Append(EscapeXml(service.Metadata.License ?? string.Empty)).AppendLine("</Fees>");
+        sb.Append("    <AccessConstraints>").Append(EscapeXml(service.Metadata.License ?? string.Empty)).AppendLine("</AccessConstraints>");
         sb.AppendLine("  </Service>");
 
         sb.AppendLine("  <Capability>");
@@ -481,13 +467,6 @@ internal static partial class WmsRequestHandlers
         sb.AppendLine("    <Layer>");
         sb.Append("      <Title>").Append(EscapeXml(serviceTitle)).AppendLine("</Title>");
         sb.Append("      <Abstract>").Append(EscapeXml(service.Metadata.Description ?? "Honua WMS root layer")).AppendLine("</Abstract>");
-        sb.Append("      <").Append(crsElementName).AppendLine(">EPSG:4326</" + crsElementName + ">");
-        sb.Append("      <").Append(crsElementName).AppendLine(">EPSG:3857</" + crsElementName + ">");
-        if (!isWms111)
-        {
-            sb.AppendLine("      <CRS>CRS:84</CRS>");
-        }
-
         // Root-layer bbox: union of per-resource CRS84 bboxes when V2 carries any,
         // otherwise fall back to world bounds. WMS clients rely on the root layer carrying
         // *some* extent to
@@ -510,25 +489,25 @@ internal static partial class WmsRequestHandlers
         foreach (var layer in accessibleLayers)
         {
             var layerName = GetWmsLayerDisplayName(layer);
-            var resourceTitle = layer.Resource.Metadata.Title ?? layer.Resource.Metadata.Name ?? layerName;
-            var layerAbstract = layer.Resource.Metadata.Description ?? $"WMS layer {layerName}";
+            var layerMetadata = PublishedMetadataProjection.InheritMetadata(layer.Resource.Metadata, service.Metadata);
+            var resourceTitle = layerMetadata.Title ?? layer.Resource.Metadata.Name ?? layerName;
+            var layerAbstract = layerMetadata.Description ?? $"WMS layer {layerName}";
 
             sb.AppendLine("      <Layer queryable=\"1\">");
             sb.Append("        <Name>").Append(EscapeXml(layerName)).AppendLine("</Name>");
             sb.Append("        <Title>").Append(EscapeXml(resourceTitle)).AppendLine("</Title>");
             sb.Append("        <Abstract>").Append(EscapeXml(layerAbstract)).AppendLine("</Abstract>");
-            AppendWmsKeywords(sb, layer.Resource.Metadata.Keywords.Prepend(layerName), "        ");
-            sb.Append("        <").Append(crsElementName).AppendLine(">EPSG:4326</" + crsElementName + ">");
-            sb.Append("        <").Append(crsElementName).AppendLine(">EPSG:3857</" + crsElementName + ">");
-            if (!isWms111)
-            {
-                sb.AppendLine("        <CRS>CRS:84</CRS>");
-            }
+            AppendWmsKeywords(sb, layerMetadata.Keywords.Prepend(layerName), "        ");
+            var supportedCrs = layer.Resource.Spatial?.SupportedCrs ?? [];
+            var crsNames = supportedCrs.Count == 0
+                ? (isWms111 ? new[] { "EPSG:4326", "EPSG:3857" } : ["EPSG:4326", "EPSG:3857", "CRS:84"])
+                : supportedCrs.Select(crs => crs.Crs ?? $"EPSG:{crs.ResolveSrid()}").ToArray();
+            foreach (var crs in crsNames.Distinct(StringComparer.OrdinalIgnoreCase))
+                sb.Append("        <").Append(crsElementName).Append('>').Append(EscapeXml(crs))
+                    .Append("</").Append(crsElementName).AppendLine(">");
 
             var layerExtent = await TryGetLayerWgs84ExtentAsync(
-                layer.Resource,
-                coordinateTransformService,
-                cancellationToken).ConfigureAwait(false) ?? rootExtent;
+                layer.Resource, coordinateTransformService, cancellationToken).ConfigureAwait(false) ?? rootExtent;
             await AppendWmsGeographicBoundsAsync(context, sb, layerExtent, "        ", isWms111).ConfigureAwait(false);
 
             // Preserve the CITE fixture dimensions (elevation on cite:Lakes and
@@ -537,10 +516,15 @@ internal static partial class WmsRequestHandlers
             AppendWmsCiteDimensions(sb, layer, "        ", isWms111);
             AppendWmsTemporalDimension(sb, layer, "        ", isWms111, temporalRanges);
 
-            sb.AppendLine("        <MetadataURL type=\"TC211\">");
-            sb.AppendLine("          <Format>text/xml</Format>");
-            AppendWmsOnlineResource(sb, "          ", metadataUrl, isWms111);
-            sb.AppendLine("        </MetadataURL>");
+            var metadataLink = layer.Resource.Metadata.Links.FirstOrDefault(link =>
+                string.Equals(link.Rel, "metadata", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(link.Href));
+            if (metadataLink is not null)
+            {
+                sb.AppendLine("        <MetadataURL type=\"TC211\">");
+                sb.Append("          <Format>").Append(EscapeXml(metadataLink.Type ?? "application/xml")).AppendLine("</Format>");
+                AppendWmsOnlineResource(sb, "          ", metadataLink.Href, isWms111);
+                sb.AppendLine("        </MetadataURL>");
+            }
             sb.AppendLine("        <Style>");
             sb.AppendLine("          <Name>default</Name>");
             sb.AppendLine("          <Title>Default style</Title>");

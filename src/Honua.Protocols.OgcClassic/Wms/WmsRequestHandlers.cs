@@ -34,6 +34,8 @@ using SkiaSharp;
 using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;
 using static Honua.Protocols.Ogc.Classic.OgcClassicRequestHelpers;
 
+using Honua.Core.Features.Metadata.Services;
+
 namespace Honua.Protocols.Ogc.Classic.Wms;
 
 internal static partial class WmsRequestHandlers
@@ -209,7 +211,8 @@ internal static partial class WmsRequestHandlers
                 }
 
                 OgcClassicLog.WmsRequested(logger, serviceId, "GetCapabilities");
-                var xml = await BuildWmsCapabilities(context, svcDef, accessibleLayers, capabilitiesVersion).ConfigureAwait(false);
+                var metadataService = svcDef with { Metadata = PublishedMetadataProjection.ForCapabilities(snapshot.Graph, svcDef) };
+                var xml = await BuildWmsCapabilities(context, metadataService, accessibleLayers, capabilitiesVersion).ConfigureAwait(false);
                 return Results.Content(xml, GetWmsCapabilitiesMimeType(capabilitiesVersion), Encoding.UTF8, StatusCodes.Status200OK);
             }
 

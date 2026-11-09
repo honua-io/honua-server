@@ -25,6 +25,8 @@ using Microsoft.Extensions.Primitives;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
+using Honua.Core.Features.Metadata.Services;
+
 namespace Honua.Protocols.Ogc.Classic.Wcs20;
 
 internal sealed partial class Wcs20Handler
@@ -249,7 +251,11 @@ internal sealed partial class Wcs20Handler
                 cancellationToken)
             .ConfigureAwait(false);
 
-        var document = BuildCapabilitiesDocument(context, coverageResult.Coverages, supportedCrs.Uris, sections);
+        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var service = coverageResult.Coverages.Select(coverage => coverage.Service).FirstOrDefault()
+            ?? ResolveService(context, snapshot, scope).Service;
+        var metadata = PublishedMetadataProjection.ForCapabilities(snapshot.Graph, service);
+        var document = BuildCapabilitiesDocument(context, coverageResult.Coverages, supportedCrs.Uris, sections, metadata);
         return Xml(document);
     }
 
@@ -1112,33 +1118,27 @@ internal sealed partial class Wcs20Handler
         HttpContext context,
         IReadOnlyCollection<WcsCoverage> coverages,
         IReadOnlyList<string> supportedCrsUris,
-        IReadOnlySet<string>? sections)
+        IReadOnlySet<string>? sections,
+        MetadataV2ObjectMetadata metadata)
     {
         var rootChildren = new List<object>();
 
         if (IncludesSection(sections, "ServiceIdentification"))
         {
             rootChildren.Add(new XElement(Ows + "ServiceIdentification",
-                new XElement(Ows + "Title", "Honua WCS 2.0.1"),
-                new XElement(Ows + "Abstract", "Honua Web Coverage Service for raster and coverage data."),
-                new XElement(Ows + "Keywords",
-                    new XElement(Ows + "Keyword", "WCS"),
-                    new XElement(Ows + "Keyword", "coverage"),
-                    new XElement(Ows + "Keyword", "raster")),
+                new XElement(Ows + "Title", metadata.Title ?? "Honua WCS 2.0.1"),
+                new XElement(Ows + "Abstract", metadata.Description ?? string.Empty),
+                CatalogCapabilitiesXml.Keywords(metadata, Ows),
                 new XElement(Ows + "ServiceType", "WCS"),
                 new XElement(Ows + "ServiceTypeVersion", Wcs20Utilities.Version),
                 new XElement(Ows + "Profile", "http://www.opengis.net/spec/WCS_protocol-binding_get-kvp/1.0"),
-                new XElement(Ows + "Fees", "NONE"),
-                new XElement(Ows + "AccessConstraints", "NONE")));
+                new XElement(Ows + "Fees", metadata.License ?? string.Empty),
+                new XElement(Ows + "AccessConstraints", metadata.License ?? string.Empty)));
         }
 
         if (IncludesSection(sections, "ServiceProvider"))
         {
-            rootChildren.Add(new XElement(Ows + "ServiceProvider",
-                new XElement(Ows + "ProviderName", "Honua"),
-                new XElement(Ows + "ProviderSite", new XAttribute(XLink + "href", "https://honua.io")),
-                new XElement(Ows + "ServiceContact",
-                    new XElement(Ows + "Role", "pointOfContact"))));
+            rootChildren.Add(CatalogCapabilitiesXml.Provider(metadata, Ows));
         }
 
         if (IncludesSection(sections, "OperationsMetadata"))

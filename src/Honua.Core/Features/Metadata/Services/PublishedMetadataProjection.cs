@@ -89,6 +89,36 @@ public sealed class PublishedMetadataProjection(
             : null;
     }
 
+    public static MetadataV2ObjectMetadata ForCapabilities(MetadataV2Graph graph, MetadataV2Service? service)
+    {
+        if (service is null)
+            return graph.Metadata;
+        var folder = graph.Folders.FirstOrDefault(candidate =>
+            !candidate.Deleted && string.Equals(candidate.Metadata.Id, service.FolderId, StringComparison.Ordinal));
+        return InheritMetadata(service.Metadata, folder?.Metadata ?? graph.Metadata);
+    }
+
+    public static MetadataV2ObjectMetadata InheritMetadata(MetadataV2ObjectMetadata metadata, MetadataV2ObjectMetadata parent)
+    {
+        var contact = metadata.ContactPoint;
+        var inheritedContact = parent.ContactPoint;
+        return metadata with
+        {
+            Title = metadata.Title ?? parent.Title,
+            Description = metadata.Description ?? parent.Description,
+            Keywords = metadata.Keywords.Count == 0 ? parent.Keywords : metadata.Keywords,
+            License = metadata.License ?? parent.License,
+            Attribution = metadata.Attribution ?? parent.Attribution,
+            Publisher = metadata.Publisher ?? parent.Publisher,
+            ContactPoint = contact is null ? inheritedContact : contact with
+            {
+                Name = contact.Name ?? inheritedContact?.Name,
+                Email = contact.Email ?? inheritedContact?.Email,
+                Url = contact.Url ?? inheritedContact?.Url
+            }
+        };
+    }
+
     public static string ResolveOwner(MetadataV2ObjectMetadata metadata)
         => string.IsNullOrWhiteSpace(metadata.Publisher) ? "honua" : metadata.Publisher;
 }
