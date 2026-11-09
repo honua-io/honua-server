@@ -7,6 +7,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
+using Honua.Db.Postgres.Features.Styling;
 
 namespace Honua.Db.Postgres.Features.Migration;
 
