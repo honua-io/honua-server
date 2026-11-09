@@ -32,9 +32,7 @@ internal static partial class ServiceSettingsEndpoints
     {
         if (!TryResolveServicesByName(snapshot, serviceName, out var services))
             return new(null, TypedResults.NotFound(ApiResponse<object>.Failure($"Service '{serviceName}' not found.")));
-        var serviceIds = services.Where(service => ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.FeatureServer) &&
-                IsFeatureServerService(snapshot.Graph, service))
-            .Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
+        var serviceIds = FindFeatureServiceIds(snapshot.Graph, services);
         if (serviceIds.Count == 0)
             return new(null, TypedResults.Problem(title: "FeatureServer service not found",
                 detail: $"Service '{serviceName}' does not resolve to a FeatureServer service.", statusCode: 409));
@@ -46,6 +44,11 @@ internal static partial class ServiceSettingsEndpoints
             ? new(resource, null)
             : new(null, TypedResults.NotFound(ApiResponse<object>.Failure($"Layer {layerId} not found in service '{serviceName}'.")));
     }
+
+    private static HashSet<string> FindFeatureServiceIds(MetadataV2Graph graph, IEnumerable<MetadataV2Service> services) =>
+        services.Where(service => ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.FeatureServer) &&
+                IsFeatureServerService(graph, service))
+            .Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
 
     private static string[] FindLayerMetadataResourceIds(MetadataV2GraphSnapshot snapshot,
         HashSet<string> serviceIds, int layerId) => snapshot.Graph.Publications

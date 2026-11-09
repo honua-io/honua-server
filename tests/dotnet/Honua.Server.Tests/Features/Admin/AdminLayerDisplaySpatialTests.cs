@@ -34,6 +34,7 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/display")]
     [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/display")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
     public async Task Display_Update_RoundTripsAndChangesProtocolMetadata()
     {
         using var client = _fixture.CreateAdminClient();
@@ -59,6 +60,14 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
         document.RootElement.GetProperty("defaultVisibility").GetBoolean().Should().BeFalse();
         document.RootElement.GetProperty("hasZ").GetBoolean().Should().BeTrue();
         document.RootElement.GetProperty("hasM").GetBoolean().Should().BeTrue();
+        using var service = await client.GetAsync("/rest/services/test/FeatureServer?f=json");
+        service.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var serviceDocument = JsonDocument.Parse(await service.Content.ReadAsStringAsync());
+        var advertised = serviceDocument.RootElement.GetProperty("layers").EnumerateArray()
+            .Single(layer => layer.GetProperty("id").GetInt32() == 0);
+        advertised.GetProperty("minScale").GetDouble().Should().Be(12000);
+        advertised.GetProperty("maxScale").GetDouble().Should().Be(500);
+        advertised.GetProperty("defaultVisibility").GetBoolean().Should().BeFalse();
     }
 
     [IntegrationTest]

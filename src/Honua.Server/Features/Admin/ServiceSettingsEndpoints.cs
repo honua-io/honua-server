@@ -939,11 +939,7 @@ internal static partial class ServiceSettingsEndpoints
             return FeatureLayerBindingState.NotFound;
         }
 
-        var featureServiceIds = matchingServices
-            .Where(service => ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.FeatureServer))
-            .Where(service => IsFeatureServerService(graph, service))
-            .Select(service => service.Metadata.Id)
-            .ToHashSet(StringComparer.Ordinal);
+        var featureServiceIds = FindFeatureServiceIds(graph, matchingServices);
         if (featureServiceIds.Count == 0)
         {
             return FeatureLayerBindingState.Conflict;
