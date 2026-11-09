@@ -3775,6 +3775,58 @@
             "$ref": "#/components/responses/NotFound"
           }
         }
+      },
+      "get": {
+        "tags": [
+          "Services",
+          "Layers"
+        ],
+        "summary": "Get Layer Metadata",
+        "description": "Read persisted editing, source governance, access policy and temporal metadata for the service layer.",
+        "operationId": "getLayerMetadata",
+        "parameters": [
+          {
+            "name": "serviceName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "layerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated layer metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseLayerMetadataResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
       }
     },
     "/version": {
@@ -22231,6 +22283,214 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/DiscoveryMetadataUpdateRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metadata/layers/{layerId}/display": {
+      "get": {
+        "tags": [
+          "Metadata",
+          "Layers"
+        ],
+        "parameters": [
+          {
+            "name": "layerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Persisted display metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseLayerDisplayResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "The layer index resolves to multiple resources."
+          }
+        },
+        "summary": "Get Layer Display",
+        "operationId": "getAdminLayerDisplay"
+      },
+      "put": {
+        "tags": [
+          "Metadata",
+          "Layers"
+        ],
+        "parameters": [
+          {
+            "name": "layerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Persisted display metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseLayerDisplayResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "The layer index resolves to multiple resources."
+          }
+        },
+        "summary": "Update Layer Display",
+        "operationId": "setAdminLayerDisplay",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LayerDisplayUpdateRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metadata/layers/{layerId}/spatial": {
+      "get": {
+        "tags": [
+          "Metadata",
+          "Layers"
+        ],
+        "parameters": [
+          {
+            "name": "layerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Persisted spatial metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseLayerSpatialResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "The layer index resolves to multiple resources."
+          }
+        },
+        "summary": "Get Layer Spatial",
+        "operationId": "getAdminLayerSpatial"
+      },
+      "put": {
+        "tags": [
+          "Metadata",
+          "Layers"
+        ],
+        "parameters": [
+          {
+            "name": "layerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Persisted spatial metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseLayerSpatialResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "The layer index resolves to multiple resources."
+          }
+        },
+        "summary": "Update Layer Spatial",
+        "operationId": "setAdminLayerSpatial",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LayerSpatialUpdateRequest"
               }
             }
           }
@@ -51558,6 +51818,225 @@
             "type": "object",
             "additionalProperties": true,
             "description": "Parity evidence generated from the inventory and planned manifest."
+          }
+        }
+      },
+      "LayerSpatialReference": {
+        "type": "object",
+        "properties": {
+          "srid": {
+            "type": "integer",
+            "minimum": 1,
+            "nullable": true
+          },
+          "crs": {
+            "type": "string",
+            "nullable": true
+          },
+          "isGeographic": {
+            "type": "boolean"
+          }
+        }
+      },
+      "LayerDisplayUpdateRequest": {
+        "type": "object",
+        "description": "Omitted or null values preserve existing metadata; explicit clear flags remove storage CRS or epoch.",
+        "properties": {
+          "minScale": {
+            "type": "number",
+            "format": "double",
+            "minimum": 0,
+            "nullable": true
+          },
+          "maxScale": {
+            "type": "number",
+            "format": "double",
+            "minimum": 0,
+            "nullable": true
+          },
+          "defaultVisibility": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "queryable": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "hasZ": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "hasM": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "displayField": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "LayerDisplayResponse": {
+        "type": "object",
+        "properties": {
+          "minScale": {
+            "type": "number",
+            "format": "double",
+            "minimum": 0,
+            "nullable": true
+          },
+          "maxScale": {
+            "type": "number",
+            "format": "double",
+            "minimum": 0,
+            "nullable": true
+          },
+          "defaultVisibility": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "queryable": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "hasZ": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "hasM": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "displayField": {
+            "type": "string",
+            "nullable": true
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ApiResponseLayerDisplayResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/LayerDisplayResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "LayerSpatialUpdateRequest": {
+        "type": "object",
+        "description": "Omitted or null values preserve existing metadata; explicit clear flags remove storage CRS or epoch.",
+        "properties": {
+          "spatialReference": {
+            "$ref": "#/components/schemas/LayerSpatialReference"
+          },
+          "geometryType": {
+            "type": "string",
+            "enum": [
+              "none",
+              "point",
+              "multiPoint",
+              "lineString",
+              "multiLineString",
+              "polygon",
+              "multiPolygon",
+              "geometryCollection"
+            ],
+            "nullable": true
+          },
+          "supportedCrs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LayerSpatialReference"
+            },
+            "nullable": true
+          },
+          "storageCrs": {
+            "$ref": "#/components/schemas/LayerSpatialReference"
+          },
+          "storageCrsCoordinateEpoch": {
+            "type": "number",
+            "format": "double",
+            "minimum": 0,
+            "nullable": true
+          },
+          "clearStorageCrs": {
+            "type": "boolean"
+          },
+          "clearStorageCrsCoordinateEpoch": {
+            "type": "boolean"
+          }
+        }
+      },
+      "LayerSpatialResponse": {
+        "type": "object",
+        "properties": {
+          "spatialReference": {
+            "$ref": "#/components/schemas/LayerSpatialReference"
+          },
+          "geometryType": {
+            "type": "string",
+            "enum": [
+              "none",
+              "point",
+              "multiPoint",
+              "lineString",
+              "multiLineString",
+              "polygon",
+              "multiPolygon",
+              "geometryCollection"
+            ],
+            "nullable": true
+          },
+          "supportedCrs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LayerSpatialReference"
+            },
+            "nullable": true
+          },
+          "storageCrs": {
+            "$ref": "#/components/schemas/LayerSpatialReference"
+          },
+          "storageCrsCoordinateEpoch": {
+            "type": "number",
+            "format": "double",
+            "minimum": 0,
+            "nullable": true
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ApiResponseLayerSpatialResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/LayerSpatialResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }

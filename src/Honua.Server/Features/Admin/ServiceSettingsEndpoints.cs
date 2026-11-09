@@ -19,7 +19,7 @@ namespace Honua.Server.Features.Admin;
 /// <summary>
 /// Admin endpoints for managing per-service protocol toggles and MapServer settings.
 /// </summary>
-internal static class ServiceSettingsEndpoints
+internal static partial class ServiceSettingsEndpoints
 {
     private const int DefaultMapServerMaxImageWidth = 4096;
     private const int DefaultMapServerMaxImageHeight = 4096;
@@ -65,6 +65,9 @@ internal static class ServiceSettingsEndpoints
         group.MapPut("/{serviceName}/timeinfo", HandleUpdateTimeInfo)
             .WithDisplayName("Update Time Info")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+
+        group.MapGet("/{serviceName}/layers/{layerId:int}/metadata", HandleGetLayerMetadata)
+            .WithDisplayName("Get Layer Metadata");
 
         group.MapPut("/{serviceName}/layers/{layerId:int}/metadata", HandleUpdateLayerMetadata)
             .WithDisplayName("Update Layer Metadata")
@@ -338,15 +341,7 @@ internal static class ServiceSettingsEndpoints
             var featureServiceIds = featureServices
                 .Select(service => service.Metadata.Id)
                 .ToHashSet(StringComparer.Ordinal);
-            var targetResourceIds = snapshot.Graph.Publications
-                .Where(publication =>
-                    featureServiceIds.Contains(publication.ServiceId) &&
-                    publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
-                    snapshot.IsRoutable(publication) &&
-                    publication.LayerIndex == layerId)
-                .Select(publication => publication.ResourceId)
-                .Distinct(StringComparer.Ordinal)
-                .ToArray();
+            var targetResourceIds = FindLayerMetadataResourceIds(snapshot, featureServiceIds, layerId);
             if (targetResourceIds.Length > 1)
             {
                 return TypedResults.Problem(
