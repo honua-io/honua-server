@@ -8,6 +8,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Studio.Abstractions;
+using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
@@ -134,6 +135,51 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
         aliceMcpUpdate.GetProperty("structuredContent").GetProperty("ownerId").GetString()
             .Should().Be(aliceOwnerId);
     }
+
+    [IntegrationTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_list_items")]
+    [Endpoint("POST /mcp tools/call honua_studio_list_versions")]
+    public async Task Discovery_SavedMaps_ReturnsOwnerItemsAndVersionHashesWithoutMutation()
+    {
+        var keys = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var alice = await keys.CreateAsync("discovery-alice", ["studio:enduser"], null, null, default);
+        var bob = await keys.CreateAsync("discovery-bob", ["studio:enduser"], null, null, default);
+        var store = _fixture.Services.GetRequiredService<IStudioPackageStore>();
+        var aliceDraft = await SeedDiscoveryDraftAsync(store, alice.Record.Id.ToString("D"));
+        var bobDraft = await SeedDiscoveryDraftAsync(store, bob.Record.Id.ToString("D"));
+        var first = await store.CreateVersionAsync(aliceDraft, "first", null);
+        var second = await store.CreateVersionAsync(aliceDraft, "second", null);
+        _ = await store.CreateVersionAsync(bobDraft, "foreign", null);
+        var pointers = await store.GetPointersAsync(aliceDraft.ItemId);
+        using var client = _fixture.CreateClient(options => options.DefaultRequestHeaders.Add("X-API-Key", alice.Key));
+        var mcp = new StudioMcpHttpClient(client);
+
+        var items = await mcp.CallToolAsync("honua_studio_list_items", "{\"q\":\"discovery-map\",\"limit\":1}");
+        items.GetProperty("total").GetInt32().Should().Be(1);
+        items.GetProperty("items")[0].GetProperty("itemId").GetGuid().Should().Be(aliceDraft.ItemId);
+        items.GetRawText().Should().NotContain(bobDraft.ItemId.ToString("D"));
+        var versions = await mcp.CallToolAsync("honua_studio_list_versions",
+            $$"""{"itemId":"{{aliceDraft.ItemId}}","limit":1}""");
+        versions.GetProperty("versions")[0].GetProperty("contentHash").GetString().Should().Be(second.ContentHash);
+        var previous = await mcp.CallToolAsync("honua_studio_list_versions",
+            $$"""{"itemId":"{{aliceDraft.ItemId}}","limit":1,"beforeVersionNumber":{{versions.GetProperty("nextBeforeVersionNumber").GetInt32()}}}""");
+        previous.GetProperty("versions")[0].GetProperty("versionId").GetGuid().Should().Be(first.VersionId);
+        var denied = await mcp.CallToolRawAsync("honua_studio_list_versions",
+            $$"""{"itemId":"{{bobDraft.ItemId}}"}""");
+        AssertCrossUserToolDenial(denied);
+        (await store.GetPointersAsync(aliceDraft.ItemId)).Should().BeEquivalentTo(pointers);
+        (await store.ListVersionsAsync(aliceDraft.ItemId)).Should().HaveCount(2);
+    }
+
+    private static Task<StudioPackageDraft> SeedDiscoveryDraftAsync(IStudioPackageStore store, string owner) =>
+        store.CreateDraftAsync(new StudioPackageDraft
+        {
+            DraftId = Guid.NewGuid(), ItemId = Guid.NewGuid(), PackageKey = "discovery-map",
+            OwnerId = owner, Family = StudioPackageFamily.Map, Generation = 1,
+            Envelope = new StudioPackageEnvelope { Family = StudioPackageFamily.Map, SchemaVersion = "1.0" },
+            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow
+        });
 
     private static void AssertCrossUserToolDenial(JsonElement result)
     {
