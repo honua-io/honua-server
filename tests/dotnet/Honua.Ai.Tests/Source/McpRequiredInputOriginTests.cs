@@ -32,10 +32,12 @@ public sealed partial class McpWorkflowViewTests
     {
         private static readonly Regex ToolReference = new(@"\bhonua_[a-z0-9_]+\b", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
         public SortedSet<string> Missing { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> ProducerReferences { get; } = new(StringComparer.Ordinal);
 
         public void Inspect(JsonElement schema, InputOriginPath context)
         {
             if (schema.ValueKind != JsonValueKind.Object) return;
+            ProducerReferences.UnionWith(FindReferences(ReadDescription(schema)));
             var source = HasNamedOrigin(schema) ? ReadDescription(schema) : context.SourceDescription;
             InspectRequired(schema, context with { SourceDescription = source });
             InspectChildren(schema, context with { SourceDescription = source });
@@ -72,10 +74,13 @@ public sealed partial class McpWorkflowViewTests
         private bool HasNamedOrigin(JsonElement schema)
         {
             var description = ReadDescription(schema);
-            var references = ToolReference.Matches(description).Select(match => match.Value).ToArray();
+            var references = FindReferences(description).ToArray();
             return references.All(toolNames.Contains)
                 && (description.Contains("caller", StringComparison.OrdinalIgnoreCase) || references.Length > 0);
         }
+
+        private static IEnumerable<string> FindReferences(string description) =>
+            ToolReference.Matches(description).Select(match => match.Value);
 
         private static string ReadDescription(JsonElement schema) =>
             schema.TryGetProperty("description", out var description) && description.ValueKind == JsonValueKind.String

@@ -52,8 +52,7 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests
         var result = call.GetProperty("result");
         IsInputRefusal(result).Should().BeTrue();
         result.GetProperty("structuredContent").GetProperty("violations").EnumerateArray()
-            .Should().Contain(violation => violation.GetProperty("fieldPath").GetString() == "$.jobId"
-                && violation.GetProperty("message").GetString()!.Contains("honua_list_jobs", StringComparison.Ordinal));
+            .Should().Contain(violation => HasInputGuidance(violation, "jobId", "honua_list_jobs"));
         AssertRefusalMirror(result);
     }
 
