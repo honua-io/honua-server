@@ -4,12 +4,23 @@
 using System.Net;
 using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 public sealed partial class PostgresProposalPersistenceTests
 {
+    [IntegrationTest]
+    public void ProposalExecutors_WithoutRedis_ResolveOnlyAvailableActuators()
+    {
+        var catalog = _fixture.GetService<IOperationExecutorCatalog>();
+        Assert.Contains(OperationClass.AdminConfigChange, catalog.SupportedKinds);
+        Assert.DoesNotContain(OperationClass.MetadataRelease, catalog.SupportedKinds);
+        Assert.NotNull(_fixture.GetService<IOperationProposalEvidenceValidator>());
+    }
+
     [IntegrationTest]
     public async Task TrySetAsync_RetentionHint_DoesNotExpireApprovalHistory()
     {

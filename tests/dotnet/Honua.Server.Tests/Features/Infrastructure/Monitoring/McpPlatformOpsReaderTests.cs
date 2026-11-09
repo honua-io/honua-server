@@ -154,8 +154,8 @@ public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
             "test",
             CancellationToken.None);
         await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        var proposalStore = new RedisOperationProposalStore(
-            multiplexer, NullLogger<RedisOperationProposalStore>.Instance);
+        await using var stores = await PostgresOperationStores.CreateAsync();
+        var proposalStore = stores.Proposals;
         var ladder = Substitute.For<Honua.Core.Features.Guardrails.Abstractions.IGuardrailLadder>();
         var decision = new GuardrailDecision(GuardrailTier.RequiresApproval, operationClass, HonuaEdition.Enterprise, "model-proposal");
         ladder.Resolve(operationClass).Returns(decision);

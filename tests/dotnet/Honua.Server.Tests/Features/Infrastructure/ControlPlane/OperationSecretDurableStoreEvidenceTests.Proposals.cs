@@ -33,8 +33,9 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests
     public async Task ProposeAsync_AllowPolicy_VerifiedHumanApprovalReplaysOriginalExactlyOnce(string operationId, bool loseProposalAudit, bool revokeProposer)
     {
         await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        var proposals = new RedisOperationProposalStore(multiplexer, NullLogger<RedisOperationProposalStore>.Instance);
-        var instances = new RedisOperationInstanceStore(multiplexer);
+        await using var stores = await PostgresOperationStores.CreateAsync();
+        var proposals = stores.Proposals;
+        var instances = stores.Instances;
         var secrets = BuildRedisSecretStore(multiplexer);
         var audit = new RecordingAuditLog { FailAction = loseProposalAudit ? "operation.proposed" : null };
         var definition = AdminAccessOperationCatalog.Definitions.Single(d => d.OperationId == operationId);

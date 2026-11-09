@@ -22,7 +22,6 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>Exercises the approved restore continuation through the real Redis stores and gateway.</summary>
 [Collection(RedisFixture.CollectionName)]
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.TestInfrastructure)]
@@ -32,9 +31,10 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
     public async Task ApprovedConvergence_AfterFailedStatusRead_StartsTheNextDeployment()
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        await using var stores = await PostgresOperationStores.CreateAsync();
         var database = connection.GetDatabase();
         var proposalIds = new List<string>();
-        var proposals = new RedisOperationProposalStore(connection, NullLogger<RedisOperationProposalStore>.Instance);
+        var proposals = stores.Proposals;
         await database.KeyDeleteAsync("controlplane:workflow:restore-cell-exclusive-owner");
         try
         {
@@ -111,12 +111,13 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
     public async Task ApprovedRestore_ReplacementWorker_WaitsForProtectionAndVerifiesReadback()
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        await using var stores = await PostgresOperationStores.CreateAsync();
         var database = connection.GetDatabase();
         await database.KeyDeleteAsync("controlplane:workflow:restore-cell-exclusive-owner");
         try
         {
             var workflows = new RedisWorkflowOperationStore(connection, NullLogger<RedisWorkflowOperationStore>.Instance);
-            var proposals = new RedisOperationProposalStore(connection, NullLogger<RedisOperationProposalStore>.Instance);
+            var proposals = stores.Proposals;
             var journal = Substitute.For<ISchemaJournal>();
             journal.ReadAsync(Arg.Any<CancellationToken>()).Returns(new SchemaJournalSnapshot(true,
                 [new AppliedSchemaMigration(142, "reader-incompatible", 0)]));
@@ -302,6 +303,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
     public async Task ApprovedConvergence_CanTakeOverOnlyTerminalFailure(DeployTargetKind targetKind)
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        await using var stores = await PostgresOperationStores.CreateAsync();
         var database = connection.GetDatabase();
         await database.KeyDeleteAsync("controlplane:workflow:restore-cell-exclusive-owner");
         try
@@ -419,8 +421,9 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
     public async Task LocalCheckpoint_WithoutWorkflow_ResumesDeterministicSubmission()
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        await using var stores = await PostgresOperationStores.CreateAsync();
         var database = connection.GetDatabase();
-        var proposals = new RedisOperationProposalStore(connection, NullLogger<RedisOperationProposalStore>.Instance);
+        var proposals = stores.Proposals;
         var proposalId = "proposal-" + Guid.NewGuid().ToString("N");
         await database.KeyDeleteAsync("controlplane:workflow:restore-cell-exclusive-owner");
         try

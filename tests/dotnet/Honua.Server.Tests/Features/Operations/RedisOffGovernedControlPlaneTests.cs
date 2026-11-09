@@ -21,6 +21,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.OperationsRedisOff;
 
@@ -82,6 +83,17 @@ public sealed class RedisOffGovernedControlPlaneTests
 
         published.Should().Contain(AdminApiOperationCatalog.Definitions
             .Select(static definition => PublishedOperationTool.ProjectName(definition.OperationId)));
+    }
+
+    [UnitTest]
+    public void ProductionWithoutPostgres_WithRedis_DoesNotPersistInstancesInRedis()
+    {
+        var services = ComposeRedisOff(Environments.Production);
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(Substitute.For<IDatabase>());
+        services.AddSingleton(redis);
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IOperationInstanceStore>().Should().BeOfType<UnavailableOperationInstanceStore>();
     }
 
     [UnitTest]

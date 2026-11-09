@@ -653,7 +653,7 @@ public sealed class ExecutionWorkerProfileTests
         services.AddHostedService<ExecutionJobBackstopSweepService>();
         services.AddHostedService<WorkflowOperationBackstopSweepService>();
         services.AddHostedService<ExecutionQueueDepthCollectorBackgroundService>();
-        services.AddSingleton<IOperationProposalStore, RedisOperationProposalStore>();
+        services.AddSingleton(Substitute.For<IOperationProposalStore>());
         services.AddSingleton<IOperationGateway, OperationGateway>();
         services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
             Honua.ControlPlane.Executors.DeployOperationExecutor>();

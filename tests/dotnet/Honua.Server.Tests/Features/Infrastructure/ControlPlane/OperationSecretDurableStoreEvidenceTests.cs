@@ -50,13 +50,14 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests(RedisFixtur
     ];
 
     [IntegrationTest]
-    public async Task ActuatedSecretOutput_LeavesNoPlaintext_InRedisInstanceStoreOrAuditLog()
+    public async Task ActuatedSecretOutput_LeavesNoPlaintext_InPostgresInstanceStoreOrAuditLog()
     {
         await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        await using var stores = await PostgresOperationStores.CreateAsync();
         foreach (var (operationId, secretField, routeId) in SecretOutputOperations)
         {
             var secret = $"plaintext-{Guid.NewGuid():N}";
-            var instanceStore = new RedisOperationInstanceStore(multiplexer);
+            var instanceStore = stores.Instances;
             var secretStore = BuildRedisSecretStore(multiplexer);
             var audit = new RecordingAuditLog();
             var keysBefore = SnapshotKeys(multiplexer);
@@ -91,6 +92,7 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests(RedisFixtur
             var reference = persisted!.Result!.SecretReferences.Should().ContainSingle().Subject;
             reference.Name.Should().Be(secretField);
 
+            await stores.AssertNoPlaintextAsync(secret);
             AssertNoPlaintextInNewRedisKeys(multiplexer, keysBefore, secret);
             audit.Events.Should().NotBeEmpty();
             JsonSerializer.Serialize(audit.Events).Should().NotContain(secret);
@@ -104,9 +106,10 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests(RedisFixtur
     }
 
     [IntegrationTest]
-    public async Task ApprovedSecretInput_LeavesNoPlaintext_InRedisProposalStoreOrAuditLog()
+    public async Task ApprovedSecretInput_LeavesNoPlaintext_InPostgresProposalStoreOrAuditLog()
     {
         await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        await using var stores = await PostgresOperationStores.CreateAsync();
         foreach (var (operationId, routeId) in new[]
                  {
                      ("admin.oidc-provider.create", (string?)null),
@@ -114,9 +117,7 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests(RedisFixtur
                  })
         {
             var secret = $"plaintext-{Guid.NewGuid():N}";
-            var proposalStore = new RedisOperationProposalStore(
-                multiplexer,
-                NullLogger<RedisOperationProposalStore>.Instance);
+            var proposalStore = stores.Proposals;
             var secretStore = BuildRedisSecretStore(multiplexer);
             var audit = new RecordingAuditLog();
             var definition = AdminAccessOperationCatalog.Definitions.Single(item => item.OperationId == operationId);
@@ -125,7 +126,7 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests(RedisFixtur
 
             // The gateway resolves its audit sink from this scope, so the recorder captures every
             // audit event the proposal path writes.
-            var instanceStore = new RedisOperationInstanceStore(multiplexer);
+            var instanceStore = stores.Instances;
             var services = new ServiceCollection();
             services.AddLogging();
             services.AddSingleton<IAuditLog>(audit);
@@ -192,6 +193,7 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests(RedisFixtur
             proposal.Should().NotBeNull();
             JsonSerializer.Serialize(proposal).Should().NotContain(secret);
 
+            await stores.AssertNoPlaintextAsync(secret);
             AssertNoPlaintextInNewRedisKeys(multiplexer, keysBefore, secret);
             audit.Events.Should().NotBeEmpty();
             JsonSerializer.Serialize(audit.Events).Should().NotContain(secret);

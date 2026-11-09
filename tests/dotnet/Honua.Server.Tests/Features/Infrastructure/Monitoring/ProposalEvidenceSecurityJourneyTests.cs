@@ -33,6 +33,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Security;
 using Honua.TestKit;
+using Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -76,6 +77,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
     private readonly Dictionary<string, ToolDescriptor> _descriptors = new(StringComparer.Ordinal);
     private ConnectionMultiplexer _redis = null!;
     private FaultSwitchProposalStore _proposals = null!;
+    private PostgresOperationStores _stores = null!;
     private WebAppFixture _fixture = null!;
     private IAdminApiKeyStore _apiKeys = null!;
     private HumanApprovalHttpClient _human = null!;
@@ -84,8 +86,8 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
     public async Task InitializeAsync()
     {
         _redis = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        _proposals = new FaultSwitchProposalStore(new RedisOperationProposalStore(
-            _redis, NullLogger<RedisOperationProposalStore>.Instance));
+        _stores = await PostgresOperationStores.CreateAsync();
+        _proposals = new FaultSwitchProposalStore(_stores.Proposals);
 
         _fixture = HumanApprovalHttpClient.Configure(new WebAppFixture(), _identity)
             .ConfigureWebHost(ConfigureHost)
@@ -106,6 +108,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
 
         await _fixture.DisposeAsync();
         await _redis.DisposeAsync();
+        await _stores.DisposeAsync();
     }
 
     [IntegrationTest]
@@ -1043,7 +1046,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         services.RemoveAll<IOperationProposalStore>();
         services.AddSingleton<IOperationProposalStore>(_proposals);
         services.RemoveAll<IOperationInstanceStore>();
-        services.AddSingleton<IOperationInstanceStore>(new RedisOperationInstanceStore(_redis));
+        services.AddSingleton<IOperationInstanceStore>(_stores.Instances);
         services.RemoveAll<IOperationEnvelopeFactory>();
         services.AddSingleton<IOperationEnvelopeFactory>(provider => new ScopedOperationEnvelopeFactory(
             provider.GetRequiredService<IServiceScopeFactory>(), useVolatileAudit: false));
