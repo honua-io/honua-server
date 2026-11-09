@@ -198,6 +198,32 @@ batches meet the plan's exit criteria (assembly under 120 s, no lander
 timeouts, at least 80 % of batch runs green or uniquely attributable, every
 would-land set's later per-PR landings reproducing the recorded tree).
 
+## Full-CI compute runner selection
+
+`ci.yml` uses the repository variable `HONUA_CI_HEAVY_RUNNER` for its compatible
+build/test workloads. Unset or empty selects `ubuntu-latest`. A nonempty value
+is one runner label, such as a GitHub-hosted larger-runner name; it is not a JSON
+label array. Main owns configuring the variable after the runner is available
+to this repository and the combined batch has passed build-host preflight.
+
+The switch covers build, format, foundation-family tests, server shards, MCP
+certification and LLM smoke, PostgreSQL and core-package compatibility, AOT,
+Docker build, and Console quickstart smoke. Admission, routing, receipt
+aggregation and final verdict jobs remain on standard hosted runners so a
+compute-pool problem cannot strand their reporting. The PR Gate is unchanged.
+
+The selected runner must provide a clean Ubuntu x64 environment compatible with
+GitHub's hosted tools, Docker, passwordless sudo, .NET/Node/Python setup actions,
+and the existing disk-cleanup steps. This switch provisions no runners and
+changes no command, permission, test selection, concurrency or timeout.
+
+Worker GDAL, Python integration and browser jobs retain their Ubuntu 24.04 pins
+for native-package and Chromium compatibility. They do not use this switch.
+Main checks the chosen pool on the first ordinary combined batch using it;
+no separate branch full run is needed. Clear the variable to restore the hosted
+default for subsequent jobs; already queued/running jobs keep their assigned
+runner and must finish or be handled by the batch controller.
+
 ## Nightly Lane
 
 These workflows run on schedule and can be dispatched manually:
