@@ -139,8 +139,8 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
         return styleId;
     }
 
-    private static string CircleStyle(string color) => $$"""
+    private static string CircleStyle(string color) => $$$"""
         {"version":8,"sources":{},"layers":[{"id":"points","type":"circle","source":"features",
-        "paint":{"circle-color":"{{color}}","circle-radius":10}}]}
+        "paint":{"circle-color":"{{{color}}}","circle-radius":10}}]}
         """;
 }
