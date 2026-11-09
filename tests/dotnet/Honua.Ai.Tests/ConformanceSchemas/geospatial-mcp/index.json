@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "geospatial-mcp JSON Schema index",
-  "description": "Machine-readable map from standard MCP tool names and resource family URIs to their JSON Schema (draft 2020-12) files. 'standardName' is the bare taxonomy.md tool name; 'referenceToolName' is the name the reference implementation (Honua /mcp) advertises. 'implementationStatus' records whether the reference implementation ships the tool/resource family today (implemented) or whether it is a standard family not yet served by the reference (known-gap). For resources, 'implementationStatus' gates the FULL conformance level the same way it does for tools: a manifest must advertise every 'implemented' resource family to reach FULL; 'known-gap' families are reported as informational notes only. 'profile' (optional; default 'base') assigns a tool to a conformance profile: 'base' tools are required for the base FULL verdict; tools in an additive profile such as 'mutation' are required for FULL only when a manifest declares that profile, and are otherwise reported as informational notes (see /CONFORMANCE.md \u00a7Conformance Profiles).",
+  "description": "Machine-readable map from standard MCP tool names and resource family URIs to their JSON Schema (draft 2020-12) files. 'standardName' is the bare taxonomy.md tool name; 'referenceToolName' is the name the reference implementation (Honua /mcp) advertises. 'implementationStatus' records whether the reference implementation ships the tool/resource family today (implemented) or whether it is a standard family not yet served by the reference (known-gap). For resources, 'implementationStatus' gates the FULL conformance level the same way it does for tools: a manifest must advertise every 'implemented' resource family to reach FULL; 'known-gap' families are reported as informational notes only. 'profile' (optional; default 'base') assigns a tool to a conformance profile: 'base' tools are required for the base FULL verdict; tools in an additive profile such as 'mutation' are required for FULL only when a manifest declares that profile, and are otherwise reported as informational notes (see /CONFORMANCE.md §Conformance Profiles).",
   "date": "2026-07-06",
   "dialect": "https://json-schema.org/draft/2020-12/schema",
   "tools": [
@@ -137,7 +137,7 @@
       "schema": "tools/edit_features.schema.json",
       "implementationStatus": "known-gap",
       "profile": "mutation",
-      "notes": "Sole member of the optional mutation conformance profile (docs/adr/0028-governed-feature-mutation.md). Governed transactional editing: an implementation must require an authenticated, authorized caller and authorize each edit type (insert/update/delete) independently. The reference implementation (Honua) does NOT serve this tool \u2014 Honua does not support AI operational data editing (honua-server ADR-0028, founder-reaffirmed 2026-07-06); its referenceToolName is null and its implementationStatus is known-gap. Base-profile (read-only) implementations conform without advertising this tool; it is required for FULL only when an adopter's manifest declares the mutation profile."
+      "notes": "Sole member of the optional mutation conformance profile (docs/adr/0028-governed-feature-mutation.md). Governed transactional editing: an implementation must require an authenticated, authorized caller and authorize each edit type (insert/update/delete) independently. The reference implementation (Honua) does NOT serve this tool — Honua does not support AI operational data editing (honua-server ADR-0028, founder-reaffirmed 2026-07-06); its referenceToolName is null and its implementationStatus is known-gap. Base-profile (read-only) implementations conform without advertising this tool; it is required for FULL only when an adopter's manifest declares the mutation profile."
     },
     {
       "standardName": "render_map",
@@ -260,41 +260,11 @@
       "implementationStatus": "implemented",
       "notes": "Honua extension (#6219): Read-only retrieval of sanitized steps, a bounded event tail, and artifact availability for a caller-readable geoprocessing job. Pending formalization in the standard; schema marks x-honua-extension."
     },
-    {
-      "standardName": "propose_finding",
-      "referenceToolName": "honua_propose_finding",
-      "family": "Control-plane proposal (Honua extension)",
-      "schema": "tools/propose_finding.schema.json",
-      "implementationStatus": "implemented"
-    },
-    {
-      "standardName": "propose_deploy_plan",
-      "referenceToolName": "honua_propose_deploy_plan",
-      "family": "Control-plane proposal (Honua extension)",
-      "schema": "tools/propose_deploy_plan.schema.json",
-      "implementationStatus": "implemented"
-    },
-    {
-      "standardName": "propose_deploy_operation",
-      "referenceToolName": "honua_propose_deploy_operation",
-      "family": "Control-plane proposal (Honua extension)",
-      "schema": "tools/propose_deploy_operation.schema.json",
-      "implementationStatus": "implemented"
-    },
-    {
-      "standardName": "propose_metadata_release",
-      "referenceToolName": "honua_propose_metadata_release",
-      "family": "Control-plane proposal (Honua extension)",
-      "schema": "tools/propose_metadata_release.schema.json",
-      "implementationStatus": "implemented"
-    },
-    {
-      "standardName": "propose_platform_release_convergence",
-      "referenceToolName": "honua_propose_platform_release_convergence",
-      "family": "Control-plane proposal (Honua extension)",
-      "schema": "tools/propose_platform_release_convergence.schema.json",
-      "implementationStatus": "implemented"
-    },
+    {"standardName":"propose_finding","referenceToolName":"honua_propose_finding","family":"Control-plane proposal (Honua extension)","schema":"tools/propose_finding.schema.json","implementationStatus":"implemented"},
+    {"standardName":"propose_deploy_plan","referenceToolName":"honua_propose_deploy_plan","family":"Control-plane proposal (Honua extension)","schema":"tools/propose_deploy_plan.schema.json","implementationStatus":"implemented"},
+    {"standardName":"propose_deploy_operation","referenceToolName":"honua_propose_deploy_operation","family":"Control-plane proposal (Honua extension)","schema":"tools/propose_deploy_operation.schema.json","implementationStatus":"implemented"},
+    {"standardName":"propose_metadata_release","referenceToolName":"honua_propose_metadata_release","family":"Control-plane proposal (Honua extension)","schema":"tools/propose_metadata_release.schema.json","implementationStatus":"implemented"},
+    {"standardName":"propose_platform_release_convergence","referenceToolName":"honua_propose_platform_release_convergence","family":"Control-plane proposal (Honua extension)","schema":"tools/propose_platform_release_convergence.schema.json","implementationStatus":"implemented"},
     {
       "standardName": "propose_operation",
       "referenceToolName": "honua_propose_operation",
@@ -573,7 +543,7 @@
       "family": "Studio composition and lifecycle (Honua extension)",
       "schema": "tools/studio_propose_publication.schema.json",
       "implementationStatus": "implemented",
-      "notes": "Honua extension (honua-server#3002): records publish/share/embed intent on a Studio draft for human review ONLY \u2014 no publish/share/embed execution tool exists on the agent surface (REQ-003/REQ-009). Pending formalization in the standard's publish family."
+      "notes": "Honua extension (honua-server#3002): records publish/share/embed intent on a Studio draft for human review ONLY — no publish/share/embed execution tool exists on the agent surface (REQ-003/REQ-009). Pending formalization in the standard's publish family."
     },
     {
       "standardName": "bind_interaction",
@@ -582,7 +552,7 @@
       "schema": "tools/bind_interaction.schema.json",
       "implementationStatus": "implemented",
       "profile": "composition",
-      "notes": "Adds or replaces one declarative event\u2192action binding in a composition document; member of the opt-in composition conformance profile (geospatial-mcp docs/adr/0030-declarative-interactions-and-layout.md). Bindings are data-only ($event.* substitution, no expression language); actions never emit events. Honua is the reference implementation: the tool is advertised as honua_studio_bind_interaction over the draft-lifecycle target (draftId + generation, admitted upstream as x-honua-reference-shape)."
+      "notes": "Adds or replaces one declarative event→action binding in a composition document; member of the opt-in composition conformance profile (geospatial-mcp docs/adr/0030-declarative-interactions-and-layout.md). Bindings are data-only ($event.* substitution, no expression language); actions never emit events. Honua is the reference implementation: the tool is advertised as honua_studio_bind_interaction over the draft-lifecycle target (draftId + generation, admitted upstream as x-honua-reference-shape)."
     },
     {
       "standardName": "remove_interaction",
@@ -609,7 +579,7 @@
       "schema": "tools/remove_control.schema.json",
       "implementationStatus": "implemented",
       "profile": "composition",
-      "notes": "Removes one control, by id, from a composition document; member of the opt-in composition conformance profile. Interactions bound to the removed control must be removed with it or the call rejected \u2014 no dangling control: references. Advertised by the reference implementation as honua_studio_remove_control, whose cascadeInteractions flag selects between the two conformant outcomes."
+      "notes": "Removes one control, by id, from a composition document; member of the opt-in composition conformance profile. Interactions bound to the removed control must be removed with it or the call rejected — no dangling control: references. Advertised by the reference implementation as honua_studio_remove_control, whose cascadeInteractions flag selects between the two conformant outcomes."
     }
   ],
   "resources": [
@@ -739,7 +709,7 @@
     {
       "name": "CompositionControls",
       "schema": "common/controls.schema.json",
-      "role": "Standard-owned controls collection for composition documents (MapPackage/AppPackage) \u2014 the closed input-affordance vocabulary that control:{id} references resolve against; referenced by both resource schemas and by add_control. See geospatial-mcp docs/adr/0031-composition-controls.md."
+      "role": "Standard-owned controls collection for composition documents (MapPackage/AppPackage) — the closed input-affordance vocabulary that control:{id} references resolve against; referenced by both resource schemas and by add_control. See geospatial-mcp docs/adr/0031-composition-controls.md."
     }
   ],
   "conformance": [
