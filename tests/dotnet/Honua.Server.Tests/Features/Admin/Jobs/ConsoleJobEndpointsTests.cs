@@ -1001,16 +1001,16 @@ public sealed partial class ConsoleJobEndpointsTests : IAsyncLifetime
     public async Task GetJobDiagnostics_DisclosesEventTruncationAndHistoricalJobsWithoutProvenance()
     {
         var now = DateTimeOffset.UtcNow;
-        _jobStore.Set(CreateJob("job-diag-historical", ExecutionJobStatus.Succeeded, now.AddDays(-3), "corr-diag-historical") with
+        _jobStore.Set(CreateJob("job-diag-historical", ExecutionJobStatus.Succeeded, now.AddDays(-30), "corr-diag-historical") with
         {
-            CompletedAt = now.AddDays(-3).AddMinutes(4),
+            CompletedAt = now.AddDays(-30).AddMinutes(4),
             CurrentPhase = "Completed",
             ArtifactReferences = ["expired", "available"]
         });
         _logStore.SetLogs("job-diag-historical",
             Enumerable.Range(0, 5).Select(i => new ExecutionLogEntry
             {
-                Timestamp = now.AddDays(-3).AddSeconds(i),
+                Timestamp = now.AddDays(-30).AddSeconds(i),
                 Level = ExecutionLogLevel.Info,
                 Message = $"event {i}",
                 Phase = "Run"
