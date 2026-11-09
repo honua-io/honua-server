@@ -285,7 +285,8 @@ internal sealed class ServicePublishExecutor
         var now = _clock.GetUtcNow();
         var (identity, promotionReadback) = await ResolvePublishedLayerReadbackAsync(
             summary.StorageLayerId, context.TenantId, CancellationToken.None).ConfigureAwait(false);
-        if (identity is null && promotionReadback == PromotionReadback.Available)
+        if (promotionReadback == PromotionReadback.Available &&
+            !string.Equals(identity?.ServiceName, summary.ServiceName, StringComparison.Ordinal))
         {
             promotionReadback = await ResolvePromotionReadbackAsync(summary.ServiceName, CancellationToken.None)
                 .ConfigureAwait(false);
