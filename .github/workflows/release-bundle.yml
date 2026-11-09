@@ -67,7 +67,7 @@ permissions:
 
 concurrency:
   group: release-bundle-${{ github.event.inputs.release_id || github.event.pull_request.number }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   REGISTRY_GHCR: ghcr.io

@@ -1486,3 +1486,33 @@ Issue #7170 remains open. Before reintroducing any pack, collect completed durat
 under representative contention, evaluate its completed-sample p90 against 70% of the
 proposed inner budget, and qualify it in main's ordinary integration batch. Historical
 member sums alone do not qualify a pack. The deeper 60-job consolidation remains parked.
+
+## Capabilities budget
+
+The `Server Features Capabilities` test-step history is:
+
+| Full CI run | Test-step seconds | Outcome |
+|---|---:|---|
+| [42518262877](https://github.com/honua-io/honua-server/actions/runs/42518262877) | 1028 | Passed |
+| [42524495976](https://github.com/honua-io/honua-server/actions/runs/42524495976) | 922 | Passed |
+| [42532577743](https://github.com/honua-io/honua-server/actions/runs/42532577743) | 1072 | Passed |
+| [42575571107](https://github.com/honua-io/honua-server/actions/runs/42575571107/job/129039342167) | 1323 | Capacity exhausted at the 22-minute cap |
+
+The completed hosted-run nearest-rank p90 is 17.9 minutes. The failed batch
+produced output two seconds before termination and no final TRX; its 22.1-minute
+duration is censored and does not establish the time needed to finish.
+
+The build-host reproduction of batch source `0f1e9d672f20ffa11dc6055c675963cd9ce437b2`
+completed the unchanged selection on 9 November in 1,402 seconds: 101 executed,
+101 passed, zero failed or skipped. The timing artifact records a clean source
+snapshot and passing execution attestation. This exceeds 70% of the provisional
+32-minute cap (22.4 minutes), so the measured basis now sets a 34-minute inner
+cap: `ceil((1402 / 60) / 0.7)`. Utilization is 68.7%; the 44-minute outer cap
+preserves ten minutes for setup and artifact upload. Test selection and the
+five-minute silence detector stay the same.
+
+Release coordination authorized this capacity rebase for #7210 as an exception
+to policy rule 4. This focused build-host result establishes a completed sample,
+not hosted contention qualification. The passing combined batch must confirm
+that the completed test step uses at most 70% of the new cap (23.8 minutes), or
+supply a new measured basis for splitting or rebudgeting.
