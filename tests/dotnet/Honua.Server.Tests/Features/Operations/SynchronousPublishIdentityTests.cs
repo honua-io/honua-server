@@ -99,7 +99,9 @@ public sealed class SynchronousPublishIdentityTests
             ServiceName = "parcels",
             Parameters = new Dictionary<string, string?>
             {
-                ["schema"] = "public", ["table"] = "parcels", ["layerName"] = "Parcels",
+                ["schema"] = "public",
+                ["table"] = "parcels",
+                ["layerName"] = "Parcels",
             },
         },
         new OperationPolicyContext { ResolvedConnectionString = "Host=localhost;Database=test" });
