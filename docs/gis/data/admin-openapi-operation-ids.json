@@ -573,6 +573,12 @@
       "path": "/capabilities"
     },
     {
+      "operationId": "getAdminLayerDiscovery",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/metadata/layers/{layerId}/discovery"
+    },
+    {
       "operationId": "getAdminLayerDrawingInfo",
       "catalogOperationId": "admin.layer.drawing-info.get",
       "method": "GET",
@@ -619,6 +625,12 @@
       "catalogOperationId": null,
       "method": "GET",
       "path": "/openapi.json"
+    },
+    {
+      "operationId": "getAdminServiceDiscovery",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/services/{serviceName}/discovery"
     },
     {
       "operationId": "getAdminVersion",
@@ -2331,6 +2343,12 @@
       "path": "/api-keys/{id}/restrictions"
     },
     {
+      "operationId": "updateAdminLayerDiscovery",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/metadata/layers/{layerId}/discovery"
+    },
+    {
       "operationId": "updateAdminLayerFields",
       "catalogOperationId": "admin.layer.fields.set",
       "method": "PUT",
@@ -2347,6 +2365,12 @@
       "catalogOperationId": "admin.layer.style.set",
       "method": "PUT",
       "path": "/metadata/layers/{layerId}/style"
+    },
+    {
+      "operationId": "updateAdminServiceDiscovery",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/services/{serviceName}/discovery"
     },
     {
       "operationId": "updateAlertRule",
