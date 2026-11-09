@@ -20,7 +20,7 @@
     <PackageReference Include="FluentAssertions" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../../../src/Honua.Protocols.Scene/Honua.Protocols.Scene.csproj" />
+    <ProjectReference Include="../../../src/Honua.Protocols/Scene/Honua.Protocols.Scene.csproj" />
     <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
     <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

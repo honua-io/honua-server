@@ -11,6 +11,8 @@ namespace Honua.Architecture.Tests;
 public sealed class SourceTextRatchetTests
 {
     [UnitTheory]
+    [InlineData("", true)]
+    [InlineData("", false)]
     [InlineData("::Method()|src/Other/Store.cs::Method()", true)]
     [InlineData("\treturn task.Result;", true)]
     [InlineData("::Method()|src/Other/Store.cs::Method()", false)]
