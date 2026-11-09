@@ -12,6 +12,56 @@ namespace Honua.Db.Postgres.Tests.Features.Metadata;
 
 public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
 {
+    [IntegrationTest]
+    public async Task SaveAsync_OmittedDatasetStatus_PreservesDefaultThroughColdReload()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreFreshDbTests));
+        try
+        {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataV2GraphStore(provider, "Test",
+                schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance, schemaName: schema);
+            await store.SaveAsync(new MetadataV2Graph { Environment = "Test" }, expectedEtag: null);
+            await using (var connection = await fixture.DataSource.OpenConnectionAsync())
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"""
+                    UPDATE "{schema}".metadata_v2_snapshots SET document = document || $1::jsonb
+                    WHERE environment = 'Test';
+                    """;
+                command.Parameters.AddWithValue("""
+                    {"resources":[{"metadata":{"id":"dataset","name":"dataset"},"type":"feature-dataset",
+                      "schemaFields":[{"name":"name","type":"string"}]}]}
+                    """);
+                await command.ExecuteNonQueryAsync();
+            }
+            var loaded = await new PostgresMetadataV2GraphStore(provider, "Test",
+                schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance, schemaName: schema).GetCurrentAsync();
+            var saved = await store.SaveAsync(loaded.Graph with
+            {
+                Metadata = loaded.Graph.Metadata with { Title = "Edited title" }
+            }, loaded.Etag);
+            var reloaded = await new PostgresMetadataV2GraphStore(provider, "Test",
+                schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance, schemaName: schema).GetCurrentAsync();
+
+            reloaded.Etag.Should().Be(saved.Etag);
+            reloaded.Revision.Should().BeGreaterThan(loaded.Revision);
+            reloaded.Graph.Metadata.Title.Should().Be("Edited title");
+            var dataset = reloaded.Graph.Resources.Should().ContainSingle().Subject;
+            dataset.SchemaFields.Single().Type.Should().Be(MetadataV2FieldType.String);
+            dataset.Status.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+            dataset.Status.State.Should().Be(MetadataV2OperationalState.Unknown);
+            using var persisted = await ReadPersistedSnapshotAsync(schema, saved.Revision);
+            persisted.RootElement.GetProperty("resources")[0].GetProperty("status")
+                .GetProperty("lifecycle").GetString().Should().Be("active");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     [IntegrationTheory]
     [InlineData("\"future-field-type\"")]
     [InlineData("18446744073709551616")]

@@ -246,6 +246,26 @@ public sealed class MetadataV2RoutingRobustnessTests
         snapshot.IsRoutable(graph.Publications.Single()).Should().BeTrue();
     }
 
+    [UnitTest]
+    public void Serialize_OmittedStatuses_PreservesServingDefaultsAfterEdit()
+    {
+        var graph = JsonSerializer.Deserialize(KnownGraph, MetadataV2JsonContext.Default.MetadataV2Graph)!;
+        var edited = graph with { Metadata = graph.Metadata with { Title = "Edited title" } };
+        var json = JsonSerializer.Serialize(edited, MetadataV2JsonContext.Default.MetadataV2Graph);
+        var reloaded = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Graph)!;
+
+        reloaded.Metadata.Title.Should().Be("Edited title");
+        new MetadataV2GraphSnapshot(reloaded, "\"test\"", DateTimeOffset.UnixEpoch)
+            .IsRoutable(reloaded.Publications.Single()).Should().BeTrue();
+        using var document = JsonDocument.Parse(json);
+        foreach (var collection in new[] { "resources", "storageBindings", "publications", "services", "connections" })
+        {
+            var status = document.RootElement.GetProperty(collection)[0].GetProperty("status");
+            status.GetProperty("lifecycle").GetString().Should().Be("active");
+            status.GetProperty("state").GetString().Should().Be("unknown");
+        }
+    }
+
     [UnitTheory]
     [InlineData("{}")]
     [InlineData("{\"lifecycle\":null,\"state\":null}")]
