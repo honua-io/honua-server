@@ -160,7 +160,7 @@ internal sealed partial class StreamingFileImportService
                 {
                     // Detect CRS using streaming
                     coordinateSystem = await InspectSourceCoordinateSystemAsync(fileStream, format.Value, cancellationToken);
-                detectedSrid = coordinateSystem.DetectedSrid;
+                    detectedSrid = coordinateSystem.DetectedSrid;
                 }
             }
 
@@ -228,8 +228,7 @@ internal sealed partial class StreamingFileImportService
                 }
             }
 
-            var formatDefined = format.Value is SupportedFileFormat.Kml or SupportedFileFormat.Gpx;
-            coordinateSystem ??= ImportCoordinateSystem.FromDetection(detectedSrid, detectedSrid.HasValue && !formatDefined, formatDefined);
+            coordinateSystem ??= FromDetectedSrid(format.Value, detectedSrid);
             var sampleProperties = new Dictionary<string, object?>();
             var firstFeature = features.FirstOrDefault();
             if (firstFeature?.Attributes is not null)

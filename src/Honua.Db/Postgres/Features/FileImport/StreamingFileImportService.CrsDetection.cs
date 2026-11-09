@@ -25,12 +25,13 @@ internal sealed partial class StreamingFileImportService
         => feature.Geometry is { SRID: > 0 } geometry && geometry.SRID != sourceSrid;
 
     private static async Task<bool> HasUniformSourceCrsAsync(
-        Stream stream, SupportedFileFormat format, int sourceSrid, CancellationToken cancellationToken)
+        Stream stream, SupportedFileFormat format, int sourceSrid, CsvImportOptions? csvOptions, CancellationToken cancellationToken)
     {
         try
         {
             var features = format == SupportedFileFormat.Csv
-                ? CsvFormatReader.ReadStreamingAsync(stream, cancellationToken)
+                ? CsvFormatReader.ReadStreamingAsync(stream, delimiterOverride: null, diagnostics: null,
+                    options: csvOptions is null ? null : csvOptions with { AddressGeocoder = null }, cancellationToken)
                 : WktFormatReader.ReadStreamingAsync(stream, cancellationToken);
             await foreach (var feature in features.WithCancellation(cancellationToken))
             {
