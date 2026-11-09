@@ -5,8 +5,8 @@ import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 
-export const CLIENT_SOURCE = '372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4';
-export const SDK_VERSION = '1.32.1';
+import { CLIENT_SOURCE, SDK_VERSION, CLIENT_LOCK_SHA256 } from './client-pins.mjs';
+export { CLIENT_SOURCE, SDK_VERSION, CLIENT_LOCK_SHA256 } from './client-pins.mjs';
 
 export async function sourceSha256(moduleUrl) {
   return createHash('sha256').update(await readFile(new URL(moduleUrl))).digest('hex');
@@ -35,7 +35,7 @@ export async function requirePublishedPackage(packageName, modulePath, expectedV
   const lockSha256 = createHash('sha256').update(lockBytes).digest('hex');
   const installed = JSON.parse(lockBytes).packages[`node_modules/${packageName}`];
   if (manifest.version !== expectedVersion || installed?.version !== expectedVersion
-    || lockSha256 !== '5e6b28f4c29b82b799190e9e92083c7aca38b879afc7e242bee4320a711e195f') throw new Error('unexpected-installed-client');
+    || lockSha256 !== CLIENT_LOCK_SHA256) throw new Error('unexpected-installed-client');
   return { root: packageRoot, version: manifest.version, integrity: installed.integrity, lockSha256 };
 }
 

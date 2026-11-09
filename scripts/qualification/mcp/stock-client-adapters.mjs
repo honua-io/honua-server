@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { CatalogContractFailure } from './catalog-channel-contract.mjs';
 import { collectPages, openInstalledClient, ownedClientEndpoint, requirePublishedPackage } from './installed-client.mjs';
 import { inspectorRateBudget } from './inspector-rate-budget.mjs';
+import { acceptInspectorResult, classifyInspectorFailure } from './inspector-result.mjs';
 
 const VIEW_META = 'honua.io/workflow-view';
 const INSPECTOR_VERSION = '2.10.1';
@@ -22,7 +23,13 @@ export async function openStockSdk(baseUrl, apiKey) {
   };
 }
 
-function runInspector({ entry, config, directory, method, view, extra, deadline }) {
+function executeInspector(args, options) {
+  return new Promise(resolve => {
+    execFile(process.execPath, args, options, (error, stdout, stderr) => resolve({ error, stdout, stderr }));
+  });
+}
+
+async function runInspector({ entry, config, directory, method, view, extra, deadline }) {
   const remaining = deadline - Date.now();
   if (remaining <= 0) throw new CatalogContractFailure('inspector-budget-exceeded');
   const args = [entry, '--cli', '--config', config, '--server', 'owned', '--method', method,
@@ -30,37 +37,15 @@ function runInspector({ entry, config, directory, method, view, extra, deadline 
   const env = Object.fromEntries(['PATH', 'SystemRoot', 'WINDIR', 'TMPDIR', 'TEMP', 'TMP']
     .filter(key => process.env[key] !== undefined).map(key => [key, process.env[key]]));
   Object.assign(env, { MCP_STORAGE_DIR: directory, MCP_INSPECTOR_SECRET_STORE: 'memory', MCP_AUTO_OPEN_ENABLED: 'false' });
-  return new Promise((resolve, reject) => {
-    execFile(process.execPath, args, { env, timeout: Math.min(30_000, remaining), maxBuffer: 8 * 1024 * 1024 }, (error, stdout, stderr) => {
-      const code = error?.code ?? 0;
-      try {
-        const result = JSON.parse(stdout).result;
-        if (!result || (code !== 0 && !(code === 5 && result.isError === true))) {
-          throw new CatalogContractFailure('inspector-invocation-failed');
-        }
-        resolve(result);
-      } catch {
-        const toolIndex = extra.indexOf('--tool-name');
-        let httpStatus;
-        let clientErrorCode;
-        try {
-          const line = stderr.split('\n').findLast(value => value.trimStart().startsWith('{"error":'));
-          const diagnostic = JSON.parse(line).error;
-          if (Number.isInteger(diagnostic?.status) && diagnostic.status >= 100 && diagnostic.status <= 599) httpStatus = diagnostic.status;
-          if (['error', 'auth_required', 'unreachable', 'tool_error', 'schema_unportable', 'store_unavailable'].includes(diagnostic?.code)) clientErrorCode = diagnostic.code;
-        } catch { /* Non-JSON client diagnostics are not echoed. */ }
-        reject(new CatalogContractFailure('inspector-invocation-failed', {
-          method, view, tool: toolIndex < 0 ? undefined : extra[toolIndex + 1],
-          exitCode: typeof code === 'number' ? code : undefined, timedOut: error?.killed === true,
-          httpStatus, clientErrorCode, rateLimitDiagnostic: /429|rate.?limit|too many requests/i.test(stderr),
-          schemaDiagnostic: /schema|validation|format|ajv/i.test(stderr),
-          authorizationDiagnostic: /authentication|unauthori|forbidden|\b401\b|\b403\b/i.test(stderr),
-          interactiveDiagnostic: /elicitation|approval|input.required/i.test(stderr),
-          emptyStdout: stdout.trim().length === 0,
-        }));
-      }
-    });
+  const { error, stdout, stderr } = await executeInspector(args, {
+    env, timeout: Math.min(30_000, remaining), maxBuffer: 8 * 1024 * 1024,
   });
+  try {
+    return acceptInspectorResult(stdout, error?.code ?? 0);
+  } catch {
+    throw new CatalogContractFailure('inspector-invocation-failed',
+      classifyInspectorFailure(stderr, error, { method, view, extra, stdout }));
+  }
 }
 
 export async function openStockInspector(baseUrl, apiKey, { budget, rosters } = {}) {

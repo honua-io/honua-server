@@ -42,7 +42,7 @@ jobs:
         with:
           node-version: '22.19.0'
       - name: Check contract failure controls
-        run: node --test scripts/qualification/mcp/catalog-channel-contract.test.mjs
+        run: node --test scripts/qualification/mcp/catalog-channel-contract.test.mjs scripts/qualification/mcp/inspector-result.test.mjs scripts/qualification/mcp/inspector-rate-budget.test.mjs
       - name: Invoke every advertised tool and audit its inputs and discovery
         run: |
           set -euo pipefail
@@ -95,7 +95,8 @@ jobs:
         run: |
           set -euo pipefail
           cd .mcp-client/certification
-          echo '5e6b28f4c29b82b799190e9e92083c7aca38b879afc7e242bee4320a711e195f  package-lock.json' | sha256sum -c -
+          lock_sha=$(node --input-type=module -e "import { CLIENT_LOCK_SHA256 } from '../../scripts/qualification/mcp/client-pins.mjs'; console.log(CLIENT_LOCK_SHA256)")
+          printf '%s  package-lock.json\n' "$lock_sha" | sha256sum -c -
           npm ci --ignore-scripts
           cd "$GITHUB_WORKSPACE"
           ln -s "$GITHUB_WORKSPACE/.mcp-client/certification/node_modules" scripts/qualification/mcp/node_modules

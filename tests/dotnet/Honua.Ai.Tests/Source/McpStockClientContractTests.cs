@@ -11,6 +11,20 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 public sealed partial class McpWorkflowViewTests
 {
     [UnitTest]
+    public async Task LiveWorkflowViews_StudioDraftConsumers_NameTheDraftCreator()
+    {
+        var catalog = await LiveCatalogAsync();
+        var consumers = catalog.Where(entry => entry.Descriptor.Name.StartsWith("honua_studio_", StringComparison.Ordinal)
+            && entry.Descriptor.InputSchema.GetProperty("properties").TryGetProperty("draftId", out _)).ToArray();
+        consumers.Should().NotBeEmpty();
+        foreach (var consumer in consumers)
+        {
+            consumer.Descriptor.InputSchema.GetProperty("properties").GetProperty("draftId")
+                .GetProperty("description").GetString().Should().Contain("honua_studio_create_draft", consumer.Descriptor.Name);
+        }
+    }
+
+    [UnitTest]
     public async Task LiveWorkflowViews_JobConsumers_ProvideReadOnlyJobDiscovery()
     {
         var catalog = await LiveCatalogAsync();
