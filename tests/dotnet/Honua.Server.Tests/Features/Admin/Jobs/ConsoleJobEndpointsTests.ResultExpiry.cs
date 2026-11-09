@@ -113,48 +113,8 @@ public sealed partial class ConsoleJobEndpointsTests
     [Endpoint("GET /api/v1/admin/jobs/{jobId}/artifacts")]
     public async Task GetArtifacts_PastGpRetention_PreservesCustomAndWorkspaceLifetimes()
     {
-        var now = _retentionClock.GetUtcNow();
-        var descriptor = new CustomCodeArtifactDescriptor
-        {
-            JobId = "job-custom-retention",
-            Attempt = 1,
-            Name = "output.json",
-            ObjectKey = "retained/output",
-            Provider = CloudStorageProvider.AwsS3,
-            State = "available",
-            ContentType = "application/json",
-            SizeBytes = 2,
-            Sha256 = new string('a', 64)
-        };
-        _jobStore.Set(CreateJob(descriptor.JobId, ExecutionJobStatus.Succeeded, now.AddDays(-30), "corr-custom-retention") with
-        {
-            CompletedAt = now.AddDays(-29),
-            ArtifactReferences = [descriptor.Serialize(), "available"]
-        });
-        var storage = Substitute.For<ICloudFileStorage>();
-        storage.Provider.Returns(CloudStorageProvider.AwsS3);
-        storage.GetMetadataAsync(descriptor.ObjectKey, Arg.Any<CancellationToken>()).Returns(new CloudFile
-        {
-            FileId = descriptor.ObjectKey,
-            FileName = descriptor.Name,
-            StoragePath = descriptor.ObjectKey,
-            ContentType = descriptor.ContentType,
-            SizeBytes = descriptor.SizeBytes,
-            UploadedAt = now.AddDays(-30),
-            ExpiresAt = now.AddDays(1),
-            Provider = descriptor.Provider
-        });
-        var fixture = new WebAppFixture().ConfigureServices(services =>
-        {
-            services.RemoveAll<IExecutionJobStore>();
-            services.AddSingleton<IExecutionJobStore>(_jobStore);
-            services.RemoveAll<IArtifactStore>();
-            services.AddSingleton<IArtifactStore>(_artifactStore);
-            services.RemoveAll<ICloudFileStorage>();
-            services.AddSingleton<ICloudFileStorage>(storage);
-            services.RemoveAll<TimeProvider>();
-            services.AddSingleton<TimeProvider>(_retentionClock);
-        });
+        var descriptor = CreateRetainedCustomArtifact();
+        var fixture = CreateArtifactLifetimeFixture(descriptor);
         try
         {
             await fixture.InitializeAsync();
@@ -173,6 +133,62 @@ public sealed partial class ConsoleJobEndpointsTests
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    private static CustomCodeArtifactDescriptor CreateRetainedCustomArtifact()
+    {
+        return new CustomCodeArtifactDescriptor
+        {
+            JobId = "job-custom-retention",
+            Attempt = 1,
+            Name = "output.json",
+            ObjectKey = "retained/output",
+            Provider = CloudStorageProvider.AwsS3,
+            State = "available",
+            ContentType = "application/json",
+            SizeBytes = 2,
+            Sha256 = new string('a', 64)
+        };
+    }
+
+    private WebAppFixture CreateArtifactLifetimeFixture(CustomCodeArtifactDescriptor descriptor)
+    {
+        var now = _retentionClock.GetUtcNow();
+        _jobStore.Set(CreateJob(descriptor.JobId, ExecutionJobStatus.Succeeded, now.AddDays(-30), "corr-custom-retention") with
+        {
+            CompletedAt = now.AddDays(-29),
+            ArtifactReferences = [descriptor.Serialize(), "available"]
+        });
+        var storage = CreateRetainedStorage(descriptor, now);
+        return new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IExecutionJobStore>();
+            services.AddSingleton<IExecutionJobStore>(_jobStore);
+            services.RemoveAll<IArtifactStore>();
+            services.AddSingleton<IArtifactStore>(_artifactStore);
+            services.RemoveAll<ICloudFileStorage>();
+            services.AddSingleton<ICloudFileStorage>(storage);
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(_retentionClock);
+        });
+    }
+
+    private static ICloudFileStorage CreateRetainedStorage(CustomCodeArtifactDescriptor descriptor, DateTimeOffset now)
+    {
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.Provider.Returns(CloudStorageProvider.AwsS3);
+        storage.GetMetadataAsync(descriptor.ObjectKey, Arg.Any<CancellationToken>()).Returns(new CloudFile
+        {
+            FileId = descriptor.ObjectKey,
+            FileName = descriptor.Name,
+            StoragePath = descriptor.ObjectKey,
+            ContentType = descriptor.ContentType,
+            SizeBytes = descriptor.SizeBytes,
+            UploadedAt = now.AddDays(-30),
+            ExpiresAt = now.AddDays(1),
+            Provider = descriptor.Provider
+        });
+        return storage;
     }
 
     private sealed class RetentionTestClock : TimeProvider

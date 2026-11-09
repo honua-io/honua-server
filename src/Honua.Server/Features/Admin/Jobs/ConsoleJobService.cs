@@ -205,12 +205,13 @@ internal sealed partial class ConsoleJobService(
 
         var itemCount = Math.Min(artifactRefs.Length, effectiveLimit);
         var items = new ConsoleJobArtifact[itemCount];
-        var artifactStore = serviceProvider.GetService<IArtifactStore>();
-        var resultsExpired = ResultsExpired(job, timeProvider.GetUtcNow());
+        var projection = new ArtifactProjection(
+            serviceProvider.GetService<IArtifactStore>(),
+            ResultsExpired(job, timeProvider.GetUtcNow()) ? MapExpiredDirectArtifact : MapDirectArtifact);
 
         for (var i = 0; i < itemCount; i++)
         {
-            items[i] = await MapArtifactAsync(artifactRefs[i], artifactStore, resultsExpired, cancellationToken).ConfigureAwait(false);
+            items[i] = await MapArtifactAsync(artifactRefs[i], projection, cancellationToken).ConfigureAwait(false);
         }
 
         return new ConsoleJobArtifactPageResponse
@@ -619,10 +620,11 @@ internal sealed partial class ConsoleJobService(
         return GeoprocessingResultRetention.HasExpired(job, now, retention);
     }
 
+    private sealed record ArtifactProjection(IArtifactStore? Store, Func<string, ConsoleJobArtifact> MapDirect);
+
     private async Task<ConsoleJobArtifact> MapArtifactAsync(
         string reference,
-        IArtifactStore? artifactStore,
-        bool resultsExpired,
+        ArtifactProjection projection,
         CancellationToken cancellationToken)
     {
         var customArtifact = await MapCustomCodeArtifactAsync(reference, cancellationToken).ConfigureAwait(false);
@@ -631,18 +633,18 @@ internal sealed partial class ConsoleJobService(
             return customArtifact;
         }
 
-        if (artifactStore != null)
+        if (projection.Store != null)
         {
             try
             {
-                var artifact = await artifactStore.GetAsync(reference, cancellationToken).ConfigureAwait(false);
+                var artifact = await projection.Store.GetAsync(reference, cancellationToken).ConfigureAwait(false);
                 if (artifact == null)
                 {
                     // Jobs also contain direct provider references. A metadata provider
                     // being registered does not turn those references into missing IDs.
                     if (IsDirectArtifactReference(reference))
                     {
-                        return MapDirectArtifact(reference, resultsExpired);
+                        return projection.MapDirect(reference);
                     }
                     return new ConsoleJobArtifact
                     {
@@ -666,7 +668,7 @@ internal sealed partial class ConsoleJobService(
             }
         }
 
-        return MapDirectArtifact(reference, resultsExpired);
+        return projection.MapDirect(reference);
     }
 
     private static string SafeArtifactIdentifier(string reference)
@@ -678,17 +680,25 @@ internal sealed partial class ConsoleJobService(
             || reference.Contains('/') || reference.Contains('\\')
             || RasterOutputJson.LooksLikeDescriptor(reference);
 
-    private static ConsoleJobArtifact MapDirectArtifact(string reference, bool expired)
+    private static ConsoleJobArtifact MapDirectArtifact(string reference)
     {
         var safe = IsSafeProviderLink(reference);
         return new ConsoleJobArtifact
         {
             ArtifactId = SafeArtifactIdentifier(reference),
-            Availability = expired ? "Expired" : safe ? "Available" : "Redacted",
-            ProviderLink = safe && !expired ? reference : null,
-            Message = expired ? "The job result retention period has elapsed." : safe ? null : "Artifact reference is not safe to expose."
+            Availability = safe ? "Available" : "Redacted",
+            ProviderLink = safe ? reference : null,
+            Message = safe ? null : "Artifact reference is not safe to expose."
         };
     }
+
+    private static ConsoleJobArtifact MapExpiredDirectArtifact(string reference)
+        => new()
+        {
+            ArtifactId = SafeArtifactIdentifier(reference),
+            Availability = "Expired",
+            Message = "The job result retention period has elapsed."
+        };
 
     private static ConsoleJobArtifact MapStoredArtifact(Artifact artifact)
     {
