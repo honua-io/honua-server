@@ -19,7 +19,7 @@ public sealed class SharedHostCleanupGroup
 
 [Collection(SharedHostCleanupGroup.Name)]
 [Protocol(TestProtocols.TestQuality)]
-public sealed class SharedHostCleanupTests
+public sealed partial class SharedHostCleanupTests
 {
     [Theory]
     [InlineData(false)]

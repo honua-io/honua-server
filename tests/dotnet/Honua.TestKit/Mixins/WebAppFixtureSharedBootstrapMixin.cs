@@ -140,7 +140,7 @@ internal static class WebAppFixtureSharedBootstrapMixin
         }
     }
 
-    private static WebApplicationFactory<Program> BuildSharedFactory(
+    internal static WebApplicationFactory<Program> BuildSharedFactory(
         string connectionString,
         string sharedAdminPassword)
     {
@@ -158,10 +158,7 @@ internal static class WebAppFixtureSharedBootstrapMixin
             ["HONUA_TEST_SCHEMA_HEADERS"] = "true",
         };
 
-        // Not disposed here by design: the returned factory is stored in the process-wide
-        // _sharedFactory field by the caller (EnsureInitializedAsync) and disposed once,
-        // in ReleaseAsync, when the last referencing WebAppFixture tears down. Disposing
-        // it here or wrapping the call in `using` would break every fixture sharing it.
+        // The shared bootstrap owns this factory until startup fails or its last caller releases it.
         return Honua.TestKit.ConfiguredWebApplicationFactory.Create(builder =>
             {
                 WebAppFixturePostgresWiringMixin.ApplyCommonHostSettings(builder);
