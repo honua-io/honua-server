@@ -30,6 +30,15 @@
   ],
   "instruments": [
     {
+      "instrument": "honua.ogc.capabilities.omitted_layers",
+      "kind": "Counter",
+      "unit": null,
+      "series": [
+        "honua_ogc_capabilities_omitted_layers_total"
+      ],
+      "source": "src/Honua.Protocols.OgcClassic/CapabilitiesLayerBuilder.cs"
+    },
+    {
       "instrument": "execution.admission.evaluated",
       "kind": "Counter",
       "unit": "{evaluation}",
