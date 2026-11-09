@@ -19,7 +19,8 @@ def official_run(**overrides):
 
 class CandidateTests(unittest.TestCase):
     def test_fork_and_unexpected_event_cannot_supply_candidate_inputs(self):
-        for field, value in (("event", "pull_request"), ("head_repository", {"full_name": "other/server"})):
+        for field, value in (("event", "pull_request"), ("head_repository", {"full_name": "other/server"}),
+                             ("head_repository", None)):
             run = official_run()
             run[field] = value
             results = [json.dumps({"workflow_runs": [run]}), json.dumps({"artifacts": [{

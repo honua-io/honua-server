@@ -119,11 +119,12 @@ class AssertionTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 proof.check_services(config, invalid)
 
-    def test_stopped_containers_also_prevent_clean_host_claim(self):
+    def test_stopped_containers_and_hidden_images_prevent_clean_host_claim(self):
         installation = Mock()
         installation.run.side_effect = lambda command: "stopped-id" if "--all" in command else ""
-        with self.assertRaisesRegex(ValueError, "leftover container"):
-            proof.check_empty(installation, ("container", "volume"))
+        for resource in ("container", "image"):
+            with self.subTest(resource=resource), self.assertRaisesRegex(ValueError, "leftover " + resource):
+                proof.check_empty(installation, (resource,))
 
     def test_leftover_volumes_prevent_teardown_claim(self):
         installation = Mock()
@@ -221,6 +222,8 @@ class LifecycleTests(unittest.TestCase):
         self.archive.write_bytes(b"different archive")
         with self.assertRaisesRegex(ValueError, "transported input identity"):
             proof.proof_inputs(self.input, self.archive)
+        self.assertEqual(1, self.execute([], []))
+        self.assertEqual("validate-input", json.loads(self.receipt.read_text())["failedStage"])
 
     def test_invalid_provenance_fields_are_refused(self):
         invalid = {"packageSourceSha": "short", "serverSourceSha": None, "publishedRunId": 0,
@@ -233,6 +236,11 @@ class LifecycleTests(unittest.TestCase):
 
     def test_candidate_identity_requires_the_official_archive_and_source(self):
         self.metadata["packageKind"] = "candidate"
+        self.metadata["packageSourceSha"] = self.metadata["serverSourceSha"]
+        self.input.write_text(json.dumps(self.metadata))
+        with self.assertRaisesRegex(ValueError, "official publication"):
+            proof.proof_inputs(self.input, self.archive)
+        self.metadata["packageSourceSha"] = "b" * 40
         self.metadata["publishedArchiveSha256"] = self.metadata["archiveSha256"]
         self.input.write_text(json.dumps(self.metadata))
         with self.assertRaisesRegex(ValueError, "official publication"):

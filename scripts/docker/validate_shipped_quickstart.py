@@ -151,7 +151,7 @@ def exercise(installation: Installation, blocks: dict[str, str]) -> dict:
     installation.run(["python3", "quickstart.py"])
     installation.health()
     if installation.credentials() != credentials:
-        raise ValueError("Restart changed the installation's saved credentials")
+        raise ValueError("Reinitialization changed the installation's saved credentials")
     return {"defaultServices": default_count, "consoleServices": console_count,
             "secretFreeConfiguration": True, "publishQuery": True, "reinitializePreservesCredentials": True}
 
@@ -189,9 +189,10 @@ def main() -> int:
                "authenticatedConsoleStudio": "pending-package-and-identity-journey",
                "installations": []}
     args.receipt.parent.mkdir(parents=True, exist_ok=True)
-    stage = "validate-document"
+    stage = "validate-input"
     try:
         receipt.update(proof_inputs(args.input, args.archive))
+        stage = "validate-document"
         blocks = public_blocks(args.document)
         publication_filename(blocks)
         previous = None

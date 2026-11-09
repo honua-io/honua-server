@@ -26,8 +26,8 @@ def select_candidate() -> tuple[dict, str]:
     runs = json.loads(github("api", f"repos/{REPOSITORY}/actions/workflows/nightly-container-build.yml/runs"
                             "?status=success&per_page=30"))["workflow_runs"]
     for run in runs:
-        if run.get("event") not in ("schedule", "workflow_dispatch") or run.get(
-                "head_repository", {}).get("full_name") != REPOSITORY:
+        if run.get("event") not in ("schedule", "workflow_dispatch") or (
+                run.get("head_repository") or {}).get("full_name") != REPOSITORY:
             continue
         sha = run["head_sha"]
         if not re.fullmatch(r"[a-f0-9]{40}", sha):
