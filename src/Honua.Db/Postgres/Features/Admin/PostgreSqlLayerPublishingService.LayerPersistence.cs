@@ -387,17 +387,25 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string canonicalGeometry,
         string attributesExpression)
         => $"""
-            WITH page AS MATERIALIZED (
+            WITH source_page AS MATERIALIZED (
                 SELECT
                     src.tableoid AS source_oid,
                     src.ctid AS source_tid,
-                    {canonicalGeometry} AS geometry,
-                    {attributesExpression} AS attributes
+                    src AS source_row
                 FROM {sourceTable} AS src
                 WHERE @hasCursor = FALSE
                     OR (src.tableoid, src.ctid) > (@tableOid, @ctid::tid)
                 ORDER BY src.tableoid, src.ctid
                 LIMIT @batchSize
+            ),
+            page AS MATERIALIZED (
+                SELECT
+                    picked.source_oid,
+                    picked.source_tid,
+                    {canonicalGeometry} AS geometry,
+                    {attributesExpression} AS attributes
+                FROM source_page AS picked
+                CROSS JOIN LATERAL (SELECT (picked.source_row).*) AS src
             ),
             inserted AS (
                 INSERT INTO {featuresTable} (layer_id, geometry, attributes)
