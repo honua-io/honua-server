@@ -1,4 +1,155 @@
 {
   "version": 1,
-  "entries": []
+  "entries": [
+    {
+      "path": "src/Honua.Server/Features/Admin/AdminLayerAuthoringEndpoints.DisplaySpatial.cs",
+      "rule": "graph-resource",
+      "line": "        Func<MetadataV2Resource, IResult> respond)",
+      "reason": "Existing canonical metadata contract; vocabulary migration is deferred to rc.3."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/AdminLayerAuthoringEndpoints.DisplaySpatial.cs",
+      "rule": "graph-resource",
+      "line": "        Func<MetadataV2Resource, MetadataV2Resource> mutate)",
+      "reason": "Existing canonical metadata contract; vocabulary migration is deferred to rc.3."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/AdminLayerAuthoringEndpoints.DisplaySpatial.cs",
+      "rule": "graph-resource",
+      "line": "    private static MetadataV2Resource ApplyDisplay(MetadataV2Resource resource, LayerDisplayUpdateRequest request)",
+      "reason": "Existing canonical metadata contract; vocabulary migration is deferred to rc.3."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/AdminLayerAuthoringEndpoints.DisplaySpatial.cs",
+      "rule": "graph-resource",
+      "line": "    private static MetadataV2Resource ApplySpatial(MetadataV2Resource resource, LayerSpatialUpdateRequest request)",
+      "reason": "Existing canonical metadata contract; vocabulary migration is deferred to rc.3."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/AdminLayerAuthoringEndpoints.DisplaySpatial.cs",
+      "rule": "graph-resource",
+      "line": "    private static IResult DisplayResponse(int layerId, MetadataV2Resource resource)",
+      "reason": "Existing canonical metadata contract; vocabulary migration is deferred to rc.3."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/AdminLayerAuthoringEndpoints.DisplaySpatial.cs",
+      "rule": "graph-resource",
+      "line": "    private static IResult SpatialResponse(int layerId, MetadataV2Resource resource)",
+      "reason": "Existing canonical metadata contract; vocabulary migration is deferred to rc.3."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/ServiceSettingsEndpoints.LayerMetadata.cs",
+      "rule": "graph-resource",
+      "line": "    private sealed record FeatureLayerTarget(MetadataV2Resource? Resource, IResult? Error);",
+      "reason": "Existing canonical metadata contract; vocabulary migration is deferred to rc.3."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/ServiceSettingsEndpoints.LayerMetadata.cs",
+      "rule": "dataset-reference",
+      "line": "        var resourceIds = FindLayerMetadataResourceIds(snapshot, serviceIds, layerId);",
+      "reason": "Existing canonical metadata contract; vocabulary migration is deferred to rc.3."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/ServiceSettingsEndpoints.LayerMetadata.cs",
+      "rule": "dataset-reference",
+      "line": "        if (resourceIds.Length > 1)",
+      "reason": "Existing canonical metadata contract; vocabulary migration is deferred to rc.3."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/ServiceSettingsEndpoints.LayerMetadata.cs",
+      "rule": "dataset-reference",
+      "line": "        return resourceIds.Length == 1 && snapshot.Index.ResourcesById.TryGetValue(resourceIds[0], out var resource)",
+      "reason": "Existing canonical metadata contract; vocabulary migration is deferred to rc.3."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/ServiceSettingsEndpoints.LayerMetadata.cs",
+      "rule": "dataset-reference",
+      "line": "    private static string[] FindLayerMetadataResourceIds(MetadataV2GraphSnapshot snapshot,",
+      "reason": "Existing canonical metadata contract; vocabulary migration is deferred to rc.3."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/ServiceSettingsEndpoints.LayerMetadata.cs",
+      "rule": "graph-publication",
+      "line": "            publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&",
+      "reason": "Existing canonical metadata contract; vocabulary migration is deferred to rc.3."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/ServiceSettingsEndpoints.LayerMetadata.cs",
+      "rule": "layer-type",
+      "line": "            publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&",
+      "reason": "Existing canonical metadata contract; vocabulary migration is deferred to rc.3."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/ServiceSettingsEndpoints.LayerMetadata.cs",
+      "rule": "dataset-reference",
+      "line": "        .Select(publication => publication.ResourceId).Distinct(StringComparer.Ordinal).ToArray();",
+      "reason": "Existing canonical metadata contract; vocabulary migration is deferred to rc.3."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/ServiceSettingsEndpoints.cs",
+      "rule": "dataset-reference",
+      "line": "        var currentResourceIds = FindLayerMetadataResourceIds(snapshot, featureServiceIds, layerId);",
+      "reason": "Existing canonical metadata contract; vocabulary migration is deferred to rc.3."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/AdminLayerDisplaySpatialTests.cs",
+      "rule": "graph-publication",
+      "line": "            candidate.LayerIndex == 1 && candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);",
+      "reason": "Existing canonical metadata contract; vocabulary migration is deferred to rc.3."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/AdminLayerDisplaySpatialTests.cs",
+      "rule": "layer-type",
+      "line": "            candidate.LayerIndex == 1 && candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);",
+      "reason": "Existing canonical metadata contract; vocabulary migration is deferred to rc.3."
+    },
+    {
+      "path": "src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/MetadataV2FieldSemantics.cs",
+      "rule": "graph-resource",
+      "line": "    internal static bool HasSupportedReferences(MetadataV2Resource dataset)",
+      "reason": "Uses the existing canonical graph contract before the scheduled vocabulary migration; the shared-graph rename must land after this robustness batch."
+    },
+    {
+      "path": "src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/MetadataV2FieldSemantics.cs",
+      "rule": "graph-resource",
+      "line": "        MetadataV2Resource dataset, string? fieldName, Func<MetadataV2FieldType, bool> supportsType)",
+      "reason": "Uses the existing canonical graph contract before the scheduled vocabulary migration; the shared-graph rename must land after this robustness batch."
+    },
+    {
+      "path": "src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/MetadataV2GraphSnapshotExtensions.cs",
+      "rule": "graph-resource",
+      "line": "           IsKnownEnumValue(resource.Type, MetadataV2ResourceType.Unknown) && IsServingStatus(resource.Status) &&",
+      "reason": "Uses the existing canonical graph contract before the scheduled vocabulary migration; the shared-graph rename must land after this robustness batch."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Domain/V2/MetadataV2RoutingRobustnessTests.cs",
+      "rule": "dataset-reference",
+      "line": "            ResourceId = \"future-dataset\",",
+      "reason": "Uses the existing canonical graph contract before the scheduled vocabulary migration; the shared-graph rename must land after this robustness batch."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Services/FileMetadataV2GraphProviderTests.cs",
+      "rule": "graph-resource",
+      "line": "            Spatial = new MetadataV2ResourceSpatial { PrimaryGeometryField = \"shape\" },",
+      "reason": "Uses the existing canonical graph contract before the scheduled vocabulary migration; the shared-graph rename must land after this robustness batch."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Services/FileMetadataV2GraphProviderTests.cs",
+      "rule": "graph-resource",
+      "line": "            Temporal = new MetadataV2ResourceTemporal { StartTimeField = \"start\", EndTimeField = \"end\" },",
+      "reason": "Uses the existing canonical graph contract before the scheduled vocabulary migration; the shared-graph rename must land after this robustness batch."
+    },
+    {
+      "path": "tests/python/unit/test_postgis_metadata_snapshot.py",
+      "rule": "layer-type",
+      "line": "                           if publication[\"publicationType\"] == \"stac-collection\")",
+      "reason": "Seed regression reads the current Metadata v2 wire key literally to verify the storage mapping and STAC declaration. Preserve that contract until the deferred vocabulary migration replaces it; no alternate key is introduced."
+    },
+    {
+      "path": "tests/python/unit/test_postgis_metadata_snapshot.py",
+      "rule": "dataset-reference",
+      "line": "        assert publication[\"resourceId\"] == resource[\"metadata\"][\"id\"]",
+      "reason": "Seed regression reads the current Metadata v2 wire key literally to verify the storage mapping and STAC declaration. Preserve that contract until the deferred vocabulary migration replaces it; no alternate key is introduced."
+    }
+  ]
 }

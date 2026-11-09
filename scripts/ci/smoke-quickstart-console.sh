@@ -3,14 +3,15 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="${ROOT_DIR}/docker-compose.yml"
-PROJECT_NAME="${HONUA_QUICKSTART_SMOKE_PROJECT:-honua-quickstart-console-smoke}"
+PROJECT_NAME="${HONUA_QUICKSTART_SMOKE_PROJECT:-honua-quickstart-console-smoke-$$}"
+OWNED_SERVER="${ROOT_DIR}/scripts/ci/owned-server.py"
 SMOKE_OVERRIDE_FILE=""
 SMOKE_ENV_FILE=""
-HONUA_HTTP_PORT="${HONUA_QUICKSTART_SMOKE_HTTP_PORT:-18080}"
-HONUA_GRPC_PORT="${HONUA_QUICKSTART_SMOKE_GRPC_PORT:-18081}"
-HONUA_CONSOLE_PORT="${HONUA_QUICKSTART_SMOKE_CONSOLE_PORT:-15174}"
-POSTGRES_PORT="${HONUA_QUICKSTART_SMOKE_POSTGRES_PORT:-15432}"
-REDIS_PORT="${HONUA_QUICKSTART_SMOKE_REDIS_PORT:-16379}"
+HONUA_HTTP_PORT="$(python3 "${OWNED_SERVER}" port --variable HONUA_QUICKSTART_SMOKE_HTTP_PORT --ci-default 18080)"
+HONUA_GRPC_PORT="$(python3 "${OWNED_SERVER}" port --variable HONUA_QUICKSTART_SMOKE_GRPC_PORT --ci-default 18081)"
+HONUA_CONSOLE_PORT="$(python3 "${OWNED_SERVER}" port --variable HONUA_QUICKSTART_SMOKE_CONSOLE_PORT --ci-default 15174)"
+POSTGRES_PORT="$(python3 "${OWNED_SERVER}" port --variable HONUA_QUICKSTART_SMOKE_POSTGRES_PORT --ci-default 15432)"
+REDIS_PORT="$(python3 "${OWNED_SERVER}" port --variable HONUA_QUICKSTART_SMOKE_REDIS_PORT --ci-default 16379)"
 ADMIN_PASSWORD="${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
 
 compose() {
@@ -53,21 +54,12 @@ compose_down() {
 }
 
 wait_for_url() {
-  local url="$1"
-  local label="$2"
-  local attempts="${3:-60}"
-
-  for _ in $(seq 1 "${attempts}"); do
-    if curl -fsS "${url}" >/dev/null 2>&1; then
-      echo "${label}: ok"
-      return 0
-    fi
-
-    sleep 2
-  done
-
-  echo "${label}: timed out waiting for ${url}" >&2
-  return 1
+  local url="$1" service="$2" attempts="${3:-60}" container
+  local response_options=()
+  if [[ -n "${4:-}" ]]; then response_options+=(--redirect-path "$4"); fi
+  container="$(compose ps -q "$service")"
+  python3 "${OWNED_SERVER}" wait --container "$container" --container-port 8080 \
+    --url "$url" --timeout "$((attempts * 2))" "${response_options[@]}"
 }
 
 assert_all_health_checks() {
@@ -155,14 +147,14 @@ YAML
 compose_down
 compose up -d --build postgres redis honua console
 
-wait_for_url "http://127.0.0.1:${HONUA_HTTP_PORT}/healthz/ready" "honua ready" 90
+wait_for_url "http://127.0.0.1:${HONUA_HTTP_PORT}/healthz/ready" "honua" 90
 assert_proposal_roundtrip
 # Require a verification in a later second than the completed audit-producing request.
 AUDIT_VERIFIED_AFTER="$(date -u +%Y-%m-%dT%H:%M:%S).9999999+00:00"
 assert_all_health_checks
-wait_for_url "http://127.0.0.1:${HONUA_CONSOLE_PORT}/version.json" "console version" 60
-wait_for_url "http://127.0.0.1:${HONUA_CONSOLE_PORT}/operate" "console operate" 60
-wait_for_url "http://127.0.0.1:${HONUA_CONSOLE_PORT}/operate/health" "console operate health" 60
-wait_for_url "http://127.0.0.1:${HONUA_CONSOLE_PORT}/operate/copilot" "console operate copilot" 60
+wait_for_url "http://127.0.0.1:${HONUA_CONSOLE_PORT}/version.json" "console" 60
+wait_for_url "http://127.0.0.1:${HONUA_CONSOLE_PORT}/operate" "console" 60 "/auth/login"
+wait_for_url "http://127.0.0.1:${HONUA_CONSOLE_PORT}/operate/health" "console" 60 "/auth/login"
+wait_for_url "http://127.0.0.1:${HONUA_CONSOLE_PORT}/operate/copilot" "console" 60 "/auth/login"
 
 compose ps
