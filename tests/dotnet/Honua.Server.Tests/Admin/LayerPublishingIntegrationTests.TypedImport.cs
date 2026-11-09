@@ -303,7 +303,7 @@ public sealed partial class LayerPublishingIntegrationTests
                     serviceId = _serviceName,
                     layerId = _layerId,
                     where,
-                    outFields = new[] { "name", "population" },
+                    outFields = new[] { "name", "population", "properties" },
                     limit = 10
                 }
             }
