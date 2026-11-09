@@ -6,7 +6,7 @@ on:
     paths:
       - 'src/Honua.Server/Features/ControlPlane/**'
       - 'src/Honua.Server/Features/Infrastructure/Monitoring/McpPlatformOpsReader.cs'
-      - 'src/Honua.Core/Features/ControlPlane/**'
+      - 'src/Honua.Core/Core/Features/ControlPlane/**'
       - 'docs/get-started/compose.executor.yaml'
       - 'docs/get-started/compose.console.yaml'
       - 'docs/get-started/quickstart.md'

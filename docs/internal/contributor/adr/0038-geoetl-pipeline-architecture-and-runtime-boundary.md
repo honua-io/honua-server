@@ -51,7 +51,7 @@ Three constraints dominate:
 
 A handful of secondary forces shape the design:
 
-- The existing format readers in `Honua.Core/Features/Import/Services/`
+- The existing format readers in `Honua.Core/Core/Features/Import/Services/`
   (GeoJSON, Shapefile, GeoPackage, KML, GPX, CSV, FlatGeobuf,
   GeoParquet) cover most Phase 1 sources with no new native deps.
   Reimplementing them inside GeoETL would violate DRY and double the
@@ -298,7 +298,7 @@ kind's claim semantics.
   (the worker-side polling loop) and registers a **managed-profile**
   `PipelineJobExecutor : IJobExecutor` that runs Phase 1 connectors —
   pure-managed wrappers over the existing
-  `Honua.Core/Features/Import/Services/` readers.
+  `Honua.Core/Core/Features/Import/Services/` readers.
 - **GeoETL worker image (`honua-worker-etl`)** is built from a
   separate `Dockerfile` in the `honua-devops` repository. It layers
   GDAL, PROJ, and GEOS on top of the lean base image and hosts the

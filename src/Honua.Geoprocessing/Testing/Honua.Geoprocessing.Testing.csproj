@@ -29,7 +29,7 @@
       NetTopologySuite + its GeoJSON IO arrive transitively through
       Honua.Geoprocessing (via Honua.Geometry), so no extra package refs are needed.
     -->
-    <ProjectReference Include="..\Honua.Geoprocessing\Honua.Geoprocessing.csproj" />
+    <ProjectReference Include="..\Core\Honua.Geoprocessing.csproj" />
   </ItemGroup>
 
 </Project>

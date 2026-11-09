@@ -18,7 +18,7 @@ plane by typed artifact reference.
 
 Operating a GIS server — deploy, upgrade, scale, run geoprocessing, tune, troubleshoot, roll back — is the platform's sharpest wedge against ArcGIS Server. ArcGIS makes the *human* the control loop: you monitor, diagnose, fix, scale, and upgrade a Byzantine, stateful, click-configured stack by hand. Honua's opportunity is to close that loop so the operator **supervises** instead of operates.
 
-The control plane already abstracts substrates via two backend interfaces (`src/Honua.Core/Features/ControlPlane/Abstractions/OperationInterfaces.cs`):
+The control plane already abstracts substrates via two backend interfaces (`src/Honua.Core/Core/Features/ControlPlane/Abstractions/OperationInterfaces.cs`):
 
 - **`IDeployBackend`** (serving plane) — implemented by `AwsEcsAlbDeployBackend`, `AwsEcsGitOpsDeployBackend`, `AwsLambdaGitOpsDeployBackend`, `AzureContainerAppsRevisionDeployBackend`, `AzureFunctionsGitOpsDeployBackend`.
 - **`IBatchComputeBackend`** (geoprocessing / execution plane) — implemented by `AwsBatchComputeBackend`, `AzureBatchComputeBackend`, with `IExecutionJobDefinitionRegistry` + `SubmitJobAsync` + `ExecutionJobReconciler`.

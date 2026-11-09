@@ -435,11 +435,11 @@ none DELETE /healthz/ready
 none DELETE /mcp
 none GET /api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex:int}/content
 none GET /api/geoprocessing/jobs/{jobId}/custom-artifacts/{name}
-# UNVERIFIED src/Honua.Protocols.Scene/SceneDiscoveryEndpoints.cs - no access check; protected and (with includeDisabled) inactive scenes are listed to anonymous callers
+# UNVERIFIED src/Honua.Protocols/Scene/SceneDiscoveryEndpoints.cs - no access check; protected and (with includeDisabled) inactive scenes are listed to anonymous callers
 none GET /api/scenes
-# UNVERIFIED src/Honua.Protocols.Scene/SceneDiscoveryEndpoints.cs - no access check; protected and (with includeDisabled) inactive scenes are listed to anonymous callers
+# UNVERIFIED src/Honua.Protocols/Scene/SceneDiscoveryEndpoints.cs - no access check; protected and (with includeDisabled) inactive scenes are listed to anonymous callers
 none GET /api/scenes/{sceneId}
-# UNVERIFIED src/Honua.Protocols.Scene/SceneDiscoveryEndpoints.cs - no access check; protected and (with includeDisabled) inactive scenes are listed to anonymous callers
+# UNVERIFIED src/Honua.Protocols/Scene/SceneDiscoveryEndpoints.cs - no access check; protected and (with includeDisabled) inactive scenes are listed to anonymous callers
 none GET /api/scenes/{sceneId}/resolve
 none GET /api/styles/{layerId:int}.json
 none GET /api/v1/rasters/cog/{*artifactId}
@@ -676,73 +676,73 @@ none GET /scenes/{sceneId}/SceneServer/layers/{layerId:int}/statistics/{fieldKey
 none GET /scenes/{sceneId}/exports/openusd/stage.usda
 none GET /scenes/{sceneId}/tileset.json
 none GET /scenes/{sceneId}/{*assetPath}
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/Datastreams
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/Datastreams({id:long})
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/Datastreams({id:long})/Observations
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/Datastreams({id:long})/ObservedProperty
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/Datastreams({id:long})/Sensor
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/Datastreams({id:long})/Thing
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/FeaturesOfInterest
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/FeaturesOfInterest({id:long})
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/FeaturesOfInterest({id:long})/Observations
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/HistoricalLocations
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/HistoricalLocations({id:long})
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/HistoricalLocations({id:long})/Locations
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/HistoricalLocations({id:long})/Thing
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/Locations
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/Locations({id:long})
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/Locations({id:long})/HistoricalLocations
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/Locations({id:long})/Things
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/Observations
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/Observations({id:long})
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/Observations({id:long})/Datastream
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/Observations({id:long})/FeatureOfInterest
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/ObservedProperties
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/ObservedProperties({id:long})
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/ObservedProperties({id:long})/Datastreams
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/Sensors
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/Sensors({id:long})
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/Sensors({id:long})/Datastreams
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/Things
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/Things({id:long})
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/Things({id:long})/Datastreams
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/Things({id:long})/HistoricalLocations
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/Things({id:long})/Locations
-# UNVERIFIED src/Honua.Protocols.SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
+# UNVERIFIED src/Honua.Protocols/SensorThings/SensorThingsEndpoints*.cs - HandleCoreRead never checks the caller; only the serve.sensorthings experimental flag gates reads
 none GET /sta/v1.1/{**resourcePath}
 none GET /stac
 none GET /stac/collections
