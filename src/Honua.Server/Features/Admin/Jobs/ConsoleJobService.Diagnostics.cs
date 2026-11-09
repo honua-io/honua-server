@@ -726,7 +726,7 @@ internal sealed partial class ConsoleJobService
         var items = new List<ConsoleJobArtifact>(job.ArtifactReferences.Count);
         foreach (var reference in job.ArtifactReferences)
         {
-            items.Add(await MapArtifactAsync(reference, artifactStore, cancellationToken).ConfigureAwait(false));
+            items.Add(await MapArtifactAsync(job, reference, artifactStore, cancellationToken).ConfigureAwait(false));
         }
 
         var available = items.Count(static a => a.Availability is "Available" or "Redacted");

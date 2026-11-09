@@ -208,7 +208,7 @@ internal sealed partial class ConsoleJobService(
 
         for (var i = 0; i < itemCount; i++)
         {
-            items[i] = await MapArtifactAsync(artifactRefs[i], artifactStore, cancellationToken).ConfigureAwait(false);
+            items[i] = await MapArtifactAsync(job, artifactRefs[i], artifactStore, cancellationToken).ConfigureAwait(false);
         }
 
         return new ConsoleJobArtifactPageResponse
@@ -612,10 +612,22 @@ internal sealed partial class ConsoleJobService(
         };
 
     private async Task<ConsoleJobArtifact> MapArtifactAsync(
+        ExecutionJobRecord job,
         string reference,
         IArtifactStore? artifactStore,
         CancellationToken cancellationToken)
     {
+        var retention = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<GeoprocessingExecutorOptions>>().CurrentValue.ResultRetention;
+        if (GeoprocessingResultRetention.HasExpired(job, timeProvider.GetUtcNow(), retention))
+        {
+            return new ConsoleJobArtifact
+            {
+                ArtifactId = SafeArtifactIdentifier(reference),
+                Availability = "Expired",
+                Message = "The job result retention period has elapsed."
+            };
+        }
+
         var customArtifact = await MapCustomCodeArtifactAsync(reference, cancellationToken).ConfigureAwait(false);
         if (customArtifact is not null)
         {
