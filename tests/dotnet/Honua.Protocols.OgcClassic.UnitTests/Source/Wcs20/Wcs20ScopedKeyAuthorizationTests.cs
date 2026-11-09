@@ -3,6 +3,8 @@
 
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -28,6 +30,57 @@ public sealed class Wcs20ScopedKeyAuthorizationTests
 {
     private static readonly byte[] CoverageBytes = [0x89, 0x50, 0x4e, 0x47];
     private static readonly string[] ResourceNames = ["elevation", "neighbor"];
+
+    [UnitTheory]
+    [InlineData("services", "{\"serviceType\":\"future-service\"}")]
+    [InlineData("services", "{\"status\":{\"lifecycle\":\"future-lifecycle\"}}")]
+    [InlineData("services", "{\"status\":{\"lifecycle\":-1}}")]
+    [InlineData("publications", "{\"publicationType\":\"future-layer\"}")]
+    [InlineData("publications", "{\"status\":{\"lifecycle\":\"future-lifecycle\"}}")]
+    [InlineData("publications", "{\"status\":{\"lifecycle\":-1}}")]
+    public async Task GetCoverage_DirectBindingWithUnsupportedOwner_DoesNotExport(string collection, string patch)
+    {
+        var node = JsonSerializer.SerializeToNode(Graph(), MetadataV2JsonContext.Default.MetadataV2Graph)!;
+        foreach (var property in JsonNode.Parse(patch)!.AsObject())
+        {
+            node[collection]![0]![property.Key] = property.Value?.DeepClone();
+        }
+        var original = JsonSerializer.Deserialize(node.ToJsonString(), MetadataV2JsonContext.Default.MetadataV2Graph)!;
+        var graph = original with
+        {
+            Services = original.Services.Select(service => service with
+            {
+                AccessPolicy = new AccessPolicy { AllowedRoles = ["owner"] }
+            }).ToArray()
+        };
+
+        var result = await ExecuteAsync("2.0.1", "GetCoverage", User("reader"), graph: graph, directLayer: 101);
+
+        result.Status.Should().Be(404, result.Text);
+        result.Exports.Should().BeEmpty();
+    }
+
+    [UnitTheory]
+    [InlineData("{\"type\":\"future-connection\"}")]
+    [InlineData("{\"type\":\"managed\",\"status\":{\"lifecycle\":\"future-lifecycle\"}}")]
+    public async Task GetCoverage_DirectBindingWithUnknownConnection_DoesNotExport(string json)
+    {
+        var original = Graph();
+        var connection = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Connection)! with
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "coverage-connection" }
+        };
+        var graph = original with
+        {
+            Connections = [connection],
+            StorageBindings = original.StorageBindings.Select(binding => binding with { ConnectionId = connection.Metadata.Id }).ToArray()
+        };
+
+        var result = await ExecuteAsync("2.0.1", "GetCoverage", User("reader"), graph: graph, directLayer: 101);
+
+        result.Status.Should().Be(404, result.Text);
+        result.Exports.Should().BeEmpty();
+    }
 
     [UnitTheory]
     [InlineData("1.0.0", "read:imagery")]

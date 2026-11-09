@@ -1,4 +1,4 @@
-"""Shared conservation checks for whole-class capacity splits."""
+"""Shared conservation checks for capacity splits."""
 
 from types import ModuleType
 from typing import NamedTuple
@@ -21,11 +21,11 @@ def current_source_paths(paths):
     return relocated
 
 
-def check_partition(source, original, children):
+def check_method_partition(source, original, children):
     coverage, classes = source
     original = {**original, "paths": current_source_paths(original["paths"])}
 
-    methods = coverage.selection_pool(classes, original["csproj"])
+    methods = coverage.selection_pool(classes, original["csproj"] or coverage.DEFAULT_CSPROJ)
     parent = coverage._FilterParser(original["filter"]).parse()
     expected = {method for method in methods if coverage._eval(parent, method)}
     parsed = [coverage._FilterParser(child["filter"]).parse() for child in children]
@@ -33,6 +33,18 @@ def check_partition(source, original, children):
     assert all(selected), "Empty child."
     assert set.union(*selected) == expected, "Lost original or leaked foreign methods."
     assert sum(map(len, selected)) == len(expected), "Duplicate method ownership."
+    for child in children:
+        for field in ("paths", "csproj", "test_timeout_minutes", "timeout_minutes", "max_cpu_count",
+                      "upload_operator_eval_report", "upload_odata_evidence"):
+            assert child[field] == original[field], f"Original {field} changed."
+    return selected
+
+
+def check_partition(source, original, children):
+    selected = check_method_partition(source, original, children)
+    coverage, classes = source
+    parent = coverage._FilterParser(original["filter"]).parse()
+    parsed = [coverage._FilterParser(child["filter"]).parse() for child in children]
     future_method = "FutureMethod_" + min(selected[0]).rsplit(".", 2)[-2]
     for entry in classes.values():
         if entry["csproj"] != original["csproj"]:
@@ -44,8 +56,4 @@ def check_partition(source, original, children):
             name = fqn + "." + method
             expected_owners = owners if coverage._eval(parent, name) else [False] * len(parsed)
             assert [coverage._eval(expression, name) for expression in parsed] == expected_owners, name
-    for child in children:
-        for field in ("paths", "csproj", "test_timeout_minutes", "timeout_minutes", "max_cpu_count",
-                      "upload_operator_eval_report", "upload_odata_evidence"):
-            assert child[field] == original[field], f"Original {field} changed."
     return selected

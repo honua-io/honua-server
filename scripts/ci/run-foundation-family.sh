@@ -21,11 +21,12 @@
 #   run-foundation-family.sh run <family>          # dotnet test each project
 #
 # Spec record (one per line, `|`-separated):
-#   csproj | trx-basename | filter | env (k=v,k=v) | flags (coverage,separate-build)
+#   csproj | trx-basename | filter | env (k=v,k=v) | flags (coverage,separate-build,crash-diagnostics)
 #
 # `coverage` adds the Coverlet XPlat collector + coverlet.runsettings, matching
 # the pre-split job where ONLY Honua.Core.Tests collected coverage.
 # `separate-build` isolates a project build so other suites can still publish diagnostics.
+# `crash-diagnostics` captures mini dumps for the separate short-retention artifact.
 set -euo pipefail
 
 # Every path below (csproj paths, Honua.sln, coverlet.runsettings, the generated
@@ -63,7 +64,7 @@ SPEC
     # their own Fast cases. OgcApi's Fast cases all moved to its UnitTests shard.
     protocols)
       cat <<'SPEC'
-tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj|Honua.Protocols.GeoServices-fast-tier|Tier=Fast||
+tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj|Honua.Protocols.GeoServices-fast-tier|Tier=Fast||crash-diagnostics
 tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj|Honua.Protocols.OgcClassic-fast-tier|Tier=Fast||
 tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj|Honua.Protocols.OData-fast-tier|Tier=Fast||
 tests/dotnet/Honua.Protocols.Scene.Tests/Honua.Protocols.Scene.Tests.csproj|Honua.Protocols.Scene-fast-tier|Tier=Fast||
@@ -175,10 +176,16 @@ foundation_run() {
       --logger "console;verbosity=minimal"
       --results-directory "${RESULTS_DIR}")
     if [[ -n "${filter}" ]]; then cmd+=(--filter "${filter}"); fi
+    if [[ ",${flags}," == *,crash-diagnostics,* ]]; then
+      cmd+=(--blame-crash --blame-crash-dump-type mini)
+    fi
     if [[ ",${flags}," == *,coverage,* ]]; then
       cmd+=(--collect:"XPlat Code Coverage" --settings coverlet.runsettings)
     fi
     local -a envprefix=() kvs=()
+    if [[ ",${flags}," == *,crash-diagnostics,* ]]; then
+      envprefix=(-u NuGetPackageSourceCredentials_github-honua)
+    fi
     if [[ -n "${envs}" ]]; then
       local kv
       IFS=',' read -ra kvs <<<"${envs}"

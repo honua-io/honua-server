@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Serialization;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
@@ -23,10 +24,11 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
             throw new JsonException("Metadata v2 status must be a JSON object.");
         }
 
-        MetadataV2LifecycleStatus? lifecycle = null;
-        var state = MetadataV2OperationalState.Unknown;
+        PreservedEnumValue<MetadataV2LifecycleStatus>? lifecycle = null;
+        PreservedEnumValue<MetadataV2OperationalState> state = MetadataV2OperationalState.Unknown;
         var conditions = new List<MetadataV2Condition>();
         DateTimeOffset? observedAt = null;
+        var additionalProperties = new Dictionary<string, JsonElement>();
 
         while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
         {
@@ -56,17 +58,18 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
                     observedAt = ReadObservedAt(ref reader);
                     break;
                 default:
-                    reader.Skip();
+                    additionalProperties[name!] = ReadAdditionalProperty(ref reader);
                     break;
             }
         }
 
         return new MetadataV2Status
         {
-            Lifecycle = lifecycle ?? MetadataV2LifecycleStatus.Active,
-            State = state,
+            LifecycleValue = lifecycle ?? new PreservedEnumValue<MetadataV2LifecycleStatus>(MetadataV2LifecycleStatus.Active),
+            StateValue = state,
             Conditions = conditions,
-            ObservedAt = observedAt
+            ObservedAt = observedAt,
+            AdditionalProperties = additionalProperties.Count == 0 ? null : additionalProperties
         };
     }
 
@@ -76,8 +79,8 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
         ArgumentNullException.ThrowIfNull(value);
 
         writer.WriteStartObject();
-        writer.WriteString("lifecycle", LifecycleWireName(value.Lifecycle));
-        writer.WriteString("state", StateWireName(value.State));
+        WriteEnum(writer, "lifecycle", value.LifecycleValue);
+        WriteEnum(writer, "state", value.StateValue);
         writer.WritePropertyName("conditions");
         writer.WriteStartArray();
         foreach (var condition in value.Conditions)
@@ -87,83 +90,34 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
 
         writer.WriteEndArray();
         WriteNullableTimestamp(writer, options, "observedAt", value.ObservedAt);
+        WriteAdditionalProperties(writer, value.AdditionalProperties);
         writer.WriteEndObject();
     }
 
-    private static MetadataV2LifecycleStatus? ReadLifecycle(ref Utf8JsonReader reader)
+    private static PreservedEnumValue<MetadataV2LifecycleStatus>? ReadLifecycle(ref Utf8JsonReader reader)
+        => reader.TokenType == JsonTokenType.Null ? null : ReadStatusEnum<MetadataV2LifecycleStatus>(ref reader);
+
+    private static PreservedEnumValue<MetadataV2OperationalState> ReadState(ref Utf8JsonReader reader)
+        => reader.TokenType == JsonTokenType.Null
+            ? new PreservedEnumValue<MetadataV2OperationalState>(MetadataV2OperationalState.Unknown)
+            : ReadStatusEnum<MetadataV2OperationalState>(ref reader);
+
+    private static PreservedEnumValue<TEnum> ReadStatusEnum<TEnum>(ref Utf8JsonReader reader)
+        where TEnum : struct, Enum
     {
-        if (reader.TokenType == JsonTokenType.Null)
+        if (reader.TokenType == JsonTokenType.String)
         {
-            return null;
-        }
-
-        if (reader.TokenType == JsonTokenType.Number)
-        {
-            if (!reader.TryGetInt32(out var number))
+            var name = reader.GetString()!.Trim();
+            if (name.Length > 0 && !char.IsAsciiDigit(name[0]) &&
+                name[0] is not '-' and not '+' && !name.Contains(',') &&
+                Enum.TryParse<TEnum>(name, ignoreCase: true, out var value) &&
+                TolerantEnumJsonConverter<TEnum>.IsRecognizedValue(value))
             {
-                throw new JsonException("Metadata v2 lifecycle must be a string.");
+                return new PreservedEnumValue<TEnum>(value);
             }
-
-            return number switch
-            {
-                0 => MetadataV2LifecycleStatus.Draft,
-                1 => MetadataV2LifecycleStatus.Active,
-                2 => MetadataV2LifecycleStatus.Deprecated,
-                3 => MetadataV2LifecycleStatus.Retired,
-                4 => MetadataV2LifecycleStatus.Archived,
-                _ => throw new JsonException("Metadata v2 lifecycle is not a known value.")
-            };
+            return PreservedEnumValue<TEnum>.FromUnknownToken(ref reader);
         }
-
-        if (reader.TokenType != JsonTokenType.String)
-        {
-            throw new JsonException("Metadata v2 lifecycle must be a string.");
-        }
-
-        if (!TryParseNamed(reader.GetString(), out MetadataV2LifecycleStatus lifecycle))
-        {
-            throw new JsonException("Metadata v2 lifecycle is not a known value.");
-        }
-
-        return lifecycle;
-    }
-
-    private static MetadataV2OperationalState ReadState(ref Utf8JsonReader reader)
-    {
-        if (reader.TokenType == JsonTokenType.Null)
-        {
-            return MetadataV2OperationalState.Unknown;
-        }
-
-        if (reader.TokenType == JsonTokenType.Number)
-        {
-            if (!reader.TryGetInt32(out var number))
-            {
-                throw new JsonException("Metadata v2 operational state must be a string.");
-            }
-
-            return number switch
-            {
-                0 => MetadataV2OperationalState.Unknown,
-                1 => MetadataV2OperationalState.Ready,
-                2 => MetadataV2OperationalState.Pending,
-                3 => MetadataV2OperationalState.Degraded,
-                4 => MetadataV2OperationalState.Failed,
-                _ => throw new JsonException("Metadata v2 operational state is not a known value.")
-            };
-        }
-
-        if (reader.TokenType != JsonTokenType.String)
-        {
-            throw new JsonException("Metadata v2 operational state must be a string.");
-        }
-
-        if (!TryParseNamed(reader.GetString(), out MetadataV2OperationalState state))
-        {
-            throw new JsonException("Metadata v2 operational state is not a known value.");
-        }
-
-        return state;
+        return PreservedEnumJsonConverter<TEnum>.Instance.Read(ref reader, typeof(PreservedEnumValue<TEnum>), TolerantEnumJsonConverter<TEnum>.ConverterOptions);
     }
 
     private static List<MetadataV2Condition> ReadConditions(ref Utf8JsonReader reader)
@@ -199,6 +153,7 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
         string? reason = null;
         string? message = null;
         DateTimeOffset? lastTransitionAt = null;
+        var additionalProperties = new Dictionary<string, JsonElement>();
         while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
         {
             if (reader.TokenType != JsonTokenType.PropertyName)
@@ -230,7 +185,7 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
                     lastTransitionAt = ReadObservedAt(ref reader);
                     break;
                 default:
-                    reader.Skip();
+                    additionalProperties[name!] = ReadAdditionalProperty(ref reader);
                     break;
             }
         }
@@ -241,7 +196,8 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
             Status = status,
             Reason = reason,
             Message = message,
-            LastTransitionAt = lastTransitionAt
+            LastTransitionAt = lastTransitionAt,
+            AdditionalProperties = additionalProperties.Count == 0 ? null : additionalProperties
         };
     }
 
@@ -262,6 +218,7 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
         WriteNullableString(writer, options, "reason", condition.Reason);
         WriteNullableString(writer, options, "message", condition.Message);
         WriteNullableTimestamp(writer, options, "lastTransitionAt", condition.LastTransitionAt);
+        WriteAdditionalProperties(writer, condition.AdditionalProperties);
         writer.WriteEndObject();
     }
 
@@ -296,37 +253,30 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
     private static bool OmitNulls(JsonSerializerOptions options)
         => options.DefaultIgnoreCondition is JsonIgnoreCondition.WhenWritingNull or JsonIgnoreCondition.WhenWritingDefault;
 
-    private static bool TryParseNamed<TEnum>(string? text, out TEnum value)
+    private static void WriteEnum<TEnum>(Utf8JsonWriter writer, string name, PreservedEnumValue<TEnum> value)
         where TEnum : struct, Enum
     {
-        value = default;
-        if (string.IsNullOrEmpty(text) || char.IsAsciiDigit(text[0]) || text[0] is '-' or '+')
-        {
-            return false;
-        }
-
-        return Enum.TryParse(text, ignoreCase: true, out value) && Enum.IsDefined(value);
+        writer.WritePropertyName(name);
+        PreservedEnumJsonConverter<TEnum>.Instance.Write(writer, value, TolerantEnumJsonConverter<TEnum>.ConverterOptions);
     }
 
-    private static string LifecycleWireName(MetadataV2LifecycleStatus lifecycle)
-        => lifecycle switch
-        {
-            MetadataV2LifecycleStatus.Draft => "draft",
-            MetadataV2LifecycleStatus.Active => "active",
-            MetadataV2LifecycleStatus.Deprecated => "deprecated",
-            MetadataV2LifecycleStatus.Retired => "retired",
-            MetadataV2LifecycleStatus.Archived => "archived",
-            _ => throw new JsonException("Metadata v2 lifecycle is not a known value.")
-        };
+    private static JsonElement ReadAdditionalProperty(ref Utf8JsonReader reader)
+    {
+        using var document = JsonDocument.ParseValue(ref reader);
+        return document.RootElement.Clone();
+    }
 
-    private static string StateWireName(MetadataV2OperationalState state)
-        => state switch
+    private static void WriteAdditionalProperties(Utf8JsonWriter writer, IReadOnlyDictionary<string, JsonElement>? properties)
+    {
+        if (properties is null)
         {
-            MetadataV2OperationalState.Unknown => "unknown",
-            MetadataV2OperationalState.Ready => "ready",
-            MetadataV2OperationalState.Pending => "pending",
-            MetadataV2OperationalState.Degraded => "degraded",
-            MetadataV2OperationalState.Failed => "failed",
-            _ => throw new JsonException("Metadata v2 operational state is not a known value.")
-        };
+            return;
+        }
+
+        foreach (var property in properties)
+        {
+            writer.WritePropertyName(property.Key);
+            property.Value.WriteTo(writer);
+        }
+    }
 }

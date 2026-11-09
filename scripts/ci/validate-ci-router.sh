@@ -1054,23 +1054,19 @@ assert_descriptor \
   "targeted" \
   "false" \
   "Server Features Data Enrichment and Capabilities"
-# Capacity rebalance (#2422, re-split in #3229): Streaming SOURCE is
-# class-balanced across three executable owners - the Misc catch-all (heavy
-# FeatureStreamEndpointsTests), the dedicated Streaming Snapshot and Conformance
-# shard, and the Data Enrichment and Sharing child, whose Capabilities tests bind
-# FeatureStreamOptions. A source change must wake all three.
 assert_exact_shards \
   "streaming-source-exact-owners" \
   "src/Honua.Server/Features/Streaming/FeatureStreamEndpoints.cs" \
-  '["Server Features Data Enrichment and Capabilities","Server Features Miscellaneous","Server Features Sharing","Server Features Sharing OAuth and Portal","Server Features Streaming Endpoints","Server Features Streaming Snapshot and Conformance","Server Features Capabilities","Server Features Studio AI"]'
-# A Streaming TEST change, by contrast, must reach the shard that runs those
-# classes and must NOT wake the 25-minute Data Enrichment and Sharing child,
-# which runs no Streaming class. #3229 narrowed that child off the broad
-# tests/dotnet/Honua.Server.Tests/Features/ prefix to make this true.
+  '["Server Features Data Enrichment and Capabilities","Server Features Miscellaneous","Server Features Sharing","Server Features Sharing OAuth and Portal","Server Features Streaming Endpoints","Server Features Streaming Transports","Server Features Streaming Snapshot and Conformance","Server Features Capabilities","Server Features Studio AI"]'
 assert_exact_shards \
   "streaming-test-exact-owners" \
   "tests/dotnet/Honua.Server.Tests/Features/Streaming/FeatureStreamSnapshotEndpointsTests.cs" \
-  '["Server Features Miscellaneous","Server Features Spec Printing and Static Maps","Server Features Streaming Endpoints","Server Features Streaming Snapshot and Conformance","Server Features Studio AI"]'
+  '["Server Features Miscellaneous","Server Features Spec Printing and Static Maps","Server Features Streaming Endpoints","Server Features Streaming Transports","Server Features Streaming Snapshot and Conformance","Server Features Studio AI"]'
+for child in "Server Features Streaming Transports" "Server Features Streaming Endpoints"; do
+  assert_descriptor "streaming-endpoint-test-${child}" \
+    "tests/dotnet/Honua.Server.Tests/Features/Streaming/FeatureStreamEndpointsTests.cs" \
+    "targeted" false "${child}"
+done
 assert_excludes_shard \
   "streaming-test-excludes-data-enrichment-sharing" \
   "tests/dotnet/Honua.Server.Tests/Features/Streaming/FeatureStreamSnapshotEndpointsTests.cs" \
@@ -1627,6 +1623,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
 "${PYTHON_BIN}" scripts/ci/test-featureserver-capacity-partition.py
 "${PYTHON_BIN}" scripts/ci/test-mcp-capacity-partition.py
 "${PYTHON_BIN}" scripts/ci/test-console-capacity-partition.py
+"${PYTHON_BIN}" scripts/ci/test-streaming-capacity-partition.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
   --assert-owner \
