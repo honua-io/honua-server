@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Preserve every runnable WMS method across the measured class/complement cut."""
+"""Preserve WMS selection, routing and budgets when its filters share a job."""
 import copy
 import importlib.util
 import json
@@ -14,7 +14,7 @@ SPEC.loader.exec_module(MODULE)
 CONFIG = json.loads((ROOT / ".github/ci-shards.json").read_text())
 EVIDENCE = json.loads((ROOT / "docs/internal/ci/wms-shard-capacity-20261018.json").read_text())
 ORIGINAL = EVIDENCE["originalShard"]
-NAMES = ("OGC Classic Maps Core", "OGC Classic Maps Supporting")
+NAMES = ("OGC Classic WMS",)
 CHILDREN = [next(s for s in CONFIG["shards"] if s["name"] == name) for name in NAMES]
 PROJECT = "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj"
 CLASS = "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests"
@@ -23,13 +23,13 @@ METHODS = MODULE.selection_pool(CLASSES, PROJECT)
 PARENT = MODULE._FilterParser(ORIGINAL["filter"]).parse()
 EXPECTED = {method for method in METHODS if MODULE._eval(PARENT, method)}
 MAIN = {method for method in EXPECTED if method.startswith(CLASS + ".")}
-assert MAIN and MAIN < EXPECTED, "Both actual source partitions must be nonempty."
+assert MAIN and MAIN < EXPECTED, "The measured main class must be a strict subset of the WMS inventory."
 assert EVIDENCE["trxPresent"] is False and EVIDENCE["qualification"] == "not-evaluated"
 
 
 def check(children):
     selected = check_partition(PartitionSource(MODULE, CLASSES), ORIGINAL, children)
-    assert selected[0] == MAIN, "The measured main class changed ownership."
+    assert selected[0] == EXPECTED, "The WMS method inventory changed."
     return list(map(len, selected))
 
 
@@ -37,34 +37,34 @@ counts = check(CHILDREN)
 parents = [p for p in CONFIG["shard_partitions"] if set(NAMES) & set(p["children"])]
 assert len(parents) == 1 and parents[0] == {
     "name": ORIGINAL["name"], "filter": ORIGINAL["filter"], "children": list(NAMES)
-}, "Both children must have one unchanged legacy parent contract."
+}, "The merged shard must preserve the original selection contract."
 assert not any(s["name"] == ORIGINAL["name"] for s in CONFIG["shards"])
 for override in CONFIG["targeted_override_prefixes"]:
     assert ORIGINAL["name"] not in override["shards"], "Stale parent override."
     if any(name in override["shards"] for name in NAMES):
-        assert all(name in override["shards"] for name in NAMES), "Only half the override survived."
+        assert all(name in override["shards"] for name in NAMES), "The override lost its owner."
 # Registered source/test routing remains part of the normal PR Gate router controls.
 assert len(CONFIG["shards"]) == len({s["shard_name"] for s in CONFIG["shards"]})
 first = sorted(MAIN)[0]
 foreign = sorted(set(METHODS) - EXPECTED)[0]
-for mutation in ("lost", "duplicated", "foreign", "trigger", "budget", "parallelism", "project", "swapped"):
+for mutation in ("lost", "duplicated", "foreign", "trigger", "budget", "parallelism", "project", "narrowed"):
     changed = copy.deepcopy(CHILDREN)
     if mutation == "lost":
-        changed[0]["filter"] += "&FullyQualifiedName!=" + first
+        changed[0]["filter"] = "(" + changed[0]["filter"] + ")&FullyQualifiedName!=" + first
     elif mutation == "duplicated":
-        changed[1]["filter"] += "|FullyQualifiedName=" + first
+        changed.append(copy.deepcopy(changed[0]))
     elif mutation == "foreign":
-        changed[1]["filter"] += "|FullyQualifiedName=" + foreign
+        changed[0]["filter"] += "|FullyQualifiedName=" + foreign
     elif mutation == "trigger":
         changed[0]["paths"] = changed[0]["paths"][1:]
     elif mutation == "budget":
         changed[0]["test_timeout_minutes"] += 1
     elif mutation == "parallelism":
-        changed[1]["max_cpu_count"] = "2"
+        changed[0]["max_cpu_count"] = "2"
     elif mutation == "project":
-        changed[1]["csproj"] = "tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj"
+        changed[0]["csproj"] = "tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj"
     else:
-        changed[0]["filter"], changed[1]["filter"] = changed[1]["filter"], changed[0]["filter"]
+        changed[0]["filter"] = "FullyQualifiedName~" + CLASS
     try:
         check(changed)
     except AssertionError:
