@@ -72,13 +72,9 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
         if (guardrail is { Tier: GuardrailTier.RequiresApproval, Source: "default-policy" }
             && gatewayRequest is { Kind: OperationClass.StudioDraftMutation, ActionDiscriminator: null }
             && IsPrivateDraftEdit(descriptor.OperationId)
-            && _initiationResolver is not null)
+            && await IsInteractiveHumanAsync(cancellationToken).ConfigureAwait(false))
         {
-            var initiation = await _initiationResolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
-            if (initiation is (OperationInitiationKind.Human, OperationInitiationChannel.InteractiveOidc))
-            {
-                return PolicyDecision.Allowed;
-            }
+            return PolicyDecision.Allowed;
         }
 
         return guardrail.Tier switch
@@ -96,6 +92,13 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
                 Reason = guardrail.Source,
             },
         };
+    }
+
+    private async Task<bool> IsInteractiveHumanAsync(CancellationToken cancellationToken)
+    {
+        if (_initiationResolver is null) return false;
+        var initiation = await _initiationResolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
+        return initiation is (OperationInitiationKind.Human, OperationInitiationChannel.InteractiveOidc);
     }
 
     private static bool IsPrivateDraftEdit(string operationId) => operationId is
