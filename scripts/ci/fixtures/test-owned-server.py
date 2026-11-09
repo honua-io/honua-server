@@ -57,6 +57,55 @@ def allocation(path, environment):
 
 
 class OwnedServerTests(unittest.TestCase):
+    def test_ci_compose_project_remains_visible_to_following_workflow_steps(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "compose.yml"
+            path.write_text('ports: ["${HTTP_PORT:-9000}:8080"]')
+            self.assertEqual(allocation(path, {"CI": "true"}), {"HTTP_PORT": "9000"})
+
+    def test_inaccessible_process_descriptors_fail_explicitly(self):
+        if os.access("/proc/1/fd", os.R_OK):
+            self.skipTest("PID 1 descriptors are readable for this user")
+        with self.assertRaisesRegex(RuntimeError, "cannot be inspected"):
+            OWNED.process_ports.process_owns_listener(1, 23456)
+
+    def test_procfs_error_is_not_hidden_by_glob_suppression(self):
+        with patch.object(Path, "glob", return_value=iter(())), \
+             patch.object(Path, "iterdir", side_effect=PermissionError):
+            with self.assertRaisesRegex(RuntimeError, "cannot be inspected"):
+                OWNED.process_ports.process_owns_listener(1, 23456)
+
+    def test_host_network_container_reads_sockets_as_its_own_user(self):
+        with child(HTTP) as process:
+            check = probe(process)
+            check.options.container = "owned"
+            state = {"id": "a" * 64, "running": True, "pid": process.pid, "started": "one"}
+            sockets = "\n".join(OWNED.process_ports._listening_inodes(check.port))
+            result = subprocess.CompletedProcess([], 0, sockets, "")
+            with patch.object(OWNED, "container_state", return_value=state), \
+                 patch.object(OWNED.subprocess, "run", return_value=result) as execute, \
+                 patch.object(OWNED.process_ports, "process_owns_listener", side_effect=PermissionError):
+                check.wait()
+                self.assertEqual(execute.call_args.args[0][:3], ["docker", "exec", "a" * 64])
+                result.stdout = ""
+                with self.assertRaisesRegex(RuntimeError, "owned listener"):
+                    check.wait()
+
+    def test_container_socket_command_reads_real_owned_descriptors(self):
+        with child(HTTP) as process, child(HTTP) as foreign:
+            own, other = probe(process), probe(foreign)
+            execute = subprocess.run
+
+            def container_command(command, **options):
+                self.assertEqual(command[:3], ["docker", "exec", "owned"])
+                script = command[-1].replace("/proc/1/fd", f"/proc/{process.pid}/fd")
+                script = script.replace("/proc/[0-9]*/fd/*", f"/proc/{process.pid}/fd/*")
+                return execute(["/bin/sh", "-c", script], **options)
+
+            with patch.object(OWNED.subprocess, "run", side_effect=container_command):
+                self.assertTrue(OWNED.container_owns_listener("owned", own.port))
+                self.assertFalse(OWNED.container_owns_listener("owned", other.port))
+
     def test_compose_defaults_isolate_projects_and_local_ports(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "compose.yml"
@@ -102,7 +151,8 @@ class OwnedServerTests(unittest.TestCase):
             check = probe(process)
             check.options.container = "owned"
             state = {"id": "a" * 64, "running": True, "pid": process.pid, "started": "one"}
-            with patch.object(OWNED, "container_state", side_effect=[state, {**state, "started": "two"}]):
+            with patch.object(OWNED, "container_state", side_effect=[state, {**state, "started": "two"}]), \
+                 patch.object(OWNED, "container_owns_listener", return_value=True):
                 with self.assertRaisesRegex(RuntimeError, "owner changed"):
                     check.wait()
 

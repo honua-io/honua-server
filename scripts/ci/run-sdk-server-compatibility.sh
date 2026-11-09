@@ -168,9 +168,11 @@ ThreadingHTTPServer(("127.0.0.1", port), FixtureHandler).serve_forever()
 PY
     local fixture_pid=$!
     cleanup_pids+=("$fixture_pid")
-    python3 "$OWNED_SERVER" wait --pid "$fixture_pid" \
-        --url "$MIGRATION_GEOSERVER_URL/about/version.xml" --timeout "${HONUA_SDK_FIXTURE_READY_SECONDS:-20}"
-
+    if ! python3 "$OWNED_SERVER" wait --pid "$fixture_pid" \
+        --url "$MIGRATION_GEOSERVER_URL/about/version.xml" --timeout "${HONUA_SDK_FIXTURE_READY_SECONDS:-20}"; then
+        tail -n 80 "$log_path" >&2
+        exit 1
+    fi
 }
 
 start_migration_honua_server() {
@@ -223,9 +225,11 @@ start_migration_honua_server() {
     if [[ -n "$migration_container" ]]; then
         ownership+=(--container "$migration_container")
     fi
-    python3 "$OWNED_SERVER" wait "${ownership[@]}" \
-        --url "$MIGRATION_SERVER_BASE_URL/healthz/ready" --timeout "${HONUA_SDK_FIXTURE_READY_SECONDS:-80}"
-
+    if ! python3 "$OWNED_SERVER" wait "${ownership[@]}" \
+        --url "$MIGRATION_SERVER_BASE_URL/healthz/ready" --timeout "${HONUA_SDK_FIXTURE_READY_SECONDS:-80}"; then
+        tail -n 80 "$log_path" >&2
+        exit 1
+    fi
 }
 
 write_migration_automation_summary() {

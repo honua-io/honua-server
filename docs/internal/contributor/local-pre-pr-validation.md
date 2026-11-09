@@ -89,7 +89,8 @@ its own server unless `HONUA_BASE_URL` explicitly selects an external target.
 OpenLayers uses a per-run readiness nonce and refuses an existing page server.
 
 `scripts/ci/owned-server.py` verifies process liveness and Linux listener ownership
-before and after health. Host-network containers use their inspected process;
+before and after health. Host-network containers use their inspected process identity and read socket descriptors as
+the container user through Docker exec;
 bridge containers use the exact live container's published IPv4 loopback binding.
 Unreadable ownership fails closed. This requires Linux procfs for owned launches.
 An explicitly supplied external target remains an external probe.
@@ -97,7 +98,8 @@ An explicitly supplied external target remains an external probe.
 Shell launchers retain their named overrides, including `HONUA_CI_SERVER_PORT`,
 `HONUA_SERVER_BOOT_SMOKE_PORT`, `HONUA_LOCAL_TARGET_PORT`, the SDK migration URL/port
 variables, and `OL_TEST_PAGE_PORT`. CITE runners retain declared Compose port
-overrides and use private project names by default. Local post-apply startup prints
+overrides and use private project names outside CI. CI keeps the Compose default project so
+following workflow steps can find the same stack. Local post-apply startup prints
 the private directory containing its process and container state.
 
 SDK migration fixtures treat remote or HTTPS URLs as explicit external targets.

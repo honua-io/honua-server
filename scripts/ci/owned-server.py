@@ -37,6 +37,21 @@ def container_state(container):
     return json.loads(result.stdout)
 
 
+def container_owns_listener(container, port):
+    # Read descriptors as the container user; host users need not share its UID.
+    script = '''ls /proc/1/fd >/dev/null 2>&1 || exit 2
+for descriptor in /proc/[0-9]*/fd/*; do
+    handle="$(readlink "$descriptor" 2>/dev/null)" || continue
+    case "$handle" in socket:\\[*\\]) printf '%s\\n' "$handle" ;; esac
+done'''
+    result = subprocess.run(["docker", "exec", container, "/bin/sh", "-c", script],
+                            text=True, capture_output=True, timeout=5)
+    if result.returncode:
+        raise RuntimeError("container listener ownership cannot be inspected")
+    listeners = process_ports._listening_inodes(port)
+    return bool(listeners) and listeners <= set(result.stdout.splitlines())
+
+
 def compose_environment(path):
     text = Path(path).read_text()
     ports = dict(re.findall(r"\$\{([A-Z][A-Z0-9_]*PORT):-([0-9]+)\}", text))
@@ -48,10 +63,13 @@ def compose_environment(path):
             selected = process_ports.resolve_port(0)
         allocated.add(selected)
         environment[name] = str(selected)
-    project = os.getenv("COMPOSE_PROJECT_NAME") or f"honua-{Path(path).parent.name}-{secrets.token_hex(6)}"
-    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", project):
-        raise ValueError("test Compose project name is invalid")
-    environment["COMPOSE_PROJECT_NAME"] = project
+    project = os.getenv("COMPOSE_PROJECT_NAME")
+    if not project and os.getenv("CI", "").lower() not in {"1", "true", "yes"}:
+        project = f"honua-{Path(path).parent.name}-{secrets.token_hex(6)}"
+    if project:
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", project):
+            raise ValueError("test Compose project name is invalid")
+        environment["COMPOSE_PROJECT_NAME"] = project
     for name, value in environment.items():
         print(f"{name}={value}")
 
@@ -101,6 +119,8 @@ class ReadinessProbe:
             bindings = (state.get("ports") or {}).get(f"{self.options.container_port}/tcp") or []
             return any(binding["HostPort"] == str(self.port) and
                        binding["HostIp"] in {self.host, "0.0.0.0"} for binding in bindings)
+        if self.options.container:
+            return container_owns_listener(state["id"], self.port)
         return process_ports.process_owns_listener(pid, self.port)
 
     def healthy(self):

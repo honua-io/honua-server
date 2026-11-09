@@ -146,7 +146,6 @@ runs:
         fi
       env:
         ConnectionStrings__DefaultConnection: "Host=localhost;Database=honua_test;Username=honua;Password=honua"
-        ASPNETCORE_URLS: "http://localhost:5000"
         ASPNETCORE_ENVIRONMENT: "Development"
         HONUA_ADMIN_PASSWORD: "ci-admin-password"
         Security__ConnectionEncryption__MasterKey: "test-master-key-that-is-at-least-32-characters-long-for-security"

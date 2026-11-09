@@ -343,7 +343,3 @@ jobs:
         with:
           path: ${{ env.MARKER_PATH }}
           key: honua-serving-image-verification-v3-${{ env.FRESHNESS_EPOCH }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.variant }}-${{ env.INPUT_DIGEST }}
-
-      - name: Clean up serving-image smoke container
-        if: always() && env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true' && matrix.variant == 'generic'
-        run: docker rm -f honua-aot-boundary || true

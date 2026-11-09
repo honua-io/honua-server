@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { bootstrapHonuaServer } from '../../../tests/shared/js-bootstrap.ts';
+import openlayersSetup from '../../../tests/js/openlayers/rendering/global-setup.ts';
 
 const variables = ['CI', 'HONUA_BASE_URL', 'HONUA_TEST_PORT', 'HONUA_SERVICE_ID', 'HONUA_LAYER_ID'];
 const ownedServer = `
@@ -85,5 +86,12 @@ test('a live bootstrap without the listener cannot qualify foreign health', asyn
       const context = await bootstrapHonuaServer(options(projectRoot, port));
       retain(context);
     }, /ownership|healthy/);
+  });
+});
+
+test('OpenLayers cannot adopt a foreign listener without an explicit URL', async () => {
+  await fixture(async ({ port }) => {
+    process.env.HONUA_TEST_PORT = String(port);
+    await assert.rejects(openlayersSetup(), /HONUA_BASE_URL/);
   });
 });

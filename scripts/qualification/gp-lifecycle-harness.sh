@@ -8,7 +8,7 @@ HONUA_GP_PORT="$(python3 "$owned_server" port --variable HONUA_GP_PORT --ci-defa
 HONUA_GP_PEER_PORT="$(python3 "$owned_server" port --variable HONUA_GP_PEER_PORT --ci-default 18081)" || exit 2
 export HONUA_GP_PORT HONUA_GP_PEER_PORT
 receipt_root="${HONUA_GP_RECEIPT_DIR:-${repo_root}/artifacts/gp-lifecycle}"
-base_url="http://127.0.0.1:${HONUA_GP_PORT:-18080}"
+base_url="http://127.0.0.1:${HONUA_GP_PORT}"
 api_key="gp-reliability-admin"
 project_name="honua-gp-reliability-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-$$}"
 lane="${HONUA_GP_LANE:-lifecycle}"
