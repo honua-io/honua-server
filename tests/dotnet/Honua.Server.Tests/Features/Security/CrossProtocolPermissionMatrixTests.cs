@@ -1143,19 +1143,6 @@ public sealed class WfsReadVisibilitySeamTests
     }
 }
 
-/// <summary>
-/// Direct coverage of the WFS-T transaction write authorization seam
-/// (BH3-001 / BH3-014). WFS Transaction actions route through
-/// <c>ValidateTransactionLayerWriteAccessAsync</c>, which now calls
-/// <see cref="ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(HttpContext, MetadataV2Object, MetadataV2Service?, AuthorizationOperation, CancellationToken)"/>
-/// with the action's specific operation (Insert / Update / Delete; Replace maps to
-/// Update). The ServiceRbacTestFixture cannot render a full WFS Transaction HTTP
-/// round-trip (it needs a PostGIS-backed store and non-admin principal injection),
-/// so these tests exercise that exact per-operation seam directly, mirroring the
-/// read-side <c>WfsReadVisibilitySeamTests</c> precedent. A service with no explicit
-/// write policy is used so the RBAC grant path (not an authoritative AccessPolicy)
-/// governs the decision.
-/// </summary>
 [Protocol(TestProtocols.Wfs20)]
 [Operation(Operations.Update)]
 public sealed class WfsTransactionWriteAuthorizationSeamTests

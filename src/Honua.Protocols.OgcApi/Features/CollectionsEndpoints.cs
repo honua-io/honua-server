@@ -509,13 +509,6 @@ internal static class CollectionsEndpoints
         }
     }
 
-    /// <summary>
-    /// Metadata v2 builder for an OGC API Features <see cref="CollectionInfo"/>. The collection
-    /// id is the publication's <c>ServiceLocalId</c>, falling back to its resource name when the
-    /// publication carries no explicit local id. Spatial extent is read from the typed
-    /// <see cref="MetadataV2ObjectSpatial"/> slot on the resource; temporal extent is computed
-    /// from the V2 temporal helpers keyed on the resolved storage layer id.
-    /// </summary>
     private static async Task<CollectionInfo> CreateCollectionAsync(
         MetadataV2Object resource,
         MetadataV2Layer publication,
@@ -766,11 +759,6 @@ internal static class CollectionsEndpoints
         };
     }
 
-    /// <summary>
-    /// Builds the OGC API Features queryables JSON Schema from
-    /// <see cref="MetadataV2Object.SchemaFields"/>, with the primary geometry field
-    /// resolved via <see cref="MetadataV2SpatialExtensions.FindPrimaryGeometryField"/>.
-    /// </summary>
     private static QueryablesSchema CreateQueryablesSchema(
         MetadataV2Object resource,
         string queryablesId)

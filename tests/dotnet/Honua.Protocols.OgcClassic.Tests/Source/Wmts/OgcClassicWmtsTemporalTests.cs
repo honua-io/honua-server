@@ -350,7 +350,6 @@ public sealed class OgcClassicWmtsTemporalTests : IAsyncLifetime
 
     private Task ConfigureLayerAsTimeAwareAsync()
     {
-        // V2 cutover (#1035 72/N): time-info now lives on MetadataV2Object.Temporal.
         _fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
             temporal: new MetadataV2ObjectTemporal { StartTimeField = "timestamp" });

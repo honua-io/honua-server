@@ -1008,12 +1008,6 @@ internal static class ServiceSettingsEndpoints
         Conflict,
     }
 
-    /// <summary>
-    /// Creates the V2 <see cref="MetadataV2ObjectTemporal"/> block. Treats an entirely-empty time info as
-    /// "clear temporal" — returns null so the resource turns non-temporal — to preserve
-    /// clear-on-empty-PUT semantics. Preserves an existing declared extent when
-    /// only the field names are changing.
-    /// </summary>
     private static MetadataV2ObjectTemporal? ToV2Temporal(
         string? startTimeField,
         string? endTimeField,

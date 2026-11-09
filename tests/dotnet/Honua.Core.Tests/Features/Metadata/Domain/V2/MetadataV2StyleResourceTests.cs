@@ -8,12 +8,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 
-/// <summary>
-/// Tests for the ADR-0048 Phase 2 (#1389) first-class style resources: the
-/// <see cref="MetadataV2StyleFactory"/> producer output, the
-/// <c>StyleResourceIds → Type=Style</c> graph validation exercised with real data, and
-/// the one-style-many-resources reverse index.
-/// </summary>
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class MetadataV2StyleResourceTests
 {

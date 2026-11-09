@@ -1593,13 +1593,6 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
         return ((DoubleArray)bbox.Fields[index]).GetValue(row);
     }
 
-    /// <summary>
-    /// honua-server#4666: a resource may declare geometry through its schema alone —
-    /// <see cref="MetadataV2Object.Spatial"/> is nullable, so a graph compiled from a source
-    /// that carries a geometry column but no declared layer geometry type leaves the slot unset.
-    /// The writer used to read only the typed slot, so such a layer was served as an
-    /// attribute-only Parquet file: silent, unsignalled geometry loss for every consumer.
-    /// </summary>
     [Fact]
     public async Task FormatAsGeoParquet_WhenSpatialSlotIsAbsentButSchemaDeclaresGeometry_StillWritesGeometryColumn()
     {
@@ -1750,10 +1743,6 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
         GeoParquetFeatureWriter.SerializeGeometryTypes([]).Should().Be("[]");
     }
 
-    /// <summary>
-    /// A resource whose geometry is declared only by a <see cref="MetadataV2FieldType.Geometry"/>
-    /// schema field, with no <see cref="MetadataV2Object.Spatial"/> slot at all.
-    /// </summary>
     private static MetadataV2Object CreateResourceWithoutSpatialSlot(params MetadataV2Field[] fields)
         => new()
         {

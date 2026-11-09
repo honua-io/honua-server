@@ -64,22 +64,6 @@ public interface IFeatureWriter
     /// <returns>Result summary of the batch operation</returns>
     Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// V2 convenience overload of <see cref="ApplyEditsAsync(int, FeatureEditBatch, CancellationToken)"/>
-    /// that accepts a <see cref="MetadataV2Object"/> instead of the integer
-    /// storage-layer handle. Resolves the storage-layer id via
-    /// <see cref="IMetadataV2GraphProvider"/> and dispatches to the int-keyed
-    /// implementation. Default-interface method so existing implementations
-    /// require no changes.
-    /// </summary>
-    /// <param name="graphProvider">Metadata v2 graph provider used to resolve
-    /// the storage-layer id from the current snapshot.</param>
-    /// <param name="resource">Canonical V2 resource whose primary storage
-    /// binding identifies the target layer.</param>
-    /// <param name="editBatch">Batch of operations to apply.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <exception cref="InvalidOperationException">Thrown when the resource has
-    /// no resolvable storage-layer id (e.g. document-only resources).</exception>
     async Task<FeatureEditResult> ApplyEditsAsync(
         IMetadataV2GraphProvider graphProvider,
         MetadataV2Object resource,

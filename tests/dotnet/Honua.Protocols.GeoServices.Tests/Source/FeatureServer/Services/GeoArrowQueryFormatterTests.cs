@@ -998,11 +998,6 @@ public sealed class GeoArrowQueryFormatterTests
         return $@"{{""crs"":{projJson},""crs_type"":""projjson""}}";
     }
 
-    /// <summary>
-    /// honua-server#4666: the GeoArrow writer shared the GeoParquet writer's one-sided spatial
-    /// predicate, so a resource declaring geometry only through its schema fields (no
-    /// <see cref="MetadataV2Object.Spatial"/> slot) was streamed as attribute-only Arrow.
-    /// </summary>
     [Fact]
     public async Task FormatAsGeoArrowAsync_WhenSpatialSlotIsAbsentButSchemaDeclaresGeometry_StillWritesGeometryColumn()
     {
@@ -1055,10 +1050,6 @@ public sealed class GeoArrowQueryFormatterTests
         ((Point)decoded).Y.Should().BeApproximately(ExpectedY, 1e-9);
     }
 
-    /// <summary>
-    /// A resource whose geometry is declared only by a <see cref="MetadataV2FieldType.Geometry"/>
-    /// schema field, with no <see cref="MetadataV2Object.Spatial"/> slot at all.
-    /// </summary>
     private static MetadataV2Object CreateResourceWithoutSpatialSlot(params MetadataV2Field[] fields)
         => new()
         {

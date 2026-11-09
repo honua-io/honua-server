@@ -379,7 +379,6 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
 
     private Task ConfigureLayerAsTimeAwareAsync()
     {
-        // V2 cutover (#1035 72/N): time-info now lives on MetadataV2Object.Temporal.
         // Use the seeded "timestamp" DateTime field on the shared test layer; resolvers
         // emit an extent only when the field resolves to a real Date/DateTime attribute.
         _fixture.UpdateV2ResourceMetadata(

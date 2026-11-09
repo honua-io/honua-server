@@ -266,13 +266,6 @@ internal static class OgcFeaturesUtilities
         CancellationToken cancellationToken)
         => OgcQueryablesUtilities.BuildTemporalExtentAsync(resource, layerIndex, featureReader, cancellationToken);
 
-    /// <summary>
-    /// Resolves the start/end temporal field names + canonical types from a V2 resource.
-    /// Reads <see cref="MetadataV2Object.Temporal"/> for the configured field names and
-    /// looks up the field type in <see cref="MetadataV2Object.SchemaFields"/>. Returns
-    /// false when no start field is declared, the start field is not present in the schema,
-    /// or the schema field type is not a recognized temporal type.
-    /// </summary>
     public static bool TryResolveTemporalFieldsV2(
         MetadataV2Object resource,
         out string? startFieldName,
