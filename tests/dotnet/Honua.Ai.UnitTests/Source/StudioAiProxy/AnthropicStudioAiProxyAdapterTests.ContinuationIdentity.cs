@@ -19,6 +19,30 @@ namespace Honua.Server.Tests.Features.StudioAiProxy;
 
 public sealed partial class AnthropicStudioAiProxyAdapterTests
 {
+    [UnitTest]
+    public async Task StreamAsync_DuplicateProviderToolProperties_CompletesWithoutSavingContinuation()
+    {
+        var handler = new StudioAiProxyMockHttpMessageHandler(DuplicateToolPropertiesFixture);
+        using var clients = new StudioAiProxyMockHttpClientFactory(handler);
+        var adapter = new AnthropicStudioAiProxyAdapter(clients, new StudioAiProxyApiKeyResolver(),
+            NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
+        var identity = AiExecutionContext.Create("test", "person-a", "studio-chat");
+
+        var events = await CollectAsync(adapter, InitialContinuationRequest(identity));
+
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.Error);
+        events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.ToolCallStop);
+        events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.MessageStop);
+        events.Last().Type.Should().Be(StudioAiChatEventType.MessageStop);
+        JsonSerializer.Serialize(events).Should().NotContain("PRIVATE_");
+        var continueTurn = () => CollectAsync(adapter, ToolResultContinuationRequest(identity));
+        await continueTurn.Should().ThrowAsync<InvalidOperationException>();
+        handler.SendCount.Should().Be(1);
+    }
+
+    internal static string DuplicateToolPropertiesFixture
+        => ToolArgumentsFixture("""{"status":"open","status":"open"}""");
+
     [UnitTheory]
     [InlineData("1.0", "1")]
     [InlineData("1e0", "1")]
@@ -125,8 +149,11 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
     }
 
     private static string NumericToolFixture(string number)
+        => ToolArgumentsFixture("{\"status\":\"open\",\"values\":[" + number + "]}");
+
+    private static string ToolArgumentsFixture(string input)
     {
-        var arguments = JsonSerializer.Serialize("{\"status\":\"open\",\"values\":[" + number + "]}");
+        var arguments = JsonSerializer.Serialize(input);
         return WithThinking(ToolCallFixture)
             .Replace("\"partial_json\":\"{\\\"status\\\":\"", "\"partial_json\":" + arguments, StringComparison.Ordinal)
             .Replace("\"partial_json\":\"\\\"open\\\"}\"", "\"partial_json\":\"\"", StringComparison.Ordinal);

@@ -20,6 +20,29 @@ namespace Honua.Server.Tests.Features.StudioAiProxy;
 public sealed partial class StudioAiProxyServiceTests
 {
     [UnitTest]
+    public async Task StreamChatAsync_DuplicateProviderToolProperties_ReleasesSingleSuccessTerminal()
+    {
+        using var clients = new StudioAiProxyMockHttpClientFactory(new StudioAiProxyMockHttpMessageHandler(
+            AnthropicStudioAiProxyAdapterTests.DuplicateToolPropertiesFixture));
+        var service = CreateAnthropicSigningService(clients);
+        var request = new StudioAiChatRequest
+        {
+            ExecutionContext = AiExecutionContext.Create("test", "person-a", "studio-chat"),
+            Messages = [new() { Role = StudioAiRole.User, Content = "hi" }]
+        };
+        var summary = new StudioAiProxyCallSummary();
+
+        var events = await CollectAsync(service, request, summary);
+
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.Error);
+        events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.ToolCallStop);
+        events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.MessageStop);
+        events.Last().Type.Should().Be(StudioAiChatEventType.MessageStop);
+        summary.Succeeded.Should().BeTrue();
+        JsonSerializer.Serialize(events).Should().NotContain("PRIVATE_");
+    }
+
+    [UnitTest]
     public async Task PrepareChatAsync_AnthropicToolContinuation_UsesVerifiedIdentityAndKeepsReasoningPrivate()
     {
         var handler = new StudioAiProxySequenceHttpMessageHandler(
