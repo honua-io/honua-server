@@ -888,20 +888,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return null;
         }
 
-        return new PublishedLayerSummary
-        {
-            LayerId = reader.GetInt32(0),
-            LayerName = reader.GetString(1),
-            Description = reader.IsDBNull(2) ? null : reader.GetString(2),
-            Schema = reader.GetString(3),
-            Table = reader.GetString(4),
-            PrimaryKey = reader.IsDBNull(5) ? null : reader.GetString(5),
-            GeometryType = reader.GetString(6),
-            Srid = reader.GetInt32(7),
-            Enabled = reader.GetBoolean(8),
-            FieldCount = reader.GetInt32(9),
-            ServiceName = serviceName
-        };
+        return ReadPublishedLayer(reader, serviceName);
     }
 
     private static async Task<PublishedLayerSummary?> GetLayerSummaryByIdAsync(
@@ -947,20 +934,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return null;
         }
 
-        return new PublishedLayerSummary
-        {
-            LayerId = reader.GetInt32(0),
-            LayerName = reader.GetString(1),
-            Description = reader.IsDBNull(2) ? null : reader.GetString(2),
-            Schema = reader.GetString(3),
-            Table = reader.GetString(4),
-            PrimaryKey = reader.IsDBNull(5) ? null : reader.GetString(5),
-            GeometryType = reader.GetString(6),
-            Srid = reader.GetInt32(7),
-            Enabled = reader.GetBoolean(8),
-            FieldCount = reader.GetInt32(9),
-            ServiceName = DefaultServiceName
-        };
+        return ReadPublishedLayer(reader, DefaultServiceName);
     }
 
     private static async Task SetLayerEnabledCoreAsync(
@@ -986,7 +960,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     {
         return new PublishedLayerSummary
         {
-            LayerId = layer.LayerId,
+            StorageLayerId = layer.StorageLayerId,
             LayerName = layer.LayerName,
             Description = layer.Description,
             Schema = layer.Schema,

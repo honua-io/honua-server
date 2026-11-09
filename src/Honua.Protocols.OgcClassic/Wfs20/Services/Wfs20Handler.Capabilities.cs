@@ -7,7 +7,6 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Security;
 using System.Security.Claims;
-using System.Text;
 using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
@@ -82,6 +81,10 @@ internal sealed partial class Wfs20Handler
                     : null
             };
 
+            foreach (var featureType in featureTypes.DistinctBy(featureType => featureType.NamespacePrefix))
+            {
+                capabilities.Namespaces.Add(featureType.NamespacePrefix, featureType.NamespaceUri);
+            }
             Wfs20Log.GetCapabilitiesReturned(_logger);
             return capabilities;
         }
@@ -118,7 +121,7 @@ internal sealed partial class Wfs20Handler
                 throw new ArgumentException($"Requested feature type(s) not found: {string.Join(", ", requestedTypes)}.");
             }
 
-            var schema = GenerateSchemaForTypes(selectedTypes);
+            var schema = GenerateFeatureSchema(selectedTypes, context, "2.0.0");
 
             Wfs20Log.DescribeFeatureTypeReturned(_logger, selectedTypes.Length == 0 ? requestedTypes.Length : selectedTypes.Length);
             return schema;
@@ -169,31 +172,11 @@ internal sealed partial class Wfs20Handler
             candidates.Add((storageLayerId.Value, resource!, publication, service!));
         }
 
-        var visiblePublications = candidates
-            .OrderBy(static candidate => candidate.StorageLayerId)
-            .ThenBy(static candidate => candidate.Publication.LayerIndex ?? int.MaxValue)
-            .ThenBy(static candidate => candidate.Resource.Metadata.Name, StringComparer.OrdinalIgnoreCase)
-            .GroupBy(static candidate => candidate.StorageLayerId)
-            .Select(static group => group.First())
-            .ToArray();
-
-        var descriptors = ImmutableArray.CreateBuilder<WfsFeatureTypeDescriptor>(visiblePublications.Length);
-        var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var candidate in visiblePublications)
+        var descriptors = ImmutableArray.CreateBuilder<WfsFeatureTypeDescriptor>(candidates.Count);
+        foreach (var candidate in candidates.OrderBy(static candidate => candidate.Publication.Metadata.Id, StringComparer.Ordinal))
         {
             var resourceName = GetResourceFeatureTypeName(candidate.Resource);
-
-            var baseName = IsWfs10CiteLayerName(resourceName)
-                ? resourceName
-                : BuildTypeLocalName(resourceName, candidate.StorageLayerId);
-            var localName = baseName;
-            if (!usedNames.Add(localName))
-            {
-                localName = $"{baseName}_{candidate.StorageLayerId.ToString(CultureInfo.InvariantCulture)}";
-                usedNames.Add(localName);
-            }
-
+            var localName = XmlConvert.EncodeLocalName(candidate.Publication.Metadata.Id);
             descriptors.Add(new WfsFeatureTypeDescriptor(
                 candidate.Resource,
                 candidate.Publication,
@@ -228,11 +211,6 @@ internal sealed partial class Wfs20Handler
         };
 
 
-    private static bool IsWfs10CiteLayerName(string layerName)
-        => layerName is "Other" or "Fifteen" or "Seven" or "Nulls" or "Locks" or
-            "Points" or "Lines" or "Polygons" or "MPoints" or "MLines" or "MPolygons";
-
-
     private static ImmutableArray<WfsFeatureTypeDescriptor> ResolveRequestedFeatureTypes(
         ImmutableArray<WfsFeatureTypeDescriptor> publishedTypes,
         string[] requestedTypes)
@@ -243,14 +221,14 @@ internal sealed partial class Wfs20Handler
         }
 
         var matches = ImmutableArray.CreateBuilder<WfsFeatureTypeDescriptor>();
-        var seenLayerIds = new HashSet<int>();
+        var seenPublicationIds = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var requestedType in requestedTypes)
         {
             foreach (var featureType in publishedTypes)
             {
                 if (!MatchesRequestedType(featureType, requestedType) ||
-                    !seenLayerIds.Add(featureType.StorageLayerId))
+                    !seenPublicationIds.Add(featureType.Publication.Metadata.Id))
                 {
                     continue;
                 }
@@ -294,11 +272,8 @@ internal sealed partial class Wfs20Handler
 
     private static bool MatchesRequestedType(WfsFeatureTypeDescriptor featureType, string requestedType)
     {
-        var normalizedRequested = FilterExpressionHelpers.NormalizeIdentifier(requestedType);
-        return string.Equals(requestedType, featureType.QualifiedName, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(normalizedRequested, featureType.LocalName, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(normalizedRequested, featureType.Resource.Metadata.Name, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(normalizedRequested, featureType.StorageLayerId.ToString(CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
+        return string.Equals(requestedType, featureType.QualifiedName, StringComparison.Ordinal) ||
+               string.Equals(FilterExpressionHelpers.NormalizeIdentifier(requestedType), featureType.LocalName, StringComparison.Ordinal);
     }
 
 
@@ -762,89 +737,4 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static string GenerateSchemaForTypes(IReadOnlyList<WfsFeatureTypeDescriptor> featureTypes)
-    {
-        if (featureTypes.Count == 0)
-        {
-            return GenerateEmptySchema();
-        }
-
-        var schema = new StringBuilder();
-        schema.AppendLine("""<?xml version="1.0" encoding="UTF-8"?>""");
-        schema.AppendLine($"""<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:gml="{Wfs20Utilities.GmlNamespace}" xmlns:{FeatureNamespacePrefix}="{FeatureNamespaceUri}" targetNamespace="{FeatureNamespaceUri}" elementFormDefault="qualified" version="1.0.0">""");
-        schema.AppendLine($"""  <xsd:import namespace="{Wfs20Utilities.GmlNamespace}" schemaLocation="http://schemas.opengis.net/gml/3.2.1/gml.xsd"/>""");
-        schema.AppendLine();
-
-        foreach (var featureType in featureTypes)
-        {
-            var typeName = XmlConvert.EncodeLocalName(featureType.LocalName);
-            schema.AppendLine($"""  <xsd:element name="{typeName}" type="{FeatureNamespacePrefix}:{typeName}Type" substitutionGroup="gml:AbstractFeature"/>""");
-            schema.AppendLine($"""  <xsd:complexType name="{typeName}Type">""");
-            schema.AppendLine("""    <xsd:complexContent>""");
-            schema.AppendLine("""      <xsd:extension base="gml:AbstractFeatureType">""");
-            schema.AppendLine("""        <xsd:sequence>""");
-
-            var geometryPropertyName = ResolveGeometryPropertyName(featureType.Resource);
-            if (geometryPropertyName is not null)
-            {
-                var geometryFieldName = XmlConvert.EncodeLocalName(geometryPropertyName);
-                schema.AppendLine($"""          <xsd:element name="{geometryFieldName}" type="{MapGeometryPropertyType(featureType.Resource.ReadGeometryType())}" minOccurs="0" nillable="true"/>""");
-            }
-
-            foreach (var field in GetVisibleAttributeFields(featureType.Resource))
-            {
-                var fieldName = XmlConvert.EncodeLocalName(field.Name);
-                var minOccurs = field.Nullable ? " minOccurs=\"0\"" : string.Empty;
-                var nillable = field.Nullable ? " nillable=\"true\"" : string.Empty;
-                schema.AppendLine($"""          <xsd:element name="{fieldName}" type="{MapXsdType(field.Type)}"{minOccurs}{nillable}/>""");
-            }
-
-            schema.AppendLine("""        </xsd:sequence>""");
-            schema.AppendLine("""      </xsd:extension>""");
-            schema.AppendLine("""    </xsd:complexContent>""");
-            schema.AppendLine("""  </xsd:complexType>""");
-            schema.AppendLine();
-        }
-
-        schema.AppendLine("""</xsd:schema>""");
-        return schema.ToString();
-    }
-
-
-    private static string GenerateEmptySchema()
-    {
-        return $$"""
-            <?xml version="1.0" encoding="UTF-8"?>
-            <xsd:schema
-                xmlns:xsd="http://www.w3.org/2001/XMLSchema"
-                xmlns:gml="{{Wfs20Utilities.GmlNamespace}}"
-                xmlns:{{FeatureNamespacePrefix}}="{{FeatureNamespaceUri}}"
-                targetNamespace="{{FeatureNamespaceUri}}"
-                elementFormDefault="qualified"
-                version="1.0.0">
-              <xsd:import namespace="{{Wfs20Utilities.GmlNamespace}}" schemaLocation="http://schemas.opengis.net/gml/3.2.1/gml.xsd"/>
-            </xsd:schema>
-            """;
-    }
-
-
-    private static string GenerateEmptySchemaForTypes(IReadOnlyList<string> requestedTypes)
-    {
-        var requested = string.Join(", ", requestedTypes);
-        return $$"""
-            <?xml version="1.0" encoding="UTF-8"?>
-            <xsd:schema
-                xmlns:xsd="http://www.w3.org/2001/XMLSchema"
-                xmlns:gml="{{Wfs20Utilities.GmlNamespace}}"
-                xmlns:{{FeatureNamespacePrefix}}="{{FeatureNamespaceUri}}"
-                targetNamespace="{{FeatureNamespaceUri}}"
-                elementFormDefault="qualified"
-                version="1.0.0">
-              <xsd:import namespace="{{Wfs20Utilities.GmlNamespace}}" schemaLocation="http://schemas.opengis.net/gml/3.2.1/gml.xsd"/>
-              <xsd:annotation>
-                <xsd:documentation>Requested feature types were not found: {{XmlEscape(requested)}}</xsd:documentation>
-              </xsd:annotation>
-            </xsd:schema>
-            """;
-    }
 }

@@ -39,7 +39,7 @@ public sealed partial class LayerPublishingIntegrationTests
             JsonContent.Create(request, options: _jsonOptions));
         var payload = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Created, payload);
-        _layerId = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(payload, _jsonOptions)!.Data!.LayerId;
+        _layerId = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(payload, _jsonOptions)!.Data!.StorageLayerId;
 
         var serviceUrl = $"/rest/services/{_serviceName}/FeatureServer";
         using var serviceResponse = await _client.GetAsync(serviceUrl + "?f=json");

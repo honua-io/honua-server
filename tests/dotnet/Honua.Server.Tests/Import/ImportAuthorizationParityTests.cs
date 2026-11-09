@@ -295,7 +295,7 @@ public sealed class ImportAuthorizationParityTests : IAsyncLifetime
     [Trait("Tier", "Integration")]
     [Operation(Operations.Import)]
     [Endpoint("POST /api/v1/admin/import/preview")]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export")]
     [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
     [Endpoint("GET /api/v1/admin/tile-operations/jobs")]
     [Endpoint("GET /api/v1/admin/tile-operations/jobs/{jobId}")]

@@ -29,8 +29,8 @@ public sealed partial class AdminLayerAuthoringEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/popup-info")]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/popup-info")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/popup-info")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/popup-info")]
     public async Task PutPopupInfo_ThenGet_RoundTripsStoredDocument()
     {
         var client = _fixture.CreateAdminClient();
@@ -50,7 +50,7 @@ public sealed partial class AdminLayerAuthoringEndpointsTests : IAsyncLifetime
         var put = await DeserializeDocumentAsync(putResponse);
         put!.Success.Should().BeTrue();
         put.Data.Should().NotBeNull();
-        put.Data!.LayerId.Should().Be(WebAppFixture.TestLayerId);
+        put.Data!.StorageLayerId.Should().Be(WebAppFixture.TestLayerId);
         put.Data.Document!.Value.GetProperty("title").GetString().Should().Be("{name}");
 
         var getResponse = await client.GetAsync(
@@ -65,7 +65,7 @@ public sealed partial class AdminLayerAuthoringEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/popup-info")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/popup-info")]
     public async Task PutPopupInfo_WithNonObjectBody_ReturnsBadRequest()
     {
         var client = _fixture.CreateAdminClient();
@@ -81,8 +81,8 @@ public sealed partial class AdminLayerAuthoringEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/drawing-info")]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/drawing-info")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/drawing-info")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/drawing-info")]
     public async Task PutDrawingInfo_ThenGet_RoundTripsRenderer()
     {
         var client = _fixture.CreateAdminClient();
@@ -119,8 +119,8 @@ public sealed partial class AdminLayerAuthoringEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/drawing-info")]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/drawing-info")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/drawing-info")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/drawing-info")]
     public async Task PutDrawingInfo_WithNullBody_ClearsStoredDocument()
     {
         var client = _fixture.CreateAdminClient();
@@ -152,8 +152,8 @@ public sealed partial class AdminLayerAuthoringEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/relationships")]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/relationships")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/relationships")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/relationships")]
     public async Task PutRelationships_ThenGet_RoundTripsRelationship()
     {
         var client = _fixture.CreateAdminClient();
@@ -168,7 +168,7 @@ public sealed partial class AdminLayerAuthoringEndpointsTests : IAsyncLifetime
                     Id = "rel-authoring-test",
                     Name = "Authored Relationship",
                     Description = "Created by integration test",
-                    RelatedLayerId = 1,
+                    RelatedStorageLayerId = 1,
                     Role = "origin",
                     Cardinality = "one-to-many",
                     OriginField = "objectid",
@@ -189,7 +189,7 @@ public sealed partial class AdminLayerAuthoringEndpointsTests : IAsyncLifetime
         put.Data.Should().NotBeNull();
         put.Data!.Relationships.Should().ContainSingle();
         put.Data.Relationships[0].Id.Should().Be("rel-authoring-test");
-        put.Data.Relationships[0].RelatedLayerId.Should().Be(1);
+        put.Data.Relationships[0].RelatedStorageLayerId.Should().Be(1);
 
         var getResponse = await client.GetAsync(
             $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/relationships");
@@ -205,7 +205,7 @@ public sealed partial class AdminLayerAuthoringEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/relationships")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/relationships")]
     public async Task PutRelationships_WithUnknownOriginField_ReturnsBadRequest()
     {
         var client = _fixture.CreateAdminClient();
@@ -217,7 +217,7 @@ public sealed partial class AdminLayerAuthoringEndpointsTests : IAsyncLifetime
                 {
                     Id = "rel-bad-origin",
                     Name = "Bad Origin",
-                    RelatedLayerId = 1,
+                    RelatedStorageLayerId = 1,
                     Cardinality = "one-to-many",
                     OriginField = "does_not_exist",
                     DestinationField = "related_id",

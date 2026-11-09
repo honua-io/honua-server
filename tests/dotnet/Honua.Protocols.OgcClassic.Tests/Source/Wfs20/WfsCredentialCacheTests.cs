@@ -21,8 +21,8 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 [Protocol(TestProtocols.Wfs20)]
 public sealed class WfsCredentialCacheTests
 {
-    private const string ReadProtectedType = "test_layer";
-    private const string WriteType = "related_test_layer_1";
+    private const string ReadProtectedType = "pub-layer-0";
+    private const string WriteType = "pub-layer-1";
     private const string Referer = "https://wfs-credential-cache.example/";
 
     [IntegrationTheory]

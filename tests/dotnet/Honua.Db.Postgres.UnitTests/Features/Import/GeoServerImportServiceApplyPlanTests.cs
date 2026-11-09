@@ -512,7 +512,7 @@ public sealed class GeoServerImportServiceApplyPlanTests
                 throw new LayerPublishingException(
                     LayerPublishingErrorKind.Conflict,
                     $"Layer already exists for table '{request.Schema}.{request.Table}'.",
-                    existingLayer.LayerId);
+                    existingLayer.StorageLayerId);
             }
 
             Requests.Add(request);
@@ -538,7 +538,7 @@ public sealed class GeoServerImportServiceApplyPlanTests
             bool enabled,
             CancellationToken cancellationToken = default)
         {
-            var existing = _publishedTargets.Values.FirstOrDefault(layer => layer.LayerId == layerId);
+            var existing = _publishedTargets.Values.FirstOrDefault(layer => layer.StorageLayerId == layerId);
             if (existing == null)
             {
                 return Task.FromResult<PublishedLayerSummary?>(null);
@@ -546,7 +546,7 @@ public sealed class GeoServerImportServiceApplyPlanTests
 
             AttachRequests.Add(new LayerAttachRequest(layerId, serviceName, enabled));
             var linked = CreateSummary(
-                existing.LayerId,
+                existing.StorageLayerId,
                 existing.Schema,
                 existing.Table,
                 serviceName,
@@ -620,7 +620,7 @@ public sealed class GeoServerImportServiceApplyPlanTests
             string? primaryKey = null)
             => new()
             {
-                LayerId = layerId,
+                StorageLayerId = layerId,
                 LayerName = layerName ?? table,
                 Schema = schema,
                 Table = table,

@@ -17,6 +17,30 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 [Trait("Tier", "Fast")]
 public sealed partial class AdminOperationRequestContractTests
 {
+    [Theory]
+    [InlineData("admin.layer.fields.get", "storageLayerId", "/api/v1/admin/metadata/layers/741/fields")]
+    [InlineData("admin.layer.set-enabled", "storageLayerId", "/api/v1/admin/connections/11111111-1111-1111-1111-111111111111/layers/741/enabled")]
+    [InlineData("admin.services.layer-metadata.set", "serviceLayerIndex", "/api/v1/admin/services/roads/layers/7/metadata")]
+    public async Task Submit_ExplicitLayerSelector_BindsGovernedRoute(string operationId, string selector, string expectedPath)
+    {
+        using var capture = new CaptureHandler();
+        using var client = new HttpClient(capture);
+        var executor = CreateApi(operationId, client);
+        await executor.SubmitAsync(new OperationRequest
+        {
+            OperationId = operationId,
+            ConnectionId = "11111111-1111-1111-1111-111111111111",
+            ServiceName = "roads",
+            Parameters = new Dictionary<string, string?>
+            {
+                [selector] = selector == "storageLayerId" ? "741" : "7",
+                ["enabled"] = "true",
+            },
+        }, new OperationPolicyContext());
+
+        capture.Uri!.AbsolutePath.Should().Be(expectedPath);
+    }
+
     [Fact]
     public async Task ReleasePackageList_Pagination_RemainsInQuery()
     {
@@ -47,7 +71,7 @@ public sealed partial class AdminOperationRequestContractTests
             ConnectionId = "11111111-1111-1111-1111-111111111111",
             Parameters = new Dictionary<string, string?>
             {
-                ["layerId"] = "1",
+                ["storageLayerId"] = "1",
                 ["serviceName"] = service,
                 ["enabled"] = "true"
             }
@@ -70,7 +94,7 @@ public sealed partial class AdminOperationRequestContractTests
             ConnectionId = "11111111-1111-1111-1111-111111111111",
             Parameters = new Dictionary<string, string?>
             {
-                ["layerId"] = "1",
+                ["storageLayerId"] = "1",
                 ["enabled"] = "true"
             }
         }, new OperationPolicyContext());
@@ -310,7 +334,7 @@ public sealed partial class AdminOperationRequestContractTests
         (await executor.ValidateAsync(new OperationRequest
         {
             OperationId = executor.OperationId,
-            Parameters = new Dictionary<string, string?> { ["scope"] = "all", ["layerId"] = "null" }
+            Parameters = new Dictionary<string, string?> { ["scope"] = "all", ["storageLayerId"] = "null" }
         })).IsValid.Should().BeTrue();
     }
 

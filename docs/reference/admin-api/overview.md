@@ -18,7 +18,7 @@ All admin endpoints require authentication. Send `X-API-Key` with the admin pass
 |---|---|---|
 | Connections, tables, layers, service settings | `/api/v1/admin/connections`, `/api/v1/admin/services` | [Connections and layers](connections-and-layers.md) |
 | File, URL, migration, and raster imports; jobs | `/api/v1/admin/import`, `/api/v1/admin/operations`, `/api/v1/admin/jobs`, `/api/v1/admin/tile-operations` | [Imports and jobs](imports-and-jobs.md) |
-| Layer styles, SLD, suggestions, themes | `/api/v1/admin/metadata/layers/{layerId}/style` | [Styles](styles.md) |
+| Layer styles, SLD, suggestions, themes | `/api/v1/admin/metadata/layers/{storageLayerId}/style` | [Styles](styles.md) |
 | API keys, roles, users, OIDC providers, license | `/api/v1/admin/api-keys`, `/api/v1/admin/roles`, `/api/v1/admin/users`, `/api/v1/admin/oidc`, `/api/v1/admin/license` | [Users, roles, and licensing](users-roles-licensing.md) |
 | Form packages and submissions | `/api/v1/admin/forms`, `/api/v1/forms` | [Forms](forms.md) |
 | Deploy operations and rollback | `/api/v1/admin/deploy` | [Upgrade and rollback](../../guides/deploy/upgrade-and-rollback.md) |

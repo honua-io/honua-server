@@ -1,10 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin.Services;
-using Honua.Infrastructure.Authentication;
-using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
@@ -19,36 +20,33 @@ internal static class AdminLayerValidationEndpoints
             .WithTags("Admin", "Metadata", "Validation")
             .RequireAdminAuthorization();
 
-        _ = group.MapGet("/{layerId:int}/validation", HandleGetLayerValidation)
+        _ = group.MapGet("/{storageLayerId:int}/validation", HandleGetLayerValidation)
             .WithName("GetAdminLayerValidation")
             .WithSummary("Validate layer metadata against its backing storage")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
     }
 
     private static async Task<IResult> HandleGetLayerValidation(
-        int layerId,
+        int storageLayerId,
         HttpContext context,
         [FromServices] ILayerValidationService validationService,
         CancellationToken cancellationToken)
     {
-        if (layerId < 0)
+        if (storageLayerId < 0)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status400BadRequest,
-                $"Layer identifier '{layerId}' is invalid.");
+                $"Layer identifier '{storageLayerId}' is invalid.");
         }
 
-        var validation = await validationService.ValidateLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        if (validation == null)
+        var validation = await validationService.ValidateLayerAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
+        if (!validation.IsValid)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                context,
-                StatusCodes.Status404NotFound,
-                $"Layer {layerId} not found.");
+            return ServiceResourceValidationHelpers.CreateAdminValidationProblem(context, validation, $"Layer {storageLayerId} not found.");
         }
 
-        var payload = ApiResponse<LayerValidationResponse>.CreateSuccess(validation);
+        var payload = ApiResponse<LayerValidationResponse>.CreateSuccess(validation.Resource!);
         return Results.Json(payload, LayerValidationJsonContext.Default.ApiResponseLayerValidationResponse);
     }
 }

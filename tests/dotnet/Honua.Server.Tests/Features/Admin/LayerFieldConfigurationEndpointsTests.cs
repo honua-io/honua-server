@@ -30,8 +30,8 @@ public sealed class LayerFieldConfigurationEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/fields")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/fields")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/fields")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/fields")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task UpdateLayerFields_WithAliasDomainAndHiddenField_PersistsAndHydratesCatalog()
     {
@@ -173,8 +173,8 @@ public sealed class LayerFieldConfigurationEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/filter")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/filter")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/filter")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/filter")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task UpdateLayerFilter_WithValidPermanentFilter_PersistsAndFiltersPublicQueries()
     {
@@ -252,7 +252,7 @@ public sealed class LayerFieldConfigurationEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/filter")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/filter")]
     public async Task UpdateLayerFilter_WithInvalidPermanentFilter_ReturnsBadRequest()
     {
         var adminClient = _fixture.CreateAdminClient();
@@ -275,7 +275,7 @@ public sealed class LayerFieldConfigurationEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/fields")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/fields")]
     public async Task UpdateLayerFields_WithUnknownField_ReturnsBadRequest()
     {
         var adminClient = _fixture.CreateAdminClient();

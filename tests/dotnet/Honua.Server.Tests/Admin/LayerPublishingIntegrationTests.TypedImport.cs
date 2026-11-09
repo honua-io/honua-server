@@ -104,7 +104,7 @@ public sealed partial class LayerPublishingIntegrationTests
             ServiceName = _serviceName,
             Enabled = true
         });
-        _layerId = published.LayerId;
+        _layerId = published.StorageLayerId;
         published.GeometryType.Should().Be("Point");
 
         var sortedPayload = await ReadOgcItemsAsync("sortby=-population");
@@ -232,7 +232,7 @@ public sealed partial class LayerPublishingIntegrationTests
             ServiceName = _serviceName,
             Enabled = true
         });
-        _layerId = published.LayerId;
+        _layerId = published.StorageLayerId;
 
         var payload = await ReadOgcItemsAsync("limit=10");
         using var document = JsonDocument.Parse(payload);
@@ -267,6 +267,7 @@ public sealed partial class LayerPublishingIntegrationTests
 
     private async Task<JsonElement> CallQueryFeaturesAsync(string where)
     {
+        var layer = await ReadImportedGeometryCatalogLayerAsync();
         var body = new
         {
             jsonrpc = "2.0",
@@ -277,8 +278,8 @@ public sealed partial class LayerPublishingIntegrationTests
                 name = "honua_query_features",
                 arguments = new
                 {
-                    serviceId = _serviceName,
-                    layerId = _layerId,
+                    serviceId = layer.GetProperty("serviceId").GetString(),
+                    serviceLayerIndex = layer.GetProperty("serviceLayerIndex").GetInt32(),
                     where,
                     outFields = new[] { "name", "population" },
                     limit = 10

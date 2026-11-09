@@ -213,7 +213,7 @@ public sealed class LayerPublishWorkerControlsTests
 
     private static PublishedLayerSummary Summary(long? metadataRevision = null) => new()
     {
-        LayerId = 23,
+        StorageLayerId = 23,
         LayerName = "Roads",
         Schema = "public",
         Table = "roads",

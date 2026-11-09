@@ -9,6 +9,7 @@ using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 using PermanentFilterLanguages = Honua.Core.Features.Metadata.Domain.V2.MetadataV2PermanentFilterLanguages;
@@ -27,37 +28,37 @@ internal static class AdminLayerFilterConfigurationEndpoints
             .WithTags("Admin", "Metadata", "Filters")
             .RequireAdminAuthorization();
 
-        _ = group.MapGet("/{layerId:int}/filter", HandleGetLayerFilter)
+        _ = group.MapGet("/{storageLayerId:int}/filter", HandleGetLayerFilter)
             .WithName("GetAdminLayerFilter")
             .WithSummary("Get persisted layer permanent filter configuration")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
-        _ = group.MapPut("/{layerId:int}/filter", HandleUpdateLayerFilter)
+        _ = group.MapPut("/{storageLayerId:int}/filter", HandleUpdateLayerFilter)
             .WithName("UpdateAdminLayerFilter")
             .WithSummary("Update persisted layer permanent filter configuration")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
     }
 
     private static async Task<IResult> HandleGetLayerFilter(
-        int layerId,
+        int storageLayerId,
         HttpContext context,
         [FromServices] IResourceValidator resourceValidator,
         CancellationToken cancellationToken)
     {
-        var layerResult = await ValidateLayerAsync(layerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
+        var layerResult = await ValidateLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
         if (layerResult.Problem != null || layerResult.Resource == null)
         {
             return layerResult.Problem!;
         }
 
-        var response = BuildResponse(layerId, layerResult.Resource.PermanentFilter);
+        var response = BuildResponse(storageLayerId, layerResult.Resource.PermanentFilter);
         return Results.Json(
             ApiResponse<LayerFilterConfigurationResponse>.CreateSuccess(response),
             LayerFieldConfigurationJsonContext.Default.ApiResponseLayerFilterConfigurationResponse);
     }
 
     private static async Task<IResult> HandleUpdateLayerFilter(
-        int layerId,
+        int storageLayerId,
         LayerFilterConfigurationUpdateRequest request,
         HttpContext context,
         [FromServices] IResourceValidator resourceValidator,
@@ -66,7 +67,7 @@ internal static class AdminLayerFilterConfigurationEndpoints
         [FromServices] OutputCacheInvalidationService cacheInvalidator,
         CancellationToken cancellationToken)
     {
-        var layerResult = await ValidateLayerAsync(layerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
+        var layerResult = await ValidateLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
         if (layerResult.Problem != null || layerResult.Resource == null)
         {
             return layerResult.Problem!;
@@ -74,7 +75,7 @@ internal static class AdminLayerFilterConfigurationEndpoints
 
         var preview = AdminLayerConfigurationTargets.Resolve(
             await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false),
-            layerId);
+            storageLayerId);
         if (preview.IsAmbiguous)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -98,7 +99,7 @@ internal static class AdminLayerFilterConfigurationEndpoints
 
         var written = await AdminLayerConfigurationTargets.WriteAsync(
             graphStore,
-            layerId,
+            storageLayerId,
             resource => resource with { PermanentFilter = validationResult.Filter },
             cancellationToken).ConfigureAwait(false);
         if (written.IsAmbiguous)
@@ -109,9 +110,9 @@ internal static class AdminLayerFilterConfigurationEndpoints
                 written.ConflictDetail ?? "The layer id is published by more than one resource.");
         }
 
-        await cacheInvalidator.InvalidateServiceCatalogAsync(null, [layerId], cancellationToken).ConfigureAwait(false);
+        await cacheInvalidator.InvalidateServiceCatalogAsync(null, [storageLayerId], cancellationToken).ConfigureAwait(false);
 
-        var response = BuildResponse(layerId, validationResult.Filter);
+        var response = BuildResponse(storageLayerId, validationResult.Filter);
         return Results.Json(
             ApiResponse<LayerFilterConfigurationResponse>.CreateSuccess(response),
             LayerFieldConfigurationJsonContext.Default.ApiResponseLayerFilterConfigurationResponse);
@@ -199,28 +200,24 @@ internal static class AdminLayerFilterConfigurationEndpoints
     }
 
     private static async Task<(MetadataV2Resource? Resource, IResult? Problem)> ValidateLayerAsync(
-        int layerId,
+        int storageLayerId,
         HttpContext context,
         IResourceValidator resourceValidator,
         CancellationToken cancellationToken)
     {
-        var layerResult = await resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
+        var layerResult = await resourceValidator.ValidateStorageLayerV2Async(storageLayerId, cancellationToken).ConfigureAwait(false);
         if (!layerResult.IsValid || layerResult.Resource == null)
         {
-            var statusCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier
-                ? StatusCodes.Status400BadRequest
-                : StatusCodes.Status404NotFound;
-            var message = layerResult.ErrorMessage ?? $"Layer {layerId} not found.";
-            return (null, ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, message));
+            return (null, ServiceResourceValidationHelpers.CreateAdminValidationProblem(context, layerResult, $"Layer {storageLayerId} not found."));
         }
 
         return (layerResult.Resource, null);
     }
 
-    private static LayerFilterConfigurationResponse BuildResponse(int layerId, MetadataV2PermanentFilter? filter)
+    private static LayerFilterConfigurationResponse BuildResponse(int storageLayerId, MetadataV2PermanentFilter? filter)
         => new()
         {
-            LayerId = layerId,
+            StorageLayerId = storageLayerId,
             PermanentFilter = BuildPermanentFilterConfiguration(filter)
         };
 

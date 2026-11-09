@@ -131,9 +131,9 @@ internal sealed partial class Wfs20Handler
                 using var postCommitCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
                 try
                 {
-                    foreach (var (layerId, serviceId) in serviceIdsByLayer)
+                    foreach (var layerId in serviceIdsByLayer.Keys)
                     {
-                        await _mutationEventService.InvalidateLayerAsync(serviceId, layerId, postCommitCts.Token).ConfigureAwait(false);
+                        await _mutationEventService.InvalidateStorageLayerAsync(layerId, postCommitCts.Token).ConfigureAwait(false);
                     }
 
                     await PublishTransactionEventsAsync(
@@ -1244,15 +1244,7 @@ internal sealed partial class Wfs20Handler
             throw new WfsTransactionException("MissingParameterValue", "Transaction action is missing a feature type name.", "typeName");
         }
 
-        var trimmedTypeName = rawTypeName.Trim();
-        var localName = trimmedTypeName.Contains(':', StringComparison.Ordinal)
-            ? trimmedTypeName[(trimmedTypeName.LastIndexOf(':') + 1)..]
-            : trimmedTypeName;
-
-        var match = descriptors.FirstOrDefault(descriptor =>
-            descriptor.QualifiedName.Equals(trimmedTypeName, StringComparison.OrdinalIgnoreCase) ||
-            descriptor.LocalName.Equals(trimmedTypeName, StringComparison.OrdinalIgnoreCase) ||
-            descriptor.LocalName.Equals(localName, StringComparison.OrdinalIgnoreCase));
+        var match = descriptors.FirstOrDefault(descriptor => MatchesRequestedType(descriptor, rawTypeName.Trim()));
         if (match is not null)
         {
             return match;

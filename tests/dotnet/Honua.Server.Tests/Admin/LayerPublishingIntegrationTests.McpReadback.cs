@@ -59,7 +59,7 @@ public sealed partial class LayerPublishingIntegrationTests
         (isError.ValueKind == JsonValueKind.True).Should().BeFalse(publishBody);
         var completed = result.GetProperty("structuredContent");
         completed.GetProperty("status").GetString().Should().Be("Completed", publishBody);
-        var layerId = int.Parse(completed.GetProperty("layerId").GetString()!, CultureInfo.InvariantCulture);
+        var layerId = int.Parse(completed.GetProperty("storageLayerId").GetString()!, CultureInfo.InvariantCulture);
         _layerId = layerId;
         var resourceUri = completed.GetProperty("serviceUri").GetString();
         resourceUri.Should().NotBeNullOrWhiteSpace();

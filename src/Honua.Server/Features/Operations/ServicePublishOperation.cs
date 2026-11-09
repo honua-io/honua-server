@@ -62,9 +62,16 @@ internal static class ServicePublishOperation
         [
             new OperationParameterDescriptor
             {
-                Name = "layerId",
-                Title = "Published layer id",
+                Name = "storageLayerId",
+                Title = "Published storage layer id",
                 Required = true,
+                Schema = new WorkflowSchemaDefinition { Type = WorkflowSchemaValueType.WholeNumber }
+            },
+            new OperationParameterDescriptor
+            {
+                Name = "serviceLayerIndex",
+                Title = "Published service layer index",
+                Required = false,
                 Schema = new WorkflowSchemaDefinition { Type = WorkflowSchemaValueType.WholeNumber }
             },
             new OperationParameterDescriptor

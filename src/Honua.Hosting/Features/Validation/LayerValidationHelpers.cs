@@ -15,7 +15,7 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Infrastructure.Validation;
 
-internal static class LayerValidationHelpers
+internal static partial class LayerValidationHelpers
 {
     internal static Func<HttpContext, string, string, int, IResult>? ODataErrorFactoryOverride { get; set; }
 
@@ -204,7 +204,7 @@ internal static class LayerValidationHelpers
             return CreateProblemJsonError(context, AccessPolicyHelpers.AuthRequiredMessage, StatusCodes.Status401Unauthorized);
         }
 
-        return AccessPolicyHelpers.CreateAccessDeniedResult(context, AccessDecision.RequiresAuth());
+        return ChallengeTenantHiddenPublication(context, hidden);
     }
 
     public static Task<MetadataV2ValidationResult> ValidateLayerWithAccessV2Async(
@@ -378,7 +378,7 @@ internal static class LayerValidationHelpers
             int.TryParse(collectionId, NumberStyles.None, CultureInfo.InvariantCulture, out var storageLayerId))
         {
             var collections = await ResolveStorageCollectionsWithAccessV2Async(
-                context, snapshot, requiredProtocol, scope, storageLayerId, cancellationToken).ConfigureAwait(false);
+                context, snapshot, new(requiredProtocol, scope, cancellationToken) { StorageLayerId = storageLayerId }).ConfigureAwait(false);
             return collections.TryGetValue(storageLayerId, out var collection)
                 ? collection
                 : new MetadataV2ValidationResult(false, null, null, null,
@@ -521,35 +521,47 @@ internal static class LayerValidationHelpers
         return new MetadataV2ValidationResult(true, publication, resource, service, null, snapshot);
     }
 
+    public sealed record StorageCollectionOptions(
+        string? RequiredProtocol,
+        AccessScope Scope = AccessScope.Read,
+        CancellationToken CancellationToken = default)
+    {
+        public int? StorageLayerId { get; init; }
+    }
+
     public static async Task<IReadOnlyDictionary<int, MetadataV2ValidationResult>> ResolveStorageCollectionsWithAccessV2Async(
         HttpContext context,
         MetadataV2GraphSnapshot snapshot,
-        string? requiredProtocol,
-        AccessScope scope = AccessScope.Read,
-        int? storageLayerId = null,
-        CancellationToken cancellationToken = default)
+        StorageCollectionOptions options)
+        => await ResolveStorageCollectionsWithAccessV2Async(snapshot,
+            new StorageCollectionAccess(new(context, AccessPolicyHelpers.DefaultOperationForScope(options.Scope), options.CancellationToken))
+            {
+                RequiredProtocol = options.RequiredProtocol,
+                StorageLayerId = options.StorageLayerId,
+            }).ConfigureAwait(false);
+
+    private static async Task<IReadOnlyDictionary<int, MetadataV2ValidationResult>> ResolveStorageCollectionsWithAccessV2Async(
+        MetadataV2GraphSnapshot snapshot,
+        StorageCollectionAccess request)
     {
         var collections = new Dictionary<int, MetadataV2ValidationResult>();
         foreach (var publication in snapshot.Graph.Publications)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            request.Access.CancellationToken.ThrowIfCancellationRequested();
             var id = snapshot.ResolveStorageLayerId(publication);
-            if (!id.HasValue || (storageLayerId.HasValue && id.Value != storageLayerId.Value))
+            if (!id.HasValue || (request.StorageLayerId.HasValue && id.Value != request.StorageLayerId.Value)
+                || (request.ResourceId is not null && publication.ResourceId != request.ResourceId))
             {
                 continue;
             }
-
-            var service = ResolveVisibleProtocolService(context, snapshot, publication, requiredProtocol);
+            var service = ResolveVisibleProtocolService(request.Access.Context, snapshot, publication, request.RequiredProtocol);
             if (service is null)
             {
                 continue;
             }
-
             var resource = snapshot.ResolveResource(publication)!;
-            var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
-                context, resource, service, scope, cancellationToken).ConfigureAwait(false);
-            var candidate = new MetadataV2ValidationResult(
-                accessError is null, publication, resource, service, accessError, snapshot);
+            var candidate = await AuthorizeResolvedResourceAsync(request.Access,
+                new(true, publication, resource, service, null, snapshot)).ConfigureAwait(false);
             if (!collections.TryGetValue(id.Value, out var existing) ||
                 (candidate.IsValid && !existing.IsValid) ||
                 (candidate.IsValid == existing.IsValid && publication.IsPrimary && !existing.Publication!.IsPrimary))
@@ -557,7 +569,6 @@ internal static class LayerValidationHelpers
                 collections[id.Value] = candidate;
             }
         }
-
         return collections;
     }
 

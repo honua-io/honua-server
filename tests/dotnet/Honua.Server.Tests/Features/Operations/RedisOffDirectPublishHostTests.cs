@@ -11,13 +11,17 @@ using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Services;
+using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Operations;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -63,7 +67,7 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
             .PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishedLayerSummary
             {
-                LayerId = 321,
+                StorageLayerId = 321,
                 LayerName = "Parcels",
                 Schema = "public",
                 Table = "parcels",
@@ -95,7 +99,9 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
                 builder.UseSetting("Operations:Policy:Rules:1:Decision", "Allow");
             })
             .ReplaceService(_publishing)
-            .ReplaceService(resolver);
+            .ReplaceService(resolver)
+            .ReplaceService(Substitute.For<IPublishedServiceStore>())
+            .ReplaceService<IMetadataV2GraphProvider>(PublishedLayerGraphProvider());
         await _fixture.InitializeAsync();
     }
 
@@ -173,6 +179,15 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
         proposals.GetProperty("available").GetBoolean().Should().BeFalse(proposals.GetRawText());
     }
 
+    private static TestMetadataV2GraphProvider PublishedLayerGraphProvider() => new TestMetadataV2GraphBuilder()
+        .AddResource("res-parcels", "Parcels")
+        .AddStorageBinding("bind-parcels", "res-parcels", "public.parcels", storageLayerId: 321)
+        .AddService("svc-parcels", "default")
+        .AddPublication("pub-parcels", "svc-parcels", "res-parcels",
+            layerIndex: 3, storageBindingId: "bind-parcels",
+            publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+        .BuildProvider();
+
     private void AssertCanonicalDirectPublish(JsonElement output)
     {
         output.GetProperty("status").GetString().Should().Be("Completed", output.GetRawText());
@@ -187,7 +202,10 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
         output.GetProperty("durable").GetBoolean().Should().BeFalse();
         output.GetProperty("evidenceRefs").EnumerateArray().Select(item => item.GetString())
             .Should().Contain(NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef);
-        output.GetProperty("layerId").GetString().Should().Be("321");
+        output.GetProperty("storageLayerId").GetString().Should().Be("321");
+        output.TryGetProperty("serviceLayerIndex", out var serviceLayerIndex).Should().BeTrue(output.GetRawText());
+        serviceLayerIndex.GetString().Should().Be("3");
+        output.TryGetProperty("layerId", out _).Should().BeFalse();
     }
 
     private static string PublishArguments(string layerName)

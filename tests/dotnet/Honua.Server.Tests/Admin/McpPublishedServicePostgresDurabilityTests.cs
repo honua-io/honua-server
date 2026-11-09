@@ -230,7 +230,7 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
             first.GetRawText(), Environment.NewLine, errors.Diagnostics);
         var exactUri = first.GetProperty("serviceUri").GetString();
         exactUri.Should().NotBeNullOrWhiteSpace();
-        var firstStorageId = int.Parse(first.GetProperty("layerId").GetString()!, CultureInfo.InvariantCulture);
+        var firstStorageId = int.Parse(first.GetProperty("storageLayerId").GetString()!, CultureInfo.InvariantCulture);
         _publishedLayerIds.Add(firstStorageId);
 
         var second = await PublishAsync(_secondTable, "second layer");
@@ -267,7 +267,7 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
             completed.Status.Should().Be(OperationHandleStatus.Completed);
             completed.Result!.Details["readbackStatus"].Should().Be("Resolved");
             completed.Result.Details["serviceUri"].Should().Be(exactUri);
-            completed.Result.Details["layerId"].Should().Be(secondStorageId.ToString(CultureInfo.InvariantCulture));
+            completed.Result.Details["storageLayerId"].Should().Be(secondStorageId.ToString(CultureInfo.InvariantCulture));
         }
 
         using (var statusResponse = await _client.GetAsync(
@@ -401,7 +401,7 @@ public sealed class McpPublishedServicePostgresDurabilityTests : IAsyncLifetime
             var status = data.GetProperty("status").GetString();
             if (status == "Completed")
             {
-                return data.GetProperty("layerId").GetInt32();
+                return data.GetProperty("storageLayerId").GetInt32();
             }
 
             status.Should().NotBe("Failed", body);

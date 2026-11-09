@@ -235,7 +235,7 @@ internal sealed partial class Wfs20Handler
         var spatialFilter = ParseBboxFilterForResource(bbox, resource, wfsVersion);
         var resourceIds = ParseResourceIds(
             normalizedResourceId,
-            descriptor,
+            descriptor.LocalName,
             enforceResourceIdTypeMatch,
             requireResourceIdQualifier);
         sqlFilter = resourceIds.MatchesNothing
@@ -454,7 +454,6 @@ internal sealed partial class Wfs20Handler
         }
 
         if (resource.Metadata.Name.Equals("Other", StringComparison.Ordinal) &&
-            IsWfs10CiteLayerName(resource.Metadata.Name) &&
             !resolved.Any(existing => existing.Equals("string1", StringComparison.OrdinalIgnoreCase)) &&
             GetVisibleAttributeFields(resource).Any(field => field.Name.Equals("string1", StringComparison.OrdinalIgnoreCase)))
         {
@@ -601,20 +600,7 @@ internal sealed partial class Wfs20Handler
 
     private static ResourceIdResolution ParseResourceIds(
         string? resourceId,
-        WfsFeatureTypeDescriptor descriptor,
-        bool enforceTypeMatch,
-        bool requireTypeQualifier)
-        => ParseResourceIds(
-            resourceId,
-            descriptor.LocalName,
-            descriptor.Resource.Metadata.Name,
-            enforceTypeMatch,
-            requireTypeQualifier);
-
-    private static ResourceIdResolution ParseResourceIds(
-        string? resourceId,
         string localTypeName,
-        string resourceName,
         bool enforceTypeMatch,
         bool requireTypeQualifier)
     {
@@ -638,8 +624,7 @@ internal sealed partial class Wfs20Handler
             }
 
             if (prefix.Length > 0 &&
-                !FilterExpressionHelpers.NormalizeIdentifier(prefix).Equals(localTypeName, StringComparison.OrdinalIgnoreCase) &&
-                !FilterExpressionHelpers.NormalizeIdentifier(prefix).Equals(resourceName, StringComparison.OrdinalIgnoreCase))
+                !FilterExpressionHelpers.NormalizeIdentifier(prefix).Equals(localTypeName, StringComparison.Ordinal))
             {
                 if (enforceTypeMatch)
                 {
@@ -1623,45 +1608,6 @@ internal sealed partial class Wfs20Handler
         }
     }
 
-    private static string BuildTypeLocalName(string resourceName, int storageLayerId)
-    {
-        var input = string.IsNullOrWhiteSpace(resourceName)
-            ? $"layer_{storageLayerId.ToString(CultureInfo.InvariantCulture)}"
-            : resourceName;
-
-        var builder = new StringBuilder(input.Length);
-        var lastWasUnderscore = false;
-
-        foreach (var ch in input)
-        {
-            if (char.IsLetterOrDigit(ch))
-            {
-                builder.Append(char.ToLowerInvariant(ch));
-                lastWasUnderscore = false;
-                continue;
-            }
-
-            if (!lastWasUnderscore)
-            {
-                builder.Append('_');
-                lastWasUnderscore = true;
-            }
-        }
-
-        var result = builder.ToString().Trim('_');
-        if (string.IsNullOrWhiteSpace(result))
-        {
-            result = $"layer_{storageLayerId.ToString(CultureInfo.InvariantCulture)}";
-        }
-
-        if (char.IsDigit(result[0]))
-        {
-            result = $"layer_{result}";
-        }
-
-        return result;
-    }
-
     private static bool IsAnonymousWriteAllowed(
         HttpContext context,
         MetadataV2Resource resource,
@@ -1990,7 +1936,7 @@ internal sealed partial class Wfs20Handler
 
     private sealed record WfsFeatureTypeDescriptor(
         MetadataV2Resource Resource,
-        MetadataV2Publication? Publication,
+        MetadataV2Publication Publication,
         MetadataV2Service? Service,
         int StorageLayerId,
         string QualifiedName,

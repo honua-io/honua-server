@@ -585,7 +585,7 @@ public sealed class GeoServerImportServiceDataSourceApplyTests
             Requests.Add(request);
             return Task.FromResult(new PublishedLayerSummary
             {
-                LayerId = 100 + Requests.Count - 1,
+                StorageLayerId = 100 + Requests.Count - 1,
                 LayerName = request.LayerName ?? request.Table,
                 Schema = request.Schema,
                 Table = request.Table,
@@ -682,7 +682,7 @@ public sealed class GeoServerImportServiceDataSourceApplyTests
             CancellationToken cancellationToken = default)
             => Task.FromResult(new PublishedLayerSummary
             {
-                LayerId = 1,
+                StorageLayerId = 1,
                 LayerName = request.LayerName ?? request.Table,
                 Schema = request.Schema,
                 Table = request.Table,

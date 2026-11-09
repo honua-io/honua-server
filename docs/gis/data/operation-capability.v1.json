@@ -680,22 +680,22 @@
     {
       "spec": "admin-api",
       "method": "PUT",
-      "path": "/api/v1/admin/connections/{id}/layers/{layerId}/enabled",
+      "path": "/api/v1/admin/connections/{id}/layers/{storageLayerId}/enabled",
       "operationId": "setLayerEnabled",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "put-api-v1-admin-connections-id-layers-layerid-enabled"
+      "catalogEntryId": "put-api-v1-admin-connections-id-layers-storagelayerid-enabled"
     },
     {
       "spec": "admin-api",
       "method": "POST",
-      "path": "/api/v1/admin/connections/{id}/layers/{layerId}/features/refresh",
+      "path": "/api/v1/admin/connections/{id}/layers/{storageLayerId}/features/refresh",
       "operationId": "refreshConnectionLayerFeatures",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "post-api-v1-admin-connections-id-layers-layerid-features-refresh"
+      "catalogEntryId": "post-api-v1-admin-connections-id-layers-storagelayerid-features-refresh"
     },
     {
       "spec": "admin-api",
@@ -2060,182 +2060,182 @@
     {
       "spec": "admin-api",
       "method": "GET",
-      "path": "/api/v1/admin/metadata/layers/{layerId}/discovery",
+      "path": "/api/v1/admin/metadata/layers/{storageLayerId}/discovery",
       "operationId": null,
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-admin-metadata-layers-layerid-discovery"
+      "catalogEntryId": "get-api-v1-admin-metadata-layers-storagelayerid-discovery"
     },
     {
       "spec": "admin-api",
       "method": "PUT",
-      "path": "/api/v1/admin/metadata/layers/{layerId}/discovery",
+      "path": "/api/v1/admin/metadata/layers/{storageLayerId}/discovery",
       "operationId": null,
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "put-api-v1-admin-metadata-layers-layerid-discovery"
+      "catalogEntryId": "put-api-v1-admin-metadata-layers-storagelayerid-discovery"
     },
     {
       "spec": "admin-api",
       "method": "GET",
-      "path": "/api/v1/admin/metadata/layers/{layerId}/drawing-info",
+      "path": "/api/v1/admin/metadata/layers/{storageLayerId}/drawing-info",
       "operationId": "getAdminLayerDrawingInfo",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-admin-metadata-layers-layerid-drawing-info"
+      "catalogEntryId": "get-api-v1-admin-metadata-layers-storagelayerid-drawing-info"
     },
     {
       "spec": "admin-api",
       "method": "PUT",
-      "path": "/api/v1/admin/metadata/layers/{layerId}/drawing-info",
+      "path": "/api/v1/admin/metadata/layers/{storageLayerId}/drawing-info",
       "operationId": "setAdminLayerDrawingInfo",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "put-api-v1-admin-metadata-layers-layerid-drawing-info"
+      "catalogEntryId": "put-api-v1-admin-metadata-layers-storagelayerid-drawing-info"
     },
     {
       "spec": "admin-api",
       "method": "GET",
-      "path": "/api/v1/admin/metadata/layers/{layerId}/fields",
+      "path": "/api/v1/admin/metadata/layers/{storageLayerId}/fields",
       "operationId": "getAdminLayerFields",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-admin-metadata-layers-layerid-fields"
+      "catalogEntryId": "get-api-v1-admin-metadata-layers-storagelayerid-fields"
     },
     {
       "spec": "admin-api",
       "method": "PUT",
-      "path": "/api/v1/admin/metadata/layers/{layerId}/fields",
+      "path": "/api/v1/admin/metadata/layers/{storageLayerId}/fields",
       "operationId": "updateAdminLayerFields",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "put-api-v1-admin-metadata-layers-layerid-fields"
+      "catalogEntryId": "put-api-v1-admin-metadata-layers-storagelayerid-fields"
     },
     {
       "spec": "admin-api",
       "method": "GET",
-      "path": "/api/v1/admin/metadata/layers/{layerId}/filter",
+      "path": "/api/v1/admin/metadata/layers/{storageLayerId}/filter",
       "operationId": "getAdminLayerFilter",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-admin-metadata-layers-layerid-filter"
+      "catalogEntryId": "get-api-v1-admin-metadata-layers-storagelayerid-filter"
     },
     {
       "spec": "admin-api",
       "method": "PUT",
-      "path": "/api/v1/admin/metadata/layers/{layerId}/filter",
+      "path": "/api/v1/admin/metadata/layers/{storageLayerId}/filter",
       "operationId": "updateAdminLayerFilter",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "put-api-v1-admin-metadata-layers-layerid-filter"
+      "catalogEntryId": "put-api-v1-admin-metadata-layers-storagelayerid-filter"
     },
     {
       "spec": "admin-api",
       "method": "GET",
-      "path": "/api/v1/admin/metadata/layers/{layerId}/popup-info",
+      "path": "/api/v1/admin/metadata/layers/{storageLayerId}/popup-info",
       "operationId": "getAdminLayerPopupInfo",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-admin-metadata-layers-layerid-popup-info"
+      "catalogEntryId": "get-api-v1-admin-metadata-layers-storagelayerid-popup-info"
     },
     {
       "spec": "admin-api",
       "method": "PUT",
-      "path": "/api/v1/admin/metadata/layers/{layerId}/popup-info",
+      "path": "/api/v1/admin/metadata/layers/{storageLayerId}/popup-info",
       "operationId": "setAdminLayerPopupInfo",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "put-api-v1-admin-metadata-layers-layerid-popup-info"
+      "catalogEntryId": "put-api-v1-admin-metadata-layers-storagelayerid-popup-info"
     },
     {
       "spec": "admin-api",
       "method": "GET",
-      "path": "/api/v1/admin/metadata/layers/{layerId}/relationships",
+      "path": "/api/v1/admin/metadata/layers/{storageLayerId}/relationships",
       "operationId": "getAdminLayerRelationships",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-admin-metadata-layers-layerid-relationships"
+      "catalogEntryId": "get-api-v1-admin-metadata-layers-storagelayerid-relationships"
     },
     {
       "spec": "admin-api",
       "method": "PUT",
-      "path": "/api/v1/admin/metadata/layers/{layerId}/relationships",
+      "path": "/api/v1/admin/metadata/layers/{storageLayerId}/relationships",
       "operationId": "setAdminLayerRelationships",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "put-api-v1-admin-metadata-layers-layerid-relationships"
+      "catalogEntryId": "put-api-v1-admin-metadata-layers-storagelayerid-relationships"
     },
     {
       "spec": "admin-api",
       "method": "GET",
-      "path": "/api/v1/admin/metadata/layers/{layerId}/style",
+      "path": "/api/v1/admin/metadata/layers/{storageLayerId}/style",
       "operationId": "getAdminLayerStyle",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-admin-metadata-layers-layerid-style"
+      "catalogEntryId": "get-api-v1-admin-metadata-layers-storagelayerid-style"
     },
     {
       "spec": "admin-api",
       "method": "PUT",
-      "path": "/api/v1/admin/metadata/layers/{layerId}/style",
+      "path": "/api/v1/admin/metadata/layers/{storageLayerId}/style",
       "operationId": "updateAdminLayerStyle",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "put-api-v1-admin-metadata-layers-layerid-style"
+      "catalogEntryId": "put-api-v1-admin-metadata-layers-storagelayerid-style"
     },
     {
       "spec": "admin-api",
       "method": "GET",
-      "path": "/api/v1/admin/metadata/layers/{layerId}/style/export-sld",
+      "path": "/api/v1/admin/metadata/layers/{storageLayerId}/style/export-sld",
       "operationId": "exportLayerSldStyle",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-admin-metadata-layers-layerid-style-export-sld"
+      "catalogEntryId": "get-api-v1-admin-metadata-layers-storagelayerid-style-export-sld"
     },
     {
       "spec": "admin-api",
       "method": "POST",
-      "path": "/api/v1/admin/metadata/layers/{layerId}/style/import-sld",
+      "path": "/api/v1/admin/metadata/layers/{storageLayerId}/style/import-sld",
       "operationId": "importLayerSldStyle",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "post-api-v1-admin-metadata-layers-layerid-style-import-sld"
+      "catalogEntryId": "post-api-v1-admin-metadata-layers-storagelayerid-style-import-sld"
     },
     {
       "spec": "admin-api",
       "method": "POST",
-      "path": "/api/v1/admin/metadata/layers/{layerId}/suggest-style",
+      "path": "/api/v1/admin/metadata/layers/{storageLayerId}/suggest-style",
       "operationId": "suggestLayerStyle",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "post-api-v1-admin-metadata-layers-layerid-suggest-style"
+      "catalogEntryId": "post-api-v1-admin-metadata-layers-storagelayerid-suggest-style"
     },
     {
       "spec": "admin-api",
       "method": "GET",
-      "path": "/api/v1/admin/metadata/layers/{layerId}/validation",
+      "path": "/api/v1/admin/metadata/layers/{storageLayerId}/validation",
       "operationId": "getAdminLayerValidation",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-admin-metadata-layers-layerid-validation"
+      "catalogEntryId": "get-api-v1-admin-metadata-layers-storagelayerid-validation"
     },
     {
       "spec": "admin-api",
@@ -3810,42 +3810,42 @@
     {
       "spec": "admin-api",
       "method": "GET",
-      "path": "/api/v1/admin/services/{serviceName}/layers/{layerId}/export",
+      "path": "/api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export",
       "operationId": "exportServiceLayer",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-admin-services-servicename-layers-layerid-export"
+      "catalogEntryId": "get-api-v1-admin-services-servicename-layers-servicelayerindex-export"
     },
     {
       "spec": "admin-api",
       "method": "PUT",
-      "path": "/api/v1/admin/services/{serviceName}/layers/{layerId}/metadata",
+      "path": "/api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata",
       "operationId": "updateLayerMetadata",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "put-api-v1-admin-services-servicename-layers-layerid-metadata"
+      "catalogEntryId": "put-api-v1-admin-services-servicename-layers-servicelayerindex-metadata"
     },
     {
       "spec": "admin-api",
       "method": "GET",
-      "path": "/api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic",
+      "path": "/api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/share/traffic",
       "operationId": "getLayerShareTrafficSummary",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-admin-services-servicename-layers-layerid-share-traffic"
+      "catalogEntryId": "get-api-v1-admin-services-servicename-layers-servicelayerindex-share-traffic"
     },
     {
       "spec": "admin-api",
       "method": "GET",
-      "path": "/api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic/series",
+      "path": "/api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/share/traffic/series",
       "operationId": "getLayerShareTrafficSeries",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-admin-services-servicename-layers-layerid-share-traffic-series"
+      "catalogEntryId": "get-api-v1-admin-services-servicename-layers-servicelayerindex-share-traffic-series"
     },
     {
       "spec": "admin-api",

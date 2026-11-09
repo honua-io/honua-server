@@ -4,10 +4,10 @@
   "validates": "inputs",
   "inputs": {
     "serviceId": "county_parcels",
-    "layerId": 0,
+    "serviceLayerIndex": 0,
     "encoding": "esri-drawing-info"
   },
   "expected": "tool_result",
   "canonicalRefs": ["StyleRef"],
-  "notes": "Reference-implementation shape: resolves the primary/default StyleRef bound to a published (serviceId, layerId) when no styleId is supplied."
+  "notes": "Reference-implementation shape: resolves the primary/default StyleRef bound to a published (serviceId, serviceLayerIndex) when no styleId is supplied."
 }

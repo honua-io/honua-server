@@ -2,6 +2,774 @@
   "version": 1,
   "entries": [
     {
+      "path": "docker/cite/shared/scripts/author-wfs-publications.sql",
+      "rule": "dataset-reference",
+      "line": "        ON resource #>> '{metadata,id}' = publication ->> 'resourceId'",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "docker/cite/shared/scripts/author-wfs-publications.sql",
+      "rule": "layer-type",
+      "line": "    WHERE publication ->> 'publicationType' = 'ogc-collection'",
+      "reason": "PublicationType/publicationType is the current metadata graph member and persisted JSON discriminator. Retain the canonical schema until the approved wire/SQL migration boundary."
+    },
+    {
+      "path": "docs/concepts/domain/layer.md",
+      "rule": "graph-publication",
+      "line": "- The graph Layer ID is the author-chosen, globally unique string currently stored as `MetadataV2Publication.Metadata.Id`. Public protocol identifiers derive from the Layer, so changing its storage binding preserves its identity. The Service-local string identifier is currently stored as `MetadataV2Publication.Identifier.Value`.",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "docs/gis/data/feature-catalog.json",
+      "rule": "layer-membership",
+      "line": "        \"Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.RecordsService_StorageRebound_ListsStablePublicationIds\",",
+      "reason": "Transition aid naming the current graph publication identity, including regression identifiers and their generated inventory. The coordinated C# kind rename updates these names; public protocol IDs already use the graph Layer ID."
+    },
+    {
+      "path": "docs/gis/data/feature-catalog.json",
+      "rule": "layer-membership",
+      "line": "        \"Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.WfsCapabilities_StorageRebound_UsesDistinctEncodedPublicationIds\",",
+      "reason": "Transition aid naming the current graph publication identity, including regression identifiers and their generated inventory. The coordinated C# kind rename updates these names; public protocol IDs already use the graph Layer ID."
+    },
+    {
+      "path": "src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/MetadataV2GraphSnapshotExtensions.cs",
+      "rule": "dataset-reference",
+      "line": "        var resourceIds = candidates.Select(static resource => resource.Metadata.Id).ToHashSet(StringComparer.Ordinal);",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/MetadataV2GraphSnapshotExtensions.cs",
+      "rule": "dataset-reference",
+      "line": "        var serviceNames = publications.Where(publication => resourceIds.Contains(publication.ResourceId))",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/MetadataV2GraphSnapshotExtensions.cs",
+      "rule": "graph-publication",
+      "line": "        Func<MetadataV2Publication, bool>? includePublication = null)",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/MetadataV2GraphSnapshotExtensions.cs",
+      "rule": "graph-resource",
+      "line": "            resource.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table).ToArray();",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/MetadataV2GraphSnapshotExtensions.cs",
+      "rule": "graph-resource",
+      "line": "    MetadataV2Resource? Resource,",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "src/Honua.Core/Features/Validation/Abstractions/IResourceValidator.cs",
+      "rule": "graph-resource",
+      "line": "    Task<ResourceValidationResult<MetadataV2Resource>> ValidateStorageLayerV2Async(",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "src/Honua.Core/Features/Validation/ResourceValidator.cs",
+      "rule": "graph-resource",
+      "line": "            ? ResourceValidationResult.NotFound<MetadataV2Resource>(",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "src/Honua.Core/Features/Validation/ResourceValidator.cs",
+      "rule": "graph-resource",
+      "line": "            return ResourceValidationResult.AmbiguousIdentifier<MetadataV2Resource>(target.ConflictDetail!);",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "src/Honua.Core/Features/Validation/ResourceValidator.cs",
+      "rule": "graph-resource",
+      "line": "    public async Task<ResourceValidationResult<MetadataV2Resource>> ValidateStorageLayerV2Async(",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "src/Honua.Db/Postgres/Features/Migration/GeoservicesLayerPublicationService.Reconciliation.cs",
+      "rule": "dataset-reference",
+      "line": "        var resourceId = $\"res-layer-{publishedLayer.StorageLayerId.ToString(CultureInfo.InvariantCulture)}\";",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "src/Honua.Hosting/Features/Validation/LayerValidationHelpers.Identifiers.cs",
+      "rule": "dataset-reference",
+      "line": "                    ResourceId = target.Resource.Metadata.Id,",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "src/Honua.Hosting/Features/Validation/LayerValidationHelpers.Identifiers.cs",
+      "rule": "dataset-reference",
+      "line": "        public string? ResourceId { get; init; }",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "src/Honua.Hosting/Features/Validation/LayerValidationHelpers.Identifiers.cs",
+      "rule": "graph-publication",
+      "line": "    private static IResult? ChallengeTenantHiddenPublication(HttpContext context, MetadataV2Publication? publication)",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "src/Honua.Hosting/Features/Validation/LayerValidationHelpers.cs",
+      "rule": "dataset-reference",
+      "line": "                || (request.ResourceId is not null && publication.ResourceId != request.ResourceId))",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "src/Honua.Io/Features/Export/ExportEndpoints.cs",
+      "rule": "graph-resource",
+      "line": "    private static string ResolveLayerName(MetadataV2Resource resource, int serviceLayerIndex)",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "src/Honua.Protocols.OgcApi/Records/OgcRecordsEndpoints.cs",
+      "rule": "graph-publication",
+      "line": "        MetadataV2Publication publication,",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "src/Honua.Protocols.OgcApi/Records/OgcRecordsEndpoints.cs",
+      "rule": "graph-publication",
+      "line": "        var recordPublications = new Dictionary<string, MetadataV2Publication>(StringComparer.Ordinal);",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "src/Honua.Protocols.OgcClassic/OgcClassicRequestHelpers.cs",
+      "rule": "graph-publication",
+      "line": "    internal static string? GetServiceLayerIdentifier(MetadataV2Publication publication)",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Capabilities.cs",
+      "rule": "layer-membership",
+      "line": "                    !seenPublicationIds.Add(featureType.Publication.Metadata.Id))",
+      "reason": "Transition aid naming the current graph publication identity, including regression identifiers and their generated inventory. The coordinated C# kind rename updates these names; public protocol IDs already use the graph Layer ID."
+    },
+    {
+      "path": "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Capabilities.cs",
+      "rule": "layer-membership",
+      "line": "        var seenPublicationIds = new HashSet<string>(StringComparer.Ordinal);",
+      "reason": "Transition aid naming the current graph publication identity, including regression identifiers and their generated inventory. The coordinated C# kind rename updates these names; public protocol IDs already use the graph Layer ID."
+    },
+    {
+      "path": "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.GetPropertyValue.cs",
+      "rule": "dataset-reference",
+      "line": "        var resourceIds = ParseResourceIds(normalizedResourceId, descriptor.LocalName, enforceResourceIdTypeMatch, requireResourceIdQualifier);",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Schemas.cs",
+      "rule": "graph-resource",
+      "line": "        public string GeometryPropertyType(MetadataV2Resource resource)",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.cs",
+      "rule": "graph-publication",
+      "line": "        MetadataV2Publication Publication,",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/AdminLayerAuthoringEndpoints.RelationshipBatch.cs",
+      "rule": "graph-resource",
+      "line": "        return target.Resource?.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/AdminLayerAuthoringEndpoints.cs",
+      "rule": "dataset-reference",
+      "line": "            RelatedStorageLayerId = ResolveStorageLayerIdForResource(rel.RelatedResourceId, snapshot),",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/AdminLayerAuthoringEndpoints.cs",
+      "rule": "dataset-reference",
+      "line": "    private static int ResolveStorageLayerIdForResource(string resourceId, MetadataV2GraphSnapshot snapshot)",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/AdminLayerAuthoringEndpoints.cs",
+      "rule": "graph-resource",
+      "line": "        int storageLayerId, MetadataV2Resource resource, LayerRelationshipUpdateRequest request, MetadataV2GraphSnapshot snapshot)",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/AdminLayerAuthoringEndpoints.cs",
+      "rule": "graph-resource",
+      "line": "        int storageLayerId, MetadataV2Resource resource, MetadataV2GraphSnapshot snapshot)",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/AdminLayerConfigurationTargets.cs",
+      "rule": "graph-resource",
+      "line": "        return target.IsAmbiguous || target.Resource?.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/DiscoveryMetadataTarget.cs",
+      "rule": "dataset-reference",
+      "line": "            snapshot.Graph.Publications.Where(publication => resourceIds.Contains(publication.ResourceId)))));",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/DiscoveryMetadataTarget.cs",
+      "rule": "dataset-reference",
+      "line": "        return ResourceValidationResult.Success(new DiscoveryMetadataTarget(resource.Metadata, resourceIds, new HashSet<string>(), Impact(snapshot,",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/Share/ShareAdminEndpoints.cs",
+      "rule": "dataset-reference",
+      "line": "            new ShareItemRef { ResourceId = NullIfWhiteSpace(resourceId), ServiceName = serviceName, LayerId = serviceLayerIndex },",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "src/Honua.Server/Features/Operations/ServicePublishExecutor.cs",
+      "rule": "dataset-reference",
+      "line": "                AddServiceLayerIndex(publishedLayer, details, resourceIds);",
+      "reason": "ResourceIds is the current canonical operation-result map. Synchronous and queued publishing both return its persisted service index; regression assertions retain the current DTO until the approved admin/jobs vocabulary migration."
+    },
+    {
+      "path": "src/Honua.Server/Features/Operations/ServicePublishExecutor.cs",
+      "rule": "dataset-reference",
+      "line": "                AddServiceLayerIndex(publishedLayer, resultDetails, resourceIds);",
+      "reason": "ResourceIds is the current canonical operation-result map. Synchronous and queued publishing both return its persisted service index; regression assertions retain the current DTO until the approved admin/jobs vocabulary migration."
+    },
+    {
+      "path": "src/Honua.Server/Features/Operations/ServicePublishExecutor.cs",
+      "rule": "dataset-reference",
+      "line": "                resourceIds[\"serviceName\"] = publishedLayer.ServiceName;",
+      "reason": "ResourceIds is the current canonical operation-result map. This change splits selectors inside that map; the operation DTO vocabulary changes in the approved later admin/jobs migration."
+    },
+    {
+      "path": "src/Honua.Server/Features/Operations/ServicePublishExecutor.cs",
+      "rule": "dataset-reference",
+      "line": "            ResourceIds = resourceIds,",
+      "reason": "ResourceIds is the current canonical operation-result map. Synchronous and queued publishing both return its persisted service index; regression assertions retain the current DTO until the approved admin/jobs vocabulary migration."
+    },
+    {
+      "path": "src/Honua.Server/Features/Operations/ServicePublishExecutor.cs",
+      "rule": "dataset-reference",
+      "line": "            resourceIds[\"serviceLayerIndex\"] = indexText;",
+      "reason": "ResourceIds is the current canonical operation-result map. Synchronous and queued publishing both return its persisted service index; regression assertions retain the current DTO until the approved admin/jobs vocabulary migration."
+    },
+    {
+      "path": "src/Honua.Server/Features/Operations/ServicePublishExecutor.cs",
+      "rule": "dataset-reference",
+      "line": "            resourceIds[\"serviceName\"] = summary.ServiceName;",
+      "reason": "ResourceIds is the current canonical operation-result map. Synchronous and queued publishing both return its persisted service index; regression assertions retain the current DTO until the approved admin/jobs vocabulary migration."
+    },
+    {
+      "path": "src/Honua.Server/Features/Operations/ServicePublishExecutor.cs",
+      "rule": "dataset-reference",
+      "line": "            resourceIds[\"storageLayerId\"] = layerText;",
+      "reason": "ResourceIds is the current canonical operation-result map. This change splits selectors inside that map; the operation DTO vocabulary changes in the approved later admin/jobs migration."
+    },
+    {
+      "path": "src/Honua.Server/Features/Operations/ServicePublishExecutor.cs",
+      "rule": "dataset-reference",
+      "line": "        Dictionary<string, string> resourceIds)",
+      "reason": "ResourceIds is the current canonical operation-result map. Synchronous and queued publishing both return its persisted service index; regression assertions retain the current DTO until the approved admin/jobs vocabulary migration."
+    },
+    {
+      "path": "src/Honua.Server/Features/Operations/ServicePublishExecutor.cs",
+      "rule": "dataset-reference",
+      "line": "        resourceIds.Remove(\"layerId\");",
+      "reason": "ResourceIds is the current canonical operation-result map. This change splits selectors inside that map; the operation DTO vocabulary changes in the approved later admin/jobs migration."
+    },
+    {
+      "path": "src/Honua.Server/Features/Operations/ServicePublishExecutor.cs",
+      "rule": "dataset-reference",
+      "line": "        resourceIds.Remove(\"serviceLayerIndex\");",
+      "reason": "ResourceIds is the current canonical operation-result map. This change splits selectors inside that map; the operation DTO vocabulary changes in the approved later admin/jobs migration."
+    },
+    {
+      "path": "src/Honua.Server/Features/Operations/ServicePublishExecutor.cs",
+      "rule": "dataset-reference",
+      "line": "        var resourceIds = new Dictionary<string, string>(StringComparer.Ordinal)",
+      "reason": "ResourceIds is the current canonical operation-result map. Synchronous and queued publishing both return its persisted service index; regression assertions retain the current DTO until the approved admin/jobs vocabulary migration."
+    },
+    {
+      "path": "tests/dotnet/Honua.Ai.Tests/ConformanceSchemas/geospatial-mcp/skills/contracts/live-surface.json",
+      "rule": "map-envelope",
+      "line": "      \"requiredFields\": [\"mapPackageId\"], \"requiredProperties\": [\"styleId\", \"themeId\", \"sourceBindings\", \"initialView\"]",
+      "reason": "Pinned upstream MCP skill contract: mapPackageId is the current standard wire field. Keep the reviewed vendor bytes unchanged until the upstream vocabulary change is qualified and vendored."
+    },
+    {
+      "path": "tests/dotnet/Honua.Ai.Tests/ConformanceSchemas/geospatial-mcp/skills/contracts/live-surface.json",
+      "rule": "map-envelope",
+      "line": "      \"requiredFields\": [\"mapPackageId\"], \"requiredProperties\": [\"width\", \"height\"]",
+      "reason": "Pinned upstream MCP skill contract: mapPackageId is the current standard wire field. Keep the reviewed vendor bytes unchanged until the upstream vocabulary change is qualified and vendored."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerEndpointTests.cs",
+      "rule": "graph-resource",
+      "line": "        public Task<ResourceValidationResult<MetadataV2Resource>> ValidateStorageLayerV2Async(",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20EndpointsTests.cs",
+      "rule": "dataset-reference",
+      "line": "                  <fes:ResourceId rid=\"pub-layer-0.999999999\" />",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20EndpointsTests.cs",
+      "rule": "dataset-reference",
+      "line": "                  <fes:ResourceId rid=\"pub-layer-0.{{deleteId}}\" />",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20EndpointsTests.cs",
+      "rule": "dataset-reference",
+      "line": "                  <fes:ResourceId rid=\"pub-layer-0.{{featureId}}\" />",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20EndpointsTests.cs",
+      "rule": "dataset-reference",
+      "line": "                  <fes:ResourceId rid=\"pub-layer-0.{{updateId}}\" />",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20EndpointsTests.cs",
+      "rule": "dataset-reference",
+      "line": "            \"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID=pub-layer-0.1\");",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20EndpointsTests.cs",
+      "rule": "dataset-reference",
+      "line": "            \"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID=pub-layer-0.1,pub-layer-0.bad\");",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20EndpointsTests.cs",
+      "rule": "dataset-reference",
+      "line": "            \"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID=pub-layer-0.5\");",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20EndpointsTests.cs",
+      "rule": "dataset-reference",
+      "line": "            \"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID=test-not-found\");",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20EndpointsTests.cs",
+      "rule": "dataset-reference",
+      "line": "            \"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0,pub-layer-1&RESOURCEID=101\");",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20EndpointsTests.cs",
+      "rule": "dataset-reference",
+      "line": "            $\"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID=pub-layer-0.{deleteId}\");",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20EndpointsTests.cs",
+      "rule": "dataset-reference",
+      "line": "            $\"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID=pub-layer-0.{updateId}\");",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20EndpointsTests.cs",
+      "rule": "dataset-reference",
+      "line": "            $\"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID={primaryRid}\");",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20EndpointsTests.cs",
+      "rule": "dataset-reference",
+      "line": "            $\"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID={resourceId}\");",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20EndpointsTests.cs",
+      "rule": "dataset-reference",
+      "line": "            $\"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID={rid}&OUTPUTFORMAT=application%2Fjson\");",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20EndpointsTests.cs",
+      "rule": "dataset-reference",
+      "line": "            $\"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-1&RESOURCEID={relatedRid}\");",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20EndpointsTests.cs",
+      "rule": "dataset-reference",
+      "line": "        var resourceIdMatch = Regex.Match(content, \"rid=\\\"(?<rid>pub-layer-0\\\\.\\\\d+)\\\"\", RegexOptions.CultureInvariant);",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20HiddenFieldTests.cs",
+      "rule": "dataset-reference",
+      "line": "                <fes:Filter><fes:ResourceId rid=\"pub-layer-0.1\" /></fes:Filter>",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20MutationScenarioTests.cs",
+      "rule": "dataset-reference",
+      "line": "                <honua:{{_typeName}} gml:id=\"{{resourceId}}\">",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20MutationScenarioTests.cs",
+      "rule": "dataset-reference",
+      "line": "            $\"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID=urn:ogc:def:query:OGC-WFS::GetFeatureById&ID={Uri.EscapeDataString(resourceId)}\");",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20MutationScenarioTests.cs",
+      "rule": "dataset-reference",
+      "line": "            $\"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID=urn:ogc:def:query:OGC-WFS::GetFeatureById&ID={Uri.EscapeDataString(resourceId.ToUpperInvariant())}\");",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20MutationScenarioTests.cs",
+      "rule": "dataset-reference",
+      "line": "            $\"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES={_typeName}&RESOURCEID={Uri.EscapeDataString(resourceId)}\");",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20MutationScenarioTests.cs",
+      "rule": "dataset-reference",
+      "line": "        await AssertStoredQueryIdentityAsync(resourceId);",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20MutationScenarioTests.cs",
+      "rule": "dataset-reference",
+      "line": "        var numericId = resourceId[(resourceId.LastIndexOf('.') + 1)..];",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20MutationScenarioTests.cs",
+      "rule": "dataset-reference",
+      "line": "    private async Task AssertStoredQueryIdentityAsync(string resourceId)",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Admin/LayerPublishJobTests.cs",
+      "rule": "dataset-reference",
+      "line": "            Assert.Equal(\"3\", status.ResourceIds[\"serviceLayerIndex\"]);",
+      "reason": "ResourceIds is the current canonical operation-result map. This change splits selectors inside that map; the operation DTO vocabulary changes in the approved later admin/jobs migration."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Admin/LayerPublishJobTests.cs",
+      "rule": "dataset-reference",
+      "line": "            Assert.Equal(\"741\", status.ResourceIds[\"storageLayerId\"]);",
+      "reason": "ResourceIds is the current canonical operation-result map. This change splits selectors inside that map; the operation DTO vocabulary changes in the approved later admin/jobs migration."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Admin/LayerPublishJobTests.cs",
+      "rule": "dataset-reference",
+      "line": "        Assert.Equal(\"7\", status.ResourceIds[\"storageLayerId\"]);",
+      "reason": "ResourceIds is the current canonical operation-result map. This change splits selectors inside that map; the operation DTO vocabulary changes in the approved later admin/jobs migration."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/AdminLayerConfigurationTargetTests.cs",
+      "rule": "dataset-reference",
+      "line": "            .AddPublication(\"pub-\" + resourceId, serviceId, resourceId,",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/AdminLayerConfigurationTargetTests.cs",
+      "rule": "dataset-reference",
+      "line": "            .AddResource(resourceId, resourceId, type,",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/AdminLayerConfigurationTargetTests.cs",
+      "rule": "dataset-reference",
+      "line": "            .AddStorageBinding(bindingId, resourceId, resourceId, storageLayerId: StorageLayerId)",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/AdminLayerConfigurationTargetTests.cs",
+      "rule": "dataset-reference",
+      "line": "        var bindingId = \"binding-\" + resourceId;",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/AdminLayerSharedLayerIndexTests.cs",
+      "rule": "dataset-reference",
+      "line": "                Publications = [.. snapshot.Graph.Publications.Select(candidate => candidate.ResourceId == resource.Metadata.Id",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/AdminLayerSharedLayerIndexTests.cs",
+      "rule": "dataset-reference",
+      "line": "        AssertStoredConfiguration(after.Index.ResourcesById[targetResourceId], configuration);",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/AdminLayerSharedLayerIndexTests.cs",
+      "rule": "dataset-reference",
+      "line": "        after.Index.ResourcesById[TwinResourceId].Should().BeEquivalentTo(before.Index.ResourcesById[TwinResourceId]);",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/AdminLayerSharedLayerIndexTests.cs",
+      "rule": "dataset-reference",
+      "line": "        var (before, targetResourceId) = AddTwinAtLayerId(retireTwin: false, twinStorageLayerId: TwinStorageLayerId);",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/AdminLayerSharedLayerIndexTests.cs",
+      "rule": "dataset-reference",
+      "line": "    private (MetadataV2GraphSnapshot Before, string TargetResourceId) AddTwinAtLayerId(bool retireTwin, int twinStorageLayerId = LayerId)",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/AdminLayerSharedLayerIndexTests.cs",
+      "rule": "graph-publication",
+      "line": "                    ? candidate with { LayerIndex = ServiceLayerIndex, Identifier = new MetadataV2PublicationIdentifier { Value = ServiceLayerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture), IsNumeric = true } }",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/AdminLayerSharedLayerIndexTests.cs",
+      "rule": "graph-publication",
+      "line": "            Identifier = new MetadataV2PublicationIdentifier { Value = ServiceLayerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture), IsNumeric = true },",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/AdminLayerSharedLayerIndexTests.cs",
+      "rule": "graph-resource",
+      "line": "    private static void AssertStoredConfiguration(MetadataV2Resource resource, string configuration)",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Export/ExportLayerIdentityTests.cs",
+      "rule": "graph-publication",
+      "line": "                    Identifier = new MetadataV2PublicationIdentifier",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Export/ExportLayerIdentityTests.cs",
+      "rule": "graph-resource",
+      "line": "            snapshot.ResolveResource(candidate)?.Type == MetadataV2ResourceType.FeatureDataset);",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Licensing/FeatureEditsDeniedPathSkipsResourceValidatorTests.cs",
+      "rule": "graph-resource",
+      "line": "        public Task<ResourceValidationResult<MetadataV2Resource>> ValidateStorageLayerV2Async(",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Operations/SynchronousPublishIdentityTests.cs",
+      "rule": "dataset-reference",
+      "line": "        handle.ResourceIds.Should().Contain(\"serviceLayerIndex\", indexText).And.Contain(\"storageLayerId\", \"321\");",
+      "reason": "ResourceIds is the current canonical operation-result map. Synchronous and queued publishing both return its persisted service index; regression assertions retain the current DTO until the approved admin/jobs vocabulary migration."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Operations/SynchronousPublishIdentityTests.cs",
+      "rule": "dataset-reference",
+      "line": "        handle.ResourceIds.Should().Contain(\"serviceName\", \"parcels\").And.NotContainKey(\"serviceLayerIndex\");",
+      "reason": "ResourceIds is the current canonical operation-result map. Synchronous and queued publishing both return its persisted service index; regression assertions retain the current DTO until the approved admin/jobs vocabulary migration."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Operations/SynchronousPublishIdentityTests.cs",
+      "rule": "dataset-reference",
+      "line": "        handle.ResourceIds.Should().NotContainKey(\"serviceLayerIndex\");",
+      "reason": "ResourceIds is the current canonical operation-result map. Synchronous and queued publishing both return its persisted service index; regression assertions retain the current DTO until the approved admin/jobs vocabulary migration."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.Schemas.cs",
+      "rule": "dataset-reference",
+      "line": "            Resources = graph.Resources.Select(resource => resource.Metadata.Id == primaryResourceId",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.Schemas.cs",
+      "rule": "dataset-reference",
+      "line": "        var primaryResourceId = graph.Publications.Single(publication => publication.Metadata.Id == PublicationId).ResourceId;",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.Styles.cs",
+      "rule": "dataset-reference",
+      "line": "                ? publication with { ResourceId = secondResourceId, StorageBindingId = \"second-style-binding\" }",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.Styles.cs",
+      "rule": "dataset-reference",
+      "line": "                Metadata = resource.Metadata with { Id = secondResourceId, Name = secondResourceId },",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.Styles.cs",
+      "rule": "dataset-reference",
+      "line": "                ResourceId = secondResourceId,",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.Styles.cs",
+      "rule": "dataset-reference",
+      "line": "        _styles.GetStyleAsync(Arg.Is<MetadataV2Resource>(candidate => candidate.Metadata.Id == secondResourceId),",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.Styles.cs",
+      "rule": "dataset-reference",
+      "line": "        await _styles.Received(1).GetStyleAsync(Arg.Is<MetadataV2Resource>(candidate => candidate.Metadata.Id == resourceId),",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.Styles.cs",
+      "rule": "dataset-reference",
+      "line": "        await _styles.Received(1).GetStyleAsync(Arg.Is<MetadataV2Resource>(candidate => candidate.Metadata.Id == secondResourceId),",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.Styles.cs",
+      "rule": "dataset-reference",
+      "line": "        const string secondResourceId = \"second-style-resource\";",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.Styles.cs",
+      "rule": "dataset-reference",
+      "line": "        var resourceId = ConfigureDistinctStyleResources();",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.Styles.cs",
+      "rule": "graph-resource",
+      "line": "        _styles.GetStyleAsync(Arg.Is<MetadataV2Resource>(candidate => candidate.Metadata.Id == secondResourceId),",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.Styles.cs",
+      "rule": "graph-resource",
+      "line": "        await _styles.DidNotReceive().GetStyleAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<int>(), Arg.Any<CancellationToken>());",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.Styles.cs",
+      "rule": "graph-resource",
+      "line": "        await _styles.Received().GetStyleAsync(Arg.Any<MetadataV2Resource>(), OriginalStorageLayerId, Arg.Any<CancellationToken>());",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.Styles.cs",
+      "rule": "graph-resource",
+      "line": "        await _styles.Received().GetStyleAsync(Arg.Any<MetadataV2Resource>(), ReboundStorageLayerId, Arg.Any<CancellationToken>());",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.Styles.cs",
+      "rule": "graph-resource",
+      "line": "        await _styles.Received(1).GetStyleAsync(Arg.Is<MetadataV2Resource>(candidate => candidate.Metadata.Id == resourceId),",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.Styles.cs",
+      "rule": "graph-resource",
+      "line": "        await _styles.Received(1).GetStyleAsync(Arg.Is<MetadataV2Resource>(candidate => candidate.Metadata.Id == secondResourceId),",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.cs",
+      "rule": "graph-publication",
+      "line": "                Identifier = new MetadataV2PublicationIdentifier(),",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.cs",
+      "rule": "graph-publication",
+      "line": "                PublicationType = MetadataV2PublicationType.EsriMapLayer,",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.cs",
+      "rule": "graph-publication",
+      "line": "            Identifier = new MetadataV2PublicationIdentifier { Value = \"0\", IsNumeric = true },",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.cs",
+      "rule": "graph-resource",
+      "line": "            snapshot.ResolveResource(candidate)?.Type == MetadataV2ResourceType.FeatureDataset);",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.cs",
+      "rule": "graph-resource",
+      "line": "        _styles.GetStyleAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<int>(), Arg.Any<CancellationToken>())",
+      "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.cs",
+      "rule": "layer-membership",
+      "line": "    public async Task RecordsService_StorageRebound_ListsStablePublicationIds()",
+      "reason": "Transition aid naming the current graph publication identity, including regression identifiers and their generated inventory. The coordinated C# kind rename updates these names; public protocol IDs already use the graph Layer ID."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.cs",
+      "rule": "layer-membership",
+      "line": "    public async Task WfsCapabilities_StorageRebound_UsesDistinctEncodedPublicationIds()",
+      "reason": "Transition aid naming the current graph publication identity, including regression identifiers and their generated inventory. The coordinated C# kind rename updates these names; public protocol IDs already use the graph Layer ID."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.cs",
+      "rule": "layer-type",
+      "line": "                PublicationType = MetadataV2PublicationType.EsriMapLayer,",
+      "reason": "PublicationType/publicationType is the current metadata graph member and persisted JSON discriminator. Retain the canonical schema until the approved wire/SQL migration boundary."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/Tiles/TileJsonCredentialEndpointTests.cs",
+      "rule": "dataset-reference",
+      "line": "        .First(publication => publication.ResourceId == \"res-layer-0\" && publication.LayerIndex == WebAppFixture.TestLayerId).Metadata.Id;",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/Tiles/TileJsonEndpointTests.cs",
+      "rule": "dataset-reference",
+      "line": "        .First(publication => publication.ResourceId == \"res-layer-0\" && publication.LayerIndex == WebAppFixture.TestLayerId).Metadata.Id;",
+      "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/Wfs/WfsMultiLayerTransactionLockTests.cs",
+      "rule": "dataset-reference",
+      "line": "                  <fes:Filter><fes:ResourceId rid=\"pub-{layer}.{layer * 11}\" /></fes:Filter>",
+      "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Operations/RedisOffDirectPublishHostTests.cs",
+      "rule": "graph-publication",
+      "line": "            publicationType: MetadataV2PublicationType.EsriFeatureLayer)",
+      "reason": "Regression fixture uses the existing metadata graph publication type and discriminator. The approved C# and wire migration updates that canonical model separately; no public selector alias is added."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Operations/RedisOffDirectPublishHostTests.cs",
+      "rule": "layer-type",
+      "line": "            publicationType: MetadataV2PublicationType.EsriFeatureLayer)",
+      "reason": "Regression fixture uses the existing metadata graph publication type and discriminator. The approved C# and wire migration updates that canonical model separately; no public selector alias is added."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Operations/SynchronousPublishIdentityTests.cs",
+      "rule": "dataset-reference",
+      "line": "        handle.ResourceIds.Should().NotContainKey(\"serviceName\").And.NotContainKey(\"serviceLayerIndex\");",
+      "reason": "ResourceIds is the existing canonical operation-handle property. This regression verifies that completed publication withholds ambiguous public selectors; the admin/jobs vocabulary migration owns the property rename."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Operations/SynchronousPublishIdentityTests.cs",
+      "rule": "graph-publication",
+      "line": "                publicationType: MetadataV2PublicationType.EsriFeatureLayer)",
+      "reason": "Regression fixture uses the existing metadata graph publication type and discriminator. The approved C# and wire migration updates that canonical model separately; no public selector alias is added."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Operations/SynchronousPublishIdentityTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2PublicationType.EsriFeatureLayer)",
+      "reason": "Regression fixture uses the existing metadata graph publication type and discriminator. The approved C# and wire migration updates that canonical model separately; no public selector alias is added."
+    },
+    {
       "path": "src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/MetadataV2FieldSemantics.cs",
       "rule": "graph-resource",
       "line": "    internal static bool HasSupportedReferences(MetadataV2Resource dataset)",

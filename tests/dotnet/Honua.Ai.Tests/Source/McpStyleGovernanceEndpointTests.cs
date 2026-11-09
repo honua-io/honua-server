@@ -66,7 +66,7 @@ public sealed class McpStyleGovernanceEndpointTests
                 parameters = new Dictionary<string, string>
                 {
                     ["serviceId"] = WebAppFixture.TestServiceId,
-                    ["layerId"] = "0",
+                    ["serviceLayerIndex"] = "0",
                     ["styleId"] = "restricted-preset",
                 },
             });
@@ -97,7 +97,7 @@ public sealed class McpStyleGovernanceEndpointTests
     [Trait("Tier", "Integration")]
     [Operation(Operations.Update)]
     [Endpoint("POST /api/v1/operations/style.apply-preset/validate")]
-    public async Task RestStyleValidation_MalformedLayerId_ReturnsBadRequest(string layerId)
+    public async Task RestStyleValidation_MalformedLayerId_ReturnsBadRequest(string serviceLayerIndex)
     {
         var fixture = new WebAppFixture();
         await fixture.InitializeAsync();
@@ -110,7 +110,7 @@ public sealed class McpStyleGovernanceEndpointTests
                 parameters = new Dictionary<string, string>
                 {
                     ["serviceId"] = serviceId,
-                    ["layerId"] = layerId,
+                    ["serviceLayerIndex"] = serviceLayerIndex,
                     ["styleId"] = "validation-preset",
                 },
             });

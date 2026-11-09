@@ -129,10 +129,9 @@ public sealed class McpIngestCatalogConnectionIntegrationTests
                 serviceName,
             });
             published.GetProperty("status").GetString().Should().Be("Completed", published.GetRawText());
-            published.GetProperty("layerId").GetString().Should().NotBeNullOrWhiteSpace();
+            published.GetProperty("storageLayerId").GetString().Should().NotBeNullOrWhiteSpace();
+            published.TryGetProperty("layerId", out _).Should().BeFalse();
 
-            // The operation handle carries a physical LayerId. Query the
-            // public FeatureServer using its own published layer index.
             using var serviceResponse = await admin.GetAsync($"/rest/services/{serviceName}/FeatureServer?f=json");
             var servicePayload = await serviceResponse.Content.ReadAsStringAsync();
             serviceResponse.StatusCode.Should().Be(HttpStatusCode.OK, servicePayload);

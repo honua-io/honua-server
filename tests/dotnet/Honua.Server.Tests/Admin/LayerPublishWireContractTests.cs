@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Honua.Infrastructure.Models;
+using Honua.Core.Features.Admin.Domain;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Startup;
@@ -15,6 +16,24 @@ namespace Honua.Server.Tests.Admin;
 
 public sealed class LayerPublishWireContractTests
 {
+    [UnitTest]
+    public void PublishedLayer_SourceGeneratedJson_LabelsStorageHandle()
+    {
+        var layer = new PublishedLayerSummary
+        {
+            StorageLayerId = 741,
+            LayerName = "Roads",
+            Schema = "public",
+            Table = "roads",
+            GeometryType = "Point",
+            ServiceName = "public-roads",
+        };
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(layer, LayerPublishingJsonContext.Default.PublishedLayerSummary));
+
+        Assert.Equal(741, document.RootElement.GetProperty("storageLayerId").GetInt32());
+        Assert.False(document.RootElement.TryGetProperty("layerId", out _));
+    }
+
     [UnitTheory]
     [InlineData("", true)]
     [InlineData(",\"enabled\":true", true)]
@@ -51,7 +70,7 @@ public sealed class LayerPublishWireContractTests
         var payload = body.RootElement.GetProperty("data");
         Assert.Equal(statusUrl, payload.GetProperty("statusUrl").GetString());
         Assert.Equal(330000, payload.GetProperty("rowsTotal").GetInt64());
-        Assert.False(payload.TryGetProperty("layerId", out _));
+        Assert.False(payload.TryGetProperty("storageLayerId", out _));
         var schema = ResponseDataSchema(spec, "/connections/{id}/layers", "post", "202");
         AssertDocumentedProperties(schema, payload);
         Assert.Equal("Queued", Assert.Single(schema.GetProperty("properties").GetProperty("status")
@@ -66,16 +85,16 @@ public sealed class LayerPublishWireContractTests
     [InlineData("Completed", 23, null)]
     [InlineData("Failed", null, "Layer publish failed.")]
     [InlineData("Cancelled", null, null)]
-    public async Task Poll_EmitsDocumentedStateAndOptionalResult(string status, int? layerId, string? error)
+    public async Task Poll_EmitsDocumentedStateAndOptionalResult(string status, int? storageLayerId, string? error)
     {
         var response = await ExecuteAsync(TypedResults.Ok(
             ApiResponse<LayerPublishJobStatusResponse>.CreateSuccess(new LayerPublishJobStatusResponse
             {
                 JobId = "publish",
                 Status = status,
-                RowsMaterialized = layerId.HasValue ? 330000 : 1000,
+                RowsMaterialized = storageLayerId.HasValue ? 330000 : 1000,
                 RowsTotal = 330000,
-                LayerId = layerId,
+                StorageLayerId = storageLayerId,
                 ErrorMessage = error,
             })));
         using var body = response.Body;
@@ -88,12 +107,12 @@ public sealed class LayerPublishWireContractTests
         Assert.Contains(status, schema.GetProperty("properties").GetProperty("status").GetProperty("enum")
             .EnumerateArray().Select(value => value.GetString()));
         Assert.Equal(status, payload.GetProperty("status").GetString());
-        Assert.Equal(layerId.HasValue ? 330000 : 1000, payload.GetProperty("rowsMaterialized").GetInt64());
+        Assert.Equal(storageLayerId.HasValue ? 330000 : 1000, payload.GetProperty("rowsMaterialized").GetInt64());
         Assert.Equal(330000, payload.GetProperty("rowsTotal").GetInt64());
-        Assert.True(schema.GetProperty("properties").GetProperty("layerId").GetProperty("nullable").GetBoolean());
+        Assert.True(schema.GetProperty("properties").GetProperty("storageLayerId").GetProperty("nullable").GetBoolean());
         Assert.True(schema.GetProperty("properties").GetProperty("errorMessage").GetProperty("nullable").GetBoolean());
-        var actualLayerId = payload.GetProperty("layerId");
-        Assert.Equal(layerId, actualLayerId.ValueKind == JsonValueKind.Null ? null : actualLayerId.GetInt32());
+        var actualStorageLayerId = payload.GetProperty("storageLayerId");
+        Assert.Equal(storageLayerId, actualStorageLayerId.ValueKind == JsonValueKind.Null ? null : actualStorageLayerId.GetInt32());
         Assert.Equal(error, payload.GetProperty("errorMessage").GetString());
     }
 

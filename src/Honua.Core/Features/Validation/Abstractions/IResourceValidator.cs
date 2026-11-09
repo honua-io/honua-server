@@ -7,6 +7,10 @@ namespace Honua.Core.Features.Validation.Abstractions;
 
 public interface IResourceValidator
 {
+    Task<ResourceValidationResult<MetadataV2Resource>> ValidateStorageLayerV2Async(
+        int storageLayerId,
+        CancellationToken cancellationToken = default);
+
     Task<ResourceValidationResult<MetadataV2Resource>> ValidateLayerV2Async(
         int layerId,
         CancellationToken cancellationToken = default);
@@ -75,11 +79,16 @@ public static class ResourceValidationResult
 
     public static ResourceValidationResult<T> InvalidIdentifier<T>(string message) =>
         new(false, default, ResourceValidationError.InvalidIdentifier, message);
+
+    public static ResourceValidationResult<T> AmbiguousIdentifier<T>(string message) =>
+        new(false, default, ResourceValidationError.AmbiguousIdentifier, message);
 }
 
 public enum ResourceValidationError
 {
     NotFound,
 
-    InvalidIdentifier
+    InvalidIdentifier,
+
+    AmbiguousIdentifier
 }

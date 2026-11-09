@@ -32,7 +32,7 @@ using StackExchange.Redis;
 namespace Honua.Server.Tests.Features.Export;
 
 [Protocol(TestProtocols.TestQuality)]
-public sealed class ExportJobServiceTests
+public sealed partial class ExportJobServiceTests
 {
     [UnitTest]
     [Operation(Operations.Export)]
@@ -57,7 +57,7 @@ public sealed class ExportJobServiceTests
                 ExportJsonContext.Default.PersistedExportJobRequest));
         await progressStore.SetProgressAsync(
             job.JobId,
-            ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.LayerId, job.TotalFeatures) with
+            ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.ServiceLayerIndex, job.TotalFeatures) with
             {
                 Status = OperationStatus.Processing,
                 CurrentPhase = "Exporting features"
@@ -94,7 +94,7 @@ public sealed class ExportJobServiceTests
         var job = CreateJob("missing-recovered-export");
         await progressStore.SetProgressAsync(
             job.JobId,
-            ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.LayerId, job.TotalFeatures));
+            ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.ServiceLayerIndex, job.TotalFeatures));
 
         await using var enumerator = sut.ReadQueuedJobIdsAsync().GetAsyncEnumerator();
         var hasRecoveredJob = await enumerator.MoveNextAsync();
@@ -131,7 +131,7 @@ public sealed class ExportJobServiceTests
                 ExportJsonContext.Default.PersistedExportJobRequest));
         await progressStore.SetProgressAsync(
             job.JobId,
-            ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.LayerId, job.TotalFeatures) with
+            ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.ServiceLayerIndex, job.TotalFeatures) with
             {
                 Status = OperationStatus.Processing,
                 CurrentPhase = "Exporting features"
@@ -143,7 +143,7 @@ public sealed class ExportJobServiceTests
 
         await progressStore.SetProgressAsync(
             job.JobId,
-            ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.LayerId, job.TotalFeatures) with
+            ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.ServiceLayerIndex, job.TotalFeatures) with
             {
                 Status = OperationStatus.Processing,
                 CurrentPhase = "Exporting features"
@@ -188,7 +188,7 @@ public sealed class ExportJobServiceTests
                 ExportJsonContext.Default.PersistedExportJobRequest));
         await progressStore.SetProgressAsync(
             job.JobId,
-            ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.LayerId, job.TotalFeatures) with
+            ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.ServiceLayerIndex, job.TotalFeatures) with
             {
                 Status = OperationStatus.Processing,
                 CurrentPhase = "Exporting features"
@@ -308,6 +308,12 @@ public sealed class ExportJobServiceTests
         var progress = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
         progress.Should().NotBeNull();
         progress!.Status.Should().Be(OperationStatus.Completed);
+        progress.ServiceLayerIndex.Should().Be(3);
+        var wire = JsonSerializer.SerializeToElement(progress, ExportJsonContext.Default.ExportProgress);
+        wire.GetProperty("serviceLayerIndex").GetInt32().Should().Be(3);
+        wire.TryGetProperty("layerId", out _).Should().BeFalse();
+        wire.TryGetProperty("storageLayerId", out _).Should().BeFalse();
+        streamingStore.Received(1).StreamFeaturesAsync(job.StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
         progress.DownloadUrl.Should().Be("https://example.test/export.csv");
         observedSubmitter.Should().BeEquivalentTo(job.Submitter);
         JobSecurityScope.Current.Should().BeNull();
@@ -1009,7 +1015,10 @@ public sealed class ExportJobServiceTests
             4326,
             1,
             ExportGeometryType.None,
-            new JobSecurityContext("subject-a", "tenant-a", [new JobSecurityClaim("role", "reader")]));
+            new JobSecurityContext("subject-a", "tenant-a", [new JobSecurityClaim("role", "reader")]))
+        {
+            ServiceLayerIndex = 3,
+        };
 
     private sealed class InMemoryUniversalProgressStore : IUniversalProgressStore
     {

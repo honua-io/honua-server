@@ -10,7 +10,7 @@ internal sealed record ExportProgress : IOperationProgress, ICancellableOperatio
     public required string JobId { get; init; }
     public required string Format { get; init; }
     public required string ServiceName { get; init; }
-    public required int LayerId { get; init; }
+    public required int ServiceLayerIndex { get; init; }
     public required OperationStatus Status { get; init; }
     public long TotalFeatures { get; init; }
     public long ProcessedFeatures { get; init; }
@@ -45,14 +45,14 @@ internal sealed record ExportProgress : IOperationProgress, ICancellableOperatio
         string jobId,
         string format,
         string serviceName,
-        int layerId,
+        int serviceLayerIndex,
         long totalFeatures)
         => new()
         {
             JobId = jobId,
             Format = format,
             ServiceName = serviceName,
-            LayerId = layerId,
+            ServiceLayerIndex = serviceLayerIndex,
             TotalFeatures = totalFeatures,
             Status = OperationStatus.Queued,
             StartedAt = DateTimeOffset.UtcNow,

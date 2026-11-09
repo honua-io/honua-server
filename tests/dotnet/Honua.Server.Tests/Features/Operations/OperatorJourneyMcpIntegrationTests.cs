@@ -166,7 +166,7 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
                 serviceName,
             });
             using var publishBody = ResponseJson(published);
-            publishBody.RootElement.GetProperty("data").GetProperty("layerId").GetInt32()
+            publishBody.RootElement.GetProperty("data").GetProperty("storageLayerId").GetInt32()
                 .Should().BeGreaterThan(0);
 
             var policy = await CallOkAsync(admin, "honua_admin_services_access_policy_set", new

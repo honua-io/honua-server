@@ -375,7 +375,7 @@ internal sealed partial class Wfs20Handler
 
         var selectedTypes = xmlQueries
             .SelectMany(query => ResolveRequestedFeatureTypes(publishedTypes, Wfs20Utilities.ParseTypeNames(query.TypeNames)))
-            .DistinctBy(static descriptor => descriptor.QualifiedName, StringComparer.OrdinalIgnoreCase)
+            .DistinctBy(static descriptor => descriptor.QualifiedName, StringComparer.Ordinal)
             .ToArray();
         var wfsUrl = $"{BaseUrlResolver.GetBaseUrl(context)}/wfs";
 

@@ -165,7 +165,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         return new MaterializedFeatureRefreshResult
         {
-            LayerId = metadata.LayerId,
+            StorageLayerId = metadata.LayerId,
             LayerName = metadata.LayerName,
             Schema = metadata.Schema,
             Table = metadata.Table,

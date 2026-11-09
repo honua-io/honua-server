@@ -6,14 +6,14 @@ import { request as httpsRequest } from 'node:https';
 import { createHash } from 'node:crypto';
 import { gunzipSync, inflateSync, brotliDecompressSync } from 'node:zlib';
 import { until } from './postgres-cancellation-observer.mjs';
+import { queryArguments } from './request-cancellation.mjs';
+
+export { queryArguments } from './request-cancellation.mjs';
 
 export const INSPECTOR_CANCELLATION_CONTRACT = 'honua.inspector-browser-cancellation-proof/v1';
 const LIMIT = 4 * 1024 * 1024;
 const hash = (value) => 'sha256:' + createHash('sha256').update(value).digest('hex');
 const require = (condition, stage) => { if (!condition) throw new Error(`Inspector cancellation proof failed: ${stage}`); };
-export const queryArguments = (fixture) => ({ serviceId: fixture.serviceName, layerId: fixture.layerId,
-  where: "name IN ('alpha','beta') AND count >= 1", outFields: ['name', 'count'], outSrid: 4326,
-  returnGeometry: true, limit: 3 });
 
 function frames(bytes, headers) {
   const encoding = (headers['content-encoding'] ?? '').trim().toLowerCase();
@@ -217,10 +217,11 @@ export async function inspectorBrowserCancellation({ endpoint, inspectorVersion,
     await ui.recover();
     await verifyRecovery(await wire.recoveryResult());
     wire.assertTerminal();
+    // The v1 evidence contract calls the service index layerId; MCP arguments use serviceLayerIndex.
     proof = { schema: INSPECTOR_CANCELLATION_CONTRACT, performedBy: 'MCP Inspector', inspectorVersion,
       protocolVersion: terminal.protocolVersion, transport: 'streamable-http', protocolEra: 'legacy',
       fixtureSourceSha: sourceSha, seedSqlSha256: fixture.seedSqlSha256, allocatedIdsSha256: fixture.allocatedIdsSha256,
-      requestMethod: 'tools/call', toolName: 'honua_query_features', serviceName: fixture.serviceName, layerId: fixture.layerId,
+      requestMethod: 'tools/call', toolName: 'honua_query_features', serviceName: fixture.serviceName, layerId: fixture.serviceLayerIndex,
       sessionSha256: terminal.sessionSha256, argumentsSha256: hash(JSON.stringify(queryArguments(fixture))),
       requestId: terminal.id, notificationRequestId: terminal.id, responseId: terminal.id, responseCount: 1,
       notificationMethod: 'notifications/cancelled', protocolCode: -32800, code: 'cancelled', hasResult: false,

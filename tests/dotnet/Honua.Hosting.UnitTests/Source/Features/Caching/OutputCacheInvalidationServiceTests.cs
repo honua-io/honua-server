@@ -19,7 +19,7 @@ using ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols
 namespace Honua.Server.Tests.Features.Caching;
 
 [Protocol(TestProtocols.TestQuality)]
-public sealed class OutputCacheInvalidationServiceTests
+public sealed partial class OutputCacheInvalidationServiceTests
 {
     private static string ScopedKey(string key) => CacheScopeKeys.EnsureScoped(key, null);
 
@@ -194,6 +194,31 @@ public sealed class OutputCacheInvalidationServiceTests
 
     [UnitTest]
     [Operation(Operations.Cache)]
+    public async Task InvalidateStorageLayerAsync_StorageHandleDiffersFromServiceIndex_EvictsOwningService()
+    {
+        var graph = CreateFeatureServerGraph(("alpha", [7]), ("beta", [41]));
+        graph = graph with
+        {
+            StorageBindings = graph.StorageBindings.Select(binding => binding.StorageLayerId == 7
+                ? binding with { StorageLayerId = 741 }
+                : binding).ToArray(),
+        };
+        var outputCacheStore = Substitute.For<IOutputCacheStore>();
+        var responseCache = Substitute.For<IResponseCache>();
+        var sut = new OutputCacheInvalidationService(outputCacheStore, responseCache, null,
+            CreateScopeFactory(graph), null, NullLogger<OutputCacheInvalidationService>.Instance);
+
+        await sut.InvalidateStorageLayerAsync(741, CancellationToken.None);
+
+        await outputCacheStore.Received(1).EvictByTagAsync("service:alpha", Arg.Any<CancellationToken>());
+        await outputCacheStore.DidNotReceive().EvictByTagAsync("service:beta", Arg.Any<CancellationToken>());
+        await responseCache.Received(1).RemoveByPatternAsync("response:query:featureserver:service:alpha:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:alpha:layer:7:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:odata:layer:7:*", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
     public async Task InvalidateLayerAsync_WithoutServiceId_ResolvesOwningServices()
     {
         var outputCacheStore = Substitute.For<IOutputCacheStore>();
@@ -289,14 +314,14 @@ public sealed class OutputCacheInvalidationServiceTests
 
     [UnitTest]
     [Operation(Operations.Cache)]
-    public async Task InvalidateLayerAsync_NonNumericPublication_EvictsPublicationIdViaStorageBinding()
+    public async Task InvalidateStorageLayerAsync_NonNumericPublication_EvictsPublicationIdViaStorageBinding()
     {
         var responseCache = Substitute.For<IResponseCache>();
         var scopeFactory = CreateScopeFactory(CreateNonNumericPublicationGraph());
         var logger = NullLogger<OutputCacheInvalidationService>.Instance;
         var sut = new OutputCacheInvalidationService(null, responseCache, null, scopeFactory, null, logger);
 
-        await sut.InvalidateLayerAsync(null, 42, CancellationToken.None);
+        await sut.InvalidateStorageLayerAsync(42, CancellationToken.None);
 
         await responseCache.Received().RemoveByPatternAsync("response:query:ogc:collection:parcels:*", Arg.Any<CancellationToken>());
     }

@@ -374,8 +374,13 @@ internal sealed class McpPublishServiceOutput
     [JsonPropertyName("serviceUri")]
     public string? ServiceUri { get; set; }
 
-    [JsonPropertyName("layerId")]
-    public string? LayerId { get; set; }
+    [JsonPropertyName("storageLayerId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? StorageLayerId { get; set; }
+
+    [JsonPropertyName("serviceLayerIndex")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ServiceLayerIndex { get; set; }
 
     [JsonPropertyName("serviceName")]
     public string? ServiceName { get; set; }
@@ -557,8 +562,11 @@ internal sealed class McpPublishResultOutput
     [JsonPropertyName("serviceId")]
     public string? ServiceId { get; set; }
 
-    [JsonPropertyName("layerId")]
-    public string? LayerId { get; set; }
+    [JsonPropertyName("storageLayerId")]
+    public string? StorageLayerId { get; set; }
+
+    [JsonPropertyName("serviceLayerIndex")]
+    public string? ServiceLayerIndex { get; set; }
 
     [JsonPropertyName("metadataRevision")]
     public long? MetadataRevision { get; set; }
