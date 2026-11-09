@@ -201,7 +201,8 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
         output.GetProperty("evidenceRefs").EnumerateArray().Select(item => item.GetString())
             .Should().Contain(NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef);
         output.GetProperty("storageLayerId").GetString().Should().Be("321");
-        output.GetProperty("serviceLayerIndex").GetString().Should().Be("3");
+        output.TryGetProperty("serviceLayerIndex", out var serviceLayerIndex).Should().BeTrue(output.GetRawText());
+        serviceLayerIndex.GetString().Should().Be("3");
         output.TryGetProperty("layerId", out _).Should().BeFalse();
     }
 
