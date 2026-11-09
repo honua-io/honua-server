@@ -8,6 +8,21 @@ internal static class AdminSessionCrossSiteRequestGuard
 {
     private const string SecFetchSiteHeader = "Sec-Fetch-Site";
 
+    public static bool HasTrustedOrigin(HttpRequest request)
+    {
+        var fetchSite = request.Headers[SecFetchSiteHeader].ToString();
+        if (!string.IsNullOrEmpty(fetchSite) && fetchSite is not ("same-origin" or "same-site" or "none")) return false;
+        var origin = request.Headers.Origin;
+        if (origin.Count == 0)
+            return string.IsNullOrEmpty(fetchSite) || fetchSite is "same-origin" or "none";
+        if (origin.Count != 1 || !Uri.TryCreate(origin[0], UriKind.Absolute, out var originUri)
+            || originUri.UserInfo.Length != 0 || originUri.AbsolutePath != "/"
+            || originUri.Query.Length != 0 || originUri.Fragment.Length != 0
+            || !Uri.TryCreate(request.Scheme + "://" + request.Host, UriKind.Absolute, out var requestUri)) return false;
+        return Uri.Compare(originUri, requestUri, UriComponents.SchemeAndServer,
+            UriFormat.Unescaped, StringComparison.OrdinalIgnoreCase) == 0;
+    }
+
     // An unsafe method a browser marked cross-site must not be authenticated by the session cookie.
     public static bool IsCrossSiteUnsafeRequest(HttpRequest request)
     {
