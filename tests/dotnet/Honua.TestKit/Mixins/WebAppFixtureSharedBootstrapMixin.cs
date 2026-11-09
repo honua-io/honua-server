@@ -52,7 +52,9 @@ internal static class WebAppFixtureSharedBootstrapMixin
     /// first caller spins up the factory and connects it to a fresh
     /// <see cref="PostgresFixture"/>; every subsequent caller just bumps the refcount.
     /// </summary>
-    internal static async Task EnsureInitializedAsync(string sharedAdminPassword)
+    internal static async Task EnsureInitializedAsync(
+        string sharedAdminPassword,
+        Func<string, string, WebApplicationFactory<Program>>? buildFactory = null)
     {
         await _sharedLock.WaitAsync();
         try
@@ -62,7 +64,7 @@ internal static class WebAppFixtureSharedBootstrapMixin
                 _sharedPostgres = new PostgresFixture();
                 await _sharedPostgres.InitializeAsync();
 
-                _sharedFactory = BuildSharedFactory(_sharedPostgres.ConnectionString, sharedAdminPassword);
+                _sharedFactory = (buildFactory ?? BuildSharedFactory)(_sharedPostgres.ConnectionString, sharedAdminPassword);
                 // Start the lazy host under the lock so parallel fixtures share one service provider.
                 _ = _sharedFactory.Services;
 
