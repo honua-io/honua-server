@@ -750,6 +750,7 @@ internal sealed class McpDataAccessSurface
             httpContext.Items.Remove(ProposalEvidenceVerifier.InvokingToolItemKey);
         }
 
+        McpConsoleEntities.Enrich(tool.Name, result);
         return SuccessResponse(request.Id, result, McpJsonContext.Default.McpToolsCallResult);
     }
 

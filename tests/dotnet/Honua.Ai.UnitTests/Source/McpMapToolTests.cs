@@ -281,6 +281,35 @@ public sealed class McpMapToolTests
     [Operation(Operations.Query)]
     [Endpoint("POST /mcp tools/call honua_list_layers")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_ListLayers_EmitsConsoleLinksOutsideContentChannels()
+    {
+        var response = await BuildSurface().DispatchAsync(
+            AuthenticatedContext(BuildServices()),
+            ToolCall("console-layers", ListLayersTool.ToolName, "{}"),
+            CancellationToken.None);
+
+        var result = response!.Result!.Value;
+        var entities = result.GetProperty("_meta").GetProperty("honua/consoleEntities");
+        entities.GetArrayLength().Should().Be(2);
+        var service = entities[0];
+        service.GetProperty("kind").GetString().Should().Be("service");
+        service.GetProperty("id").GetString().Should().Be(ServiceName);
+        service.GetProperty("href").GetString().Should().Be("/operate/services/Parcels/settings");
+        var layer = entities[1];
+        layer.GetProperty("kind").GetString().Should().Be("layer");
+        layer.GetProperty("id").GetString().Should().Be("0");
+        layer.GetProperty("serviceName").GetString().Should().Be(ServiceName);
+        layer.GetProperty("href").GetString().Should().Be("/operate/layers/0");
+        StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.ListLayersOutputSchema);
+        var jsonText = result.GetProperty("content").EnumerateArray().Last().GetProperty("text").GetString();
+        JsonElement.DeepEquals(JsonDocument.Parse(jsonText!).RootElement,
+            result.GetProperty("structuredContent")).Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_list_layers")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ListLayers_ProtocolPublications_CountAndPageUniqueLayerIdentities()
     {
         var graph = await MultiProtocolLayerGraphAsync();

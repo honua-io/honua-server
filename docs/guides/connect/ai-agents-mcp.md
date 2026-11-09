@@ -142,6 +142,24 @@ Every successful tool result returns its data twice: as `structuredContent` and 
 
 ## What the tools do
 
+### Open a result in Console
+
+Known entity results may include `result._meta["honua/consoleEntities"]`, an array
+of typed navigation targets with `kind`, `id`, optional `serviceName`, and `href`.
+For example, a returned job can carry
+`{"kind":"job","id":"job-123","href":"/operate/jobs/job-123"}`.
+Clients may offer these links alongside the result. Both `structuredContent` and
+the canonical JSON text retain their original shape; navigation metadata does not
+add tool descriptors or fields to their output schemas.
+
+Targets come from known authorized job, layer, service, folder, and operation
+results. Service links use the wire `serviceName`; a numeric layer target retains
+Console's disambiguation chooser. Metadata contains at most 100 targets and may
+be absent. Feature attributes and display titles do not supply identities.
+Console rechecks access at the destination. Opening an approval link navigates to
+the proposal; it does not approve it. Rendering these targets depends on the
+client's Console integration.
+
 ### Plan, validate, and run geoprocessing
 
 Start with the safe ones; everything in the planning family is read-only:

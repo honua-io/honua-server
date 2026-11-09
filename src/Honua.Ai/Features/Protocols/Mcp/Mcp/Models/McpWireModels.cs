@@ -474,6 +474,9 @@ internal sealed class McpToolsCallResult
     [JsonPropertyName("isError")]
     public bool IsError { get; set; }
 
+    [JsonPropertyName("_meta")]
+    public JsonElement? Meta { get; set; }
+
     [JsonPropertyName("structuredContent")]
     public JsonElement? StructuredContent { get; set; }
 }
