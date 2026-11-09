@@ -652,10 +652,10 @@ public class Tests
     assert MODULE.unresolved_method_classes(found) == ["Ns.Tests"]
 
 
-def test_geoservices_partition_preserves_every_runnable_method_and_budget() -> None:
+def test_gp_nas_partition_preserves_every_runnable_method_and_budget() -> None:
     config = json.loads((REPOSITORY_ROOT / ".github/ci-shards.json").read_text())
     partition = next(p for p in config["shard_partitions"]
-                     if p["name"] == "GeoServices FeatureServer GPServer and NAServer")
+                     if p["name"] == "GPServer and NAServer capacity partition")
     assert partition["granularity"] == "method"
     shards = {s["name"]: s for s in config["shards"]}
     parsed = {name: MODULE._FilterParser(s["filter"]).parse() for name, s in shards.items()}
@@ -673,21 +673,20 @@ def test_geoservices_partition_preserves_every_runnable_method_and_budget() -> N
     assert selected > 100
     soap = "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests"
     for method, expected in (("GetJobStatus_InvalidProgressHint_ReturnsSoapFaultBeforeJobLookup",
-                             "GeoServices Maintenance and Durable Jobs"),
+                             "GeoServices GPServer SOAP Progress"),
                             ("SoapSubmitJob_PublishedName_UsesCanonicalPlanAndBinding",
-                             "GeoServices SOAP and MVT Tiles")):
+                             "GeoServices GPServer SOAP")):
         assert method in classes[f"{shards[partition['children'][0]]['csproj']}::{soap}"]["methods"]
         assert [name for name in partition["children"]
                 if MODULE._eval(parsed[name], soap + "." + method)] == [expected]
     for name in partition["children"]:
-        test_budget, job_budget = (28, 38) if name == "FeatureServer Replica" else (22, 32)
-        assert shards[name]["test_timeout_minutes"] == test_budget
-        assert shards[name]["timeout_minutes"] == job_budget
+        assert shards[name]["test_timeout_minutes"] == 22
+        assert shards[name]["timeout_minutes"] == 32
 
 
 test_method_partition_rejects_holes_duplicates_and_leaks()
 test_method_partition_rejects_unresolved_runnable_methods()
-test_geoservices_partition_preserves_every_runnable_method_and_budget()
+test_gp_nas_partition_preserves_every_runnable_method_and_budget()
 
 
 
@@ -773,27 +772,3 @@ def test_miscellaneous_partition_detects_missing_moved_methods() -> None:
 test_miscellaneous_partition_detects_missing_moved_methods()
 
 print("shard-filter-dangling-guard=ok")
-
-
-def test_consolidated_shards_preserve_execution_contracts() -> None:
-    config = json.loads((REPOSITORY_ROOT / ".github/ci-shards.json").read_text())
-    shards = {shard["name"]: shard for shard in config["shards"]}
-    contracts = (
-        ("GeoServices Maintenance and Durable Jobs", "GeoServices", 22, 32),
-        ("GeoServices SOAP and MVT Tiles", "GeoServices", 22, 32),
-        ("OData Errors and Mutations", "OData", 20, 30),
-        ("OGC API Rendering Records and Tiles", "OgcApi", 22, 32),
-        ("OGC Classic WMS", "OgcClassic", 20, 30),
-        ("GeoServices MapServer", "GeoServices", 29, 39),
-        ("Scene", "Scene", 30, 40),
-    )
-    fields = ("csproj", "test_timeout_minutes", "timeout_minutes", "max_cpu_count",
-              "upload_operator_eval_report", "upload_odata_evidence")
-    for name, project, test_cap, job_cap in contracts:
-        project_name = f"Honua.Protocols.{project}.Tests"
-        expected = (f"tests/dotnet/{project_name}/{project_name}.csproj",
-                    test_cap, job_cap, "", False, False)
-        assert tuple(shards[name][field] for field in fields) == expected, name
-
-
-test_consolidated_shards_preserve_execution_contracts()

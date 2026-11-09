@@ -67,7 +67,8 @@
         "FeatureServer Editing and Relationships",
         "FeatureServer Query Services and Replication",
         "OGC API Features",
-        "OGC Classic WMS",
+        "OGC Classic Maps Core",
+        "OGC Classic Maps Supporting",
         "OData Core",
         "MCP Endpoints",
         "MCP and Sessions",
@@ -82,7 +83,8 @@
         "FeatureServer Editing and Relationships",
         "FeatureServer Query Services and Replication",
         "OGC API Features",
-        "OGC Classic WMS",
+        "OGC Classic Maps Core",
+        "OGC Classic Maps Supporting",
         "OData Core",
         "MCP Endpoints",
         "MCP and Sessions",
@@ -97,7 +99,8 @@
         "FeatureServer Editing and Relationships",
         "FeatureServer Query Services and Replication",
         "OGC API Features",
-        "OGC Classic WMS",
+        "OGC Classic Maps Core",
+        "OGC Classic Maps Supporting",
         "OData Core",
         "MCP Endpoints",
         "MCP and Sessions",
@@ -324,6 +327,14 @@
       ]
     },
     {
+      "name": "OGC API Tiles capacity split (#3204)",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Styles",
+      "children": [
+        "OGC API Tiles Coverages and Processes",
+        "OGC API Tiles Endpoints and CRS"
+      ]
+    },
+    {
       "name": "Raster Serving capacity split (#3204)",
       "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Elevation)|(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Cog|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Zarr|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Coverages))|(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Terrain|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Tiles)",
       "children": [
@@ -335,8 +346,22 @@
       "name": "MapServer endpoint source partition",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerIdentifyEndpointTests",
       "children": [
-        "GeoServices MapServer"
+        "GeoServices MapServer",
+        "GeoServices MapServer Export",
+        "GeoServices MapServer Identify"
       ]
+    },
+    {
+      "name": "GPServer and NAServer capacity partition",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.NAServer",
+      "children": [
+        "GeoServices GPServer and NAServer",
+        "GeoServices GPServer SOAP",
+        "GeoServices GPServer SOAP Progress",
+        "GeoServices GPServer Durable and Aliases",
+        "GeoServices GPServer Endpoints"
+      ],
+      "granularity": "method"
     },
     {
       "name": "Operator Eval Harness capacity partition",
@@ -347,40 +372,37 @@
       ]
     },
     {
-      "name": "OGC API Tiles Maps and Data",
+      "name": "OGC API Maps and Tiles capacity partition",
       "csproj": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Styles)|(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Records)",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Records",
       "children": [
-        "OGC API Tiles Coverages and Processes",
-        "OGC API Rendering Records and Tiles",
-        "OGC API Maps Basic and Conformance"
+        "OGC API Maps Basic and Conformance",
+        "OGC API Maps Rendering and Records"
       ]
     },
     {
-      "name": "GeoServices FeatureServer GPServer and NAServer",
+      "name": "FeatureServer Tiles and Replica capacity partition",
       "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.NAServer)|((FullyQualifiedName~MvtTile|FullyQualifiedName~Replica)&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~CachingReplicaStoreTests&FullyQualifiedName!~DistributedReplicaStoreTests&FullyQualifiedName!~FeatureServerReplicationTests&FullyQualifiedName!~ReplicationDurabilityTests&FullyQualifiedName!~PostgresChangeTrackerTests)|((FullyQualifiedName~FeatureServerMaintenance|FullyQualifiedName~FeatureServerTemporal|FullyQualifiedName~FeatureServerExtrusion)&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer)",
+      "filter": "(FullyQualifiedName~MvtTile|FullyQualifiedName~Replica)&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~CachingReplicaStoreTests&FullyQualifiedName!~DistributedReplicaStoreTests&FullyQualifiedName!~FeatureServerReplicationTests&FullyQualifiedName!~ReplicationDurabilityTests&FullyQualifiedName!~PostgresChangeTrackerTests",
       "children": [
-        "GeoServices GPServer and NAServer",
-        "GeoServices SOAP and MVT Tiles",
-        "GeoServices Maintenance and Durable Jobs",
-        "GeoServices GPServer Endpoints",
+        "FeatureServer MVT Tiles",
         "FeatureServer Replica"
-      ],
-      "granularity": "method"
+      ]
     },
     {
       "name": "Scene All",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Scene",
       "children": [
-        "Scene"
+        "Scene",
+        "Scene I3S Resources"
       ]
     },
     {
       "name": "OGC Classic Maps",
       "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms)",
       "children": [
-        "OGC Classic WMS"
+        "OGC Classic Maps Core",
+        "OGC Classic Maps Supporting"
       ]
     },
     {
@@ -838,6 +860,37 @@
       ]
     },
     {
+      "name": "FeatureServer MVT Tiles",
+      "shard_name": "FeatureServer MVT Tiles",
+      "dispatch_rank": 14.31,
+      "artifact_suffix": "featureserver-mvt-tiles",
+      "log_name": "server-tests-featureserver-mvt-tiles",
+      "timeout_minutes": 32,
+      "test_timeout_minutes": 22,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "Capacity split of FeatureServer Tiles and Replica along the MvtTile | Replica filter boundary. Measured on the passing retry of run 37435142851 (TRX class spans): MVT classes occupy 2.8m of the 20.2m whole. Budgets unchanged. The MVT and Replica filters exclude each other, so a name containing both substrings matches neither child and must be assigned explicitly. Coverage currently finds no such class.",
+      "filter": "FullyQualifiedName~MvtTile&FullyQualifiedName!~Replica&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~CachingReplicaStoreTests&FullyQualifiedName!~DistributedReplicaStoreTests&FullyQualifiedName!~FeatureServerReplicationTests&FullyQualifiedName!~ReplicationDurabilityTests&FullyQualifiedName!~PostgresChangeTrackerTests",
+      "paths": [
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/",
+        "src/Honua.Protocols.GeoServices/FeatureServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileCacheTtlTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileDecodeTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileEndpointTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileErrorHandlingTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileTemporalEndpointTests.cs",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerZarrTestFixture.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+    },
+    {
       "name": "FeatureServer Replica",
       "shard_name": "FeatureServer Replica",
       "dispatch_rank": 14.32,
@@ -848,7 +901,7 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "Replica side of the FeatureServer MvtTile | Replica filter boundary; the MvtTile side runs in GeoServices SOAP and MVT Tiles. Measured on the passing retry of run 37435142851 (TRX class spans, serial): replica classes occupy 17.3m of the 20.2m whole, under the unchanged 22m test budget. Excludes the replica-store and replication classes that belong to FeatureServer Query Services and Replication. October 2026 fleet re-base (#5884): the run-shard step peaked at 19.2m across full-matrix runs 38158644558 / 38164919834 / 38182837651 / 38193561888 against a 22m cap; 28m keeps that peak at the 0.7 target_utilization.",
+      "_comment": "Capacity split of FeatureServer Tiles and Replica along the MvtTile | Replica filter boundary. Measured on the passing retry of run 37435142851 (TRX class spans, serial): replica classes occupy 17.3m of the 20.2m whole, under the unchanged 22m test budget. Excludes the replica-store and replication classes that belong to FeatureServer Query Services and Replication. October 2026 fleet re-base (#5884): the run-shard step peaked at 19.2m across full-matrix runs 38158644558 / 38164919834 / 38182837651 / 38193561888 against a 22m cap; 28m keeps that peak at the 0.7 target_utilization.",
       "filter": "FullyQualifiedName~Replica&FullyQualifiedName!~MvtTile&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~CachingReplicaStoreTests&FullyQualifiedName!~DistributedReplicaStoreTests&FullyQualifiedName!~FeatureServerReplicationTests&FullyQualifiedName!~ReplicationDurabilityTests&FullyQualifiedName!~PostgresChangeTrackerTests",
       "paths": [
         "src/Honua.Core/Features/Validation/",
@@ -877,31 +930,27 @@
       "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
     },
     {
-      "name": "GeoServices Maintenance and Durable Jobs",
-      "shard_name": "GeoServices Maintenance and Durable Jobs",
-      "dispatch_rank": 14.9,
-      "artifact_suffix": "geoservices-maintenance-and-durable-jobs",
-      "log_name": "server-tests-geoservices-maintenance-and-durable-jobs",
+      "name": "FeatureServer Maintenance and Temporal",
+      "shard_name": "FeatureServer Maintenance and Temporal",
+      "dispatch_rank": 11.3,
+      "artifact_suffix": "featureserver-maintenance-temporal",
+      "log_name": "server-tests-featureserver-maintenance-temporal",
       "timeout_minutes": 32,
       "test_timeout_minutes": 22,
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "((FullyQualifiedName~FeatureServerMaintenance|FullyQualifiedName~FeatureServerTemporal|FullyQualifiedName~FeatureServerExtrusion)&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer)|(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests)|(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.GetJobStatus_)",
+      "_comment": "ADR-0037 finer-sharding: carved from FeatureServer Query Services and Replication. Selects Maintenance, Temporal (excluding MvtTileTemporal which is matched by MvtTile in the Tiles+Replica shard), TemporalQueryBuilder and Extrusion classes. Complementary with the FeatureServer Query Services and Replication catch-all.",
+      "filter": "((FullyQualifiedName~FeatureServerMaintenance|FullyQualifiedName~FeatureServerTemporal|FullyQualifiedName~FeatureServerExtrusion)&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer)",
       "paths": [
         "src/Honua.Core/Features/Validation/",
         "src/Honua.Hosting/Features/Services/",
         "src/Honua.Protocols.GeoServices/FeatureServer/",
-        "src/Honua.Protocols.GeoServices/GPServer/",
-        "src/Honua.Protocols.GeoServices/NAServer/",
-        "src/Honua.Routing/Features/Routing/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerExtrusionTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerMaintenanceTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerTemporalExtentEndpointTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerTemporalTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/GeoServicesTemporalQueryBuilderTests.cs",
-        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/",
-        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/",
         "tests/dotnet/RedisCollection.cs",
         "tests/dotnet/Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs",
         "tests/dotnet/Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs",
@@ -1172,6 +1221,7 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj",
+      "_comment": "OData CATCH-ALL (#1899): converted from a class-name-keyed selector to a namespace-prefix selector so new OData test classes are auto-covered instead of silently falling outside every OData shard (the original #1899 finding \u2014 e.g. ODataBboxShorthandTests, ODataInOperatorTests, ODataParquetFormatTests, ODataServerPagingEndpointTests, ODataChangesetEditionGateTests, ODataQueryParameterAdapterOrderByTests all matched no OData filter). Selects everything in the Honua.Server.Tests.Features.Protocols.OData namespace EXCEPT the classes/sub-namespaces carved into the OData Query and Spatial, OData Mutations and Batch, and OData Client Certification sibling shards. The trailing FullyQualifiedName!~ exclusions mirror those siblings' selectors exactly, so the four OData shards partition the OData suite with no gaps; any newly added OData test class falls here by default.",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.OData&FullyQualifiedName!~ODataAdvancedFeaturesTests&FullyQualifiedName!~ODataFilterFunctionTests&FullyQualifiedName!~ODataFilterMatrixTests&FullyQualifiedName!~ODataPaginationTests&FullyQualifiedName!~ODataSkipTokenTests&FullyQualifiedName!~ODataSpatialMatrixTests&FullyQualifiedName!~ODataSpatialReferenceTests&FullyQualifiedName!~ODataTemporalFilteringTests&FullyQualifiedName!~ODataCrudEndpointTests&FullyQualifiedName!~ODataCrudExceptionMappingTests&FullyQualifiedName!~ODataDeltaTests&FullyQualifiedName!~ODataETagConcurrencyTests&FullyQualifiedName!~ODataGeometryCrudTests&FullyQualifiedName!~ODataMultipartBatchTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.OData.Services&FullyQualifiedName!~ODataClientCertificationTests&FullyQualifiedName!~ODataClientIntegrationTests&FullyQualifiedName!~ODataErrorHandlingTests&FullyQualifiedName!~ODataV4ConformanceEndpointTests&FullyQualifiedName!~ODataLimitsEnforcementTests&FullyQualifiedName!~ODataExpansionBudgetRegressionTests",
       "paths": [
         "src/Honua.Core/Features/Validation/",
@@ -1185,8 +1235,7 @@
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataParquetFormatTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataQueryHandlerTests.cs",
         "tests/dotnet/Honua.TestKit/Helpers/ODataTestHelpers.cs"
-      ],
-      "_comment": "Catch-all for the OData test namespace. The FullyQualifiedName!~ exclusions mirror the OData Advanced and Filters, OData Pagination and Spatial, OData Errors and Mutations and OData Client Certification selectors, so a new OData test class runs here by default."
+      ]
     },
     {
       "name": "OData Advanced and Filters",
@@ -1273,6 +1322,34 @@
       ]
     },
     {
+      "name": "OData Mutations and Batch",
+      "shard_name": "OData Mutations and Batch",
+      "dispatch_rank": 11.7,
+      "artifact_suffix": "odata-mutations-batch",
+      "log_name": "server-tests-odata-mutations-batch",
+      "timeout_minutes": 30,
+      "test_timeout_minutes": 20,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj",
+      "_comment": "Owns fixture-backed OData write-path classes and remaining Server.Tests OData Services classes. Fixture-independent service classes moved to the OData Units assembly and shard; they retain their original namespaces.",
+      "filter": "FullyQualifiedName~ODataCrudEndpointTests|FullyQualifiedName~ODataCrudExceptionMappingTests|FullyQualifiedName~ODataDeltaTests|FullyQualifiedName~ODataETagConcurrencyTests|FullyQualifiedName~ODataGeometryCrudTests|FullyQualifiedName~ODataMultipartBatchTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.OData.Services",
+      "paths": [
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Hosting/Features/Services/",
+        "src/Honua.Protocols.OData/",
+        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataCrudEndpointTests.cs",
+        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataCrudExceptionMappingTests.cs",
+        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataDeltaTests.cs",
+        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataETagConcurrencyTests.cs",
+        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataGeometryCrudTests.cs",
+        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataMultipartBatchTests.cs",
+        "tests/dotnet/Honua.Protocols.OData.Tests/Source/Services/",
+        "tests/dotnet/Honua.TestKit/Helpers/ODataTestHelpers.cs"
+      ]
+    },
+    {
       "name": "OData Client Certification",
       "shard_name": "OData Client Certification",
       "dispatch_rank": 10.2,
@@ -1317,33 +1394,25 @@
       ]
     },
     {
-      "name": "OGC API Rendering Records and Tiles",
-      "shard_name": "OGC API Rendering Records and Tiles",
-      "dispatch_rank": 14.7,
-      "artifact_suffix": "ogc-api-rendering-records-and-tiles",
-      "log_name": "server-tests-ogc-api-rendering-records-and-tiles",
+      "name": "OGC API Maps Rendering and Records",
+      "shard_name": "OGC API Maps Rendering and Records",
+      "dispatch_rank": 6.8,
+      "artifact_suffix": "ogc-api-maps-rendering-records",
+      "log_name": "server-tests-ogc-api-maps-rendering-records",
       "timeout_minutes": 32,
       "test_timeout_minutes": 22,
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj",
-      "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Records)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsConformanceTests)|(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesEndpointTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesCrsTests)",
+      "_comment": "Capacity split #5006: Basic and Conformance took ~360s, the remaining Maps and Records ~407s in run 35164215061 attempt 2. Both retain the original 22m test / 32m job budgets. Maps paths select both children; the exact partition preserves all original classes, including future Maps/Records tests. See docs/internal/ci/shard-rebalance-5006.md.",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Records)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsConformanceTests",
       "paths": [
-        "src/Honua.Core/Features/Raster/",
         "src/Honua.Core/Features/Validation/",
-        "src/Honua.Protocols.OgcApi/Coverages/",
-        "src/Honua.Protocols.OgcApi/Edr/",
         "src/Honua.Protocols.OgcApi/Maps/",
-        "src/Honua.Protocols.OgcApi/Processes/",
         "src/Honua.Protocols.OgcApi/Records/",
-        "src/Honua.Protocols.OgcApi/Tiles/",
-        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Coverages/",
-        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Edr/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Maps/",
-        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Records/",
-        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Tiles/",
         "tests/dotnet/RedisCollection.cs"
       ]
     },
@@ -1378,18 +1447,43 @@
       ]
     },
     {
-      "name": "OGC Classic WMS",
-      "shard_name": "OGC Classic WMS",
-      "dispatch_rank": 12.8,
-      "artifact_suffix": "ogc-classic-wms",
-      "log_name": "server-tests-ogc-classic-wms",
+      "name": "OGC Classic Maps Core",
+      "shard_name": "OGC Classic Maps Core",
+      "dispatch_rank": 16.6,
+      "artifact_suffix": "ogc-classic-maps-core",
+      "log_name": "server-tests-ogc-classic-maps-core",
       "timeout_minutes": 30,
       "test_timeout_minutes": 20,
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms)",
+      "_comment": "Capacity split #6318: exact class/complement partition of the original Wms namespace. Runs the measured OgcClassicWmsTests class family. Original source triggers, test assembly, Tier exclusions, parallelism and 20m/30m budgets remain unchanged.",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms)&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests",
+      "paths": [
+        "src/Honua.Core/Features/Metadata/Domain/V2/",
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Protocols.GeoServices/MapServer/",
+        "src/Honua.Protocols.OgcClassic/Wms/",
+        "src/Honua.Server/Features/StaticMap/",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/MetadataV2LifecycleRoutingTests.cs",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/"
+      ]
+    },
+    {
+      "name": "OGC Classic Maps Supporting",
+      "shard_name": "OGC Classic Maps Supporting",
+      "dispatch_rank": 16.5,
+      "artifact_suffix": "ogc-classic-maps-supporting",
+      "log_name": "server-tests-ogc-classic-maps-supporting",
+      "timeout_minutes": 30,
+      "test_timeout_minutes": 20,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
+      "_comment": "Capacity split #6318: exact class/complement partition of the original Wms namespace. Retains every other Wms class, including rendered-raster, hidden-field, authorization, capabilities, exception-mapping, temporal, CRS and Mapsui coverage. Original source triggers, test assembly, Tier exclusions, parallelism and 20m/30m budgets remain unchanged.",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests",
       "paths": [
         "src/Honua.Core/Features/Metadata/Domain/V2/",
         "src/Honua.Core/Features/Validation/",
@@ -1423,7 +1517,7 @@
     {
       "name": "GeoServices MapServer",
       "shard_name": "GeoServices MapServer",
-      "dispatch_rank": 19.0,
+      "dispatch_rank": 21.0,
       "artifact_suffix": "geoservices-mapserver",
       "log_name": "server-tests-geoservices-mapserver",
       "timeout_minutes": 39,
@@ -1431,7 +1525,7 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerIdentifyEndpointTests",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests",
       "paths": [
         "src/Honua.Core/Features/Validation/",
         "src/Honua.Protocols.GeoServices/MapServer/",
@@ -1444,6 +1538,58 @@
         "tests/dotnet/Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs"
       ],
       "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+    },
+    {
+      "name": "GeoServices MapServer Export",
+      "shard_name": "GeoServices MapServer Export",
+      "dispatch_rank": 21.1,
+      "artifact_suffix": "geoservices-mapserver-export",
+      "log_name": "server-tests-geoservices-mapserver-export",
+      "timeout_minutes": 39,
+      "test_timeout_minutes": 29,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests",
+      "paths": [
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Protocols.GeoServices/MapServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerZarrTestFixture.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj",
+      "_comment": "Source class split for #4533. Preserves original 29-minute test and 39-minute job caps; complete measured timing verification remains required."
+    },
+    {
+      "name": "GeoServices MapServer Identify",
+      "shard_name": "GeoServices MapServer Identify",
+      "dispatch_rank": 21.2,
+      "artifact_suffix": "geoservices-mapserver-identify",
+      "log_name": "server-tests-geoservices-mapserver-identify",
+      "timeout_minutes": 39,
+      "test_timeout_minutes": 29,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerIdentifyEndpointTests",
+      "paths": [
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Protocols.GeoServices/MapServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerZarrTestFixture.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj",
+      "_comment": "Source class split for #4533. Preserves original 29-minute test and 39-minute job caps; complete measured timing verification remains required."
     },
     {
       "name": "GeoServices ImageServer",
@@ -1510,29 +1656,84 @@
       "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
     },
     {
-      "name": "GeoServices SOAP and MVT Tiles",
-      "shard_name": "GeoServices SOAP and MVT Tiles",
-      "dispatch_rank": 5.5,
-      "artifact_suffix": "geoservices-soap-and-mvt-tiles",
-      "log_name": "server-tests-geoservices-soap-and-mvt-tiles",
+      "name": "GeoServices GPServer SOAP",
+      "shard_name": "GeoServices GPServer SOAP",
+      "dispatch_rank": 12.81,
+      "artifact_suffix": "geoservices-gpserver-soap",
+      "log_name": "server-tests-geoservices-gpserver-soap",
       "timeout_minutes": 32,
       "test_timeout_minutes": 22,
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.GetJobStatus_)|(FullyQualifiedName~MvtTile&FullyQualifiedName!~Replica&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~CachingReplicaStoreTests&FullyQualifiedName!~DistributedReplicaStoreTests&FullyQualifiedName!~FeatureServerReplicationTests&FullyQualifiedName!~ReplicationDurabilityTests&FullyQualifiedName!~PostgresChangeTrackerTests)",
+      "_comment": "Prior passing TRX: 64 cases, 800.3 seconds summed test duration. Excludes only the GetJobStatus progress methods, whose 13 cases run in the progress sibling. Original test and job budgets, tier selection, CPU and affected paths are unchanged.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.GetJobStatus_",
+      "_paths_comment": "#2693: the canonical Routing feature belongs to the GPServer/NAServer operator slice. Its Honua.Server.Tests routing coverage is additionally owned by Core, while this shard runs the protocol-level NAServer tests. Unrelated future Honua.Routing areas remain under the unmapped-source fail-safe.",
       "paths": [
         "src/Honua.Core/Features/Validation/",
-        "src/Honua.Hosting/Features/Services/",
-        "src/Honua.Protocols.GeoServices/FeatureServer/",
         "src/Honua.Protocols.GeoServices/GPServer/",
         "src/Honua.Protocols.GeoServices/NAServer/",
         "src/Honua.Routing/Features/Routing/",
-        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileCacheTtlTests.cs",
-        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileDecodeTests.cs",
-        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileEndpointTests.cs",
-        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileErrorHandlingTests.cs",
-        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileTemporalEndpointTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerZarrTestFixture.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+    },
+    {
+      "name": "GeoServices GPServer SOAP Progress",
+      "shard_name": "GeoServices GPServer SOAP Progress",
+      "dispatch_rank": 12.82,
+      "artifact_suffix": "geoservices-gpserver-soap-progress",
+      "log_name": "server-tests-geoservices-gpserver-soap-progress",
+      "timeout_minutes": 32,
+      "test_timeout_minutes": 22,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "Prior passing TRX: 13 GetJobStatus progress cases, 469.5 seconds summed test duration. Theory rows remain together under their original methods. Original test and job budgets, tier selection, CPU and affected paths are unchanged.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.GetJobStatus_",
+      "_paths_comment": "#2693: the canonical Routing feature belongs to the GPServer/NAServer operator slice. Its Honua.Server.Tests routing coverage is additionally owned by Core, while this shard runs the protocol-level NAServer tests. Unrelated future Honua.Routing areas remain under the unmapped-source fail-safe.",
+      "paths": [
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Protocols.GeoServices/GPServer/",
+        "src/Honua.Protocols.GeoServices/NAServer/",
+        "src/Honua.Routing/Features/Routing/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerZarrTestFixture.cs",
+        "tests/dotnet/Shared/ProtocolUnits/GeoServices/PbfQueryFormatterTests.Shared.cs"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+    },
+    {
+      "name": "GeoServices GPServer Durable and Aliases",
+      "shard_name": "GeoServices GPServer Durable and Aliases",
+      "dispatch_rank": 12.83,
+      "artifact_suffix": "geoservices-gpserver-durable-aliases",
+      "log_name": "server-tests-geoservices-gpserver-durable-aliases",
+      "timeout_minutes": 32,
+      "test_timeout_minutes": 22,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "Prior passing TRX: 41 durable and alias cases, 993.4 seconds summed test duration. These stateful classes retain all original factories and assertions. Original test and job budgets, tier selection, CPU and affected paths are unchanged.",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests)",
+      "_paths_comment": "#2693: the canonical Routing feature belongs to the GPServer/NAServer operator slice. Its Honua.Server.Tests routing coverage is additionally owned by Core, while this shard runs the protocol-level NAServer tests. Unrelated future Honua.Routing areas remain under the unmapped-source fail-safe.",
+      "paths": [
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Protocols.GeoServices/GPServer/",
+        "src/Honua.Protocols.GeoServices/NAServer/",
+        "src/Honua.Routing/Features/Routing/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/",
         "tests/dotnet/RedisCollection.cs",
@@ -1957,7 +2158,7 @@
     {
       "name": "Scene",
       "shard_name": "Scene",
-      "dispatch_rank": 20.1,
+      "dispatch_rank": 24.6,
       "artifact_suffix": "scene",
       "log_name": "server-tests-scene",
       "timeout_minutes": 40,
@@ -1966,12 +2167,33 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.Scene.Tests/Honua.Protocols.Scene.Tests.csproj",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Scene",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Scene)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Scene.I3s",
       "paths": [
         "src/Honua.Protocols.Scene/",
         "src/Honua.Scene/",
         "tests/dotnet/Honua.Protocols.Scene.Tests/Source/"
-      ]
+      ],
+      "_comment": "Whole-class capacity split after run 38054987297 exhausted its 30m active-output budget. Retains the original Scene classes outside the I3s prefix; the complementary sibling preserves every I3S class. Both inherit the original paths and 30m test / 40m job caps."
+    },
+    {
+      "name": "Scene I3S Resources",
+      "shard_name": "Scene I3S Resources",
+      "dispatch_rank": 24.5,
+      "artifact_suffix": "scene-i3s-resources",
+      "log_name": "server-tests-scene-i3s-resources",
+      "timeout_minutes": 40,
+      "test_timeout_minutes": 30,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.Scene.Tests/Honua.Protocols.Scene.Tests.csproj",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Scene)&FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Scene.I3s",
+      "paths": [
+        "src/Honua.Protocols.Scene/",
+        "src/Honua.Scene/",
+        "tests/dotnet/Honua.Protocols.Scene.Tests/Source/"
+      ],
+      "_comment": "Complementary whole-class I3s-prefix half of Scene. The prior 8e58 successful TRX partitions into 66 I3S and 87 remaining cases; new I3S cases stay in this sibling automatically. Original paths, tier composition, CPU and 30m/40m budgets are unchanged."
     },
     {
       "name": "SensorThings",
@@ -3715,34 +3937,28 @@
       "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
     },
     {
-      "name": "OData Errors and Mutations",
-      "shard_name": "OData Errors and Mutations",
-      "dispatch_rank": 13.6,
-      "artifact_suffix": "odata-errors-and-mutations",
-      "log_name": "server-tests-odata-errors-and-mutations",
+      "name": "OData Errors and Conformance",
+      "shard_name": "OData Errors and Conformance",
+      "dispatch_rank": 7.4,
+      "artifact_suffix": "odata-errors-and-conformance",
+      "log_name": "server-tests-odata-errors-and-conformance",
       "timeout_minutes": 30,
       "test_timeout_minutes": 20,
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "(FullyQualifiedName~ODataErrorHandlingTests|FullyQualifiedName~ODataV4ConformanceEndpointTests|FullyQualifiedName~ODataLimitsEnforcementTests|FullyQualifiedName~ODataExpansionBudgetRegressionTests)|(FullyQualifiedName~ODataCrudEndpointTests|FullyQualifiedName~ODataCrudExceptionMappingTests|FullyQualifiedName~ODataDeltaTests|FullyQualifiedName~ODataETagConcurrencyTests|FullyQualifiedName~ODataGeometryCrudTests|FullyQualifiedName~ODataMultipartBatchTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.OData.Services)",
+      "_comment": "September 2026 shard-headroom rebalance (#3204), from the trunk-red run 34072577139 and the TRX artifacts of runs 34054772215 / 34058058911 / 34066674166 / 34072577139. Sizing is `scripts/ci/summarize-trx-class-intervals.py` union-of-intervals (startTime..endTime), which includes the fixture/collection setup that `duration` omits; the same measure predicted the #4455 STAC split's post-split wall to 7.1m against an actual 6.5-7.5m. Budgets are unchanged. Parent p90 was 26.0m of 29m (90%). ODataErrorHandlingTests (53 cases) with the conformance and limits classes is 7.4m of the parent's 25.7m union. New shard 7.4m of 20m (37%); residual OData Core 18.3m of 29m (63%).",
+      "filter": "FullyQualifiedName~ODataErrorHandlingTests|FullyQualifiedName~ODataV4ConformanceEndpointTests|FullyQualifiedName~ODataLimitsEnforcementTests|FullyQualifiedName~ODataExpansionBudgetRegressionTests",
       "paths": [
         "src/Honua.Core/Features/Validation/",
         "src/Honua.Hosting/Features/Services/",
         "src/Honua.Protocols.OData/",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataAdvancedOperationsTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataAuthorizationTests.cs",
-        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataCrudEndpointTests.cs",
-        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataCrudExceptionMappingTests.cs",
-        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataDeltaTests.cs",
-        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataETagConcurrencyTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataEndpointTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataErrorHandlingTests.cs",
-        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataGeometryCrudTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataLimitsEnforcementTests.cs",
-        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataMultipartBatchTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataQueryHandlerTests.cs",
-        "tests/dotnet/Honua.Protocols.OData.Tests/Source/Services/",
         "tests/dotnet/Honua.TestKit/Helpers/ODataTestHelpers.cs"
       ],
       "csproj": "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj"
@@ -3860,6 +4076,34 @@
         "tests/dotnet/Shared/SceneUnitSupport/SceneExecutorTestStubs.cs"
       ],
       "csproj": ""
+    },
+    {
+      "name": "OGC API Tiles Endpoints and CRS",
+      "shard_name": "OGC API Tiles Endpoints and CRS",
+      "dispatch_rank": 13.4,
+      "artifact_suffix": "ogc-api-tiles-endpoints-and-crs",
+      "log_name": "server-tests-ogc-api-tiles-endpoints-and-crs",
+      "timeout_minutes": 32,
+      "test_timeout_minutes": 22,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "September 2026 shard-headroom rebalance (#3204), from the trunk-red run 34072577139 and the TRX artifacts of runs 34054772215 / 34058058911 / 34066674166 / 34072577139. Sizing is `scripts/ci/summarize-trx-class-intervals.py` union-of-intervals (startTime..endTime), which includes the fixture/collection setup that `duration` omits; the same measure predicted the #4455 STAC split's post-split wall to 7.1m against an actual 6.5-7.5m. Budgets are unchanged. Parent p90 was 17.1m of 22m (78%). This shard is the most parallel of the set (summed/whole = 1.95), so a Processes-vs-Tiles cut was measured and REJECTED - either direction leaves the Tiles side at a 17.0m union (77%). Taking the two heaviest Tiles classes instead (OgcTilesEndpointTests 7.7m, OgcTilesCrsTests 4.8m) is the balanced cut, and matches the #4455 pattern: new shard 13.4m of 22m (61%), residual 13.5m of 22m (62%).",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesEndpointTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesCrsTests",
+      "paths": [
+        "src/Honua.Core/Features/Raster/",
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Protocols.OgcApi/Coverages/",
+        "src/Honua.Protocols.OgcApi/Edr/",
+        "src/Honua.Protocols.OgcApi/Processes/",
+        "src/Honua.Protocols.OgcApi/Tiles/",
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Coverages/",
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Edr/",
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/",
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Tiles/",
+        "tests/dotnet/RedisCollection.cs"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj"
     },
     {
       "name": "Elevation and Terrain Analysis",

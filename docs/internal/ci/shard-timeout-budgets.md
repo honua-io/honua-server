@@ -100,8 +100,7 @@ the shard's cap, no whole-class move reaches the target and the follow-up is to
 split the class in source. `Core Endpoints` remains in that state
 (`FeatureServerEndpointTests`, 24.6 min of a 32 min cap).
 
-The MapServer job layout in this section is superseded by the same-project consolidation below;
-the source-class split remains. `GeoServices MapServer` previously had the same floor: `MapServerEndpointTests`
+`GeoServices MapServer` previously had the same floor: `MapServerEndpointTests`
 occupied 22.9 min of a 29 min cap. Run 34150993948 subsequently exhausted that
 cap after 1743 seconds while still producing output (2 seconds idle), leaving
 no completed TRX. The source split in #4533 preserves its 123 test methods and
@@ -1363,8 +1362,7 @@ with 1,201 seconds elapsed and four seconds of idle time at exit, but no TRX.
 The 108 passed console records are partial execution, not a completed suite.
 The deliberately throwing exception-mapping provider near the end is not itself an assertion failure.
 
-The former matrix partitioned that entire legacy WMS namespace into the following children.
-The same-project consolidation below supersedes this job layout:
+The matrix partitions that entire legacy WMS namespace into the following children:
 
 - `OGC Classic Maps Core`: the measured `OgcClassicWmsTests` class family.
 - `OGC Classic Maps Supporting`: the exact complement, retaining temporal, bounds, CRS,
@@ -1448,41 +1446,43 @@ missing, overlapping or leaking ownership. Package, form and temporal source
 paths select their executing child within the unchanged six-family PR cap.
 
 
-## Same-project consolidation: 132 to 123 jobs
+## Same-project consolidation withdrawn after contention failures
 
-Seven groups of complete selectors now share jobs with the same project, inner and outer caps,
-CPU setting and report flags. The affected-path lists are unions of the original member paths.
-The following estimates sum each member's highest observed run-shard wall time from ordinary
-full runs [42524495976](https://github.com/honua-io/honua-server/actions/runs/42524495976),
+The proposed seven packs reduced the roster from 132 to 123 jobs. Ordinary full runs
+[42524495976](https://github.com/honua-io/honua-server/actions/runs/42524495976),
 [42518262877](https://github.com/honua-io/honua-server/actions/runs/42518262877) and
-[42532577743](https://github.com/honua-io/honua-server/actions/runs/42532577743).
+[42532577743](https://github.com/honua-io/honua-server/actions/runs/42532577743)
+provided three observations per former member. Summing each member's nearest-rank p90
+(the maximum of three samples) put every proposed pack below 70% utilization.
+That estimate did not predict execution under contention.
 
-| Job | Former members and highest observed wall time | Sum | Inner cap | Estimated utilization |
-| --- | --- | --- | --- | --- |
-| GeoServices Maintenance and Durable Jobs | FeatureServer Maintenance and Temporal: 452s; GeoServices GPServer Durable and Aliases: 381s; GeoServices GPServer SOAP Progress: 61s | 894s | 22m | 67.7% |
-| GeoServices SOAP and MVT Tiles | GeoServices GPServer SOAP: 211s; FeatureServer MVT Tiles: 116s | 327s | 22m | 24.8% |
-| OData Errors and Mutations | OData Errors and Conformance: 456s; OData Mutations and Batch: 361s | 817s | 20m | 68.1% |
-| OGC API Rendering Records and Tiles | OGC API Maps Rendering and Records: 566s; OGC API Tiles Endpoints and CRS: 316s | 882s | 22m | 66.8% |
-| OGC Classic WMS | OGC Classic Maps Core: 431s; OGC Classic Maps Supporting: 336s | 767s | 20m | 63.9% |
-| GeoServices MapServer | GeoServices MapServer Export: 467s; GeoServices MapServer Identify: 346s; GeoServices MapServer: 326s | 1139s | 29m | 65.5% |
-| Scene | Scene I3S Resources: 847s; Scene: 356s | 1203s | 30m | 66.8% |
+In integration batch [42561946615](https://github.com/honua-io/honua-server/actions/runs/42561946615)
+at source `67e5fd98106bef528a406c0ff994e647a8eb93dc`, both MapServer and Scene
+reached their unchanged inner caps while still producing output. The table audits all
+seven packs against a requirement that measured p90 use at most 70% of the inner cap
+(at least 30% headroom). Elapsed times below come from the actual test step, excluding
+queue, build and artifact time. Cancelled steps are censored observations, not completed
+samples and not valid inputs to a completion-time p90.
 
-This is a scheduling estimate, not hosted qualification or a claim that historical capacity
-exhaustion is fixed. The WMS, MapServer and Scene job splits described above are superseded.
-Their earlier capacity failures remain valid historical evidence. The newer samples place their
-summed maxima below the existing 70% planning target; they do not establish the cause of the
-improved timings, a long-term percentile or immunity to shared-runner contention. Main's ordinary
-integration batch must qualify the new layout with complete TRX, exit and timing receipts under
-the unchanged caps. If a combined job exhausts capacity, restore its former member jobs rather
-than raise the budget or remove tests.
+| Proposed pack | Historical member p90 sum | Inner cap | Historical utilization | Contended test-step observation | Decision |
+| --- | --- | --- | --- | --- | --- |
+| GeoServices Maintenance and Durable Jobs | 894s | 22m | 67.7% | Cancelled at 1095s; already 83.0% of cap | Restore three members |
+| GeoServices SOAP and MVT Tiles | 327s | 22m | 24.8% | Test step never started | Restore two members |
+| OData Errors and Mutations | 817s | 20m | 68.1% | Test step never started | Restore two members |
+| OGC API Rendering Records and Tiles | 882s | 22m | 66.8% | Cancelled at 818s; completion unknown | Restore two members |
+| OGC Classic WMS | 767s | 20m | 63.9% | Test step never started | Restore two members |
+| GeoServices MapServer | 1139s | 29m | 65.5% | Capacity exhausted at 1749s; still emitting output | Restore three members |
+| Scene | 1203s | 30m | 66.8% | Capacity exhausted at 1810s; still emitting output | Restore two members |
 
-Collection/fixture review for these groups found per-test-class fixtures in OgcApi and GeoServices;
-collections control serialization, and Maps and Tiles already share Database.OgcApiTiles.
-The selected classes introduce no shared environment-variable, AppContext or static mutable state.
-This reviews fixture compatibility for packing the complete existing selectors; it does not
-supply the planner's class-level regrouping map or authorize further regrouping. Summed member
-walls remain a conservative scheduling heuristic whose combined execution needs hosted proof.
+There is no completed contended sample for any pack, so no contended p90 or 30% margin
+can honestly be established. All seven packs are withdrawn rather than extrapolating
+new timeouts from incomplete observations. The canonical roster returns to **132 jobs**,
+with the exact former selectors, projects, paths, dispatch ranks, inner/outer budgets,
+CPU settings and report flags. Method-level SOAP progress ownership and the original
+WMS, MapServer and Scene partitions remain intact. No test is dropped, and no timeout
+is raised. Historical receipts retain the roster at their own source SHA.
 
-Method-level coverage retains the SOAP GetJobStatus_ split, checks each runnable method has
-exactly one owner in its partition, and pins execution contracts for all seven combined jobs.
-The canonical roster is 123 jobs; historical receipts retain the roster at their own source SHA.
+Issue #7170 remains open. Before reintroducing any pack, collect completed durations
+under representative contention, evaluate its completed-sample p90 against 70% of the
+proposed inner budget, and qualify it in main's ordinary integration batch. Historical
+member sums alone do not qualify a pack. The deeper 60-job consolidation remains parked.
