@@ -830,12 +830,10 @@ internal sealed partial class Wfs20Handler
             "http://schemas.opengis.net/wfs/2.0/wfs.xsd"
         };
 
-        if (selectedTypes.Count > 0)
+        foreach (var group in selectedTypes.GroupBy(descriptor => descriptor.NamespaceUri))
         {
-            var typeNames = string.Join(
-                ",",
-                selectedTypes.Select(descriptor => descriptor.LocalName));
-            values.Add(FeatureNamespaceUri);
+            var typeNames = string.Join(",", group.Select(descriptor => descriptor.QualifiedName));
+            values.Add(group.Key);
             values.Add(
                 $"{wfsUrl}?SERVICE=WFS&VERSION={Wfs20Utilities.Version}&REQUEST=DescribeFeatureType&TYPENAMES={Uri.EscapeDataString(typeNames)}");
         }
@@ -1268,11 +1266,11 @@ internal sealed partial class Wfs20Handler
             writer.WriteStartElement("wfs", "member", Wfs20Utilities.WfsNamespace);
         }
 
-        writer.WriteStartElement(FeatureNamespacePrefix, plan.Descriptor.LocalName, FeatureNamespaceUri);
+        writer.WriteStartElement(plan.Descriptor.NamespacePrefix, plan.Descriptor.LocalName, plan.Descriptor.NamespaceUri);
         if (!includeMemberWrapper)
         {
             writer.WriteAttributeString("xmlns", "gml", null, Wfs20Utilities.GmlNamespace);
-            writer.WriteAttributeString("xmlns", FeatureNamespacePrefix, null, FeatureNamespaceUri);
+            writer.WriteAttributeString("xmlns", plan.Descriptor.NamespacePrefix, null, plan.Descriptor.NamespaceUri);
             writer.WriteAttributeString("xmlns", "xsi", null, Wfs20Utilities.XsiNamespace);
         }
 
@@ -1289,12 +1287,12 @@ internal sealed partial class Wfs20Handler
         if (TryGetGmlIdentifierValue(feature.Attributes, out var gmlIdentifier, out var gmlIdentifierCodeSpace))
         {
             writer.WriteStartElement("gml", "identifier", Wfs20Utilities.GmlNamespace);
-            // codeSpace is mandatory on gml:CodeWithAuthorityType; fall back to the WFS namespace
-            // URI when a transaction supplied an identifier without an explicit authority so the
+            // codeSpace is mandatory on gml:CodeWithAuthorityType; use the feature namespace
+            // when a transaction supplied an identifier without an explicit authority so the
             // emitted GML stays schema-valid.
             writer.WriteAttributeString(
                 "codeSpace",
-                string.IsNullOrWhiteSpace(gmlIdentifierCodeSpace) ? FeatureNamespaceUri : gmlIdentifierCodeSpace);
+                string.IsNullOrWhiteSpace(gmlIdentifierCodeSpace) ? plan.Descriptor.NamespaceUri : gmlIdentifierCodeSpace);
             writer.WriteString(gmlIdentifier);
             writer.WriteEndElement();
         }
@@ -1310,9 +1308,9 @@ internal sealed partial class Wfs20Handler
             !string.IsNullOrWhiteSpace(feature.GeometryGml))
         {
             writer.WriteStartElement(
-                FeatureNamespacePrefix,
+                plan.Descriptor.NamespacePrefix,
                 XmlConvert.EncodeLocalName(geometryPropertyName),
-                FeatureNamespaceUri);
+                plan.Descriptor.NamespaceUri);
             writer.WriteRaw(RelabelCrs84SrsName(feature.GeometryGml, plan.Query, plan.RequestedSrsName));
             writer.WriteEndElement();
         }
@@ -1324,9 +1322,9 @@ internal sealed partial class Wfs20Handler
                 if (field.Nullable)
                 {
                     writer.WriteStartElement(
-                        FeatureNamespacePrefix,
+                        plan.Descriptor.NamespacePrefix,
                         XmlConvert.EncodeLocalName(field.Name),
-                        FeatureNamespaceUri);
+                        plan.Descriptor.NamespaceUri);
                     writer.WriteAttributeString("xsi", "nil", Wfs20Utilities.XsiNamespace, XmlConvert.ToString(true));
                     writer.WriteEndElement();
                 }
@@ -1335,9 +1333,9 @@ internal sealed partial class Wfs20Handler
             }
 
             writer.WriteStartElement(
-                FeatureNamespacePrefix,
+                plan.Descriptor.NamespacePrefix,
                 XmlConvert.EncodeLocalName(field.Name),
-                FeatureNamespaceUri);
+                plan.Descriptor.NamespaceUri);
             writer.WriteString(ConvertFieldValueToInvariantString(value, field));
             writer.WriteEndElement();
         }
