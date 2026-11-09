@@ -7,18 +7,21 @@ using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Publishing.Abstractions;
+using Honua.Core.Features.Publishing.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
 using NSubstitute;
 
-namespace Honua.Server.Tests.Features.Operations;
+namespace Honua.Server.Tests.Features.OperationsPublishing;
 
 public sealed class SynchronousPublishIdentityTests
 {
     private readonly ILayerPublishingService _publishing = Substitute.For<ILayerPublishingService>();
     private readonly IMetadataV2GraphProvider _graphs = Substitute.For<IMetadataV2GraphProvider>();
+    private readonly IPublishedServiceStore _promotions = Substitute.For<IPublishedServiceStore>();
     private readonly ServicePublishExecutor _executor;
 
     public SynchronousPublishIdentityTests()
@@ -36,7 +39,8 @@ public sealed class SynchronousPublishIdentityTests
                 MetadataRevision = 42,
             });
         _executor = new ServicePublishExecutor(
-            _publishing, Substitute.For<ISecureConnectionResolver>(), _graphs, TimeProvider.System);
+            _publishing, Substitute.For<ISecureConnectionResolver>(), _graphs, TimeProvider.System,
+            publishedServices: _promotions);
     }
 
     [Theory]
@@ -91,6 +95,33 @@ public sealed class SynchronousPublishIdentityTests
         handle.ResourceIds.Should().Contain("serviceName", "parcels").And.NotContainKey("serviceLayerIndex");
     }
 
+    [UnitTest]
+    public async Task SubmitAsync_ReturnedServiceHasPromotionCollision_WithholdsPublicIdentity()
+    {
+        _graphs.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(Graph("other-service", 9));
+        _promotions.FindByPublicIdAsync("parcels", Arg.Any<CancellationToken>())
+            .Returns(new PublishedServiceRecord
+            {
+                ServiceId = "parcels",
+                IntentId = "another-intent",
+                SourceKind = PublishSourceKind.ResultPackage,
+                SourceId = "another-package",
+                TargetKind = PublishTargetKind.FeatureService,
+                Status = PublishedServiceStatus.Active,
+                PublishedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            });
+
+        var handle = await SubmitAsync();
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+        handle.Result!.Details.Should().Contain("readbackStatus", "Unavailable");
+        handle.Result.Details.Should().NotContainKey("serviceName").And.NotContainKey("serviceLayerIndex");
+        handle.ResourceIds.Should().NotContainKey("serviceName").And.NotContainKey("serviceLayerIndex");
+        await _publishing.Received(1).PublishLayerAsync(
+            Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
+    }
+
     private Task<OperationHandle> SubmitAsync() => _executor.SubmitAsync(
         new OperationRequest
         {
@@ -113,7 +144,8 @@ public sealed class SynchronousPublishIdentityTests
             .AddStorageBinding("bind-parcels", "res-parcels", "public.parcels", storageLayerId: 321)
             .AddService("svc-parcels", serviceName)
             .AddPublication("pub-parcels", "svc-parcels", "res-parcels",
-                layerIndex: index, storageBindingId: "bind-parcels")
+                layerIndex: index, storageBindingId: "bind-parcels",
+                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
             .Build(),
         "\"newer-graph\"", DateTimeOffset.UtcNow);
 }

@@ -12,6 +12,7 @@ using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Security.Abstractions;
@@ -84,7 +85,8 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
             .AddStorageBinding("bind-parcels", "res-parcels", "public.parcels", storageLayerId: 321)
             .AddService("svc-parcels", "default")
             .AddPublication("pub-parcels", "svc-parcels", "res-parcels",
-                layerIndex: 3, storageBindingId: "bind-parcels")
+                layerIndex: 3, storageBindingId: "bind-parcels",
+                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
             .BuildProvider();
 
         _fixture
