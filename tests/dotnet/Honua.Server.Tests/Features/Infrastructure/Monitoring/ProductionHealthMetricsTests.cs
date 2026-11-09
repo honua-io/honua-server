@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Infrastructure.Monitoring;
 using Honua.Server.Features.HealthCheck;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -37,7 +38,7 @@ public sealed class ProductionHealthMetricsTests
         metrics.GetAlertConditions().Should().BeEmpty();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(0, 0, true)]
     [InlineData(0, 1, false)]
     [InlineData(7, 3, false)]
@@ -78,7 +79,7 @@ public sealed class ProductionHealthMetricsTests
         }
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(false, 0.0, true)]
     [InlineData(true, 0.0, false)]
     [InlineData(true, 0.7, false)]
@@ -94,7 +95,7 @@ public sealed class ProductionHealthMetricsTests
         metrics.GetAlertConditions().Should().HaveCount(expectedHealthy ? 0 : 1);
     }
 
-    [Fact]
+    [UnitTest]
     public void GetAlertConditions_NoCacheSamples_PreservesOtherAlerts()
     {
         var metrics = CreateHealthyMetrics();
