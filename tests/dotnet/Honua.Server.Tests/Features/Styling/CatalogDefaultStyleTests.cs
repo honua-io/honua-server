@@ -110,8 +110,10 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
             .Returns(Task.FromException<Honua.Core.Features.Styling.Domain.StyleCatalogRecord>(new InvalidOperationException("Catalog unavailable.")));
         var service = new LayerStyleService(layerStyles, NullLogger<LayerStyleService>.Instance, independentStyleCatalog: failing);
         var resource = _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[LayerId];
-        using var document = JsonDocument.Parse(CircleStyle("#00ff00"));
+        using var document = JsonDocument.Parse(CircleStyle("#00ff00").Replace("\"source\":\"features\",", string.Empty, StringComparison.Ordinal));
 
+        MapLibreStyleNormalizer.TryNormalize(document.RootElement, StyleLayerDescriptor.FromResource(resource, LayerId), out _, out _)
+            .Should().BeTrue("the catalog failure must be reached after style validation");
         var update = () => service.UpdateStyleAsync(resource, LayerId, document.RootElement, null);
 
         await update.Should().ThrowAsync<InvalidOperationException>();
