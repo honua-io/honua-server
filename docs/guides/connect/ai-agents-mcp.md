@@ -285,7 +285,7 @@ The curated prompts select the view that owns each stage. Dashboard authoring us
 
 | View | What an admin selects it for |
 |---|---|
-| `configure` | The closed admin roster (server status, API-key reads, connection/table/service discovery, connection create and test, import from URL, layer publish, access policy), job status and results, inline ingest, service publish, layer reads, style and render. Studio authoring and publication use `setup`. |
+| `configure` | The closed admin roster (server status, API-key reads, connection/table/service/folder discovery, connection create and test, import from URL, layer publish, access policy), job status and results, inline ingest, service publish, layer reads, style and render. Studio authoring and publication use `setup`. |
 | `operate` | Health, findings, events, alerts, platform-release status, deploy operations, and `honua_propose_finding`. |
 | `analyze` | Grounding, geocoding, layer reads, and the plan / validate / execute / job tools. A published-layer buffer is process `analytics.buffer-aggregate` (`layerId`). `geometry.buffer` accepts one WKB and does not read a published layer. |
 | `review` | Read-only package review (`review.v1`): `honua_validate_package` and `honua_preview_package`. Anonymous listing returns an empty tools array. These two descriptors are not on `setup`; together they exceed that view's 128 KiB aggregate ceiling. |

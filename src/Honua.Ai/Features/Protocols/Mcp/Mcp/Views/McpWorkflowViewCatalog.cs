@@ -228,6 +228,7 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_admin_connections_list"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_connection_tables_list"),
                     McpWorkflowViewMemberRule.Exact(PublishedOperationTool.ProjectName("admin.services.list")),
+                    McpWorkflowViewMemberRule.Exact(PublishedOperationTool.ProjectName("folder.list")),
                     McpWorkflowViewMemberRule.Exact("honua_admin_connections_create"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_connections_test"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_import_upload_object"),

@@ -30,7 +30,7 @@ public sealed partial class McpWorkflowViewTests
 
     private sealed class RequiredInputOriginAudit(HashSet<string> toolNames)
     {
-        private static readonly Regex SourceIntroduction = new(@"\bfrom\b|\bsource\s*:", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+        private static readonly Regex SourceIntroduction = new(@"\bfrom\b|\bsource\s*:|\breturned\s+by\b|\bwith\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
         private static readonly Regex ToolReference = new(@"\bhonua_[a-z0-9_]+\b", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
         public SortedSet<string> Missing { get; } = new(StringComparer.Ordinal);
         public HashSet<string> ProducerReferences { get; } = new(StringComparer.Ordinal);
@@ -78,7 +78,7 @@ public sealed partial class McpWorkflowViewTests
             var description = ReadDescription(schema);
             var references = FindReferences(description).ToArray();
             return references.All(toolNames.Contains)
-                && (description.Contains("caller", StringComparison.OrdinalIgnoreCase) || references.Length > 0);
+                && (description.Contains("caller", StringComparison.OrdinalIgnoreCase) || references.Length > 0 && SourceIntroduction.IsMatch(description));
         }
 
         private static IEnumerable<string> FindReferences(string description) =>
