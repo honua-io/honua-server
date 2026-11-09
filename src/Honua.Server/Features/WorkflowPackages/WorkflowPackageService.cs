@@ -937,6 +937,21 @@ internal sealed class WorkflowPackageService(
                 WorkflowPackageValidationResult.Failed(failures, version.PackageHash));
         }
 
+        foreach (var step in steps)
+        {
+            var inputKey = WorkflowOrchestrationEngine.FindDynamicCatalogIdentifier(step);
+            if (inputKey is not null)
+            {
+                throw new WorkflowPackageValidationException(WorkflowPackageValidationResult.Failed(
+                    [new WorkflowPackageValidationFailure
+                    {
+                        Code = "UNSUPPORTED_DYNAMIC_CATALOG_SCHEDULE",
+                        Message = WorkflowOrchestrationEngine.DynamicCatalogIdentifierMessage(step.StepId, inputKey),
+                        FieldPath = $"graph.nodes[{step.StepId}].parameters.{inputKey}"
+                    }], version.PackageHash));
+            }
+        }
+
         var now = clock.GetUtcNow();
         return new WorkflowDefinition
         {
@@ -967,12 +982,6 @@ internal sealed class WorkflowPackageService(
         for (var index = 0; index < definition.Steps.Count; index++)
         {
             var step = definition.Steps[index];
-            // Dynamic identifiers were authorized per item; manual run creation captures their individual bindings.
-            if (WorkflowOrchestrationEngine.FindDynamicCatalogIdentifier(step) is not null)
-            {
-                continue;
-            }
-
             var boundPlan = await geoprocessingJobService
                 .EnsurePlanExecutionTierAuthorizedAsync(step.Plan, principal, cancellationToken)
                 .ConfigureAwait(false);

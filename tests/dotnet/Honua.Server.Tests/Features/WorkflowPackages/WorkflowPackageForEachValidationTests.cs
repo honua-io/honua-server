@@ -75,24 +75,57 @@ public sealed partial class WorkflowPackageSchedulePublicationTests
     }
 
     [UnitTest]
-    public async Task PublishVersion_ForEachTypedInputs_AuthorizesConcreteItemsAndRetainsTemplate()
+    public async Task PublishVersion_ForEachTypedInputs_RejectsBackgroundDynamicLayer()
     {
         var harness = CreateForEachHarness(ProcessParameterValueType.LayerId, "layerId");
         var saved = await harness.Service.SavePackageAsync(
             new SaveWorkflowPackageRequest { Name = "Published fan-out", Graph = ForEachGraph("1", "2", "layerId") }, Author(), CancellationToken.None);
         var version = await harness.Service.CreateVersionAsync(saved.PackageId, Author(), CancellationToken.None);
 
-        var publication = await harness.Service.PublishVersionAsync(saved.PackageId, version.Version,
-            ScheduleRequest("typed-fan-out", true, true, "0 * * * *"), Author(), CancellationToken.None);
+        var exception = await Assert.ThrowsAsync<WorkflowPackageValidationException>(() =>
+            harness.Service.PublishVersionAsync(saved.PackageId, version.Version,
+                ScheduleRequest("typed-fan-out", true, true, "0 * * * *"), Author(), CancellationToken.None));
 
-        var definition = (await harness.Definitions.GetAsync(publication.WorkflowDefinitionId!))!;
-        var template = Assert.Single(definition.Steps);
-        Assert.Equal("echo", template.StepId);
-        Assert.Equal(new[] { "1", "2" }, template.ForEach!.Items);
-        Assert.Empty(WorkflowDefinitionValidator.Validate(definition));
-        var authorizedValues = harness.Authorized.SelectMany(plan => plan.Steps).Select(step => step.Inputs["layerId"]).ToArray();
-        Assert.DoesNotContain("${item}", authorizedValues);
-        Assert.Equal(new[] { "1", "2" }, authorizedValues.Distinct().Order());
+        Assert.Contains(exception.Result.Failures, failure => failure.Code == "UNSUPPORTED_DYNAMIC_CATALOG_SCHEDULE");
+        Assert.Null(await harness.Packages.GetPublicationAsync("typed-fan-out"));
+    }
+
+    [UnitTest]
+    public async Task CreateVersion_ForEachDataBinding_ValidatesConcreteInputsAndRemapsDependencies()
+    {
+        var harness = CreateForEachHarness(ProcessParameterValueType.WholeNumber, "value",
+            new ProcessParameterSpec { Name = "iteration", DisplayName = "Iteration", ValueType = ProcessParameterValueType.Text, Required = true, Description = "Iteration" });
+        var target = ForEachGraph("east", "west", "iteration").Nodes[0];
+        var upstream = target with
+        {
+            NodeId = "upstream",
+            ForEach = null,
+            Parameters = new Dictionary<string, string> { ["value"] = "1", ["iteration"] = "start" }
+        };
+        var graph = new WorkflowGraph
+        {
+            Nodes = [upstream, target, upstream with { NodeId = "downstream" }],
+            Edges =
+            [
+                new WorkflowEdge { SourceNodeId = "upstream", TargetNodeId = "echo", TargetPort = "value" },
+                new WorkflowEdge { SourceNodeId = "echo", TargetNodeId = "downstream", Kind = WorkflowEdgeKind.Control }
+            ]
+        };
+        var saved = await harness.Service.SavePackageAsync(
+            new SaveWorkflowPackageRequest { Name = "Bound fan-out", Graph = graph }, Author(), CancellationToken.None);
+
+        var version = await harness.Service.CreateVersionAsync(saved.PackageId, Author(), CancellationToken.None);
+
+        Assert.True(version.Validation.IsValid);
+        var steps = Assert.Single(harness.Validated).Steps;
+        Assert.Equal(new[] { "upstream", "echo::0", "echo::1", "downstream" }, steps.Select(step => step.StepId));
+        Assert.All(steps.Where(step => step.StepId.StartsWith("echo::", StringComparison.Ordinal)), step =>
+        {
+            Assert.Equal(new[] { "upstream" }, step.DependsOn);
+            Assert.Equal("artifact:0", step.Inputs["value"]);
+        });
+        Assert.Equal(new[] { "east", "west" }, steps.Where(step => step.StepId.StartsWith("echo::", StringComparison.Ordinal)).Select(step => step.Inputs["iteration"]));
+        Assert.Equal(new[] { "echo::0", "echo::1" }, steps.Single(step => step.StepId == "downstream").DependsOn);
     }
 
     [UnitTest]
@@ -101,10 +134,13 @@ public sealed partial class WorkflowPackageSchedulePublicationTests
         var harness = CreateForEachHarness(ProcessParameterValueType.WholeNumber, "value",
             new ProcessParameterSpec { Name = "layerId", DisplayName = "Layer", ValueType = ProcessParameterValueType.LayerId, Required = true, Description = "Static layer" });
         var graph = ForEachGraph("1", "2");
-        graph = graph with { Nodes = [graph.Nodes[0] with
+        graph = graph with
+        {
+            Nodes = [graph.Nodes[0] with
         {
             Parameters = new Dictionary<string, string>(graph.Nodes[0].Parameters) { ["layerId"] = "7" }
-        }] };
+        }]
+        };
         var saved = await harness.Service.SavePackageAsync(
             new SaveWorkflowPackageRequest { Name = "Static layer fan-out", Graph = graph }, Author(), CancellationToken.None);
         var version = await harness.Service.CreateVersionAsync(saved.PackageId, Author(), CancellationToken.None);
@@ -136,7 +172,10 @@ public sealed partial class WorkflowPackageSchedulePublicationTests
         var catalog = Substitute.For<IProcessCatalog>();
         catalog.GetProcess("test.echo").Returns(new ProcessDefinition
         {
-            ProcessId = "test.echo", Title = "Typed echo", Description = "Typed echo", Category = "test",
+            ProcessId = "test.echo",
+            Title = "Typed echo",
+            Description = "Typed echo",
+            Category = "test",
             Parameters = [new ProcessParameterSpec { Name = parameterName, DisplayName = "Value", ValueType = valueType, Required = true, Description = "Iteration value" }, .. additionalParameters],
             OutputArtifactKinds = [ArtifactKind.File]
         });
@@ -157,14 +196,17 @@ public sealed partial class WorkflowPackageSchedulePublicationTests
             var plan = call.Arg<AnalysisPlan>();
             authorized.Add(plan);
             Assert.Equal("author", call.Arg<ClaimsPrincipal>().Identity!.Name);
-            return Task.FromResult(plan with { Steps = plan.Steps.Select(step => step with
+            return Task.FromResult(plan with
             {
-                Inputs = new Dictionary<string, string>(step.Inputs)
+                Steps = plan.Steps.Select(step => step with
                 {
-                    ["authorized-value"] = step.Inputs[parameterName],
-                    ["authorized-layer"] = step.Inputs.GetValueOrDefault("layerId", "none")
-                }
-            }).ToArray() });
+                    Inputs = new Dictionary<string, string>(step.Inputs)
+                    {
+                        ["authorized-value"] = step.Inputs[parameterName],
+                        ["authorized-layer"] = step.Inputs.GetValueOrDefault("layerId", "none")
+                    }
+                }).ToArray()
+            });
         });
         var service = new WorkflowPackageService(packages, new EchoNodeRegistry(), jobs, TimeProvider.System,
             NullLogger<WorkflowPackageService>.Instance, definitions);

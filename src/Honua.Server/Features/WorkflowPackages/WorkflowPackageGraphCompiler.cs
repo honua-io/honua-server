@@ -82,16 +82,14 @@ internal static class WorkflowPackageGraphCompiler
         };
     }
 
-    public static HashSet<string> BuildDataBoundInputFieldPaths(WorkflowGraph graph, AnalysisPlan? plan = null)
+    public static HashSet<string> BuildDataBoundInputFieldPaths(WorkflowGraph graph, AnalysisPlan plan)
     {
         ArgumentNullException.ThrowIfNull(graph);
 
         var paths = new HashSet<string>(StringComparer.Ordinal);
+        var stepIds = plan.Steps.Select(step => step.StepId).ToArray();
         foreach (var edge in graph.Edges.Where(edge => edge.Kind == WorkflowEdgeKind.Data && !string.IsNullOrWhiteSpace(edge.TargetPort)))
         {
-            // The Where filter above already proves TargetPort is non-null/non-whitespace,
-            // but that narrowing doesn't flow across the LINQ call boundary into this body.
-            var stepIds = plan?.Steps.Select(step => step.StepId) ?? graph.Nodes.Select(node => node.NodeId);
             foreach (var stepId in stepIds.Where(stepId => stepId == edge.TargetNodeId
                 || stepId.StartsWith(edge.TargetNodeId + WorkflowDefinitionExpander.IterationSeparator, StringComparison.Ordinal)))
             {

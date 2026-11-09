@@ -148,6 +148,10 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                     && input.Value.Contains(forEach.ItemPlaceholder, StringComparison.Ordinal)).Key
             : null;
 
+    internal static string DynamicCatalogIdentifierMessage(string stepId, string inputKey)
+        => $"Step '{stepId}' supplies the catalog identifier '{inputKey}' from a ForEach item. "
+            + "Background triggers require a static catalog binding. Use a static identifier or run this workflow manually.";
+
     private static void RejectDynamicCatalogIdentifiers(WorkflowDefinition definition)
     {
         foreach (var step in definition.Steps.Where(step => step.ForEach is not null))
@@ -156,11 +160,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             if (inputKey is not null)
             {
                 throw new WorkflowDefinitionValidationException(
-                    $"Step '{step.StepId}' supplies the catalog identifier '{inputKey}' from a "
-                    + "ForEach item, which a background trigger cannot authorize: publication resolves "
-                    + "the publisher's access but cannot see the item value, and authorizing it at run "
-                    + "creation would use the orchestrator's admin authority. Use a static identifier, "
-                    + "or run this workflow manually.");
+                    DynamicCatalogIdentifierMessage(step.StepId, inputKey));
             }
         }
     }
