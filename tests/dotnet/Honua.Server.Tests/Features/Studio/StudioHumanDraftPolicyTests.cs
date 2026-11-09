@@ -72,6 +72,34 @@ public sealed class StudioHumanDraftPolicyTests
         initiation.Kind.Should().Be(expected);
     }
 
+    [UnitTheory]
+    [InlineData(null, null, OperationInitiationKind.Human)]
+    [InlineData("https://server.example", "same-origin", OperationInitiationKind.Human)]
+    [InlineData("https://server.example:443", "same-origin", OperationInitiationKind.Human)]
+    [InlineData("https://other.example", "same-site", OperationInitiationKind.Agent)]
+    [InlineData("https://server.example:8443", "same-site", OperationInitiationKind.Agent)]
+    [InlineData("http://server.example", "same-site", OperationInitiationKind.Agent)]
+    [InlineData("null", "same-site", OperationInitiationKind.Agent)]
+    [InlineData(null, "same-site", OperationInitiationKind.Agent)]
+    [InlineData("https://server.example", "cross-site", OperationInitiationKind.Agent)]
+    public async Task ResolveAsync_BrowserOrigin_RequiresTheExactTrustedAuthority(
+        string? origin, string? fetchSite, OperationInitiationKind expected)
+    {
+        using var host = new OperationHumanApprovalTestHost();
+        var human = await host.CreateHumanAsync();
+        host.ReviewRequest(human);
+        host.Context.Request.Scheme = "https";
+        host.Context.Request.Host = new HostString("server.example");
+        host.Context.Request.Path = "/api/v1/studio/package-drafts";
+        if (origin is not null) host.Context.Request.Headers.Origin = origin;
+        if (fetchSite is not null) host.Context.Request.Headers["Sec-Fetch-Site"] = fetchSite;
+        var resolver = new OperationInitiationResolver(new HttpContextAccessor { HttpContext = host.Context });
+
+        var initiation = await resolver.ResolveAsync(CancellationToken.None);
+
+        initiation.Kind.Should().Be(expected);
+    }
+
     private static Task<PolicyDecision> EvaluateAsync(
         string operationId, GuardrailTier tier = GuardrailTier.RequiresApproval,
         string source = "default-policy", string? action = null)
