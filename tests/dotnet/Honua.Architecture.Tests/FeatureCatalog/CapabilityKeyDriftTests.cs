@@ -34,7 +34,7 @@ public sealed class CapabilityKeyDriftTests
 
         missing.Should().BeEmpty(
             "every feature-catalog entry must resolve to a capability key via "
-            + "CapabilityRouteMapper; regenerate with scripts/generate-feature-catalog.sh "
+            + "CapabilityRouteMapper; regenerate with scripts/ci/generate-feature-catalog.sh "
             + "after adding a capability-route-mapping.v1.json rule for any new route.");
     }
 
@@ -194,7 +194,7 @@ public sealed class CapabilityKeyDriftTests
             entries.Should().NotBeEmpty();
             entries.Should().OnlyContain(entry => entry.Maturity == row.Maturity,
                 "every feature-catalog entry for '{0}' must carry the overridden tier '{1}'; "
-                + "regenerate with scripts/generate-feature-catalog.sh", row.Capability, row.Maturity);
+                + "regenerate with scripts/ci/generate-feature-catalog.sh", row.Capability, row.Maturity);
         }
     }
 

@@ -73,7 +73,7 @@ tracked under [honua-server#1018](https://github.com/honua-io/honua-server/issue
 
 - Endpoint group: `src/Honua.Server/Features/Import/GeoservicesImportEndpoints.cs`
 - Service implementation: `src/Honua.Db/Postgres/Features/Import/GeoservicesImportService.cs`
-- REST client: `src/Honua.Core/Features/Migration/Services/GeoServicesRestClient.cs`
+- REST client: `src/Honua.Core/Core/Features/Migration/Services/GeoServicesRestClient.cs`
 - URL validation: `src/Honua.Server/Features/Import/GeoservicesServiceUrlValidation.cs`
 - Inventory fixtures and baselines:
   `tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/Fixtures/ArcGis/`
@@ -102,7 +102,7 @@ PostGIS and verifies request/job artifacts do not persist token material.
 
 - Endpoint group: `src/Honua.Server/Features/Import/GeoServerImportEndpoints.cs`
 - Service implementation: `src/Honua.Db/Postgres/Features/Import/GeoServerImportService.cs`
-- REST client: `src/Honua.Core/Features/Import/Services/GeoServerRestClient.cs`
+- REST client: `src/Honua.Core/Core/Features/Import/Services/GeoServerRestClient.cs`
 - URL validation: `src/Honua.Server/Features/Import/GeoServerServiceUrlValidation.cs`
 - Inventory fixtures and baselines:
   `tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/Fixtures/GeoServer/`
@@ -141,7 +141,7 @@ import feature.
 ### Classic OGC WFS/WMS/WMTS Migration Planning
 
 - Operator endpoint: `src/Honua.Server/Features/Import/MigrationScannerEndpoints.cs`
-- Scanner implementation: `src/Honua.Core/Features/Import/Services/OgcServiceMigrationScanner.cs`
+- Scanner implementation: `src/Honua.Core/Core/Features/Import/Services/OgcServiceMigrationScanner.cs`
 - URL validation: `src/Honua.Server/Features/Import/OgcServiceUrlValidation.cs`
 - Focused coverage:
   `tests/dotnet/Honua.Core.Tests/Features/Import/OgcServiceMigrationScannerTests.cs`

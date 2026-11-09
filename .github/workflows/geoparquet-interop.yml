@@ -2,6 +2,7 @@ name: GeoParquet Interop Evidence
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches: [trunk]
     paths:
       - '.github/workflows/geoparquet-interop.yml'
@@ -12,11 +13,11 @@ on:
       - 'Directory.Packages.props'
       - 'NuGet.config'
       - 'src/Honua.Server/Honua.Server.csproj'
-      - 'src/Honua.Core/Features/Metadata/**'
-      - 'src/Honua.Core.Abstractions/Features/Metadata/**'
-      - 'src/Honua.Core/Features/Infrastructure/Crs/**'
-      - 'src/Honua.Protocols.OData/**'
-      - 'src/Honua.Protocols.GeoServices/FeatureServer/**'
+      - 'src/Honua.Core/Core/Features/Metadata/**'
+      - 'src/Honua.Core/Abstractions/Features/Metadata/**'
+      - 'src/Honua.Core/Core/Features/Infrastructure/Crs/**'
+      - 'src/Honua.Protocols/OData/**'
+      - 'src/Honua.Protocols/GeoServices/FeatureServer/**'
       - 'src/Honua.Import/Features/FileImport/**'
       - 'src/Honua.Db/Postgres/Features/FileImport/**'
       - 'src/Honua.Geometry/Features/FileImport/**'
@@ -34,7 +35,7 @@ on:
       - 'tests/dotnet/Honua.Server.Tests/Import/GeoParquetImportTests.cs'
       - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/GeoParquetSdkInteropConformanceTests.cs'
       - 'src/Honua.Hosting/Features/Services/GeoParquet*.cs'
-      - 'src/Honua.Core/Configuration/GeoParquetLimits.cs'
+      - 'src/Honua.Core/Core/Configuration/GeoParquetLimits.cs'
       - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/GeoParquetQueryFormatterTests.cs'
       - 'tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/FeatureServer/Services/QueryFormatterTests.cs'
       - 'tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Honua.Protocols.GeoServices.UnitTests.csproj'
@@ -58,6 +59,7 @@ env:
 
 jobs:
   evidence:
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     name: GeoParquet execution evidence
     runs-on: ubuntu-latest
     timeout-minutes: 35

@@ -8,7 +8,7 @@ name: Capability Label Sync
 #
 # Source of truth today: docs/gis/data/capability-categories.seed.json, a
 # small hand-committed seed derived from FeatureCatalog.Categories
-# (src/Honua.Core/Features/Licensing/Domain/FeatureCatalog.cs) plus a handful
+# (src/Honua.Core/Core/Features/Licensing/Domain/FeatureCatalog.cs) plus a handful
 # of obvious Community protocol-serving families that have no entitlement
 # key. TODO(#2893): once honua-server publishes the canonical
 # capability-keys.v1.json artifact, point `seed_path` at that artifact

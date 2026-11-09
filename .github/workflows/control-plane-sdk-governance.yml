@@ -22,7 +22,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: control-plane-sdk-governance-${{ github.ref }}
+  group: control-plane-sdk-governance-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:

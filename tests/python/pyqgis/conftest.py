@@ -32,6 +32,7 @@ from _pytest.reports import TestReport
 from shared import canonical_fixture
 from shared.postgis import PostGISFixture
 from shared.server import HonuaServer
+from shared.process_ports import server_port
 
 
 # ---------------------------------------------------------------------------
@@ -418,7 +419,7 @@ def pyqgis_runtime() -> Generator[PyQgisCompatibilityRuntime, None, None]:
     fixture.apply_sql_file(seed_path)
 
     worker_id = _get_worker_id()
-    port = int(os.getenv("HONUA_PYQGIS_PORT", str(DEFAULT_PORT))) + _get_worker_index(worker_id)
+    port = server_port("HONUA_PYQGIS_PORT", DEFAULT_PORT, _get_worker_index(worker_id))
     server = HonuaServer(
         connection_string=fixture.get_npgsql_connection_string(),
         port=port,
