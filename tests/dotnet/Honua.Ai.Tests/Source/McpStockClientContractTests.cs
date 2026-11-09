@@ -11,17 +11,18 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
 public sealed partial class McpWorkflowViewTests
 {
+    private static readonly string[] ServiceWriteOperations =
+    [
+        "admin.services.access-policy.set", "admin.services.layer-metadata.set",
+        "admin.services.protocols.set", "admin.services.timeinfo.set", "service.move"
+    ];
     [UnitTest]
     public async Task LiveWorkflowViews_ServiceWrites_ProvideReadOnlyServiceDiscovery()
     {
         var catalog = await LiveCatalogAsync();
         var sourceName = PublishedOperationTool.ProjectName("admin.services.list");
         catalog.Single(entry => entry.Descriptor.Name == sourceName).Descriptor.Annotations!.ReadOnlyHint.Should().BeTrue();
-        var consumers = new[]
-        {
-            "admin.services.access-policy.set", "admin.services.layer-metadata.set",
-            "admin.services.protocols.set", "admin.services.timeinfo.set", "service.move"
-        }.Select(PublishedOperationTool.ProjectName).ToHashSet(StringComparer.Ordinal);
+        var consumers = ServiceWriteOperations.Select(PublishedOperationTool.ProjectName).ToHashSet(StringComparer.Ordinal);
         foreach (var view in McpWorkflowViewCatalog.All.Values)
         {
             var members = McpWorkflowViewProjector.Project(view, catalog).Members;
