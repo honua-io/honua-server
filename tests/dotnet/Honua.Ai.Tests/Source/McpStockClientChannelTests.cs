@@ -58,22 +58,21 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests
         largestPayloadBytes.Should().BeGreaterThanOrEqualTo(1024, "successful live reads must exercise the former size-elision boundary");
     }
 
-    private WebAppFixture CreateStockFixture() => new WebAppFixture().UseKestrel().WithTestLicense(HonuaEdition.Pro)
-        .ConfigureWebHost(builder =>
-        {
-            builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
-            builder.UseSetting("HONUA_DEV_AUTH", "false");
-            builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-        })
-        .ConfigureServices(services =>
-        {
+    private WebAppFixture CreateStockFixture()
+    {
+        IConfiguration? hostConfiguration = null;
+        return new WebAppFixture().UseKestrel().WithTestLicense(HonuaEdition.Pro)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+                builder.ConfigureServices((context, _) => hostConfiguration = context.Configuration);
+            })
             // The test host adds its data provider after startup's conditional MCP registration.
-            var configurations = services.Where(service => service.ServiceType == typeof(IConfiguration)).ToArray();
-            Console.Error.WriteLine($"Stock fixture configuration descriptors={configurations.Length}, instances={configurations.Count(service => service.ImplementationInstance is not null)}, factories={configurations.Count(service => service.ImplementationFactory is not null)}");
-            var configuration = (IConfiguration)services.Single(service => service.ServiceType == typeof(IConfiguration)).ImplementationInstance!;
-            services.AddMcpDataAccessSurface(configuration);
-        });
+            .ConfigureServices(services => services.AddMcpDataAccessSurface(hostConfiguration!));
+    }
 
     private static bool IsSameJson(string text, JsonElement expected)
     {
