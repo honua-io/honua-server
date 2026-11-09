@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.Styling;
