@@ -768,18 +768,6 @@
       "rule": "layer-type",
       "line": "                publicationType: MetadataV2PublicationType.EsriFeatureLayer)",
       "reason": "Regression fixture uses the existing metadata graph publication type and discriminator. The approved C# and wire migration updates that canonical model separately; no public selector alias is added."
-    },
-    {
-      "path": "tests/python/unit/test_postgis_metadata_snapshot.py",
-      "rule": "layer-type",
-      "line": "                           if publication[\"publicationType\"] == \"stac-collection\")",
-      "reason": "Seed regression reads the current Metadata v2 wire key literally to verify the storage mapping and STAC declaration. Preserve that contract until the deferred vocabulary migration replaces it; no alternate key is introduced."
-    },
-    {
-      "path": "tests/python/unit/test_postgis_metadata_snapshot.py",
-      "rule": "dataset-reference",
-      "line": "        assert publication[\"resourceId\"] == resource[\"metadata\"][\"id\"]",
-      "reason": "Seed regression reads the current Metadata v2 wire key literally to verify the storage mapping and STAC declaration. Preserve that contract until the deferred vocabulary migration replaces it; no alternate key is introduced."
     }
   ]
 }

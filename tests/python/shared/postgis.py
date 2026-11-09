@@ -1298,9 +1298,6 @@ class PostGISFixture:
             image_storage_id = f"storage-image-layer-{layer_part}"
 
             geometry_type_token = self._metadata_v2_geometry_type(geometry_type)
-            resource_fields = fields_by_layer.get(row_layer_id, [])
-            primary_geometry_field = next((field["name"] for field in resource_fields
-                                           if "geometry.primary" in field["semanticRoles"]), None)
             feature_spatial = {
                 "spatialReference": {
                     "srid": srid,
@@ -1308,7 +1305,7 @@ class PostGISFixture:
                     "isGeographic": srid == 4326,
                 },
                 "geometryType": geometry_type_token,
-                "primaryGeometryField": primary_geometry_field,
+                "primaryGeometryField": "geometry",
                 "bbox": {
                     "west": west,
                     "south": south,
@@ -1332,7 +1329,7 @@ class PostGISFixture:
                 "type": "feature-dataset",
                 "storageBindingIds": [feature_storage_id],
                 "primaryStorageBindingId": feature_storage_id,
-                "schemaFields": resource_fields,
+                "schemaFields": fields_by_layer.get(row_layer_id, []),
                 # Attachment tests must reach storage, rather than the production
                 # capability refusal for resources that do not support attachments.
                 "editing": {"supportsAttachments": True},
