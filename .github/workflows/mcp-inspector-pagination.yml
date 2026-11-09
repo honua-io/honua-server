@@ -17,7 +17,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: mcp-inspector-pagination-${{ github.event.pull_request.number || github.ref }}
+  group: mcp-inspector-pagination-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:

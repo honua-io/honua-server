@@ -103,9 +103,28 @@ class PullRequestLoadTests(unittest.TestCase):
         self.assertIn("if (pr.draft)", job_scripts(parity["jobs"]["plan"]))
         self.assertIn("if (pr.draft)", job_scripts(claude["jobs"]["resolve"]))
         self.assertEqual(observer["jobs"]["producer"]["concurrency"]["cancel-in-progress"], "true")
-        admission = claude["jobs"]["review"]["concurrency"]
+        review = claude["jobs"]["review"]["concurrency"]
+        self.assertEqual(review["cancel-in-progress"], "false")
+        self.assertEqual(review["group"], "claude-review-${{ needs.resolve.outputs.pr }}-${{ needs.resolve.outputs.head }}")
+        admission = claude["jobs"]["resolve"]["concurrency"]
         self.assertEqual(admission["cancel-in-progress"], "true")
-        self.assertEqual(admission["group"], "claude-review-pr-${{ needs.resolve.outputs.pr }}")
+        self.assertIn("github.event.issue.number", admission["group"])
+
+    def test_new_concurrency_preserves_independent_non_pr_runs(self):
+        names = ("availability-evidence-contract.yml", "capacity-evidence-contract.yml",
+                 "close-external-prs.yml", "gp-customcode-runtime.yml", "gp-lifecycle-qualification.yml",
+                 "gp-qualification-harness-checks.yml", "mcp-inspector-pagination.yml", "release-bundle-tooling.yml")
+        for name in names:
+            with self.subTest(workflow=name):
+                group = workflow(name)["concurrency"]["group"]
+                self.assertIn("github.event.pull_request.number || github.run_id", group)
+                expression = group[group.index("${{"):]
+                manual = {"run_id": 123, "event": {"pull_request": {}}}
+                push = {"run_id": 124, "event": {"pull_request": {}}}
+                self.assertNotEqual(evaluate(expression, manual), evaluate(expression, push))
+                manual["event"]["pull_request"]["number"] = 42
+                push["event"]["pull_request"]["number"] = 42
+                self.assertEqual(evaluate(expression, manual), evaluate(expression, push))
 
 
 if __name__ == "__main__":
