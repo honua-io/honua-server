@@ -2,7 +2,7 @@
 
 /**
  * Decision and mutation logic for the trusted derived-artifact normalization
- * consumer (#3219).
+ * consumer.
  *
  * `planNormalizationMutation` is pure: the workflow supplies already-validated
  * envelope/plan data plus the exact-head facts it read through the GitHub API,
@@ -54,6 +54,43 @@ function isExactSha(value) {
 
 function isDigest(value) {
   return typeof value === 'string' && DIGEST_PATTERN.test(value);
+}
+
+function isWritableNormalizationBranch(policy) {
+  return policy && typeof policy.defaultBranch === 'string' && policy.defaultBranch.length > 0
+    && policy.headRef !== policy.defaultBranch
+    && !/^(?:releases?(?:\/|$)|(?:land|train)\/batch(?:\/|$))/.test(policy.headRef)
+    && policy.protected === false && policy.rulesCount === 0;
+}
+
+function verifyNormalizationIdentity({ run, pullRequest, repository, defaultBranch }) {
+  if (pullRequest.base?.repo?.full_name !== repository || pullRequest.base?.ref !== defaultBranch) {
+    throw new Error('Normalization requires the current canonical base.');
+  }
+  if (pullRequest.state !== 'open' || pullRequest.draft || pullRequest.head?.sha !== run.head_sha
+    || pullRequest.head?.ref !== run.head_branch
+    || pullRequest.head?.repo?.full_name !== run.head_repository?.full_name) {
+    throw new Error('Normalization producer and current PR identity differ.');
+  }
+}
+
+async function inspectNormalizationTarget({ octokit, repo, run, pullRequest }) {
+  const { data: repository } = await octokit.rest.repos.get(repo);
+  verifyNormalizationIdentity({
+    run, pullRequest, repository: `${repo.owner}/${repo.repo}`, defaultBranch: repository.default_branch,
+  });
+  const headRef = pullRequest.head.ref;
+  const policy = { headRef, defaultBranch: repository.default_branch, protected: true, rulesCount: null, writable: false };
+  if (pullRequest.head.repo.full_name !== `${repo.owner}/${repo.repo}`) return policy;
+  const { data: branch } = await octokit.rest.repos.getBranch({ ...repo, branch: headRef });
+  const { data: rules } = await octokit.request('GET /repos/{owner}/{repo}/rules/branches/{branch}', {
+    ...repo, branch: headRef,
+  });
+  if (!Array.isArray(rules)) throw new Error('Normalization branch policy is unreadable.');
+  policy.protected = branch.protected;
+  policy.rulesCount = rules.length;
+  policy.writable = isWritableNormalizationBranch(policy);
+  return policy;
 }
 
 /**
@@ -125,6 +162,7 @@ function planNormalizationMutation(input) {
     headCommit,
     changes,
     allowedPaths,
+    branchPolicy,
   } = input || {};
 
   if (!Array.isArray(allowedPaths) || allowedPaths.length === 0
@@ -170,6 +208,9 @@ function planNormalizationMutation(input) {
 
   if (sameRepository !== true) {
     return decision('skip', 'fork-read-only');
+  }
+  if (!isWritableNormalizationBranch(branchPolicy) || branchPolicy.headRef !== pullRequest.headRef) {
+    return decision('fail', 'branch-not-writable');
   }
   if (changes.length === 0) {
     return decision('skip', 'no-delta');
@@ -247,6 +288,9 @@ async function applyNormalizationMutation({
   const tree = await octokit.rest.git.createTree({
     ...repo, base_tree: headCommit.treeSha, tree: entries,
   });
+  if (tree.data.sha === headCommit.treeSha) {
+    return { commitSha: null, treeSha: tree.data.sha, paths: [], reviewRequested: false };
+  }
   const commit = await octokit.rest.git.createCommit({
     ...repo,
     message: buildNormalizationCommitMessage({
@@ -313,6 +357,7 @@ module.exports = {
   applyNormalizationMutation,
   buildNormalizationCommitMessage,
   isNormalizationReplay,
+  inspectNormalizationTarget,
   parseNormalizationTrailer,
   planNormalizationMutation,
   probeNormalizationCredential,
