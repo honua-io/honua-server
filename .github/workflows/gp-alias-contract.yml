@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [trunk]
     paths:
-      - 'src/Honua.Protocols.GeoServices/GPServer/GPServerEsriTaskAliases.cs'
+      - 'src/Honua.Protocols/GeoServices/GPServer/GPServerEsriTaskAliases.cs'
       - 'tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/GPServer/GPServerEsriTaskAliasesTests.cs'
       - 'tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/OgcProcessesEndpointsTests.cs'
       - 'docs/gis/data/geoservices-parity-judgment.json'

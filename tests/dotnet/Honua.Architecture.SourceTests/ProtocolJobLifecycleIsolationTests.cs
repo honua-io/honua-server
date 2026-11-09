@@ -33,8 +33,8 @@ public sealed class ProtocolJobLifecycleIsolationTests
         var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var adapterDirectories = new[]
         {
-            ArchitectureTestHelpers.CombinePath(root, "src", "Honua.Protocols.OgcApi", "Processes"),
-            ArchitectureTestHelpers.CombinePath(root, "src", "Honua.Protocols.GeoServices", "GPServer"),
+            ArchitectureTestHelpers.CombinePath(root, "src", "Honua.Protocols", "OgcApi", "Processes"),
+            ArchitectureTestHelpers.CombinePath(root, "src", "Honua.Protocols", "GeoServices", "GPServer"),
         };
 
         var violations = adapterDirectories
@@ -56,8 +56,8 @@ public sealed class ProtocolJobLifecycleIsolationTests
         var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var protocolProjects = new[]
         {
-            ArchitectureTestHelpers.CombinePath(root, "src", "Honua.Protocols.OgcApi", "Honua.Protocols.OgcApi.csproj"),
-            ArchitectureTestHelpers.CombinePath(root, "src", "Honua.Protocols.GeoServices", "Honua.Protocols.GeoServices.csproj"),
+            ArchitectureTestHelpers.CombinePath(root, "src", "Honua.Protocols", "OgcApi", "Honua.Protocols.OgcApi.csproj"),
+            ArchitectureTestHelpers.CombinePath(root, "src", "Honua.Protocols", "GeoServices", "Honua.Protocols.GeoServices.csproj"),
         };
 
         var violations = protocolProjects

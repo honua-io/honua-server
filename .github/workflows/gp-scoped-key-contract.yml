@@ -4,8 +4,8 @@ on:
   pull_request:
     branches: [trunk]
     paths:
-      - 'src/Honua.Geoprocessing/Features/Geoprocessing/**'
-      - 'src/Honua.Core/Features/ControlPlane/Domain/OperationModels.cs'
+      - 'src/Honua.Geoprocessing/Core/Features/Geoprocessing/**'
+      - 'src/Honua.Core/Core/Features/ControlPlane/Domain/OperationModels.cs'
       - 'src/Honua.Hosting/Features/Authentication/LayerScopedWriteKey.cs'
       - 'src/Honua.Hosting/Features/Authentication/ApiKeyAuthenticationHandler.cs'
       - 'src/Honua.Hosting/Features/Authentication/ScopedJob*.cs'
@@ -17,7 +17,7 @@ on:
       - 'tests/dotnet/Honua.Server.Tests/Features/Infrastructure/ControlPlane/CustomCodeArtifactIngestorTests.cs'
       - 'tests/dotnet/Honua.Server.Tests/Features/Infrastructure/ControlPlane/RedisStaleAttemptFencingIntegrationTests.cs'
       - 'tests/dotnet/Honua.StaleAttemptWorker/**'
-      - 'src/Honua.Protocols.GeoServices/GPServer/**'
+      - 'src/Honua.Protocols/GeoServices/GPServer/**'
       - 'tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/**'
       - 'tests/dotnet/Honua.TestKit.Postgres.Hosting/**'
       - 'tests/dotnet/Honua.Protocols.OgcApi.ComponentTests/OgcFeaturesClientDiscoveryTests.cs'
@@ -25,7 +25,7 @@ on:
       - 'tests/dotnet/Honua.Geoprocessing.UnitTests/**'
       - 'src/Honua.Db/Postgres/Features/Geoprocessing/**'
       - 'tests/dotnet/Honua.Db.Postgres.Tests/Features/Geoprocessing/**'
-      - 'src/Honua.Core/Features/Geoprocessing/**'
+      - 'src/Honua.Core/Core/Features/Geoprocessing/**'
       - 'src/Honua.Server/Migrations/132_IndexManagedWorkspaceStreamRetention.sql'
       - 'tests/dotnet/Honua.Server.Tests/Features/Eval/EvalHarnessTests.cs'
       - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/**'

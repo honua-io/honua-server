@@ -54,7 +54,7 @@ def report(*paths: str):
 
 class NativeImageImpactTests(unittest.TestCase):
     def test_server_project_change_selects_all_serving_variants_only(self) -> None:
-        result = report("src/Honua.Protocols.OData/Features/Query.cs")
+        result = report("src/Honua.Protocols/OData/Features/Query.cs")
         self.assertTrue(result["candidate"]["risk_classes"]["server_aot_compile"])
         self.assertEqual(
             result["candidate"]["serving_variants"],
@@ -63,7 +63,7 @@ class NativeImageImpactTests(unittest.TestCase):
         self.assertFalse(result["candidate"]["worker_build"])
 
     def test_shared_core_change_selects_serving_and_worker(self) -> None:
-        result = report("src/Honua.Core/Models/Resource.cs")
+        result = report("src/Honua.Core/Core/Models/Resource.cs")
         self.assertTrue(result["candidate"]["risk_classes"]["server_aot_compile"])
         self.assertTrue(result["candidate"]["risk_classes"]["worker_managed_graph"])
         self.assertTrue(result["candidate"]["worker_build"])
@@ -205,7 +205,7 @@ class NativeImageImpactTests(unittest.TestCase):
         result = report("src/Honua.Db/Oracle/OracleStore.cs")
         projects = result["graphs"]["serving"]["projects"]
         self.assertIn("src/Honua.Db/Oracle/Honua.Oracle.csproj", projects)
-        self.assertIn("src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj", projects)
+        self.assertIn("src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj", projects)
         self.assertTrue(result["candidate"]["risk_classes"]["server_aot_compile"])
 
     def test_invalid_or_escaping_project_reference_fails_closed(self) -> None:
@@ -265,7 +265,7 @@ class NativeImageImpactTests(unittest.TestCase):
                 MODULE.validate_observer_permissions(source)
 
     def test_report_is_explicitly_non_mutating(self) -> None:
-        result = report("src/Honua.Core/Models/Resource.cs")
+        result = report("src/Honua.Core/Core/Models/Resource.cs")
         encoded = json.dumps(result)
         self.assertEqual(result["mode"], "observe")
         self.assertEqual(result["mutation"], "none")
@@ -453,9 +453,9 @@ class ImageInputContentAddressTests(unittest.TestCase):
 
     def test_unsafe_selected_path_fails_closed(self) -> None:
         unsafe = dict(TREE)
-        unsafe["src/Honua.Core/we\\ird.cs"] = ("100644", "1" * 40)
+        unsafe["src/Honua.Core/Core/we\\ird.cs"] = ("100644", "1" * 40)
         selection = MODULE.image_input_selection(ROOT, POLICY, unsafe.keys(), normalized=True)
-        self.assertIn("src/Honua.Core/we\\ird.cs", selection["serving_generic"])
+        self.assertIn("src/Honua.Core/Core/we\\ird.cs", selection["serving_generic"])
         with self.assertRaises(MODULE.PolicyError):
             MODULE._content_digest(unsafe, selection["serving_generic"])
 
@@ -477,7 +477,7 @@ class ImageInputContentAddressTests(unittest.TestCase):
                 MODULE.parse_tree_output(value)
 
     def test_report_binds_the_tree_it_addressed(self) -> None:
-        result = report("src/Honua.Core/Models/Resource.cs")
+        result = report("src/Honua.Core/Core/Models/Resource.cs")
         self.assertEqual(result["image_input_digests"], IMAGE_INPUTS)
         self.assertEqual(result["image_input_tree"], "merge")
         self.assertEqual(result["image_input_tree_sha"], "9" * 40)
@@ -486,14 +486,14 @@ class ImageInputContentAddressTests(unittest.TestCase):
         for broken in ({}, {"serving_generic": "0" * 64}, dict(IMAGE_INPUTS, worker="short")):
             with self.subTest(broken=sorted(broken)), self.assertRaises(MODULE.PolicyError):
                 MODULE.evaluate(
-                    ROOT, POLICY, ["src/Honua.Core/Models/Resource.cs"],
+                    ROOT, POLICY, ["src/Honua.Core/Core/Models/Resource.cs"],
                     base_sha="base", head_sha="head",
                     image_input_tree="merge", image_input_tree_sha="9" * 40,
                     image_inputs=broken,
                 )
         with self.assertRaises(MODULE.PolicyError):
             MODULE.evaluate(
-                ROOT, POLICY, ["src/Honua.Core/Models/Resource.cs"],
+                ROOT, POLICY, ["src/Honua.Core/Core/Models/Resource.cs"],
                 base_sha="base", head_sha="head",
                 image_input_tree="worktree", image_input_tree_sha="9" * 40,
                 image_inputs=IMAGE_INPUTS,
