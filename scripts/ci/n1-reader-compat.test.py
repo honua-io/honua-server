@@ -217,7 +217,7 @@ class ReaderGuardLayout(unittest.TestCase):
 
             def repository_git(*arguments: str) -> str:
                 return subprocess.check_output(
-                    ["git", "-C", directory, *arguments], text=True).strip()
+                    ["git", "-c", "commit.gpgsign=false", "-C", directory, *arguments], text=True).strip()
 
             repository_git("init", "--quiet")
             repository_git("config", "user.name", "Mike McDougall")
