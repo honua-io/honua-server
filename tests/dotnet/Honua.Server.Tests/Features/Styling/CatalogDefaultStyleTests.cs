@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Styling.Abstractions;
@@ -47,26 +48,69 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
-    [InlineData("GetMap", "LAYERS=1&STYLES=&CRS=CRS:84&BBOX=-123,37,-122,38&WIDTH=256&HEIGHT=256")]
-    [InlineData("GetLegendGraphic", "LAYER=1&STYLE=default")]
+    [InlineData("/ogc/services/test/wms?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&FORMAT=image/png&LAYERS=1&STYLES=&CRS=CRS:84&BBOX=-123,37,-122,38&WIDTH=256&HEIGHT=256")]
+    [InlineData("/ogc/services/test/wms?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetLegendGraphic&FORMAT=image/png&LAYER=1&STYLE=default")]
+    [InlineData("/ogc/services/test/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&FORMAT=image/png&LAYER=1&STYLE=default&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0")]
+    [InlineData("/static/test/bbox/-123,37,-122,38/256x256.png?layers=1")]
     [Operation(Operations.Wms)]
     [InterfaceOperation(TestProtocols.Wms13, "GetMap")]
     [InterfaceOperation(TestProtocols.Wms13, "GetLegendGraphic")]
     [Endpoint("GET /ogc/services/{serviceId}/wms")]
-    public async Task Wms_CatalogDefault_RendersCatalogColor(string operation, string parameters)
+    [Endpoint("GET /ogc/services/{serviceId}/wmts")]
+    [InterfaceOperation(TestProtocols.Wmts10, "GetTile")]
+    [Endpoint("GET /static/{serviceId}/bbox/{bbox}/{dimensions}.{format}")]
+    public async Task Render_CatalogPromotionAndEdit_UsesCurrentCatalogColor(string path)
+    {
+        await _fixture.GetService<ILayerStyleCatalog>().SetMapLibreStyleAsync(LayerId, CircleStyle("#0000ff"));
+        using var initial = await _fixture.Client.GetAsync(path);
+        await AssertColorAsync(initial, SKColors.Blue);
+        var styleId = await AssociateStyleAsync("#ff0000");
+
+        using var promoted = await _fixture.Client.GetAsync(path);
+        await AssertColorAsync(promoted, SKColors.Red);
+        await _fixture.GetService<IStyleCatalog>().UpdateStyleAsync(styleId, CircleStyle("#00ff00"));
+        using var edited = await _fixture.Client.GetAsync(path);
+        await AssertColorAsync(edited, SKColors.Lime);
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.PrintingTools)]
+    [Operation(Operations.Print)]
+    [Endpoint("POST /rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute")]
+    public async Task Print_CatalogDefault_RendersCatalogColor()
     {
         await _fixture.GetService<ILayerStyleCatalog>().SetMapLibreStyleAsync(LayerId, CircleStyle("#0000ff"));
         await AssociateStyleAsync("#ff0000");
+        var webMap = JsonSerializer.Serialize(new
+        {
+            mapOptions = new
+            {
+                extent = new
+                {
+                    xmin = -123, ymin = 37, xmax = -122, ymax = 38,
+                    spatialReference = new { wkid = 4326 }
+                }
+            },
+            operationalLayers = new[] { new { url = $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/1" } },
+            exportOptions = new { dpi = 96, outputSize = new[] { 256, 256 } }
+        });
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["Web_Map_as_JSON"] = webMap, ["Format"] = "PNG32", ["Layout_Template"] = "MAP_ONLY"
+        });
 
-        using var response = await _fixture.Client.GetAsync(
-            $"/ogc/services/{WebAppFixture.TestServiceId}/wms?SERVICE=WMS&VERSION=1.3.0"
-            + $"&REQUEST={operation}&FORMAT=image/png&{parameters}");
+        using var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute", form);
 
+        await AssertColorAsync(response, SKColors.Red);
+    }
+
+    private static async Task AssertColorAsync(HttpResponseMessage response, SKColor color)
+    {
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var bitmap = SKBitmap.Decode(await response.Content.ReadAsByteArrayAsync());
         bitmap.Should().NotBeNull();
-        bitmap.Pixels.Should().Contain(pixel => pixel.Red > 200 && pixel.Green < 40 && pixel.Blue < 40);
-        bitmap.Pixels.Should().NotContain(pixel => pixel.Blue > 200 && pixel.Red < 40 && pixel.Green < 40);
+        bitmap.Pixels.Should().Contain(pixel => pixel.Red == color.Red && pixel.Green == color.Green && pixel.Blue == color.Blue);
     }
 
     private async Task<string> AssociateStyleAsync(string color)
