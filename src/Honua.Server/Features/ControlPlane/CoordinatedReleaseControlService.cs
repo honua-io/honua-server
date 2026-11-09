@@ -13,7 +13,8 @@ using Honua.Infrastructure.MultiTenancy;
 namespace Honua.ControlPlane;
 
 internal sealed partial class CoordinatedReleaseControlService(
-    IEnumerable<IWorkflowOperationStore> workflowStores)
+    IEnumerable<IWorkflowOperationStore> workflowStores,
+    OperationHumanApprovalAuthority? approvalAuthority = null)
 {
     private static readonly Regex UnsafeOperationIdCharacters = new("[^a-z0-9]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private readonly IWorkflowOperationStore? _workflowStore = workflowStores.FirstOrDefault();
@@ -117,18 +118,30 @@ internal sealed partial class CoordinatedReleaseControlService(
         }
 
         var context = operation.CoordinatedRelease;
-        var approver = string.IsNullOrWhiteSpace(requestedBy) ? context.GateApprovedBy : requestedBy;
+        var authority = approvalAuthority ?? throw new HumanApprovalRequiredException();
+        var actor = requestedBy ?? throw new HumanApprovalRequiredException();
+        var evidence = await authority.VerifyGateAsync(operation, gate,
+            new OperationProposalApprovalContext { ApprovedBy = actor, TenantId = operation.Audit.TenantId ?? string.Empty },
+            cancellationToken).ConfigureAwait(false);
         var updatedContext = gate switch
         {
-            CoordinatedReleaseStep.ContainerRollout => context with { ContainerGateApproved = true, GateApprovedBy = approver },
-            CoordinatedReleaseStep.MetadataAndSchema => context with { DataGateApproved = true, GateApprovedBy = approver },
+            CoordinatedReleaseStep.ContainerRollout => context with
+            {
+                ContainerGateApproved = true,
+                ContainerHumanApproval = evidence,
+                GateApprovedBy = evidence.ActorId,
+            },
+            CoordinatedReleaseStep.MetadataAndSchema => context with
+            {
+                DataGateApproved = true,
+                DataHumanApproval = evidence,
+                GateApprovedBy = evidence.ActorId,
+            },
             _ => throw new InvalidOperationException($"Coordinated release step '{gate}' is not an approvable gate.")
         };
 
         var updated = operation with
         {
-            // Returning to Reconciling lets the conductor re-enter and advance the now-approved gate.
-            // The original requester stays on the audit record; the approver is stored on the context.
             Status = WorkflowOperationStatus.Reconciling,
             UpdatedAt = DateTimeOffset.UtcNow,
             CurrentPhase = $"Operator approved the {gate} gate.",
@@ -144,7 +157,7 @@ internal sealed partial class CoordinatedReleaseControlService(
             throw new InvalidOperationException("The coordinated release changed while the gate was being approved.");
         }
 
-        return updated;
+        return updated with { Version = updated.Version + 1 };
     }
 
     public async Task<WorkflowOperationRecord?> RequestRollbackAsync(
@@ -293,7 +306,7 @@ internal sealed partial class CoordinatedReleaseControlService(
     {
         if (_workflowStore == null)
         {
-            throw new InvalidOperationException("Coordinated release operations require Redis-backed durable storage.");
+            throw new ServiceUnavailableException("Coordinated release operations require Redis-backed durable storage.");
         }
     }
 }

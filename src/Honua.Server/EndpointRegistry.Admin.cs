@@ -95,6 +95,7 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/metadata/coordinated-releases/operations"),
         new("GET", "/api/v1/admin/metadata/coordinated-releases/{packageId}/operation"),
         new("POST", "/api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approve/{gate}"),
+        new("GET", "/api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approval-review/{gate}"),
         new("POST", "/api/v1/admin/metadata/coordinated-releases/operations/{operationId}/rollback"),
         new("POST", "/api/v1/admin/metadata/prevalidate"),
         // GP process releases and bindings (honua-server#6221)
@@ -116,6 +117,7 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/platform-release/converge"),
         new("GET", "/api/v1/admin/proposals"),
         new("GET", "/api/v1/admin/proposals/{id}"),
+        new("GET", "/api/v1/admin/proposals/{id}/approval-review"),
         new("POST", "/api/v1/admin/proposals/{id}/approve"),
         new("POST", "/api/v1/admin/proposals/{id}/reject"),
         new("GET", "/api/v1/admin/services"),

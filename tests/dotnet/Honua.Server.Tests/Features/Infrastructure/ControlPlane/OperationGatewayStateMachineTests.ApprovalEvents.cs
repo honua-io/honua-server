@@ -29,20 +29,21 @@ public sealed partial class OperationGatewayStateMachineTests
     [Operation(Operations.TestInfrastructure)]
     public async Task ApplyApprovedProposal_ExecutionPending_ProposerReadsOneApprovalNamingApprover()
     {
-        var proposal = CreateProposal("p-approval-event", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval) with
-        {
-            RequestedBy = "proposing-agent"
-        };
+        var proposal = CanonicalOperationGatewayTestComposition.WithVersionedInitiation(
+            CreateProposal("p-approval-event", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval) with
+            {
+                RequestedBy = "proposing-agent"
+            });
         var audit = new RecordingAuditLog();
         var executor = new PendingApprovalExecutor();
         var gateway = BuildGateway(new InMemoryProposalStore(proposal), executor,
             configure: services => services.AddSingleton<IAuditLog>(audit));
-        var applying = gateway.ApplyApprovedProposalAsync(proposal.ProposalId, "human-approver");
+        var applying = gateway.ApplyApprovedProposalAsync(proposal.ProposalId, ApprovedBy("human-approver"));
         try
         {
             await executor.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
             await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                gateway.ApplyApprovedProposalAsync(proposal.ProposalId, "another-approver"));
+                gateway.ApplyApprovedProposalAsync(proposal.ProposalId, ApprovedBy("another-approver")));
             var principal = new ClaimsPrincipal(new ClaimsIdentity(
                 [new Claim(ClaimTypes.NameIdentifier, proposal.RequestedBy!)], "test"));
             var authorization = Substitute.For<IAuthorizationService>();
@@ -110,7 +111,7 @@ public sealed partial class OperationGatewayStateMachineTests
                 services.AddSingleton<IOperationInstanceStore>(instances);
             });
 
-        var result = await gateway.ApplyApprovedProposalAsync(proposal.ProposalId, "human-approver");
+        var result = await gateway.ApplyApprovedProposalAsync(proposal.ProposalId, ApprovedBy("human-approver"));
 
         Assert.Equal(OperationProposalStatus.Failed, result!.Status);
         var persisted = await store.GetAsync(proposal.ProposalId);
@@ -151,7 +152,7 @@ public sealed partial class OperationGatewayStateMachineTests
             });
 
         var error = await Record.ExceptionAsync(() =>
-            gateway.ApplyApprovedProposalAsync(proposal.ProposalId, "human-approver"));
+            gateway.ApplyApprovedProposalAsync(proposal.ProposalId, ApprovedBy("human-approver")));
 
         var persisted = await store.GetAsync(proposal.ProposalId);
         Assert.Equal(OperationProposalStatus.Failed, persisted!.Status);
@@ -162,6 +163,9 @@ public sealed partial class OperationGatewayStateMachineTests
             handle.Status == OperationHandleStatus.Failed && handle.ProposalId == proposal.ProposalId),
             Arg.Any<CancellationToken>());
     }
+
+    private static OperationProposalApprovalContext ApprovedBy(string approver) =>
+        new() { ApprovedBy = approver, TenantId = string.Empty };
 
     private static OperationHandle CreateApprovalHandle(OperationProposal proposal) => new()
     {

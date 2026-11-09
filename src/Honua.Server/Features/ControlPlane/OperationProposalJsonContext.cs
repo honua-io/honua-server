@@ -13,6 +13,8 @@ namespace Honua.ControlPlane;
 [JsonSerializable(typeof(OperationProposalPlan))]
 [JsonSerializable(typeof(OperationProposalAutonomyMetadata))]
 [JsonSerializable(typeof(OperationProposalEvidence))]
+[JsonSerializable(typeof(OperationInitiationEvidence))]
+[JsonSerializable(typeof(OperationHumanApprovalEvidence))]
 internal sealed partial class OperationProposalJsonContext : JsonSerializerContext
 {
 }

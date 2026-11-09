@@ -23,6 +23,7 @@ internal static class AdminInfoEndpoints
             ComponentVersionsDeclaration.Embedded.ContractVersions,
             ServedContractVersions.Current,
             ProtocolProfile.ExcludedContractNames);
+        ContractVersionsStartupCheck.ValidateApprovalSchemas(ComponentVersionsDeclaration.Embedded.SchemaVersions);
 
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin")
             .WithApiVersionSet()

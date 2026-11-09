@@ -17,17 +17,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Regression coverage for BH4-031: concurrent calls to
-/// <see cref="OperationGateway.ApplyApprovedProposalAsync(string,string,CancellationToken)"/> must execute the
-/// underlying operation exactly once, even when two callers both read
-/// <see cref="OperationProposalStatus.AwaitingApproval"/> before either claims.
-///
-/// The fix transitions the proposal from AwaitingApproval → Executing via an
-/// atomic CAS write (single-flight guard) before invoking the executor.  The
-/// caller that loses the CAS re-reads a non-AwaitingApproval status and throws
-/// rather than proceeding to execute.
-/// </summary>
 public sealed class OperationGatewayApprovalConcurrencyTests
 {
     // ── concurrent-claim tests ────────────────���───────────────────────────────
@@ -45,8 +34,8 @@ public sealed class OperationGatewayApprovalConcurrencyTests
         // call's outcome is captured independently (not into a shared success/failure variable
         // overwritten per iteration) so a real double-success or double-failure regression can
         // never be silently masked by one outcome overwriting the other.
-        var t1 = CaptureOutcomeAsync(() => sut.ApplyApprovedProposalAsync("p-concurrent", "admin-1"));
-        var t2 = CaptureOutcomeAsync(() => sut.ApplyApprovedProposalAsync("p-concurrent", "admin-2"));
+        var t1 = CaptureOutcomeAsync(() => sut.ApplyApprovedProposalAsync("p-concurrent", new OperationProposalApprovalContext { ApprovedBy = "admin-1", TenantId = string.Empty }));
+        var t2 = CaptureOutcomeAsync(() => sut.ApplyApprovedProposalAsync("p-concurrent", new OperationProposalApprovalContext { ApprovedBy = "admin-2", TenantId = string.Empty }));
         var outcomes = await Task.WhenAll(t1, t2);
 
         // Assert
@@ -57,12 +46,6 @@ public sealed class OperationGatewayApprovalConcurrencyTests
             .Should().BeOfType<InvalidOperationException>("the losing caller should throw rather than double-execute");
     }
 
-    /// <summary>
-    /// Runs <paramref name="action"/> on a thread-pool thread and captures its outcome as a
-    /// (Success, Failure) pair instead of letting an exception propagate. The broad catch here
-    /// is intentional: it captures whatever the concurrent call actually threw so the caller can
-    /// assert on its type, rather than swallowing a signal that would otherwise fail the test.
-    /// </summary>
     private static async Task<(OperationProposal? Success, Exception? Failure)> CaptureOutcomeAsync(
         Func<Task<OperationProposal?>> action)
     {
@@ -87,7 +70,7 @@ public sealed class OperationGatewayApprovalConcurrencyTests
         var executor = new RecordingExecutor(() => Interlocked.Increment(ref executorCallCount));
         var sut = BuildGateway(store, executor);
 
-        var act = () => sut.ApplyApprovedProposalAsync("p-executing", "admin");
+        var act = () => sut.ApplyApprovedProposalAsync("p-executing", new OperationProposalApprovalContext { ApprovedBy = "admin", TenantId = string.Empty });
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*Executing*cannot be approved*");
@@ -104,7 +87,7 @@ public sealed class OperationGatewayApprovalConcurrencyTests
         var executor = new RecordingExecutor(() => Interlocked.Increment(ref executorCallCount));
         var sut = BuildGateway(store, executor);
 
-        var act = () => sut.ApplyApprovedProposalAsync("p-submitted", "admin");
+        var act = () => sut.ApplyApprovedProposalAsync("p-submitted", new OperationProposalApprovalContext { ApprovedBy = "admin", TenantId = string.Empty });
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         executorCallCount.Should().Be(0, "an already-resolved proposal must not be executed again");
@@ -121,7 +104,7 @@ public sealed class OperationGatewayApprovalConcurrencyTests
         var sut = BuildGateway(store, new RecordingExecutor());
 
         // First call: approve
-        var result = await sut.ApplyApprovedProposalAsync("p-seq", "admin");
+        var result = await sut.ApplyApprovedProposalAsync("p-seq", new OperationProposalApprovalContext { ApprovedBy = "admin", TenantId = string.Empty });
         result.Should().NotBeNull();
         result!.Status.Should().Be(OperationProposalStatus.Submitted);
 
@@ -136,7 +119,7 @@ public sealed class OperationGatewayApprovalConcurrencyTests
     {
         var now = DateTimeOffset.UtcNow;
         var plan = new OperationProposalPlan { Summary = "test proposal" };
-        return new OperationProposal
+        return CanonicalOperationGatewayTestComposition.WithVersionedInitiation(new OperationProposal
         {
             ProposalId = proposalId,
             Kind = OperationClass.Deploy,
@@ -151,7 +134,7 @@ public sealed class OperationGatewayApprovalConcurrencyTests
             },
             CreatedAt = now,
             UpdatedAt = now,
-        };
+        });
     }
 
     private static OperationGateway BuildGateway(
@@ -165,9 +148,6 @@ public sealed class OperationGatewayApprovalConcurrencyTests
         return CanonicalOperationGatewayTestComposition.Build(store, ladder, executors);
     }
 
-    /// <summary>
-    /// Thread-safe in-memory proposal store with CAS semantics (matching Redis behaviour).
-    /// </summary>
     private sealed class InMemoryProposalStore(OperationProposal proposal) : IOperationProposalStore
     {
         private OperationProposal _proposal = proposal;
@@ -233,9 +213,6 @@ public sealed class OperationGatewayApprovalConcurrencyTests
             => Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Executor that records how many times it was called and invokes an optional callback.
-    /// </summary>
     private sealed class RecordingExecutor(Action? onExecute = null) : IOperationExecutor
     {
         public OperationClass OperationClass => OperationClass.Deploy;

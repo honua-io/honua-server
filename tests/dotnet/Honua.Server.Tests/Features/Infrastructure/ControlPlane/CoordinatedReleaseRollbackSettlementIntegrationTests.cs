@@ -297,7 +297,6 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
         CoordinatedReleaseReconciler reconciler,
         TransitionLedger ledger)
     {
-        var control = new CoordinatedReleaseControlService([(IWorkflowOperationStore)store]);
         for (var cycle = 0; cycle < 40; cycle++)
         {
             await reconciler.ReconcileCoordinatedReleaseAsync(operationId);
@@ -305,8 +304,8 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
             var operation = (await store.GetAsync(operationId))!;
             if (operation.Status == WorkflowOperationStatus.AwaitingApproval)
             {
-                await control.ApproveGateAsync(operationId, operation.CoordinatedRelease!.CurrentStep, "operator", "approved", default);
-                await ledger.CaptureAsync(store, operationId, $"approved-{operation.CoordinatedRelease.CurrentStep}");
+                await CoordinatedGateTestApproval.ApproveAsync(store, operation);
+                await ledger.CaptureAsync(store, operationId, $"approved-{operation.CoordinatedRelease!.CurrentStep}");
                 continue;
             }
 
@@ -681,8 +680,9 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
 
         public Task<bool> TrySetAsync(WorkflowOperationRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
         {
-            _operations[operation.OperationId] = operation;
-            return Task.FromResult(true);
+            if (!_operations.TryGetValue(operation.OperationId, out var current) || current.Version != operation.Version)
+                return Task.FromResult(false);
+            return Task.FromResult(_operations.TryUpdate(operation.OperationId, operation with { Version = operation.Version + 1 }, current));
         }
 
         public Task<IReadOnlyList<WorkflowOperationRecord>> ListActiveAsync(WorkflowOperationKind? kind = null, CancellationToken cancellationToken = default)

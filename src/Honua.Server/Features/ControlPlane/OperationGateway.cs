@@ -38,18 +38,20 @@ internal sealed partial class OperationGateway : IOperationGateway
     private readonly ILogger<OperationGateway> _logger;
     private readonly IOperationProposalEvidenceValidator? _evidenceValidator;
     private readonly OperationProposerApiKeyAuthority? _proposerKeyAuthority;
+    private readonly IOperationHumanApprovalVerifier? _humanApprovalVerifier;
+    private readonly OperationInitiationResolver? _initiationResolver;
 
     public OperationGateway(
         IGuardrailLadder ladder,
         IOperationProposalStore proposalStore,
-        IEnumerable<IOperationExecutor> executors,
         IServiceScopeFactory scopeFactory,
         IProposalNotifier notifier,
         ILogger<OperationGateway> logger,
         IOperationProposalEvidenceValidator? evidenceValidator = null,
-        OperationProposerApiKeyAuthority? proposerKeyAuthority = null)
+        OperationProposerApiKeyAuthority? proposerKeyAuthority = null,
+        IOperationHumanApprovalVerifier? humanApprovalVerifier = null,
+        OperationInitiationResolver? initiationResolver = null)
     {
-        ArgumentNullException.ThrowIfNull(executors);
         _ladder = ladder;
         _proposalStore = proposalStore;
         _scopeFactory = scopeFactory;
@@ -57,6 +59,8 @@ internal sealed partial class OperationGateway : IOperationGateway
         _logger = logger;
         _evidenceValidator = evidenceValidator;
         _proposerKeyAuthority = proposerKeyAuthority;
+        _humanApprovalVerifier = humanApprovalVerifier;
+        _initiationResolver = initiationResolver;
     }
 
     public async Task<OperationGatewayResult> RouteAsync(
@@ -231,34 +235,8 @@ internal sealed partial class OperationGateway : IOperationGateway
 
     public async Task<OperationProposal?> ApplyApprovedProposalAsync(
         string proposalId,
-        string approvedBy,
-        CancellationToken cancellationToken = default)
-        => await ApplyApprovedProposalCoreAsync(
-            proposalId,
-            new OperationProposalApprovalContext { ApprovedBy = approvedBy, TenantId = string.Empty },
-            hasApprovalContext: false,
-            cancellationToken).ConfigureAwait(false);
-
-    public async Task<OperationProposal?> ApplyApprovedProposalAsync(
-        string proposalId,
         OperationProposalApprovalContext approval,
         CancellationToken cancellationToken = default)
-        => await ApplyApprovedProposalCoreAsync(
-            proposalId,
-            approval,
-            hasApprovalContext: true,
-            cancellationToken).ConfigureAwait(false);
-
-    private static bool IsRequester(string? requestedBy, OperationProposalApprovalContext approval) =>
-        !string.IsNullOrWhiteSpace(requestedBy)
-        && (string.Equals(requestedBy, approval.ApprovedBy, StringComparison.OrdinalIgnoreCase)
-            || approval.ApproverIdentities.Contains(requestedBy, StringComparer.OrdinalIgnoreCase));
-
-    private async Task<OperationProposal?> ApplyApprovedProposalCoreAsync(
-        string proposalId,
-        OperationProposalApprovalContext approval,
-        bool hasApprovalContext,
-        CancellationToken cancellationToken)
     {
         var approvedBy = approval.ApprovedBy;
         var proposal = await _proposalStore.GetAsync(proposalId, cancellationToken).ConfigureAwait(false);
@@ -274,16 +252,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 $"Proposal '{proposalId}' is '{proposal.Status}' and cannot be approved.");
         }
 
-        // Separation of duties is enforced here as well as at the approval endpoint, so no
-        // approval entry point can execute a proposal on its own requester's say-so (#4901).
-        if (IsRequester(proposal.RequestedBy, approval))
-        {
-            await OperationApprovalDenialRecorder.RecordAsync(
-                _scopeFactory, proposal, approvedBy, OperationApprovalDenialReason.SelfApproval, cancellationToken)
-                .ConfigureAwait(false);
-            throw new InvalidOperationException(
-                "Separation of duties: the requester of a proposal cannot approve it.");
-        }
+        await VerifyHumanApprovalAsync(proposal, approval, cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -301,7 +270,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             if (proposal.Evidence is not null)
             {
-                if (!hasApprovalContext || _evidenceValidator is null)
+                if (_evidenceValidator is null)
                 {
                     throw new InvalidOperationException(
                         "Evidence-bound proposals require the authenticated approval validation boundary.");
@@ -323,7 +292,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         // Transitions AwaitingApproval → Executing via a CAS write: only one concurrent
         // caller wins this write; all others re-read a non-AwaitingApproval status and
         // throw, preventing double-execution of non-idempotent operations (BH4-031).
-        proposal = await ClaimForExecutionAsync(proposal, approvedBy, cancellationToken).ConfigureAwait(false);
+        proposal = await ClaimForExecutionAsync(proposal, approval, cancellationToken).ConfigureAwait(false);
 
         var request = RebuildRequest(proposal) with { ApprovedBy = approvedBy, ApprovedProposalId = proposal.ProposalId };
         string? executionOperationId = null;
@@ -759,6 +728,11 @@ internal sealed partial class OperationGateway : IOperationGateway
             UpdatedAt = now,
         };
 
+        proposal = proposal with
+        {
+            Initiation = await CreateInitiationEvidenceAsync(proposal, cancellationToken).ConfigureAwait(false),
+        };
+
         var created = await _proposalStore.TryCreateAsync(proposal, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
         if (!created)
@@ -996,60 +970,65 @@ internal sealed partial class OperationGateway : IOperationGateway
             $"Failed to persist resolution for proposal '{proposal.ProposalId}' after repeated version conflicts.");
     }
 
+    private async Task<OperationInitiationEvidence> CreateInitiationEvidenceAsync(
+        OperationProposal proposal, CancellationToken cancellationToken)
+    {
+        var initiation = _initiationResolver is null
+            ? (Kind: OperationInitiationKind.Unknown, Channel: OperationInitiationChannel.Unknown)
+            : await _initiationResolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
+        return new OperationInitiationEvidence
+        {
+            Version = OperationInitiationEvidence.CurrentVersion,
+            Kind = initiation.Kind,
+            Channel = initiation.Channel,
+            PrincipalId = proposal.RequestedBy,
+            TenantId = proposal.TenantId,
+            PlanHash = proposal.SealedPlanHash!,
+            PolicyRevision = ComputePolicyRevision(proposal.GuardrailDecision!),
+            AcceptedAt = proposal.CreatedAt,
+        };
+    }
+
+    private async Task<OperationHumanApprovalEvidence> VerifyHumanApprovalAsync(
+        OperationProposal proposal, OperationProposalApprovalContext approval, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (_humanApprovalVerifier is null) throw new HumanApprovalRequiredException();
+            return await _humanApprovalVerifier.VerifyAsync(proposal, approval, cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException exception) when (exception is not ServiceUnavailableException)
+        {
+            await OperationApprovalDenialRecorder.RecordAsync(_scopeFactory, proposal, approval.ApprovedBy,
+                OperationApprovalDenialReason.HumanSessionRequired, cancellationToken).ConfigureAwait(false);
+            throw;
+        }
+    }
+
     // The claim is a compare-and-swap, and a lost claim throws instead of double-applying the proposal.
     private async Task<OperationProposal> ClaimForExecutionAsync(
         OperationProposal proposal,
-        string approvedBy,
+        OperationProposalApprovalContext approval,
         CancellationToken cancellationToken)
     {
-        for (var attempt = 0; attempt < 3; attempt++)
+        // Revalidate expiry after proposer evidence work, before attempting the exact reviewed version.
+        var humanApproval = await VerifyHumanApprovalAsync(proposal, approval, cancellationToken).ConfigureAwait(false);
+        var payload = proposal.Kind == OperationClass.Deploy
+            ? Honua.ControlPlane.Executors.DeployExecutionPayload.Parse(proposal.Plan.ExecutionPayload)
+            : null;
+        var claiming = proposal with
         {
-            var payload = proposal.Kind == OperationClass.Deploy
-                ? Honua.ControlPlane.Executors.DeployExecutionPayload.Parse(proposal.Plan.ExecutionPayload)
-                : null;
-            var restoreId = proposal.Kind == OperationClass.Deploy && payload is not null
-                ? DurableRestoreQueue.CreateId()
-                : proposal.ExecutionOperationId;
-            var claiming = proposal with
-            {
-                Status = OperationProposalStatus.Executing,
-                ResolvedBy = approvedBy,
-                ExecutionOperationId = restoreId
-            };
-            if (await _proposalStore.TrySetAsync(claiming, cancellationToken: cancellationToken)
-                    .ConfigureAwait(false))
-            {
-                // TrySetAsync stores version+1 internally; return a record whose Version
-                // reflects the new stored value so PersistResolutionAsync uses the correct
-                // token for its subsequent CAS write.
-                return claiming with { Version = proposal.Version + 1 };
-            }
-
-            // CAS failed — re-read to find out why.
-            var latest = await _proposalStore.GetAsync(proposal.ProposalId, cancellationToken)
-                .ConfigureAwait(false);
-            if (latest == null)
-            {
-                throw new InvalidOperationException(
-                    $"Proposal '{proposal.ProposalId}' disappeared while claiming for execution.");
-            }
-
-            if (latest.Status != OperationProposalStatus.AwaitingApproval)
-            {
-                // Another concurrent caller already claimed (Executing) or fully resolved
-                // this proposal. Do not proceed to execute the operation a second time.
-                throw new InvalidOperationException(
-                    $"Proposal '{proposal.ProposalId}' is '{latest.Status}' — it was claimed or " +
-                    "resolved concurrently; this call will not execute the operation again.");
-            }
-
-            // Status is still AwaitingApproval but the version advanced (e.g. a
-            // notification write bumped the record). Refresh the version and retry.
-            proposal = latest;
-        }
+            Status = OperationProposalStatus.Executing,
+            ResolvedBy = humanApproval.ActorId,
+            HumanApproval = humanApproval,
+            ExecutionOperationId = proposal.Kind == OperationClass.Deploy && payload is not null
+                ? DurableRestoreQueue.CreateId() : proposal.ExecutionOperationId,
+        };
+        if (await _proposalStore.TrySetAsync(claiming, cancellationToken: cancellationToken).ConfigureAwait(false))
+            return claiming with { Version = proposal.Version + 1 };
 
         throw new InvalidOperationException(
-            $"Failed to claim proposal '{proposal.ProposalId}' for execution after repeated version conflicts.");
+            "The proposal changed while approval was being claimed. Reopen its review before approving again.");
     }
 
     private async Task CompensateClaimedProposalAsync(

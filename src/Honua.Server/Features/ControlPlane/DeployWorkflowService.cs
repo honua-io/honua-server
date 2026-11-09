@@ -39,6 +39,7 @@ internal sealed partial class DeployWorkflowService
     private readonly IOptionsMonitor<ControlPlaneOptions>? _controlPlaneOptions;
     private readonly IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>? _tenantOptions;
     private readonly IOptions<RestoreCellOptions>? _restoreOptions;
+    private readonly IOperationProposalStore? _proposalStore;
 
     public DeployWorkflowService(
         IDeployTargetRegistry targetRegistry,
@@ -48,11 +49,13 @@ internal sealed partial class DeployWorkflowService
         ILogger<DeployWorkflowService> logger,
         IOptionsMonitor<ControlPlaneOptions>? controlPlaneOptions = null,
         IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>? tenantOptions = null,
-        IOptions<RestoreCellOptions>? restoreOptions = null)
+        IOptions<RestoreCellOptions>? restoreOptions = null,
+        IOperationProposalStore? proposalStore = null)
     {
         _controlPlaneOptions = controlPlaneOptions;
         _tenantOptions = tenantOptions;
         _restoreOptions = restoreOptions;
+        _proposalStore = proposalStore;
         _targetRegistry = targetRegistry;
         _workflowStore = workflowStores.FirstOrDefault();
         _backends = backends.ToDictionary(
@@ -547,15 +550,14 @@ internal sealed partial class DeployWorkflowService
         string? requestedBy,
         string? reason,
         CancellationToken cancellationToken = default)
-        => SubmitWithRestoreAsync(operationId, requestedBy, reason, restoreOwnerId: null, cancellationToken);
+        => SubmitCoreAsync(new DeploySubmission(operationId, requestedBy, reason, null), null, cancellationToken);
 
-    internal async Task<WorkflowOperationRecord?> SubmitWithRestoreAsync(
-        string operationId,
-        string? requestedBy,
-        string? reason,
-        string? restoreOwnerId,
-        CancellationToken cancellationToken)
+    private sealed record DeploySubmission(string OperationId, string? ActorId, string? Reason, string? RestoreOwnerId);
+
+    private async Task<WorkflowOperationRecord?> SubmitCoreAsync(
+        DeploySubmission submission, OperationProposal? approvedProposal, CancellationToken cancellationToken)
     {
+        var (operationId, requestedBy, reason, restoreOwnerId) = submission;
         EnsureDurableStoreConfigured();
         await using var admission = RestoreAdmissionEnabled
             ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, restoreOwnerId, false, cancellationToken, _logger).ConfigureAwait(false)
@@ -630,9 +632,8 @@ internal sealed partial class DeployWorkflowService
         var audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason);
         if (operation.Deploy.TargetKind == DeployTargetKind.LocalCompose)
         {
-            // Checked before the claim so a same-principal submit cannot change the Compose project.
             if (string.IsNullOrWhiteSpace(requestedBy) ||
-                string.Equals(requestedBy, operation.Audit.RequestedBy, StringComparison.OrdinalIgnoreCase))
+                (approvedProposal is null && string.Equals(requestedBy, operation.Audit.RequestedBy, StringComparison.OrdinalIgnoreCase)))
             {
                 throw new ResourceConflictException(
                     "Separation of duties: a different principal must submit this Compose operation.");
@@ -670,18 +671,18 @@ internal sealed partial class DeployWorkflowService
 
         try
         {
-            var submission = await backend.StartAsync(preliminary, cancellationToken).ConfigureAwait(false);
+            var backendSubmission = await backend.StartAsync(preliminary, cancellationToken).ConfigureAwait(false);
             var updated = preliminary with
             {
-                Status = submission.Status,
+                Status = backendSubmission.Status,
                 UpdatedAt = DateTimeOffset.UtcNow,
-                ProviderOperationId = submission.ProviderOperationId,
-                CurrentPhase = submission.Message ?? "Submitted to deploy backend",
+                ProviderOperationId = backendSubmission.ProviderOperationId,
+                CurrentPhase = backendSubmission.Message ?? "Submitted to deploy backend",
                 ErrorMessage = null,
                 Deploy = operation.Deploy with
                 {
-                    CurrentRevision = submission.ObservedRevision ?? operation.Deploy.CurrentRevision,
-                    TrafficExposedAt = StampTrafficExposure(operation.Deploy.TrafficExposedAt, submission.Status)
+                    CurrentRevision = backendSubmission.ObservedRevision ?? operation.Deploy.CurrentRevision,
+                    TrafficExposedAt = StampTrafficExposure(operation.Deploy.TrafficExposedAt, backendSubmission.Status)
                 }
             };
 

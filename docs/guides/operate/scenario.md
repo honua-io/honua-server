@@ -10,7 +10,8 @@ Follow one deployment/readiness failure through the bounded loop:
 `observe → diagnose → sealed proposal → separate approval → stage → validate → activate → observe → complete or restore and verify`
 
 The server owns evidence and governed operations. The terminal DevOps client
-owns the model session. Console is an optional independent inspector/approver.
+owns the model session. Console provides the separate verified human review flow;
+terminal and MCP clients cannot approve with an API key or bearer token.
 The infrastructure control plane provisions the placement; the server control
 plane configures resources and governs registered operations.
 
@@ -47,12 +48,12 @@ handoff. Record release ID, image digest, architecture, endpoint, deployment
 target/backend ID, installed CLI/MCP versions and integrity hashes. Do not
 substitute a floating image tag or manufacture a candidate from trunk.
 
-Create separate proposer and approver profiles backed by different principals.
-The observation seat needs `ops:read`; proposal authority must be scoped to
-its target operation. The human approver needs the appropriate approval grant
-(`admin:approve` for API keys) and read authority. Never pass the approver
-credential to the model. Profile names alone do not establish separation of
-duties: retain the server-resolved principal IDs.
+Scope the proposer credential to its target operation; the observation seat needs
+`ops:read`. Approval requires one authorized human with read and approval authority
+in the original Server's verified OIDC session, using Console's private review
+flow. The requester may approve. API keys, operator bearers and MCP tokens cannot
+approve. Never pass the private human session or review capability to the model.
+Retain the server-resolved requester and approver identities.
 
 Use the MCP product workflow below with the verified endpoint and a
 secret-backed read profile. For REST/Admin API inspection, the same server
@@ -206,15 +207,14 @@ proposal unapproved: this candidate has not established the protected path.
 Show that limitation plainly to the user. A plan response cannot repair a
 missing prior identity in a sealed finding proposal.
 
-Only after those checks, the separate human reviews the sealed target, diff,
-risk, policy, scope and evidence before running:
+Only after those checks, one authorized human signs in to the original Server
+through Console and opens that proposal in the approval inbox. Review the exact
+version, sealed target, diff, risk, policy, scope and evidence before approving.
+The requester may perform this step. The private OIDC session and one-use review
+capability authorize the decision; a CLI confirmation or API key does not.
 
-```powershell
-honua admin operate approveOperationProposal --path "id=$proposalId" --profile approver --yes
-```
-
-REST maps these commands to `GET /api/v1/admin/proposals/{id}` and
-`POST /api/v1/admin/proposals/{id}/approve` (no approval request body).
+The proposal read maps to `GET /api/v1/admin/proposals/{id}`. The private approval
+flow uses `POST /api/v1/admin/proposals/{id}/approve` with no request body.
 The proposer then polls the same proposal. Approval alone is not actuator
 success. A conflict or changed authority requires inspection and a newly
 reviewed proposal, not blind replay with broader credentials.
@@ -252,13 +252,14 @@ must observe the prior revision/configuration and the preserved data, not just
 the load balancer's routing state. Retain detection/recovery durations and
 failed checks.
 
-## 6. Inspect or approve visually (optional)
+## 6. Inspect the same operation in Console
 
 Point Console `/operate` at the same verified endpoint. Compare finding,
-proposal and operation IDs with the terminal receipt. A separate authorized
-Console principal can approve in its focused inbox instead of the terminal
-approver. Console does not host the model or create another control plane.
-The terminal remains sufficient when Console is absent.
+proposal and operation IDs with the terminal receipt. Approval uses its verified
+human session and focused inbox as described above; the requester may approve.
+Other visual inspection is optional. Console does not host the model or create
+another control plane. Terminal and MCP clients keep reading the same operation
+before and after the human decision.
 
 The DevOps agent and Console must apply the [same progress rules](#progress-and-protection).
 Keep technical provenance expandable. Show the affected service, protection

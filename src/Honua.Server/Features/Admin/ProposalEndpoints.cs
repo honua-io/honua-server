@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Exceptions;
 using Honua.ControlPlane;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -13,14 +12,12 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
-using Honua.Core.Features.Studio.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Console;
 using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.MultiTenancy;
-using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -31,9 +28,6 @@ namespace Honua.Server.Features.Admin;
 
 internal static class ProposalEndpoints
 {
-    // Reserved RBAC scope for operation-approval decisions.
-    private const string ApprovalScope = "__operations__";
-
     public static void MapProposalEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/proposals")
@@ -58,6 +52,7 @@ internal static class ProposalEndpoints
 
         group.MapPost("/{id}/approve", HandleApproveProposal)
             .RequireAdminApproveAuthorization()
+            .WithMetadata(AdminHumanApprovalEndpointMetadata.Approve)
             .WithDisplayName("Approve Operation Proposal")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<ProposalDetailResponse>()
@@ -65,6 +60,17 @@ internal static class ProposalEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+
+        group.MapGet("/{id}/approval-review", HandleOpenApprovalReview)
+            .RequireAdminApproveAuthorization()
+            .WithMetadata(AdminHumanApprovalEndpointMetadata.Review)
+            .WithDisplayName("Open Human Approval Review")
+            .ExcludeFromDescription()
+            .Produces<ProposalHumanReviewResponse>()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapPost("/{id}/reject", HandleRejectProposal)
@@ -199,8 +205,7 @@ internal static class ProposalEndpoints
         }
 
         var actor = ConsolePrincipal.ResolveActorId(context.User);
-        var approverIdentities = ResolveApproverIdentities(context, actor);
-        var denied = await EnsureApproverAsync(permissionResolver, proposalStore, id, actor, approverIdentities, context)
+        var denied = await EnsureApproverAsync(permissionResolver, proposalStore, id, actor, context)
             .ConfigureAwait(false);
         if (denied != null)
         {
@@ -208,10 +213,13 @@ internal static class ProposalEndpoints
         }
 
         var proposal = await proposalStore.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
-        var operationId = proposal?.OperationId ?? (proposal is null ? null : LegacyOperationIds.For(proposal.Kind));
-        if (proposal != null &&
-            (operationExecutors is null || !operationExecutors.Any(executor =>
-                string.Equals(executor.OperationId, operationId, StringComparison.Ordinal))))
+        if (proposal is null) return Results.NotFound();
+        var transportDenial = await DenyNonHumanApprovalAsync(proposal, actor!, context).ConfigureAwait(false);
+        if (transportDenial is not null) return transportDenial;
+
+        var operationId = proposal.OperationId ?? LegacyOperationIds.For(proposal.Kind);
+        if (operationExecutors is null || !operationExecutors.Any(executor =>
+                string.Equals(executor.OperationId, operationId, StringComparison.Ordinal)))
         {
             return Results.Problem(
                 title: "Operation executor unavailable",
@@ -229,26 +237,21 @@ internal static class ProposalEndpoints
 
         try
         {
-            if (proposal?.Evidence is not null && string.IsNullOrWhiteSpace(tenantContext?.TenantId))
+            if (proposal.Evidence is not null && string.IsNullOrWhiteSpace(tenantContext?.TenantId))
             {
                 return Results.Problem(
                     detail: "A resolved tenant is required to approve this proposal.",
                     statusCode: StatusCodes.Status403Forbidden);
             }
 
-            // Preserve the established actor identity for legacy proposals. Evidence-bound
-            // proposals use the same scheme-qualified actor stamped at the MCP boundary so
-            // separation-of-duties and credential revocation revalidation compare like-for-like.
-            var approvalActor = proposal?.Evidence is null
-                ? actor!
-                : AuditContextResolver.ResolveActor(context, out _);
+            var approvalActor = CanonicalSecurityActor.Resolve(context.User)?.ActorId;
+            if (approvalActor is null) throw new HumanApprovalRequiredException();
             var resolved = await gateway.ApplyApprovedProposalAsync(
                 id,
                 new OperationProposalApprovalContext
                 {
                     ApprovedBy = approvalActor,
                     TenantId = tenantContext?.TenantId ?? string.Empty,
-                    ApproverIdentities = approverIdentities,
                 },
                 context.RequestAborted)
                 .ConfigureAwait(false);
@@ -256,9 +259,57 @@ internal static class ProposalEndpoints
                 ? Results.NotFound()
                 : Results.Json(ToDetail(resolved), ProposalJsonContext.Default.ProposalDetailResponse);
         }
+        catch (HumanApprovalRequiredException exception)
+        {
+            return Results.Problem(detail: exception.Message, statusCode: StatusCodes.Status403Forbidden);
+        }
         catch (InvalidOperationException ex) when (ex is not ServiceUnavailableException)
         {
             return Results.Problem(detail: ex.Message, statusCode: StatusCodes.Status409Conflict);
+        }
+    }
+
+    private static async Task<IResult?> DenyNonHumanApprovalAsync(
+        OperationProposal proposal, string actor, HttpContext context)
+    {
+        try
+        {
+            OperationHumanApprovalAuthority.RefuseNonHumanTransport(context);
+        }
+        catch (HumanApprovalRequiredException exception)
+        {
+            await OperationApprovalDenialRecorder.RecordAsync(
+                context.RequestServices.GetRequiredService<IServiceScopeFactory>(), proposal, actor,
+                OperationApprovalDenialReason.HumanSessionRequired, context.RequestAborted).ConfigureAwait(false);
+            return Results.Problem(detail: exception.Message, statusCode: StatusCodes.Status403Forbidden);
+        }
+
+        return null;
+    }
+
+    private static async Task<IResult> HandleOpenApprovalReview(
+        string id, HttpContext context,
+        [FromServices] OperationHumanApprovalAuthority authority,
+        [FromServices] IOperationProposalStore? proposalStore = null)
+    {
+        context.Response.Headers.CacheControl = "no-store";
+        if (!UnavailableOperationProposalStore.IsDurable(proposalStore)) return ControlPlaneUnavailable(context);
+        try
+        {
+            OperationHumanApprovalAuthority.RefuseNonHumanTransport(context);
+            var proposal = await proposalStore.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
+            if (proposal is null || !OperationTenantAuthorization.CanAccess(context, proposal.TenantId)) return Results.NotFound();
+            var review = await authority.OpenReviewAsync(proposal, context).ConfigureAwait(false);
+            return Results.Json(new ProposalHumanReviewResponse { Proposal = ToDetail(proposal), Review = review },
+                ProposalHumanReviewJsonContext.Default.ProposalHumanReviewResponse);
+        }
+        catch (HumanApprovalRequiredException exception)
+        {
+            return Results.Problem(detail: exception.Message, statusCode: StatusCodes.Status403Forbidden);
+        }
+        catch (InvalidOperationException exception) when (exception is not ServiceUnavailableException)
+        {
+            return Results.Problem(detail: exception.Message, statusCode: StatusCodes.Status409Conflict);
         }
     }
 
@@ -321,7 +372,6 @@ internal static class ProposalEndpoints
         IOperationProposalStore proposalStore,
         string proposalId,
         string? actor,
-        IReadOnlyCollection<string> approverIdentities,
         HttpContext context)
     {
         var denied = await EnsureApprovePermissionAsync(permissionResolver, actor, context).ConfigureAwait(false);
@@ -342,80 +392,15 @@ internal static class ProposalEndpoints
             return scopeDenied;
         }
 
-        // Separation of duties: the proposer cannot approve their own proposal, whichever
-        // identity encoding the proposal's writer recorded (#4901).
-        if (!string.IsNullOrWhiteSpace(proposal.RequestedBy) &&
-            approverIdentities.Contains(proposal.RequestedBy, StringComparer.OrdinalIgnoreCase))
-        {
-            await OperationApprovalDenialRecorder.RecordAsync(
-                context.RequestServices.GetRequiredService<IServiceScopeFactory>(),
-                proposal, actor!, OperationApprovalDenialReason.SelfApproval, context.RequestAborted)
-                .ConfigureAwait(false);
-            return Results.Problem(
-                detail: "Separation of duties: the requester of a proposal cannot approve it.",
-                statusCode: StatusCodes.Status403Forbidden);
-        }
-
         return null;
     }
 
-    private static IResult? EnsureProposalScope(HttpContext context, OperationProposal proposal)
-    {
-        if (!OperatorScopeCatalog.IsScopeGoverned(context.User))
-        {
-            return null;
-        }
-
-        // A decision may release the proposer's authority into an actuator. Require
-        // the deciding bearer to possess the same canonical operation-family scope;
-        // read-only approval must not bypass the original submission's scope ceiling.
-        var legacyId = proposal.Kind is OperationClass.Deploy or OperationClass.Seed
-            or OperationClass.AdminConfigChange or OperationClass.MetadataRelease
-            or OperationClass.Geoprocess or OperationClass.ServicePublish
-            ? LegacyOperationIds.For(proposal.Kind)
-            : null;
-        var operationId = proposal.OperationId ?? legacyId ?? string.Empty;
-        var request = new OperationRequest
-        {
-            OperationId = operationId,
-            GatewayRequest = legacyId is not null && string.Equals(operationId, legacyId, StringComparison.Ordinal)
-                ? new OperationGatewayRequest
-                {
-                    Kind = proposal.Kind,
-                    ActionDiscriminator = proposal.ActionDiscriminator ?? proposal.AutonomyMetadata?.ActionDiscriminator,
-                }
-                : null,
-        };
-        return OperationScopeMapping.TryResolve(request, out var operation) &&
-            OperatorScopeCatalog.PermitsOperation(OperatorScopeCatalog.CollectRecognizedScopes(context.User), operation)
+    private static IResult? EnsureProposalScope(HttpContext context, OperationProposal proposal) =>
+        OperationApprovalAuthorization.PermitsOperationScope(context.User, proposal)
             ? null
             : Results.Problem(
                 detail: "The bearer scope does not authorize a decision on this operation proposal.",
                 statusCode: StatusCodes.Status403Forbidden);
-    }
-
-    private static HashSet<string> ResolveApproverIdentities(HttpContext context, string? actor)
-    {
-        var identities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        Add(actor);
-        Add(CanonicalSecurityActor.Resolve(context.User)?.ActorId);
-        var auditActor = AuditContextResolver.ResolveActor(context, out var actorType);
-        if (actorType != AuditActorType.Anonymous)
-        {
-            Add(auditActor);
-        }
-
-        Add(context.RequestServices.GetService<IStudioAuthorizationService>()?.ResolveCallerId(context.User));
-        return identities;
-
-        void Add(string? identity)
-        {
-            if (!string.IsNullOrWhiteSpace(identity))
-            {
-                identities.Add(identity);
-            }
-        }
-    }
 
     private static async Task<IResult?> EnsureApprovePermissionAsync(
         IPermissionResolver permissionResolver,
@@ -427,27 +412,10 @@ internal static class ProposalEndpoints
             return Results.Problem(detail: "Unauthenticated.", statusCode: StatusCodes.Status401Unauthorized);
         }
 
-        var roles = context.User.FindAll(System.Security.Claims.ClaimTypes.Role)
-            .Select(claim => claim.Value)
-            .ToArray();
-
-        var decision = await permissionResolver.AuthorizeAsync(
-                actor,
-                roles,
-                ApprovalScope,
-                layer: null,
-                AuthorizationOperation.Approve,
-                isAuthenticated: true,
-                context.RequestAborted)
-            .ConfigureAwait(false);
-
-        // Allow when an explicit 'approve' grant matches. When no per-operation
-        // grant is configured for the principal's roles the resolver reports
-        // NoMatchingGrant; per the shared RBAC seam's documented fallback, defer
-        // to the coarse admin-policy gate already enforced on this route group
-        // (RequireAdminAuthorization) rather than hard-denying. Only an explicitly
-        // denied/anonymous principal is forbidden here.
-        return decision.IsAllowed || decision.HasNoMatchingGrant
+        var authorization = new OperationApprovalAuthorization(
+            permissionResolver,
+            context.RequestServices.GetRequiredService<Microsoft.AspNetCore.Authorization.IAuthorizationService>());
+        return await authorization.CanDecideAsync(context.User, context.RequestAborted).ConfigureAwait(false)
             ? null
             : Results.Problem(
                 detail: "Approving an operation proposal requires the 'approve' permission.",
@@ -471,9 +439,21 @@ internal static class ProposalEndpoints
         UpdatedAt = proposal.UpdatedAt,
     };
 
+    private static bool RequiresFreshProposal(OperationProposal proposal) =>
+        proposal.Status is OperationProposalStatus.Planned or OperationProposalStatus.AwaitingApproval
+        && proposal.Initiation is not { Version: OperationInitiationEvidence.CurrentVersion };
+
     private static ProposalDetailResponse ToDetail(OperationProposal proposal, OperationProposalExecutionView? execution = null) => new()
     {
         ProposalId = proposal.ProposalId,
+        Version = proposal.Version,
+        PlanHash = proposal.SealedPlanHash,
+        Initiation = proposal.Initiation?.Kind.ToString() ?? "Unknown",
+        ApprovalChannel = proposal.HumanApproval?.Channel,
+        RequiresReproposal = RequiresFreshProposal(proposal),
+        ApprovalRemediation = RequiresFreshProposal(proposal)
+            ? "Create a fresh proposal with a new idempotency key, then reopen it in Console for human approval."
+            : null,
         Kind = proposal.Kind.ToString(),
         Status = execution?.Status ?? proposal.Status.ToString(),
         RequestedBy = proposal.RequestedBy,
