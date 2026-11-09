@@ -17,7 +17,7 @@ public sealed class AnthropicContinuationStoreTests
         var clock = new ContinuationClock();
         var store = new AnthropicContinuationStore(clock);
         using var content = JsonDocument.Parse("[{\"type\":\"thinking\",\"thinking\":\"private\",\"signature\":\"signed\"}]");
-        store.Save("turn", content.RootElement);
+        store.Save("turn", new AnthropicContinuationStore.Turn(content.RootElement, "fixture-fingerprint"));
         store.Restore("turn").Should().NotBeNull();
 
         clock.UtcNow += TimeSpan.FromMinutes(15);
@@ -34,7 +34,7 @@ public sealed class AnthropicContinuationStoreTests
         using var content = JsonDocument.Parse("[]");
         for (var index = 0; index <= 128; index++)
         {
-            store.Save(index.ToString(System.Globalization.CultureInfo.InvariantCulture), content.RootElement);
+            store.Save(index.ToString(System.Globalization.CultureInfo.InvariantCulture), new AnthropicContinuationStore.Turn(content.RootElement, "fixture-fingerprint"));
             clock.UtcNow += TimeSpan.FromSeconds(1);
         }
 
@@ -52,7 +52,7 @@ public sealed class AnthropicContinuationStoreTests
         using var content = JsonDocument.Parse(JsonSerializer.Serialize(new string('x', 250_000)));
         for (var index = 0; index < 17; index++)
         {
-            store.Save(index.ToString(System.Globalization.CultureInfo.InvariantCulture), content.RootElement);
+            store.Save(index.ToString(System.Globalization.CultureInfo.InvariantCulture), new AnthropicContinuationStore.Turn(content.RootElement, "fixture-fingerprint"));
             clock.UtcNow += TimeSpan.FromSeconds(1);
         }
 

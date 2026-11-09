@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Net;
 using FluentAssertions;
 using Honua.Ai.StudioAiProxy;
 using Honua.Ai.StudioAiProxy.Adapters;
@@ -25,15 +26,20 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
     [InlineData("1.2300e2", "123")]
     [InlineData("1e21", "1e+21")]
     [InlineData("1e-7", "0.0000001")]
+    [InlineData("9007199254740993.0", "9007199254740993")]
+    [InlineData("1e400", "10e399")]
+    [InlineData("0.00000000000000000000000000001", "1e-29")]
     public async Task StreamAsync_EquivalentNumericToolArguments_RestoresPrivateContinuation(string providerNumber, string clientNumber)
     {
         var fixture = NumericToolFixture(providerNumber);
-        var handler = new StudioAiProxyMockHttpMessageHandler(fixture);
+        var handler = new StudioAiProxySequenceHttpMessageHandler(
+            () => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(fixture) },
+            () => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(TextTurnFixture) });
         using var clients = new StudioAiProxyMockHttpClientFactory(handler);
         var adapter = new AnthropicStudioAiProxyAdapter(clients, new StudioAiProxyApiKeyResolver(),
             NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
         var identity = AiExecutionContext.Create("test", "person-a", "studio-chat");
-        var first = await CollectAsync(adapter, ContinuationRequest(identity, false));
+        var first = await CollectAsync(adapter, InitialContinuationRequest(identity));
         first.Should().ContainSingle(e => e.Type == StudioAiChatEventType.ToolCallStop);
         var request = NumericContinuation(identity, clientNumber);
 
@@ -41,6 +47,8 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
 
         first.Concat(second).Should().NotContain(e => e.Type == StudioAiChatEventType.Error);
         handler.SendCount.Should().Be(2);
+        second.Last().Type.Should().Be(StudioAiChatEventType.MessageStop);
+        second.Last().StopReason.Should().Be(StudioAiStopReason.EndTurn);
         using var body = JsonDocument.Parse(handler.CapturedRequestBody!);
         var assistant = body.RootElement.GetProperty("messages")[1].GetProperty("content");
         assistant[0].GetProperty("thinking").GetString().Should().Be("PRIVATE_THINKINGPRIVATE_THINKING");
@@ -53,6 +61,7 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
     [InlineData("9007199254740992", "9007199254740993")]
     [InlineData("1.00000000000000000000000000001", "1.00000000000000000000000000002")]
     [InlineData("1e400", "2e400")]
+    [InlineData("1", "\"1\"")]
     public async Task StreamAsync_DistinctNumericToolArguments_RejectsBeforeHttp(string providerNumber, string clientNumber)
     {
         var handler = new StudioAiProxyMockHttpMessageHandler(NumericToolFixture(providerNumber));
@@ -60,7 +69,7 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
         var adapter = new AnthropicStudioAiProxyAdapter(clients, new StudioAiProxyApiKeyResolver(),
             NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
         var identity = AiExecutionContext.Create("test", "person-a", "studio-chat");
-        await CollectAsync(adapter, ContinuationRequest(identity, false));
+        await CollectAsync(adapter, InitialContinuationRequest(identity));
 
         var continueTurn = () => CollectAsync(adapter, NumericContinuation(identity, clientNumber));
 
@@ -86,9 +95,9 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
         var options = DefaultOptions();
         options.ApiKey = reference;
         var identity = AiExecutionContext.Create("test", "person-a", "studio-chat");
-        await CollectAsync(adapter, options, ContinuationRequest(identity, false));
+        await CollectAsync(adapter, options, InitialContinuationRequest(identity));
         if (rotation == "before-preparation") credential = "fixture-credential-b";
-        var invocation = adapter.Prepare(options, ContinuationRequest(identity, true));
+        var invocation = adapter.Prepare(options, ToolResultContinuationRequest(identity));
         secrets.ReceivedCalls().Count(call => call.GetMethodInfo().Name == "GetSecretOrDefaultAsync").Should().Be(1);
         if (rotation == "after-preparation") credential = "fixture-credential-b";
         var events = new List<StudioAiChatEvent>();
@@ -125,7 +134,7 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
 
     private static StudioAiChatRequest NumericContinuation(AiExecutionContext identity, string number)
     {
-        var prior = ContinuationRequest(identity, true);
+        var prior = ToolResultContinuationRequest(identity);
         using var arguments = JsonDocument.Parse("{\"values\":[" + number + "],\"status\":\"open\"}");
         return new StudioAiChatRequest
         {

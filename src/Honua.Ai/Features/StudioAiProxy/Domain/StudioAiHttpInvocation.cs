@@ -37,6 +37,7 @@ internal sealed class StudioAiHttpInvocation
     internal AiExecutionContext? ExecutionContext { get; }
     internal string Model { get; }
     internal Uri Destination { get; }
+    internal string? RequiredCredentialFingerprint { get; init; }
     internal byte[] CopyBody() => (byte[])_body.Clone();
     internal StudioAiProxyProviderOptions CopyOptions() => SnapshotOptions(_options);
 

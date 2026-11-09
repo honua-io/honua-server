@@ -72,9 +72,17 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
 
     public StudioAiHttpInvocation Prepare(StudioAiProxyProviderOptions options, StudioAiChatRequest request,
         AiExecutionContext? executionContext = null)
-        => new(options, request, "/v1/messages", (snapshot, original, model) =>
-            JsonSerializer.SerializeToUtf8Bytes(BuildRequest(snapshot, original, model, executionContext ?? original.ExecutionContext),
-                StudioAiProxyJsonContext.Default.AnthropicProxyRequest), executionContext);
+    {
+        string? requiredCredentialFingerprint = null;
+        var identity = executionContext ?? request.ExecutionContext;
+        return new(options, request, "/v1/messages", (snapshot, original, model) =>
+        {
+            var scope = new AnthropicContinuationStore.Scope(snapshot, original, model, identity);
+            var body = JsonSerializer.SerializeToUtf8Bytes(BuildRequest(scope), StudioAiProxyJsonContext.Default.AnthropicProxyRequest);
+            requiredCredentialFingerprint = scope.RestoredCredentials.SingleOrDefault();
+            return body;
+        }, identity) { RequiredCredentialFingerprint = requiredCredentialFingerprint };
+    }
 
     public async IAsyncEnumerable<StudioAiChatEvent> StreamPreparedAsync(
         StudioAiHttpInvocation invocation, IAiExecutionPermit permit,
@@ -105,6 +113,10 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
             yield return state.Error("Anthropic API key is not configured.");
             yield break;
         }
+
+        var credentialFingerprint = AnthropicContinuationStore.CredentialFingerprint(apiKey);
+        if (invocation.RequiredCredentialFingerprint is { } required && required != credentialFingerprint)
+            throw new InvalidOperationException(AnthropicContinuationStore.UnavailableMessage);
 
         var client = _httpClientFactory.CreateClient("studio-ai-proxy");
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, invocation.Destination);
@@ -369,7 +381,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
             var content = turn.Content();
             var scope = new AnthropicContinuationStore.Scope(options, invocation.Request, invocation.Model, invocation.ExecutionContext);
             var key = AnthropicContinuationStore.Key(scope, invocation.Request.Messages.Count, AnthropicAssistantTurn.VisibleMessage(content));
-            _continuations.Save(key, content);
+            _continuations.Save(key, new AnthropicContinuationStore.Turn(content, credentialFingerprint));
         }
     }
 
@@ -383,15 +395,11 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         }
     }
 
-    private AnthropicProxyRequest BuildRequest(
-        StudioAiProxyProviderOptions options,
-        StudioAiChatRequest request,
-        string model,
-        AiExecutionContext? executionContext)
+    private AnthropicProxyRequest BuildRequest(AnthropicContinuationStore.Scope scope)
     {
+        var (options, request, model, _) = scope;
         var currentTurnStart = request.Messages.Select((message, index) => (message, index))
             .LastOrDefault(item => item.message.Role == StudioAiRole.User).index;
-        var scope = new AnthropicContinuationStore.Scope(options, request, model, executionContext);
         var proxyRequest = new AnthropicProxyRequest
         {
             Model = model,
@@ -432,8 +440,10 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         var message = scope.Request.Messages[index];
         if (message is not { Role: StudioAiRole.Assistant, ToolCalls.Count: > 0 }) return BuildMessageContent(message);
         var key = AnthropicContinuationStore.Key(scope, index, message);
-        return (index >= currentTurnStart ? _continuations.Restore(key) : _continuations.TryRestore(key))
-            ?? BuildMessageContent(message);
+        var turn = index >= currentTurnStart ? _continuations.Restore(key) : _continuations.TryRestore(key);
+        if (turn is null) return BuildMessageContent(message);
+        scope.RestoredCredentials.Add(turn.CredentialFingerprint);
+        return turn.Content;
     }
 
     private static JsonElement BuildMessageContent(StudioAiMessage message)
