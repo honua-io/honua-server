@@ -14,8 +14,8 @@
       offline (no Redis/job-store/control-plane). Honua.Worker.Gdal supplies the GDAL
       executor + FakeGdalCommandRunner for the scalar/structural-diff proof.
     -->
-    <ProjectReference Include="..\..\..\src\Honua.Geoprocessing.Testing\Honua.Geoprocessing.Testing.csproj" />
-    <ProjectReference Include="..\..\..\src\Honua.Geoprocessing\Honua.Geoprocessing.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Geoprocessing\Testing\Honua.Geoprocessing.Testing.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Geoprocessing\Core\Honua.Geoprocessing.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Worker.Gdal\Honua.Worker.Gdal.csproj" />
     <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
   </ItemGroup>

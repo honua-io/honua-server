@@ -6,7 +6,7 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../../src/Honua.Protocols.OData/Honua.Protocols.OData.csproj" />
+    <ProjectReference Include="../../../src/Honua.Protocols/OData/Honua.Protocols.OData.csproj" />
     <ProjectReference Include="../../../src/Honua.Db/Postgres/Honua.Postgres.csproj" />
     <!-- Canonical SQL/manifest are linked, never copied or executed by this host.
          Provisioning belongs to the server-independent Postgres test fixture. -->

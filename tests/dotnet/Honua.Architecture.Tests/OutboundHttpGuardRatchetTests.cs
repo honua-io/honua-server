@@ -26,9 +26,9 @@ public sealed partial class OutboundHttpGuardRatchetTests
 
     private static readonly string[] CanonicalImplementations =
     [
-        "src/Honua.Core/Features/Infrastructure/Validation/OutboundHttpUrlValidator.cs",
-        "src/Honua.Core/Features/Migration/Services/MigrationPinnedDns.cs",
-        "src/Honua.Core/Features/Infrastructure/Validation/PinnedDnsConnector.cs",
+        "src/Honua.Core/Core/Features/Infrastructure/Validation/OutboundHttpUrlValidator.cs",
+        "src/Honua.Core/Core/Features/Migration/Services/MigrationPinnedDns.cs",
+        "src/Honua.Core/Core/Features/Infrastructure/Validation/PinnedDnsConnector.cs",
     ];
 
     private static readonly string[] CanonicalConnectors = ["MigrationPinnedDns.", "PinnedDnsConnector."];
