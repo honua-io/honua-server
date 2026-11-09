@@ -30,7 +30,7 @@ function runInspector({ entry, config, directory, method, view, extra, deadline 
     .filter(key => process.env[key] !== undefined).map(key => [key, process.env[key]]));
   Object.assign(env, { MCP_STORAGE_DIR: directory, MCP_INSPECTOR_SECRET_STORE: 'memory', MCP_AUTO_OPEN_ENABLED: 'false' });
   return new Promise((resolve, reject) => {
-    execFile(process.execPath, args, { env, timeout: Math.min(30_000, remaining), maxBuffer: 8 * 1024 * 1024 }, (error, stdout) => {
+    execFile(process.execPath, args, { env, timeout: Math.min(30_000, remaining), maxBuffer: 8 * 1024 * 1024 }, (error, stdout, stderr) => {
       const code = error?.code ?? 0;
       try {
         const result = JSON.parse(stdout).result;
@@ -43,6 +43,10 @@ function runInspector({ entry, config, directory, method, view, extra, deadline 
         reject(new CatalogContractFailure('inspector-invocation-failed', {
           method, view, tool: toolIndex < 0 ? undefined : extra[toolIndex + 1],
           exitCode: typeof code === 'number' ? code : undefined, timedOut: error?.killed === true,
+          schemaDiagnostic: /schema|validation|format|ajv/i.test(stderr),
+          authorizationDiagnostic: /authentication|unauthori|forbidden|\b401\b|\b403\b/i.test(stderr),
+          interactiveDiagnostic: /elicitation|approval|input.required/i.test(stderr),
+          emptyStdout: stdout.trim().length === 0,
         }));
       }
     });
