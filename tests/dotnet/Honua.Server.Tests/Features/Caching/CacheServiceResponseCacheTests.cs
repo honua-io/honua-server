@@ -150,8 +150,9 @@ public sealed class CacheServiceResponseCacheTests
                     ["response-version:query:featureserver:service:alpha"] = "sa",
                     ["response-version:query:featureserver:service:alpha:layer:7"] = "sal7"
                 },
-                ExpectedStorageKey: "response:query:featureserver:service:alpha:layer:7:abc123:v:g:l7:sa:sal7",
+                ExpectedStorageKey: "response:query:featureserver:service:alpha:layer:7:abc123:v:0:g:l7:sa:sal7",
                 ExpectedVersionLookups: [
+                    "response-version:recovery",
                     "response-version:query:featureserver",
                     "response-version:query:featureserver:layer:7",
                     "response-version:query:featureserver:service:alpha",
@@ -171,8 +172,9 @@ public sealed class CacheServiceResponseCacheTests
                     ["response-version:query:ogc"] = "g",
                     ["response-version:query:ogc:collection:roads"] = "c1"
                 },
-                ExpectedStorageKey: "response:query:ogc:collection:roads:abc123:v:g:c1",
+                ExpectedStorageKey: "response:query:ogc:collection:roads:abc123:v:0:g:c1",
                 ExpectedVersionLookups: [
+                    "response-version:recovery",
                     "response-version:query:ogc",
                     "response-version:query:ogc:collection:roads"
                 ],
@@ -190,8 +192,9 @@ public sealed class CacheServiceResponseCacheTests
                     ["response-version:query:odata"] = "g",
                     ["response-version:query:odata:layer:42"] = "l42"
                 },
-                ExpectedStorageKey: "response:query:odata:layer:42:abc123:v:g:l42",
+                ExpectedStorageKey: "response:query:odata:layer:42:abc123:v:0:g:l42",
                 ExpectedVersionLookups: [
+                    "response-version:recovery",
                     "response-version:query:odata",
                     "response-version:query:odata:layer:42"
                 ],
@@ -229,9 +232,12 @@ public sealed class CacheServiceResponseCacheTests
 
         public Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
         {
-            if (_versionValues.TryGetValue(key, out var version))
+            if (key.StartsWith(ResponseCacheVersionKeys.Prefix, StringComparison.Ordinal))
             {
                 VersionLookups.Add(key);
+            }
+            if (_versionValues.TryGetValue(key, out var version))
+            {
                 if (typeof(T) == typeof(string))
                 {
                     return Task.FromResult<T?>((T?)(object?)version);
