@@ -16,11 +16,11 @@ This is **not** a greenfield "build a content store" task. honua-server already 
 saved-query store, its versioned domain model, and most of its admin endpoints:
 
 - A versioned content store, `IAnalysisContentStore`
-  (`src/Honua.Core/Features/AnalysisContent/Abstractions/IAnalysisContentStore.cs`) that already models
+  (`src/Honua.Core/Core/Features/AnalysisContent/Abstractions/IAnalysisContentStore.cs`) that already models
   an **item root + immutable versions + current-version pointer**, with `CreateItemAsync`,
   `AddVersionAsync`, `GetVersionAsync(itemId, version?)`, **`ListVersionsAsync(itemId)`**, and
   `ListItemsAsync(query)`. This is the same item/version shape the analysis-package family (#1237) uses.
-- The domain contracts (`src/Honua.Core/Features/AnalysisContent/Domain/AnalysisContentContracts.cs`):
+- The domain contracts (`src/Honua.Core/Core/Features/AnalysisContent/Domain/AnalysisContentContracts.cs`):
   `AnalysisContentItem`, `AnalysisContentVersion`, `AnalysisContentKind.SavedQuery`, and the
   **`SavedQueryContent`** payload (`NaturalLanguageQuery`, `LayerId`, `ServiceName`, `FilterPlan`,
   `OutFields`, `OutputSrid`, `PreviewLimit`, `OutputFormat`, `Units`, `Metadata`). Versions carry a stable
@@ -51,7 +51,7 @@ honest "version history isn't available on this server yet" state — it is not 
 
 | Concern | Existing type / file | Reuse as |
 | --- | --- | --- |
-| Versioned store | `IAnalysisContentStore` · `Honua.Core/Features/AnalysisContent/Abstractions` | Already has `ListVersionsAsync`; **just map it to HTTP** |
+| Versioned store | `IAnalysisContentStore` · `Honua.Core/Core/Features/AnalysisContent/Abstractions` | Already has `ListVersionsAsync`; **just map it to HTTP** |
 | Domain model | `AnalysisContentItem` / `AnalysisContentVersion` / `SavedQueryContent` · `…/Domain/AnalysisContentContracts.cs` | Wire payloads verbatim |
 | Postgres + in-memory stores | `PostgresAnalysisContentStore`, `InMemoryAnalysisContentStore` | No store change required for the list endpoint |
 | Endpoint group | `AnalysisContentEndpoints.MapAnalysisContentEndpoints` · `Honua.Ai/Features/AnalysisContent` | Add the `GET …/versions` (and `…/diff`) routes alongside the existing ones |
