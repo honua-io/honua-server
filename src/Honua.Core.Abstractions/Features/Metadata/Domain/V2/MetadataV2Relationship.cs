@@ -3,9 +3,11 @@
 
 using System.Text.Json.Serialization;
 
+using Honua.Core.Serialization;
+
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-public sealed record MetadataV2Relationship
+public sealed record MetadataV2Relationship : ExtensibleJsonRecord
 {
     [JsonPropertyName("id")]
     public string Id { get; init; } = string.Empty;
