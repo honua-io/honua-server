@@ -20117,6 +20117,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests.AnalysisFamily_NativeContentRoundTripsWithJobAndArtifactLinks",
         "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests.FormFamily_ConsoleAuthoredPackageRoundTripsLosslesslyThroughLifecycle",
+        "Honua.Server.Tests.Features.Studio.StudioHumanDraftMutationTests.ReopenVersion_UntrustedBrowserOrigin_DoesNotCreateDraftDirectly",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
