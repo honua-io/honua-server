@@ -92,14 +92,26 @@ internal static partial class AdminLayerAuthoringEndpoints
             throw new LayerConfigurationValidationException("Scale denominators must be finite and nonnegative.");
         if (display.MinScale is > 0 && display.MaxScale is > 0 && display.MinScale < display.MaxScale)
             throw new LayerConfigurationValidationException("The minimum visible scale denominator must be at least the maximum visible denominator.");
-        if (!string.IsNullOrWhiteSpace(display.DisplayField) && !resource.SchemaFields.Any(field =>
-                string.Equals(field.Name, display.DisplayField, StringComparison.OrdinalIgnoreCase)))
-            throw new LayerConfigurationValidationException("The display field must name a declared field.");
+        if (!string.IsNullOrWhiteSpace(display.DisplayField))
+        {
+            var field = resource.SchemaFields.FirstOrDefault(candidate =>
+                string.Equals(candidate.Name, display.DisplayField, StringComparison.OrdinalIgnoreCase));
+            if (field is null)
+                throw new LayerConfigurationValidationException("The display field must name a declared field.");
+            display = display with { DisplayField = field.Name };
+        }
+        else if (request.DisplayField is not null)
+        {
+            display = display with { DisplayField = null };
+        }
         return resource with { Display = display };
     }
 
     private static MetadataV2Resource ApplySpatial(MetadataV2Resource resource, LayerSpatialUpdateRequest request)
     {
+        if (request.GeometryType is { } geometryType &&
+            (!Enum.IsDefined(geometryType) || geometryType == MetadataV2GeometryType.Unknown))
+            throw new LayerConfigurationValidationException("A supported geometry type is required.");
         var current = resource.Spatial ?? new();
         var spatial = current with
         {
@@ -110,9 +122,6 @@ internal static partial class AdminLayerAuthoringEndpoints
             StorageCrsCoordinateEpoch = request.ClearStorageCrsCoordinateEpoch
                 ? null : request.StorageCrsCoordinateEpoch ?? current.StorageCrsCoordinateEpoch
         };
-        if (request.GeometryType is { } geometryType &&
-            (!Enum.IsDefined(geometryType) || geometryType == MetadataV2GeometryType.Unknown))
-            throw new LayerConfigurationValidationException("A supported geometry type is required.");
         if (spatial.SpatialReference is { } reference && reference.ResolveSrid() is not > 0)
             throw new LayerConfigurationValidationException("The spatial reference must resolve to a positive SRID.");
         if (spatial.SupportedCrs.Any(crs => crs is null || crs.ResolveSrid() is not > 0) ||
