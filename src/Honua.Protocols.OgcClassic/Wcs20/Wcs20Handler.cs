@@ -251,11 +251,7 @@ internal sealed partial class Wcs20Handler
                 cancellationToken)
             .ConfigureAwait(false);
 
-        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var service = coverageResult.Coverages.Select(coverage => coverage.Service).FirstOrDefault()
-            ?? ResolveService(context, snapshot, scope).Service;
-        var metadata = PublishedMetadataProjection.ForCapabilities(snapshot.Graph, service);
-        var document = BuildCapabilitiesDocument(context, coverageResult.Coverages, supportedCrs.Uris, sections, metadata);
+        var document = BuildCapabilitiesDocument(context, coverageResult, supportedCrs.Uris, sections);
         return Xml(document);
     }
 
@@ -578,7 +574,8 @@ internal sealed partial class Wcs20Handler
                         Wcs20Utilities.ExceptionCodes.NoSuchCoverage,
                         $"Coverage '{scope.LayerId!.Value.ToString(CultureInfo.InvariantCulture)}' was not found.",
                         Wcs20Utilities.Parameters.CoverageId))
-                : new CoverageListResult([coverage.Coverage.Value], null);
+                : new CoverageListResult([coverage.Coverage.Value], null,
+                    PublishedMetadataProjection.ForCapabilities(snapshot.Graph, coverage.Coverage.Value.Service));
         }
 
         var service = ResolveService(context, snapshot, scope);
@@ -632,7 +629,7 @@ internal sealed partial class Wcs20Handler
                 entry.Publication.LayerIndex));
         }
 
-        return new CoverageListResult(coverages, null);
+        return new CoverageListResult(coverages, null, PublishedMetadataProjection.ForCapabilities(snapshot.Graph, service.Service));
     }
 
     private async Task<CoverageResolutionResult> ResolveCoverageAsync(
@@ -1116,11 +1113,12 @@ internal sealed partial class Wcs20Handler
 
     private static XDocument BuildCapabilitiesDocument(
         HttpContext context,
-        IReadOnlyCollection<WcsCoverage> coverages,
+        CoverageListResult catalog,
         IReadOnlyList<string> supportedCrsUris,
-        IReadOnlySet<string>? sections,
-        MetadataV2ObjectMetadata metadata)
+        IReadOnlySet<string>? sections)
     {
+        var coverages = catalog.Coverages;
+        var metadata = catalog.Metadata ?? new MetadataV2ObjectMetadata();
         var rootChildren = new List<object>();
 
         if (IncludesSection(sections, "ServiceIdentification"))
@@ -3135,7 +3133,7 @@ internal sealed partial class Wcs20Handler
             Wcs20Utilities.XmlContentType,
             Encoding.UTF8);
 
-    private readonly record struct CoverageListResult(IReadOnlyList<WcsCoverage> Coverages, IResult? Error);
+    private readonly record struct CoverageListResult(IReadOnlyList<WcsCoverage> Coverages, IResult? Error, MetadataV2ObjectMetadata? Metadata = null);
 
     private readonly record struct CoverageResolutionResult(WcsCoverage? Coverage, IResult? Error);
 

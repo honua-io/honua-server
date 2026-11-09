@@ -65,14 +65,7 @@ internal sealed partial class Wfs20Handler
             {
                 UpdateSequence = Wfs20Utilities.CurrentUpdateSequence,
                 ServiceIdentification = ShouldIncludeCapabilitiesSection(requestedSections, "ServiceIdentification")
-                    ? new ServiceIdentification
-                    {
-                        Title = metadata.Title ?? "Honua WFS 2.0",
-                        Abstract = metadata.Description ?? string.Empty,
-                        Keywords = metadata.Keywords.ToArray(),
-                        Fees = metadata.License ?? string.Empty,
-                        AccessConstraints = metadata.License ?? string.Empty
-                    }
+                    ? CreateCatalogIdentification(metadata)
                     : null,
                 ServiceProvider = ShouldIncludeCapabilitiesSection(requestedSections, "ServiceProvider")
                     ? CreateCatalogServiceProvider(metadata)
@@ -102,6 +95,15 @@ internal sealed partial class Wfs20Handler
         }
     }
 
+
+    private static ServiceIdentification CreateCatalogIdentification(MetadataV2ObjectMetadata metadata) => new()
+    {
+        Title = metadata.Title ?? "Honua WFS 2.0",
+        Abstract = metadata.Description ?? string.Empty,
+        Keywords = metadata.Keywords.ToArray(),
+        Fees = metadata.License ?? string.Empty,
+        AccessConstraints = metadata.License ?? string.Empty
+    };
 
     private static Models.ServiceProvider CreateCatalogServiceProvider(MetadataV2ObjectMetadata metadata) => new()
     {
