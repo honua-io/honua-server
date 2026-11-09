@@ -378,10 +378,21 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         }
         else if (state.StopReason == StudioAiStopReason.ToolCall && !turn.CaptureLimitExceeded && !cancellationToken.IsCancellationRequested)
         {
-            var content = turn.Content();
-            var scope = new AnthropicContinuationStore.Scope(options, invocation.Request, invocation.Model, invocation.ExecutionContext);
+            SaveContinuation(invocation, turn.Content(), credentialFingerprint);
+        }
+    }
+
+    private void SaveContinuation(StudioAiHttpInvocation invocation, JsonElement content, string credentialFingerprint)
+    {
+        try
+        {
+            var scope = new AnthropicContinuationStore.Scope(invocation.CopyOptions(), invocation.Request, invocation.Model, invocation.ExecutionContext);
             var key = AnthropicContinuationStore.Key(scope, invocation.Request.Messages.Count, AnthropicAssistantTurn.VisibleMessage(content));
             _continuations.Save(key, new AnthropicContinuationStore.Turn(content, credentialFingerprint));
+        }
+        catch (JsonException)
+        {
+            // Private capture must not fail a visible turn that already completed.
         }
     }
 
