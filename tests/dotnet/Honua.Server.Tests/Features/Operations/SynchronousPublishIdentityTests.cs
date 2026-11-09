@@ -66,7 +66,7 @@ public sealed class SynchronousPublishIdentityTests
     public async Task SubmitAsync_PostCommitGraphReadFails_CompletesWithoutInventedIndex()
     {
         _graphs.GetCurrentAsync(Arg.Any<CancellationToken>())
-            .Returns(_ => ValueTask.FromException<MetadataV2GraphSnapshot>(new InvalidOperationException("unavailable")));
+            .Returns<MetadataV2GraphSnapshot>(_ => throw new InvalidOperationException("unavailable"));
 
         var handle = await SubmitAsync();
 

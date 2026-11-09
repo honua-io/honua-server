@@ -3001,7 +3001,8 @@
         "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.Discovery_LegacyPublicationIdentifier_ReturnsStoredLocalId",
         "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.Discovery_UnknownTarget_ReturnsNotFound",
         "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.Discovery_WithoutAdminCredentials_RejectsReadAndWrite",
-        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateLayer_RoundTripsThroughProtocolAndPreservesOtherMetadata"
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateLayer_RoundTripsThroughProtocolAndPreservesOtherMetadata",
+        "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.GetMetadata_AmbiguousStorageHandle_ReturnsConflict"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -3129,6 +3130,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.GetMetadata_AmbiguousStorageHandle_ReturnsConflict",
         "Honua.Server.Tests.Features.Admin.LayerValidationEndpointsTests.GetLayerValidation_WhenDeclaredColumnIsDropped_ReturnsInvalid",
         "Honua.Server.Tests.Features.Admin.LayerValidationEndpointsTests.GetLayerValidation_WithAttributeOnlyStorage_ReturnsValid",
         "Honua.Server.Tests.Features.Admin.LayerValidationEndpointsTests.GetLayerValidation_WithInvalidSavedPermanentFilter_ReturnsInvalid",
@@ -3809,7 +3811,8 @@
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.ListActiveOperations_PublishingType_ReturnsWorkflowFields",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.ListActiveOperations_WhenFiltered_ReturnsOnlyActive",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.ListActiveOperations_WhenMixedTypesPresent_PreservesUnifiedOperationIdentityFields",
-        "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.ListActiveOperations_WhenNoneActive_ReturnsEmptyList"
+        "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.ListActiveOperations_WhenNoneActive_ReturnsEmptyList",
+        "Honua.Server.Tests.Features.Admin.PersistedExportProgressTests.ListOperations_InvalidExportRecord_KeepsHealthyOperationsVisible"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -3938,7 +3941,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.GetOperationsByType_DeploymentType_ReturnsOperations",
-        "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.GetOperationsByType_WhenMatching_ReturnsOperations"
+        "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.GetOperationsByType_WhenMatching_ReturnsOperations",
+        "Honua.Server.Tests.Features.Admin.PersistedExportProgressTests.ListOperations_InvalidExportRecord_KeepsHealthyOperationsVisible"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -3956,7 +3960,8 @@
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.GetOperationStatus_DeploymentType_ReturnsLifecycleFields",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.GetOperationStatus_NonexistentId_ReturnsNotFound",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.GetOperationStatus_PublishingType_ReturnsWorkflowFields",
-        "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.GetOperationStatus_WhenExists_ReturnsProgress"
+        "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.GetOperationStatus_WhenExists_ReturnsProgress",
+        "Honua.Server.Tests.Features.Admin.PersistedExportProgressTests.ReadOperation_InvalidExportRecord_ReturnsSafeRecordProblem"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -8328,6 +8333,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.Issue5565_RecordsWithExtent_ReturnBboxPolygonGeometry",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsTemporalAndTitleTests.GetItem_ReturnsTheDistinctTitleRatherThanTheName",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.RecordsLandingAndLimitTests.GetItem_ServiceRecord_ListsEachLayerIdOnce",
+        "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.RecordsService_ProtocolRowsShareResource_EveryLayerIdResolvesToRecord",
         "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.RecordsService_StorageRebound_ListsStablePublicationIds",
         "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.Records_LegacyPublication_UsesOnlyNumericFeatureServerIndex"
       ],
@@ -18582,6 +18588,7 @@
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenRemoteQueuedNeverSubmitted_CancelsLocallyWithoutCallingBackend",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenRemoteQueuedNeverSubmitted_CasFailure_Returns409",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenRemoteQueuedRetryAwaitingResubmission_CancelsLocallyWithoutCallingBackend",
+        "Honua.Server.Tests.Features.Admin.PersistedExportProgressTests.ReadOperation_InvalidExportRecord_ReturnsSafeRecordProblem",
         "Honua.Server.Tests.Import.GeoServerImportEndpointTests.CancelJob_AfterDequeueBeforeRequestRead_PreservesCancelledWithoutImporting"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -25607,7 +25614,8 @@
         "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateDiscovery_InvalidInput_DoesNotMutate",
         "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateDiscovery_NullTextAndEmptyKeywords_ClearsOnlyDiscovery",
         "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateDiscovery_WithStaleEtag_RejectsOverwrite",
-        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateLayer_RoundTripsThroughProtocolAndPreservesOtherMetadata"
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateLayer_RoundTripsThroughProtocolAndPreservesOtherMetadata",
+        "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.UpdateDiscovery_AmbiguousStorageHandle_ReturnsConflictWithoutMutation"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
