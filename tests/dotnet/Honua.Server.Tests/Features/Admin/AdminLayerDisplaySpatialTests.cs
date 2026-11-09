@@ -5,6 +5,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -51,6 +52,10 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
         using var document = JsonDocument.Parse(await protocol.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("minScale").GetDouble().Should().Be(12000);
         document.RootElement.GetProperty("displayField").GetString().Should().Be("name");
+        document.RootElement.GetProperty("maxScale").GetDouble().Should().Be(500);
+        document.RootElement.GetProperty("defaultVisibility").GetBoolean().Should().BeFalse();
+        document.RootElement.GetProperty("hasZ").GetBoolean().Should().BeTrue();
+        document.RootElement.GetProperty("hasM").GetBoolean().Should().BeTrue();
     }
 
     [IntegrationTest]
@@ -62,12 +67,14 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
         var before = _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[0];
         const string path = "/api/v1/admin/metadata/layers/0/spatial";
         using var response = await PutAsync(client, path,
-            """{"supportedCrs":[{"srid":26910,"crs":"EPSG:26910"}],"storageCrs":{"srid":4326,"crs":"EPSG:4326"},"storageCrsCoordinateEpoch":2020.5}""");
+            """{"geometryType":"multipoint","supportedCrs":[{"srid":26910,"crs":"EPSG:26910"}],"storageCrs":{"srid":4326,"crs":"EPSG:4326"},"storageCrsCoordinateEpoch":2020.5}""");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var saved = await ReadAsync(client, path);
         saved.GetProperty("supportedCrs")[0].GetProperty("srid").GetInt32().Should().Be(26910);
         saved.GetProperty("storageCrsCoordinateEpoch").GetDouble().Should().Be(2020.5);
+        saved.GetProperty("storageCrs").GetProperty("srid").GetInt32().Should().Be(4326);
+        saved.GetProperty("geometryType").GetString().Should().Be("multipoint");
         var after = _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[0];
         after.Should().BeEquivalentTo(before with { Spatial = after.Spatial });
         after.Spatial!.SpatialReference.Should().BeEquivalentTo(before.Spatial!.SpatialReference);
@@ -98,6 +105,9 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
 
     [IntegrationTheory]
     [InlineData("display", "{\"minScale\":-1}")]
+    [InlineData("display", "{\"minScale\":100,\"maxScale\":500}")]
+    [InlineData("spatial", "{\"geometryType\":\"unknown\"}")]
+    [InlineData("spatial", "{\"storageCrsCoordinateEpoch\":-1}")]
     [InlineData("display", "{\"displayField\":\"missing-field\"}")]
     [InlineData("spatial", "{\"supportedCrs\":[{\"srid\":-1}]}")]
     [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/display")]
@@ -128,22 +138,48 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
     [IntegrationTheory]
     [InlineData("/api/v1/admin/metadata/layers/0/display")]
     [InlineData("/api/v1/admin/metadata/layers/0/spatial")]
-    [InlineData("/api/v1/admin/services/alpha/layers/0/metadata")]
+    [InlineData("/api/v1/admin/services/test/layers/0/metadata")]
     [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/display")]
     [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/spatial")]
     [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/display")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/spatial")]
     public async Task Metadata_AuthenticatedReader_IsForbidden(string path)
     {
-        using var factory = ServiceRbacTestFixture.CreateFactory();
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "viewer");
+        using var client = await CreateReaderClientAsync();
         using var read = await client.GetAsync(path);
         read.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        if (path.EndsWith("/metadata", StringComparison.Ordinal))
-            return;
-        using var write = await PutAsync(client, path, "{}");
-        write.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTheory]
+    [InlineData("display")]
+    [InlineData("spatial")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/display")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/spatial")]
+    public async Task Update_AuthenticatedReader_IsForbidden(string section)
+    {
+        using var client = await CreateReaderClientAsync();
+        using var response = await PutAsync(client, $"/api/v1/admin/metadata/layers/0/{section}", "{}");
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTheory]
+    [InlineData(" NAME ", "name")]
+    [InlineData("   ", null)]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/display")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/display")]
+    public async Task Display_FieldCasingOrWhitespace_PersistsCanonicalNameOrNull(string input, string? expected)
+    {
+        using var client = _fixture.CreateAdminClient();
+        const string path = "/api/v1/admin/metadata/layers/0/display";
+        using var response = await PutAsync(client, path, JsonSerializer.Serialize(new { displayField = input }));
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await ReadAsync(client, path)).GetProperty("displayField").GetString().Should().Be(expected);
+    }
+
+    private async Task<HttpClient> CreateReaderClientAsync()
+    {
+        var key = await _fixture.GetService<IAdminApiKeyStore>().CreateAsync(
+            $"metadata-reader-{Guid.NewGuid():N}", ["studio:enduser"], null, null, default);
+        return _fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", key.Key));
     }
 
     private static async Task<JsonElement> ReadAsync(HttpClient client, string path)
