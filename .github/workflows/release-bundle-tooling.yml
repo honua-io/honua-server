@@ -19,6 +19,10 @@ on:
       - '.github/workflows/release-bundle*.yml'
   workflow_dispatch:
 
+concurrency:
+  group: release-bundle-tooling-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   tooling:
     name: Release tooling smokes
