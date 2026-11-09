@@ -1130,8 +1130,8 @@ internal sealed partial class Wcs20Handler
                 new XElement(Ows + "ServiceType", "WCS"),
                 new XElement(Ows + "ServiceTypeVersion", Wcs20Utilities.Version),
                 new XElement(Ows + "Profile", "http://www.opengis.net/spec/WCS_protocol-binding_get-kvp/1.0"),
-                new XElement(Ows + "Fees", metadata.License ?? string.Empty),
-                new XElement(Ows + "AccessConstraints", metadata.License ?? string.Empty)));
+                new XElement(Ows + "Fees", metadata.Fees ?? string.Empty),
+                new XElement(Ows + "AccessConstraints", metadata.AccessConstraints ?? string.Empty)));
         }
 
         if (IncludesSection(sections, "ServiceProvider"))

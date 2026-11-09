@@ -101,8 +101,8 @@ internal sealed partial class Wfs20Handler
         Title = metadata.Title ?? "Honua WFS 2.0",
         Abstract = metadata.Description ?? string.Empty,
         Keywords = metadata.Keywords.ToArray(),
-        Fees = metadata.License ?? string.Empty,
-        AccessConstraints = metadata.License ?? string.Empty
+        Fees = metadata.Fees ?? string.Empty,
+        AccessConstraints = metadata.AccessConstraints ?? string.Empty
     };
 
     private static Models.ServiceProvider CreateCatalogServiceProvider(MetadataV2ObjectMetadata metadata) => new()

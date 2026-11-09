@@ -229,8 +229,8 @@ internal sealed partial class Wfs20Handler
             sb.AppendLine(keywords.ToString());
         sb.AppendLine("    <ows:ServiceType>WFS</ows:ServiceType>");
         sb.AppendLine("    <ows:ServiceTypeVersion>1.1.0</ows:ServiceTypeVersion>");
-        sb.Append("    <ows:Fees>").Append(XmlEscape(metadata.License ?? string.Empty)).AppendLine("</ows:Fees>");
-        sb.Append("    <ows:AccessConstraints>").Append(XmlEscape(metadata.License ?? string.Empty)).AppendLine("</ows:AccessConstraints>");
+        sb.Append("    <ows:Fees>").Append(XmlEscape(metadata.Fees ?? string.Empty)).AppendLine("</ows:Fees>");
+        sb.Append("    <ows:AccessConstraints>").Append(XmlEscape(metadata.AccessConstraints ?? string.Empty)).AppendLine("</ows:AccessConstraints>");
         sb.AppendLine("  </ows:ServiceIdentification>");
         sb.AppendLine(CatalogCapabilitiesXml.Provider(metadata, Ows10Namespace).ToString());
         AppendWfs11OperationsMetadata(sb, wfsUrl);
@@ -253,8 +253,8 @@ internal sealed partial class Wfs20Handler
         // the deployment's own endpoint (Public:BaseUrl), never a vendor site: customers
         // serve Honua on their own domains.
         sb.AppendLine($"""    <OnlineResource>{XmlEscape(wfsUrl)}</OnlineResource>""");
-        sb.Append("    <Fees>").Append(XmlEscape(metadata.License ?? string.Empty)).AppendLine("</Fees>");
-        sb.Append("    <AccessConstraints>").Append(XmlEscape(metadata.License ?? string.Empty)).AppendLine("</AccessConstraints>");
+        sb.Append("    <Fees>").Append(XmlEscape(metadata.Fees ?? string.Empty)).AppendLine("</Fees>");
+        sb.Append("    <AccessConstraints>").Append(XmlEscape(metadata.AccessConstraints ?? string.Empty)).AppendLine("</AccessConstraints>");
         sb.AppendLine("  </Service>");
         sb.AppendLine("  <Capability>");
         sb.AppendLine("    <Request>");

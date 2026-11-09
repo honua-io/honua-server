@@ -97,6 +97,12 @@ public sealed record MetadataV2ObjectMetadata : ExtensibleJsonRecord
     [JsonPropertyName("license")]
     public string? License { get; init; }
 
+    [JsonPropertyName("fees")]
+    public string? Fees { get; init; }
+
+    [JsonPropertyName("accessConstraints")]
+    public string? AccessConstraints { get; init; }
+
     [JsonPropertyName("attribution")]
     public string? Attribution { get; init; }
 

@@ -1299,8 +1299,8 @@ internal static class WmtsRequestHandlers
                 sb.AppendLine(keywords.ToString());
             sb.AppendLine("    <ows:ServiceType>OGC WMTS</ows:ServiceType>");
             sb.AppendLine("    <ows:ServiceTypeVersion>1.0.0</ows:ServiceTypeVersion>");
-            sb.Append("    <ows:Fees>").Append(EscapeXml(service.Metadata.License ?? string.Empty)).AppendLine("</ows:Fees>");
-            sb.Append("    <ows:AccessConstraints>").Append(EscapeXml(service.Metadata.License ?? string.Empty)).AppendLine("</ows:AccessConstraints>");
+            sb.Append("    <ows:Fees>").Append(EscapeXml(service.Metadata.Fees ?? string.Empty)).AppendLine("</ows:Fees>");
+            sb.Append("    <ows:AccessConstraints>").Append(EscapeXml(service.Metadata.AccessConstraints ?? string.Empty)).AppendLine("</ows:AccessConstraints>");
             sb.AppendLine("  </ows:ServiceIdentification>");
         }
 

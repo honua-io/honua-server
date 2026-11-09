@@ -95,7 +95,7 @@ public sealed class PublishedMetadataProjection(
             return graph.Metadata;
         var folder = graph.Folders.FirstOrDefault(candidate =>
             !candidate.Deleted && string.Equals(candidate.Metadata.Id, service.FolderId, StringComparison.Ordinal));
-        return InheritMetadata(service.Metadata, folder?.Metadata ?? graph.Metadata);
+        return InheritMetadata(service.Metadata, folder is null ? graph.Metadata : InheritMetadata(folder.Metadata, graph.Metadata));
     }
 
     public static MetadataV2ObjectMetadata InheritMetadata(MetadataV2ObjectMetadata metadata, MetadataV2ObjectMetadata parent)
@@ -108,6 +108,8 @@ public sealed class PublishedMetadataProjection(
             Description = metadata.Description ?? parent.Description,
             Keywords = metadata.Keywords.Count == 0 ? parent.Keywords : metadata.Keywords,
             License = metadata.License ?? parent.License,
+            Fees = metadata.Fees ?? parent.Fees,
+            AccessConstraints = metadata.AccessConstraints ?? parent.AccessConstraints,
             Attribution = metadata.Attribution ?? parent.Attribution,
             Publisher = metadata.Publisher ?? parent.Publisher,
             ContactPoint = contact is null ? inheritedContact : contact with

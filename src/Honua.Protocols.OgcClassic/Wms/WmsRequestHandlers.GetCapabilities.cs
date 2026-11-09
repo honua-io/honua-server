@@ -405,8 +405,8 @@ internal static partial class WmsRequestHandlers
         var contact = CatalogCapabilitiesXml.WmsContact(service.Metadata);
         if (contact is not null)
             sb.AppendLine(contact.ToString());
-        sb.Append("    <Fees>").Append(EscapeXml(service.Metadata.License ?? string.Empty)).AppendLine("</Fees>");
-        sb.Append("    <AccessConstraints>").Append(EscapeXml(service.Metadata.License ?? string.Empty)).AppendLine("</AccessConstraints>");
+        sb.Append("    <Fees>").Append(EscapeXml(service.Metadata.Fees ?? string.Empty)).AppendLine("</Fees>");
+        sb.Append("    <AccessConstraints>").Append(EscapeXml(service.Metadata.AccessConstraints ?? string.Empty)).AppendLine("</AccessConstraints>");
         sb.AppendLine("  </Service>");
 
         sb.AppendLine("  <Capability>");
@@ -489,7 +489,7 @@ internal static partial class WmsRequestHandlers
         foreach (var layer in accessibleLayers)
         {
             var layerName = GetWmsLayerDisplayName(layer);
-            var layerMetadata = PublishedMetadataProjection.InheritMetadata(layer.Resource.Metadata, service.Metadata);
+            var layerMetadata = layer.Resource.Metadata;
             var resourceTitle = layerMetadata.Title ?? layer.Resource.Metadata.Name ?? layerName;
             var layerAbstract = layerMetadata.Description ?? $"WMS layer {layerName}";
 
