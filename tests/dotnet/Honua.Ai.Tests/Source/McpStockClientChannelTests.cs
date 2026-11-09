@@ -4,6 +4,7 @@
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Views;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
@@ -11,6 +12,8 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -62,6 +65,12 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        })
+        .ConfigureServices(services =>
+        {
+            // The test host adds its data provider after startup's conditional MCP registration.
+            var configuration = (IConfiguration)services.Single(service => service.ServiceType == typeof(IConfiguration)).ImplementationInstance!;
+            services.AddMcpDataAccessSurface(configuration);
         });
 
     private static bool IsSameJson(string text, JsonElement expected)
