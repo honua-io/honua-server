@@ -28,7 +28,7 @@ set -euo pipefail
 #
 # Run from anywhere in the repo. Commit the regenerated file.
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
 echo "Regenerating ${PWD}/docs/gis/data/geoservices-rest-parity.json from the derived route roster + judgement source..."
