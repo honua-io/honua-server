@@ -1515,7 +1515,7 @@ def test_nb_sch01_declared_queryable_reaches_the_client(
             f"with '?properties=name,{NAMESPACED_FIELD}' answered "
             f"{properties_outcome}. The syntactic gate on that parameter is "
             "OgcFeaturesQueryParameterAdapter.IsSimpleFieldName "
-            "(src/Honua.Protocols.OgcApi/Features/Services/"
+            "(src/Honua.Protocols/OgcApi/Features/Services/"
             "OgcFeaturesQueryParameterAdapter.cs); a matching identifier "
             "restriction lives at "
             "FeatureQueryBuilder.Validation.ValidFieldNameRegex "

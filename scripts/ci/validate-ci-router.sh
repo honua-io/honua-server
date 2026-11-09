@@ -325,7 +325,7 @@ for changed in \
 done
 for child in "OGC Classic Maps Core" "OGC Classic Maps Supporting"; do
   assert_descriptor "wms-capacity-runtime-${child}" \
-    "src/Honua.Protocols.OgcClassic/Wms/WmsRequestHandlers.cs" "targeted" false "${child}"
+    "src/Honua.Protocols/OgcClassic/Wms/WmsRequestHandlers.cs" "targeted" false "${child}"
   assert_descriptor "wms-capacity-registration-${child}" \
     "src/Honua.Server/EndpointRegistry.cs" "targeted" false "${child}"
 done
@@ -339,17 +339,17 @@ for changed in \
 done
 for child in "FeatureServer Editing and Relationships" "FeatureServer Query Services and Replication"; do
   assert_descriptor "featureserver-capacity-runtime-${child}" \
-    "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerEndpoints.cs" "targeted" false "${child}"
+    "src/Honua.Protocols/GeoServices/FeatureServer/FeatureServerEndpoints.cs" "targeted" false "${child}"
   assert_descriptor "featureserver-capacity-registration-${child}" \
     "src/Honua.Server/EndpointRegistry.cs" "targeted" false "${child}"
   assert_excludes_shard "featureserver-capacity-imageserver-exclusion-${child}" \
-    "src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs" "${child}"
+    "src/Honua.Protocols/GeoServices/ImageServer/ImageServerEndpoints.cs" "${child}"
   assert_excludes_shard "featureserver-capacity-scene-exclusion-${child}" \
-    "src/Honua.Protocols.Scene/SceneServerEndpoints.cs" "${child}"
+    "src/Honua.Protocols/Scene/SceneServerEndpoints.cs" "${child}"
   assert_excludes_shard "featureserver-capacity-auth-exclusion-${child}" \
     "src/Honua.Hosting/Features/Authentication/JwtBearerSupport.cs" "${child}"
   assert_excludes_shard "featureserver-capacity-raster-exclusion-${child}" \
-    "src/Honua.Core/Features/Raster/ZarrParser/ZarrMetadataExtractor.cs" "${child}"
+    "src/Honua.Core/Core/Features/Raster/ZarrParser/ZarrMetadataExtractor.cs" "${child}"
 done
 # The serialized [Collection("Database")] write-path concurrency class owns its
 # own shard; it must route there and nowhere else.
@@ -388,7 +388,7 @@ assert_exact_shards \
   '["STAC Protocol","STAC Items and Collections"]'
 assert_exact_shards \
   "stac-capacity-split-source" \
-  "src/Honua.Protocols.Stac/StacEndpoints.cs" \
+  "src/Honua.Protocols/Stac/StacEndpoints.cs" \
   '["Protocols Stac Components","Protocols Stac Units","STAC Items and Collections","STAC Protocol","STAC and API Governance"]'
 # --- #3204 September 2026 shard-headroom rebalance --------------------------
 # Every capacity split below leaves both children on the same source tree, so a
@@ -531,7 +531,7 @@ assert_descriptor \
 
 assert_descriptor \
   "feature-server-slice" \
-  "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerEndpoints.cs" \
+  "src/Honua.Protocols/GeoServices/FeatureServer/FeatureServerEndpoints.cs" \
   "targeted" \
   "false" \
   "FeatureServer Query Services and Replication"
@@ -557,20 +557,20 @@ assert_descriptor \
 # and MCP and Sessions query/edit paths, so a validation-only diff is targeted, not run_all.
 assert_descriptor \
   "core-validation-targeted" \
-  "src/Honua.Core/Features/Validation/ResourceValidator.cs" \
+  "src/Honua.Core/Core/Features/Validation/ResourceValidator.cs" \
   "targeted" \
   "false" \
   "OGC API Maps Basic and Conformance"
 
 assert_descriptor \
   "maps-source-basic" \
-  "src/Honua.Protocols.OgcApi/Maps/OgcMapsEndpoints.cs" \
+  "src/Honua.Protocols/OgcApi/Maps/OgcMapsEndpoints.cs" \
   "targeted" \
   "false" \
   "OGC API Maps Basic and Conformance"
 assert_descriptor \
   "maps-source-rendering" \
-  "src/Honua.Protocols.OgcApi/Maps/OgcMapsEndpoints.cs" \
+  "src/Honua.Protocols/OgcApi/Maps/OgcMapsEndpoints.cs" \
   "targeted" \
   "false" \
   "OGC API Maps Rendering and Records"
@@ -594,14 +594,14 @@ assert_descriptor \
   "OGC API Maps Rendering and Records"
 assert_descriptor \
   "core-validation-maps-rendering" \
-  "src/Honua.Core/Features/Validation/ResourceValidator.cs" \
+  "src/Honua.Core/Core/Features/Validation/ResourceValidator.cs" \
   "targeted" \
   "false" \
   "OGC API Maps Rendering and Records"
 
 assert_descriptor \
   "core-validation-targeted-features" \
-  "src/Honua.Core/Features/Validation/CommonQueryValidator.cs" \
+  "src/Honua.Core/Core/Features/Validation/CommonQueryValidator.cs" \
   "targeted" \
   "false" \
   "OGC API Features"
@@ -612,13 +612,13 @@ assert_descriptor \
 # that slice target both owners instead of tripping the unmapped-source net.
 assert_descriptor \
   "publishing-core-targeted" \
-  "src/Honua.Core/Features/Publishing/Domain/PublishingJsonContext.cs" \
+  "src/Honua.Core/Core/Features/Publishing/Domain/PublishingJsonContext.cs" \
   "targeted" \
   "false" \
   "Core and Cloud Contracts"
 assert_descriptor \
   "publishing-core-includes-mcp" \
-  "src/Honua.Core/Features/Publishing/Domain/PublishingJsonContext.cs" \
+  "src/Honua.Core/Core/Features/Publishing/Domain/PublishingJsonContext.cs" \
   "targeted" \
   "false" \
   "MCP and Sessions"
@@ -695,27 +695,27 @@ assert_descriptor \
 # over-run, but do not under-test the FeatureServer family).
 assert_excludes_shard \
   "featureserver-excludes-imageserver" \
-  "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerQueryHandler.cs" \
+  "src/Honua.Protocols/GeoServices/FeatureServer/FeatureServerQueryHandler.cs" \
   "GeoServices ImageServer"
 
 # Conversely, a single GeoServices ImageServer change targets ImageServer and
 # must EXCLUDE the FeatureServer Query Services and Replication shard.
 assert_excludes_shard \
   "imageserver-excludes-featureserver" \
-  "src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs" \
+  "src/Honua.Protocols/GeoServices/ImageServer/ImageServerEndpoints.cs" \
   "FeatureServer Query Services and Replication"
 
 # An OData-only feature change targets the OData shard family (targeted, not
 # run_all) and excludes an unrelated protocol shard.
 assert_excludes_shard \
   "odata-excludes-wfs" \
-  "src/Honua.Protocols.OData/Features/ODataEndpoints.cs" \
+  "src/Honua.Protocols/OData/Features/ODataEndpoints.cs" \
   "WFS"
 
 # Scene source and tests select both complementary whole-class owners.
 assert_exact_shards \
   "scene-targeted" \
-  "src/Honua.Protocols.Scene/SceneServerEndpoints.cs" \
+  "src/Honua.Protocols/Scene/SceneServerEndpoints.cs" \
   '["Protocols Scene Components","Protocols Scene Units","Scene","Scene I3S Resources"]'
 assert_exact_shards \
   "scene-assets-targeted" \
@@ -727,7 +727,7 @@ assert_exact_shards \
   '["Scene","Scene I3S Resources"]'
 assert_excludes_shard \
   "scene-excludes-featureserver" \
-  "src/Honua.Protocols.Scene/SceneServerEndpoints.cs" \
+  "src/Honua.Protocols/Scene/SceneServerEndpoints.cs" \
   "FeatureServer Query Services and Replication"
 
 # A Geocoding (GeocodeServer) change targets the dedicated Geocoding shard and
@@ -758,18 +758,18 @@ assert_descriptor \
 
 assert_descriptor \
   "core-query-pipeline-still-run-all" \
-  "src/Honua.Core/Queries/FeatureQuery.cs" \
+  "src/Honua.Core/Core/Queries/FeatureQuery.cs" \
   "infrastructure_change" \
   "true" \
   "Core and Cloud Contracts"
 
 # A brand-new, not-yet-mapped top-level protocol area (e.g. a future
-# src/Honua.Protocols.Wcps/ landing before its shard is added) trips the
+# src/Honua.Protocols/Wcps/ landing before its shard is added) trips the
 # unmapped-source safety net and runs run_all until an owning shard is mapped —
 # never a silent skip.
 assert_descriptor \
   "new-unmapped-protocol-run-all" \
-  "src/Honua.Protocols.Wcps/WcpsEndpoints.cs" \
+  "src/Honua.Protocols/Wcps/WcpsEndpoints.cs" \
   "unmapped_source_change" \
   "true" \
   "Core and Cloud Contracts"
@@ -779,7 +779,7 @@ assert_descriptor \
 # skip. Before #1899 its tests matched no filter and never ran.
 assert_descriptor \
   "sensorthings-targeted" \
-  "src/Honua.Protocols.SensorThings/SensorThingsEndpoints.cs" \
+  "src/Honua.Protocols/SensorThings/SensorThingsEndpoints.cs" \
   "targeted" \
   "false" \
   "SensorThings"
@@ -831,31 +831,31 @@ assert_descriptor \
 # Capacity partitions: a GPServer diff selects all GPServer siblings.
 assert_descriptor \
   "gpserver-source-targets-gpserver-endpoints" \
-  "src/Honua.Protocols.GeoServices/GPServer/GPServerEndpoints.cs" \
+  "src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs" \
   "targeted" \
   "false" \
   "GeoServices GPServer Endpoints"
 assert_descriptor \
   "gpserver-source-targets-gpserver-naserver" \
-  "src/Honua.Protocols.GeoServices/GPServer/GPServerEndpoints.cs" \
+  "src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs" \
   "targeted" \
   "false" \
   "GeoServices GPServer and NAServer"
 assert_descriptor \
   "gpserver-source-targets-soap" \
-  "src/Honua.Protocols.GeoServices/GPServer/GPServerEndpoints.cs" \
+  "src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs" \
   "targeted" \
   "false" \
   "GeoServices GPServer SOAP"
 assert_descriptor \
   "gpserver-source-targets-soap-progress" \
-  "src/Honua.Protocols.GeoServices/GPServer/GPServerEndpoints.cs" \
+  "src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs" \
   "targeted" \
   "false" \
   "GeoServices GPServer SOAP Progress"
 assert_descriptor \
   "gpserver-source-targets-durable-aliases" \
-  "src/Honua.Protocols.GeoServices/GPServer/GPServerEndpoints.cs" \
+  "src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs" \
   "targeted" \
   "false" \
   "GeoServices GPServer Durable and Aliases"
@@ -931,7 +931,7 @@ assert_exact_shards \
   "location-allocation-routing-batch" \
   "$(printf '%s\n%s\n%s' \
       'src/Honua.Routing/Features/Routing/Providers/LocationAllocationSolver.cs' \
-      'src/Honua.Protocols.GeoServices/NAServer/NAServerParameterTranslation.cs' \
+      'src/Honua.Protocols/GeoServices/NAServer/NAServerParameterTranslation.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/LocationAllocationSolverTests.cs')" \
   '["Ai Components","Ai Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","Geoprocessing Units","Protocols GeoServices Components","Protocols GeoServices Units","Protocols OgcApi Components","Protocols OgcApi Units","Protocols OgcClassic Components","Protocols OgcClassic Units","Routing Units"]'
 
@@ -964,7 +964,7 @@ assert_exact_shards \
   "routing-profile-cumulative-batch" \
   "$(printf '%s\n%s\n%s\n%s\n%s' \
       'src/Honua.Routing/Features/Routing/Providers/NetworkDatasetRegistry.cs' \
-      'src/Honua.Protocols.GeoServices/NAServer/NAServerEndpoints.cs' \
+      'src/Honua.Protocols/GeoServices/NAServer/NAServerEndpoints.cs' \
       'src/Honua.Server/Migrations/083_AddNetworkDatasetTravelProfiles.sql' \
       'tests/dotnet/Honua.TestKit/PgRoutingFixture.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/NetworkDatasetValidationTests.cs')" \
@@ -1040,9 +1040,9 @@ assert_excludes_shard \
 assert_exact_shards \
   "zarr-point-slice-cumulative-batch" \
   "$(printf '%s\n%s\n%s\n%s\n%s' \
-      'src/Honua.Core/Features/Raster/Abstractions/IZarrPointSliceReader.cs' \
-      'src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerIdentifyHandler.cs' \
-      'src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs' \
+      'src/Honua.Core/Core/Features/Raster/Abstractions/IZarrPointSliceReader.cs' \
+      'src/Honua.Protocols/GeoServices/ImageServer/Handlers/ImageServerIdentifyHandler.cs' \
+      'src/Honua.Protocols/GeoServices/ImageServer/ImageServerEndpoints.cs' \
       'src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs' \
       'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerZarrTestFixture.cs')" \
   '["Ai Components","Ai Units","Aws Units","Azure Units","Databricks Units","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","GeoServices ImageServer","GeoServices ImageServer Raster Rendering","GeoServices ImageServer Rendering and Support","Geoprocessing Units","Hosting Components","Hosting Units","Import Units","MySql Units","OData Units","OGC API Tiles Coverages and Processes","OGC API Tiles Endpoints and CRS","Oracle Units","Postgres Units","Protocols GeoServices Components","Protocols GeoServices Units","Protocols OData Components","Protocols OgcApi Components","Protocols OgcApi Units","Protocols OgcClassic Components","Protocols OgcClassic Units","Protocols Scene Components","Protocols Scene Units","Protocols SensorThings Components","Protocols SensorThings Units","Protocols Stac Components","Protocols Stac Units","Raster Serving Scene Geometry and Terrain","Redshift Units","Routing Units","Scene Units","ServiceDefaults Units","Snowflake Units","SqlServer Units","WFS"]'
@@ -1201,7 +1201,7 @@ assert_descriptor \
 # owners instead of tripping the unmapped shared-protocol run_all safety net.
 assert_exact_shards \
   "shared-wmts-formatter-bounded-owners" \
-  "src/Honua.Protocols.Ogc.Shared/Common/WmtsTileMatrixFormatting.cs" \
+  "src/Honua.Protocols/Ogc.Shared/Common/WmtsTileMatrixFormatting.cs" \
   '["GeoServices ImageServer","OGC API Tiles Coverages and Processes","OGC Classic WMTS","Protocols OgcApi Components","Protocols OgcApi Units","Protocols OgcClassic Components","Protocols OgcClassic Units","Protocols Stac Components","Protocols Stac Units"]'
 
 # An endpoint-ADDING feature PR touches the registration plumbing AND a feature
@@ -1212,7 +1212,7 @@ assert_descriptor \
   "$(printf '%s\n%s\n%s' \
       'src/Honua.Server/EndpointRegistry.cs' \
       'src/Honua.Server/Program.cs' \
-      'src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs')" \
+      'src/Honua.Protocols/GeoServices/ImageServer/ImageServerEndpoints.cs')" \
   "targeted" \
   "false" \
   "GeoServices ImageServer"
@@ -1220,7 +1220,7 @@ assert_descriptor \
   "endpoint-adding-feature-includes-smoke" \
   "$(printf '%s\n%s' \
       'src/Honua.Server/EndpointRegistry.cs' \
-      'src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs')" \
+      'src/Honua.Protocols/GeoServices/ImageServer/ImageServerEndpoints.cs')" \
   "targeted" \
   "false" \
   "MCP and Sessions"
@@ -1281,7 +1281,7 @@ assert_descriptor \
   "override-plus-core-still-run-all" \
   "$(printf '%s\n%s' \
       'src/Honua.Server/Startup/JsonContextRegistration.cs' \
-      'src/Honua.Core/Queries/FeatureQuery.cs')" \
+      'src/Honua.Core/Core/Queries/FeatureQuery.cs')" \
   "infrastructure_change" \
   "true" \
   "Core and Cloud Contracts"
@@ -1299,34 +1299,34 @@ assert_descriptor \
 # They must not trigger the 50+ shard unmapped-source fallback.
 assert_descriptor \
   "core-capability-registry-targeted" \
-  "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs" \
+  "src/Honua.Core/Core/Features/Capabilities/CapabilityRegistry.cs" \
   "targeted" \
   "false" \
   "Server Features Data Enrichment and Capabilities"
 assert_descriptor \
   "core-capability-registry-includes-admin-governance" \
-  "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs" \
+  "src/Honua.Core/Core/Features/Capabilities/CapabilityRegistry.cs" \
   "targeted" \
   "false" \
   "Server Features Admin Catalog and Configuration"
 assert_excludes_shard \
   "core-capability-registry-excludes-unrelated-admin-operations" \
-  "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs" \
+  "src/Honua.Core/Core/Features/Capabilities/CapabilityRegistry.cs" \
   "Server Features Admin Runtime Operations"
 
-# #1939 raster: src/Honua.Core/Features/Raster/ is the shared raster pipeline
+# src/Honua.Core/Core/Features/Raster/ is the shared raster pipeline
 # adapted by ImageServer + OGC API Coverages + Wcs(WFS). A raster change targets
 # those raster-rendering shards (incl. GeoServices ImageServer which runs the
 # ImageServer raster-sampling tests), NOT run_all.
 assert_descriptor \
   "raster-core-targeted" \
-  "src/Honua.Core/Features/Raster/ZarrParser/ZarrMetadataExtractor.cs" \
+  "src/Honua.Core/Core/Features/Raster/ZarrParser/ZarrMetadataExtractor.cs" \
   "targeted" \
   "false" \
   "GeoServices ImageServer"
 assert_excludes_shard \
   "raster-core-excludes-featureserver" \
-  "src/Honua.Core/Features/Raster/ZarrParser/ZarrMetadataExtractor.cs" \
+  "src/Honua.Core/Core/Features/Raster/ZarrParser/ZarrMetadataExtractor.cs" \
   "FeatureServer Query Services and Replication"
 
 # #1944 collaboration: src/Honua.Server/Features/Collaboration/ (and the Core and Cloud Contracts
@@ -1335,7 +1335,7 @@ assert_excludes_shard \
 assert_descriptor \
   "collaboration-targeted" \
   "$(printf '%s\n%s' \
-      'src/Honua.Core/Features/Collaboration/FeatureLocks/FeatureEditGuard.cs' \
+      'src/Honua.Core/Core/Features/Collaboration/FeatureLocks/FeatureEditGuard.cs' \
       'src/Honua.Server/Features/Collaboration/FeatureLocks/FeatureLockServices.cs')" \
   "targeted" \
   "false" \
@@ -1353,7 +1353,7 @@ assert_descriptor \
   "hosting-output-format-services-targeted" \
   "$(printf '%s\n%s' \
       'src/Honua.Hosting/Features/Services/GeoParquetFeatureWriter.cs' \
-      'src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerQueryHandler.cs')" \
+      'src/Honua.Protocols/GeoServices/FeatureServer/FeatureServerQueryHandler.cs')" \
   "targeted" \
   "false" \
   "FeatureServer Query Services and Replication"
@@ -1365,7 +1365,7 @@ assert_descriptor \
   "false" \
   "OData Core"
 
-# #1963 oauth: the GeoServices Sharing source (src/Honua.Protocols.GeoServices/
+# oauth: the GeoServices Sharing source (src/Honua.Protocols/GeoServices/
 # Sharing/) is owned by the Server Features Miscellaneous catch-all (Features.Sharing.*),
 # the Admin OAuth endpoints by the Admin & Console shard (Features.Admin.*), and
 # the Hosting/Features/Authentication override routes to the auth/security
@@ -1373,7 +1373,7 @@ assert_descriptor \
 # shards (Server Features Admin Authentication and Credentials for OAuthClientEndpointsTests).
 assert_descriptor \
   "oauth-sharing-source-targeted" \
-  "src/Honua.Protocols.GeoServices/Sharing/SharingOAuth2Endpoints.cs" \
+  "src/Honua.Protocols/GeoServices/Sharing/SharingOAuth2Endpoints.cs" \
   "targeted" \
   "false" \
   "Server Features Miscellaneous"
@@ -1495,7 +1495,7 @@ assert_descriptor \
   "Server Features Admin Integrations and Automation"
 assert_descriptor \
   "alert-core-includes-agentic-ops-owner" \
-  "src/Honua.Core/Features/Alerts/Domain/AlertModels.cs" \
+  "src/Honua.Core/Core/Features/Alerts/Domain/AlertModels.cs" \
   "targeted" \
   "false" \
   "Server Features Admin Integrations and Automation"
@@ -1507,7 +1507,7 @@ assert_descriptor \
   "Server Features Admin Integrations and Automation"
 assert_descriptor \
   "authorization-core-includes-studio-owner" \
-  "src/Honua.Core/Features/Authorization/PermissionResolver.cs" \
+  "src/Honua.Core/Core/Features/Authorization/PermissionResolver.cs" \
   "targeted" \
   "false" \
   "Server Features Analytics Studio Export and Reporting"
@@ -1519,7 +1519,7 @@ assert_descriptor \
   "Server Features Analytics Studio Export and Reporting"
 assert_descriptor \
   "forms-core-includes-studio-owner" \
-  "src/Honua.Core/Features/Forms/Packages/FormPackageContracts.cs" \
+  "src/Honua.Core/Core/Features/Forms/Packages/FormPackageContracts.cs" \
   "targeted" \
   "false" \
   "Server Features Analytics Studio Export and Reporting"
@@ -1553,7 +1553,7 @@ assert_descriptor \
   "Caching File Storage Styling and Infrastructure"
 assert_descriptor \
   "core-caching-targeted-to-split-child" \
-  "src/Honua.Core/Features/Caching/MetadataCacheState.cs" \
+  "src/Honua.Core/Core/Features/Caching/MetadataCacheState.cs" \
   "targeted" \
   "false" \
   "Caching File Storage Styling and Infrastructure"
@@ -1577,11 +1577,11 @@ assert_descriptor \
   "Core and Cloud Contracts"
 
 # Cross-cutting Core and Cloud Contracts feature trees NOT mapped to a shard still run_all (the
-# unmapped-source net): e.g. src/Honua.Core/Features/Geometry/ has no owning
+# unmapped-source net): e.g. src/Honua.Core/Core/Features/Geometry/ has no owning
 # shard and must not be silently narrowed.
 assert_descriptor \
   "core-geometry-feature-still-run-all" \
-  "src/Honua.Core/Features/Geometry/GeometryOperations.cs" \
+  "src/Honua.Core/Core/Features/Geometry/GeometryOperations.cs" \
   "unmapped_source_change" \
   "true" \
   "Core and Cloud Contracts"
