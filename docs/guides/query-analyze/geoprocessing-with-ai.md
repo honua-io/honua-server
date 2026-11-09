@@ -104,13 +104,16 @@ does not replace checking the executed result.
 Pass the same `plan` to `honua_execute_plan`. For retry-safe submission, supply
 an `idempotencyKey` unique to this logical request and retain it across retries.
 
-The response includes `jobId` and `resourceUri`. Read that returned resource with
-`resources/read` until status is `Succeeded`, `Failed`, or `Cancelled`. Use a
+The response includes `jobId` and `resourceUri`. Poll `honua_list_jobs` for that
+`jobId`, following `nextCursor` when present, until status is `Succeeded`, `Failed`,
+or `Cancelled`. Call `honua_get_job_results` with the same `jobId` for the terminal
+result package. The returned status/result resources remain available to clients
+using `resources/read`. Use a
 bounded wait; on timeout inspect the job or request cancellation with
 `honua_cancel_job` rather than submitting duplicates. Progress notifications can
 supplement polling when supported by the client session.
 
-On success, read `honua://jobs/{jobId}/results`. Inspect the returned `artifacts`
+On success, inspect the `artifacts` from `honua_get_job_results` (or the result resource)
 and retain their actual identifiers and references. Check the geometry: this
 example should have bounds `[-500, -500, 500, 500]` in EPSG:3857 and area within
 1% of `π × 500²` square metres. A job ID or a successful tool call alone does not
