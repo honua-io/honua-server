@@ -32,55 +32,55 @@
       "reason": "Transition aid naming the current graph publication identity, including regression identifiers and their generated inventory. The coordinated C# kind rename updates these names; public protocol IDs already use the graph Layer ID."
     },
     {
-      "path": "src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/MetadataV2GraphSnapshotExtensions.cs",
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2GraphSnapshotExtensions.cs",
       "rule": "dataset-reference",
       "line": "        var resourceIds = candidates.Select(static resource => resource.Metadata.Id).ToHashSet(StringComparer.Ordinal);",
       "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
     },
     {
-      "path": "src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/MetadataV2GraphSnapshotExtensions.cs",
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2GraphSnapshotExtensions.cs",
       "rule": "dataset-reference",
       "line": "        var serviceNames = publications.Where(publication => resourceIds.Contains(publication.ResourceId))",
       "reason": "ResourceId is the current metadata graph reference and the names that carry it through canonical APIs and regression fixtures. Retain that schema until the approved kind and wire/SQL migration steps; no new alias is introduced."
     },
     {
-      "path": "src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/MetadataV2GraphSnapshotExtensions.cs",
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2GraphSnapshotExtensions.cs",
       "rule": "graph-publication",
       "line": "        Func<MetadataV2Publication, bool>? includePublication = null)",
       "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
     },
     {
-      "path": "src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/MetadataV2GraphSnapshotExtensions.cs",
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2GraphSnapshotExtensions.cs",
       "rule": "graph-resource",
       "line": "            resource.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table).ToArray();",
       "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
     },
     {
-      "path": "src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/MetadataV2GraphSnapshotExtensions.cs",
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2GraphSnapshotExtensions.cs",
       "rule": "graph-resource",
       "line": "    MetadataV2Resource? Resource,",
       "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
     },
     {
-      "path": "src/Honua.Core/Features/Validation/Abstractions/IResourceValidator.cs",
+      "path": "src/Honua.Core/Core/Features/Validation/Abstractions/IResourceValidator.cs",
       "rule": "graph-resource",
       "line": "    Task<ResourceValidationResult<MetadataV2Resource>> ValidateStorageLayerV2Async(",
       "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
     },
     {
-      "path": "src/Honua.Core/Features/Validation/ResourceValidator.cs",
+      "path": "src/Honua.Core/Core/Features/Validation/ResourceValidator.cs",
       "rule": "graph-resource",
       "line": "            ? ResourceValidationResult.NotFound<MetadataV2Resource>(",
       "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
     },
     {
-      "path": "src/Honua.Core/Features/Validation/ResourceValidator.cs",
+      "path": "src/Honua.Core/Core/Features/Validation/ResourceValidator.cs",
       "rule": "graph-resource",
       "line": "            return ResourceValidationResult.AmbiguousIdentifier<MetadataV2Resource>(target.ConflictDetail!);",
       "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
     },
     {
-      "path": "src/Honua.Core/Features/Validation/ResourceValidator.cs",
+      "path": "src/Honua.Core/Core/Features/Validation/ResourceValidator.cs",
       "rule": "graph-resource",
       "line": "    public async Task<ResourceValidationResult<MetadataV2Resource>> ValidateStorageLayerV2Async(",
       "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
@@ -122,49 +122,49 @@
       "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
     },
     {
-      "path": "src/Honua.Protocols.OgcApi/Records/OgcRecordsEndpoints.cs",
+      "path": "src/Honua.Protocols/OgcApi/Records/OgcRecordsEndpoints.cs",
       "rule": "graph-publication",
       "line": "        MetadataV2Publication publication,",
       "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
     },
     {
-      "path": "src/Honua.Protocols.OgcApi/Records/OgcRecordsEndpoints.cs",
+      "path": "src/Honua.Protocols/OgcApi/Records/OgcRecordsEndpoints.cs",
       "rule": "graph-publication",
       "line": "        var recordPublications = new Dictionary<string, MetadataV2Publication>(StringComparer.Ordinal);",
       "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
     },
     {
-      "path": "src/Honua.Protocols.OgcClassic/OgcClassicRequestHelpers.cs",
+      "path": "src/Honua.Protocols/OgcClassic/OgcClassicRequestHelpers.cs",
       "rule": "graph-publication",
       "line": "    internal static string? GetServiceLayerIdentifier(MetadataV2Publication publication)",
       "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
     },
     {
-      "path": "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Capabilities.cs",
+      "path": "src/Honua.Protocols/OgcClassic/Wfs20/Services/Wfs20Handler.Capabilities.cs",
       "rule": "layer-membership",
       "line": "                    !seenPublicationIds.Add(featureType.Publication.Metadata.Id))",
       "reason": "Transition aid naming the current graph publication identity, including regression identifiers and their generated inventory. The coordinated C# kind rename updates these names; public protocol IDs already use the graph Layer ID."
     },
     {
-      "path": "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Capabilities.cs",
+      "path": "src/Honua.Protocols/OgcClassic/Wfs20/Services/Wfs20Handler.Capabilities.cs",
       "rule": "layer-membership",
       "line": "        var seenPublicationIds = new HashSet<string>(StringComparer.Ordinal);",
       "reason": "Transition aid naming the current graph publication identity, including regression identifiers and their generated inventory. The coordinated C# kind rename updates these names; public protocol IDs already use the graph Layer ID."
     },
     {
-      "path": "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.GetPropertyValue.cs",
+      "path": "src/Honua.Protocols/OgcClassic/Wfs20/Services/Wfs20Handler.GetPropertyValue.cs",
       "rule": "dataset-reference",
       "line": "        var resourceIds = ParseResourceIds(normalizedResourceId, descriptor.LocalName, enforceResourceIdTypeMatch, requireResourceIdQualifier);",
       "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
     },
     {
-      "path": "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Schemas.cs",
+      "path": "src/Honua.Protocols/OgcClassic/Wfs20/Services/Wfs20Handler.Schemas.cs",
       "rule": "graph-resource",
       "line": "        public string GeometryPropertyType(MetadataV2Resource resource)",
       "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
     },
     {
-      "path": "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.cs",
+      "path": "src/Honua.Protocols/OgcClassic/Wfs20/Services/Wfs20Handler.cs",
       "rule": "graph-publication",
       "line": "        MetadataV2Publication Publication,",
       "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
