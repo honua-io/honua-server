@@ -65,6 +65,7 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
         SeedMetadata();
         _fixture.MutateV2ResourceObjectMetadata(1, metadata => metadata with
         {
+            Title = "Survey roads",
             Links = [new MetadataV2Link { Rel = "metadata", Href = "https://example.com/catalog/roads", Type = "application/xml" }]
         });
         _fixture.UpdateV2ResourceMetadata(1, spatial: new MetadataV2ResourceSpatial
@@ -79,7 +80,7 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, text);
         var document = XDocument.Parse(text);
         var layer = document.Descendants().Single(element => element.Name.LocalName == "Layer" &&
-            element.Elements().Any(child => child.Name.LocalName == "Name" && child.Value == "1"));
+            element.Elements().Any(child => child.Name.LocalName == "Title" && child.Value == "Survey roads"));
         layer.Elements().Where(element => element.Name.LocalName == "CRS").Select(element => element.Value)
             .Should().Contain("EPSG:26910");
         var metadataUrl = layer.Elements().Single(element => element.Name.LocalName == "MetadataURL");
