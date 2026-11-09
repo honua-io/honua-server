@@ -195,6 +195,16 @@ public sealed partial class LayerPublishingIntegrationTests
         var mcpFeatures = mcp.GetProperty("structuredContent").GetProperty("features");
         mcpFeatures.GetArrayLength().Should().Be(1, mcp.GetRawText());
         AssertFeatureServerAttributes(mcpFeatures[0].GetProperty("attributes"), "Alpha", 2);
+
+        var geoJsonResponse = await _client.GetAsync(
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=geojson&where=population%3D2&outFields=*&returnGeometry=true");
+        var geoJsonPayload = await geoJsonResponse.Content.ReadAsStringAsync();
+        geoJsonResponse.StatusCode.Should().Be(HttpStatusCode.OK, geoJsonPayload);
+        using var geoJsonResult = JsonDocument.Parse(geoJsonPayload);
+        var geoJsonProperties = geoJsonResult.RootElement.GetProperty("features")[0].GetProperty("properties");
+        geoJsonProperties.GetProperty("name").GetString().Should().Be("Alpha");
+        if (geoJsonProperties.TryGetProperty("properties", out var residual)) AssertNoPromotedDuplicates(residual);
+
     }
 
     [IntegrationTest]
@@ -212,12 +222,13 @@ public sealed partial class LayerPublishingIntegrationTests
 
         await _fixture.Postgres.ExecuteDdlUnderLockAsync($$"""
             SELECT honua.create_import_table('public', '{{tableName}}', 4326);
-            INSERT INTO public.{{tableName}} (geometry, properties)
-            VALUES (ST_SetSRID(ST_MakePoint(-122.4, 37.8), 4326), '{"name":"Legacy","population":2}'::jsonb);
+            ALTER TABLE public.{{tableName}} ADD COLUMN name text;
+            INSERT INTO public.{{tableName}} (geometry, name, properties)
+            VALUES (ST_SetSRID(ST_MakePoint(-122.4, 37.8), 4326), 'Top-level', '{"name":"Legacy","population":2}'::jsonb);
             """);
 
         var columns = await ColumnNamesAsync("public", tableName);
-        columns.Should().BeEquivalentTo(["id", "geometry", "properties", "created_at"]);
+        columns.Should().BeEquivalentTo(["id", "geometry", "name", "properties", "created_at"]);
 
         var published = await PublishLayerAsync(new PublishLayerRequest
         {
@@ -228,7 +239,7 @@ public sealed partial class LayerPublishingIntegrationTests
             GeometryType = "Point",
             Srid = 4326,
             PrimaryKey = "id",
-            Fields = ["id", "properties"],
+            Fields = ["id", "name", "properties"],
             ServiceName = _serviceName,
             Enabled = true
         });
@@ -239,7 +250,7 @@ public sealed partial class LayerPublishingIntegrationTests
         var features = document.RootElement.GetProperty("features");
         features.GetArrayLength().Should().Be(1, payload);
         var properties = features[0].GetProperty("properties");
-        properties.TryGetProperty("name", out _).Should().BeFalse(payload);
+        properties.GetProperty("name").GetString().Should().Be("Top-level");
         properties.TryGetProperty("created_at", out _).Should().BeFalse(payload);
         properties.GetProperty("properties").GetProperty("name").GetString().Should().Be("Legacy");
         (await ColumnNamesAsync("public", tableName)).Should().NotContain("name");
