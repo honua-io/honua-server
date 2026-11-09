@@ -601,6 +601,9 @@ internal sealed class McpIngestDatasetArgument
     [JsonPropertyName("sourceSrid")]
     public int? SourceSrid { get; set; }
 
+    [JsonPropertyName("targetSrid")]
+    public int? TargetSrid { get; set; }
+
     [JsonPropertyName("longitudeColumn")]
     public string? LongitudeColumn { get; set; }
 
@@ -734,6 +737,15 @@ internal sealed class McpIngestDatasetOutput
 
     [JsonPropertyName("srid")]
     public int? Srid { get; set; }
+
+    [JsonPropertyName("sourceSrid")]
+    public int? SourceSrid { get; set; }
+
+    [JsonPropertyName("storedSrid")]
+    public int? StoredSrid { get; set; }
+
+    [JsonPropertyName("reprojected")]
+    public bool Reprojected { get; set; }
 
     [JsonPropertyName("geometryColumn")]
     public string? GeometryColumn { get; set; }

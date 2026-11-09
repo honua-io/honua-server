@@ -31,12 +31,10 @@ internal sealed partial class StreamingFileImportService
             return format switch
             {
                 SupportedFileFormat.GeoJson => await DetectGeoJsonSridAsync(stream, cancellationToken),
-                SupportedFileFormat.GeoServicesJson => await GeoServicesJsonFormatReader.TryDetectSridAsync(stream, cancellationToken) ?? 4326,
+                SupportedFileFormat.GeoServicesJson => await GeoServicesJsonFormatReader.TryDetectSridAsync(stream, cancellationToken),
                 SupportedFileFormat.Kml => 4326,
                 SupportedFileFormat.Gpx => 4326,
-                // A PostGIS CSV export carries the CRS on each geometry (EWKT/EWKB). Honour
-                // that SRID instead of assuming 4326; lon/lat and plain WKT keep the default (#6171).
-                SupportedFileFormat.Csv => await CsvFormatReader.TryDetectGeometrySridAsync(stream, cancellationToken) ?? 4326,
+                SupportedFileFormat.Csv => await CsvFormatReader.TryDetectGeometrySridAsync(stream, cancellationToken),
                 SupportedFileFormat.Gml => await GmlFormatReader.TryDetectSridAsync(stream, cancellationToken),
                 SupportedFileFormat.Wkt => await DetectWktSridAsync(stream, cancellationToken),
                 SupportedFileFormat.GeoPackage => await DetectGeoPackageSridAsync(stream, cancellationToken),
@@ -125,8 +123,8 @@ internal sealed partial class StreamingFileImportService
 
     private static async Task<int?> DetectGeoJsonSridAsync(Stream stream, CancellationToken cancellationToken)
     {
-        var detected = await StreamingGeoJsonReader.DetectCrsAsync(stream, cancellationToken);
-        return detected ?? 4326;
+        var detected = await StreamingGeoJsonReader.DetectCrsMetadataAsync(stream, cancellationToken);
+        return detected.Declared ? detected.Srid : 4326;
     }
 
     private static async Task<byte[]?> ReadHeaderAsync(Stream stream, CancellationToken cancellationToken)
@@ -157,10 +155,10 @@ internal sealed partial class StreamingFileImportService
         return format switch
         {
             SupportedFileFormat.GeoJson => await DetectGeoJsonSridAsync(headerStream, cancellationToken),
-            SupportedFileFormat.GeoServicesJson => await GeoServicesJsonFormatReader.TryDetectSridAsync(headerStream, cancellationToken) ?? 4326,
+            SupportedFileFormat.GeoServicesJson => await GeoServicesJsonFormatReader.TryDetectSridAsync(headerStream, cancellationToken),
             SupportedFileFormat.Kml => 4326,
             SupportedFileFormat.Gpx => 4326,
-            SupportedFileFormat.Csv => await CsvFormatReader.TryDetectGeometrySridAsync(headerStream, cancellationToken) ?? 4326,
+            SupportedFileFormat.Csv => await CsvFormatReader.TryDetectGeometrySridAsync(headerStream, cancellationToken),
             SupportedFileFormat.Gml => await GmlFormatReader.TryDetectSridAsync(headerStream, cancellationToken),
             SupportedFileFormat.Wkt => await DetectWktSridAsync(headerStream, cancellationToken),
             // Defensive: currently unreachable — FlatGeobuf non-seekable paths spill to

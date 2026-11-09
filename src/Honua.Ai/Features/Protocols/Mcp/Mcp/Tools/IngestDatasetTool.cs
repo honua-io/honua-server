@@ -30,8 +30,6 @@ internal sealed partial class IngestDatasetTool : IMcpTool
 
     public const string ImportedPrimaryKey = "id";
 
-    private const int ImportedTargetSrid = 4326;
-
     private const string CsvFormat = "csv";
     private const string GeoJsonFormat = "geojson";
 
@@ -54,7 +52,7 @@ internal sealed partial class IngestDatasetTool : IMcpTool
             + "publish as a queryable layer. Accepts format \"geojson\" (a GeoJSON FeatureCollection; coordinates are WGS84 lon/lat per RFC 7946) "
             + "or \"csv\" (text with a header row; point geometry is read from longitude/latitude columns — auto-detected names "
             + "lon/lng/long/longitude/x and lat/latitude/y, or set longitudeColumn/latitudeColumn explicitly — or from a WKT column named "
-            + "wkt/geom/geometry/shape; coordinate order is lon/lat and the coordinate CRS defaults to EPSG:4326, override with sourceSrid). "
+            + "wkt/geom/geometry/shape; coordinate order is lon/lat and the undeclared coordinate CRS requires sourceSrid; targetSrid is optional and defaults to keeping the source). "
             + "For a CSV that only has addresses, either geocode it first with honua_geocode_addresses and ingest the returned lon/lat values, or "
             + "set addressColumn to geocode server-side during ingest (up to 100 rows; requires the 'geocoding.batch' entitlement). "
             + "Returns the {connectionId, schema, table} triple plus row count and per-row errors — pass those values straight to "
@@ -114,8 +112,8 @@ internal sealed partial class IngestDatasetTool : IMcpTool
                 FileName = $"{validated.DatasetName}.{validated.Format}",
                 TableName = validated.DatasetName,
                 SourceKind = "mcp-inline",
-                SourceSrid = validated.SourceSrid,
-                TargetSrid = ImportedTargetSrid,
+                SourceSrid = validated.SourceSrid ?? (validated.AddressColumn is not null ? 4326 : null),
+                TargetSrid = validated.TargetSrid,
                 OverwriteExisting = true,
                 CsvOptions = csvOptions
             };
@@ -165,10 +163,15 @@ internal sealed partial class IngestDatasetTool : IMcpTool
                 "'datasetName' is required and must be 1-63 characters of letters, digits, or underscores, not starting with a digit.");
         }
 
-        var sourceSrid = argument.SourceSrid ?? 4326;
-        if (sourceSrid <= 0)
+        var sourceSrid = argument.SourceSrid;
+        if (sourceSrid is <= 0)
         {
             throw new GeoprocessingValidationException("'sourceSrid' must be a positive SRID/WKID.");
+        }
+
+        if (argument.TargetSrid is <= 0)
+        {
+            throw new GeoprocessingValidationException("'targetSrid' must be a positive SRID/WKID.");
         }
 
         var longitudeColumn = NormalizeOption(argument.LongitudeColumn);
@@ -198,6 +201,7 @@ internal sealed partial class IngestDatasetTool : IMcpTool
             argument.Data,
             datasetName,
             sourceSrid,
+            argument.TargetSrid,
             longitudeColumn,
             latitudeColumn,
             addressColumn);
@@ -240,7 +244,7 @@ internal sealed partial class IngestDatasetTool : IMcpTool
         var allowFailover = LicenseGate
             .CheckEntitlement(httpContext.RequestServices, GeocodeTool.FailoverEntitlementKey)
             .IsActive;
-        var sourceSrid = validated.SourceSrid;
+        var sourceSrid = validated.SourceSrid ?? 4326;
         return new CsvImportOptions
         {
             AddressColumn = validated.AddressColumn,
@@ -325,7 +329,10 @@ internal sealed partial class IngestDatasetTool : IMcpTool
             ConnectionId = catalogConnection.ConnectionId,
             Schema = importResult.Schema,
             Table = importResult.PhysicalTableName ?? importResult.TableName,
-            Srid = ImportedTargetSrid,
+            Srid = importResult.StoredSrid,
+            SourceSrid = importResult.SourceSrid,
+            StoredSrid = importResult.StoredSrid,
+            Reprojected = importResult.Reprojected,
             GeometryColumn = ImportedGeometryColumn,
             PrimaryKey = ImportedPrimaryKey,
             Warnings = warnings,
@@ -402,7 +409,8 @@ internal sealed partial class IngestDatasetTool : IMcpTool
         string Format,
         string Data,
         string DatasetName,
-        int SourceSrid,
+        int? SourceSrid,
+        int? TargetSrid,
         string? LongitudeColumn,
         string? LatitudeColumn,
         string? AddressColumn);

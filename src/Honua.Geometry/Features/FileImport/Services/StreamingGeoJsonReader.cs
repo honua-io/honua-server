@@ -955,61 +955,39 @@ internal sealed class StreamingGeoJsonReader
     /// Reads only the beginning of the file to find the CRS property.
     /// </summary>
     public static async Task<int?> DetectCrsAsync(Stream stream, CancellationToken cancellationToken = default)
+        => (await DetectCrsMetadataAsync(stream, cancellationToken)).Srid;
+
+    public static async Task<(int? Srid, bool Declared)> DetectCrsMetadataAsync(Stream stream, CancellationToken cancellationToken = default)
     {
-        // Read only the first few KB to find CRS
         const int headerSize = 8192;
         using var bufferRental = GeometryMemoryManager.RentWkbBuffer(headerSize);
         var buffer = bufferRental.Buffer;
         var bytesRead = await stream.ReadAsync(buffer.AsMemory(0, headerSize), cancellationToken);
+        if (stream.CanSeek) stream.Position = 0;
+        return ParseCrsMetadata(buffer.AsSpan(0, bytesRead));
+    }
 
-        if (bytesRead == 0)
-            return null;
-
-        // Reset stream position if possible
-        if (stream.CanSeek)
-            stream.Position = 0;
-
+    private static (int? Srid, bool Declared) ParseCrsMetadata(ReadOnlySpan<byte> header)
+    {
+        var reader = new Utf8JsonReader(header, isFinalBlock: false, state: default);
         try
         {
-            // Parse the header portion
-            var headerJson = Encoding.UTF8.GetString(buffer.AsSpan(0, bytesRead));
-
-            // Locate the deprecated GeoJSON-2008 "crs" member. It is a root-level member that, in
-            // conforming documents, precedes the "features" array. Anchor the EPSG scan to the
-            // region that belongs to the crs member only: an unanchored scan of the whole 8 KB
-            // header can pick up an "EPSG:3857"-looking attribute string inside a feature and
-            // wrongly re-stamp the layer's CRS (#2743 rider).
-            var crsIndex = headerJson.IndexOf("\"crs\"", StringComparison.OrdinalIgnoreCase);
-            if (crsIndex < 0)
-                return null;
-
-            // Bound the search at the "features" array (the crs member always precedes it in a
-            // conforming document); if it is not visible in the header window, scan to the end.
-            var featuresIndex = headerJson.IndexOf("\"features\"", crsIndex, StringComparison.OrdinalIgnoreCase);
-            var crsRegion = featuresIndex > crsIndex
-                ? headerJson[crsIndex..featuresIndex]
-                : headerJson[crsIndex..];
-
-            // Matches both the plain "EPSG:3857" form and the URN "urn:ogc:def:crs:EPSG::3857" form
-            // (the double colon is absorbed by the [:\s]* class).
-            var epsgMatch = System.Text.RegularExpressions.Regex.Match(
-                crsRegion,
-                @"EPSG[:\s]*(\d+)",
-                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-
-            if (epsgMatch.Success && int.TryParse(epsgMatch.Groups[1].Value, out var srid))
+            while (reader.Read())
             {
-                return srid;
+                if (reader.TokenType != JsonTokenType.PropertyName || reader.CurrentDepth != 1 || !reader.ValueTextEquals("crs")) continue;
+                if (!reader.Read()) return (null, true);
+                var start = checked((int)reader.TokenStartIndex);
+                if (!reader.TrySkip()) return (null, true);
+                var declaration = Encoding.UTF8.GetString(header[start..checked((int)reader.BytesConsumed)]);
+                var match = System.Text.RegularExpressions.Regex.Match(declaration, @"EPSG[:\s]*(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (match.Success && int.TryParse(match.Groups[1].Value, out var srid)) return (srid, true);
+                return declaration.Contains("CRS84", StringComparison.OrdinalIgnoreCase) ? (4326, true) : (null, true);
             }
         }
-        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
+        catch (JsonException)
         {
-            // Broad catch is intentional: this is a best-effort scan of a raw header byte window
-            // for an optional, deprecated GeoJSON-2008 "crs" hint. Any failure here (e.g. encoding
-            // errors on a malformed header) should fall back to the layer's configured/default CRS
-            // rather than aborting the whole import stream.
+            // A bounded header may end in the middle of a feature, beyond the CRS declaration.
         }
-
-        return null;
+        return (null, false);
     }
 }

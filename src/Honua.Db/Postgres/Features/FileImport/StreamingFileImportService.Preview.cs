@@ -40,11 +40,18 @@ internal sealed partial class StreamingFileImportService
         FileGdb.FileGdbReader.FileGdbLayerInfo? previewFileGdbLayer = null;
         GeoParquetScratch? geoParquetScratch = null;
         long? geoParquetTotalRows = null;
-        FileStream? fgbTempStream = null;
+        FileStream? seekablePreviewStream = null;
         string[] warnings = [];
         Stream? kmzStream = null;
         try
         {
+            if (!fileStream.CanSeek && format.Value == SupportedFileFormat.GeoJson)
+            {
+                seekablePreviewStream = await SpillToSeekableTempAsync(fileStream, cancellationToken);
+                fileStream = seekablePreviewStream;
+            }
+            bool? declaredOverride = null;
+            bool? formatDefinedOverride = null;
             int? detectedSrid;
             string[] availableLayers = [];
 
@@ -107,6 +114,8 @@ internal sealed partial class StreamingFileImportService
                 var scratchStream = geoParquetScratch.Stream;
                 var parquetMeta = await GeoParquetReader.ExtractMetadataAsync(scratchStream, cancellationToken);
                 detectedSrid = parquetMeta.Srid;
+                declaredOverride = !parquetMeta.Crs84Implied;
+                formatDefinedOverride = parquetMeta.Crs84Implied;
                 warnings = parquetMeta.Warnings;
                 geoParquetTotalRows = parquetMeta.TotalRowCount;
 
@@ -124,9 +133,9 @@ internal sealed partial class StreamingFileImportService
                 // FlatGeobuf binary headers can exceed the 8 KB CRS-detection buffer when
                 // the schema has many columns. Spill to a seekable temp file so full-header
                 // CRS detection and the library's Deserialize (which requires seeking) work.
-                fgbTempStream = await SpillToSeekableTempAsync(fileStream, cancellationToken);
-                fileStream = fgbTempStream;
-                ImportLog.SpilledToTempFile(_logger, fgbTempStream.Length);
+                seekablePreviewStream = await SpillToSeekableTempAsync(fileStream, cancellationToken);
+                fileStream = seekablePreviewStream;
+                ImportLog.SpilledToTempFile(_logger, seekablePreviewStream.Length);
                 detectedSrid = await DetectCrsStreamingAsync(fileStream, format.Value, cancellationToken);
             }
             else
@@ -213,6 +222,16 @@ internal sealed partial class StreamingFileImportService
                 }
             }
 
+            if (fileStream.CanSeek) fileStream.Position = 0;
+            var coordinateSystem = await InspectCoordinateSystemAsync(fileStream, format.Value, detectedSrid, cancellationToken);
+            if (declaredOverride.HasValue)
+            {
+                coordinateSystem = coordinateSystem with
+                {
+                    SourceCrsDeclared = declaredOverride.Value,
+                    DetectionMethod = formatDefinedOverride == true ? "format-defined" : declaredOverride.Value ? "file-metadata" : "unknown"
+                };
+            }
             var sampleProperties = new Dictionary<string, object?>();
             var firstFeature = features.FirstOrDefault();
             if (firstFeature?.Attributes is not null)
@@ -233,6 +252,7 @@ internal sealed partial class StreamingFileImportService
                     ? (int)Math.Min(geoParquetTotalRows.Value, int.MaxValue)
                     : headerFeatureCount ?? (needsFullCount ? totalStreamedCount : features.Count),
                 DetectedSrid = detectedSrid,
+                CoordinateSystem = coordinateSystem,
                 SampleProperties = sampleProperties,
                 AvailableLayers = availableLayers,
                 Warnings = warnings
@@ -245,9 +265,9 @@ internal sealed partial class StreamingFileImportService
                 await kmzStream.DisposeAsync();
             }
 
-            if (fgbTempStream != null)
+            if (seekablePreviewStream != null)
             {
-                await fgbTempStream.DisposeAsync();
+                await seekablePreviewStream.DisposeAsync();
             }
 
             CleanupShapefileScratch(shapefileScratch);

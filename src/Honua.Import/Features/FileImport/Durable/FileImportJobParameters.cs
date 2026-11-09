@@ -75,7 +75,6 @@ internal static class FileImportJobParameters
             [FileName] = request.FileName,
             [FileSizeBytes] = fileSizeBytes.ToString(CultureInfo.InvariantCulture),
             [TableName] = request.TableName,
-            [TargetSrid] = request.TargetSrid.ToString(CultureInfo.InvariantCulture),
             [OverwriteExisting] = request.OverwriteExisting ? "true" : "false",
             [LoadMode] = request.LoadMode.ToString(),
             [SourceKind] = request.SourceKind,
@@ -94,6 +93,7 @@ internal static class FileImportJobParameters
         AddIfPresent(parameters, ObjectStoreRoleArn, request.ObjectStoreRoleArn);
         AddIfPresent(parameters, ObjectStoreContentType, request.ObjectStoreContentType);
         AddIfPresent(parameters, TargetSchema, request.TargetSchema);
+        AddIfPresent(parameters, TargetSrid, request.TargetSrid?.ToString(CultureInfo.InvariantCulture));
         AddIfPresent(parameters, SourceSrid, request.SourceSrid?.ToString(CultureInfo.InvariantCulture));
         AddIfPresent(parameters, KeyColumns, request.KeyColumns.Count == 0 ? null : string.Join(',', request.KeyColumns));
         AddIfPresent(parameters, SourceUrl, request.SourceUrl);
@@ -134,10 +134,15 @@ internal static class FileImportJobParameters
             return false;
         }
 
-        if (!int.TryParse(Get(parameters, TargetSrid) ?? "4326", NumberStyles.Integer, CultureInfo.InvariantCulture, out var targetSrid))
+        int? targetSrid = null;
+        if (Get(parameters, TargetSrid) is { } targetSridText)
         {
-            error = $"'{TargetSrid}' is not an integer.";
-            return false;
+            if (!int.TryParse(targetSridText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedTarget))
+            {
+                error = $"'{TargetSrid}' is not an integer.";
+                return false;
+            }
+            targetSrid = parsedTarget;
         }
 
         int? sourceSrid = null;

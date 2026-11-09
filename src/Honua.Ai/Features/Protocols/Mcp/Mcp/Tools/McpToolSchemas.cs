@@ -326,8 +326,11 @@ internal static class McpToolSchemas
             },
             "sourceSrid": {
               "type": "integer",
-              "default": 4326,
-              "description": "Spatial reference (SRID/WKID) of the input coordinates; data is stored in EPSG:4326. Defaults to 4326 (WGS84 lon/lat)."
+              "description": "Explicit source SRID/WKID override. Required when the input format does not declare a CRS."
+            },
+            "targetSrid": {
+              "type": ["integer", "null"],
+              "description": "Optional target SRID. Omit or use null to keep the source coordinate system."
             },
             "longitudeColumn": {
               "type": "string",

@@ -28,7 +28,14 @@ public sealed record ImportResult
 
     public required SupportedFileFormat Format { get; init; }
 
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.Never)]
     public int? DetectedSrid { get; init; }
+
+    public int? SourceSrid { get; init; }
+
+    public int? StoredSrid { get; init; }
+
+    public bool Reprojected { get; init; }
 
     public double? StorageCrsCoordinateEpoch { get; init; }
 

@@ -403,7 +403,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     Options = FileOptions.Asynchronous | FileOptions.SequentialScan
                 });
                 shouldDisposeStream = true;
-                detectedSrid = request.SourceSrid ?? 4326;
+                detectedSrid = 4326;
             }
             else if (format.Value == SupportedFileFormat.FileGdb)
             {
@@ -425,10 +425,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 // reports NoFeaturesFound), so only then is the target SRID an acceptable source.
                 // Otherwise an unresolvable CRS must fail with SourceSridRequired like every other
                 // format instead of silently assuming the target SRID (#6114).
-                detectedSrid = request.SourceSrid
-                    ?? (layers.Length == 0
-                        ? request.TargetSrid
-                        : await ResolveFileGdbSridAsync(layers, cancellationToken));
+                detectedSrid = await ResolveFileGdbSridAsync(layers, cancellationToken);
                 warnings = FileGdb.FileGdbAdvancedConstructs.DetectWarnings(fileGdbScratch.GdbPath);
             }
             else if (format.Value == SupportedFileFormat.GeoParquet)
@@ -472,18 +469,13 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 shouldDisposeStream = true;
                 totalBytes = fgbTempStream.Length;
                 ImportLog.SpilledToTempFile(_logger, totalBytes.Value);
-                detectedSrid = request.SourceSrid
-                    ?? await DetectCrsStreamingAsync(fileStream, format.Value, cancellationToken);
+                detectedSrid = await DetectCrsStreamingAsync(fileStream, format.Value, cancellationToken);
                 // ReadHeader advances position; reset so Deserialize can read from the start.
                 fileStream.Position = 0;
             }
             else
             {
-                if (request.SourceSrid.HasValue)
-                {
-                    detectedSrid = request.SourceSrid;
-                }
-                else if (!fileStream.CanSeek)
+                if (!fileStream.CanSeek)
                 {
                     var header = await ReadHeaderAsync(fileStream, cancellationToken);
                     detectedSrid = header == null
@@ -530,6 +522,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 return result;
             }
 
+            var targetSrid = request.TargetSrid ?? sourceSrid.Value;
+            request = request with { TargetSrid = targetSrid };
+
             if (coordinateEpoch.HasValue &&
                 (!detectedSrid.HasValue || sourceSrid.Value != request.TargetSrid ||
                  sourceSrid.Value != detectedSrid.Value))
@@ -541,7 +536,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
             var sridValidationErrors = await ValidateImportSridsAsync(
                 sourceSrid.Value,
-                request.TargetSrid,
+                targetSrid,
                 cancellationToken);
             if (sridValidationErrors.Count > 0)
             {
@@ -688,6 +683,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 schema: ResolveTargetSchema(request.TargetSchema),
                 repairedGeometryCount: repairedCount) with
             {
+                SourceSrid = sourceSrid.Value,
+                StoredSrid = targetSrid,
+                Reprojected = sourceSrid.Value != targetSrid,
                 StorageCrsCoordinateEpoch = coordinateEpoch,
                 // Per-row issues (e.g. CSV address rows that failed to geocode, or GeoJSON
                 // geometries repaired by the validity gate) that did not block the import but should

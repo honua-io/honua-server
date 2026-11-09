@@ -73,6 +73,10 @@ internal static partial class ImportEndpoints
             .RequireAdminAuthorization();
 
         MapImportRoutes(v1Group, isV1: true);
+        app.MapGet("/api/v{version:apiVersion}/admin/coordinate-systems", HandleCoordinateSystemsAsync)
+            .WithApiVersionSet().HasApiVersion(1, 0)
+            .WithTags("Import").WithName("SearchCoordinateSystemsV1")
+            .RequireAdminAuthorization();
 
         MapCompatibilityImportRoutes(app);
     }
@@ -288,6 +292,7 @@ internal static partial class ImportEndpoints
         {
             using Stream stream = file.OpenReadStream();
             FilePreview preview = await importService.PreviewFileAsync(stream, safeFileName, cancellationToken);
+            preview = await EnrichPreviewCoordinateSystemAsync(context, preview, cancellationToken);
             IResult result = Results.Json(preview, ImportJsonContext.Default.FilePreview);
             await result.ExecuteAsync(context);
         }
@@ -443,6 +448,7 @@ internal static partial class ImportEndpoints
                 previewStream,
                 staged.File.FileName,
                 cancellationToken);
+            preview = await EnrichPreviewCoordinateSystemAsync(context, preview, cancellationToken);
             IResult result = Results.Json(preview, ImportJsonContext.Default.FilePreview);
             await result.ExecuteAsync(context);
         }
@@ -936,7 +942,7 @@ internal static partial class ImportEndpoints
                 ["sourceKind"] = request.SourceKind,
                 ["sourceUrl"] = request.SourceUrl ?? string.Empty,
                 ["sourceSrid"] = request.SourceSrid?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
-                ["targetSrid"] = request.TargetSrid.ToString(CultureInfo.InvariantCulture)
+                ["targetSrid"] = request.TargetSrid?.ToString(CultureInfo.InvariantCulture) ?? string.Empty
             }.ToImmutableDictionary()
         };
 
@@ -1138,7 +1144,7 @@ internal static partial class ImportEndpoints
                 TableName = tableName,
                 UploadId = NormalizeOptionalOperationId(fields, "UploadId"),
                 SourceSrid = TryParseNullableInt(fields, "SourceSrid"),
-                TargetSrid = TryParseNullableInt(fields, "TargetSrid") ?? 4326,
+                TargetSrid = TryParseNullableInt(fields, "TargetSrid"),
                 TargetSchema = targetSchema,
                 OverwriteExisting = TryParseBool(fields, "OverwriteExisting"),
                 ForceBackground = TryParseBool(fields, "ForceBackground"),
@@ -1316,10 +1322,11 @@ internal static partial class ImportEndpoints
     }
 
     private static int? TryParseNullableInt(Dictionary<string, string> fields, string fieldName)
-        => fields.TryGetValue(fieldName, out var value) &&
-           int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
-            ? parsed
-            : null;
+    {
+        if (!fields.TryGetValue(fieldName, out var value) || string.IsNullOrWhiteSpace(value)) return null;
+        if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)) return parsed;
+        throw new ArgumentException("The coordinate-system code must be an integer.");
+    }
 
     private static string? NormalizeOptionalOperationId(Dictionary<string, string> fields, string fieldName)
     {
@@ -1802,8 +1809,7 @@ internal sealed record ImportUrlImportRequest
     public required string TableName { get; init; }
     public string? TargetSchema { get; init; }
     public int? SourceSrid { get; init; }
-    // A setter preserves the initializer when .NET 10 source-generated JSON omits this field.
-    public int TargetSrid { get; set; } = 4326;
+    public int? TargetSrid { get; init; }
     public bool OverwriteExisting { get; init; }
     public bool ForceBackground { get; init; }
     public bool TrackProgress { get; init; }
@@ -1834,7 +1840,7 @@ internal sealed record ImportExecutionRequest
     public string? UploadId { get; init; }
     public string? TargetSchema { get; init; }
     public int? SourceSrid { get; init; }
-    public int TargetSrid { get; init; } = 4326;
+    public int? TargetSrid { get; init; }
     public bool OverwriteExisting { get; init; }
     public bool ForceBackground { get; init; }
     public bool TrackProgress { get; init; }

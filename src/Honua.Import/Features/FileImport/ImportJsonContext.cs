@@ -155,6 +155,7 @@ namespace Honua.Import.FileImport;
 [JsonSerializable(typeof(MigrationScorecardLayer[]))]
 [JsonSerializable(typeof(MigrationInventoryCodedValue))]
 [JsonSerializable(typeof(MigrationInventoryCodedValue[]))]
+[JsonSerializable(typeof(Honua.Core.Features.Shared.Models.CoordinateSystemSearchResult))]
 [JsonSerializable(typeof(FilePreview))]
 [JsonSerializable(typeof(ImportResult))]
 [JsonSerializable(typeof(ImportTypedColumn))]

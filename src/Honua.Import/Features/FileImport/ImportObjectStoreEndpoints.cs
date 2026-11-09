@@ -301,8 +301,7 @@ internal sealed record ImportObjectStoreImportRequest
 
     public int? SourceSrid { get; init; }
 
-    // A setter preserves the initializer when .NET 10 source-generated JSON omits this field.
-    public int TargetSrid { get; set; } = 4326;
+    public int? TargetSrid { get; init; }
 
     public bool OverwriteExisting { get; init; }
 }
