@@ -303,6 +303,7 @@ The curated prompts select `configure` or `analyze`, not `setup`. Each view is b
 | View | What an admin selects it for |
 |---|---|
 | `configure` | The closed admin roster (server status, API-key reads, connection create and test, import from URL, layer publish, access policy), inline ingest, service publish, layer reads, style and render, and the Studio composition, save, get-version, and publication tools. |
+| `folders` | Folder and Service discovery, Folder create, rename and delete, and Service moves through canonical operations. Select `configure` for publishing and access policy. |
 | `operate` | Health, findings, events, alerts, platform-release status, deploy operations, and `honua_propose_finding`. |
 | `analyze` | Grounding, geocoding, layer reads, and the plan / validate / execute / job tools. A published-layer buffer is process `analytics.buffer-aggregate` (`layerId`). `geometry.buffer` accepts one WKB and does not read a published layer. |
 | `review` | Read-only package review (`review.v1`): `honua_validate_package` and `honua_preview_package`. Anonymous listing returns an empty tools array. These two descriptors are not on `setup`; together they exceed that view's 128 KiB aggregate ceiling. |
@@ -329,7 +330,7 @@ The server publishes its `/mcp` tool roster as a generated file, [`docs/gis/data
 - `static`: the hand-authored `honua_*` tools.
 - `projectedAdmin`: the `honua_admin_*` tools that the default composition publishes. These are the audited Admin projection plus the closed operator roster, minus the audited secret and browser-session exclusions.
 - `requiresDurableControlPlane`: the projected Admin tools that register only when a durable operation-proposal store is configured.
-- `views`: the members of the `default`, `setup`, `configure`, `operate`, `analyze` and `review` workflow views.
+- `views`: the members of the `default`, `setup`, `configure`, `folders`, `operate`, `analyze` and `review` workflow views.
 - `retired`: tool names the server no longer advertises, such as `honua_propose_operation`.
 
 `serverSha` records the commit the roster was last regenerated from. To regenerate the file, run `bash scripts/generate-mcp-tool-roster.sh`. The nightly generated-files job also regenerates it. `McpToolRosterDriftTests` fails when the committed file no longer matches the composed server.

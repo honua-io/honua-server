@@ -11,6 +11,8 @@ internal static class McpWorkflowViewCatalog
 
     public const string ConfigureViewName = "configure";
 
+    public const string FoldersViewName = "folders";
+
     public const string OperateViewName = "operate";
 
     public const string AnalyzeViewName = "analyze";
@@ -207,8 +209,9 @@ internal static class McpWorkflowViewCatalog
         Title = "Configure and publish",
         Description =
             "The bounded path an admin uses to connect or ingest data, publish a layer, set access, "
-            + "style and render a map, then compose, save, read, and propose a Studio map, app, or dashboard.",
-        Revision = "configure.v1",
+            + "style and render a map, then compose, save, read, and propose a Studio map, app, or dashboard. "
+            + "Select the folders view to organize folders or move services.",
+        Revision = "configure.v2",
         Stages =
         [
             new McpWorkflowViewStageDefinition
@@ -218,12 +221,7 @@ internal static class McpWorkflowViewCatalog
                 Description = "Read server status and API-key grants, then create, test, import, publish, and set access.",
                 Rules =
                 [
-                    McpWorkflowViewMemberRule.Exact("honua_list_folders"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_services_list"),
-                    McpWorkflowViewMemberRule.Exact("honua_create_folder"),
-                    McpWorkflowViewMemberRule.Exact("honua_update_folder"),
-                    McpWorkflowViewMemberRule.Exact("honua_delete_folder"),
-                    McpWorkflowViewMemberRule.Exact("honua_move_service"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_server_status"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_api_key_list"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_api_key_effective_permissions"),
@@ -319,6 +317,34 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_studio_remove_interaction"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_add_control"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_remove_control"),
+                ],
+            },
+        ],
+    };
+
+    public static McpWorkflowViewDefinition Folders { get; } = new()
+    {
+        Name = FoldersViewName,
+        Title = "Organize folders and services",
+        Description =
+            "List folders and services, create, rename or delete a folder, and move a service. "
+            + "Select configure to publish data or set service access. Listing grants no authority.",
+        Revision = "folders.v1",
+        Stages =
+        [
+            new McpWorkflowViewStageDefinition
+            {
+                Id = "folders",
+                Title = "Folder management",
+                Description = "Discover folder membership and submit canonical folder and service-move operations.",
+                Rules =
+                [
+                    McpWorkflowViewMemberRule.Exact("honua_list_folders"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_services_list"),
+                    McpWorkflowViewMemberRule.Exact("honua_create_folder"),
+                    McpWorkflowViewMemberRule.Exact("honua_update_folder"),
+                    McpWorkflowViewMemberRule.Exact("honua_delete_folder"),
+                    McpWorkflowViewMemberRule.Exact("honua_move_service"),
                 ],
             },
         ],
@@ -432,6 +458,7 @@ internal static class McpWorkflowViewCatalog
             [Default.Name] = Default,
             [Setup.Name] = Setup,
             [Configure.Name] = Configure,
+            [Folders.Name] = Folders,
             [Operate.Name] = Operate,
             [Analyze.Name] = Analyze,
             [Review.Name] = Review,

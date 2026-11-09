@@ -1015,7 +1015,7 @@ public sealed class McpWorkflowViewTests
             .ToArray();
 
         views.Select(v => v.GetProperty("name").GetString()).Should().Equal(
-            "analyze", "configure", "default", "operate", "review", "setup");
+            "analyze", "configure", "default", "folders", "operate", "review", "setup");
         views.Should().OnlyContain(v => v.GetProperty("toolCount").GetInt32() <= McpWorkflowViewBudget.MaxDescriptors);
     }
 
@@ -1099,6 +1099,7 @@ public sealed class McpWorkflowViewTests
         foreach (var definition in new[]
                  {
                      McpWorkflowViewCatalog.Configure,
+                     McpWorkflowViewCatalog.Folders,
                      McpWorkflowViewCatalog.Operate,
                      McpWorkflowViewCatalog.Analyze,
                  })
@@ -1136,7 +1137,52 @@ public sealed class McpWorkflowViewTests
         analyze.Members.Select(member => member.ToolName).Should().Contain(["honua_execute_plan", "honua_geocode_address"]);
     }
 
+    [UnitTest]
+    public async Task ToolsList_FoldersView_IsBoundedCanonicalAndRequiresAuthentication()
+    {
+        await using var provider = BuildLiveProvider();
+        var surface = BuildFullSurface(provider.GetServices<IMcpToolSource>().ToArray());
+        var full = await surface.GetAllToolsAsync();
+        var view = await ListToolsAsync(surface, "folders");
+
+        view.Names.Should().BeEquivalentTo(
+        [
+            "honua_list_folders",
+            "honua_admin_services_list",
+            "honua_create_folder",
+            "honua_update_folder",
+            "honua_delete_folder",
+            "honua_move_service",
+        ]);
+        view.NextCursor.Should().BeNull();
+        view.Meta.GetProperty("descriptorBytes").GetInt32().Should().BeLessThanOrEqualTo(128 * 1024);
+        view.Tools.Should().OnlyContain(tool => Encoding.UTF8.GetByteCount(tool.GetRawText()) <= 16 * 1024);
+        foreach (var tool in view.Tools)
+        {
+            var canonical = full.Single(candidate => candidate.Name == tool.GetProperty("name").GetString());
+            JsonSerializer.Serialize(canonical.Describe(), McpJsonContext.Default.McpToolDescriptor)
+                .Should().Be(tool.GetRawText());
+        }
+
+        var configure = await ListToolsAsync(surface, "configure");
+        configure.Names.Should().NotIntersectWith(view.Names.Where(name => name != "honua_admin_services_list"));
+        var anonymous = McpTestFactory.AnonymousHttpContext();
+        (await ListToolsAsync(surface, "folders", anonymous)).Names.Should().BeEmpty();
+        var refused = await DispatchAsync(surface,
+            """{"jsonrpc":"2.0","id":"folder","method":"tools/call","params":{"name":"honua_create_folder","arguments":{"name":"Maps"}}}""",
+            anonymous);
+        refused!.Result!.Value.GetProperty("isError").GetBoolean().Should().BeTrue();
+    }
+
     private static async Task<(McpToolDescriptor Descriptor, bool IsDynamic)[]> LiveCatalogAsync()
+    {
+        await using var provider = BuildLiveProvider();
+        var surface = BuildFullSurface(provider.GetServices<IMcpToolSource>().ToArray());
+        var tools = await surface.GetAllToolsAsync();
+        return tools.Select(tool => (McpWorkflowViewDescriptorClassifier.Describe(tool), tool is PublishedOperationTool)).ToArray();
+    }
+
+    private static ServiceProvider BuildLiveProvider()
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection().Build();
         var environment = Substitute.For<IHostEnvironment>();
@@ -1147,10 +1193,7 @@ public sealed class McpWorkflowViewTests
         services.AddOperationsToolset(configuration, environment);
         services.AddAdminAccessOperations();
         McpServiceCollectionExtensions.AddMcpPublishedOperationTools(services, configuration);
-        await using var provider = services.BuildServiceProvider();
-        var surface = BuildFullSurface(provider.GetServices<IMcpToolSource>().ToArray());
-        var tools = await surface.GetAllToolsAsync();
-        return tools.Select(tool => (McpWorkflowViewDescriptorClassifier.Describe(tool), tool is PublishedOperationTool)).ToArray();
+        return services.BuildServiceProvider();
     }
 
     [UnitTest]
