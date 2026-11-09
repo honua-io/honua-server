@@ -4,7 +4,7 @@
 using System.IO.Compression;
 using System.Text;
 using FluentAssertions;
-using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;

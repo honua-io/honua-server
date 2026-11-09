@@ -214,8 +214,8 @@ public sealed partial class DirectImportCrsContractTests : IAsyncLifetime
     public async Task CoordinateSystems_RegistryFailure_ReturnsSafeUnavailableResponse()
     {
         var registry = Substitute.For<ICrsRegistry>();
-        registry.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(ValueTask.FromException<CoordinateSystemSearchResult>(new InvalidOperationException("private-registry-details")));
+        await registry.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ValueTask.FromException<CoordinateSystemSearchResult>(new InvalidOperationException("private-registry-details")));
         var fixture = new WebAppFixture().ConfigureServices(services =>
         {
             services.RemoveAll<ICrsRegistry>();
