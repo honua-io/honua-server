@@ -32,6 +32,12 @@
       "inputFields": ["connectionId"]
     },
     {
+      "toolName": "honua_admin_connection_layers_list",
+      "operationId": "admin.connections.layers.list",
+      "mode": "read",
+      "inputFields": ["connectionId", "page", "pageSize", "serviceName"]
+    },
+    {
       "toolName": "honua_admin_connections_create",
       "operationId": "admin.connections.create",
       "mode": "execute",

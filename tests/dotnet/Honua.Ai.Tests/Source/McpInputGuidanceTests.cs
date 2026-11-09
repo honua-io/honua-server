@@ -46,6 +46,46 @@ public sealed class McpInputGuidanceTests
         JsonElement.DeepEquals(mirror.RootElement, payload).Should().BeTrue();
     }
 
+    [UnitTheory]
+    [InlineData(3, 3)]
+    [InlineData(1000, 20)]
+    public void Enrich_LargeArray_BoundsGuidanceAndPreservesContentMirror(int maxItems, int expected)
+    {
+        var schema = JsonSerializer.SerializeToElement(new
+        {
+            type = "object",
+            properties = new
+            {
+                names = new { type = "array", maxItems, items = new { type = "string", description = "Caller-supplied name." } }
+            }
+        });
+        var tool = Substitute.For<IMcpTool>();
+        tool.Describe().Returns(new McpToolDescriptor { Name = "owned", InputSchema = schema });
+        var arguments = JsonSerializer.SerializeToElement(new { names = Enumerable.Repeat(0, 1000).ToArray() });
+
+        var result = McpInputGuidance.Enrich(tool, arguments, Refusal("invalid_argument"));
+
+        var payload = result.StructuredContent!.Value;
+        payload.GetProperty("violations").GetArrayLength().Should().Be(expected);
+        payload.GetRawText().Length.Should().BeLessThan(6000);
+        result.Content.Single().Text.Should().Be(payload.GetRawText());
+    }
+
+    [UnitTest]
+    public void Enrich_MalformedDescriptor_PreservesOriginalRefusal()
+    {
+        using var schema = JsonDocument.Parse("""{"type":"object","required":"jobId","properties":{"jobId":{"type":"string"}}}""");
+        var tool = Substitute.For<IMcpTool>();
+        tool.Describe().Returns(new McpToolDescriptor { Name = "owned", InputSchema = schema.RootElement.Clone() });
+        var result = Refusal("invalid_argument");
+        var original = result.StructuredContent!.Value.GetRawText();
+
+        McpInputGuidance.Enrich(tool, null, result).Should().BeSameAs(result);
+
+        result.StructuredContent.Value.GetRawText().Should().Be(original);
+        result.Content.Single().Text.Should().Be(original);
+    }
+
     private static McpToolsCallResult Refusal(string code)
     {
         using var document = JsonDocument.Parse("{\"code\":\"" + code + "\",\"message\":\"Refused.\"}");

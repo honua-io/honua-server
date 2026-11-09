@@ -19,11 +19,19 @@ internal static class McpInputGuidance
             return result;
         var text = result.Content.Where(block => block.Type == "text").ToArray();
         if (text.Length != 1) return result;
-        var schema = McpWorkflowViewDescriptorClassifier.Describe(tool).InputSchema;
-        var guidance = new Guidance(McpInputShapeGuidance.Find(schema, arguments), InputSources(schema));
-        var enriched = WritePayload(payload, guidance);
-        result.StructuredContent = enriched;
-        text[0].Text = enriched.GetRawText();
+        try
+        {
+            var schema = McpWorkflowViewDescriptorClassifier.Describe(tool).InputSchema;
+            var guidance = new Guidance(McpInputShapeGuidance.Find(schema, arguments), InputSources(schema));
+            var enriched = WritePayload(payload, guidance);
+            var enrichedText = enriched.GetRawText();
+            result.StructuredContent = enriched;
+            text[0].Text = enrichedText;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or JsonException or ArgumentException)
+        {
+            // Optional guidance must preserve the original refusal when a descriptor is malformed.
+        }
         return result;
     }
 

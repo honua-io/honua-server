@@ -9,7 +9,11 @@ namespace Honua.Ai.Protocols.Mcp.Tools;
 internal sealed class McpInputShapeGuidance
 {
     private sealed record InputPath(string Value, string? Source, string? Property = null);
+    private const int MaxViolations = 20;
+    private const int MaxArrayItems = 20;
     private readonly List<McpValidationViolation> _violations = [];
+    private int _remainingNodes = 256;
+    private bool Complete => _remainingNodes <= 0 || _violations.Count >= MaxViolations;
 
     internal static IReadOnlyList<McpValidationViolation> Find(JsonElement schema, JsonElement? arguments)
     {
@@ -20,7 +24,8 @@ internal sealed class McpInputShapeGuidance
 
     private void Inspect(JsonElement schema, JsonElement? value, InputPath context)
     {
-        if (schema.ValueKind != JsonValueKind.Object) return;
+        if (Complete || schema.ValueKind != JsonValueKind.Object) return;
+        _remainingNodes--;
         var description = ReadDescription(schema);
         if (description.Contains("honua_", StringComparison.Ordinal) || description.Contains("caller", StringComparison.OrdinalIgnoreCase))
             context = context with { Source = description };
@@ -31,9 +36,22 @@ internal sealed class McpInputShapeGuidance
         }
         if (value is null || value.Value.ValueKind == JsonValueKind.Object) InspectObject(schema, value, context);
         if (value is { ValueKind: JsonValueKind.Array } array && schema.TryGetProperty("items", out var items))
+            InspectArray(items, array, new ArrayPath(context, ReadArrayLimit(schema)));
+    }
+
+    private sealed record ArrayPath(InputPath Context, int Limit);
+
+    private static int ReadArrayLimit(JsonElement schema) =>
+        schema.TryGetProperty("maxItems", out var maximum) && maximum.ValueKind == JsonValueKind.Number && maximum.TryGetInt32(out var count)
+            ? Math.Clamp(count, 0, MaxArrayItems) : MaxArrayItems;
+
+    private void InspectArray(JsonElement items, JsonElement array, ArrayPath path)
+    {
+        var index = 0;
+        foreach (var item in array.EnumerateArray())
         {
-            var index = 0;
-            foreach (var item in array.EnumerateArray()) Inspect(items, item, context with { Value = $"{context.Value}[{index++}]" });
+            if (Complete || index >= path.Limit) break;
+            Inspect(items, item, path.Context with { Value = $"{path.Context.Value}[{index++}]" });
         }
     }
 
@@ -41,11 +59,20 @@ internal sealed class McpInputShapeGuidance
     {
         if (!schema.TryGetProperty("properties", out var properties)) return;
         if (schema.TryGetProperty("required", out var required))
-            foreach (var field in required.EnumerateArray()) InspectRequired(properties, value, context with { Value = $"{context.Value}.{field.GetString()}", Property = field.GetString() });
+            foreach (var field in required.EnumerateArray())
+            {
+                if (Complete) break;
+                _remainingNodes--;
+                InspectRequired(properties, value, context with { Value = $"{context.Value}.{field.GetString()}", Property = field.GetString() });
+            }
         if (value is not { ValueKind: JsonValueKind.Object } supplied) return;
         foreach (var property in properties.EnumerateObject())
+        {
+            if (Complete) break;
+            _remainingNodes--;
             if (supplied.TryGetProperty(property.Name, out var argument))
                 Inspect(property.Value, argument, context with { Value = $"{context.Value}.{property.Name}" });
+        }
     }
 
     private void InspectRequired(JsonElement properties, JsonElement? value, InputPath context)
@@ -57,6 +84,7 @@ internal sealed class McpInputShapeGuidance
 
     private void AddViolation(JsonElement schema, InputPath context, string problem)
     {
+        if (_violations.Count >= MaxViolations) return;
         var description = ReadDescription(schema);
         var source = context.Source is not null && context.Source != description ? $" Source: {context.Source}" : string.Empty;
         _violations.Add(new McpValidationViolation
