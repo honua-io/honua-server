@@ -174,6 +174,7 @@ internal static partial class FeatureStreamEndpoints
         [FromServices] FeatureStreamDependencies deps,
         [FromServices] DeploymentIdentity deploymentIdentity,
         [FromServices] Conformance.FeatureStreamConformanceRunRegistry conformance,
+        ILogger<FeatureStreamEndpointsLog> logger,
         HttpContext context)
     {
         var options = deps.Options.Value;
@@ -183,36 +184,42 @@ internal static partial class FeatureStreamEndpoints
         var edition = streamDecision.Edition;
         var enabled = streamDecision.IsActive;
         var snapshot = await deps.MetadataV2GraphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
-        var layerCapabilities = ResolveAllStreamLayers(snapshot)
+        var visibleLayers = ResolveAllStreamLayers(snapshot)
             .Where(layer =>
                 AccessPolicyHelpers.IsResourceAccessible(
                     context,
                     layer.Resource,
                     layer.Service))
-            .Select(layer =>
-            {
-                string[]? temporalFieldNames = null;
-                var temporalFields = layer.Resource.ReadTemporalFields();
-                var configuredFields = new[] { temporalFields.StartTimeField, temporalFields.EndTimeField }
-                    .Where(field => !string.IsNullOrWhiteSpace(field))
-                    .Select(field => field!)
-                    .ToArray();
-                temporalFieldNames = configuredFields is { Length: > 0 } ? configuredFields : null;
-                var supportsTemporalFilters = TemporalExtentHelpers.HasOptInTemporalFields(layer.Resource);
-                var srid = layer.Resource.ReadSrid() ?? 4326;
-
-                return new FeatureStreamLayerCapability
-                {
-                    LayerId = layer.LayerId,
-                    Name = layer.Resource.Metadata.Name,
-                    CanSubscribe = enabled,
-                    SupportsSpatialFilters = layer.Resource.ReadGeometryType() is not MetadataV2GeometryType.None,
-                    SupportsTemporalFilters = supportsTemporalFilters,
-                    TemporalFields = temporalFieldNames,
-                    Crs = $"EPSG:{srid.ToString(CultureInfo.InvariantCulture)}"
-                };
-            })
             .ToArray();
+        using var baselineBudget = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+        baselineBudget.CancelAfter(TimeSpan.FromSeconds(1));
+        var layerCapabilities = new List<FeatureStreamLayerCapability>(visibleLayers.Length);
+        foreach (var layer in visibleLayers)
+        {
+            string[]? temporalFieldNames = null;
+            var temporalFields = layer.Resource.ReadTemporalFields();
+            var configuredFields = new[] { temporalFields.StartTimeField, temporalFields.EndTimeField }
+                .Where(field => !string.IsNullOrWhiteSpace(field))
+                .Select(field => field!)
+                .ToArray();
+            temporalFieldNames = configuredFields is { Length: > 0 } ? configuredFields : null;
+            var supportsTemporalFilters = TemporalExtentHelpers.HasOptInTemporalFields(layer.Resource);
+            var srid = layer.Resource.ReadSrid() ?? 4326;
+
+            layerCapabilities.Add(new FeatureStreamLayerCapability
+            {
+                LayerId = layer.LayerId,
+                Name = layer.Resource.Metadata.Name,
+                CanSubscribe = enabled,
+                CanCompleteBaseline = enabled
+                    ? await ProbeBaselineCompletionAsync(deps, layer.LayerId, context, logger, baselineBudget.Token).ConfigureAwait(false)
+                    : null,
+                SupportsSpatialFilters = layer.Resource.ReadGeometryType() is not MetadataV2GeometryType.None,
+                SupportsTemporalFilters = supportsTemporalFilters,
+                TemporalFields = temporalFieldNames,
+                Crs = $"EPSG:{srid.ToString(CultureInfo.InvariantCulture)}"
+            });
+        }
 
         var response = new FeatureStreamCapabilitiesResponse
         {
@@ -241,7 +248,7 @@ internal static partial class FeatureStreamEndpoints
             // Published under both names on purpose: see FeatureStreamCapabilitiesResponse.ServerRevision.
             ServerRevision = deploymentIdentity.Revision,
             Conformance = conformance.DescribeCapability(),
-            Layers = layerCapabilities
+            Layers = [.. layerCapabilities]
         };
 
         return Results.Json(
