@@ -48,9 +48,11 @@ public sealed class StudioDiscoveryToolTests
         tool.Describe().OutputSchema.Should().NotBeNull();
     }
 
-    [UnitTest]
+    [UnitTheory]
+    [InlineData(10)]
+    [InlineData(null)]
     [Endpoint("POST /mcp tools/call honua_studio_list_items")]
-    public async Task ListItems_NonAdminCaller_ForcesOwnerAndTenantBeforePaging()
+    public async Task ListItems_NonAdminCaller_ForcesOwnerAndTenantBeforePaging(int? limit)
     {
         var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
         lifecycle.ListContentItemsAsync(Arg.Any<StudioContentItemQuery>(), Arg.Any<CancellationToken>())
@@ -68,14 +70,18 @@ public sealed class StudioDiscoveryToolTests
             services.AddSingleton(authorization);
         }, user: "alice");
 
+        var arguments = limit is { } value
+            ? $$"""{"q":"roads","cursor":"page-one","limit":{{value}}}"""
+            : """{"q":"roads","cursor":"page-one"}""";
+        var expectedLimit = limit ?? 25;
         var result = await ResolveTool("honua_studio_list_items").InvokeAsync(context,
-            McpTestFactory.ParseJson("""{"q":"roads","cursor":"page-one","limit":10}"""), default);
+            McpTestFactory.ParseJson(arguments), default);
 
         result.IsError.Should().BeFalse();
         result.StructuredContent!.Value.GetProperty("nextCursor").GetString().Should().Be("next-page");
         await lifecycle.Received(1).ListContentItemsAsync(Arg.Is<StudioContentItemQuery>(query =>
             query.OwnerId == "alice" && query.Tenant != null && query.Tenant.TenantId == "tenant-a" &&
-            query.SearchTerm == "roads" && query.Cursor == "page-one" && query.Limit == 10), Arg.Any<CancellationToken>());
+            query.SearchTerm == "roads" && query.Cursor == "page-one" && query.Limit == expectedLimit), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -101,6 +107,10 @@ public sealed class StudioDiscoveryToolTests
         }, user: "alice");
         var tool = ResolveTool("honua_studio_list_versions");
 
+        var defaultPage = (await tool.InvokeAsync(context,
+            McpTestFactory.ParseJson($$"""{"itemId":"{{itemId}}"}"""), default)).StructuredContent!.Value;
+        defaultPage.GetProperty("versions").GetArrayLength().Should().Be(2);
+        defaultPage.TryGetProperty("nextBeforeVersionNumber", out _).Should().BeFalse();
         var first = (await tool.InvokeAsync(context,
             McpTestFactory.ParseJson($$"""{"itemId":"{{itemId}}","limit":1}"""), default)).StructuredContent!.Value;
         first.GetProperty("versions")[0].GetProperty("contentHash").GetString().Should().Be(newest.ContentHash);
