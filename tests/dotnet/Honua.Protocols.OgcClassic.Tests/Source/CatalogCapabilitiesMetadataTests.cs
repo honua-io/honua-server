@@ -86,6 +86,10 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
             element.Elements().Any(child => child.Name.LocalName == "Title" && child.Value == "Survey roads"));
         layer.Elements().Where(element => element.Name.LocalName == "CRS").Select(element => element.Value)
             .Should().Contain("EPSG:26910");
+        var declaredCrs = layer.Elements().Where(element => element.Name.LocalName == "CRS").Select(element => element.Value).ToArray();
+        declaredCrs.Should().Equal("EPSG:26910");
+        foreach (var bounds in layer.Elements().Where(element => element.Name.LocalName == "BoundingBox"))
+            declaredCrs.Should().Contain(bounds.Attribute("CRS")!.Value);
         var metadataUrl = layer.Elements().Single(element => element.Name.LocalName == "MetadataURL");
         metadataUrl.Descendants().Single(element => element.Name.LocalName == "OnlineResource")
             .Attribute(XName.Get("href", "http://www.w3.org/1999/xlink"))!.Value.Should().Be("https://example.com/catalog/roads");
