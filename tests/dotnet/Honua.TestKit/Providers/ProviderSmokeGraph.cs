@@ -9,23 +9,6 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.TestKit.Providers;
 
-/// <summary>
-/// Builds the shared Metadata v2 graph used by the provider-http-smoke fixtures
-/// (<see cref="DuckDbProviderWebAppFixture"/>, <see cref="MySqlProviderWebAppFixture"/>,
-/// <see cref="SqlServerProviderWebAppFixture"/>). Every fixture seeds the exact same
-/// 5-row "parcels" dataset (see <see cref="ProviderSmokeData"/>) so the smoke test
-/// assertions (row counts, filter results, extents) are identical across providers —
-/// only the physical storage and Metadata v2 storage-binding connection differ.
-/// </summary>
-/// <remarks>
-/// One resource is published three times, once per protocol family, mirroring the
-/// convention <c>WebAppFixtureMetadataV2Mixin.BuildDefaultTestGraph</c> uses for the
-/// Postgres-backed default test graph: a dedicated <see cref="MetadataV2Service"/> per
-/// protocol (GeoServices FeatureServer, OGC API Features, OData) each with a single
-/// publication of the protocol-appropriate <see cref="MetadataV2LayerType"/>. OGC
-/// API Tiles is layered onto the OGC API Features service since it addresses the same
-/// collection resource (<c>/ogc/tiles/collections/{collectionId}/tiles/...</c>).
-/// </remarks>
 public static class ProviderSmokeGraph
 {
     /// <summary>
