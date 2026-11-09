@@ -132,14 +132,14 @@ def validate(
     generate_block = producer.split("  generate:\n", 1)[1].split("  produce:\n", 1)[0]
     produce_block = producer.split("  produce:\n", 1)[1]
     require(generate_block, "uses: ./.github/actions/setup-dotnet-ci", "generation must configure .NET")
-    require(generate_block, "bash scripts/generate-feature-catalog.sh", "generation must run the catalog emitter")
-    if generate_block.count("bash scripts/generate-feature-catalog.sh") != 2:
+    require(generate_block, "bash scripts/ci/generate-feature-catalog.sh", "generation must run the catalog emitter")
+    if generate_block.count("bash scripts/ci/generate-feature-catalog.sh") != 2:
         raise AssertionError("generation must replay the feature catalog exactly once")
-    if generate_block.count("bash scripts/generate-geoservices-parity.sh") != 2:
+    if generate_block.count("bash scripts/ci/generate-geoservices-parity.sh") != 2:
         raise AssertionError("generation must replay GeoServices parity exactly once")
     require(generate_block, 'cmp -- "${first_root}/${projection}" "${projection}"',
             "only byte-identical replayed projections may be staged")
-    if "uses: ./.github/actions/setup-dotnet-ci" in produce_block or "bash scripts/generate-" in produce_block:
+    if "uses: ./.github/actions/setup-dotnet-ci" in produce_block or "bash scripts/ci/generate-" in produce_block:
         raise AssertionError("isolated packaging must not execute setup or generators")
     if "packages:" in produce_block:
         raise AssertionError("isolated packaging must not receive package permissions")

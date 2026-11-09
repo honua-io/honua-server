@@ -694,7 +694,7 @@ assert_contains "smart-ci: FeatureServer-only diff targets FeatureServer shard" 
 assert_eq "smart-ci: not run_all for a targeted feature diff" "$(jq -r '.run_all' <<<"${desc}")" "false"
 assert_contains "derived artifacts: shell generators do not require executable bits" \
   "$(cat "${TRAIN_DIR}/train.sh")" \
-  'bash "${repo_root}/scripts/generate-geoservices-parity.sh"'
+  'bash "${repo_root}/scripts/ci/generate-geoservices-parity.sh"'
 assert_contains "derived artifacts: parity reuses the feature-catalog build" \
   "$(cat "${TRAIN_DIR}/train.sh")" \
   'generate-geoservices-parity.sh" --no-build --no-restore'

@@ -13,10 +13,10 @@ inputs still fail. Generator implementation and serialization are unchanged.
 
 | Checked-in output | Existing generator | Cadence |
 | --- | --- | --- |
-| `docs/gis/data/feature-catalog.json` | `scripts/generate-feature-catalog.sh` → `FeatureCatalogEmitter` / `FeatureCatalogGenerator` | Nightly / on demand |
-| `docs/gis/data/admin-openapi-operation-ids.json` and `admin-mcp-projection-manifest.json` | `scripts/generate-admin-operation-parity-exports.sh` → `AdminOperationParityExportTests` | Nightly / on demand |
-| `docs/gis/data/mcp-tool-roster.v1.json` (schema `mcp-tool-roster.v1.schema.json`) | `scripts/generate-mcp-tool-roster.sh` → `McpToolRosterDriftTests` (after the admin exports; `serverSha` restamps only when the roster body changes) | Nightly / on demand |
-| `docs/gis/data/geoservices-rest-parity.json` | `scripts/generate-geoservices-parity.sh` → `GeoServicesParityEmitter` / `GeoServicesParityGenerator` | Nightly / on demand |
+| `docs/gis/data/feature-catalog.json` | `scripts/ci/generate-feature-catalog.sh` → `FeatureCatalogEmitter` / `FeatureCatalogGenerator` | Nightly / on demand |
+| `docs/gis/data/admin-openapi-operation-ids.json` and `admin-mcp-projection-manifest.json` | `scripts/ci/generate-admin-operation-parity-exports.sh` → `AdminOperationParityExportTests` | Nightly / on demand |
+| `docs/gis/data/mcp-tool-roster.v1.json` (schema `mcp-tool-roster.v1.schema.json`) | `scripts/ci/generate-mcp-tool-roster.sh` → `McpToolRosterDriftTests` (after the admin exports; `serverSha` restamps only when the roster body changes) | Nightly / on demand |
+| `docs/gis/data/geoservices-rest-parity.json` | `scripts/ci/generate-geoservices-parity.sh` → `GeoServicesParityEmitter` / `GeoServicesParityGenerator` | Nightly / on demand |
 | `docs/gis/data/capability-matrix.v1.json` | `scripts/ci/generate-capability-matrix.py` (after catalog and parity) | Nightly / on demand |
 | `docs/okf/capabilities` | `scripts/ci/generate-capability-concepts.py` (after the capability matrix) | Nightly / on demand |
 | `src/Honua.Core/Core/Features/Infrastructure/Crs/Resources/geoparquet-crs-projjson.json` | `scripts/geoparquet/generate-projjson-catalog.py` | Explicit CRS/PROJ dependency update; depends on external pyproj/PROJ data, not trunk evidence |
