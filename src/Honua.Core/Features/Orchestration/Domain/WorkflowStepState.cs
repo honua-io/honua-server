@@ -24,6 +24,8 @@ public sealed record WorkflowStepState
 
     public DateTimeOffset? StartedAt { get; init; }
 
+    public bool TimeoutCancellationRequested { get; init; }
+
     public DateTimeOffset? CompletedAt { get; init; }
 
     public string? ErrorMessage { get; init; }
