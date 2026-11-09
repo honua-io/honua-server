@@ -28,9 +28,13 @@ def server_port(variable: str, ci_default: int, worker_index: int = 0) -> int:
 
 def _children(pid: int) -> set[int]:
     children = set()
-    for path in Path(f"/proc/{pid}/task").glob("*/children"):
+    try:
+        tasks = list(Path(f"/proc/{pid}/task").iterdir())
+    except FileNotFoundError:
+        return children
+    for task in tasks:
         try:
-            children.update(map(int, path.read_text().split()))
+            children.update(map(int, (task / "children").read_text().split()))
         except FileNotFoundError:
             continue
     return children
@@ -64,7 +68,11 @@ def _listening_inodes(port: int) -> set[str]:
 
 def _socket_handles(pid: int) -> set[str]:
     handles = set()
-    for descriptor in Path(f"/proc/{pid}/fd").glob("*"):
+    try:
+        descriptors = list(Path(f"/proc/{pid}/fd").iterdir())
+    except FileNotFoundError:
+        return handles
+    for descriptor in descriptors:
         try:
             handles.add(os.readlink(descriptor))
         except FileNotFoundError:

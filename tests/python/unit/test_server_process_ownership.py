@@ -169,3 +169,16 @@ def test_anonymous_and_authenticated_ports_are_independent(monkeypatch):
     monkeypatch.setenv("HONUA_STAC_COMPAT_AUTH_PORT", "25500")
     assert server_port("HONUA_STAC_COMPAT_PORT", 5565, 2) == 24502
     assert server_port("HONUA_STAC_COMPAT_AUTH_PORT", 6565, 2) == 25502
+
+
+def test_unreadable_procfs_is_not_hidden_by_glob_suppression(monkeypatch):
+    from pathlib import Path
+    from shared.process_ports import process_owns_listener
+
+    def unreadable(_):
+        raise PermissionError("procfs descriptors denied")
+
+    monkeypatch.setattr(Path, "glob", lambda *_: iter(()))
+    monkeypatch.setattr(Path, "iterdir", unreadable)
+    with pytest.raises(RuntimeError, match="cannot be inspected"):
+        process_owns_listener(1, 23456)
