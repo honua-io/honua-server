@@ -154,8 +154,7 @@ internal sealed class CapabilityManifestService(
             DeploymentProfile = options.DeploymentProfile,
             DataStores = request.Authenticated ? new CapabilityManifestDataStores
             {
-                Profile = Honua.Server.Startup.DataStoreBuildPolicy.Profile,
-                InstalledProviders = Honua.Server.Startup.DataStoreBuildPolicy.InstalledProviders
+                InstalledProviders = runtimeInventory.FeatureDataProviders.Order(StringComparer.Ordinal).ToArray()
             } : null,
             Links = BuildLinks()
         };

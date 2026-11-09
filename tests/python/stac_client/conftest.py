@@ -24,6 +24,7 @@ from shared.canonical_fixture import TEST_RESULTS_ROOT
 from shared.cert_envelope import CertificationEvidenceCollector
 from shared.postgis import PostGISFixture
 from shared.server import HonuaServer
+from shared.process_ports import server_port
 
 from . import cert_lane
 
@@ -374,7 +375,7 @@ def stac_runtime() -> Generator[StacCompatibilityRuntime, None, None]:
         fixture.seed_metadata_v2_snapshot()
 
         worker_id = _get_worker_id()
-        port = int(os.getenv("HONUA_STAC_COMPAT_PORT", str(DEFAULT_PORT))) + _get_worker_index(worker_id)
+        port = server_port("HONUA_STAC_COMPAT_PORT", DEFAULT_PORT, _get_worker_index(worker_id))
         server = HonuaServer(
             connection_string=fixture.get_npgsql_connection_string(),
             port=port,
@@ -384,7 +385,7 @@ def stac_runtime() -> Generator[StacCompatibilityRuntime, None, None]:
 
         auth_server = HonuaServer(
             connection_string=fixture.get_npgsql_connection_string(),
-            port=DEFAULT_AUTH_PORT + _get_worker_index(worker_id),
+            port=server_port("HONUA_STAC_COMPAT_AUTH_PORT", DEFAULT_AUTH_PORT, _get_worker_index(worker_id)),
             project_root=PROJECT_ROOT,
             environment={
                 "HONUA_DEV_AUTH": "false",

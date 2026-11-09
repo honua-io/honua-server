@@ -443,11 +443,10 @@ public sealed partial class CapabilityManifestEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = await ReadDocumentAsync(response);
         var stores = document.RootElement.GetProperty("dataStores");
-        stores.GetProperty("profile").GetString().Should().Be("full");
         stores.GetProperty("installedProviders").EnumerateArray()
             .Select(provider => provider.GetString()).Should().Contain(
-                "postgis", "duckdb", "mysql", "sqlserver", "oracle", "redshift", "snowflake", "databricks");
-        stores.GetProperty("fullImageTagSuffix").ValueKind.Should().Be(JsonValueKind.Null);
+                "postgis");
+        stores.GetProperty("fullImageTagSuffix").GetString().Should().Be("-full");
         stores.GetProperty("documentationHref").GetString().Should().EndWith("/docs/ops/nightly-images.md");
     }
 

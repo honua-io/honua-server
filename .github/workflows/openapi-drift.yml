@@ -26,7 +26,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: openapi-drift-${{ github.ref }}
+  group: openapi-drift-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:

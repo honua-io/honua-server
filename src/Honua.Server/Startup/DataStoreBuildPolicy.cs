@@ -11,12 +11,6 @@ internal static class DataStoreBuildPolicy
 {
     public static bool AdditionalStoresIncluded => DataStoreProviderPolicy.AdditionalStoresIncluded;
 
-    public static string Profile => AdditionalStoresIncluded ? "full" : "postgis";
-
-    public static string[] InstalledProviders => AdditionalStoresIncluded
-        ? [DataProviderNames.Postgis, .. DataStoreProviderPolicy.AdditionalStoreSectionsByProvider.Keys.Except(ExcludedBuildProviders)]
-        : [DataProviderNames.Postgis];
-
     public static async Task ValidatePostgisConnectionsAsync(
         ISecureConnectionRegistry registry, IMetadataV2GraphProvider graphProvider)
     {
@@ -68,16 +62,6 @@ internal static class DataStoreBuildPolicy
             RefuseAdditionalStores();
         }
     }
-
-    private static readonly string[] ExcludedBuildProviders =
-    [
-#if HONUA_SKIP_ORACLE
-        DataProviderNames.Oracle,
-#endif
-#if HONUA_SKIP_SNOWFLAKE
-        DataProviderNames.Snowflake,
-#endif
-    ];
 
     private static void RefuseAdditionalStores() => throw new DataStoreProviderUnavailableException();
 }

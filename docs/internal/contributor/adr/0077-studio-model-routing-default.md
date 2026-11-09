@@ -157,4 +157,22 @@ Remote OpenAI-compatible and Anthropic endpoints require HTTPS. OpenAI-compatibl
 
 ## Provider failure diagnostics
 
+Anthropic thinking, signatures and encrypted `redacted_thinking` blocks remain private to the proxy.
+The adapter reconstructs the complete provider assistant turn and restores it for tool-result
+continuations without adding reasoning to Studio messages, SSE events, signed transcripts or SDK
+contracts. Entries are bound to the verified deployment, actor and workflow, provider credential,
+endpoint, model, system prompt, tools and visible message prefix. Only a completely consumed,
+successful tool-call stream can populate this state; malformed, cancelled and post-terminal streams cannot.
+
+Continuation state is process-local, available for 15 minutes, and bounded to 128 turns and
+4,194,304 UTF-16 characters in total, with a 262,144-character capture limit per provider response.
+Capture overflow discards private continuation state without interrupting visible text or tool events;
+an oversized tool turn cannot be continued and requires a new conversation.
+Expired, evicted, restarted or differently routed continuations within the current tool-use turn
+fail preparation before a provider call; start a new conversation in that case. After a new user
+message, historical assistant turns can use their visible form if the original prefix no longer
+matches. Multiple replicas require session affinity for these
+tool continuations. No reasoning is persisted or logged. This preserves the provider's
+[thinking continuation contract](https://platform.claude.com/docs/en/build-with-claude/thinking).
+
 Studio proxy log events 6752, 6754 and 6755 retain provider identity, HTTP status where available, exception type and fixed execution phase only. Response bodies and exception payloads are omitted. Operators should use these fields to distinguish HTTP, transport and parsing failures; client error and cancellation behavior is unchanged.

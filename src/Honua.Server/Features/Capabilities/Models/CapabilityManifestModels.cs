@@ -43,19 +43,6 @@ internal sealed record CapabilityManifestDocument
     public required CapabilityManifestLink[] Links { get; init; }
 }
 
-internal sealed record CapabilityManifestDataStores
-{
-    public required string Profile { get; init; }
-
-    public required string[] InstalledProviders { get; init; }
-
-    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
-    public string? FullImageTagSuffix { get; } = Startup.DataStoreBuildPolicy.AdditionalStoresIncluded
-        ? null : DataStoreProviderPolicy.FullImageTagSuffix;
-
-    public string DocumentationHref { get; } = DataStoreProviderPolicy.DocumentationHref;
-}
-
 internal sealed record CapabilityManifestDeploymentProfile
 {
     public required bool Configured { get; init; }

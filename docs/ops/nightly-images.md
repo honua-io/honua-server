@@ -26,7 +26,7 @@ each of the newest candidates. Nothing is published. To image one specific sha, 
 workflow on trunk with `candidate_sha=<full sha>`. That sha must itself be
 certified.
 
-## Data-store image variants
+## Data-store variants
 
 The default serving images contain the PostGIS store. Import and export formats remain
 available, including GeoPackage, Shapefile, GeoTIFF and Parquet. SQLite supports file I/O;
@@ -64,13 +64,19 @@ If an existing database contains such a Connection, startup refuses with the sam
 instruction. Recover with the matching full image; remove an unused Connection through the
 normal administration workflow before returning to the PostGIS-only image.
 
-Authenticated callers can read `dataStores` from `/api/v1/capabilities/manifest`.
-`profile` is `postgis` or `full`; `installedProviders` lists canonical provider identifiers
-compiled into that image, including stores whose experimental gates are disabled.
-`fullImageTagSuffix` is `-full` on the PostGIS profile and null on the full profile;
-`documentationHref` links to this guide. Anonymous
-responses omit `dataStores`. Clients must use this inventory, rather than infer support
-from a tag; an absent inventory does not establish support for any additional store.
+Connection clients should read the authenticated capability manifest's
+`dataStores.installedProviders` before offering data-store providers. The list
+comes from runtime registrations, so disabled or excluded providers are absent.
+Do not infer availability from an image tag. A missing `dataStores` section means
+the server has not advertised its inventory.
+
+For a PostGIS-only deployment that needs additional stores, use the opt-in full
+image for the same server revision, identified by `dataStores.fullImageTagSuffix`
+(`-full`). Only use tags published for that revision. Variant publication is
+separate from capability discovery; the hint does not guarantee a full tag exists
+for an older revision. Enabling a provider may also require configuration and an
+experimental opt-in. Restart after changing provider configuration, then read the
+manifest again. File-format readers used by imports are independent of this list.
 
 The Store Image Size workflow measures both JIT variants and the default AOT image.
 Its artifacts contain before/after byte counts, publish file manifests, startup-refusal

@@ -728,7 +728,7 @@ jobs:
     outputs:
       producer_attempt: ${{ steps.managed-publish.outputs.producer-attempt }}
       managed_sdk_version: ${{ steps.managed-sdk.outputs.dotnet-sdk-version }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -867,7 +867,7 @@ jobs:
     name: Format Check
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
     needs: changes
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -899,7 +899,7 @@ jobs:
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     # Consume the verified producer; misses build only this family closure.
     needs: [changes, build]
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     # Per-family budget. The pre-split job carried a single 110-minute
     # orchestrator timeout covering every step; these are the same
     # step budgets regrouped, with headroom over the measured family time
@@ -1202,7 +1202,7 @@ jobs:
     # exclusion is safe for every shard's csproj, not only the legacy
     # Honua.Server.Tests.csproj default.
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     # Explicit producer dependency; only unmaterialized projects compile here.
     needs: [changes, targeted-shards, build]
     timeout-minutes: ${{ matrix.timeout_minutes }}
@@ -2340,7 +2340,7 @@ jobs:
   mcp-certification:
     name: MCP Certification (${{ matrix.transport }})
     if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: [build, changes, core-package-compatibility, postgres-compat]
     timeout-minutes: 15
     env:
@@ -2457,7 +2457,7 @@ jobs:
   mcp-llm-smoke:
     name: MCP LLM Smoke Tests
     if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.mcp-certification.outputs.cert_ran == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: mcp-certification
     continue-on-error: true
     timeout-minutes: 10
@@ -2550,7 +2550,7 @@ jobs:
   postgres-compat:
     name: Postgres Compatibility (${{ matrix.pg_image }})
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: changes
     timeout-minutes: 40
     strategy:
@@ -2684,7 +2684,7 @@ jobs:
   core-package-compatibility:
     name: Honua.Core Package Compatibility
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.build_changes == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: changes
     timeout-minutes: 10
     steps:
@@ -2794,7 +2794,7 @@ jobs:
     # under a 45-minute ceiling, so it is not expected to extend the batch
     # critical path.
     if: ${{ success() && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: [build, changes, core-package-compatibility, postgres-compat]
     timeout-minutes: 45
     steps:
@@ -2845,7 +2845,7 @@ jobs:
   docker-build:
     name: Docker Build & Integration Test
     if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: changes
     # A cold BuildKit build consumed 13m45s in run 29088883576, leaving no
     # time for the filesystem scan or endpoint proof. Keep the whole gate
@@ -3037,7 +3037,7 @@ jobs:
   quickstart-console-smoke:
     name: Quickstart Console Compose Smoke
     if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: changes
     timeout-minutes: 30
     steps:
