@@ -3,6 +3,10 @@ set -uo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 compose_file="${repo_root}/docker/gp-reliability/compose.yml"
+owned_server="$repo_root/scripts/ci/owned-server.py"
+HONUA_GP_PORT="$(python3 "$owned_server" port --variable HONUA_GP_PORT --ci-default 18080)" || exit 2
+HONUA_GP_PEER_PORT="$(python3 "$owned_server" port --variable HONUA_GP_PEER_PORT --ci-default 18081)" || exit 2
+export HONUA_GP_PORT HONUA_GP_PEER_PORT
 receipt_root="${HONUA_GP_RECEIPT_DIR:-${repo_root}/artifacts/gp-lifecycle}"
 base_url="http://127.0.0.1:${HONUA_GP_PORT:-18080}"
 api_key="gp-reliability-admin"
@@ -253,19 +257,13 @@ write_receipt() {
 }
 
 wait_ready() {
-  local deadline=$((SECONDS + 180))
-  until curl --fail --silent "${base_url}/healthz/ready" >/dev/null; do
-    (( SECONDS < deadline )) || return 1
-    sleep 2
-  done
+  python3 "$owned_server" wait --container "$(compose ps -q server)" --container-port 8080 \
+    --url "${base_url}/healthz/ready" --body Ready --timeout 180
 }
 
 wait_peer_ready() {
-  local deadline=$((SECONDS + 180))
-  until curl --fail --silent "$peer_url/healthz/ready" >/dev/null; do
-    (( SECONDS < deadline )) || return 1
-    sleep 2
-  done
+  python3 "$owned_server" wait --container "$(compose ps -q server-peer)" --container-port 8080 \
+    --url "${peer_url}/healthz/ready" --body Ready --timeout 180
 }
 
 # Records/reads the process a job was submitted with. See ${job_process_root} above.

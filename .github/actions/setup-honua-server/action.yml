@@ -96,71 +96,54 @@ runs:
             echo "(could not query feature counts — DB unreachable?)" >&2
         }
 
+        OWNED_SERVER="$GITHUB_WORKSPACE/scripts/ci/owned-server.py"
+        SERVER_PORT="$(python3 "$OWNED_SERVER" port --variable HONUA_CI_SERVER_PORT --ci-default 5000)"
+        export ASPNETCORE_URLS="http://127.0.0.1:$SERVER_PORT"
+        if [[ -n "${GITHUB_ENV:-}" ]]; then
+          echo "HONUA_BASE_URL=$ASPNETCORE_URLS" >> "$GITHUB_ENV"
+          echo "HONUA_TEST_PORT=$SERVER_PORT" >> "$GITHUB_ENV"
+        fi
         SERVER_MODE=source
         SERVER_PID=""
         SERVER_CONTAINER=""
         if [ -n "$SERVER_IMAGE" ]; then
           SERVER_MODE=image
-          SERVER_CONTAINER="honua-sdk-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
           case "$SERVER_IMAGE" in
             *@sha256:*) ;;
             *) echo "warning: server-image is not immutable: $SERVER_IMAGE" >&2 ;;
           esac
           docker pull "$SERVER_IMAGE"
-          docker run --rm --network host --name "$SERVER_CONTAINER" \
+          GRPC_PORT="$(python3 "$OWNED_SERVER" port --variable HONUA_CI_GRPC_PORT --ci-default 8081)"
+          SERVER_CONTAINER="$(docker create --rm --network host \
             --env ConnectionStrings__DefaultConnection \
             --env ASPNETCORE_URLS \
             --env "Kestrel__Endpoints__Http__Url=${ASPNETCORE_URLS}" \
+            --env "Kestrel__Endpoints__Grpc__Url=http://127.0.0.1:$GRPC_PORT" \
             --env ASPNETCORE_ENVIRONMENT \
             --env Authentication__PortalToken__RequireHttps \
             --env HONUA_ADMIN_PASSWORD \
             --env Security__ConnectionEncryption__MasterKey \
             --env Licensing__DevGrantEdition \
             --env Security__ConnectionEncryption__Salt \
-            "$SERVER_IMAGE" >"$SERVER_LOG" 2>&1 &
+            "$SERVER_IMAGE")"
+          docker start --attach "$SERVER_CONTAINER" >"$SERVER_LOG" 2>&1 &
           SERVER_PID=$!
         else
           dotnet run --project src/Honua.Server --configuration Release --no-build --no-launch-profile > "$SERVER_LOG" 2>&1 &
           SERVER_PID=$!
         fi
 
-        # A cold `dotnet run --no-build` start runs the PostGIS preflight check,
-        # the full database migration set, and high-frequency query preparation
-        # before /healthz/ready reports 200. On CI runners seeding a fresh
-        # database this routinely exceeds a short fixed wait and, under the heavy
-        # concurrent merge_group matrix, the JS/Esri-Leaflet lanes began polling
-        # http://localhost:5000 before Kestrel bound (curl: (7) connection
-        # refused), ejecting the whole ALLGREEN batch. Budget generously
-        # (90 iterations x 2s = 180s), mirroring load-soak-nightly's readiness
-        # wait, and:
-        #   * bound each poll with --max-time so a stalled connect can't starve
-        #     the loop of attempts (curl retries are short, not wall-clock-even);
-        #   * fail fast with full diagnostics if the dotnet process exits before
-        #     readiness, so a *deterministic* startup crash surfaces its stack
-        #     trace in seconds instead of after a 180s false "timeout".
-        for _ in $(seq 1 90); do
-          if curl -fsS --max-time 5 http://localhost:5000/healthz/ready >/dev/null; then
-            exit 0
-          fi
-
-          if [ "$SERVER_MODE" = image ]; then
-            if [ "$(docker inspect -f '{{.State.Running}}' "$SERVER_CONTAINER" 2>/dev/null || true)" != true ]; then
-              echo "Honua Server container exited before becoming ready." >&2
-              dump_diagnostics
-              exit 1
-            fi
-          elif ! kill -0 "$SERVER_PID" 2>/dev/null; then
-            echo "Honua Server process (pid ${SERVER_PID}) exited before becoming ready." >&2
-            dump_diagnostics
-            exit 1
-          fi
-
-          sleep 2
-        done
-
-        echo "Honua Server did not become ready within the readiness budget (180s)." >&2
-        dump_diagnostics
-        exit 1
+        ownership=(--pid "$SERVER_PID")
+        if [[ -n "$SERVER_CONTAINER" ]]; then
+          ownership+=(--container "$SERVER_CONTAINER")
+        fi
+        if ! python3 "$OWNED_SERVER" wait "${ownership[@]}" \
+            --url "$ASPNETCORE_URLS/healthz/ready" --body Ready --timeout "${HONUA_CI_SERVER_READY_SECONDS:-180}"; then
+          dump_diagnostics
+          kill "$SERVER_PID" 2>/dev/null || true
+          if [[ -n "$SERVER_CONTAINER" ]]; then docker rm --force "$SERVER_CONTAINER" >/dev/null 2>&1 || true; fi
+          exit 1
+        fi
       env:
         ConnectionStrings__DefaultConnection: "Host=localhost;Database=honua_test;Username=honua;Password=honua"
         ASPNETCORE_URLS: "http://localhost:5000"

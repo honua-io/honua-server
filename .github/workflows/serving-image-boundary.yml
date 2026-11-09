@@ -286,26 +286,27 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker run -d \
-            --name honua-aot-boundary \
+          OWNED_SERVER=scripts/ci/owned-server.py
+          SERVER_PORT="$(python3 "$OWNED_SERVER" port --variable HONUA_BOUNDARY_SMOKE_PORT --ci-default 8080)"
+          GRPC_PORT="$(python3 "$OWNED_SERVER" port --variable HONUA_BOUNDARY_GRPC_PORT --ci-default 8081)"
+          SERVER_URL="http://127.0.0.1:$SERVER_PORT"
+          CONTAINER="$(docker run -d \
             --network host \
             -e ASPNETCORE_ENVIRONMENT=Development \
             -e HONUA_SKIP_MIGRATIONS=true \
             -e HONUA_ADMIN_PASSWORD=ci-aot-boundary-password \
             -e Security__ConnectionEncryption__MasterKey=0123456789abcdef0123456789abcdef \
             -e ConnectionStrings__DefaultConnection='Host=127.0.0.1;Database=honua_boundary;Username=honua;Password=honua' \
-            honua-server:aot-boundary
-
-          for attempt in {1..30}; do
-            if curl --fail --silent http://localhost:8080/healthz/live >/dev/null; then
-              echo "Native-AOT serving container passed its liveness probe."
-              exit 0
-            fi
-            sleep 2
-          done
-
-          docker logs honua-aot-boundary
-          exit 1
+            -e "ASPNETCORE_URLS=$SERVER_URL" \
+            -e "Kestrel__Endpoints__Http__Url=$SERVER_URL" \
+            -e "Kestrel__Endpoints__Grpc__Url=http://127.0.0.1:$GRPC_PORT" \
+            honua-server:aot-boundary)"
+          trap 'docker rm --force "$CONTAINER" >/dev/null 2>&1 || true' EXIT
+          if ! python3 "$OWNED_SERVER" wait --container "$CONTAINER" --url "$SERVER_URL/healthz/live" --timeout 60; then
+            docker logs "$CONTAINER" || true
+            exit 1
+          fi
+          echo "Native-AOT serving container passed its owned liveness probe."
 
       - name: Verify native migration refusal shutdown
         if: env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true' && matrix.variant == 'generic'
