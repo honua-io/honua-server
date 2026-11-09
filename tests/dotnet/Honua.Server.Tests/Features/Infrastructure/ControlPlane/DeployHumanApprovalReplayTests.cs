@@ -162,7 +162,8 @@ public sealed class DeployHumanApprovalReplayTests
         TenantId = proposal.TenantId,
     };
 
-    internal static async Task<OperationProposal> CreateApprovedProposalAsync(OperationHumanApprovalTestHost host, bool requesterApproves)
+    internal static async Task<OperationProposal> CreateApprovedProposalAsync(
+        OperationHumanApprovalTestHost host, bool requesterApproves, DeployExecutionPayload? payload = null)
     {
         var human = await host.CreateHumanAsync();
         var actor = CanonicalSecurityActor.Resolve(human.Principal)!.ActorId;
@@ -170,7 +171,7 @@ public sealed class DeployHumanApprovalReplayTests
         var plan = new OperationProposalPlan
         {
             Summary = "Restore a reviewed revision",
-            ExecutionPayload = new DeployExecutionPayload { TargetId = "cell", DesiredRevision = "prior", Rollback = true }.Serialize(),
+            ExecutionPayload = (payload ?? new DeployExecutionPayload { TargetId = "cell", DesiredRevision = "prior", Rollback = true }).Serialize(),
         };
         var planHash = OperationApprovalPlanSeal.Compute(plan);
         var policy = proposal.GuardrailDecision! with { OperationClass = OperationClass.Deploy };
