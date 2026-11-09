@@ -2970,6 +2970,8 @@
         "Honua.Server.Tests.Features.Admin.CoordinatedReleaseControlEndpointsTests.ApproveGate_ConcurrentHumanReviews_OnlyOneVersionWins",
         "Honua.Server.Tests.Features.Admin.CoordinatedReleaseControlEndpointsTests.ApproveGate_PlanChangesDuringReview_RefusesStaleReview",
         "Honua.Server.Tests.Features.Admin.CoordinatedReleaseControlEndpointsTests.ApproveGate_UnchangedReconciliation_PreservesHumanReview",
+        "Honua.Server.Tests.Features.Admin.CoordinatedReleaseControlEndpointsTests.OpenGateReview_ApiKey_RefusesWithoutChangingTheGate",
+        "Honua.Server.Tests.Features.Admin.CoordinatedReleaseControlEndpointsTests.OpenGateReview_InteractiveHuman_ReturnsBoundReviewWithoutApproving",
         "Honua.Server.Tests.Features.Admin.CoordinatedReleaseControlUnavailableTests.Gate_DurableStoreUnavailable_Returns503"
       ],
       "proof_ledger_surface": "control-plane-admin",
