@@ -184,6 +184,9 @@ internal static partial class FeatureServerEndpoints
             MaxRecordCount = queryLimits.MaxRecordCount,
             ObjectIdField = objectIdField,
             DisplayField = displayField,
+            DefaultVisibility = resource.Display?.DefaultVisibility ?? true,
+            MinScale = resource.Display?.MinScale,
+            MaxScale = resource.Display?.MaxScale,
             GlobalIdField = globalIdField,
             UniqueIdField = new UniqueIdFieldInfo { Name = objectIdField, IsSystemMaintained = true },
             DrawingInfo = drawingInfo.HasValue ? drawingInfo.Value : null,
@@ -262,13 +265,10 @@ internal static partial class FeatureServerEndpoints
         {
             Id = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(resource) ?? -1,
             Name = resource.Metadata.Name,
-            // V2 has no default-visibility / min-scale / max-scale slot on the canonical
-            // resource. Esri clients require the keys present, so we emit the conservative
-            // defaults that match what the v1 path emitted for layers without scale ranges.
-            DefaultVisibility = true,
+            DefaultVisibility = resource.Display?.DefaultVisibility ?? true,
             SubLayerIds = null,
-            MinScale = null,
-            MaxScale = null,
+            MinScale = resource.Display?.MinScale,
+            MaxScale = resource.Display?.MaxScale,
             Type = resource.Type == MetadataV2ResourceType.Table ? "Table" : "Feature Layer",
             GeometryType = resource.Type == MetadataV2ResourceType.Table
                 ? null : MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None)
