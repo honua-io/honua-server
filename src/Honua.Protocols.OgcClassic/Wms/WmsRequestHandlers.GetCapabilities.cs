@@ -7,6 +7,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Helpers;
 using MetadataV2TemporalRange = Honua.Infrastructure.Helpers.TemporalExtentHelpers.MetadataV2TemporalRange;
 using Honua.Infrastructure.Rendering;
@@ -689,8 +690,8 @@ internal static partial class WmsRequestHandlers
         var outputMinY = minY;
         var outputMaxX = maxX;
         var outputMaxY = maxY;
-        if (!isWms111 &&
-            string.Equals(crs, "EPSG:4326", StringComparison.OrdinalIgnoreCase))
+        if (SpatialReferenceHelpers.TryParseCrsDefinition(crs, out var definition) &&
+            ResolveWmsBboxAxisOrder(isWms111 ? Wms111Version : Wms13Version, definition.AxisOrder) == AxisOrder.NorthEast)
         {
             outputMinX = minY;
             outputMinY = minX;
