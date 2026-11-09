@@ -401,7 +401,7 @@ internal static class StudioMcpSchemas
             "versionId": { "type": "string", "format": "uuid", "description": "Exact immutable saved version id." },
             "contentHash": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Exact content hash returned when the version was saved." },
             "route": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Requested target route key." },
-            "visibility": { "type": "string", "minLength": 1, "maxLength": 100, "description": "Requested visibility target." },
+            "visibility": { "type": "string", "enum": ["personal", "team", "organization", "public"], "description": "personal: owner only; team and organization: signed-in callers in the item tenant; public: anonymous readers. Team uses the same tenant audience as organization." },
             "note": { "type": "string", "maxLength": 2000, "description": "Human-readable rationale recorded for reviewer context." }
           }
         }
