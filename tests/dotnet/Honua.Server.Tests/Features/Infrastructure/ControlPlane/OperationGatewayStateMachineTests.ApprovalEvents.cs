@@ -29,10 +29,11 @@ public sealed partial class OperationGatewayStateMachineTests
     [Operation(Operations.TestInfrastructure)]
     public async Task ApplyApprovedProposal_ExecutionPending_ProposerReadsOneApprovalNamingApprover()
     {
-        var proposal = CreateProposal("p-approval-event", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval) with
-        {
-            RequestedBy = "proposing-agent"
-        };
+        var proposal = CanonicalOperationGatewayTestComposition.WithVersionedInitiation(
+            CreateProposal("p-approval-event", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval) with
+            {
+                RequestedBy = "proposing-agent"
+            });
         var audit = new RecordingAuditLog();
         var executor = new PendingApprovalExecutor();
         var gateway = BuildGateway(new InMemoryProposalStore(proposal), executor,
