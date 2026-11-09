@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: gp-customcode-runtime-${{ github.event.pull_request.number || github.ref }}
+  group: gp-customcode-runtime-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:

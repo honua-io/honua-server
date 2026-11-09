@@ -12,7 +12,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: close-external-prs-${{ github.event.pull_request.number || github.ref }}
+  group: close-external-prs-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:

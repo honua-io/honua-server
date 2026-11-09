@@ -45,7 +45,7 @@ permissions:
   packages: read
 
 concurrency:
-  group: gp-lifecycle-qualification-${{ github.event.pull_request.number || github.ref }}
+  group: gp-lifecycle-qualification-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:

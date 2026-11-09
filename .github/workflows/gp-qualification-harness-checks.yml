@@ -27,7 +27,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: gp-qualification-harness-checks-${{ github.event.pull_request.number || github.ref }}
+  group: gp-qualification-harness-checks-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:

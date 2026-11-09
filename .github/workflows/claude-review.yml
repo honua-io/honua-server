@@ -69,8 +69,8 @@ permissions: {}
 # workflow-level concurrency is evaluated at run creation, so a
 # `cancel-in-progress` group keyed on the PR would let Codex's rate-limit notice
 # -- or the PR-template advisory comment that lands seconds after a push --
-# cancel a review already in flight. Per-PR cancellation belongs to the review
-# job, after its trusted resolver has rejected drafts, closed PRs and stale heads.
+# cancel a review already in flight. Eligible resolver jobs cancel per PR;
+# exact-head reviews serialize so duplicate triggers cannot restart paid work.
 concurrency:
   group: >-
     claude-review-${{ github.event_name == 'schedule'
@@ -133,6 +133,9 @@ jobs:
             await core.summary.write();
 
   resolve:
+    concurrency:
+      group: claude-resolve-pr-${{ github.event.issue.number || inputs.pr || github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_branch || github.run_id }}
+      cancel-in-progress: true
     name: Resolve exact Claude review subject
     # Same-repo, non-fork, pull_request-originated PR Gate runs only; plus an
     # explicit `@claude review` re-request from a human with write access
@@ -323,13 +326,12 @@ jobs:
     needs: resolve
     if: needs.resolve.outputs.skip == 'false'
     name: Post exact-head Claude review evidence
-    # Resolve the current subject before cancellation so unrelated comments
-    # cannot interrupt a review. A newly admitted head supersedes the old one.
+    # Serialize duplicate exact-head reviews and recheck completion after admission.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:
-      group: claude-review-pr-${{ needs.resolve.outputs.pr }}
-      cancel-in-progress: true
+      group: claude-review-${{ needs.resolve.outputs.pr }}-${{ needs.resolve.outputs.head }}
+      cancel-in-progress: false
     permissions:
       # GITHUB_TOKEN stays READ-ONLY. Everything the lane publishes is published
       # by the action's own Claude App installation token, so no write scope is
