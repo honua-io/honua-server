@@ -65,6 +65,57 @@ public sealed partial class PublicPublicationIdentityTests
         locatedSchema.Root!.Attribute("targetNamespace")!.Value.Should().Be(featureNamespace);
     }
 
+    [IntegrationTheory]
+    [InlineData("Other", "Other")]
+    [InlineData("Points", "Points")]
+    [InlineData("normal-resource", "authored:layer")]
+    [Protocol(TestProtocols.Wfs20)]
+    [Operation(Operations.Query)]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    [Endpoint("GET /wfs")]
+    public async Task WfsGetFeature_StoredQuery_QualifiesStandaloneFeatureAndProperties(string resourceName, string publicationId)
+    {
+        ConfigureSchemaPublication(resourceName, publicationId);
+        BindPublicationsToSeededFeatures();
+        var localName = XmlConvert.EncodeLocalName(publicationId);
+        var schema = await ReadXmlAsync($"/wfs?SERVICE=WFS&REQUEST=DescribeFeatureType&VERSION=2.0.0&TYPENAMES={localName}");
+        XNamespace featureNamespace = schema.Root!.Attribute("targetNamespace")!.Value;
+        const string storedQuery = "urn:ogc:def:query:OGC-WFS::GetFeatureById";
+
+        var feature = await ReadXmlAsync($"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(storedQuery)}&ID={localName}.1");
+
+        XNamespace gml = "http://www.opengis.net/gml/3.2";
+        feature.Root!.Name.Should().Be(featureNamespace + localName);
+        var properties = feature.Root.Elements().Where(property => property.Name.Namespace != gml).ToArray();
+        properties.Should().NotBeEmpty();
+        properties.Should().OnlyContain(property => property.Name.Namespace == featureNamespace);
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wfs20)]
+    [Operation(Operations.Query)]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    [Endpoint("GET /wfs")]
+    public async Task WfsGetFeature_MixedNamespaces_ProvidesResolvableSchemaForEachNamespace()
+    {
+        ConfigureDistinctStyleResources();
+        ConfigureSchemaPublication("Other", "Other");
+        BindPublicationsToSeededFeatures();
+
+        var collection = await ReadXmlAsync("/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&COUNT=0");
+
+        XNamespace xsi = "http://www.w3.org/2001/XMLSchema-instance";
+        var locations = collection.Root!.Attribute(xsi + "schemaLocation")!.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var featureNamespace in new[] { "http://www.opengis.net/cite/data", "http://honua.io/wfs" })
+        {
+            var namespaceIndex = Array.IndexOf(locations, featureNamespace);
+            namespaceIndex.Should().BeGreaterThanOrEqualTo(0);
+            var location = new Uri(locations[namespaceIndex + 1]);
+            var schema = await ReadXmlAsync(location.PathAndQuery);
+            schema.Root!.Attribute("targetNamespace")!.Value.Should().Be(featureNamespace);
+        }
+    }
+
     private void BindPublicationsToSeededFeatures()
     {
         var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;

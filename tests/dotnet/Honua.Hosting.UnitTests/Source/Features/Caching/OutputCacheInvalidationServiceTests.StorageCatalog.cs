@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Infrastructure.Caching;
 using Honua.TestKit.Attributes;
@@ -13,10 +14,9 @@ namespace Honua.Server.Tests.Features.Caching;
 
 public sealed partial class OutputCacheInvalidationServiceTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData(null)]
     [InlineData("alpha")]
-    [UnitTest]
     [Operation(Operations.Cache)]
     public async Task InvalidateServiceCatalogAsync_StorageHandleDiffersFromServiceIndices_EvictsEveryBoundPublication(string? serviceId)
     {
