@@ -210,7 +210,8 @@ The switch covers build, format, foundation-family tests, server shards, MCP
 certification and LLM smoke, PostgreSQL and core-package compatibility, AOT,
 Docker build, and Console quickstart smoke. Admission, routing, receipt
 aggregation and final verdict jobs remain on standard hosted runners so a
-compute-pool problem cannot strand their reporting. The PR Gate is unchanged.
+compute-pool problem cannot strand their reporting. Light checks such as JS
+type checking also stay hosted. The PR Gate is unchanged.
 
 The selected runner must provide a clean Ubuntu x64 environment compatible with
 GitHub's hosted tools, Docker, passwordless sudo, .NET/Node/Python setup actions,
@@ -221,8 +222,8 @@ Worker GDAL, Python integration and browser jobs retain their Ubuntu 24.04 pins
 for native-package and Chromium compatibility. They do not use this switch.
 Main checks the chosen pool on the first ordinary combined batch using it;
 no separate branch full run is needed. Clear the variable to restore the hosted
-default for subsequent jobs; already queued/running jobs keep their assigned
-runner and must finish or be handled by the batch controller.
+default for new runs. Treat existing runs as assigned to their original pool;
+main handles their completion or cancellation.
 
 ## Nightly Lane
 

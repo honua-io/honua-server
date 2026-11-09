@@ -11,7 +11,7 @@ HEAVY_JOBS = {
     "mcp-certification", "mcp-llm-smoke", "postgres-compat",
     "core-package-compatibility", "aot-build", "docker-build", "quickstart-console-smoke",
 }
-CONTROL_JOBS = {
+HOSTED_JOBS = {
     "pr-template-check", "pr-readiness", "changes", "targeted-shards",
     "ci-router-validation", "dotnet-foundation-tests", "js-typecheck", "test-all",
     "merge-queue-gate", "ci-gate",
@@ -33,8 +33,8 @@ class HeavyRunnerContractTests(unittest.TestCase):
                 self.assertEqual(self.jobs[name]["runs-on"],
                                  "${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}")
 
-    def test_control_jobs_remain_available_without_the_compute_pool(self):
-        for name in CONTROL_JOBS:
+    def test_hosted_jobs_stay_on_ubuntu_latest(self):
+        for name in HOSTED_JOBS:
             with self.subTest(job=name):
                 self.assertEqual(self.jobs[name]["runs-on"], "ubuntu-latest")
 
@@ -42,7 +42,9 @@ class HeavyRunnerContractTests(unittest.TestCase):
         for name in PINNED_JOBS:
             with self.subTest(job=name):
                 self.assertEqual(self.jobs[name]["runs-on"], "ubuntu-24.04")
-        self.assertEqual(set(self.jobs), HEAVY_JOBS | CONTROL_JOBS | PINNED_JOBS)
+
+    def test_every_ci_job_has_a_runner_class(self):
+        self.assertEqual(set(self.jobs), HEAVY_JOBS | HOSTED_JOBS | PINNED_JOBS)
 
 
 if __name__ == "__main__":
