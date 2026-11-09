@@ -57,13 +57,13 @@ public sealed class DegenerateTileExtentTests : IAsyncLifetime
         var matrices = document.Root!.Element(wmts + "Contents")!.Elements(wmts + "TileMatrixSet")
             .Single(element => element.Element(ows + "Identifier")!.Value == "WebMercatorQuad").Elements(wmts + "TileMatrix").ToArray();
         matrices[^1].Element(ows + "Identifier")!.Value.Should().Be(maxZoom.ToString(CultureInfo.InvariantCulture));
-        var longitudeTileSpan = 360.0 / int.Parse(matrices[^1].Element(wmts + "MatrixWidth")!.Value, CultureInfo.InvariantCulture);
+        var tileSpanDegrees = 360.0 / int.Parse(matrices[^1].Element(wmts + "MatrixWidth")!.Value, CultureInfo.InvariantCulture);
         var layer = document.Descendants(wmts + "Layer").Single(element =>
             element.Element(ows + "Identifier")!.Value == "1");
         var bounds = layer.Element(ows + "WGS84BoundingBox")!;
         var lower = Coordinates(bounds.Element(ows + "LowerCorner")!.Value);
         var upper = Coordinates(bounds.Element(ows + "UpperCorner")!.Value);
-        AssertContainingArea([lower[0], lower[1], upper[0], upper[1]], [west, south, east, north], longitudeTileSpan);
+        AssertContainingArea([lower[0], lower[1], upper[0], upper[1]], [west, south, east, north], tileSpanDegrees);
         foreach (var limits in layer.Descendants(wmts + "TileMatrixLimits"))
         {
             int.Parse(limits.Element(wmts + "MaxTileRow")!.Value, CultureInfo.InvariantCulture).Should()
@@ -76,7 +76,7 @@ public sealed class DegenerateTileExtentTests : IAsyncLifetime
         using var json = JsonDocument.Parse(await collection.Content.ReadAsStringAsync());
         var bbox = json.RootElement.GetProperty("extent").GetProperty("spatial").GetProperty("bbox")[0]
             .EnumerateArray().Select(value => value.GetDouble()).ToArray();
-        AssertContainingArea(bbox, [west, south, east, north], longitudeTileSpan);
+        AssertContainingArea(bbox, [west, south, east, north], tileSpanDegrees);
         _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[1].Spatial!.Bbox.Should()
             .BeEquivalentTo(new MetadataV2Bbox { West = west, South = south, East = east, North = north });
     }
@@ -84,7 +84,7 @@ public sealed class DegenerateTileExtentTests : IAsyncLifetime
     private static double[] Coordinates(string value) => value.Split(' ', StringSplitOptions.RemoveEmptyEntries)
         .Select(number => double.Parse(number, CultureInfo.InvariantCulture)).ToArray();
 
-    private static void AssertContainingArea(double[] actual, double[] source, double minimumSpan)
+    private static void AssertContainingArea(double[] actual, double[] source, double expectedSpanDegrees)
     {
         actual[2].Should().BeGreaterThan(actual[0]);
         actual[3].Should().BeGreaterThan(actual[1]);
@@ -94,11 +94,11 @@ public sealed class DegenerateTileExtentTests : IAsyncLifetime
         actual[3].Should().BeGreaterThanOrEqualTo(source[3]);
         if (source[2] == source[0])
         {
-            (actual[2] - actual[0]).Should().BeApproximately(minimumSpan, 1e-10);
+            (actual[2] - actual[0]).Should().BeApproximately(expectedSpanDegrees, 1e-10);
         }
         if (source[3] == source[1])
         {
-            (actual[3] - actual[1]).Should().BeApproximately(minimumSpan, 1e-10);
+            (actual[3] - actual[1]).Should().BeApproximately(expectedSpanDegrees, 1e-10);
         }
         if (source[2] > source[0])
         {
