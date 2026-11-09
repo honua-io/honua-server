@@ -14,6 +14,7 @@ using Honua.Core.Features.Query;
 using Honua.Infrastructure.Authentication;
 using Honua.Protocols.Ogc.Classic.Wfs20;
 using Honua.TestKit.Attributes;
+using Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
