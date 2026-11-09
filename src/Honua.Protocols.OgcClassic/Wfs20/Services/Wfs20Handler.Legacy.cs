@@ -53,7 +53,7 @@ internal sealed partial class Wfs20Handler
         var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         return IsWfs10(version)
             ? BuildWfs10Capabilities(wfsUrl, featureTypes, snapshot.Graph.Metadata)
-            : BuildWfs11Capabilities(wfsUrl, featureTypes, _featureReader, snapshot.Graph.Metadata);
+            : BuildWfs11Capabilities(wfsUrl, featureTypes, snapshot.Graph.Metadata);
     }
 
     internal async Task<string> HandleLegacyDescribeFeatureTypeAsync(
@@ -213,10 +213,9 @@ internal sealed partial class Wfs20Handler
         return new LegacyXmlResult(xml, "application/xml", statusCode);
     }
 
-    internal static string BuildWfs11Capabilities(string wfsUrl, IReadOnlyList<FeatureType> featureTypes, IFeatureReader reader, MetadataV2ObjectMetadata? metadata = null)
+    internal string BuildWfs11Capabilities(string wfsUrl, IReadOnlyList<FeatureType> featureTypes, MetadataV2ObjectMetadata metadata)
     {
-        metadata ??= new MetadataV2ObjectMetadata();
-        var edits = reader is IFeatureDataProvider provider
+        var edits = _featureReader is IFeatureDataProvider provider
             ? provider.Capabilities.Edits
             : FeatureProviderEditCapabilities.ReadOnly;
         var sb = new StringBuilder(8192);

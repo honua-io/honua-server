@@ -148,7 +148,7 @@ public sealed class Wfs20OwnerEditPolicyTests
     {
         var reader = new OwnerReader();
         var writer = new CapturingWriter();
-        var handler = CreateHandler(reader, writer);
+        var handler = Wfs20HandlerTestFactory.Create(reader, writer);
         var result = await handler.ExecutePreparedEditAsync(
             context,
             layerId: 7,
@@ -191,36 +191,6 @@ public sealed class Wfs20OwnerEditPolicyTests
         };
         context.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"));
         return context;
-    }
-
-    private static Wfs20Handler CreateHandler(IFeatureReader reader, IFeatureWriter writer)
-    {
-        var coordinateTransform = Substitute.For<ICoordinateTransformService>();
-        var queryServices = new Wfs20QueryServices(
-            reader,
-            Substitute.For<IGmlFeatureStore>(),
-            Substitute.For<IMetadataV2GraphProvider>(),
-            Substitute.For<IFilterExpressionService>(),
-            new Wfs20QueryParameterAdapter(NullLogger<Wfs20QueryParameterAdapter>.Instance),
-            Substitute.For<IQueryProcessor>(),
-            Options.Create(new Wfs20Options()),
-            Substitute.For<IConfiguration>());
-        var editServices = new Wfs20EditServices(
-            writer,
-            new Wfs20EditParameterAdapter(NullLogger<Wfs20EditParameterAdapter>.Instance),
-            new EditProcessor(NullLogger<EditProcessor>.Instance),
-            new FeatureMutationValidator(Substitute.For<IGeometryValidator>()),
-            new FeatureMutationEventService(Substitute.For<IFeatureChangeEventPublisher>()),
-            Options.Create(new LimitsOptions()));
-        var spatialServices = new Wfs20SpatialServices(
-            new OgcFeaturesGeometryServices(
-                Substitute.For<IGeometryService>(),
-                coordinateTransform,
-                Options.Create(new LimitsOptions()),
-                NullLogger<OgcFeaturesGeometryServices>.Instance),
-            coordinateTransform,
-            Substitute.For<ICrsRegistry>());
-        return new Wfs20Handler(NullLogger<Wfs20Handler>.Instance, queryServices, editServices, spatialServices);
     }
 
     private sealed class CapturingWriter : IFeatureWriter
