@@ -7,6 +7,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Guardrails;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Services;
 using Honua.Server.Tests.Features.Admin;
@@ -122,7 +123,7 @@ public sealed class StudioHumanDraftMutationTests : IAsyncLifetime
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Accepted, body);
         using var document = JsonDocument.Parse(body);
-        document.RootElement.GetProperty("data").GetProperty("status").GetString().Should().Be("RequiresApproval");
+        document.RootElement.GetProperty("data").GetProperty("status").GetInt32().Should().Be((int)OperationHandleStatus.RequiresApproval);
         document.RootElement.GetProperty("data").GetProperty("operationId").GetString().Should().Be("studio.draft.create");
     }
 }
