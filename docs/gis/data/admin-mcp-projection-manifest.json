@@ -2923,7 +2923,7 @@
     },
     {
       "operationId": "folder.create",
-      "toolName": "honua_op_folder_create",
+      "toolName": "honua_create_folder",
       "title": "Create folder",
       "inputFields": [
         "If-Match",
@@ -2966,7 +2966,7 @@
     },
     {
       "operationId": "folder.delete",
-      "toolName": "honua_op_folder_delete",
+      "toolName": "honua_delete_folder",
       "title": "Delete folder",
       "inputFields": [
         "If-Match",
@@ -3008,7 +3008,7 @@
     },
     {
       "operationId": "folder.list",
-      "toolName": "honua_op_folder_list",
+      "toolName": "honua_list_folders",
       "title": "List folders",
       "inputFields": [
         "namespace"
@@ -3048,7 +3048,7 @@
     },
     {
       "operationId": "folder.update",
-      "toolName": "honua_op_folder_update",
+      "toolName": "honua_update_folder",
       "title": "Update folder",
       "inputFields": [
         "If-Match",
@@ -3092,7 +3092,7 @@
     },
     {
       "operationId": "service.move",
-      "toolName": "honua_op_service_move",
+      "toolName": "honua_move_service",
       "title": "Move service",
       "inputFields": [
         "If-Match",

@@ -44,11 +44,28 @@ Modern governed proposal calls retain the existing session-bound evidence requir
 
 ## API-key proposals
 
-Published MCP tools `honua_admin_api_key_create` and `honua_admin_api_key_revoke` submit proposals through the canonical operation runtime. An allowed policy decision creates a durable pending proposal with separate operation-instance, proposal and audit identities; it does not create or revoke a key. Policy denials and dry-run-first requirements still refuse execution. These proposal submissions reject `dryRun: true`. Other operator-gated published tools retain their approval-required refusal.
+Published MCP tools `honua_admin_api_key_create` and `honua_admin_api_key_revoke` submit proposals through the canonical operation runtime. An allowed policy decision creates a durable pending proposal with separate operation-instance, proposal and audit identities; it does not create or revoke a key. Policy denials and dry-run-first requirements still refuse execution. These proposal submissions reject `dryRun: true`. Folder mutations use the same proposal-only runtime. Operator-gated tools without a proposal adapter retain their approval-required refusal.
 
 A separately authenticated authorized approver resolves the sealed proposal through the existing approval flow. Replay checks current original-requester authority and uses that original principal, with a single execution claim. Key creation returns an opaque secret reference; the one-time key stays in the protected secret channel and must not enter model context or transcripts. A client tool-consent callback does not constitute server approval.
 
 Clients may send one printable `Idempotency-Key` header of up to 128 characters on proposal calls. The runtime binds it to the authenticated principal, tenant, proposal mode and request fingerprint. An identical retry returns the existing proposal; changed input cannot reuse that key. Proposal calls bypass the published response cache. Missing durable proposal, audit or secret-aware runtime support fails closed. This source behavior does not establish installed qualification.
+
+## Folder management
+
+The `configure` view exposes `honua_list_folders`, `honua_create_folder`,
+`honua_update_folder`, `honua_delete_folder` and `honua_move_service`. Mutations
+submit canonical proposals; review and approve them in Console. Supply the
+catalog ETag from the Folder listing as `If-Match`. Moving a Service uses its
+logical name and an explicit `folderId`; null selects Root. The optional
+namespace follows the resolved tenant and is preserved during approval replay.
+
+Use `honua_admin_services_list` with `folderId` to discover Services in a Folder,
+or `folderId: "root"` for Root. Its existing paging and service-access checks
+apply. Published-service metadata reports Folder ID/name, public name and display
+title while keeping its logical service ID and resource URI stable.
+`honua_publish_service` accepts the same Folder selection: omit it to preserve
+membership or supply null for Root. Its optional `publicName` is the immutable
+public Service leaf name, independent of the logical name and display title.
 
 ## Connect a client
 

@@ -71,12 +71,14 @@ internal sealed class PublishedOperationTool : IMcpTool
     private bool IsRuntimeDynamic =>
         _descriptor.Policy.Determinism == OperationDeterminism.RuntimeDynamic;
 
+    private bool IsFolderOperation => FolderToolName(_descriptor.OperationId) is not null;
+
     private bool RequiresAdminAuthorization =>
-        _descriptor.OperationId.StartsWith("admin.", StringComparison.Ordinal);
+        IsFolderOperation || _descriptor.OperationId.StartsWith("admin.", StringComparison.Ordinal);
 
     private bool RequiresProposalSubmission =>
         _descriptor.ApprovalModel == OperationApprovalModel.OperatorGate
-        && _descriptor.OperationId is "admin.api-key.create" or "admin.api-key.revoke";
+        && (IsFolderOperation || _descriptor.OperationId is "admin.api-key.create" or "admin.api-key.revoke");
 
     // Deterministic AND read-only invocations are the only ones safe to cache: a
     // cache must never skip a side effect or return a stale AI turn.
@@ -84,8 +86,19 @@ internal sealed class PublishedOperationTool : IMcpTool
         IsDeterministic
         && _descriptor.Policy.SideEffectClass == OperationSideEffectClass.ReadOnly;
 
+    private static string? FolderToolName(string operationId) => operationId switch
+    {
+        "folder.list" => "honua_list_folders",
+        "folder.create" => "honua_create_folder",
+        "folder.update" => "honua_update_folder",
+        "folder.delete" => "honua_delete_folder",
+        "service.move" => "honua_move_service",
+        _ => null
+    };
+
     public static string ProjectName(string operationId)
     {
+        if (FolderToolName(operationId) is { } folderToolName) return folderToolName;
         if (operationId == McpConnectionDiscoveryProjection.TablesOperationId)
             return "honua_admin_connection_tables_list";
 
@@ -138,7 +151,7 @@ internal sealed class PublishedOperationTool : IMcpTool
                 + "', governed by the operation policy decision point on every invocation"
                 + " (allow / require-approval / dry-run-first / deny)."
                 + (RequiresProposalSubmission
-                    ? " This tool submits a proposal only, never the key mutation. A separately authenticated authorized approver must approve the sealed proposal; one-time keys remain in the protected secret channel."
+                    ? " This tool submits a proposal only, never executes the mutation. A separately authenticated authorized approver must approve the sealed proposal before execution."
                     : string.Empty)
                 + determinismNote,
             InputSchema = _inputSchema,
