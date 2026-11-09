@@ -55,6 +55,8 @@ public sealed class WebAppFixture : IAsyncLifetime
     private string? _currentSchema;
     private string _environmentName = "Test";
     private bool _useSharedServer;
+    private bool _hasSharedReference;
+    private int _disposeState;
     private bool _useKestrel;
     private string? _seedPath;
     private string? _seedProfile;
@@ -437,6 +439,7 @@ public sealed class WebAppFixture : IAsyncLifetime
         // factory/Postgres construction) lives on WebAppFixtureSharedBootstrapMixin.
         await Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin
             .EnsureInitializedAsync(SharedAdminPassword);
+        _hasSharedReference = true;
 
         if (_scopedServiceOverrides.Count > 0)
         {
@@ -463,46 +466,66 @@ public sealed class WebAppFixture : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+        {
+            return;
+        }
         _serviceScope?.Dispose();
         _serviceScope = null;
 
         if (_useSharedServer)
         {
-            if (_serviceOverrideScopeId is not null)
+            if (!_hasSharedReference)
             {
-                Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin.Factory.Services
-                    .GetRequiredService<ScopedServiceOverrideRegistry>()
-                    .Remove(_serviceOverrideScopeId);
-                _serviceOverrideScopeId = null;
+                return;
             }
-
-            if (_currentSchema is not null)
+            try
             {
-                await Postgres.DropSchemaAsync(_currentSchema);
+                if (_serviceOverrideScopeId is not null)
+                {
+                    Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin.Factory.Services
+                        .GetRequiredService<ScopedServiceOverrideRegistry>()
+                        .Remove(_serviceOverrideScopeId);
+                    _serviceOverrideScopeId = null;
+                }
+                if (_currentSchema is not null)
+                {
+                    await Postgres.DropSchemaAsync(_currentSchema);
+                }
             }
-
-            Client.Dispose();
-
-            // Audit-A2: ref-counted teardown of the shared factory + Postgres lives on
-            // WebAppFixtureSharedBootstrapMixin.
-            await Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin.ReleaseAsync();
+            finally
+            {
+                Client?.Dispose();
+                _hasSharedReference = false;
+                await Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin.ReleaseAsync();
+            }
             return;
         }
 
-        if (_currentSchema is not null)
+        try
         {
-            await Postgres.DropSchemaAsync(_currentSchema);
+            if (_currentSchema is not null && _postgres is not null)
+            {
+                await _postgres.DropSchemaAsync(_currentSchema);
+            }
         }
-
-        Client.Dispose();
-        if (_factory is not null)
+        finally
         {
-            await _factory.DisposeAsync();
-        }
-
-        if (_postgres is not null)
-        {
-            await _postgres.DisposeAsync();
+            Client?.Dispose();
+            try
+            {
+                if (_factory is not null)
+                {
+                    await _factory.DisposeAsync();
+                }
+            }
+            finally
+            {
+                if (_postgres is not null)
+                {
+                    await _postgres.DisposeAsync();
+                }
+            }
         }
     }
 
