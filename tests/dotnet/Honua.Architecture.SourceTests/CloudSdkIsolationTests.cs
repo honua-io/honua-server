@@ -34,8 +34,8 @@ public sealed class CloudSdkIsolationTests
     /// </summary>
     public static IEnumerable<object[]> CloudNeutralProjects()
     {
-        yield return new object[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Core.Abstractions", "Honua.Core.Abstractions.csproj") };
-        yield return new object[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Core", "Honua.Core.csproj") };
+        yield return new object[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Core", "Abstractions", "Honua.Core.Abstractions.csproj") };
+        yield return new object[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Core", "Core", "Honua.Core.csproj") };
         yield return new object[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Hosting", "Honua.Hosting.csproj") };
     }
 
