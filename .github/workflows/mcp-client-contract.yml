@@ -99,7 +99,7 @@ jobs:
           npm ci --ignore-scripts
           cd "$GITHUB_WORKSPACE"
           ln -s "$GITHUB_WORKSPACE/.mcp-client/certification/node_modules" scripts/qualification/mcp/node_modules
-          node --test scripts/qualification/mcp/stock-client-adapters.test.mjs
+          node --test scripts/qualification/mcp/stock-client-adapters.test.mjs scripts/qualification/mcp/inspector-rate-budget.test.mjs
       - name: Invoke every view through both published clients
         env:
           HONUA_MCP_STOCK_CLIENT: '1'

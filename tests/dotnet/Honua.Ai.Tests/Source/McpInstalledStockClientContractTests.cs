@@ -2,8 +2,12 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Globalization;
+using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Views;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -39,6 +43,10 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests
         start.ArgumentList.Add(kind);
         start.ArgumentList.Add(admin.BaseAddress!.ToString());
         start.Environment["HONUA_MCP_STOCK_KEY"] = WebAppFixture.SharedAdminPassword;
+        if (kind == "inspector")
+        {
+            start.Environment["HONUA_MCP_STOCK_RATE_BUDGET"] = await ReadInspectorRateBudgetAsync(admin);
+        }
         using var process = Process.Start(start)!;
         var stdout = process.StandardOutput.ReadToEndAsync();
         var stderr = process.StandardError.ReadToEndAsync();
@@ -54,6 +62,10 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests
             result.GetProperty("largestSuccessfulPayloadBytes").GetInt32().Should().BeGreaterThanOrEqualTo(1024);
             result.GetProperty("views").EnumerateArray().Select(view => view.GetProperty("view").GetString())
                 .Should().BeEquivalentTo(McpWorkflowViewCatalog.All.Keys.Append("full"));
+            if (kind == "inspector")
+            {
+                result.GetProperty("rateBudget").GetProperty("waits").GetInt32().Should().BePositive();
+            }
             var directory = RepositoryPaths.Resolve("artifacts", "mcp-stock-clients");
             Directory.CreateDirectory(directory);
             await File.WriteAllTextAsync(Path.Join(directory, $"{kind}.json"), result.GetRawText());
@@ -66,5 +78,24 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests
                 await process.WaitForExitAsync();
             }
         }
+    }
+
+    private static async Task<string> ReadInspectorRateBudgetAsync(HttpClient admin)
+    {
+        using var response = await admin.PostAsJsonAsync("/mcp", new
+        {
+            jsonrpc = "2.0", id = 1, method = "tools/list", @params = new { view = "full" }
+        });
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var pageSize = body.RootElement.TryGetProperty("result", out var result)
+            ? result.GetProperty("tools").GetArrayLength()
+            : McpPagination.DefaultListPageSize;
+        return JsonSerializer.Serialize(new
+        {
+            limit = int.Parse(response.Headers.GetValues("X-RateLimit-Limit").Single(), CultureInfo.InvariantCulture),
+            resetAt = long.Parse(response.Headers.GetValues("X-RateLimit-Reset").Single(), CultureInfo.InvariantCulture),
+            pageSize
+        });
     }
 }

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CatalogContractFailure } from './catalog-channel-contract.mjs';
 import { collectPages, openInstalledClient, ownedClientEndpoint, requirePublishedPackage } from './installed-client.mjs';
+import { inspectorRateBudget } from './inspector-rate-budget.mjs';
 
 const VIEW_META = 'honua.io/workflow-view';
 const INSPECTOR_VERSION = '2.10.1';
@@ -25,7 +26,7 @@ function runInspector({ entry, config, directory, method, view, extra, deadline 
   const remaining = deadline - Date.now();
   if (remaining <= 0) throw new CatalogContractFailure('inspector-budget-exceeded');
   const args = [entry, '--cli', '--config', config, '--server', 'owned', '--method', method,
-    '--format', 'json', '--metadata', `${VIEW_META}=${JSON.stringify(view)}`, ...extra];
+    '--format', 'json', '--quiet', '--metadata', `${VIEW_META}=${JSON.stringify(view)}`, ...extra];
   const env = Object.fromEntries(['PATH', 'SystemRoot', 'WINDIR', 'TMPDIR', 'TEMP', 'TMP']
     .filter(key => process.env[key] !== undefined).map(key => [key, process.env[key]]));
   Object.assign(env, { MCP_STORAGE_DIR: directory, MCP_INSPECTOR_SECRET_STORE: 'memory', MCP_AUTO_OPEN_ENABLED: 'false' });
@@ -43,10 +44,11 @@ function runInspector({ entry, config, directory, method, view, extra, deadline 
         let httpStatus;
         let clientErrorCode;
         try {
-          const diagnostic = JSON.parse(stderr).error;
+          const line = stderr.split('\n').findLast(value => value.trimStart().startsWith('{"error":'));
+          const diagnostic = JSON.parse(line).error;
           if (Number.isInteger(diagnostic?.status) && diagnostic.status >= 100 && diagnostic.status <= 599) httpStatus = diagnostic.status;
           if (['error', 'auth_required', 'unreachable', 'tool_error', 'schema_unportable', 'store_unavailable'].includes(diagnostic?.code)) clientErrorCode = diagnostic.code;
-        } catch {}
+        } catch { /* Non-JSON client diagnostics are not echoed. */ }
         reject(new CatalogContractFailure('inspector-invocation-failed', {
           method, view, tool: toolIndex < 0 ? undefined : extra[toolIndex + 1],
           exitCode: typeof code === 'number' ? code : undefined, timedOut: error?.killed === true,
@@ -61,7 +63,7 @@ function runInspector({ entry, config, directory, method, view, extra, deadline 
   });
 }
 
-export async function openStockInspector(baseUrl, apiKey) {
+export async function openStockInspector(baseUrl, apiKey, { budget, rosters } = {}) {
   const endpoint = ownedClientEndpoint(baseUrl, apiKey);
   const installed = await requirePublishedPackage('@modelcontextprotocol/inspector', '@modelcontextprotocol/inspector/package.json', INSPECTOR_VERSION);
   const directory = await mkdtemp(join(tmpdir(), 'honua-mcp-stock-'));
@@ -73,9 +75,13 @@ export async function openStockInspector(baseUrl, apiKey) {
     } } }), { mode: 0o600 });
     const entry = join(installed.root, 'clients/launcher/build/index.js');
     const deadline = Date.now() + 15 * 60_000;
-    const invoke = (method, view, extra = []) => runInspector({ entry, config, directory, method, view, extra, deadline });
+    const pacing = budget ? inspectorRateBudget({ ...budget, rosters }) : undefined;
+    const invoke = async (method, view, extra = []) => {
+      await pacing?.beforeInvocation(view, deadline);
+      return runInspector({ entry, config, directory, method, view, extra, deadline });
+    };
     return {
-      metadata: { inspectorVersion: installed.version, inspectorIntegrity: installed.integrity, clientLockSha256: installed.lockSha256 },
+      metadata: { inspectorVersion: installed.version, inspectorIntegrity: installed.integrity, clientLockSha256: installed.lockSha256, rateBudget: pacing?.stats },
       discover: async view => (await invoke('tools/list', view)).tools,
       call: (view, name, args) => invoke('tools/call', view, ['--tool-name', name, '--tool-args-json', JSON.stringify(args)]),
       close: () => rm(directory, { recursive: true, force: true }),
