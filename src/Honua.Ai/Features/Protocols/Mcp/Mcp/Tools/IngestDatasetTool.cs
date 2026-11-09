@@ -51,7 +51,7 @@ internal sealed partial class IngestDatasetTool : IMcpTool
         Name = ToolName,
         Title = "Ingest dataset",
         Description = "Load a small inline dataset (up to 4 MB) into the server as a database table that honua_publish_service can immediately "
-            + "publish as a queryable layer. Accepts format \"geojson\" (a GeoJSON FeatureCollection; coordinates are WGS84 lon/lat per RFC 7946) "
+            + "publish as a queryable layer. Accepts format \"geojson\" (a GeoJSON FeatureCollection; coordinates are WGS84 (EPSG:4326) lon/lat per RFC 7946) "
             + "or \"csv\" (text with a header row; point geometry is read from longitude/latitude columns — auto-detected names "
             + "lon/lng/long/longitude/x and lat/latitude/y, or set longitudeColumn/latitudeColumn explicitly — or from a WKT column named "
             + "wkt/geom/geometry/shape; coordinate order is lon/lat and the undeclared coordinate CRS requires sourceSrid; targetSrid is optional and defaults to keeping the source). "
