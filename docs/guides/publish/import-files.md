@@ -174,3 +174,25 @@ permission to replace that table; never apply it to an unrelated customer table.
 Existing table comments must be recorded before this explicit adoption replaces them.
 New imported tables retain the marker through successful staging promotion. WFS
 imports retain the stable `wfs_` prefix for derived target names.
+
+## Coordinate systems
+
+Direct file imports keep the detected source coordinate system when `targetSrid` is omitted
+or null. Supply a supported positive `targetSrid` to request reprojection. An explicit
+`sourceSrid` overrides the interpretation of input coordinates while `detectedSrid` continues
+to report the file metadata. Results report `sourceSrid`, `storedSrid` and `reprojected`.
+
+GeoJSON without a legacy CRS declaration, KML and GPX use their format-defined WGS 84
+coordinate system. GeoParquet without a CRS member uses its format-defined CRS84 default.
+Plain WKT and CSV without embedded CRS metadata require `sourceSrid`; a target does not
+substitute for an unknown source. Unsupported or heterogeneous source systems must be
+resolved or split before importing. Existing callers that explicitly send a target retain
+that choice.
+
+The Admin preview includes `coordinateSystem` with detected-source provenance, an optional
+registry name, the effective source and planned storage SRID, and whether an override is
+required. The authenticated read-only coordinate-system lookup accepts a code, an EPSG
+identifier or literal name text through `q` (1–128 trimmed characters), with `limit` from
+1 to 50 (default 20). Registry entries include `code`, `name`, `unit` and `area`; unavailable
+registry metadata is null. The MCP `honua_ingest_dataset` tool accepts the same optional
+source and target choices. Server-side address geocoding supplies a known source CRS.
