@@ -195,7 +195,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         sql("CREATE TABLE public.rc2_lifecycle_marker (id integer PRIMARY KEY, value text NOT NULL); INSERT INTO public.rc2_lifecycle_marker VALUES (1, 'retained')")
         proposer, _ = request(base, "/api/v1/admin/api-keys/", key, {"name": "proposer", "permissions": ["admin:*"]})
         proposer_key = proposer["data"]["key"]
-        human = HumanApprovalClient.login(human_base, identity_dir / "cert.pem")
+        human = HumanApprovalClient.login(human_base, identity.directory / "cert.pem")
         _, session = rpc(base, proposer_key, None, "initialize", {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "lifecycle", "version": "1"}}, 1)
         def call(name, arguments, ident):
             result, _ = rpc(base, proposer_key, session, "tools/call", {"name": name, "arguments": arguments}, ident)
