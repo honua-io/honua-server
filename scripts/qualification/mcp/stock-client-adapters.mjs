@@ -31,15 +31,19 @@ function runInspector({ entry, config, directory, method, view, extra, deadline 
   Object.assign(env, { MCP_STORAGE_DIR: directory, MCP_INSPECTOR_SECRET_STORE: 'memory', MCP_AUTO_OPEN_ENABLED: 'false' });
   return new Promise((resolve, reject) => {
     execFile(process.execPath, args, { env, timeout: Math.min(30_000, remaining), maxBuffer: 8 * 1024 * 1024 }, (error, stdout) => {
+      const code = error?.code ?? 0;
       try {
         const result = JSON.parse(stdout).result;
-        const code = error?.code ?? 0;
         if (!result || (code !== 0 && !(code === 5 && result.isError === true))) {
           throw new CatalogContractFailure('inspector-invocation-failed');
         }
         resolve(result);
       } catch {
-        reject(new CatalogContractFailure('inspector-invocation-failed'));
+        const toolIndex = extra.indexOf('--tool-name');
+        reject(new CatalogContractFailure('inspector-invocation-failed', {
+          method, view, tool: toolIndex < 0 ? undefined : extra[toolIndex + 1],
+          exitCode: typeof code === 'number' ? code : undefined, timedOut: error?.killed === true,
+        }));
       }
     });
   });
