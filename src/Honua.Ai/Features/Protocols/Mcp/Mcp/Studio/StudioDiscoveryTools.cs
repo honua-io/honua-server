@@ -34,7 +34,8 @@ internal sealed class ListStudioItemsTool(IGeoprocessingJobService jobs, ILogger
         var principal = await EnsureAuthorizedAsync(context, OperatorOperation.Read,
             StudioAuthorizationOperation.ListOwn, cancellationToken).ConfigureAwait(false);
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioListItemsArgument);
-        if (argument.Limit is < 1 or > 100 || argument.Query?.Length > StudioMcpSchemas.MaxShortTextLength || argument.Cursor?.Length > StudioMcpSchemas.MaxNoteLength)
+        var limit = argument.Limit ?? 25;
+        if (limit is < 1 or > 100 || argument.Query?.Length > StudioMcpSchemas.MaxShortTextLength || argument.Cursor?.Length > StudioMcpSchemas.MaxNoteLength)
             throw new GeoprocessingValidationException("limit must be 1–100; q is limited to 200 characters and cursor to 2000.");
         var authorization = RequireAuthorizationService(context);
         var callerId = authorization.ResolveCallerId(principal);
@@ -46,7 +47,7 @@ internal sealed class ListStudioItemsTool(IGeoprocessingJobService jobs, ILogger
         {
             OwnerId = authorization.IsAdmin(principal) || !authorization.IsEndUserAuthorizationEnabled ? null : callerId,
             Tenant = authorization.CreateTenantScopeFilter(principal), SearchTerm = argument.Query,
-            Cursor = argument.Cursor, Limit = argument.Limit
+            Cursor = argument.Cursor, Limit = limit
         }, cancellationToken).ConfigureAwait(false);
         return McpToolHelpers.SuccessResult(result, StudioMcpJsonContext.Default.StudioContentItemListResult);
     }
@@ -75,7 +76,8 @@ internal sealed class ListStudioVersionsTool(IGeoprocessingJobService jobs, ILog
         var principal = await EnsureAuthorizedAsync(context, OperatorOperation.Read,
             StudioAuthorizationOperation.ReadContentItem, cancellationToken).ConfigureAwait(false);
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioListVersionsArgument);
-        if (argument.ItemId == Guid.Empty || argument.Limit is < 1 or > 100 || argument.BeforeVersionNumber is < 1)
+        var limit = argument.Limit ?? 25;
+        if (argument.ItemId == Guid.Empty || limit is < 1 or > 100 || argument.BeforeVersionNumber is < 1)
             throw new GeoprocessingValidationException("itemId is required; limit must be 1–100 and beforeVersionNumber must be positive.");
         var lifecycle = RequireLifecycleService(context);
         var authorization = RequireAuthorizationService(context);
@@ -96,11 +98,11 @@ internal sealed class ListStudioVersionsTool(IGeoprocessingJobService jobs, ILog
             if (!decision.IsAllowed)
                 continue;
             visible.Add(new(version.VersionId, version.VersionNumber, version.ContentHash, version.CreatedAt, version.ChangeNote));
-            if (visible.Count > argument.Limit)
+            if (visible.Count > limit)
                 break;
         }
-        var page = visible.Take(argument.Limit).ToArray();
+        var page = visible.Take(limit).ToArray();
         return McpToolHelpers.SuccessResult(new McpStudioVersionPage(argument.ItemId, page,
-            visible.Count > argument.Limit ? page[^1].VersionNumber : null), StudioMcpJsonContext.Default.McpStudioVersionPage);
+            visible.Count > limit ? page[^1].VersionNumber : null), StudioMcpJsonContext.Default.McpStudioVersionPage);
     }
 }
