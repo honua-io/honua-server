@@ -51947,12 +51947,13 @@
             "enum": [
               "none",
               "point",
-              "multiPoint",
-              "lineString",
-              "multiLineString",
+              "multipoint",
+              "linestring",
+              "multilinestring",
               "polygon",
-              "multiPolygon",
-              "geometryCollection"
+              "multipolygon",
+              "geometrycollection",
+              "mixed"
             ],
             "nullable": true
           },
@@ -51991,12 +51992,13 @@
             "enum": [
               "none",
               "point",
-              "multiPoint",
-              "lineString",
-              "multiLineString",
+              "multipoint",
+              "linestring",
+              "multilinestring",
               "polygon",
-              "multiPolygon",
-              "geometryCollection"
+              "multipolygon",
+              "geometrycollection",
+              "mixed"
             ],
             "nullable": true
           },
