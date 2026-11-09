@@ -26,21 +26,42 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _layersTable;
+    private readonly string _stylesTable;
+    private readonly string _refsTable;
 
     public PostgresLayerStyleCatalog(IAdoNetDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
 
         _layersTable = Infrastructure.SchemaSearchPath.QualifyTable("layers", schemaName);
+        _stylesTable = Infrastructure.SchemaSearchPath.QualifyTable("styles", schemaName);
+        _refsTable = Infrastructure.SchemaSearchPath.QualifyTable("layer_style_refs", schemaName);
     }
 
     /// <inheritdoc />
     public async Task<LayerStyleDefinition?> GetLayerStyleAsync(int layerId, CancellationToken cancellationToken = default)
     {
         string sql = $"""
-            SELECT {SelectColumns}
-            FROM {_layersTable}
-            WHERE layer_id = @layerId
+            SELECT layers.layer_id,
+                CASE WHEN primary_style.style_id IS NULL THEN layers.maplibre_style ELSE primary_style.maplibre_style END,
+                CASE WHEN primary_style.style_id IS NULL THEN layers.geoservices_drawing_info ELSE primary_style.drawing_info END,
+                CASE WHEN primary_style.style_id IS NULL THEN layers.style_version ELSE primary_style.style_version END,
+                CASE WHEN primary_style.style_id IS NULL THEN layers.style_revised_at ELSE primary_style.updated_at END,
+                CASE WHEN primary_style.style_id IS NULL THEN layers.style_revised_by ELSE primary_style.revised_by END,
+                CASE WHEN primary_style.style_id IS NULL THEN layers.style_change_summary ELSE primary_style.change_summary END,
+                primary_style.layer_ids
+            FROM {_layersTable} layers
+            LEFT JOIN LATERAL (
+                SELECT styles.style_id, styles.maplibre_style, styles.drawing_info,
+                    styles.style_version, styles.updated_at, styles.revised_by, styles.change_summary,
+                    ARRAY(SELECT DISTINCT other.layer_id FROM {_refsTable} other WHERE other.style_id = styles.style_id) AS layer_ids
+                FROM {_refsTable} refs
+                JOIN {_stylesTable} styles ON styles.style_id = refs.style_id
+                WHERE refs.layer_id = layers.layer_id AND refs.ordinal = 0
+                ORDER BY styles.style_id
+                LIMIT 1
+            ) primary_style ON TRUE
+            WHERE layers.layer_id = @layerId
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -53,7 +74,12 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
             return null;
         }
 
-        return ReadStyle(reader);
+        var style = ReadStyle(reader);
+        return style with
+        {
+            MapLibreStyleJson = CatalogStyleSourceProjection.ForLayer(style.MapLibreStyleJson, layerId,
+            reader.IsDBNull(7) ? [] : reader.GetFieldValue<int[]>(7))
+        };
     }
 
     /// <inheritdoc />
@@ -149,24 +175,27 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
             UPDATE {_layersTable}
             SET geoservices_drawing_info = @drawingInfo
             WHERE layer_id = @layerId
+                AND NOT EXISTS (
+                    SELECT 1 FROM {_refsTable}
+                    WHERE layer_id = @layerId AND ordinal = 0
+                )
             RETURNING {SelectColumns}
             """;
 
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
-        _ = command.Parameters.AddWithValue("@layerId", layerId);
-        _ = command.Parameters.Add(new NpgsqlParameter("@drawingInfo", NpgsqlDbType.Jsonb)
+        await using (var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false))
         {
-            Value = drawingInfoJson
-        });
+            await using var command = new NpgsqlCommand(sql, connection);
+            _ = command.Parameters.AddWithValue("@layerId", layerId);
+            _ = command.Parameters.Add(new NpgsqlParameter("@drawingInfo", NpgsqlDbType.Jsonb)
+            {
+                Value = drawingInfoJson
+            });
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            return null;
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                return ReadStyle(reader);
         }
-
-        return ReadStyle(reader);
+        return await GetLayerStyleAsync(layerId, cancellationToken).ConfigureAwait(false);
     }
 
     private static void AddNullableText(NpgsqlCommand command, string name, string? value)
