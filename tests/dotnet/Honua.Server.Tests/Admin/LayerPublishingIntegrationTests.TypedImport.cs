@@ -341,6 +341,7 @@ public sealed partial class LayerPublishingIntegrationTests
         properties.GetProperty("population").ValueKind.Should().Be(JsonValueKind.Number);
         properties.GetProperty("population").GetInt64().Should().Be(population);
         properties.TryGetProperty("created_at", out _).Should().BeFalse();
+        AssertNoPromotedDuplicates(properties.GetProperty("properties"));
         properties.GetProperty("properties").GetProperty("notes").GetProperty("kind").GetString().Should().Be(noteKind);
         properties.GetProperty("properties").GetProperty("id").GetString().Should().Be(population == 2 ? "100" : "200");
     }
@@ -351,6 +352,15 @@ public sealed partial class LayerPublishingIntegrationTests
         attributes.GetProperty("population").ValueKind.Should().Be(JsonValueKind.Number);
         attributes.GetProperty("population").GetInt64().Should().Be(population);
         attributes.TryGetProperty("created_at", out _).Should().BeFalse();
+        if (attributes.TryGetProperty("properties", out var residual)) AssertNoPromotedDuplicates(residual);
+    }
+
+    private static void AssertNoPromotedDuplicates(JsonElement residual)
+    {
+        foreach (var name in new[] { "source_id", "name", "population", "is_open", "score", "opened" })
+        {
+            residual.TryGetProperty(name, out _).Should().BeFalse($"promoted attribute {name} is exposed once");
+        }
     }
 
     private static string ReadMigration(string name)
