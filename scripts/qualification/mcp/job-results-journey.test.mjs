@@ -5,13 +5,23 @@ import test from 'node:test';
 import { jobResultsJourney } from './job-results-journey.mjs';
 
 const names = ['honua_execute_plan', 'honua_list_jobs', 'honua_get_job_results'];
+const jobOutputSchema = { type: 'object', oneOf: [
+  { type: 'object', required: ['jobId', 'resultPackageId', 'status', 'artifacts'], properties: {
+    jobId: { type: 'string' }, resultPackageId: { type: 'string' }, status: { type: 'string' }, artifacts: { type: 'array' },
+  } },
+  { type: 'object', required: ['code', 'status'], properties: { code: { type: 'string' }, status: { const: 'error' } } },
+] };
 const polygon = Array.from({ length: 33 }, (_, i) => {
   const angle = (i % 32) * Math.PI / 16;
   return [25.5 * Math.cos(angle), 25.5 * Math.sin(angle)];
 });
 
 function bufferFeature(mode) {
-  const geometry = mode === 'wrong-geometry' ? polygon.map((point, i) => i === 1 ? [...point, 99] : point) : polygon;
+  let geometry = polygon;
+  if (mode === 'wrong-geometry') geometry = polygon.map((point, i) => i === 1 ? [...point, 99] : point);
+  if (mode === 'wrong-radius') geometry = polygon.map((point, i) => i === 1 ? point.map(value => value * 1.01) : point);
+  if (mode === 'open-ring') geometry = polygon.slice(0, -1);
+  if (mode === 'collapsed-area') geometry = [0, 0.001, 0.002, 0.003, 0].map(angle => [25.5 * Math.cos(angle), 25.5 * Math.sin(angle)]);
   return { type: 'Feature', properties: { processId: 'geometry.buffer', inputSrid: 3857, bufferDistance: mode === 'wrong-distance' ? 1 : 25.5 },
     geometry: { type: 'Polygon', coordinates: [geometry] } };
 }
@@ -24,11 +34,11 @@ function toolResult({ mode, params, foreign, state }) {
   else if (name === 'honua_list_jobs') {
     const jobs = foreign ? mode === 'foreign-list-leak' ? [{ jobId: 'job-1', status: 'Succeeded' }] : []
       : [{ jobId: 'job-1', status: mode === 'failed' ? 'Failed' : ++state.polls === 1 ? 'Running' : 'Succeeded' }];
-    payload = { jobs, jobCount: jobs.length };
+    payload = { jobs, jobCount: jobs.length, ...(mode === 'job-cursor-loop' ? { nextCursor: 'repeat' } : {}) };
   } else if (foreign || args.jobId === 'missing-job-control') {
     isError = mode !== 'foreign-read-leak';
     payload = isError ? { code: mode === 'foreign-forbidden' && foreign ? 'permission_denied' : 'not_found', status: 'error' }
-      : { jobId: 'job-1', status: 'Completed', artifacts: [] };
+      : { jobId: 'job-1', resultPackageId: 'package-1', status: 'Completed', artifacts: [] };
   } else {
     const uri = mode.startsWith('download') ? '/api/geoprocessing/jobs/job-1/artifacts/0/content'
       : mode === 'external-artifact' ? 'https://external.invalid/content'
@@ -70,6 +80,7 @@ async function run(mode = 'positive') {
     } else if (body.method === 'tools/list') {
       result = { tools: names.filter(name => mode !== 'missing-tool' || name !== 'honua_get_job_results').map(name => ({
         name, inputSchema: { type: 'object', properties: name === 'honua_get_job_results' ? { jobId: { type: 'string' } } : {} },
+        ...(name === 'honua_get_job_results' ? { outputSchema: jobOutputSchema } : {}),
       })), ...(mode === 'cursor-loop' ? { nextCursor: 'repeat' } : {}) };
     } else if (body.method === 'tools/call') {
       result = toolResult({ mode, params: body.params, foreign, state });
@@ -124,9 +135,11 @@ test('published SDK results can refer to an authorized same-origin staged artifa
 
 for (const [mode, reason] of [
   ['missing-tool', 'missing-job-tool'], ['cursor-loop', 'incomplete-discovery'], ['failed', 'job-did-not-succeed'],
+  ['job-cursor-loop', 'incomplete-job-pagination'],
   ['foreign-list-leak', 'cross-user-job-listed'], ['foreign-read-leak', 'unexpected-tool-status'],
   ['foreign-forbidden', 'cross-user-nondisclosure-failed'], ['wrong-geometry', 'invalid-buffer-coordinate'],
   ['wrong-distance', 'invalid-buffer-result'], ['wrong-job', 'invalid-job-results'],
+  ['wrong-radius', 'invalid-buffer-coordinate'], ['open-ring', 'invalid-buffer-ring'], ['collapsed-area', 'invalid-buffer-area'],
   ['incomplete-result', 'invalid-job-results'], ['truncated-result', 'invalid-job-results'],
   ['contradictory-text', 'content-channel-mismatch'], ['missing-text', 'content-channel-mismatch'],
   ['missing-structured', 'content-channel-mismatch'],

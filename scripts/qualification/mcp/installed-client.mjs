@@ -8,6 +8,10 @@ import { dirname, resolve } from 'node:path';
 export const CLIENT_SOURCE = '372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4';
 export const SDK_VERSION = '1.32.1';
 
+export async function sourceSha256(moduleUrl) {
+  return createHash('sha256').update(await readFile(new URL(moduleUrl))).digest('hex');
+}
+
 export async function openInstalledClient({ baseUrl, apiKey, name, timeoutMs = 20_000 }) {
   const endpoint = new URL('/mcp', baseUrl);
   if (endpoint.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(endpoint.hostname)
@@ -38,24 +42,31 @@ export async function openInstalledClient({ baseUrl, apiKey, name, timeoutMs = 2
     }));
     return { client, fetchOwned, endpoint, metadata: { clientSource: CLIENT_SOURCE,
       sdkVersion: sdk.version, sdkIntegrity: installed.integrity, clientLockSha256: lockSha256,
-      clientHelperSha256: createHash('sha256').update(await readFile(new URL(import.meta.url))).digest('hex') } };
+      clientHelperSha256: await sourceSha256(import.meta.url) } };
   } catch (error) {
     await client.close();
     throw error;
   }
 }
 
-export async function discoverInstalledTools(client) {
-  const tools = [];
+export async function collectPages(fetchPage, reason) {
+  const items = [];
   const cursors = new Set();
   let cursor;
   for (let page = 0; page < 100; page++) {
-    const result = await client.listTools(cursor ? { cursor } : {}, { timeout: 5_000 });
-    tools.push(...result.tools);
+    const result = await fetchPage(cursor);
+    items.push(...result.items);
     cursor = result.nextCursor;
-    if (!cursor) return tools;
-    if (cursors.has(cursor)) throw new Error('incomplete-discovery');
+    if (!cursor) return items;
+    if (cursors.has(cursor)) throw new Error(reason);
     cursors.add(cursor);
   }
-  throw new Error('incomplete-discovery');
+  throw new Error(reason);
+}
+
+export async function discoverInstalledTools(client) {
+  return collectPages(async cursor => {
+    const result = await client.listTools(cursor ? { cursor } : {}, { timeout: 5_000 });
+    return { items: result.tools, nextCursor: result.nextCursor };
+  }, 'incomplete-discovery');
 }

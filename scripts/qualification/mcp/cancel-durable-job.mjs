@@ -1,9 +1,7 @@
 // This adapter proves installed-client acknowledgement only. The enclosing
 // lifecycle harness independently proves native cessation and absence of output.
-import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { discoverInstalledTools, openInstalledClient } from './installed-client.mjs';
+import { discoverInstalledTools, openInstalledClient, sourceSha256 } from './installed-client.mjs';
 export { CLIENT_SOURCE, SDK_VERSION } from './installed-client.mjs';
 
 function acknowledgement(result, jobId) {
@@ -33,7 +31,7 @@ export async function cancelDurableJob({ baseUrl, apiKey, jobId }) {
       responses.push(acknowledgement(response, jobId));
     }
     return { schema: 'honua.gp-mcp-cancellation-ack/v1', ...metadata,
-      adapterSha256: createHash('sha256').update(await readFile(new URL(import.meta.url))).digest('hex'),
+      adapterSha256: await sourceSha256(import.meta.url),
       jobId, tool: 'honua_cancel_job', responses, executionCessationProven: false };
   } finally {
     await client.close();

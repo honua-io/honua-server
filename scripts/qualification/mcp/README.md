@@ -48,7 +48,7 @@ The workflow retains separate control-count/source evidence with
 `job-results-journey.mjs` uses that same published SDK and immutable dependency
 lock. Through default discovery it finds `honua_execute_plan`, `honua_list_jobs`
 and `honua_get_job_results`, submits a point buffer in EPSG:3857, polls the
-caller-scoped job list to `Succeeded`, and reads the completed result package.
+administrator's job list to `Succeeded`, and reads the completed result package.
 It verifies the returned GeoJSON bytes, input parameters, polygon radius,
 closure and area. Both text JSON and structured content must agree on every
 tool call. Human-readable summary blocks may accompany the full text JSON.
@@ -71,8 +71,10 @@ node scripts/qualification/mcp/job-results-journey.mjs http://127.0.0.1:8080
 
 The **GP Lifecycle Qualification** workflow runs the installed-client journey
 on relevant pull requests against a real Kestrel server, disposable PostGIS and
-Redis, and the production geometry-buffer executor. The fixture creates the
-other caller's `admin:read` key through the actual admin API. To run that same
+Redis, and the production geometry-buffer executor. Its submitter is the
+bootstrap administrator; it creates the other caller's `admin:read` key through
+the actual admin API. This fixture does not qualify non-administrator-owned
+job polling. To run that same
 focused test after installing the pinned SDK beside these scripts:
 
 ```sh

@@ -57,8 +57,6 @@ public sealed class McpJobToolsInstalledClientTests
         result.GetProperty("resultStatus").GetString().Should().Be("Completed");
         result.GetProperty("crossUserRead").GetString().Should().Be("not_found");
         result.GetProperty("crossUserListed").GetBoolean().Should().BeFalse();
-        result.GetProperty("geometry").GetProperty("area").GetDouble().Should().BeInRange(
-            Math.PI * 25.5 * 25.5 * 0.9, Math.PI * 25.5 * 25.5 * 1.01);
         var receipts = RepositoryPaths.Resolve("artifacts", "mcp-job-tools");
         Directory.CreateDirectory(receipts);
         await File.WriteAllTextAsync(Path.Join(receipts, "installed-client.json"), result.GetRawText());

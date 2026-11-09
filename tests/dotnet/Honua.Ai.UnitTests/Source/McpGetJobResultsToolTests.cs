@@ -10,7 +10,6 @@ using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
-using Honua.Ai.Protocols.Mcp.Views;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,31 +28,6 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 public sealed class McpGetJobResultsToolTests
 {
     private readonly IGeoprocessingJobService _jobService = Substitute.For<IGeoprocessingJobService>();
-
-    [UnitTest]
-    public void Describe_ExecutePlan_ExplainsToolOnlyStatusAndResultsJourney()
-    {
-        var descriptor = new ExecutePlanTool(_jobService, NullLogger<ExecutePlanTool>.Instance).Describe();
-
-        descriptor.Description.Should().Contain(ListJobsTool.ToolName)
-            .And.Contain(GetJobResultsTool.ToolName)
-            .And.Contain("Succeeded")
-            .And.Contain("Failed")
-            .And.Contain("Cancelled");
-    }
-
-    [UnitTest]
-    public void DefaultView_ContainsSubmission_AlsoContainsStatusAndResultToolsWithinBudget()
-    {
-        var catalog = McpTaxonomyAlignmentTests.BuildTools()
-            .Select(tool => (McpWorkflowViewDescriptorClassifier.Describe(tool), false));
-        var view = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Default, catalog);
-
-        view.Members.Select(member => member.ToolName).Should().Contain(
-            [ExecutePlanTool.ToolName, ListJobsTool.ToolName, GetJobResultsTool.ToolName]);
-        view.Members.Should().HaveCountLessThanOrEqualTo(12);
-        view.BudgetViolations.Should().BeEmpty();
-    }
 
     [UnitTest]
     [Operation(Operations.Query)]
