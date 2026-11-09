@@ -21,7 +21,7 @@ export async function openStockSdk(baseUrl, apiKey) {
   };
 }
 
-function runInspector(entry, config, directory, method, view, extra, deadline) {
+function runInspector({ entry, config, directory, method, view, extra, deadline }) {
   const remaining = deadline - Date.now();
   if (remaining <= 0) throw new CatalogContractFailure('inspector-budget-exceeded');
   const args = [entry, '--cli', '--config', config, '--server', 'owned', '--method', method,
@@ -57,7 +57,7 @@ export async function openStockInspector(baseUrl, apiKey) {
     } } }), { mode: 0o600 });
     const entry = join(installed.root, 'clients/launcher/build/index.js');
     const deadline = Date.now() + 15 * 60_000;
-    const invoke = (method, view, extra = []) => runInspector(entry, config, directory, method, view, extra, deadline);
+    const invoke = (method, view, extra = []) => runInspector({ entry, config, directory, method, view, extra, deadline });
     return {
       metadata: { inspectorVersion: installed.version, inspectorIntegrity: installed.integrity, clientLockSha256: installed.lockSha256 },
       discover: async view => (await invoke('tools/list', view)).tools,

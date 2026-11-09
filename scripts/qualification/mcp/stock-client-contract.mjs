@@ -4,7 +4,7 @@ import { CatalogContractFailure, verifyCatalogChannels } from './catalog-channel
 import { sourceSha256 } from './installed-client.mjs';
 import { openStockInspector, openStockSdk } from './stock-client-adapters.mjs';
 
-export async function runStockClientContract(kind, baseUrl, apiKey, rosters) {
+export async function runStockClientContract({ kind, baseUrl, apiKey, rosters }) {
   const factories = { sdk: openStockSdk, inspector: openStockInspector };
   const open = factories[kind];
   if (!open) throw new CatalogContractFailure('unknown-stock-client');
@@ -22,13 +22,16 @@ export async function runStockClientContract(kind, baseUrl, apiKey, rosters) {
 async function main() {
   const roster = JSON.parse(await readFile(new URL('../../../docs/gis/data/mcp-tool-roster.v1.json', import.meta.url), 'utf8'));
   const rosters = { ...roster.views, full: [...roster.static, ...roster.projectedAdmin] };
-  const receipt = await runStockClientContract(process.argv[2], process.argv[3], process.env.HONUA_MCP_STOCK_KEY, rosters);
+  const receipt = await runStockClientContract({ kind: process.argv[2], baseUrl: process.argv[3], apiKey: process.env.HONUA_MCP_STOCK_KEY, rosters });
   process.stdout.write(JSON.stringify(receipt) + '\n');
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch(error => {
-    process.stderr.write((error instanceof CatalogContractFailure ? error.message : 'client-or-host-error') + '\n');
+    const diagnostic = error instanceof CatalogContractFailure
+      ? { code: error.message, details: error.details }
+      : { code: 'client-or-host-error' };
+    process.stderr.write(JSON.stringify(diagnostic) + '\n');
     process.exitCode = 1;
   });
 }

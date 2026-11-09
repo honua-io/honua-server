@@ -1,9 +1,14 @@
 import { isDeepStrictEqual } from 'node:util';
 
-export class CatalogContractFailure extends Error {}
+export class CatalogContractFailure extends Error {
+  constructor(code, details) {
+    super(code);
+    this.details = details;
+  }
+}
 
-function requireContract(condition, code) {
-  if (!condition) throw new CatalogContractFailure(code);
+function requireContract(condition, code, details) {
+  if (!condition) throw new CatalogContractFailure(code, details);
 }
 
 export function requireMirroredPayload(result) {
@@ -43,7 +48,10 @@ export async function verifyCatalogChannels({ rosters, discover, call }) {
   for (const [view, expected] of Object.entries(rosters)) {
     const tools = await discover(view);
     const names = tools.map(tool => tool.name).sort();
-    requireContract(expected.length > 0 && isDeepStrictEqual(names, [...expected].sort()), 'unexpected-view-roster');
+    requireContract(expected.length > 0 && isDeepStrictEqual(names, [...expected].sort()), 'unexpected-view-roster', {
+      view, expectedCount: expected.length, actualCount: names.length,
+      missing: expected.filter(name => !names.includes(name)),
+    });
     for (const tool of tools) {
       const inputs = requiredInputs(tool.inputSchema);
       if (view === 'full') inputInventory.push(...inputs.map(input => ({ tool: tool.name, ...input })));

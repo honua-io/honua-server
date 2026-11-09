@@ -58,7 +58,7 @@ async function withSyntheticPeer(change, exercise) {
 for (const kind of ['sdk', 'inspector']) {
   test(`published ${kind} selects views and preserves real client channels against a synthetic peer`, async () => {
     await withSyntheticPeer(result => result, async (baseUrl, calls) => {
-      const receipt = await runStockClientContract(kind, baseUrl, key, rosters);
+      const receipt = await runStockClientContract({ kind, baseUrl, apiKey: key, rosters });
       assert.equal(receipt.client, kind);
       assert.equal(receipt[kind === 'sdk' ? 'sdkVersion' : 'inspectorVersion'], kind === 'sdk' ? '1.32.1' : '2.10.1');
       assert.deepEqual(receipt.views, [
@@ -75,7 +75,7 @@ for (const kind of ['sdk', 'inspector']) {
 
   test(`published ${kind} cannot hide wire-level text elision`, async () => {
     await withSyntheticPeer(result => ({ ...result, content: [{ type: 'text', text: 'elided' }] }), async baseUrl => {
-      await assert.rejects(runStockClientContract(kind, baseUrl, key, rosters), { message: 'missing-or-duplicate-payload-mirror' });
+      await assert.rejects(runStockClientContract({ kind, baseUrl, apiKey: key, rosters }), { message: 'missing-or-duplicate-payload-mirror' });
     });
   });
 }

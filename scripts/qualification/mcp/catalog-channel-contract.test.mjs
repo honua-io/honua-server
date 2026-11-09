@@ -79,3 +79,14 @@ test('documents nested required fields through arrays and schema variants', () =
   delete schema.properties.plan.oneOf[0].properties.steps.items.properties.id.description;
   assert.throws(() => requiredInputs(schema), { message: 'undocumented-required-input' });
 });
+
+test('roster diagnostics contain canonical missing names and counts without echoing unexpected server names', async () => {
+  const peer = fixture();
+  peer.discover = async () => [{ name: 'read' }, { name: 'untrusted-server-value' }];
+  await assert.rejects(verifyCatalogChannels(peer), error => {
+    assert.equal(error.message, 'unexpected-view-roster');
+    assert.deepEqual(error.details, { view: 'setup', expectedCount: 2, actualCount: 2, missing: ['write'] });
+    assert.equal(JSON.stringify(error.details).includes('untrusted-server-value'), false);
+    return true;
+  });
+});
