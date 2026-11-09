@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Orchestration.Domain;
+
 namespace Honua.Core.Features.WorkflowPackages.Domain;
 
 public sealed record WorkflowPackage
@@ -63,7 +65,7 @@ public sealed record WorkflowGraph
     public IReadOnlyDictionary<string, string> EditorMetadata { get; init => field = value ?? new Dictionary<string, string>(); } = new Dictionary<string, string>();
 }
 
-public sealed record WorkflowNode
+public sealed record WorkflowNode : WorkflowStepExecutionOptions
 {
     public required string NodeId { get; init; }
 

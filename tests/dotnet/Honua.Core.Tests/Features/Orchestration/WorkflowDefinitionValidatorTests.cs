@@ -8,6 +8,31 @@ namespace Honua.Core.Tests.Features.Orchestration;
 
 public sealed class WorkflowDefinitionValidatorTests
 {
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public void Validate_FailureDependencyWithBinding_RejectsUnavailableArtifacts()
+    {
+        var definition = BuildDefinition(("a", Empty), ("b", DependsOnA));
+        definition = definition with
+        {
+            Steps = [definition.Steps[0], definition.Steps[1] with
+            {
+                FailureDependsOn = DependsOnA,
+                InputBindings = [new StepInputBinding { SourceStepId = "a", SourceArtifactSelector = "first", TargetInputKey = "input" }]
+            }]
+        };
+        Assert.Contains(WorkflowDefinitionValidator.Validate(definition), failure => failure.Contains("failure dependency", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public void Validate_FailureDependencyNotInDependsOn_RejectsUnorderedRouting()
+    {
+        var definition = BuildDefinition(("a", Empty), ("b", Empty));
+        definition = definition with { Steps = [definition.Steps[0], definition.Steps[1] with { FailureDependsOn = DependsOnA }] };
+        Assert.Contains(WorkflowDefinitionValidator.Validate(definition), failure => failure.Contains("failure dependencies must be declared", StringComparison.Ordinal));
+    }
+
     private static readonly string[] Empty = [];
     private static readonly string[] DependsOnA = ["a"];
     private static readonly string[] DependsOnB = ["b"];
