@@ -15,6 +15,7 @@ namespace Honua.Server.Tests.Import;
 public sealed partial class DirectImportCrsContractTests
 {
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task ImportFile_NonSeekableLateGeoJsonCrs_KeepsSource()
     {
         var json = "{\"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[1740000,5420000]},\"properties\":{\"padding\":\""
@@ -35,6 +36,7 @@ public sealed partial class DirectImportCrsContractTests
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task ImportFile_CsvMappedCoordinates_ValidatesSelectedGeometryBeforeCreatingTable()
     {
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("lon,lat,wkt\n174,-41,SRID=2193;POINT (1740000 5420000)\n"));
@@ -54,6 +56,7 @@ public sealed partial class DirectImportCrsContractTests
     [IntegrationTheory]
     [InlineData(true)]
     [InlineData(false)]
+    [Endpoint("POST /api/v1/admin/import/preview")]
     public async Task PreviewFile_Shapefile_ReportsPrjDeclaration(bool includePrj)
     {
         var (payload, _) = ShapefileImportTestHelpers.GetShapefileZipPayload();
