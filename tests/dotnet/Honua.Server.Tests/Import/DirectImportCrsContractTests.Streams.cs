@@ -34,6 +34,23 @@ public sealed partial class DirectImportCrsContractTests
         result.StoredSrid.Should().Be(2193);
     }
 
+    [IntegrationTest]
+    public async Task ImportFile_CsvMappedCoordinates_ValidatesSelectedGeometryBeforeCreatingTable()
+    {
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("lon,lat,wkt\n174,-41,SRID=2193;POINT (1740000 5420000)\n"));
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var result = await scope.ServiceProvider.GetRequiredService<IFileImportService>().ImportFileAsync(new ImportRequest
+        {
+            FileStream = stream,
+            FileName = "mapped.csv",
+            TableName = $"mapped_crs_{Guid.NewGuid():N}",
+            CsvOptions = new CsvImportOptions { LongitudeColumn = "lon", LatitudeColumn = "lat" }
+        });
+        if (result.Success) _importedTables.Add((result.Schema!, result.PhysicalTableName!));
+        result.Success.Should().BeFalse();
+        result.ErrorCode.Should().Be(ImportValidationErrorCodes.SourceSridHeterogeneous);
+    }
+
     [IntegrationTheory]
     [InlineData(true)]
     [InlineData(false)]
