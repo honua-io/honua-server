@@ -12,131 +12,118 @@ internal static class McpConsoleEntities
 {
     private const int MaxEntities = 100;
     private const int MaxIdentityLength = 1024;
-    private const int MaxResponseLength = 1_048_576;
+    private const int MaxResponseCharacters = 1_048_576;
+    private const int MaxResponseDepth = 16;
 
     internal static void Enrich(string toolName, McpToolsCallResult result)
     {
         if (result.IsError || result.StructuredContent is not { ValueKind: JsonValueKind.Object } payload)
             return;
 
-        var entities = new List<Entity>();
-        if (toolName == ListLayersTool.ToolName)
-            AddLayers(payload, entities);
-        else if (toolName == ListJobsTool.ToolName)
-            AddJobs(payload, entities);
-        else if (toolName is ExecutePlanTool.ToolName or GetJobResultsTool.ToolName or CancelJobTool.ToolName)
-            Add(entities, "job", Text(payload, "jobId"));
-        else if (toolName.StartsWith(PublishedOperationTool.NamePrefix, StringComparison.Ordinal)
-            || toolName.StartsWith(PublishedOperationTool.AdminNamePrefix, StringComparison.Ordinal)
-            || toolName is PublishServiceTool.ToolName or PublishResultTool.ToolName)
-            AddOperation(payload, entities);
-
+        var entities = Extract(toolName, payload).Distinct().Take(MaxEntities).ToList();
         if (entities.Count != 0)
             result.Meta = BuildMetadata(result.Meta, entities);
     }
 
-    private static void AddLayers(JsonElement payload, List<Entity> entities)
+    private static IEnumerable<Entity> Extract(string toolName, JsonElement payload)
+    {
+        if (toolName == ListLayersTool.ToolName)
+            return Layers(payload);
+        if (toolName == ListJobsTool.ToolName)
+            return Rows(payload, "jobs").SelectMany(job => Identity("job", Text(job, "jobId")));
+        if (toolName is ExecutePlanTool.ToolName or GetJobResultsTool.ToolName or CancelJobTool.ToolName)
+            return Identity("job", Text(payload, "jobId"));
+        if (toolName.StartsWith(PublishedOperationTool.NamePrefix, StringComparison.Ordinal)
+            || toolName.StartsWith(PublishedOperationTool.AdminNamePrefix, StringComparison.Ordinal)
+            || toolName is PublishServiceTool.ToolName or PublishResultTool.ToolName)
+            return Operation(payload);
+        return [];
+    }
+
+    private static IEnumerable<Entity> Layers(JsonElement payload)
     {
         foreach (var layer in Rows(payload, "layers"))
         {
             var service = Text(layer, "serviceName");
-            Add(entities, "service", service);
+            foreach (var entity in Identity("service", service)) yield return entity;
             if (layer.ValueKind != JsonValueKind.Object
                 || !layer.TryGetProperty("layerId", out var index)
                 || index.ValueKind != JsonValueKind.Number || !index.TryGetInt32(out var layerId) || layerId < 0)
                 continue;
 
-            AddLayer(entities, layerId.ToString(CultureInfo.InvariantCulture), service);
+            yield return new Entity
+            {
+                Kind = "layer", Id = layerId.ToString(CultureInfo.InvariantCulture), ServiceName = service
+            };
         }
     }
 
-    private static void AddJobs(JsonElement payload, List<Entity> entities)
-    {
-        foreach (var job in Rows(payload, "jobs"))
-            Add(entities, "job", Text(job, "jobId"));
-    }
-
-    private static void AddOperation(JsonElement payload, List<Entity> entities)
+    private static IEnumerable<Entity> Operation(JsonElement payload)
     {
         var status = Text(payload, "status");
         if (status == "RequiresApproval")
-        {
-            Add(entities, "approval", Text(payload, "proposalId"));
-            return;
-        }
-
+            return Identity("approval", Text(payload, "proposalId"));
         if (status != "Completed")
-            return;
+            return [];
 
-        Add(entities, "job", Text(payload, "jobId"));
         var operation = Text(payload, "operationId");
-        if (operation is "admin.services.list" or "folder.list" or "folder.create" or "folder.update")
-            AddCatalog(payload, operation, entities);
-        else if (operation == "admin.layer.publish")
-            AddPublishedLayer(payload, entities);
+        var resources = operation switch
+        {
+            "admin.services.list" or "folder.list" => Catalog(payload, operation),
+            "admin.layer.publish" => PublishedLayer(payload),
+            _ => []
+        };
+        return Identity("job", Text(payload, "jobId")).Concat(resources);
     }
 
-    private static void AddPublishedLayer(JsonElement payload, List<Entity> entities)
+    private static IEnumerable<Entity> PublishedLayer(JsonElement payload)
     {
         if (!payload.TryGetProperty("resourceIds", out var resources))
-            return;
+            yield break;
 
         var service = Text(resources, "serviceName");
+        foreach (var entity in Identity("service", service)) yield return entity;
         var layer = Text(resources, "layerId");
-        if (!int.TryParse(layer, NumberStyles.None, CultureInfo.InvariantCulture, out _))
-            return;
-
-        Add(entities, "service", service);
-        AddLayer(entities, layer, service);
+        if (int.TryParse(layer, NumberStyles.None, CultureInfo.InvariantCulture, out _))
+            yield return new Entity { Kind = "layer", Id = layer!, ServiceName = service };
     }
 
-    private static void AddCatalog(JsonElement payload, string operation, List<Entity> entities)
+    private static IEnumerable<Entity> Catalog(JsonElement payload, string operation)
     {
         if (!payload.TryGetProperty("details", out var details))
-            return;
-
-        var response = Text(details, "response", MaxResponseLength);
+            return [];
+        var response = Text(details, "response", MaxResponseCharacters);
         if (response is null)
-            return;
+            return [];
 
         try
         {
-            using var document = JsonDocument.Parse(response, new JsonDocumentOptions { MaxDepth = 16 });
+            using var document = JsonDocument.Parse(response, new JsonDocumentOptions { MaxDepth = MaxResponseDepth });
             if (document.RootElement.ValueKind != JsonValueKind.Object
                 || !document.RootElement.TryGetProperty("data", out var data))
-                return;
-
-            AddCatalogData(data, operation, entities);
+                return [];
+            return CatalogData(data, operation).ToArray();
         }
         catch (JsonException)
         {
             // Navigation metadata must not replace the canonical operation result.
+            return [];
         }
     }
 
-    private static void AddCatalogData(JsonElement data, string operation, List<Entity> entities)
+    private static IEnumerable<Entity> CatalogData(JsonElement data, string operation)
     {
         if (operation == "admin.services.list")
-        {
-            foreach (var service in Rows(data, "items"))
-                Add(entities, "service", Text(service, "serviceName"));
-            return;
-        }
-
-        if (data.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var folder in data.EnumerateArray().Take(MaxEntities))
-                AddFolder(folder, entities);
-        }
-        else
-            AddFolder(data, entities);
+            return Rows(data, "items").SelectMany(service => Identity("service", Text(service, "serviceName")));
+        return data.ValueKind == JsonValueKind.Array
+            ? data.EnumerateArray().Take(MaxEntities).SelectMany(Folder)
+            : [];
     }
 
-    private static void AddFolder(JsonElement folder, List<Entity> entities)
-    {
-        if (folder.ValueKind == JsonValueKind.Object && folder.TryGetProperty("metadata", out var metadata))
-            Add(entities, "folder", Text(metadata, "id"));
-    }
+    private static IEnumerable<Entity> Folder(JsonElement folder) =>
+        folder.ValueKind == JsonValueKind.Object && folder.TryGetProperty("metadata", out var metadata)
+            ? Identity("folder", Text(metadata, "id"))
+            : [];
 
     private static IEnumerable<JsonElement> Rows(JsonElement payload, string name) =>
         payload.ValueKind == JsonValueKind.Object
@@ -154,20 +141,8 @@ internal static class McpConsoleEntities
         return !string.IsNullOrWhiteSpace(text) && text.Length <= maxLength ? text : null;
     }
 
-    private static void Add(List<Entity> entities, string kind, string? id)
-    {
-        if (id is not null)
-            AddEntity(entities, new Entity { Kind = kind, Id = id });
-    }
-
-    private static void AddLayer(List<Entity> entities, string id, string? serviceName) =>
-        AddEntity(entities, new Entity { Kind = "layer", Id = id, ServiceName = serviceName });
-
-    private static void AddEntity(List<Entity> entities, Entity entity)
-    {
-        if (entities.Count < MaxEntities && !entities.Contains(entity))
-            entities.Add(entity);
-    }
+    private static IEnumerable<Entity> Identity(string kind, string? id) =>
+        id is null ? [] : [new Entity { Kind = kind, Id = id }];
 
     private static JsonElement BuildMetadata(JsonElement? existing, List<Entity> entities)
     {

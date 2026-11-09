@@ -15,6 +15,10 @@ public sealed class McpConsoleEntitiesTests
     [InlineData("honua_execute_plan", "{\"jobId\":\"job/a ?#\"}", "/operate/jobs/job%2Fa%20%3F%23")]
     [InlineData("honua_list_jobs", "{\"jobs\":[{\"jobId\":\"j1\"}]}", "/operate/jobs/j1")]
     [InlineData("honua_admin_layer_publish", "{\"status\":\"RequiresApproval\",\"proposalId\":\"p?x&y\"}", "/inbox?proposalId=p%3Fx%26y")]
+    [InlineData("honua_get_job_results", "{\"jobId\":\"j2\"}", "/operate/jobs/j2")]
+    [InlineData("honua_cancel_job", "{\"jobId\":\"j3\"}", "/operate/jobs/j3")]
+    [InlineData("honua_publish_service", "{\"status\":\"Completed\",\"jobId\":\"j4\"}", "/operate/jobs/j4")]
+    [InlineData("honua_publish_result", "{\"status\":\"Completed\",\"jobId\":\"j5\"}", "/operate/jobs/j5")]
     public void Enrich_KnownIdentities_EncodesConsoleRoute(string tool, string json, string href)
     {
         var result = Result(json);
@@ -26,13 +30,32 @@ public sealed class McpConsoleEntitiesTests
     [UnitTheory]
     [InlineData("admin.services.list", "{\"items\":[{\"serviceName\":\"wire/a\",\"id\":\"opaque-id\",\"title\":\"Display\"}]}", "/operate/services/wire%2Fa/settings")]
     [InlineData("folder.list", "[{\"metadata\":{\"id\":\"folder/a\"},\"name\":\"Display\"}]", "/operate/folders/folder%2Fa")]
-    [InlineData("folder.create", "{\"metadata\":{\"id\":\"new-folder\"}}", "/operate/folders/new-folder")]
     public void Enrich_CompletedCatalog_UsesCanonicalIdentity(string operation, string data, string href)
     {
         var result = OperationResult(operation, data);
         McpConsoleEntities.Enrich(PublishedOperationTool.ProjectName(operation), result);
         result.Meta!.Value.GetProperty("honua/consoleEntities")[0]
             .GetProperty("href").GetString().Should().Be(href);
+    }
+
+    [UnitTheory]
+    [InlineData("7", 2)]
+    [InlineData("x", 1)]
+    public void Enrich_CompletedLayerPublication_EmitsOnlyUsableTargets(string layerId, int count)
+    {
+        var result = Result($"{{\"status\":\"Completed\",\"operationId\":\"admin.layer.publish\",\"resourceIds\":{{\"serviceName\":\"wire/a\",\"layerId\":\"{layerId}\"}}}}");
+        McpConsoleEntities.Enrich("honua_admin_layer_publish", result);
+        var entities = result.Meta!.Value.GetProperty("honua/consoleEntities");
+        entities.GetArrayLength().Should().Be(count);
+        entities[0].GetProperty("kind").GetString().Should().Be("service");
+        entities[0].GetProperty("href").GetString().Should().Be("/operate/services/wire%2Fa/settings");
+        if (count == 2)
+        {
+            entities[1].GetProperty("kind").GetString().Should().Be("layer");
+            entities[1].GetProperty("id").GetString().Should().Be("7");
+            entities[1].GetProperty("serviceName").GetString().Should().Be("wire/a");
+            entities[1].GetProperty("href").GetString().Should().Be("/operate/layers/7");
+        }
     }
 
     [UnitTheory]
@@ -54,13 +77,12 @@ public sealed class McpConsoleEntitiesTests
     [InlineData("{\"data\":[{\"metadata\":null}]}")]
     public void Enrich_MalformedOptionalCatalog_PreservesResult(string response)
     {
-        var result = OperationResult("folder.list", "[]");
-        result.StructuredContent = JsonSerializer.SerializeToElement(new Dictionary<string, object>
+        var result = new McpToolsCallResult { StructuredContent = JsonSerializer.SerializeToElement(new Dictionary<string, object>
         {
             ["status"] = "Completed",
             ["operationId"] = "folder.list",
             ["details"] = new Dictionary<string, string> { ["response"] = response }
-        });
+        }) };
         var payload = result.StructuredContent;
         McpConsoleEntities.Enrich("honua_op_folder_list", result);
         result.Meta.Should().BeNull();
