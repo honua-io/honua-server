@@ -53,7 +53,9 @@ internal static class McpConsoleEntities
 
             yield return new Entity
             {
-                Kind = "layer", Id = layerId.ToString(CultureInfo.InvariantCulture), ServiceName = service
+                Kind = "layer",
+                Id = layerId.ToString(CultureInfo.InvariantCulture),
+                ServiceName = service
             };
         }
     }

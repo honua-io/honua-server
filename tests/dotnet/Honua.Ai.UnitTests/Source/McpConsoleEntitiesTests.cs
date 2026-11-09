@@ -77,12 +77,15 @@ public sealed class McpConsoleEntitiesTests
     [InlineData("{\"data\":[{\"metadata\":null}]}")]
     public void Enrich_MalformedOptionalCatalog_PreservesResult(string response)
     {
-        var result = new McpToolsCallResult { StructuredContent = JsonSerializer.SerializeToElement(new Dictionary<string, object>
+        var result = new McpToolsCallResult
         {
-            ["status"] = "Completed",
-            ["operationId"] = "folder.list",
-            ["details"] = new Dictionary<string, string> { ["response"] = response }
-        }) };
+            StructuredContent = JsonSerializer.SerializeToElement(new Dictionary<string, object>
+            {
+                ["status"] = "Completed",
+                ["operationId"] = "folder.list",
+                ["details"] = new Dictionary<string, string> { ["response"] = response }
+            })
+        };
         var payload = result.StructuredContent;
         McpConsoleEntities.Enrich("honua_op_folder_list", result);
         result.Meta.Should().BeNull();
