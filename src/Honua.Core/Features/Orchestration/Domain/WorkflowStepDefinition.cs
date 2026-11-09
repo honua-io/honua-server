@@ -5,7 +5,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Core.Features.Orchestration.Domain;
 
-public sealed record WorkflowStepDefinition
+public sealed record WorkflowStepDefinition : WorkflowStepExecutionOptions
 {
     public required string StepId { get; init; }
 
@@ -15,13 +15,5 @@ public sealed record WorkflowStepDefinition
 
     public IReadOnlyList<StepInputBinding> InputBindings { get; init; } = [];
 
-    public StepRetryPolicy? RetryPolicy { get; init; }
-
-    public WorkflowStepFailurePolicy FailurePolicy { get; init; } = WorkflowStepFailurePolicy.Fail;
-
-    public int? TimeoutSeconds { get; init; }
-
-    public WorkflowStepCondition? Condition { get; init; }
-
-    public WorkflowForEachSpec? ForEach { get; init; }
+    public IReadOnlyList<string> FailureDependsOn { get; init => field = value ?? []; } = [];
 }
