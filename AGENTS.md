@@ -1,5 +1,5 @@
 # honua-server: agent instructions
-<!-- Budget: scripts/ci/check-agents-md.py; detail goes in docs/. Scripts and claude-review.yml read the headings. -->
+<!-- Budget: scripts/ci/check-agents-md.py. Detail: docs/. Preserve review headings. -->
 
 Honua Server exposes one geospatial capability set through thin protocol adapters (protocol list:
 README). It is a clean rewrite: read the archived `../Honua.Server` for behaviour, never copy from it.
