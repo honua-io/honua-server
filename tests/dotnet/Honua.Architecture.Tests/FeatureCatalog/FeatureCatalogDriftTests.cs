@@ -49,7 +49,7 @@ public sealed class FeatureCatalogDriftTests
 
         missing.Should().BeEmpty(
             "every shipped endpoint in EndpointRegistry.All must have a feature-catalog entry; "
-            + "regenerate with scripts/generate-feature-catalog.sh after adding a route.");
+            + "regenerate with scripts/ci/generate-feature-catalog.sh after adding a route.");
     }
 
     [ArchitectureTest]
@@ -254,7 +254,7 @@ public sealed class FeatureCatalogDriftTests
             generated,
             "the committed feature-catalog.json must equal freshly-generated output; "
             + "a difference means the catalog was hand-edited or an endpoint/test changed "
-            + "without regenerating. Run scripts/generate-feature-catalog.sh and commit the result.");
+            + "without regenerating. Run scripts/ci/generate-feature-catalog.sh and commit the result.");
     }
 
     private static FeatureCatalog LoadCommittedCatalog()

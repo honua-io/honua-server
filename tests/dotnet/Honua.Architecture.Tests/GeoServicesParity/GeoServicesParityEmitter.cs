@@ -5,25 +5,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests.GeoServicesParity;
 
-/// <summary>
-/// Regeneration entry point for the published GeoServices REST parity matrix
-/// (<c>docs/gis/data/geoservices-rest-parity.json</c>). This is the canonical way to
-/// re-emit the artifact after editing the judgement source or after adding,
-/// removing, or renaming a GeoServices route.
-/// </summary>
-/// <remarks>
-/// Mirrors <c>FeatureCatalogEmitter</c>: a normal <see cref="FactAttribute"/> gated
-/// behind an environment variable so it never writes during ordinary
-/// <c>dotnet test</c> runs, which must stay read-only and pass the drift guard.
-/// Regenerate with:
-/// <code>
-/// scripts/generate-geoservices-parity.sh
-/// # or directly:
-/// HONUA_EMIT_GEOSERVICES_PARITY=1 dotnet test \
-///   tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
-///   --filter "FullyQualifiedName~GeoServicesParityEmitter"
-/// </code>
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class GeoServicesParityEmitter
 {
