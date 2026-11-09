@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using FluentAssertions;
 using Honua.TestKit.Attributes;
+using Honua.Ai.Protocols.Mcp.Views;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -18,6 +19,9 @@ public sealed partial class McpWorkflowViewTests
         var audit = new RequiredInputOriginAudit(names);
         foreach (var entry in catalog)
             audit.Inspect(entry.Descriptor.InputSchema, new InputOriginPath(entry.Descriptor.Name, null));
+        foreach (var view in McpWorkflowViewCatalog.All.Values)
+            foreach (var member in McpWorkflowViewProjector.Project(view, catalog).Members)
+                audit.Inspect(member.Descriptor.InputSchema, new InputOriginPath(member.ToolName, null));
         foreach (var missing in audit.Missing) _output.WriteLine(missing);
         audit.Missing.Should().BeEmpty("required values must name a real producer tool or a caller-owned source");
     }

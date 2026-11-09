@@ -24,7 +24,7 @@ internal static class McpPublishedLayerDiscovery
     {
         Name = name,
         Title = "List connection layers",
-        Description = "List published storage layers in connectionId from honua_admin_connections_list. Returns storage layerId, serviceName, schema, table and enabled status. Use layerId with honua_admin_layer_set_enabled; it is not the publication index from honua_list_layers. Follow page/pageSize/total to discover every result. Admin read permission required. No credentials or connection strings.",
+        Description = "List published storage layers in connectionId from honua_admin_connections_list. Returns storage layerId, serviceName, schema, table and enabled status. Use layerId with honua_admin_layer_set_enabled; it is not the publication index from honua_list_layers. Pass serviceName from " + PublishedOperationTool.ProjectName("admin.services.list") + "; omission selects the default service. Follow page/pageSize/total to discover every result. Admin read permission required. No credentials or connection strings.",
         InputSchema = inputSchema,
         OutputSchema = OutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("List connection layers")

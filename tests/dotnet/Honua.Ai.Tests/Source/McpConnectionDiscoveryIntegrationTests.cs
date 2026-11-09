@@ -104,7 +104,7 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests : IAsyncLifet
                          {
                              ("honua_admin_connections_list", "/api/v1/admin/connections", (object)new { }),
                              ("honua_admin_connection_tables_list", $"/api/v1/admin/connections/{id}/tables", new { connectionId = id }),
-                             ("honua_admin_connection_layers_list", $"/api/v1/admin/connections/{id}/layers", new { connectionId = id }),
+                             ("honua_admin_connection_layers_list", $"/api/v1/admin/connections/{id}/layers?serviceName={name}", new { connectionId = id, serviceName = name }),
                          })
                 {
                     using var rest = await client.GetAsync(path);

@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Ai.Protocols.Mcp.Tools;
+
 namespace Honua.Ai.Protocols.Mcp.Views;
 
 internal static class McpWorkflowViewCatalog
@@ -225,6 +227,7 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_admin_api_key_effective_permissions"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_connections_list"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_connection_tables_list"),
+                    McpWorkflowViewMemberRule.Exact(PublishedOperationTool.ProjectName("admin.services.list")),
                     McpWorkflowViewMemberRule.Exact("honua_admin_connections_create"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_connections_test"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_import_upload_object"),

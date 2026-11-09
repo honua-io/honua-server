@@ -47,7 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           dotnet test tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj --configuration Release \
-            --filter 'FullyQualifiedName~LiveWorkflowViews_|FullyQualifiedName~AuthenticatedCatalogCalls_|FullyQualifiedName~ConfigureOperateAndAnalyze_SelectTheOperatorPath_WithinBudget|FullyQualifiedName~McpToolRosterDriftTests' \
+            --filter 'FullyQualifiedName~LiveWorkflowViews_|FullyQualifiedName~AuthenticatedCatalogCalls_|FullyQualifiedName~InputRefusals_|FullyQualifiedName~McpInputGuidanceTests|FullyQualifiedName~ConnectionDiscovery_AdminAndNonAdminKeys_|FullyQualifiedName~ConfigureOperateAndAnalyze_SelectTheOperatorPath_WithinBudget|FullyQualifiedName~McpToolRosterDriftTests' \
             --logger 'trx;LogFileName=contract.trx' --results-directory artifacts/mcp-client-contract
           python3 - <<'PYTHON'
           import xml.etree.ElementTree as ET
@@ -56,6 +56,13 @@ jobs:
           names = {row.get('testName', '').replace(' ', '').replace('_', '') for row in rows}
           for required in [
               'LiveWorkflowViews_RequiredInputs_HaveDescriptions',
+              'LiveWorkflowViews_RequiredInputs_NameValueOrigins',
+              'LiveWorkflowViews_StudioDraftConsumers_NameTheDraftCreator',
+              'LiveWorkflowViews_NativeLayerWrites_ExposeStorageLayerDiscovery',
+              'LiveWorkflowViews_ServiceWrites_ProvideReadOnlyServiceDiscovery',
+              'InputRefusals_MissingArguments_NameFieldsAndValueSources',
+              'InputRefusals_InvalidJobIdType_NamesFieldAndProducer',
+              'ConnectionDiscovery_AdminAndNonAdminKeys_MatchRestPermissionsAndReturnOnlySafeFields',
               'LiveWorkflowViews_ConnectionPublication_ProvidesReadOnlyConnectionAndTableDiscovery',
               'LiveWorkflowViews_JobConsumers_ProvideReadOnlyJobDiscovery',
               'AuthenticatedCatalogCalls_EmptyArguments_PreserveBothContentChannels',
