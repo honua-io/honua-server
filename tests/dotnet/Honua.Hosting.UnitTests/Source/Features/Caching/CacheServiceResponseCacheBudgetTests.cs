@@ -266,7 +266,7 @@ public sealed class CacheServiceResponseCacheBudgetTests
     [InlineData(1, 65_536)]
     [InlineData(20, 11_000)]
     [Operation(Operations.Cache)]
-    public async Task BindKeyAsync_OtherSchemaRecovery_KeepsReadableReservation(int maxEntries, int maxBytes)
+    public async Task BindKeyAsync_GlobalRecovery_ReleasesOtherSchemaReservation(int maxEntries, int maxBytes)
     {
         var backend = new RecordingCache();
         var cache = ResponseCache(backend, maxEntries, maxBytes);
@@ -279,12 +279,12 @@ public sealed class CacheServiceResponseCacheBudgetTests
             await cache.SetAsync(await cache.BindKeyAsync(prefix + "first"), payload, Lifetime);
             schema.CurrentSchema = "schema_a";
             await backend.Service.SetAsync(ResponseCacheVersionKeys.Prefix + ResponseCacheVersionKeys.RecoveryNamespace,
-                "schema-a-recovery", Lifetime);
+                "global-recovery", Lifetime);
             await cache.SetAsync(await cache.BindKeyAsync(prefix + "second"), payload, Lifetime);
-            Assert.Equal(1, backend.ResponseWrites);
-            Assert.Null(await cache.GetAsync<CachedResponse>(prefix + "second"));
+            Assert.Equal(2, backend.ResponseWrites);
+            Assert.Same(payload, await cache.GetAsync<CachedResponse>(prefix + "second"));
             schema.CurrentSchema = "schema_b";
-            Assert.Same(payload, await cache.GetAsync<CachedResponse>(prefix + "first"));
+            Assert.Null(await cache.GetAsync<CachedResponse>(prefix + "first"));
         }
         finally { schema.CurrentSchema = null; }
     }
@@ -309,7 +309,8 @@ public sealed class CacheServiceResponseCacheBudgetTests
         public Func<string, string?, Task<string?>>? ReadVersion { get; set; }
         public int ResponseWrites => Volatile.Read(ref _responseWrites);
 
-        private static string ScopedKey(string key) => SchemaContext.AmbientCurrentSchema is { } schema
+        private static string ScopedKey(string key) => key != ResponseCacheVersionKeys.RecoveryEpoch
+            && SchemaContext.AmbientCurrentSchema is { } schema
             ? CacheScopeKeys.EnsureScoped(key, schema) : key;
 
         public RecordingCache()
