@@ -62,6 +62,8 @@ internal sealed partial class FileImportJobExecutor(
         var processing = (existing ?? CreateInitialProgress(jobId, request, fileSize)) with
         {
             Status = ImportStatus.Processing,
+            PhysicalTableName = null,
+            Schema = null,
             CompletedAt = null,
             ErrorMessage = null,
             ErrorCode = null,
@@ -272,6 +274,8 @@ internal sealed partial class FileImportJobExecutor(
         var terminal = current with
         {
             Status = status,
+            PhysicalTableName = status == ImportStatus.Completed ? result?.PhysicalTableName : null,
+            Schema = status == ImportStatus.Completed ? result?.Schema : null,
             FeaturesProcessed = result?.FeatureCount ?? current.FeaturesProcessed,
             CompletedAt = DateTimeOffset.UtcNow,
             ErrorMessage = errorMessage,

@@ -96,6 +96,36 @@ public sealed class FileImportJobExecutorCleanupTests
         schema.GetString().Should().Be("staging");
     }
 
+    [UnitTest]
+    public async Task RetriedImport_ClearsStaleIdentityBeforeProcessingAndOnFailure()
+    {
+        var progress = new MemoryProgress();
+        await progress.SetProgressAsync("job-1", ImportProgress.CreateInitial(
+            "job-1", "roads", SupportedFileFormat.GeoPackage) with
+        {
+            Status = ImportStatus.Completed,
+            PhysicalTableName = "old_roads",
+            Schema = "old_schema"
+        }, TimeSpan.FromHours(1));
+        var importer = new ScriptedImporter((_, _) =>
+        {
+            var processing = progress.Current.Should().BeOfType<ImportProgress>().Subject;
+            processing.Status.Should().Be(ImportStatus.Processing);
+            processing.PhysicalTableName.Should().BeNull();
+            processing.Schema.Should().BeNull();
+            return Task.FromResult(ImportResult.CreateFailure("roads", SupportedFileFormat.GeoPackage, "bad file"));
+        });
+
+        var result = await ExecuteAsync(new RecordingStorage(), importer, SixGiB, progressStore: progress);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        var failed = progress.Current.Should().BeOfType<ImportProgress>().Subject;
+        failed.Status.Should().Be(ImportStatus.Failed);
+        failed.PhysicalTableName.Should().BeNull();
+        failed.Schema.Should().BeNull();
+        failed.ErrorMessage.Should().Be(FileImportJobExecutor.SafeImportFailureMessage);
+    }
+
     private static Task<JobExecutionResult> ExecuteAsync(
         RecordingStorage storage,
         ScriptedImporter importer,
