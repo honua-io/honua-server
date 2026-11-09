@@ -88,7 +88,9 @@ public sealed class StudioHumanDraftPolicyTests
                 OperationId = operationId,
                 GatewayRequest = new OperationGatewayRequest
                 {
-                    OperationId = operationId, Kind = OperationClass.StudioDraftMutation, ActionDiscriminator = action
+                    OperationId = operationId,
+                    Kind = OperationClass.StudioDraftMutation,
+                    ActionDiscriminator = action
                 }
             }, new OperationPolicyContext());
     }
