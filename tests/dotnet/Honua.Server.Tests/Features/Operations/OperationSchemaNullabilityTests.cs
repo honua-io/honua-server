@@ -9,7 +9,7 @@ using Honua.Server.Features.Operations;
 using Honua.Server.Features.WorkflowPackages;
 using Honua.TestKit.Attributes;
 
-namespace Honua.Server.Tests.Features.Operations;
+namespace Honua.Server.Tests.Features.OperationSchemas;
 
 public sealed class OperationSchemaNullabilityTests
 {
