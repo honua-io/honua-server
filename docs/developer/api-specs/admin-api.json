@@ -3805,7 +3805,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Updated layer metadata",
+            "description": "Persisted layer metadata",
             "content": {
               "application/json": {
                 "schema": {
@@ -3825,6 +3825,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "The layer index resolves to multiple resources."
           }
         }
       }
@@ -6339,7 +6342,7 @@
           "Compliance"
         ],
         "summary": "Advance Compliance Key-Version Posture",
-        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event \u2014 it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
+        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event — it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
         "operationId": "rotateComplianceEncryptionKey",
         "responses": {
           "200": {
@@ -6774,7 +6777,7 @@
           "Import"
         ],
         "summary": "List GeoServer Import Jobs",
-        "description": "Returns the GeoServer import jobs that are still active \u2014 that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
+        "description": "Returns the GeoServer import jobs that are still active — that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
         "operationId": "listGeoServerImportJobs",
         "responses": {
           "200": {
@@ -7077,7 +7080,7 @@
           "Import"
         ],
         "summary": "List GeoServices Import Jobs",
-        "description": "Returns the GeoServices import jobs that are still active \u2014 that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
+        "description": "Returns the GeoServices import jobs that are still active — that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
         "operationId": "listGeoservicesImportJobs",
         "responses": {
           "200": {
@@ -21323,7 +21326,7 @@
             "name": "events",
             "in": "query",
             "required": false,
-            "description": "Maximum number of recent events. Values outside 1\u2013500 are rejected.",
+            "description": "Maximum number of recent events. Values outside 1–500 are rejected.",
             "schema": {
               "type": "integer",
               "minimum": 1,
@@ -51840,7 +51843,7 @@
       },
       "LayerDisplayUpdateRequest": {
         "type": "object",
-        "description": "Omitted or null values preserve existing metadata; explicit clear flags remove storage CRS or epoch.",
+        "description": "Omitted or null values preserve existing display metadata.",
         "properties": {
           "minScale": {
             "type": "number",
@@ -51892,20 +51895,16 @@
             "nullable": true
           },
           "defaultVisibility": {
-            "type": "boolean",
-            "nullable": true
+            "type": "boolean"
           },
           "queryable": {
-            "type": "boolean",
-            "nullable": true
+            "type": "boolean"
           },
           "hasZ": {
-            "type": "boolean",
-            "nullable": true
+            "type": "boolean"
           },
           "hasM": {
-            "type": "boolean",
-            "nullable": true
+            "type": "boolean"
           },
           "displayField": {
             "type": "string",
@@ -51990,6 +51989,7 @@
           "geometryType": {
             "type": "string",
             "enum": [
+              "unknown",
               "none",
               "point",
               "multipoint",
@@ -51999,15 +51999,13 @@
               "multipolygon",
               "geometrycollection",
               "mixed"
-            ],
-            "nullable": true
+            ]
           },
           "supportedCrs": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/LayerSpatialReference"
-            },
-            "nullable": true
+            }
           },
           "storageCrs": {
             "$ref": "#/components/schemas/LayerSpatialReference"
