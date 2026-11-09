@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -53,7 +55,8 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
             .Select(element => element.Value).Should().Contain("roads & bridges");
         document.Descendants().Where(element => element.Name.LocalName is "ElectronicMailAddress" or "ContactElectronicMailAddress")
             .Select(element => element.Value).Should().Contain("ops@example.com");
-        identification.Elements().Single(element => element.Name.LocalName == "AccessConstraints").Value.Should().Be("MIT");
+        identification.Elements().Single(element => element.Name.LocalName == "Fees").Value.Should().Be("USD 5 per request");
+        identification.Elements().Single(element => element.Name.LocalName == "AccessConstraints").Value.Should().Be("Registered users");
         text.Should().NotContain("1 Honua Way").And.NotContain("support@honua.local").And.NotContain("Honua Support");
     }
 
@@ -89,10 +92,76 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
         text.Should().Contain("/ogc/services/test/wms").And.NotContain("/MapServer/WMS");
     }
 
+    [IntegrationTheory]
+    [InlineData("/ogc/services/test/wms?SERVICE=WMS&REQUEST=GetCapabilities")]
+    [InlineData("/ogc/services/test/wmts?SERVICE=WMTS&REQUEST=GetCapabilities")]
+    [InlineData("/ogc/services/test/wcs?SERVICE=WCS&REQUEST=GetCapabilities")]
+    [Endpoint("GET /ogc/services/{serviceId}/wms")]
+    [Endpoint("GET /ogc/services/{serviceId}/wmts")]
+    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
+    [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
+    [InterfaceOperation(TestProtocols.Wmts10, "GetCapabilities")]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCapabilities")]
+    public async Task GetCapabilities_PartialFolderMetadata_InheritsGlobalContactAndStatements(string path)
+    {
+        SeedMetadata();
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var graph = snapshot.Graph with
+        {
+            Folders = [new() { Metadata = new() { Id = "survey-folder", Name = "survey", Title = "Folder survey" } }],
+            Services = snapshot.Graph.Services.Select(service => service with
+            {
+                FolderId = "survey-folder", Metadata = new() { Id = service.Metadata.Id, Name = service.Metadata.Name }
+            }).ToArray()
+        };
+        ((TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>()).SetGraph(graph, schema: _fixture.CurrentSchema);
+        using var response = await _fixture.Client.GetAsync(path);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var document = XDocument.Parse(await response.Content.ReadAsStringAsync());
+        var identification = document.Root!.Elements().Single(element => element.Name.LocalName is "Service" or "ServiceIdentification");
+        identification.Elements().Single(element => element.Name.LocalName == "Title").Value.Should().Be("Folder survey");
+        identification.Elements().Single(element => element.Name.LocalName == "Fees").Value.Should().Be("USD 5 per request");
+        identification.Elements().Single(element => element.Name.LocalName == "AccessConstraints").Value.Should().Be("Registered users");
+        document.Descendants().Where(element => element.Name.LocalName is "ElectronicMailAddress" or "ContactElectronicMailAddress")
+            .Select(element => element.Value).Should().Contain("ops@example.com");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
+    public async Task Wfs10Capabilities_AuthoredStatements_UsesGlobalIdentification()
+    {
+        SeedMetadata();
+        using var response = await _fixture.Client.GetAsync("/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=1.0.0");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var document = XDocument.Parse(await response.Content.ReadAsStringAsync());
+        var service = document.Root!.Elements().Single(element => element.Name.LocalName == "Service");
+        service.Elements().Single(element => element.Name.LocalName == "Title").Value.Should().Be("Global survey");
+        service.Elements().Single(element => element.Name.LocalName == "Abstract").Value.Should().Be("Survey <abstract> & details");
+        service.Elements().Single(element => element.Name.LocalName == "Fees").Value.Should().Be("USD 5 per request");
+        service.Elements().Single(element => element.Name.LocalName == "AccessConstraints").Value.Should().Be("Registered users");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/services/{serviceId}/wms")]
+    [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
+    public async Task WmsCapabilities_UntitledLayerWithoutMetadataLink_KeepsOwnNameAndOmitsMetadataUrl()
+    {
+        SeedMetadata();
+        _fixture.MutateV2ResourceObjectMetadata(1, metadata => metadata with { Title = null, Links = [] });
+        var resource = _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[1];
+        using var response = await _fixture.Client.GetAsync("/ogc/services/test/wms?SERVICE=WMS&REQUEST=GetCapabilities");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var document = XDocument.Parse(await response.Content.ReadAsStringAsync());
+        var layer = document.Descendants().Single(element => element.Name.LocalName == "Layer" &&
+            element.Elements().Any(child => child.Name.LocalName == "Title" && child.Value == resource.Metadata.Name));
+        layer.Elements().Where(element => element.Name.LocalName == "MetadataURL").Should().BeEmpty();
+    }
+
     private void SeedMetadata()
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
-        MetadataV2ObjectMetadata Fields(MetadataV2ObjectMetadata metadata, string title) => metadata with
+        MetadataV2ObjectMetadata WithAuthoredIdentification(MetadataV2ObjectMetadata metadata, string title) => metadata with
         {
             Title = title,
             Description = "Survey <abstract> & details",
@@ -103,13 +172,20 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
         };
         var graph = snapshot.Graph with
         {
-            Metadata = Fields(snapshot.Graph.Metadata, "Global survey"),
+            Metadata = WithAuthoredIdentification(snapshot.Graph.Metadata, "Global survey"),
             Services = snapshot.Graph.Services.Select(service => service with
             {
-                Metadata = Fields(service.Metadata, "Service survey")
+                Metadata = WithAuthoredIdentification(service.Metadata, "Service survey")
             }).ToArray()
         };
+        var json = JsonSerializer.SerializeToNode(graph, MetadataV2JsonContext.Default.MetadataV2Graph)!;
+        foreach (var metadata in json["services"]!.AsArray().Select(service => service!["metadata"]!).Prepend(json["metadata"]!))
+        {
+            metadata["fees"] = "USD 5 per request";
+            metadata["accessConstraints"] = "Registered users";
+        }
+        var authored = JsonSerializer.Deserialize(json.ToJsonString(), MetadataV2JsonContext.Default.MetadataV2Graph)!;
         ((TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>())
-            .SetGraph(graph, schema: _fixture.CurrentSchema);
+            .SetGraph(authored, schema: _fixture.CurrentSchema);
     }
 }
