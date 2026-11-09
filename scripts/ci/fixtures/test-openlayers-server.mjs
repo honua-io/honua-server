@@ -17,16 +17,20 @@ test('OpenLayers readiness belongs to the per-run nonce', async () => {
     env: { ...process.env, OL_TEST_PAGE_PORT: String(port), OL_TEST_PAGE_NONCE: 'owned-control' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+  child.stderr.resume();
   try {
-    await once(child.stdout, 'data');
+    await once(child.stdout, 'data', { signal: AbortSignal.timeout(10000) });
     const base = `http://127.0.0.1:${port}/__honua_test_page/`;
-    const own = await fetch(base + 'owned-control');
+    const own = await fetch(base + 'owned-control', { signal: AbortSignal.timeout(5000) });
     assert.equal(own.status, 200);
-    const foreign = await fetch(base + 'another-run');
+    const foreign = await fetch(base + 'another-run', { signal: AbortSignal.timeout(5000) });
     assert.equal(foreign.status, 404);
   } finally {
-    const exit = once(child, 'exit');
-    child.kill('SIGTERM');
-    await exit;
+    if (child.exitCode === null && child.signalCode === null) {
+      const exit = once(child, 'exit');
+      const timer = setTimeout(() => child.kill('SIGKILL'), 5000);
+      child.kill('SIGTERM');
+      try { await exit; } finally { clearTimeout(timer); }
+    }
   }
 });

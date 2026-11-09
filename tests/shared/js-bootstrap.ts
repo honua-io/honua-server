@@ -69,7 +69,7 @@ async function waitForHealthy(baseUrl: string, ownsListener: () => boolean, time
 async function stopBootstrap(child: ReturnType<typeof spawn>): Promise<void> {
   if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
   await new Promise<void>(resolve => {
-    const timer = setTimeout(() => child.kill('SIGKILL'), 5000);
+    const timer = setTimeout(() => child.kill('SIGKILL'), 30000);
     child.once('exit', () => { clearTimeout(timer); resolve(); });
     child.kill('SIGTERM');
   });
