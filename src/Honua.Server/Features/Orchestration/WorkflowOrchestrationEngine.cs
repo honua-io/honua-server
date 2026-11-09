@@ -141,26 +141,26 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         => key.EndsWith("layerId", StringComparison.OrdinalIgnoreCase)
             || key.Equals("datasetId", StringComparison.OrdinalIgnoreCase);
 
+    internal static string? FindDynamicCatalogIdentifier(WorkflowStepDefinition step)
+        => step.ForEach is { } forEach
+            ? step.Plan.Steps.SelectMany(planStep => planStep.Inputs)
+                .FirstOrDefault(input => IsCatalogIdentifierInput(input.Key)
+                    && input.Value.Contains(forEach.ItemPlaceholder, StringComparison.Ordinal)).Key
+            : null;
+
     private static void RejectDynamicCatalogIdentifiers(WorkflowDefinition definition)
     {
         foreach (var step in definition.Steps.Where(step => step.ForEach is not null))
         {
-            var placeholder = step.ForEach!.ItemPlaceholder;
-            foreach (var planStep in step.Plan.Steps)
+            var inputKey = FindDynamicCatalogIdentifier(step);
+            if (inputKey is not null)
             {
-                var dynamicInput = planStep.Inputs.FirstOrDefault(input =>
-                    IsCatalogIdentifierInput(input.Key)
-                    && input.Value.Contains(placeholder, StringComparison.Ordinal));
-
-                if (dynamicInput.Key is not null)
-                {
-                    throw new WorkflowDefinitionValidationException(
-                        $"Step '{step.StepId}' supplies the catalog identifier '{dynamicInput.Key}' from a "
-                        + "ForEach item, which a background trigger cannot authorize: publication resolves "
-                        + "the publisher's access but cannot see the item value, and authorizing it at run "
-                        + "creation would use the orchestrator's admin authority. Use a static identifier, "
-                        + "or run this workflow manually.");
-                }
+                throw new WorkflowDefinitionValidationException(
+                    $"Step '{step.StepId}' supplies the catalog identifier '{inputKey}' from a "
+                    + "ForEach item, which a background trigger cannot authorize: publication resolves "
+                    + "the publisher's access but cannot see the item value, and authorizing it at run "
+                    + "creation would use the orchestrator's admin authority. Use a static identifier, "
+                    + "or run this workflow manually.");
             }
         }
     }

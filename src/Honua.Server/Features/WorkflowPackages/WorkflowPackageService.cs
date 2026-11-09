@@ -669,7 +669,7 @@ internal sealed class WorkflowPackageService(
                     cancellationToken).ConfigureAwait(false);
                 var plan = await CompileAnalysisPlanAsync(graph, hash, cancellationToken).ConfigureAwait(false);
                 var planValidation = geoprocessingJobService.ValidatePlan(plan, principal);
-                var dataBoundInputFieldPaths = WorkflowPackageGraphCompiler.BuildDataBoundInputFieldPaths(graph);
+                var dataBoundInputFieldPaths = WorkflowPackageGraphCompiler.BuildDataBoundInputFieldPaths(graph, plan);
                 warnings.AddRange(planValidation.Warnings);
                 failures.AddRange(planValidation.Violations
                     .Where(violation => !IsDataBoundInputTypeValidation(violation, dataBoundInputFieldPaths))
@@ -683,6 +683,11 @@ internal sealed class WorkflowPackageService(
                         Message = violation.Message,
                         FieldPath = violation.FieldPath
                     }));
+                if (failures.Count == 0 && graph.Nodes.Any(node => node.ForEach is not null))
+                {
+                    await geoprocessingJobService.EnsurePlanExecutionTierAuthorizedAsync(plan, principal, cancellationToken)
+                        .ConfigureAwait(false);
+                }
             }
             catch (WorkflowPackageValidationException ex)
             {
@@ -851,13 +856,13 @@ internal sealed class WorkflowPackageService(
                 WorkflowPackageValidationResult.Failed(failures, packageHash));
         }
 
-        return new AnalysisPlan
+        return WorkflowPackageGraphCompiler.ExpandForEachPlan(new AnalysisPlan
         {
             PlanId = $"workflow-package:{packageHash[..Math.Min(packageHash.Length, 16)]}",
             IntentId = "workflow-package",
             Steps = steps,
             Outputs = outputs.Count == 0 ? [ArtifactKind.File] : outputs.ToArray()
-        };
+        }, graph);
     }
 
     private async Task<WorkflowDefinition> CompileWorkflowDefinitionAsync(
@@ -962,6 +967,12 @@ internal sealed class WorkflowPackageService(
         for (var index = 0; index < definition.Steps.Count; index++)
         {
             var step = definition.Steps[index];
+            // Dynamic identifiers were authorized per item; manual run creation captures their individual bindings.
+            if (WorkflowOrchestrationEngine.FindDynamicCatalogIdentifier(step) is not null)
+            {
+                continue;
+            }
+
             var boundPlan = await geoprocessingJobService
                 .EnsurePlanExecutionTierAuthorizedAsync(step.Plan, principal, cancellationToken)
                 .ConfigureAwait(false);

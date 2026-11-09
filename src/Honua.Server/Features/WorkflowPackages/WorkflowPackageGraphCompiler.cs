@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Orchestration.Domain;
 using Honua.Core.Features.WorkflowPackages.Domain;
 
@@ -48,7 +49,40 @@ internal static class WorkflowPackageGraphCompiler
         return (IReadOnlyList<StepInputBinding>?)bindings ?? Array.Empty<StepInputBinding>();
     }
 
-    public static HashSet<string> BuildDataBoundInputFieldPaths(WorkflowGraph graph)
+    public static AnalysisPlan ExpandForEachPlan(AnalysisPlan plan, WorkflowGraph graph)
+    {
+        if (graph.Nodes.All(node => node.ForEach is null))
+        {
+            return plan;
+        }
+
+        var nodes = graph.Nodes.ToDictionary(node => node.NodeId, StringComparer.Ordinal);
+        var definition = new WorkflowDefinition
+        {
+            WorkflowId = plan.PlanId,
+            Name = plan.IntentId,
+            CreatedAt = default,
+            UpdatedAt = default,
+            Steps = plan.Steps.Select(step => new WorkflowStepDefinition
+            {
+                StepId = step.StepId,
+                Plan = plan with { Steps = [step] },
+                DependsOn = step.DependsOn,
+                ForEach = nodes[step.StepId].ForEach
+            }).ToArray()
+        };
+        var expanded = WorkflowDefinitionExpander.Expand(definition);
+        return plan with
+        {
+            Steps = expanded.Steps.Select(step => step.Plan.Steps[0] with
+            {
+                StepId = step.StepId,
+                DependsOn = step.DependsOn
+            }).ToArray()
+        };
+    }
+
+    public static HashSet<string> BuildDataBoundInputFieldPaths(WorkflowGraph graph, AnalysisPlan? plan = null)
     {
         ArgumentNullException.ThrowIfNull(graph);
 
@@ -57,7 +91,12 @@ internal static class WorkflowPackageGraphCompiler
         {
             // The Where filter above already proves TargetPort is non-null/non-whitespace,
             // but that narrowing doesn't flow across the LINQ call boundary into this body.
-            paths.Add($"steps[{edge.TargetNodeId}].inputs.{edge.TargetPort!.Trim()}");
+            var stepIds = plan?.Steps.Select(step => step.StepId) ?? graph.Nodes.Select(node => node.NodeId);
+            foreach (var stepId in stepIds.Where(stepId => stepId == edge.TargetNodeId
+                || stepId.StartsWith(edge.TargetNodeId + WorkflowDefinitionExpander.IterationSeparator, StringComparison.Ordinal)))
+            {
+                paths.Add($"steps[{stepId}].inputs.{edge.TargetPort!.Trim()}");
+            }
         }
 
         return paths;
