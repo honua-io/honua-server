@@ -18,7 +18,7 @@ internal sealed partial class StreamingFileImportService
         {
             var detection = await StreamingGeoJsonReader.DetectCrsMetadataAsync(stream, cancellationToken);
             declared = detection.Declared;
-            formatDefined = !declared;
+            formatDefined = !declared && detection.Complete;
         }
         return new ImportCoordinateSystem
         {

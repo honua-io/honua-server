@@ -957,37 +957,83 @@ internal sealed class StreamingGeoJsonReader
     public static async Task<int?> DetectCrsAsync(Stream stream, CancellationToken cancellationToken = default)
         => (await DetectCrsMetadataAsync(stream, cancellationToken)).Srid;
 
-    public static async Task<(int? Srid, bool Declared)> DetectCrsMetadataAsync(Stream stream, CancellationToken cancellationToken = default)
+    public static async Task<(int? Srid, bool Declared, bool Complete)> DetectCrsMetadataAsync(
+        Stream stream, CancellationToken cancellationToken = default)
     {
-        const int headerSize = 8192;
-        using var bufferRental = GeometryMemoryManager.RentWkbBuffer(headerSize);
-        var buffer = bufferRental.Buffer;
-        var bytesRead = await stream.ReadAsync(buffer.AsMemory(0, headerSize), cancellationToken);
-        if (stream.CanSeek) stream.Position = 0;
-        return ParseCrsMetadata(buffer.AsSpan(0, bytesRead));
-    }
-
-    private static (int? Srid, bool Declared) ParseCrsMetadata(ReadOnlySpan<byte> header)
-    {
-        var reader = new Utf8JsonReader(header, isFinalBlock: false, state: default);
+        var buffer = new byte[16384];
+        var buffered = 0;
+        var state = new JsonReaderState();
+        var scan = new CrsMetadataScan();
         try
         {
-            while (reader.Read())
+            while (true)
             {
-                if (reader.TokenType != JsonTokenType.PropertyName || reader.CurrentDepth != 1 || !reader.ValueTextEquals("crs")) continue;
-                if (!reader.Read()) return (null, true);
-                var start = checked((int)reader.TokenStartIndex);
-                if (!reader.TrySkip()) return (null, true);
-                var declaration = Encoding.UTF8.GetString(header[start..checked((int)reader.BytesConsumed)]);
-                var match = System.Text.RegularExpressions.Regex.Match(declaration, @"EPSG[:\s]*(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                if (match.Success && int.TryParse(match.Groups[1].Value, out var srid)) return (srid, true);
-                return declaration.Contains("CRS84", StringComparison.OrdinalIgnoreCase) ? (4326, true) : (null, true);
+                var read = await stream.ReadAsync(buffer.AsMemory(buffered), cancellationToken);
+                buffered += read;
+                var consumed = ReadCrsTokens(buffer.AsSpan(0, buffered), read == 0, ref state, scan);
+                if (scan.Complete || read == 0) return (scan.Srid, scan.Declared, scan.Complete);
+                buffer.AsSpan(consumed, buffered - consumed).CopyTo(buffer);
+                buffered -= consumed;
+                if (buffered == buffer.Length)
+                {
+                    if (buffer.Length >= 16 * 1024 * 1024) return (null, scan.Declared, false);
+                    Array.Resize(ref buffer, buffer.Length * 2);
+                }
             }
         }
-        catch (JsonException)
+        finally
         {
-            // A bounded header may end in the middle of a feature, beyond the CRS declaration.
+            if (stream.CanSeek) stream.Position = 0;
         }
-        return (null, false);
     }
+
+    private sealed class CrsMetadataScan
+    {
+        public bool Declared { get; set; }
+        public bool AwaitingValue { get; set; }
+        public int ValueDepth { get; set; } = -1;
+        public int? Srid { get; set; }
+        public bool Complete { get; set; }
+    }
+
+    private static int ReadCrsTokens(ReadOnlySpan<byte> bytes, bool final, ref JsonReaderState state, CrsMetadataScan scan)
+    {
+        var reader = new Utf8JsonReader(bytes, final, state);
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.PropertyName && reader.CurrentDepth == 1 && reader.ValueTextEquals("crs"))
+            {
+                scan.Declared = true;
+                scan.AwaitingValue = true;
+                continue;
+            }
+            if (scan.AwaitingValue)
+            {
+                scan.AwaitingValue = false;
+                scan.ValueDepth = reader.CurrentDepth;
+                if (reader.TokenType is not JsonTokenType.StartObject and not JsonTokenType.StartArray and not JsonTokenType.String)
+                {
+                    scan.Complete = true;
+                    break;
+                }
+            }
+            if (scan.Declared && reader.TokenType == JsonTokenType.String)
+            {
+                var value = reader.GetString()!;
+                var match = System.Text.RegularExpressions.Regex.Match(value, @"EPSG[:\s]*(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (match.Success && int.TryParse(match.Groups[1].Value, out var srid)) scan.Srid = srid;
+                else if (value.Contains("CRS84", StringComparison.OrdinalIgnoreCase)) scan.Srid = 4326;
+                if (reader.CurrentDepth == scan.ValueDepth) scan.Complete = true;
+            }
+            if ((reader.TokenType is JsonTokenType.EndObject or JsonTokenType.EndArray) &&
+                ((scan.Declared && reader.CurrentDepth == scan.ValueDepth) || reader.CurrentDepth == 0))
+            {
+                scan.Complete = true;
+            }
+            if (scan.Complete) break;
+        }
+        state = reader.CurrentState;
+        return checked((int)reader.BytesConsumed);
+    }
+
 }

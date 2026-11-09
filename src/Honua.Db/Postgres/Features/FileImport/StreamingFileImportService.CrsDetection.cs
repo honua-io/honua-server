@@ -124,7 +124,7 @@ internal sealed partial class StreamingFileImportService
     private static async Task<int?> DetectGeoJsonSridAsync(Stream stream, CancellationToken cancellationToken)
     {
         var detected = await StreamingGeoJsonReader.DetectCrsMetadataAsync(stream, cancellationToken);
-        return detected.Declared ? detected.Srid : 4326;
+        return detected.Declared || !detected.Complete ? detected.Srid : 4326;
     }
 
     private static async Task<byte[]?> ReadHeaderAsync(Stream stream, CancellationToken cancellationToken)

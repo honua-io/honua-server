@@ -57,7 +57,7 @@ public sealed class McpIngestDatasetToolTests
                 featureCount: 1,
                 detectedSrid: 4326,
                 physicalTableName: "imported_landmarks",
-                schema: "honua_data"));
+                schema: "honua_data") with { SourceSrid = 4326, StoredSrid = 4326 });
 
         var response = await DispatchAsync(
             BuildServices(importService),
