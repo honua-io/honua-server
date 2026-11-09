@@ -1,8 +1,8 @@
 {
   "$schema": "./mcp-tool-roster.v1.schema.json",
   "schemaVersion": 1,
-  "serverSha": "6fb52d643b4e64282f95c2ddfcf1cddac7a88355",
-  "generatedAt": "2026-11-09T06:23:28Z",
+  "serverSha": "a7f30172b0810fad4ea5824adbdbae7aaa6bd8c2",
+  "generatedAt": "2026-11-09T22:34:35Z",
   "regenerate": "bash scripts/ci/generate-mcp-tool-roster.sh",
   "static": [
     "honua_alert_events",
@@ -75,6 +75,7 @@
     "honua_admin_api_key_list",
     "honua_admin_api_key_revoke",
     "honua_admin_api_key_update_restrictions",
+    "honua_admin_connection_layers_list",
     "honua_admin_connection_tables_list",
     "honua_admin_connections_create",
     "honua_admin_connections_list",
@@ -152,6 +153,7 @@
     "honua_op_service_move"
   ],
   "requiresDurableControlPlane": [
+    "honua_admin_connection_layers_list",
     "honua_admin_connection_tables_list",
     "honua_admin_connections_create",
     "honua_admin_connections_list",
@@ -211,6 +213,7 @@
       "honua_admin_layer_publish",
       "honua_admin_server_status",
       "honua_admin_services_access_policy_set",
+      "honua_admin_services_list",
       "honua_apply_style_preset",
       "honua_describe_layer",
       "honua_get_job_results",
@@ -219,6 +222,7 @@
       "honua_ingest_job_artifact",
       "honua_list_jobs",
       "honua_list_layers",
+      "honua_op_folder_list",
       "honua_publish_result",
       "honua_publish_service",
       "honua_query_features",
