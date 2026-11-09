@@ -12,12 +12,12 @@ using Microsoft.AspNetCore.Mvc.Testing;
 namespace Honua.Server.Tests.Infrastructure;
 
 [CollectionDefinition(Name, DisableParallelization = true)]
-public sealed class SharedHostCleanupCollection
+public sealed class SharedHostCleanupGroup
 {
     public const string Name = "Shared host cleanup";
 }
 
-[Collection(SharedHostCleanupCollection.Name)]
+[Collection(SharedHostCleanupGroup.Name)]
 [Protocol(TestProtocols.TestQuality)]
 public sealed class SharedHostCleanupTests
 {
