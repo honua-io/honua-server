@@ -286,6 +286,9 @@ jobs:
           if-no-files-found: error
 
   baseline:
+    concurrency:
+      group: server-test-prebuild-baseline-${{ needs.plan.outputs.pr }}-${{ matrix.identity }}
+      cancel-in-progress: true
     name: Independent prebuild baseline / ${{ matrix.identity }}
     needs: plan
     if: needs.plan.outputs.has_candidates == 'true'
@@ -355,6 +358,9 @@ jobs:
           if-no-files-found: error
 
   candidate:
+    concurrency:
+      group: server-test-prebuild-candidate-${{ needs.plan.outputs.pr }}-${{ matrix.identity }}
+      cancel-in-progress: true
     name: Opportunistic prebuild candidate / ${{ matrix.identity }}
     needs: plan
     if: needs.plan.outputs.has_candidates == 'true'
