@@ -64,7 +64,7 @@ public sealed class CoreAbstractionsIsolationTests
         var csprojPath = ArchitectureTestHelpers.CombinePath(
             repositoryRoot,
             "src",
-            "Honua.Core.Abstractions",
+            "Honua.Core", "Abstractions",
             "Honua.Core.Abstractions.csproj");
 
         File.Exists(csprojPath).Should().BeTrue("Honua.Core.Abstractions.csproj must exist at the canonical path");
@@ -207,7 +207,7 @@ public sealed class CoreAbstractionsIsolationTests
         var csprojPath = ArchitectureTestHelpers.CombinePath(
             repositoryRoot,
             "src",
-            "Honua.Core",
+            "Honua.Core", "Core",
             "Honua.Core.csproj");
 
         File.Exists(csprojPath).Should().BeTrue("Honua.Core.csproj must exist at the canonical path");
@@ -232,7 +232,7 @@ public sealed class CoreAbstractionsIsolationTests
         var csprojPath = ArchitectureTestHelpers.CombinePath(
             repositoryRoot,
             "src",
-            "Honua.Core.Abstractions",
+            "Honua.Core", "Abstractions",
             "Honua.Core.Abstractions.csproj");
 
         var projectReferences = ArchitectureTestHelpers.DirectProjectReferenceNames(csprojPath);

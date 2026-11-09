@@ -77,7 +77,8 @@ ENDPOINT_REGISTRY_GLOB = "EndpointRegistry*.cs"
 STAC_INLINE_SOURCE = (
     REPO_ROOT
     / "src"
-    / "Honua.Protocols.Stac"
+    / "Honua.Protocols"
+    / "Stac"
     / "CatalogEndpoints.cs"
 )
 

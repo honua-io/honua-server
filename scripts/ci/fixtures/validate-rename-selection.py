@@ -21,8 +21,8 @@ class RenameSelectionTests(unittest.TestCase):
     def test_real_rename_selects_old_and_new_owners(self):
         local = load('local-test-feedback')
         hosted = load('compute-affected-shards')
-        old = 'src/Honua.Protocols.Stac/RenameFixture.cs'
-        new = 'src/Honua.Protocols.Scene/RenameFixture.cs'
+        old = 'src/Honua.Protocols/Stac/RenameFixture.cs'
+        new = 'src/Honua.Protocols/Scene/RenameFixture.cs'
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             def git(*args):
