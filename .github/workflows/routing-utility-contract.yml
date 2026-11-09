@@ -4,8 +4,8 @@ on:
   pull_request:
     branches: [trunk]
     paths:
-      - 'src/Honua.Protocols.GeoServices/GPServer/**'
-      - 'src/Honua.Protocols.GeoServices/NAServer/**'
+      - 'src/Honua.Protocols/GeoServices/GPServer/**'
+      - 'src/Honua.Protocols/GeoServices/NAServer/**'
       - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/RoutingUtilityServiceTests.cs'
       - '.github/workflows/routing-utility-contract.yml'
 
