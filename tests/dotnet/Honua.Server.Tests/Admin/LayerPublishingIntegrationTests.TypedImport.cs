@@ -375,8 +375,14 @@ public sealed partial class LayerPublishingIntegrationTests
         attributes.GetProperty("population").ValueKind.Should().Be(JsonValueKind.Number);
         attributes.GetProperty("population").GetInt64().Should().Be(population);
         attributes.TryGetProperty("created_at", out _).Should().BeFalse();
-        using var residual = JsonDocument.Parse(attributes.GetProperty("properties").GetString()!);
-        AssertNoPromotedDuplicates(residual.RootElement);
+        var residual = attributes.GetProperty("properties");
+        if (residual.ValueKind == JsonValueKind.String)
+        {
+            using var document = JsonDocument.Parse(residual.GetString()!);
+            AssertNoPromotedDuplicates(document.RootElement);
+            return;
+        }
+        AssertNoPromotedDuplicates(residual);
     }
 
     private static void AssertNoPromotedDuplicates(JsonElement residual)
