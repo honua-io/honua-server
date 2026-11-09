@@ -201,7 +201,7 @@ internal static class InfrastructureCompositionRoot
                 var cacheOptions = sp.GetRequiredService<IOptions<CacheOptions>>().Value;
                 // Catalog edits and promotions bypass layer-row writes, so their
                 // current default must be read before reusing a parsed render plan.
-                if (!cacheOptions.Enabled || sp.GetService<IStyleCatalog>() is not null)
+                if (!cacheOptions.Enabled || sp.GetRequiredService<IServiceProviderIsService>().IsService(typeof(IStyleCatalog)))
                 {
                     return innerStyleCatalog;
                 }

@@ -138,7 +138,7 @@ internal sealed class LayerStyleService : ILayerStyleService
 
             return new LayerStyleUpdateResult(
                 LayerStyleUpdateStatus.Updated,
-                BuildSnapshot(updated, normalized, generatedDrawingInfoJson),
+                BuildSnapshot(await ReadSavedStyleAsync(updated, cancellationToken).ConfigureAwait(false), normalized, generatedDrawingInfoJson),
                 null,
                 NoUnsupportedSymbolizers);
         }
@@ -172,17 +172,11 @@ internal sealed class LayerStyleService : ILayerStyleService
 
         return new LayerStyleUpdateResult(
             LayerStyleUpdateStatus.Updated,
-            BuildSnapshot(saved, mapLibreJson, drawingInfoJson),
+            BuildSnapshot(await ReadSavedStyleAsync(saved, cancellationToken).ConfigureAwait(false), mapLibreJson, drawingInfoJson),
             null,
             conversion.Unsupported);
     }
 
-    // ADR-0048 Phase 2 (#1389): mirror the per-layer style update into the independent
-    // styleId-keyed catalog as the layer's default style ("style-layer-{id}"), associate
-    // it at the primary ordinal, then reconcile the canonical graph so the Type=Style
-    // resource and the data resource's StyleResourceIds reflect the edit immediately.
-    // Best-effort: a failure here must not fail the per-layer style update (Phase 1
-    // contract), so exceptions are logged and swallowed.
     private async Task SyncIndependentStyleCatalogAsync(
         int storageLayerId,
         MetadataV2Resource resource,
@@ -200,36 +194,34 @@ internal sealed class LayerStyleService : ILayerStyleService
         var styleId = $"style-layer-{storageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
         var title = resource.Metadata.Title ?? resource.Metadata.Name;
 
-        try
-        {
-            _ = await _independentStyleCatalog
-                .UpsertStyleAsync(
-                    styleId,
-                    mapLibreStyleJson,
-                    title,
-                    resource.Metadata.Description,
-                    drawingInfoJson,
-                    revisedBy,
-                    changeSummary,
-                    cancellationToken)
-                .ConfigureAwait(false);
+        _ = await _independentStyleCatalog
+            .UpsertStyleAsync(
+                styleId,
+                mapLibreStyleJson,
+                title,
+                resource.Metadata.Description,
+                drawingInfoJson,
+                revisedBy,
+                changeSummary,
+                cancellationToken)
+            .ConfigureAwait(false);
 
-            _ = await _independentStyleCatalog
-                .AssociateLayerAsync(storageLayerId, styleId, ordinal: 0, cancellationToken)
-                .ConfigureAwait(false);
+        _ = await _independentStyleCatalog
+            .AssociateLayerAsync(storageLayerId, styleId, ordinal: 0, cancellationToken)
+            .ConfigureAwait(false);
 
-            if (_styleGraphSync is not null)
-            {
-                await _styleGraphSync.SyncLayerStylesAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
-            }
-        }
-        // Intentional broad catch: this is a best-effort sync to the independent style catalog after
-        // the primary style write already succeeded; a sync failure here must not fail the caller's
-        // overall style update, so it is logged and swallowed.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
+        if (_styleGraphSync is not null)
         {
-            LayerStyleLog.StyleCatalogSyncFailed(_logger, storageLayerId, ex);
+            await _styleGraphSync.SyncLayerStylesAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    private async Task<LayerStyleDefinition> ReadSavedStyleAsync(LayerStyleDefinition fallback, CancellationToken cancellationToken)
+    {
+        if (_independentStyleCatalog is null)
+            return fallback;
+        return await _styleCatalog.GetLayerStyleAsync(fallback.LayerId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("The saved layer style could not be read.");
     }
 
     private async ValueTask<StyleLayerDescriptor> ResolveStyleLayerAsync(

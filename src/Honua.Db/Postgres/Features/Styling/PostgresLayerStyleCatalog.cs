@@ -43,15 +43,16 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
     {
         string sql = $"""
             SELECT layers.layer_id,
-                COALESCE(primary_style.maplibre_style, layers.maplibre_style),
+                CASE WHEN primary_style.style_id IS NULL THEN layers.maplibre_style ELSE primary_style.maplibre_style END,
                 CASE WHEN primary_style.style_id IS NULL THEN layers.geoservices_drawing_info ELSE primary_style.drawing_info END,
-                COALESCE(primary_style.style_version, layers.style_version),
+                CASE WHEN primary_style.style_id IS NULL THEN layers.style_version ELSE primary_style.style_version END,
                 CASE WHEN primary_style.style_id IS NULL THEN layers.style_revised_at ELSE primary_style.updated_at END,
                 CASE WHEN primary_style.style_id IS NULL THEN layers.style_revised_by ELSE primary_style.revised_by END,
                 CASE WHEN primary_style.style_id IS NULL THEN layers.style_change_summary ELSE primary_style.change_summary END
             FROM {_layersTable} layers
             LEFT JOIN LATERAL (
-                SELECT styles.*
+                SELECT styles.style_id, styles.maplibre_style, styles.drawing_info,
+                    styles.style_version, styles.updated_at, styles.revised_by, styles.change_summary
                 FROM {_refsTable} refs
                 JOIN {_stylesTable} styles ON styles.style_id = refs.style_id
                 WHERE refs.layer_id = layers.layer_id AND refs.ordinal = 0
@@ -167,6 +168,10 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
             UPDATE {_layersTable}
             SET geoservices_drawing_info = @drawingInfo
             WHERE layer_id = @layerId
+                AND NOT EXISTS (
+                    SELECT 1 FROM {_refsTable}
+                    WHERE layer_id = @layerId AND ordinal = 0
+                )
             RETURNING {SelectColumns}
             """;
 
@@ -181,7 +186,8 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            return null;
+            await reader.CloseAsync().ConfigureAwait(false);
+            return await GetLayerStyleAsync(layerId, cancellationToken).ConfigureAwait(false);
         }
 
         return ReadStyle(reader);
