@@ -2,7 +2,11 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Data.Common;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Db.Postgres.Features.Styling;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Styling.Abstractions;
@@ -14,6 +18,7 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using Npgsql;
 using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.Styling;
@@ -52,6 +57,55 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
         var fallback = (await layerStyles.GetLayerStyleAsync(LayerId))!;
         fallback.MapLibreStyleJson.Should().Contain("#0000ff");
         fallback.DrawingInfoJson.Should().Be("{}");
+    }
+
+    [IntegrationTest]
+    public async Task SetDrawingInfo_CatalogDefault_ReleasesConnectionBeforeReread()
+    {
+        await AssociateStyleAsync("#ff0000");
+        var builder = new NpgsqlConnectionStringBuilder(_fixture.Postgres.ConnectionString)
+        {
+            SearchPath = _fixture.CurrentSchema,
+            MaxPoolSize = 1,
+            Timeout = 2
+        };
+        await using var source = NpgsqlDataSource.Create(builder.ConnectionString);
+        var provider = Substitute.For<IAdoNetDatabaseConnectionProvider>();
+        provider.OpenConnectionAsync(Arg.Any<CancellationToken>()).Returns(async call =>
+            (DbConnection)await source.OpenConnectionAsync(call.Arg<CancellationToken>()));
+        var catalog = new PostgresLayerStyleCatalog(provider, _fixture.CurrentSchema);
+
+        var style = await catalog.SetDrawingInfoAsync(LayerId, "{}");
+
+        style.Should().NotBeNull();
+        style!.MapLibreStyleJson.Should().Contain("#ff0000");
+        style.DrawingInfoJson.Should().BeNull();
+    }
+
+    [IntegrationTest]
+    public async Task GetLayerStyle_SharedMigratedCatalogStyle_ProjectsOnlyRequestedSource()
+    {
+        var document = JsonNode.Parse(CircleStyle("#ff0000"))!.AsObject();
+        document["sources"] = JsonNode.Parse("""{"layer-1":{"type":"vector","tiles":["/tiles/1/{z}/{x}/{y}.mvt"]},"layer-2":{"type":"vector","tiles":["/tiles/2/{z}/{x}/{y}.mvt"]}}""");
+        var first = document["layers"]![0]!.DeepClone();
+        first["source"] = "layer-1";
+        first["source-layer"] = "layer";
+        var second = first.DeepClone();
+        second["id"] = "circle-layer-2";
+        second["source"] = "layer-2";
+        document["layers"] = new JsonArray(first, second);
+        var catalog = _fixture.GetService<IStyleCatalog>();
+        var id = $"shared-{Guid.NewGuid():N}";
+        await catalog.CreateStyleAsync(id, document.ToJsonString());
+        (await catalog.AssociateLayerAsync(LayerId, id, ordinal: 0)).Should().BeTrue();
+
+        var style = await _fixture.GetService<ILayerStyleCatalog>().GetLayerStyleAsync(LayerId);
+        using var projected = JsonDocument.Parse(style!.MapLibreStyleJson!);
+
+        projected.RootElement.GetProperty("layers").EnumerateArray().Select(layer => layer.GetProperty("source").GetString())
+            .Should().Equal("layer-1", "other target symbolizers must not be rendered against this layer's features");
+        projected.RootElement.GetProperty("sources").EnumerateObject().Select(source => source.Name)
+            .Should().Equal("layer-1");
     }
 
     [IntegrationTest]
