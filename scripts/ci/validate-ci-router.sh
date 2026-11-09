@@ -320,12 +320,12 @@ for changed in \
   tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/OgcClassicWmsTests.cs \
   tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/RenderedRasterBaselineTests.cs; do
   assert_exact_shards "wms-capacity-${changed##*/}" "${changed}" \
-    '["OGC Classic Maps Integration"]'
+    '["OGC Classic WMS"]'
 done
 assert_descriptor "wms-capacity-runtime" \
-  "src/Honua.Protocols.OgcClassic/Wms/WmsRequestHandlers.cs" "targeted" false "OGC Classic Maps Integration"
+  "src/Honua.Protocols.OgcClassic/Wms/WmsRequestHandlers.cs" "targeted" false "OGC Classic WMS"
 assert_descriptor "wms-capacity-registration" \
-  "src/Honua.Server/EndpointRegistry.cs" "targeted" false "OGC Classic Maps Integration"
+  "src/Honua.Server/EndpointRegistry.cs" "targeted" false "OGC Classic WMS"
 # #6332: every inherited trigger selects both whole-class FeatureServer children.
 for changed in \
   tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerMutationScenarioTests.cs \
@@ -467,27 +467,14 @@ assert_descriptor \
   "false" \
   "Server Features Miscellaneous"
 assert_descriptor \
-  "headroom-split-ogc-tiles-endpoints-crs" \
+  "ogc-tiles-endpoints-crs" \
   "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Tiles/OgcTilesEndpointTests.cs" \
   "targeted" \
   "false" \
   "OGC API Rendering Records and Tiles"
-# The dominant class kept on each parent must still select the parent.
 assert_descriptor \
-  "headroom-split-parent-mapserver" \
+  "mapserver-source-endpoints" \
   "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerEndpointTests.cs" \
-  "targeted" \
-  "false" \
-  "GeoServices MapServer"
-assert_descriptor \
-  "mapserver-source-split-export" \
-  "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerExportEndpointTests.cs" \
-  "targeted" \
-  "false" \
-  "GeoServices MapServer"
-assert_descriptor \
-  "mapserver-source-split-identify" \
-  "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerIdentifyEndpointTests.cs" \
   "targeted" \
   "false" \
   "GeoServices MapServer"
@@ -838,13 +825,7 @@ assert_descriptor \
   "false" \
   "GeoServices SOAP and MVT Tiles"
 assert_descriptor \
-  "gpserver-source-targets-soap-progress" \
-  "src/Honua.Protocols.GeoServices/GPServer/GPServerEndpoints.cs" \
-  "targeted" \
-  "false" \
-  "GeoServices Maintenance and Durable Jobs"
-assert_descriptor \
-  "gpserver-source-targets-durable-aliases" \
+  "gpserver-source-targets-maintenance-durable-jobs" \
   "src/Honua.Protocols.GeoServices/GPServer/GPServerEndpoints.cs" \
   "targeted" \
   "false" \

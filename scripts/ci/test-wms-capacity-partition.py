@@ -14,7 +14,7 @@ SPEC.loader.exec_module(MODULE)
 CONFIG = json.loads((ROOT / ".github/ci-shards.json").read_text())
 EVIDENCE = json.loads((ROOT / "docs/internal/ci/wms-shard-capacity-20261018.json").read_text())
 ORIGINAL = EVIDENCE["originalShard"]
-NAMES = ("OGC Classic Maps Integration",)
+NAMES = ("OGC Classic WMS",)
 CHILDREN = [next(s for s in CONFIG["shards"] if s["name"] == name) for name in NAMES]
 PROJECT = "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj"
 CLASS = "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests"
@@ -23,7 +23,7 @@ METHODS = MODULE.selection_pool(CLASSES, PROJECT)
 PARENT = MODULE._FilterParser(ORIGINAL["filter"]).parse()
 EXPECTED = {method for method in METHODS if MODULE._eval(PARENT, method)}
 MAIN = {method for method in EXPECTED if method.startswith(CLASS + ".")}
-assert MAIN and MAIN < EXPECTED, "Both actual source partitions must be nonempty."
+assert MAIN and MAIN < EXPECTED, "The measured main class must be a strict subset of the WMS inventory."
 assert EVIDENCE["trxPresent"] is False and EVIDENCE["qualification"] == "not-evaluated"
 
 

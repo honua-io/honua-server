@@ -655,7 +655,7 @@ public class Tests
 def test_geoservices_partition_preserves_every_runnable_method_and_budget() -> None:
     config = json.loads((REPOSITORY_ROOT / ".github/ci-shards.json").read_text())
     partition = next(p for p in config["shard_partitions"]
-                     if p["name"] == "GeoServices FeatureServer and GPServer Integration")
+                     if p["name"] == "GeoServices FeatureServer GPServer and NAServer")
     assert partition["granularity"] == "method"
     shards = {s["name"]: s for s in config["shards"]}
     parsed = {name: MODULE._FilterParser(s["filter"]).parse() for name, s in shards.items()}
@@ -773,3 +773,27 @@ def test_miscellaneous_partition_detects_missing_moved_methods() -> None:
 test_miscellaneous_partition_detects_missing_moved_methods()
 
 print("shard-filter-dangling-guard=ok")
+
+
+def test_consolidated_shards_preserve_execution_contracts() -> None:
+    config = json.loads((REPOSITORY_ROOT / ".github/ci-shards.json").read_text())
+    shards = {shard["name"]: shard for shard in config["shards"]}
+    contracts = (
+        ("GeoServices Maintenance and Durable Jobs", "GeoServices", 22, 32),
+        ("GeoServices SOAP and MVT Tiles", "GeoServices", 22, 32),
+        ("OData Errors and Mutations", "OData", 20, 30),
+        ("OGC API Rendering Records and Tiles", "OgcApi", 22, 32),
+        ("OGC Classic WMS", "OgcClassic", 20, 30),
+        ("GeoServices MapServer", "GeoServices", 29, 39),
+        ("Scene", "Scene", 30, 40),
+    )
+    fields = ("csproj", "test_timeout_minutes", "timeout_minutes", "max_cpu_count",
+              "upload_operator_eval_report", "upload_odata_evidence")
+    for name, project, test_cap, job_cap in contracts:
+        project_name = f"Honua.Protocols.{project}.Tests"
+        expected = (f"tests/dotnet/{project_name}/{project_name}.csproj",
+                    test_cap, job_cap, "", False, False)
+        assert tuple(shards[name][field] for field in fields) == expected, name
+
+
+test_consolidated_shards_preserve_execution_contracts()
