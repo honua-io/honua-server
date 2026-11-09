@@ -1402,7 +1402,7 @@ public static class GpCli
             repoRoot,
             kind == GpProcessKind.Gdal
                 ? "src/Honua.Worker.Gdal/GdalWorkerServiceCollectionExtensions.cs"
-                : "src/Honua.Geoprocessing/Features/Geoprocessing/GeoprocessingServiceCollectionExtensions.cs");
+                : "src/Honua.Geoprocessing/Core/Features/Geoprocessing/GeoprocessingServiceCollectionExtensions.cs");
 
         if (File.Exists(registrationFile))
         {
@@ -1424,7 +1424,7 @@ public static class GpCli
         // literal, so Path.Combine cannot silently drop either argument here.
         var catalogFile = Path.Join(
             repoRoot,
-            "src/Honua.Geoprocessing/Features/Geoprocessing/BuiltInProcessCatalog.cs");
+            "src/Honua.Geoprocessing/Core/Features/Geoprocessing/BuiltInProcessCatalog.cs");
         if (File.Exists(catalogFile))
         {
             var source = await File.ReadAllTextAsync(catalogFile).ConfigureAwait(false);
@@ -1441,7 +1441,7 @@ public static class GpCli
 
         var capabilityFile = Path.Join(
             repoRoot,
-            "src/Honua.Geoprocessing/Features/Geoprocessing/ProcessExecutionCapabilityCatalog.cs");
+            "src/Honua.Geoprocessing/Core/Features/Geoprocessing/ProcessExecutionCapabilityCatalog.cs");
         if (File.Exists(capabilityFile))
         {
             var source = await File.ReadAllTextAsync(capabilityFile).ConfigureAwait(false);

@@ -48,7 +48,7 @@ on:
       - 'scripts/ci/generate-capability-manifest-crosswalk.test.py'
       - 'docs/gis/data/capability-manifest-adjudication.v1.json'
       - 'docs/gis/data/capability-manifest-crosswalk.v1.json'
-      - 'src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs'
+      - 'src/Honua.Core/Core/Features/Capabilities/CapabilityRegistry.cs'
       - 'scripts/ci/openapi-drift-check.py'
       - 'docs/developer/api-specs/**'
       - 'src/Honua.Server/openapi.json'

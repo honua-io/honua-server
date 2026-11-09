@@ -116,6 +116,6 @@ Mobile-side follow-ups are limited to UX/adapters that call these routes and bin
 
 ## Source map
 
-- Core contracts: `src/Honua.Core/Features/Forms/Packages/FormCompatibilityContracts.cs`, `src/Honua.Core/Features/FieldWorkflows/Review/`, `src/Honua.Core/Features/FieldWorkflows/Export/`.
+- Core contracts: `src/Honua.Core/Core/Features/Forms/Packages/FormCompatibilityContracts.cs`, `src/Honua.Core/Core/Features/FieldWorkflows/Review/`, `src/Honua.Core/Core/Features/FieldWorkflows/Export/`.
 - Server routes/services: `src/Honua.Server/Features/Forms/` (compatibility), `src/Honua.Server/Features/FieldWorkflows/Review/`, `src/Honua.Server/Features/FieldWorkflows/Export/`.
 - Postgres persistence: `src/Honua.Db/Postgres/Features/FieldWorkflows/PostgresFieldReviewStore.cs` (migration `050_CreateFieldReview.sql`), `src/Honua.Db/Postgres/Features/FieldWorkflows/PostgresFieldExportStore.cs` (migration `067_CreateFieldExportRecords.sql`).
