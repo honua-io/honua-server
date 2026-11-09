@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -325,11 +326,14 @@ class ComposeQuickstartTests(unittest.TestCase):
                                 cwd=path, env=self.compose_env(path), capture_output=True, text=True)
         services = json.loads(result.stdout)['services']
         for name in ('honua', 'compose-manager', 'compose-executor'):
-            self.assertEqual(['bash', '+x', '-euc'], services[name]['entrypoint'][:3])
+            self.assertEqual(['/app/honua-entrypoint'], services[name]['entrypoint'])
             self.assertEqual(['/app/Honua.Server'], services[name]['command'])
         self.assertEqual(services['honua']['entrypoint'], services['compose-manager']['entrypoint'])
-        # Rendered config re-escapes '$' as '$$'; the container receives single '$'.
-        entrypoint = [part.replace('$$', '$') for part in services['honua']['entrypoint']]
+        binary = str(Path(directory) / 'honua-entrypoint')
+        self.assertIsNotNone(shutil.which('cc'))
+        subprocess.run(['cc', '-Wall', '-Wextra', '-Werror',
+                        str(ROOT / 'docker/runtime/secret-entrypoint.c'), '-o', binary], check=True)
+        entrypoint = [binary]
         files = Path(directory) / 'run'
         files.mkdir()
         planted = {'admin': 'planted-admin-' + os.urandom(8).hex(), 'db': 'planted-db-' + os.urandom(8).hex()}

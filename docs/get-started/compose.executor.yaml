@@ -3,30 +3,8 @@
 # Only the dedicated executor image mounts the Docker socket.
 # The separate manager and executor share the executor socket; the serving service does not.
 # Secrets are files under ./secrets, mounted at /run/secrets; none is a Compose variable.
-# The entrypoint matches compose.yaml: it loads each HONUA_SECRET_FILE__<setting> file into <setting>.
-x-load-secrets: &load-secrets
-  - bash
-  - +x
-  - -euc
-  - |
-    { set +x; } 2>/dev/null
-    # Tracing stays off through exec: inherited xtrace (SHELLOPTS, BASH_ENV) would echo every loaded value.
-    # BASH_XTRACEFD is left alone; unsetting it would close the descriptor it names.
-    for ref in $${!HONUA_SECRET_FILE__@}; do
-      value=$$(< "$${!ref}")
-      [ -n "$$value" ] || { echo "empty secret file for $${ref#HONUA_SECRET_FILE__}" >&2; exit 1; }
-      export "$${ref#HONUA_SECRET_FILE__}=$$value"
-      unset "$$ref"
-    done
-    if [ -n "$${HONUA_DATABASE_PASSWORD_FILE:-}" ]; then
-      value=$$(< "$$HONUA_DATABASE_PASSWORD_FILE")
-      [ -n "$$value" ] || { echo "empty database password file" >&2; exit 1; }
-      export ConnectionStrings__DefaultConnection="$$ConnectionStrings__DefaultConnection;Password=$$value"
-      unset HONUA_DATABASE_PASSWORD_FILE
-    fi
-    unset value ref
-    exec "$$@"
-  - load-secrets
+# The native entrypoint matches compose.yaml and loads file-backed settings without a shell.
+x-load-secrets: &load-secrets ["/app/honua-entrypoint"]
 services:
   keyring-init:
     # CAP_CHOWN cannot traverse a private host directory on its own.
@@ -130,19 +108,6 @@ services:
       timeout: 3s
       retries: 30
     restart: unless-stopped
-  # A fresh named volume is root-owned. This one-shot command makes it writable by uid 1002
-  # before the executor binds the socket. The Debian runtime image provides chown.
-  compose-executor-init:
-    image: ${HONUA_EXECUTOR_IMAGE:?Set the immutable executor digest}
-    user: "0:0"
-    entrypoint: ["chown", "1002:1001", "/run/honua-compose"]
-    restart: "no"
-    read_only: true
-    cap_drop: [ALL]
-    cap_add: [CHOWN]
-    security_opt: ["no-new-privileges:true"]
-    volumes:
-      - compose-executor-socket:/run/honua-compose
   compose-executor:
     image: ${HONUA_EXECUTOR_IMAGE:?Set the immutable executor digest}
     entrypoint: *load-secrets
@@ -158,13 +123,11 @@ services:
     restart: unless-stopped
     # The sidecar does not serve HTTP, so replace the server image's HTTP healthcheck.
     healthcheck:
-      test: ["CMD-SHELL", "test -S /run/honua-compose/executor.sock"]
+      test: ["CMD", "/app/honua-healthcheck", "--unix", "/run/honua-compose/executor.sock"]
       interval: 5s
       timeout: 3s
       retries: 30
     depends_on:
-      compose-executor-init:
-        condition: service_completed_successfully
       # Gives the secret files the group the executor reads them with.
       keyring-init:
         condition: service_completed_successfully

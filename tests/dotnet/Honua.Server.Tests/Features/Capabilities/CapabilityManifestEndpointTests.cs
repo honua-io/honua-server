@@ -447,7 +447,7 @@ public sealed partial class CapabilityManifestEndpointTests : IAsyncLifetime
             .Select(provider => provider.GetString()).Should().Contain(
                 "postgis");
         stores.GetProperty("fullImageTagSuffix").GetString().Should().Be("-full");
-        stores.GetProperty("documentationHref").GetString().Should().EndWith("/docs/ops/nightly-images.md");
+        stores.GetProperty("documentationHref").GetString().Should().EndWith("/docs/ops/nightly-images.md#data-store-variants");
     }
 
     [IntegrationTest]

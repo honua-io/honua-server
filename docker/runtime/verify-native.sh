@@ -27,7 +27,7 @@ verify_native() {
     fi
 }
 
-for native in "$runtime_root$app_directory/"*.so "$runtime_root/app/honua-healthcheck"; do
+for native in "$runtime_root$app_directory/"*.so "$runtime_root/app/honua-healthcheck" "$runtime_root/app/honua-entrypoint"; do
     case "$native" in
         # Only one platform variant is loaded; verify the available set below.
         */*-librdkafka.so) continue ;;

@@ -5,10 +5,27 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <sys/un.h>
 #include <unistd.h>
+
+static int probe_unix_socket(const char *path)
+{
+    struct sockaddr_un address = { .sun_family = AF_UNIX };
+    if (strlen(path) >= sizeof(address.sun_path))
+        return 1;
+    memcpy(address.sun_path, path, strlen(path) + 1);
+    int connection = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (connection < 0)
+        return 1;
+    int result = connect(connection, (struct sockaddr *)&address, sizeof(address));
+    close(connection);
+    return result == 0 ? 0 : 1;
+}
 
 int main(int argc, char **argv)
 {
+    if (argc == 3 && strcmp(argv[1], "--unix") == 0)
+        return probe_unix_socket(argv[2]);
     if (argc > 2 || (argc == 2 && strcmp(argv[1], "--ready") != 0))
         return 1;
     const char *path = argc == 2 ? "/healthz/ready" : "/healthz/live";

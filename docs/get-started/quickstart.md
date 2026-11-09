@@ -161,32 +161,10 @@ Make a directory and put this in it as `compose.yaml`:
 # Secrets are files under ./secrets, mounted at /run/secrets. None is a Compose variable,
 # so `docker compose config` never prints one. This entrypoint loads each file named by a
 # HONUA_SECRET_FILE__<setting> variable into <setting>, then starts the server.
-x-load-secrets: &load-secrets
-  - bash
-  - +x
-  - -euc
-  - |
-    { set +x; } 2>/dev/null
-    # Tracing stays off through exec: inherited xtrace (SHELLOPTS, BASH_ENV) would echo every loaded value.
-    # BASH_XTRACEFD is left alone; unsetting it would close the descriptor it names.
-    for ref in $${!HONUA_SECRET_FILE__@}; do
-      value=$$(< "$${!ref}")
-      [ -n "$$value" ] || { echo "empty secret file for $${ref#HONUA_SECRET_FILE__}" >&2; exit 1; }
-      export "$${ref#HONUA_SECRET_FILE__}=$$value"
-      unset "$$ref"
-    done
-    if [ -n "$${HONUA_DATABASE_PASSWORD_FILE:-}" ]; then
-      value=$$(< "$$HONUA_DATABASE_PASSWORD_FILE")
-      [ -n "$$value" ] || { echo "empty database password file" >&2; exit 1; }
-      export ConnectionStrings__DefaultConnection="$$ConnectionStrings__DefaultConnection;Password=$$value"
-      unset HONUA_DATABASE_PASSWORD_FILE
-    fi
-    unset value ref
-    exec "$$@"
-  - load-secrets
+x-load-secrets: &load-secrets ["/app/honua-entrypoint"]
 services:
   keyring-init:
-    image: redis:7.4-alpine
+    image: redis:7.4-alpine@sha256:a58a2b51fdb121a55861f2586cbde33f174c0f33d5a277b182d52dce45ed9cd4
     user: "0:0"
     entrypoint: ["sh", "-c"]
     # The servers run as gid 1001. Secret files stay yours; only their group changes.

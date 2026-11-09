@@ -33,6 +33,8 @@ sort -u "$packages" | while IFS= read -r package; do
 done
 cc -O2 -Wall -Wextra -Werror -fPIE -pie -Wl,-z,relro,-z,now \
     docker/runtime/health-probe.c -o "$additions/app/honua-healthcheck"
+cc -O2 -Wall -Wextra -Werror -fPIE -pie -Wl,-z,relro,-z,now \
+    docker/runtime/secret-entrypoint.c -o "$additions/app/honua-entrypoint"
 mkdir -p "$additions/tmp/honua-logs" "$additions/tmp/honua-cache" \
     "$additions/tmp/dotnet-diagnostics" "$additions/tmp/honua-temp" \
     "$additions/tmp/honua-storage" "$additions/var/lib/honua/storage"

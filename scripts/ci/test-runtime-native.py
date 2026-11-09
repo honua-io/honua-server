@@ -26,6 +26,7 @@ class NativeRuntimeGateTests(unittest.TestCase):
         fonts.mkdir(parents=True)
         (fonts / 'DejaVuSans.ttf').touch()
         shutil.copy2('/bin/true', self.app / 'honua-healthcheck')
+        shutil.copy2('/bin/true', self.app / 'honua-entrypoint')
         source = self.base / 'reader.c'
         source.write_text('#include <stdio.h>\nint reader(void){return puts("reader");}\n')
         subprocess.run(['cc', '-shared', '-fPIC', str(source), '-o',

@@ -43,6 +43,19 @@ class HealthProbeTests(unittest.TestCase):
     def test_ready_succeeds(self):
         self.assertEqual(self.probe_status(200, '/healthz/ready'), 0)
 
+    def test_executor_socket_must_accept_connections(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = str(Path(directory) / 'executor.sock')
+            with socket.socket(socket.AF_UNIX) as listener:
+                listener.bind(path)
+                self.assertNotEqual(subprocess.run([self.binary, '--unix', path],
+                                                  timeout=8).returncode, 0)
+                listener.listen()
+                self.assertEqual(subprocess.run([self.binary, '--unix', path],
+                                               timeout=8).returncode, 0)
+            self.assertNotEqual(subprocess.run([self.binary, '--unix', path],
+                                              timeout=8).returncode, 0)
+
     def test_live_succeeds(self):
         self.assertEqual(self.probe_status(200, '/healthz/live'), 0)
 
