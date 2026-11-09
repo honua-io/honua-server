@@ -20,6 +20,8 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpJobToolsInstalledClientTests
 {
+    private static readonly string[] ReaderPermissions = ["admin:read"];
+
     [ExternalServiceTest("HONUA_MCP_JOB_CLIENT")]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /mcp")]
@@ -43,7 +45,7 @@ public sealed class McpJobToolsInstalledClientTests
         using var keyResponse = await admin.PostAsJsonAsync("/api/v1/admin/api-keys", new
         {
             name = "job-result-reader",
-            permissions = new[] { "admin:read" }
+            permissions = ReaderPermissions
         });
         keyResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         using var keyBody = JsonDocument.Parse(await keyResponse.Content.ReadAsStringAsync());
