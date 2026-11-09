@@ -583,7 +583,7 @@ internal sealed class CapabilityManifestService(
                 supported: spec.Supported && served,
                 configured: configured,
                 unavailableReasonOverride: lifecycleEnabled
-                    ? null
+                    ? spec.UnavailableReasonOverride
                     : Core.Features.Capabilities.CapabilityReasonCodes.ExperimentalDisabled,
                 entitlementKey: spec.EntitlementKey,
                 entitlementKeys: spec.EntitlementKeys,
@@ -591,8 +591,7 @@ internal sealed class CapabilityManifestService(
                 requiresAuthentication: spec.RequiresAuthentication,
                 requiresEnvironment: spec.RequiresEnvironment,
                 requiresWorkspace: spec.RequiresWorkspace,
-                requiresDurableJobStore: spec.RequiresDurableJobStore,
-                unavailableReasonOverride: spec.UnavailableReasonOverride));
+                requiresDurableJobStore: spec.RequiresDurableJobStore));
         }
 
         // codeql[cs/linq/missed-where]: adds a capability only when that id is not already present
