@@ -250,7 +250,7 @@ public sealed class MetadataV2RoutingRobustnessTests
     public void Serialize_OmittedStatuses_PreservesServingDefaultsAfterEdit()
     {
         var graph = JsonSerializer.Deserialize(KnownGraph, MetadataV2JsonContext.Default.MetadataV2Graph)!;
-        var edited = graph with { Metadata = graph.Metadata with { Title = "Edited title" } };
+        var edited = graph with { Metadata = new() { Title = "Edited title" } };
         var json = JsonSerializer.Serialize(edited, MetadataV2JsonContext.Default.MetadataV2Graph);
         var reloaded = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Graph)!;
 
