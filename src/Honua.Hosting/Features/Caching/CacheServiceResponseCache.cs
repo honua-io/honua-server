@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
+using Honua.Infrastructure.Middleware;
 
 namespace Honua.Infrastructure.Caching;
 
@@ -39,11 +40,11 @@ internal sealed class CacheServiceResponseCache : IResponseCache
     private readonly int _maxEntries;
     private long _reservedBytes;
     private long _reservationSequence;
-    private string? _observedRecoveryEpoch;
+    private readonly Dictionary<string, string> _observedRecoveryEpochs = new(StringComparer.Ordinal);
     private readonly SortedSet<ResponseReservation> _expirationOrder = new(Comparer<ResponseReservation>.Create((left, right) =>
     {
         var expiration = left.ExpiresAt.CompareTo(right.ExpiresAt);
-        return expiration != 0 ? expiration : StringComparer.Ordinal.Compare(left.Key, right.Key);
+        return expiration != 0 ? expiration : StringComparer.Ordinal.Compare(left.BudgetKey, right.BudgetKey);
     }));
     private readonly object _budgetLock = new();
     private readonly Dictionary<string, ResponseReservation> _reservations = new(StringComparer.Ordinal);
@@ -155,13 +156,14 @@ internal sealed class CacheServiceResponseCache : IResponseCache
         namespaces.Insert(0, ResponseCacheVersionKeys.RecoveryNamespace);
 
         var now = DateTimeOffset.UtcNow;
+        var scope = CacheScopeKeys.GetScopePrefix(SchemaContext.AmbientCurrentSchema);
         var resolved = new string[namespaces.Count];
         List<int>? missIndices = null;
 
         // Only SetAsync may reuse local versions. Every read checks shared invalidations.
         for (var i = 0; i < namespaces.Count; i++)
         {
-            if (allowLocalVersionCache && _localVersionCache.TryGetValue(namespaces[i], out var entry) && entry.Expiry > now)
+            if (allowLocalVersionCache && _localVersionCache.TryGetValue(scope + namespaces[i], out var entry) && entry.Expiry > now)
             {
                 resolved[i] = entry.Version;
             }
@@ -189,28 +191,29 @@ internal sealed class CacheServiceResponseCache : IResponseCache
                 var i = missIndices[j];
                 var version = string.IsNullOrWhiteSpace(versions[j]) ? "0" : versions[j]!;
                 resolved[i] = version;
-                _localVersionCache[namespaces[i]] = (version, now.Add(VersionLocalCacheTtl));
+                _localVersionCache[scope + namespaces[i]] = (version, now.Add(VersionLocalCacheTtl));
             }
             if (missIndices[0] == 0)
             {
-                ReleaseObsoleteEpochReservations(resolved[0], reservationsBeforeRead);
+                ReleaseObsoleteEpochReservations(resolved[0], reservationsBeforeRead, scope);
             }
         }
 
         return resolved;
     }
 
-    private void ReleaseObsoleteEpochReservations(string epoch, long reservationsBeforeRead)
+    private void ReleaseObsoleteEpochReservations(string epoch, long reservationsBeforeRead, string scope)
     {
         lock (_budgetLock)
         {
-            if (_observedRecoveryEpoch == epoch)
+            if (_observedRecoveryEpochs.GetValueOrDefault(scope) == epoch)
             {
                 return;
             }
-            _observedRecoveryEpoch = epoch;
+            _observedRecoveryEpochs[scope] = epoch;
             var epochMarker = $":v:{epoch}:";
             var invalidated = _reservations.Values.Where(reservation =>
+                reservation.ScopePrefix == scope &&
                 reservation.Sequence <= reservationsBeforeRead &&
                 GetNamespaceKeysForCacheKey(reservation.Key).Count > 0 &&
                 !reservation.Key.Contains(epochMarker, StringComparison.Ordinal)).ToArray();
@@ -229,6 +232,7 @@ internal sealed class CacheServiceResponseCache : IResponseCache
             return false;
         }
 
+        var scope = CacheScopeKeys.GetScopePrefix(SchemaContext.AmbientCurrentSchema);
         var reservationsBeforeInvalidation = Volatile.Read(ref _reservationSequence);
         // Each namespace token bumps an independent version key, so the writes have
         // no ordering dependency on one another; issue them concurrently instead of
@@ -244,12 +248,13 @@ internal sealed class CacheServiceResponseCache : IResponseCache
         // on the very next write too, without waiting for the 30 s local TTL.
         foreach (var ns in namespaces)
         {
-            _localVersionCache.TryRemove(ns, out _);
+            _localVersionCache.TryRemove(scope + ns, out _);
         }
 
         lock (_budgetLock)
         {
             var invalidated = _reservations.Values.Where(reservation =>
+                reservation.ScopePrefix == scope &&
                 reservation.Sequence <= reservationsBeforeInvalidation &&
                 GetNamespaceKeysForCacheKey(reservation.Key).Any(namespaces.Contains)).ToArray();
             foreach (var reservation in invalidated)
@@ -358,11 +363,13 @@ internal sealed class CacheServiceResponseCache : IResponseCache
     private ResponseReservation? TryReserve(string key, int payloadBytes, TimeSpan expiration)
     {
         var now = DateTimeOffset.UtcNow;
-        var bytes = payloadBytes + (long)key.Length * sizeof(char) + ReservationOverheadBytes;
+        var scope = CacheScopeKeys.GetScopePrefix(SchemaContext.AmbientCurrentSchema);
+        var budgetKey = scope + key;
+        var bytes = payloadBytes + (long)budgetKey.Length * sizeof(char) + ReservationOverheadBytes;
         lock (_budgetLock)
         {
             PruneExpiredReservations(now);
-            _reservations.TryGetValue(key, out var current);
+            _reservations.TryGetValue(budgetKey, out var current);
             var retainedBytes = _reservedBytes - (current?.Bytes ?? 0);
             if ((current is null && _reservations.Count >= _maxEntries) || bytes > _maxBytes - retainedBytes)
             {
@@ -372,8 +379,11 @@ internal sealed class CacheServiceResponseCache : IResponseCache
             {
                 RemoveReservation(current);
             }
-            var reservation = new ResponseReservation(key, bytes, now.Add(expiration), Interlocked.Increment(ref _reservationSequence));
-            _reservations[key] = reservation;
+            var reservation = new ResponseReservation(key, bytes, now.Add(expiration), Interlocked.Increment(ref _reservationSequence))
+            {
+                ScopePrefix = scope
+            };
+            _reservations[budgetKey] = reservation;
             _expirationOrder.Add(reservation);
             _reservedBytes += bytes;
             return reservation;
@@ -382,9 +392,10 @@ internal sealed class CacheServiceResponseCache : IResponseCache
 
     private void ReleaseReservation(string key, ResponseReservation? expected = null)
     {
+        var budgetKey = CacheScopeKeys.GetScopePrefix(SchemaContext.AmbientCurrentSchema) + key;
         lock (_budgetLock)
         {
-            if (_reservations.TryGetValue(key, out var current) && (expected is null || ReferenceEquals(current, expected)))
+            if (_reservations.TryGetValue(budgetKey, out var current) && (expected is null || ReferenceEquals(current, expected)))
             {
                 RemoveReservation(current);
             }
@@ -401,12 +412,16 @@ internal sealed class CacheServiceResponseCache : IResponseCache
 
     private void RemoveReservation(ResponseReservation reservation)
     {
-        _reservations.Remove(reservation.Key);
+        _reservations.Remove(reservation.BudgetKey);
         _expirationOrder.Remove(reservation);
         _reservedBytes -= reservation.Bytes;
     }
 
-    private sealed record ResponseReservation(string Key, long Bytes, DateTimeOffset ExpiresAt, long Sequence);
+    private sealed record ResponseReservation(string Key, long Bytes, DateTimeOffset ExpiresAt, long Sequence)
+    {
+        public required string ScopePrefix { get; init; }
+        public string BudgetKey => ScopePrefix + Key;
+    }
 
     private static string NormalizeKey(string key)
     {
