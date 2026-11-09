@@ -51,10 +51,11 @@ its exact-head verification completes.
 
 PR workflows cancel superseded admission per PR. Trusted observers resolve the
 current PR before expensive jobs: prebuild producers/parity legs cancel by PR
-and matrix identity, and Claude cancels by resolved PR. Unrelated comment events
-cannot cancel a Claude review before resolution. Review-attestation publication
+and matrix identity. Claude cancels resolver admission per PR and serializes
+duplicate exact-head reviews; unrelated comments cannot interrupt paid work. Review-attestation publication
 remains serialized so cancellation cannot interrupt its status/dispatch update.
-Manual qualification/release workflows retain their non-PR cancellation policy.
+New validation concurrency uses a unique run ID outside PR events, keeping manual
+qualification independent of trunk pushes. Existing release cancellation policy is retained.
 
 ## Required PR lane
 
