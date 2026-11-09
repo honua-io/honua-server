@@ -113,7 +113,7 @@ public sealed class ServicePublishMcpAuthorizationTests
                 "the operation context must carry the canonical authorization result");
             await publishing.Received(1).PublishLayerAsync(
                 Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
-            await graphProvider.DidNotReceive().GetCurrentAsync(Arg.Any<CancellationToken>());
+            await graphProvider.Received(1).GetCurrentAsync(Arg.Any<CancellationToken>());
             return;
         }
 

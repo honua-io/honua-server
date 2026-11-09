@@ -283,13 +283,22 @@ internal sealed class ServicePublishExecutor
             TryNotify(() => { notifications.BroadcastToolsListChanged(); });
         }
         var now = _clock.GetUtcNow();
-        var promotionReadback = await ResolvePromotionReadbackAsync(summary.ServiceName, CancellationToken.None)
-            .ConfigureAwait(false);
+        var (identity, promotionReadback) = await ResolvePublishedLayerReadbackAsync(
+            summary.StorageLayerId, context.TenantId, CancellationToken.None).ConfigureAwait(false);
+        if (identity is null && promotionReadback == PromotionReadback.Available)
+        {
+            promotionReadback = await ResolvePromotionReadbackAsync(summary.ServiceName, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
         var resultDetails = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["storageLayerId"] = summary.StorageLayerId.ToString(CultureInfo.InvariantCulture),
             ["layerName"] = summary.LayerName,
             ["geometryType"] = summary.GeometryType,
+        };
+        var resourceIds = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["storageLayerId"] = summary.StorageLayerId.ToString(CultureInfo.InvariantCulture),
         };
         if (promotionReadback != PromotionReadback.Available)
         {
@@ -301,6 +310,12 @@ internal sealed class ServicePublishExecutor
         else
         {
             resultDetails["serviceName"] = summary.ServiceName;
+            resourceIds["serviceName"] = summary.ServiceName;
+            if (identity is { } publishedLayer &&
+                string.Equals(publishedLayer.ServiceName, summary.ServiceName, StringComparison.Ordinal))
+            {
+                AddServiceLayerIndex(publishedLayer, resultDetails, resourceIds);
+            }
         }
         if (summary.MetadataRevision is > 0)
         {
@@ -316,16 +331,7 @@ internal sealed class ServicePublishExecutor
             CreatedAt = now,
             UpdatedAt = now,
             MetadataRevision = summary.MetadataRevision,
-            ResourceIds = promotionReadback != PromotionReadback.Available
-                ? new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["storageLayerId"] = summary.StorageLayerId.ToString(CultureInfo.InvariantCulture),
-                }
-                : new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["storageLayerId"] = summary.StorageLayerId.ToString(CultureInfo.InvariantCulture),
-                    ["serviceName"] = summary.ServiceName,
-                },
+            ResourceIds = resourceIds,
             Result = new OperationResultSummary
             {
                 Summary = $"Published storage layer '{summary.LayerName}' (handle {summary.StorageLayerId}) to service '{summary.ServiceName}'.",
@@ -386,12 +392,7 @@ internal sealed class ServicePublishExecutor
                 }
                 details["readbackStatus"] = "Resolved";
                 resourceIds["serviceName"] = publishedLayer.ServiceName;
-                if (publishedLayer.ServiceLayerIndex is int index)
-                {
-                    var indexText = index.ToString(CultureInfo.InvariantCulture);
-                    details["serviceLayerIndex"] = indexText;
-                    resourceIds["serviceLayerIndex"] = indexText;
-                }
+                AddServiceLayerIndex(publishedLayer, details, resourceIds);
             }
             else
             {
@@ -443,6 +444,19 @@ internal sealed class ServicePublishExecutor
         {
             // Readback failure cannot make the committed publication retryable.
             return (null, PromotionReadback.Unavailable);
+        }
+    }
+
+    private static void AddServiceLayerIndex(
+        PublishedLayerIdentity identity,
+        Dictionary<string, string> details,
+        Dictionary<string, string> resourceIds)
+    {
+        if (identity.ServiceLayerIndex is int index)
+        {
+            var indexText = index.ToString(CultureInfo.InvariantCulture);
+            details["serviceLayerIndex"] = indexText;
+            resourceIds["serviceLayerIndex"] = indexText;
         }
     }
 

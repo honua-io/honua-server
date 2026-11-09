@@ -294,7 +294,7 @@ public sealed class ServicePublishTransportAuthorizationTests : IAsyncLifetime
     {
         await _publishing.Received(1).PublishLayerAsync(
             Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
-        await _graphProvider.DidNotReceive().GetCurrentAsync(Arg.Any<CancellationToken>());
+        await _graphProvider.Received(1).GetCurrentAsync(Arg.Any<CancellationToken>());
     }
 
     private async Task AssertZeroActuationAsync()
