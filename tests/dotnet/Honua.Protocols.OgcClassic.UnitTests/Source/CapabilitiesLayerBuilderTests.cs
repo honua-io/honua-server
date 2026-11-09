@@ -72,7 +72,9 @@ public sealed class CapabilitiesLayerBuilderTests
     [UnitTest]
     public async Task TryBuildAsync_OutOfMemory_PropagatesFailure()
     {
+#pragma warning disable CA2201 // Inject a runtime failure to verify it escapes per-layer recovery.
         var failure = new OutOfMemoryException();
+#pragma warning restore CA2201
 
         var thrown = await Assert.ThrowsAsync<OutOfMemoryException>(() =>
             CapabilitiesLayerBuilder.TryBuildAsync(

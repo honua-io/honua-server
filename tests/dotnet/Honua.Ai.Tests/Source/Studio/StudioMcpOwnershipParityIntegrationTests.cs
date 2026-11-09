@@ -175,10 +175,15 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
     private static Task<StudioPackageDraft> SeedDiscoveryDraftAsync(IStudioPackageStore store, string owner, string packageKey) =>
         store.CreateDraftAsync(new StudioPackageDraft
         {
-            DraftId = Guid.NewGuid(), ItemId = Guid.NewGuid(), PackageKey = packageKey,
-            OwnerId = owner, Family = StudioPackageFamily.Map, Generation = 1,
+            DraftId = Guid.NewGuid(),
+            ItemId = Guid.NewGuid(),
+            PackageKey = packageKey,
+            OwnerId = owner,
+            Family = StudioPackageFamily.Map,
+            Generation = 1,
             Envelope = new StudioPackageEnvelope { Family = StudioPackageFamily.Map, SchemaVersion = "1.0" },
-            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
         });
 
     private static void AssertCrossUserToolDenial(JsonElement result)

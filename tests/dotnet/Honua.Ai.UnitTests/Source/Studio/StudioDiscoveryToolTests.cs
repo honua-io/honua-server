@@ -95,10 +95,16 @@ public sealed class StudioDiscoveryToolTests
         var itemId = Guid.NewGuid();
         StudioContentVersion Version(int number, string owner, string tenant) => new()
         {
-            ItemId = itemId, VersionId = Guid.NewGuid(), VersionNumber = number, PackageKey = "roads",
-            OwnerId = owner, TenantId = tenant, ContentHash = $"hash-{owner}-{tenant}-{number}",
+            ItemId = itemId,
+            VersionId = Guid.NewGuid(),
+            VersionNumber = number,
+            PackageKey = "roads",
+            OwnerId = owner,
+            TenantId = tenant,
+            ContentHash = $"hash-{owner}-{tenant}-{number}",
             Envelope = new StudioPackageEnvelope { Family = StudioPackageFamily.Map, SchemaVersion = "1.0" },
-            Validation = StudioValidationSummary.NotValidated, CreatedAt = DateTimeOffset.UnixEpoch
+            Validation = StudioValidationSummary.NotValidated,
+            CreatedAt = DateTimeOffset.UnixEpoch
         };
         var newest = Version(4, "alice", "tenant-a");
         var foreignOwner = Version(3, "bob", "tenant-a");
@@ -107,7 +113,10 @@ public sealed class StudioDiscoveryToolTests
         var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
         lifecycle.GetPointersAsync(itemId, Arg.Any<CancellationToken>()).Returns(new StudioContentItemPointers
         {
-            ItemId = itemId, OwnerId = "alice", TenantId = "tenant-a", CurrentVersionId = newest.VersionId
+            ItemId = itemId,
+            OwnerId = "alice",
+            TenantId = "tenant-a",
+            CurrentVersionId = newest.VersionId
         });
         lifecycle.ListVersionsAsync(itemId, Arg.Any<CancellationToken>()).Returns(new[] { oldest, foreignOwner, foreignTenant, newest });
         var authorization = OwnerAuthorization();
