@@ -211,7 +211,7 @@ public sealed class McpPromptCatalogTests
         }
 
         setup.Should().NotContain("{source}");
-        setup.Should().Contain("view \"configure\"").And.NotContain("view \"setup\"");
+        setup.Should().Contain("view \"configure\"").And.Contain("view \"setup\"");
     }
 
     [UnitTest]
