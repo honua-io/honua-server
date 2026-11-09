@@ -69,6 +69,8 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests
         .ConfigureServices(services =>
         {
             // The test host adds its data provider after startup's conditional MCP registration.
+            var configurations = services.Where(service => service.ServiceType == typeof(IConfiguration)).ToArray();
+            Console.Error.WriteLine($"Stock fixture configuration descriptors={configurations.Length}, instances={configurations.Count(service => service.ImplementationInstance is not null)}, factories={configurations.Count(service => service.ImplementationFactory is not null)}");
             var configuration = (IConfiguration)services.Single(service => service.ServiceType == typeof(IConfiguration)).ImplementationInstance!;
             services.AddMcpDataAccessSurface(configuration);
         });
