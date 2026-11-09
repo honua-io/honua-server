@@ -1,4 +1,5 @@
 """Secret-safe regression checks for the shipped quickstart (Docker Compose v2)."""
+import base64
 import hmac
 import json
 import os
@@ -6,6 +7,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 import urllib.request
 
 from quickstart import initialize
@@ -49,10 +51,83 @@ class QuickstartTests(unittest.TestCase):
                 initialize(env_file)
             self.assertTrue(hmac.compare_digest(env_file.read_text(), "POSTGRES_PASSWORD=\n"))
 
+    def test_audit_key_is_private_persistent_unique_and_wired_to_server(self):
+        keys = []
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {}, clear=True):
+            for index in range(2):
+                env_file = Path(directory) / str(index)
+                result = subprocess.run(
+                    ["python3", str(ROOT / "scripts/docker/quickstart.py"),
+                     "--env-file", str(env_file), "--init-only"], capture_output=True)
+                self.assertEqual(result.returncode, 0)
+                self.assertEqual(result.stdout + result.stderr, b"")
+                original = env_file.read_bytes()
+                initialize(env_file)
+                self.assertTrue(hmac.compare_digest(original, env_file.read_bytes()))
+                self.assertEqual(env_file.stat().st_mode & 0o077, 0)
+                key = self.render(env_file)["honua"]["environment"]["AuditLog__ChainVerification__Key"]
+                self.assertTrue(len(base64.b64decode(key, validate=True)) >= 32)
+                keys.append(key)
+            self.assertFalse(hmac.compare_digest(*keys))
+
+    def test_existing_password_file_gains_audit_key_without_rotating_passwords(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {}, clear=True):
+            env_file = Path(directory) / ".env"
+            existing = "POSTGRES_PASSWORD=" + "a" * 64 + "\nMINIO_ROOT_PASSWORD=" + "b" * 64 + "\n"
+            env_file.write_text(existing)
+            initialize(env_file)
+            self.assertTrue(env_file.read_text().startswith(existing))
+            self.assertIn("AuditLog__ChainVerification__Key=", env_file.read_text())
+
+    def test_invalid_audit_keys_are_rejected_without_changing_saved_secrets(self):
+        for value in ("", "not-base64!", base64.b64encode(b"short").decode()):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {}, clear=True):
+                env_file = Path(directory) / ".env"
+                original = "AuditLog__ChainVerification__Key=" + value + "\n"
+                env_file.write_text(original)
+                with self.assertRaisesRegex(ValueError, "AuditLog__ChainVerification__Key"):
+                    initialize(env_file)
+                self.assertTrue(hmac.compare_digest(original, env_file.read_text()))
+
+    def test_supplied_audit_key_is_preserved_and_conflicts_are_rejected(self):
+        key = base64.b64encode(os.urandom(32)).decode()
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+                os.environ, {"AuditLog__ChainVerification__Key": key}, clear=True):
+            env_file = Path(directory) / ".env"
+            initialize(env_file)
+            self.assertIn("AuditLog__ChainVerification__Key=" + key, env_file.read_text())
+            original = env_file.read_bytes()
+            with patch.dict(os.environ, {"AuditLog__ChainVerification__Key": base64.b64encode(os.urandom(32)).decode()}):
+                with self.assertRaisesRegex(ValueError, "differs"):
+                    initialize(env_file)
+            self.assertTrue(hmac.compare_digest(original, env_file.read_bytes()))
+
+    def test_smoke_rejects_unhealthy_degraded_empty_and_missing_audit_checks(self):
+        source = (ROOT / "scripts/ci/smoke-quickstart-console.sh").read_text()
+        self.assertIn("assert_all_health_checks() {", source)
+        function = source.split("assert_all_health_checks() {", 1)[1].split("\n}\n", 1)[0]
+        healthy = {"status": "Healthy", "entries": {"audit-chain-integrity": {"status": "Healthy"}}}
+        reports = [healthy, {**healthy, "status": "Unhealthy"},
+                   {"status": "Healthy", "entries": {}},
+                   {"status": "Healthy", "entries": {"database": {"status": "Healthy"}}}]
+        for status in ("Unhealthy", "Degraded"):
+            reports.append({"status": "Healthy", "entries": {
+                "audit-chain-integrity": {"status": "Healthy"}, "database": {"status": status}}})
+        with tempfile.TemporaryDirectory() as directory:
+            report_file = Path(directory) / "health.json"
+            for index, report in enumerate(reports):
+                report_file.write_text(json.dumps(report))
+                result = subprocess.run(["bash", "-c",
+                    'set -euo pipefail; curl() { cat "$REPORT_FILE"; }; '
+                    'HONUA_HTTP_PORT=18080; ADMIN_PASSWORD=unused; '
+                    'assert_all_health_checks() {' + function + '\n}; assert_all_health_checks'],
+                    env={**os.environ, "REPORT_FILE": str(report_file)}, capture_output=True)
+                self.assertEqual(result.returncode == 0, index == 0, "Smoke must reject unhealthy or incomplete health")
+
     def render(self, env_file, **overrides):
         env = {key: value for key, value in os.environ.items()
                if key not in ("POSTGRES_PASSWORD", "MINIO_ROOT_PASSWORD", "HONUA_BIND_ADDRESS",
-                              "HONUA_CONSOLE_IMAGE", "HONUA_PUBLIC_BASE_URL",
+                              "HONUA_CONSOLE_IMAGE", "HONUA_PUBLIC_BASE_URL", "AuditLog__ChainVerification__Key",
                               "LayerPublishing__MaterializationTimeoutSeconds")}
         env.update(overrides)
         result = subprocess.run(

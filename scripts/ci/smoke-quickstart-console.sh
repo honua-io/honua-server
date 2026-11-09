@@ -5,15 +5,13 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="${ROOT_DIR}/docker-compose.yml"
 PROJECT_NAME="${HONUA_QUICKSTART_SMOKE_PROJECT:-honua-quickstart-console-smoke}"
 SMOKE_OVERRIDE_FILE=""
+SMOKE_ENV_FILE=""
 HONUA_HTTP_PORT="${HONUA_QUICKSTART_SMOKE_HTTP_PORT:-18080}"
 HONUA_GRPC_PORT="${HONUA_QUICKSTART_SMOKE_GRPC_PORT:-18081}"
 HONUA_CONSOLE_PORT="${HONUA_QUICKSTART_SMOKE_CONSOLE_PORT:-15174}"
 POSTGRES_PORT="${HONUA_QUICKSTART_SMOKE_POSTGRES_PORT:-15432}"
 REDIS_PORT="${HONUA_QUICKSTART_SMOKE_REDIS_PORT:-16379}"
 ADMIN_PASSWORD="${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
-# Disposable credentials for this isolated smoke project; never print them.
-export POSTGRES_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
-export MINIO_ROOT_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 
 compose() {
   local compose_files=(-f "${COMPOSE_FILE}")
@@ -30,7 +28,7 @@ compose() {
   HONUA_ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
   HONUA_DEV_GRANT_EDITION="${HONUA_DEV_GRANT_EDITION:-Enterprise}" \
   HONUA_ENABLE_OBSERVABILITY_TEST_SEED="${HONUA_ENABLE_OBSERVABILITY_TEST_SEED:-true}" \
-    docker compose --profile console "${compose_files[@]}" --project-directory "${ROOT_DIR}" "$@"
+    docker compose --env-file "${SMOKE_ENV_FILE}" --profile console "${compose_files[@]}" --project-directory "${ROOT_DIR}" "$@"
 }
 
 cleanup() {
@@ -42,6 +40,9 @@ cleanup() {
   compose_down
   if [[ -n "${SMOKE_OVERRIDE_FILE}" ]]; then
     rm -f "${SMOKE_OVERRIDE_FILE}" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${SMOKE_ENV_FILE}" ]]; then
+    rm -f "${SMOKE_ENV_FILE}" >/dev/null 2>&1 || true
   fi
   return "${status}"
 }
@@ -67,6 +68,15 @@ wait_for_url() {
 
   echo "${label}: timed out waiting for ${url}" >&2
   return 1
+}
+
+assert_all_health_checks() {
+  curl -fsS -H "X-API-Key: ${ADMIN_PASSWORD}" \
+    "http://127.0.0.1:${HONUA_HTTP_PORT}/monitoring/health/comprehensive" \
+    | jq -e '.status == "Healthy" and (.entries | type == "object")
+        and (.entries | has("audit-chain-integrity"))
+        and (.entries | all(.status == "Healthy"))' >/dev/null
+  echo "all registered health checks: Healthy"
 }
 
 assert_proposal_roundtrip() {
@@ -113,6 +123,8 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 2
 fi
 
+SMOKE_ENV_FILE="$(mktemp)"
+python3 "${ROOT_DIR}/scripts/docker/quickstart.py" --env-file "${SMOKE_ENV_FILE}" --init-only
 SMOKE_OVERRIDE_FILE="$(mktemp)"
 cat >"${SMOKE_OVERRIDE_FILE}" <<'YAML'
 services:
@@ -132,6 +144,7 @@ compose_down
 compose up -d --build postgres redis honua console
 
 wait_for_url "http://127.0.0.1:${HONUA_HTTP_PORT}/healthz/ready" "honua ready" 90
+assert_all_health_checks
 assert_proposal_roundtrip
 wait_for_url "http://127.0.0.1:${HONUA_CONSOLE_PORT}/version.json" "console version" 60
 wait_for_url "http://127.0.0.1:${HONUA_CONSOLE_PORT}/operate" "console operate" 60
