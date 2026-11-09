@@ -322,7 +322,6 @@ internal static class WmtsRequestHandlers
             }
 
             OgcClassicLog.WmtsRequested(logger, serviceId, "GetCapabilities");
-            var coordinateTransformService = context.RequestServices.GetService<ICoordinateTransformService>();
             var capabilitiesFeatureReader = context.RequestServices.GetService<IFeatureReader>();
             var tileMatrixSetRegistry = context.RequestServices.GetService<ITileMatrixSetRegistry>();
             // Capabilities only advertises resources that (a) carry geometry and (b) the caller
@@ -338,7 +337,6 @@ internal static class WmtsRequestHandlers
                 snapshot.Graph,
                 sections,
                 wmtsMaxZoom,
-                coordinateTransformService,
                 capabilitiesFeatureReader,
                 tileMatrixSetRegistry,
                 logger,
@@ -1248,7 +1246,6 @@ internal static class WmtsRequestHandlers
         MetadataV2Graph graph,
         WmtsCapabilitiesSections sections,
         int wmtsMaxZoom,
-        ICoordinateTransformService? coordinateTransformService,
         IFeatureReader? featureReader,
         ITileMatrixSetRegistry? tileMatrixSetRegistry,
         ILogger logger,
