@@ -308,10 +308,10 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
             serviceUri.Should().Be($"honua://published-services/{service}");
             var publishedServiceId = result.GetProperty("serviceId").GetString();
             publishedServiceId.Should().Be(service);
-            var publicLayerId = result.GetProperty("layerId").GetString();
-            publicLayerId.Should().NotBeNullOrWhiteSpace();
+            var serviceLayerIndex = result.GetProperty("serviceLayerIndex").GetString();
+            serviceLayerIndex.Should().NotBeNullOrWhiteSpace();
 
-            using var query = await client.GetAsync($"/rest/services/{publishedServiceId}/FeatureServer/{publicLayerId}" +
+            using var query = await client.GetAsync($"/rest/services/{publishedServiceId}/FeatureServer/{serviceLayerIndex}" +
                 "/query?f=json&where=1%3D1&outFields=*&returnGeometry=true&resultRecordCount=10");
             var queryBody = await query.Content.ReadAsStringAsync();
             query.EnsureSuccessStatusCode();
