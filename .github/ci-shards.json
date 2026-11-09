@@ -3974,7 +3974,7 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "A capacity-exhausted 22.1-minute run requires a 32-minute test cap at 70% utilization; reserve ten additional minutes for job overhead. See docs/internal/ci/shard-timeout-budgets.md for qualification.",
+      "_comment": "A run capacity-exhausted at 22.1 minutes sets a provisional 32-minute floor at 70% utilization; reserve ten additional minutes for job overhead. See docs/internal/ci/shard-timeout-budgets.md for qualification.",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Capabilities.",
       "paths": [
         "src/Honua.Core/Features/Authorization/",
