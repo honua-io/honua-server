@@ -200,21 +200,8 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
 
         foreach (var layerId in layerIdList)
         {
-            tags.Add($"layer:{layerId}");
-
-            responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerLayerPattern(layerId));
-            responsePatterns.Add(ResponseCacheUtilities.BuildODataLayerPattern(layerId));
-            var ogcCollectionIds = await ResolveLayerCollectionIdsAsync(layerId, cancellationToken).ConfigureAwait(false);
-            foreach (var ogcCollectionId in ogcCollectionIds)
-            {
-                tags.Add($"collection:{ogcCollectionId.Trim().ToLowerInvariant()}");
-                responsePatterns.Add(ResponseCacheUtilities.BuildOgcCollectionPattern(ogcCollectionId));
-            }
-
-            if (!string.IsNullOrWhiteSpace(normalizedServiceId))
-            {
-                responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerLayerPattern(normalizedServiceId, layerId));
-            }
+            await InvalidateStorageLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+            await InvalidateLayerAsync(normalizedServiceId, layerId, cancellationToken).ConfigureAwait(false);
         }
 
         if (string.IsNullOrWhiteSpace(normalizedServiceId) && layerIdList.Length == 0)
