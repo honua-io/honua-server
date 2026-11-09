@@ -13,7 +13,8 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
-public sealed class PostgresProposalPersistenceTests : IAsyncLifetime
+[Operation(Operations.ApprovalManagement)]
+public sealed partial class PostgresProposalPersistenceTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureWebHost(builder =>
     {
