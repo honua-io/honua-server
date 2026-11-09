@@ -37,6 +37,8 @@ public sealed class FolderProtocolEndpointTests(WebAppFixture fixture) : IClassF
 
     [IntegrationTheory]
     [MemberData(nameof(Endpoints))]
+    [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{folderName}/{serviceId}/MapServer/WMS")]
     [Endpoint("GET /rest/services/{folderName}/{serviceId}/MapServer/WMTS")]
