@@ -9,8 +9,7 @@ const distance = 25.5;
 const srid = 3857;
 const maxBytes = 512 * 1024;
 
-function payload(result, isError = false) {
-  if ((result.isError ?? false) !== isError) throw new Error('unexpected-tool-status');
+function payload(result) {
   const structured = result.structuredContent;
   const text = (result.content ?? []).filter(block => block.type === 'text').flatMap(block => {
     try { return [JSON.parse(block.text)]; } catch { return []; }
@@ -19,8 +18,16 @@ function payload(result, isError = false) {
   return structured;
 }
 
-async function call(client, name, args, isError = false) {
-  return payload(await client.callTool({ name, arguments: args }, undefined, { timeout: 5_000 }), isError);
+async function call(client, name, args) {
+  const result = await client.callTool({ name, arguments: args }, undefined, { timeout: 5_000 });
+  if ((result.isError ?? false) !== false) throw new Error('unexpected-tool-status');
+  return payload(result);
+}
+
+async function deniedResults(client, jobId) {
+  const result = await client.callTool({ name: 'honua_get_job_results', arguments: { jobId } }, undefined, { timeout: 5_000 });
+  if (result.isError !== true) throw new Error('unexpected-tool-status');
+  return payload(result);
 }
 
 async function listJobs(client) {
@@ -120,8 +127,8 @@ export async function jobResultsJourney({ baseUrl, apiKey, otherApiKey, missingJ
     if (!artifact.artifactId || artifact.kind !== 'FeatureLayer' || artifact.contentType !== 'application/geo+json') throw new Error('invalid-buffer-artifact');
     const geometry = verifyGeometry(await artifactBytes(artifact, owner, apiKey, jobId));
     if ((await listJobs(other.client)).some(job => job.jobId === jobId)) throw new Error('cross-user-job-listed');
-    const denied = await call(other.client, 'honua_get_job_results', { jobId }, true);
-    const missing = await call(other.client, 'honua_get_job_results', { jobId: missingJobId }, true);
+    const denied = await deniedResults(other.client, jobId);
+    const missing = await deniedResults(other.client, missingJobId);
     if (denied.code !== 'not_found' || missing.code !== denied.code) throw new Error('cross-user-nondisclosure-failed');
     return { schema: 'honua.mcp-job-tools-journey/v1', ...owner.metadata,
       adapterSha256: createHash('sha256').update(await readFile(new URL(import.meta.url))).digest('hex'),

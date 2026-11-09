@@ -16,9 +16,37 @@ function bufferFeature(mode) {
     geometry: { type: 'Polygon', coordinates: [geometry] } };
 }
 
+function toolResult({ mode, params, foreign, state }) {
+  const { name, arguments: args } = params;
+  let payload;
+  let isError = false;
+  if (name === 'honua_execute_plan') payload = { jobId: 'job-1', status: mode === 'submission-completed' ? 'Succeeded' : 'Queued' };
+  else if (name === 'honua_list_jobs') {
+    const jobs = foreign ? mode === 'foreign-list-leak' ? [{ jobId: 'job-1', status: 'Succeeded' }] : []
+      : [{ jobId: 'job-1', status: mode === 'failed' ? 'Failed' : ++state.polls === 1 ? 'Running' : 'Succeeded' }];
+    payload = { jobs, jobCount: jobs.length };
+  } else if (foreign || args.jobId === 'missing-job-control') {
+    isError = mode !== 'foreign-read-leak';
+    payload = isError ? { code: mode === 'foreign-forbidden' && foreign ? 'permission_denied' : 'not_found', status: 'error' }
+      : { jobId: 'job-1', status: 'Completed', artifacts: [] };
+  } else {
+    const uri = mode.startsWith('download') ? '/api/geoprocessing/jobs/job-1/artifacts/0/content'
+      : mode === 'external-artifact' ? 'https://external.invalid/content'
+      : `data:application/geo+json;base64,${Buffer.from(JSON.stringify(bufferFeature(mode))).toString('base64')}`;
+    payload = { jobId: mode === 'wrong-job' ? 'job-2' : 'job-1', resultPackageId: 'package-1', status: mode === 'incomplete-result' ? 'Executing' : 'Completed',
+      artifacts: [{ artifactId: 'artifact-1', kind: 'FeatureLayer', label: 'outputFeatureLayer', contentType: 'application/geo+json', uri }],
+      totalArtifactCount: 1, artifactsTruncated: mode === 'truncated-result', errors: [] };
+  }
+  const result = { isError, structuredContent: payload, content: [{ type: 'text', text: 'Human-readable summary.' },
+    { type: 'text', text: JSON.stringify(mode === 'contradictory-text' && name === 'honua_get_job_results' && !foreign ? { ...payload, jobId: 'wrong' } : payload) }] };
+  if (mode === 'missing-text') result.content = [];
+  if (mode === 'missing-structured') delete result.structuredContent;
+  return result;
+}
+
 async function run(mode = 'positive') {
   const calls = [];
-  let polls = 0;
+  const state = { polls: 0 };
   const server = createServer(async (request, response) => {
     if (request.method === 'GET' && request.url === '/api/geoprocessing/jobs/job-1/artifacts/0/content') {
       if (mode === 'download-redirect') { response.writeHead(302, { Location: 'https://external.invalid' }).end(); return; }
@@ -44,30 +72,7 @@ async function run(mode = 'positive') {
         name, inputSchema: { type: 'object', properties: name === 'honua_get_job_results' ? { jobId: { type: 'string' } } : {} },
       })), ...(mode === 'cursor-loop' ? { nextCursor: 'repeat' } : {}) };
     } else if (body.method === 'tools/call') {
-      const { name, arguments: args } = body.params;
-      let payload;
-      let isError = false;
-      if (name === 'honua_execute_plan') payload = { jobId: 'job-1', status: mode === 'submission-completed' ? 'Succeeded' : 'Queued' };
-      else if (name === 'honua_list_jobs') {
-        const jobs = foreign ? mode === 'foreign-list-leak' ? [{ jobId: 'job-1', status: 'Succeeded' }] : []
-          : [{ jobId: 'job-1', status: mode === 'failed' ? 'Failed' : ++polls === 1 ? 'Running' : 'Succeeded' }];
-        payload = { jobs, jobCount: jobs.length };
-      } else if (foreign || args.jobId === 'missing-job-control') {
-        isError = mode !== 'foreign-read-leak';
-        payload = isError ? { code: mode === 'foreign-forbidden' && foreign ? 'permission_denied' : 'not_found', status: 'error' }
-          : { jobId: 'job-1', status: 'Completed', artifacts: [] };
-      } else {
-        const uri = mode.startsWith('download') ? '/api/geoprocessing/jobs/job-1/artifacts/0/content'
-          : mode === 'external-artifact' ? 'https://external.invalid/content'
-          : `data:application/geo+json;base64,${Buffer.from(JSON.stringify(bufferFeature(mode))).toString('base64')}`;
-        payload = { jobId: mode === 'wrong-job' ? 'job-2' : 'job-1', resultPackageId: 'package-1', status: mode === 'incomplete-result' ? 'Executing' : 'Completed',
-          artifacts: [{ artifactId: 'artifact-1', kind: 'FeatureLayer', label: 'outputFeatureLayer', contentType: 'application/geo+json', uri }],
-          totalArtifactCount: 1, artifactsTruncated: mode === 'truncated-result', errors: [] };
-      }
-      result = { isError, structuredContent: payload, content: [{ type: 'text', text: 'Human-readable summary.' },
-        { type: 'text', text: JSON.stringify(mode === 'contradictory-text' && name === 'honua_get_job_results' && !foreign ? { ...payload, jobId: 'wrong' } : payload) }] };
-      if (mode === 'missing-text') result.content = [];
-      if (mode === 'missing-structured') delete result.structuredContent;
+      result = toolResult({ mode, params: body.params, foreign, state });
     } else {
       response.writeHead(400).end(); return;
     }

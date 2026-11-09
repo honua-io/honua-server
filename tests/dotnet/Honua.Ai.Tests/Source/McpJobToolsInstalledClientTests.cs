@@ -48,6 +48,23 @@ public sealed class McpJobToolsInstalledClientTests
         using var keyBody = JsonDocument.Parse(await keyResponse.Content.ReadAsStringAsync());
         var readerKey = keyBody.RootElement.GetProperty("data").GetProperty("key").GetString()!;
 
+        using var receipt = await RunInstalledClientAsync(admin.BaseAddress!, readerKey);
+        var result = receipt.RootElement;
+        result.GetProperty("schema").GetString().Should().Be("honua.mcp-job-tools-journey/v1");
+        result.GetProperty("sdkVersion").GetString().Should().Be("1.32.1");
+        result.GetProperty("status").GetString().Should().Be("Succeeded");
+        result.GetProperty("resultStatus").GetString().Should().Be("Completed");
+        result.GetProperty("crossUserRead").GetString().Should().Be("not_found");
+        result.GetProperty("crossUserListed").GetBoolean().Should().BeFalse();
+        result.GetProperty("geometry").GetProperty("area").GetDouble().Should().BeInRange(
+            Math.PI * 25.5 * 25.5 * 0.9, Math.PI * 25.5 * 25.5 * 1.01);
+        var receipts = RepositoryPaths.Resolve("artifacts", "mcp-job-tools");
+        Directory.CreateDirectory(receipts);
+        await File.WriteAllTextAsync(Path.Join(receipts, "installed-client.json"), result.GetRawText());
+    }
+
+    private static async Task<JsonDocument> RunInstalledClientAsync(Uri baseAddress, string readerKey)
+    {
         var start = new ProcessStartInfo("node")
         {
             RedirectStandardOutput = true,
@@ -56,7 +73,7 @@ public sealed class McpJobToolsInstalledClientTests
             WorkingDirectory = RepositoryPaths.Resolve()
         };
         start.ArgumentList.Add(RepositoryPaths.Resolve("scripts", "qualification", "mcp", "job-results-journey.mjs"));
-        start.ArgumentList.Add(admin.BaseAddress!.ToString());
+        start.ArgumentList.Add(baseAddress.ToString());
         start.Environment["HONUA_MCP_JOB_OWNER_KEY"] = WebAppFixture.SharedAdminPassword;
         start.Environment["HONUA_MCP_JOB_OTHER_KEY"] = readerKey;
         using var process = Process.Start(start)!;
@@ -66,19 +83,7 @@ public sealed class McpJobToolsInstalledClientTests
         {
             await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(75));
             process.ExitCode.Should().Be(0, await stderr);
-            using var receipt = JsonDocument.Parse(await stdout);
-            var result = receipt.RootElement;
-            result.GetProperty("schema").GetString().Should().Be("honua.mcp-job-tools-journey/v1");
-            result.GetProperty("sdkVersion").GetString().Should().Be("1.32.1");
-            result.GetProperty("status").GetString().Should().Be("Succeeded");
-            result.GetProperty("resultStatus").GetString().Should().Be("Completed");
-            result.GetProperty("crossUserRead").GetString().Should().Be("not_found");
-            result.GetProperty("crossUserListed").GetBoolean().Should().BeFalse();
-            result.GetProperty("geometry").GetProperty("area").GetDouble().Should().BeInRange(
-                Math.PI * 25.5 * 25.5 * 0.9, Math.PI * 25.5 * 25.5 * 1.01);
-            var receipts = RepositoryPaths.Resolve("artifacts", "mcp-job-tools");
-            Directory.CreateDirectory(receipts);
-            await File.WriteAllTextAsync(Path.Join(receipts, "installed-client.json"), result.GetRawText());
+            return JsonDocument.Parse(await stdout);
         }
         finally
         {
