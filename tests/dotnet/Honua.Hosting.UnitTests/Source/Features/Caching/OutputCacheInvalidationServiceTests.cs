@@ -334,6 +334,7 @@ public sealed partial class OutputCacheInvalidationServiceTests
                 "res-parcels",
                 "Named Parcels",
                 MetadataV2ResourceType.FeatureDataset,
+                fields: [new() { Name = "shape", Type = MetadataV2FieldType.Geometry }],
                 spatial: new MetadataV2ResourceSpatial
                 {
                     SpatialReference = MetadataV2SpatialReference.Wgs84,
@@ -413,6 +414,7 @@ public sealed partial class OutputCacheInvalidationServiceTests
                     resourceId,
                     layerId == 42 ? "Named Layer" : $"Layer {layerId}",
                     MetadataV2ResourceType.FeatureDataset,
+                    fields: [new() { Name = "shape", Type = MetadataV2FieldType.Geometry }],
                     spatial: new MetadataV2ResourceSpatial
                     {
                         SpatialReference = MetadataV2SpatialReference.Wgs84,
