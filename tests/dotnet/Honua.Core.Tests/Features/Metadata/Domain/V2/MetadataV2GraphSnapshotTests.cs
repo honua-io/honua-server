@@ -327,16 +327,18 @@ public sealed class MetadataV2GraphSnapshotTests
         var binding = new MetadataV2StorageBinding { Status = active };
         var resource = new MetadataV2Resource { Status = active };
 
-        binding.IsRoutable(resource).Should().BeTrue();
-        (binding with { Status = deprecated }).IsRoutable(resource).Should().BeTrue();
-        binding.IsRoutable(resource with { Status = deprecated }).Should().BeTrue();
-        (binding with { Status = draft }).IsRoutable(resource).Should().BeFalse();
-        binding.IsRoutable(resource with { Status = draft }).Should().BeFalse();
-        (binding with { Status = retired }).IsRoutable(resource).Should().BeFalse();
-        binding.IsRoutable(resource with { Status = retired }).Should().BeFalse();
-        (binding with { Status = archived }).IsRoutable(resource).Should().BeFalse();
-        binding.IsRoutable(resource with { Status = archived }).Should().BeFalse();
-        binding.IsRoutable(resource: null).Should().BeFalse();
+        var snapshot = new MetadataV2GraphSnapshot(new MetadataV2Graph(), "test", DateTimeOffset.UnixEpoch);
+
+        snapshot.IsRoutable(binding, resource).Should().BeTrue();
+        snapshot.IsRoutable(binding with { Status = deprecated }, resource).Should().BeTrue();
+        snapshot.IsRoutable(binding, resource with { Status = deprecated }).Should().BeTrue();
+        snapshot.IsRoutable(binding with { Status = draft }, resource).Should().BeFalse();
+        snapshot.IsRoutable(binding, resource with { Status = draft }).Should().BeFalse();
+        snapshot.IsRoutable(binding with { Status = retired }, resource).Should().BeFalse();
+        snapshot.IsRoutable(binding, resource with { Status = retired }).Should().BeFalse();
+        snapshot.IsRoutable(binding with { Status = archived }, resource).Should().BeFalse();
+        snapshot.IsRoutable(binding, resource with { Status = archived }).Should().BeFalse();
+        snapshot.IsRoutable(binding, resource: null).Should().BeFalse();
     }
 
     [UnitTest]

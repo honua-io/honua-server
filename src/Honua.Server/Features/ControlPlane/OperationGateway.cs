@@ -329,9 +329,12 @@ internal sealed partial class OperationGateway : IOperationGateway
         string? executionOperationId = null;
         var status = OperationProposalStatus.Failed;
         string? failureMessage = null;
+        var approvalAuditRecorded = false;
 
         try
         {
+            await RecordApprovalAsync(proposal, approvedBy, cancellationToken).ConfigureAwait(false);
+            approvalAuditRecorded = true;
             await using var scope = _scopeFactory.CreateAsyncScope();
             var invoker = scope.ServiceProvider.GetRequiredService<ICanonicalOperationInvoker>();
             var operationId = proposal.OperationId ?? LegacyOperationIds.For(proposal.Kind);
@@ -420,6 +423,11 @@ internal sealed partial class OperationGateway : IOperationGateway
                 .ConfigureAwait(false);
             throw;
         }
+        catch (Exception ex) when (!approvalAuditRecorded && ex is not OutOfMemoryException)
+        {
+            Log.ProposalApprovalAuditFailed(_logger, proposalId, ex);
+            failureMessage = "The approval could not be durably audited; actuation did not begin.";
+        }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: this is the operation-proposal execution boundary.
@@ -445,20 +453,33 @@ internal sealed partial class OperationGateway : IOperationGateway
 
         using var completionTimeout = new CancellationTokenSource(CompletionPersistenceTimeout);
         await PersistResolutionAsync(resolved, OperationProposalStatus.Executing, completionTimeout.Token).ConfigureAwait(false);
+        if (!approvalAuditRecorded)
+        {
+            await PersistCanonicalResolutionAsync(resolved, OperationHandleStatus.Failed, completionTimeout.Token)
+                .ConfigureAwait(false);
+        }
+        await PublishApprovedResolutionAsync(resolved, approvedBy, completionTimeout.Token).ConfigureAwait(false);
+        return resolved;
+    }
+
+    private async Task PublishApprovedResolutionAsync(
+        OperationProposal resolved,
+        string approvedBy,
+        CancellationToken cancellationToken)
+    {
         await RecordAutonomyProposalResolutionAsync(
                 resolved,
                 OpsAutonomyProposalResolution.Approved,
-                completionTimeout.Token)
+                cancellationToken)
             .ConfigureAwait(false);
         await WriteAuditAsync(
                 resolved,
-                status == OperationProposalStatus.Failed ? "operation.apply_failed" : "operation.applied",
+                resolved.Status == OperationProposalStatus.Failed ? "operation.apply_failed" : "operation.applied",
                 approvedBy,
-                status == OperationProposalStatus.Failed ? AuditOutcome.Failure : AuditOutcome.Success,
-                completionTimeout.Token)
+                resolved.Status == OperationProposalStatus.Failed ? AuditOutcome.Failure : AuditOutcome.Success,
+                cancellationToken)
             .ConfigureAwait(false);
-        await _notifier.NotifyResolvedAsync(resolved, completionTimeout.Token).ConfigureAwait(false);
-        return resolved;
+        await _notifier.NotifyResolvedAsync(resolved, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task ValidateCurrentProposerAsync(string? actor, CancellationToken cancellationToken)
@@ -504,7 +525,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         };
 
         await PersistResolutionAsync(resolved, OperationProposalStatus.AwaitingApproval, cancellationToken).ConfigureAwait(false);
-        await PersistCanonicalRejectionAsync(resolved, cancellationToken).ConfigureAwait(false);
+        await PersistCanonicalResolutionAsync(resolved, OperationHandleStatus.Rejected, cancellationToken).ConfigureAwait(false);
         await RecordAutonomyProposalResolutionAsync(
                 resolved,
                 OpsAutonomyProposalResolution.Rejected,
@@ -516,8 +537,22 @@ internal sealed partial class OperationGateway : IOperationGateway
         return resolved;
     }
 
-    private async Task PersistCanonicalRejectionAsync(
+    private async Task RecordApprovalAsync(
         OperationProposal proposal,
+        string approvedBy,
+        CancellationToken cancellationToken)
+    {
+        var auditId = await WriteAuditAsync(
+            proposal, "operation.approved", approvedBy, AuditOutcome.Success, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(auditId))
+        {
+            throw new InvalidOperationException("Approval audit persistence did not return an identity.");
+        }
+    }
+
+    private async Task PersistCanonicalResolutionAsync(
+        OperationProposal proposal,
+        OperationHandleStatus status,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(proposal.Audit.OperationInstanceId))
@@ -536,7 +571,7 @@ internal sealed partial class OperationGateway : IOperationGateway
 
         await instanceStore.SetAsync(current with
         {
-            Status = OperationHandleStatus.Rejected,
+            Status = status,
             ProposalId = proposal.ProposalId,
             UpdatedAt = DateTimeOffset.UtcNow,
             Reason = proposal.ResolutionReason,
@@ -1747,6 +1782,9 @@ internal sealed partial class OperationGateway : IOperationGateway
 
         [LoggerMessage(9201, LogLevel.Error, "Execution of approved proposal {ProposalId} failed")]
         public static partial void ProposalExecutionFailed(ILogger logger, string proposalId, Exception exception);
+
+        [LoggerMessage(9206, LogLevel.Error, "Approval audit for proposal {ProposalId} failed before actuation")]
+        public static partial void ProposalApprovalAuditFailed(ILogger logger, string proposalId, Exception exception);
 
         [LoggerMessage(9202, LogLevel.Warning, "No executor registered for direct-execute of operation kind {Kind}; returning NotSupported")]
         public static partial void NoExecutorRegisteredForDirect(ILogger logger, string kind);

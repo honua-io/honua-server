@@ -4,9 +4,11 @@
 using System.Globalization;
 using System.Text.Json.Serialization;
 
+using Honua.Core.Serialization;
+
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-public sealed record MetadataV2SpatialReference
+public sealed record MetadataV2SpatialReference : ExtensibleJsonRecord
 {
     [JsonPropertyName("srid")]
     public int? Srid { get; init; }
@@ -72,7 +74,7 @@ public sealed record MetadataV2SpatialReference
     };
 }
 
-public sealed record MetadataV2Bbox
+public sealed record MetadataV2Bbox : ExtensibleJsonRecord
 {
     [JsonPropertyName("west")]
     public double West { get; init; }
@@ -87,15 +89,23 @@ public sealed record MetadataV2Bbox
     public double North { get; init; }
 }
 
-public sealed record MetadataV2ResourceSpatial
+public sealed record MetadataV2ResourceSpatial : ExtensibleJsonRecord
 {
     private IReadOnlyList<MetadataV2SpatialReference> _supportedCrs = Array.Empty<MetadataV2SpatialReference>();
 
     [JsonPropertyName("spatialReference")]
     public MetadataV2SpatialReference? SpatialReference { get; init; }
 
+    [JsonIgnore]
+    public MetadataV2GeometryType GeometryType
+    {
+        get => GeometryTypeValue.Value;
+        init => GeometryTypeValue = value;
+    }
+
     [JsonPropertyName("geometryType")]
-    public MetadataV2GeometryType GeometryType { get; init; } = MetadataV2GeometryType.None;
+    [JsonConverter(typeof(PreservedEnumJsonConverter<MetadataV2GeometryType>))]
+    public PreservedEnumValue<MetadataV2GeometryType> GeometryTypeValue { get; init; } = MetadataV2GeometryType.None;
 
     [JsonPropertyName("bbox")]
     public MetadataV2Bbox? Bbox { get; init; }

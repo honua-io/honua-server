@@ -3,9 +3,11 @@
 
 using System.Text.Json.Serialization;
 
+using Honua.Core.Serialization;
+
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-public sealed record MetadataV2PermanentFilter
+public sealed record MetadataV2PermanentFilter : ExtensibleJsonRecord
 {
     [JsonPropertyName("expression")]
     public string Expression { get; init; } = string.Empty;

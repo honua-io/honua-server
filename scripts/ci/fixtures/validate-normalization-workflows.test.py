@@ -42,6 +42,73 @@ class NormalizationContractTests(unittest.TestCase):
     def test_current_tree_passes(self) -> None:
         self.assertIn(run(), {"observe", "enforce"})
 
+    def test_generator_in_packaging_is_rejected(self) -> None:
+        marker = "      - name: Download bounded projection data\n"
+        producer = SOURCES["producer"].replace(
+            marker,
+            "      - run: bash scripts/ci/generate-feature-catalog.sh\n\n" + marker,
+            1,
+        )
+        self.assertNotEqual(producer, SOURCES["producer"])
+        with self.assertRaisesRegex(AssertionError, "isolated packaging must not execute setup or generators"):
+            run(producer=producer)
+
+    def test_permissions_are_read_only_at_every_scope(self) -> None:
+        for workflow in ("producer", "consumer"):
+            for permission in ("checks", "packages", "id-token", "attestations", "deployments", "issues"):
+                with self.subTest(workflow=workflow, permission=permission):
+                    source = SOURCES[workflow].replace("permissions:\n", f"permissions:\n  {permission}: write\n", 1)
+                    with self.assertRaisesRegex(AssertionError, "permission"):
+                        run(**{workflow: source})
+            with self.subTest(workflow=workflow, scope="scalar"):
+                source = SOURCES[workflow].replace("permissions:\n", "permissions: write-all\n", 1)
+                with self.assertRaisesRegex(AssertionError, "permission"):
+                    run(**{workflow: source})
+        producer = SOURCES["producer"].replace("  generate:\n", "  generate:\n    permissions:\n      checks: write\n", 1)
+        with self.assertRaisesRegex(AssertionError, "permission"):
+            run(producer=producer)
+
+    def test_quoted_and_inline_permission_overrides_are_rejected(self) -> None:
+        for permissions in ('    "permissions": { checks: write }', '    permissions: write-all'):
+            producer = SOURCES["producer"].replace("  generate:\n", "  generate:\n" + permissions + "\n", 1)
+            with self.assertRaisesRegex(AssertionError, "permission"):
+                run(producer=producer)
+
+    def test_target_inspection_is_required_before_minting_and_mutating(self) -> None:
+        consumer = SOURCES["consumer"].replace("await inspectNormalizationTarget({", "await uncheckedTarget({", 1)
+        with self.assertRaisesRegex(AssertionError, "target inspection"):
+            run(consumer=consumer)
+
+    def test_every_producer_checkout_disables_persisted_credentials(self) -> None:
+        producer = SOURCES["producer"].replace("persist-credentials: false", "persist-credentials: true", 1)
+        with self.assertRaisesRegex(AssertionError, "credentials"):
+            run(producer=producer)
+
+    def test_app_token_has_exact_repository_and_permission_scope(self) -> None:
+        token_step = next(step for step in MODULE.yaml.safe_load(SOURCES["consumer"])["jobs"]["validate"]["steps"]
+                          if step.get("name") == "Mint scoped normalization credential")
+        self.assertEqual(token_step["with"], {
+            "app-id": "${{ secrets.HONUA_RELEASE_APP_ID }}",
+            "private-key": "${{ secrets.HONUA_RELEASE_APP_PRIVATE_KEY }}",
+            "owner": "honua-io",
+            "repositories": "honua-server",
+            "permission-contents": "write",
+            "permission-pull-requests": "write",
+        })
+
+    def test_app_token_scope_widening_is_rejected(self) -> None:
+        for original, replacement in (
+            ("owner: honua-io", "owner: another-owner"),
+            ("repositories: honua-server", "repositories: another-repository"),
+            ("          repositories: honua-server\n", ""),
+            ("permission-contents: write", "permission-actions: write\n          permission-contents: write"),
+        ):
+            with self.subTest(replacement=replacement):
+                self.assertEqual(SOURCES["consumer"].count(original), 1)
+                consumer = SOURCES["consumer"].replace(original, replacement, 1)
+                with self.assertRaisesRegex(AssertionError, "App token scope"):
+                    run(consumer=consumer)
+
     def test_declared_enforce_mode_passes(self) -> None:
         consumer = SOURCES["consumer"].replace(
             "  NORMALIZATION_MODE: observe", "  NORMALIZATION_MODE: enforce")
@@ -75,7 +142,7 @@ class NormalizationContractTests(unittest.TestCase):
 
     def test_index_form_secret_is_rejected(self) -> None:
         consumer = SOURCES["consumer"].replace(
-            "          app-id: ${{ secrets.NORMALIZATION_APP_ID }}",
+            "          app-id: ${{ secrets.HONUA_RELEASE_APP_ID }}",
             "          app-id: ${{ secrets['MERGE_TRAIN_TOKEN'] }}",
         )
         with self.assertRaisesRegex(AssertionError, "unexpected secret expression"):
@@ -83,7 +150,7 @@ class NormalizationContractTests(unittest.TestCase):
 
     def test_tojson_secrets_is_rejected(self) -> None:
         consumer = SOURCES["consumer"].replace(
-            "          app-id: ${{ secrets.NORMALIZATION_APP_ID }}",
+            "          app-id: ${{ secrets.HONUA_RELEASE_APP_ID }}",
             "          app-id: ${{ toJSON(secrets) }}",
         )
         with self.assertRaisesRegex(AssertionError, "unexpected secret expression"):
@@ -91,7 +158,7 @@ class NormalizationContractTests(unittest.TestCase):
 
     def test_lowercase_secret_name_is_rejected(self) -> None:
         consumer = SOURCES["consumer"].replace(
-            "          app-id: ${{ secrets.NORMALIZATION_APP_ID }}",
+            "          app-id: ${{ secrets.HONUA_RELEASE_APP_ID }}",
             "          app-id: ${{ secrets.merge_train_token }}",
         )
         with self.assertRaisesRegex(AssertionError, "unexpected secret expression"):
@@ -116,6 +183,7 @@ class NormalizationContractTests(unittest.TestCase):
         consumer, substitutions = re.subn(
             r"          env\.NORMALIZATION_CREDENTIAL_PRESENT == 'true' &&\n"
             r"(          steps\.artifact\.outputs\.same_repository == 'true' &&\n"
+            r"          steps\.artifact\.outputs\.branch_writable == 'true' &&\n"
             r"          steps\.compare\.outputs\.change_count != '0'\n"
             r"        uses: actions/github-script@)",
             r"\1",

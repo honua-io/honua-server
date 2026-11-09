@@ -337,7 +337,7 @@ public sealed class MetadataV2ModelTests
 
         storageNames.Should().Contain(nameof(MetadataV2StorageType.GeoParquet));
         storageNames.Should().Contain(nameof(MetadataV2StorageType.CloudOptimizedGeoTiff));
-        publicationNames.Intersect(storageNames).Should().BeEmpty();
+        publicationNames.Intersect(storageNames).Should().Equal("Unknown");
     }
 
     [UnitTest]
@@ -345,6 +345,7 @@ public sealed class MetadataV2ModelTests
     public void ResourceAndPublicationTypes_MatchCanonicalBacklogVocabulary()
     {
         Enum.GetNames<MetadataV2ResourceType>().Should().BeEquivalentTo(
+            nameof(MetadataV2ResourceType.Unknown),
             nameof(MetadataV2ResourceType.FeatureDataset),
             nameof(MetadataV2ResourceType.Table),
             nameof(MetadataV2ResourceType.RasterDataset),

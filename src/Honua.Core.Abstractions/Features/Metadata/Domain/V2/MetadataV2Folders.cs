@@ -3,9 +3,11 @@
 
 using System.Text.Json.Serialization;
 
+using Honua.Core.Serialization;
+
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-public sealed record MetadataV2Folder
+public sealed record MetadataV2Folder : ExtensibleJsonRecord
 {
     private IReadOnlyList<string>? _previousNames;
 
@@ -23,7 +25,7 @@ public sealed record MetadataV2Folder
     public bool Deleted { get; init; }
 }
 
-public sealed record MetadataV2ServicePathAlias
+public sealed record MetadataV2ServicePathAlias : ExtensibleJsonRecord
 {
     private IReadOnlyList<string>? _targetFacetIds;
 

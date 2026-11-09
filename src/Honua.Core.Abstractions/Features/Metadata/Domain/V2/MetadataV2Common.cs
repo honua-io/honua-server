@@ -4,6 +4,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
+using Honua.Core.Serialization;
+
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
 public static class MetadataV2Constants
@@ -13,7 +15,7 @@ public static class MetadataV2Constants
     public const string ApiVersion = "metadata.honua.io/v2alpha1";
 }
 
-public sealed record MetadataV2ObjectMetadata
+public sealed record MetadataV2ObjectMetadata : ExtensibleJsonRecord
 {
     public const int MaxAttributionLength = 512;
 
@@ -116,13 +118,27 @@ public sealed record MetadataV2ObjectMetadata
 }
 
 [JsonConverter(typeof(MetadataV2StatusJsonConverter))]
-public sealed record MetadataV2Status
+public sealed record MetadataV2Status : ExtensibleJsonRecord
 {
+    [JsonIgnore]
+    public MetadataV2LifecycleStatus Lifecycle
+    {
+        get => LifecycleValue.Value;
+        init => LifecycleValue = value;
+    }
+
     [JsonPropertyName("lifecycle")]
-    public MetadataV2LifecycleStatus Lifecycle { get; init; } = MetadataV2LifecycleStatus.Active;
+    public PreservedEnumValue<MetadataV2LifecycleStatus> LifecycleValue { get; init; } = MetadataV2LifecycleStatus.Active;
+
+    [JsonIgnore]
+    public MetadataV2OperationalState State
+    {
+        get => StateValue.Value;
+        init => StateValue = value;
+    }
 
     [JsonPropertyName("state")]
-    public MetadataV2OperationalState State { get; init; } = MetadataV2OperationalState.Unknown;
+    public PreservedEnumValue<MetadataV2OperationalState> StateValue { get; init; } = MetadataV2OperationalState.Unknown;
 
     [JsonPropertyName("conditions")]
     public IReadOnlyList<MetadataV2Condition> Conditions { get; init; } = Array.Empty<MetadataV2Condition>();
@@ -131,7 +147,7 @@ public sealed record MetadataV2Status
     public DateTimeOffset? ObservedAt { get; init; }
 }
 
-public sealed record MetadataV2Condition
+public sealed record MetadataV2Condition : ExtensibleJsonRecord
 {
     [JsonPropertyName("type")]
     public string Type { get; init; } = string.Empty;
@@ -149,7 +165,7 @@ public sealed record MetadataV2Condition
     public DateTimeOffset? LastTransitionAt { get; init; }
 }
 
-public sealed record MetadataV2ExtensionPoint
+public sealed record MetadataV2ExtensionPoint : ExtensibleJsonRecord
 {
     [JsonPropertyName("id")]
     public string Id { get; init; } = string.Empty;
@@ -164,7 +180,7 @@ public sealed record MetadataV2ExtensionPoint
     public JsonElement? Schema { get; init; }
 }
 
-public sealed record MetadataV2ContactPoint
+public sealed record MetadataV2ContactPoint : ExtensibleJsonRecord
 {
     public const int MaxNameLength = 256;
 
@@ -180,7 +196,7 @@ public sealed record MetadataV2ContactPoint
     public string? Url { get; init; }
 }
 
-public sealed record MetadataV2Link
+public sealed record MetadataV2Link : ExtensibleJsonRecord
 {
     public const int MaxGovernanceHrefLength = 2048;
 
@@ -203,7 +219,7 @@ public sealed record MetadataV2Link
     public string? ManagedBy { get; init; }
 }
 
-public sealed record MetadataV2Field
+public sealed record MetadataV2Field : ExtensibleJsonRecord
 {
     private IReadOnlyList<string>? _semanticRoles;
 
@@ -213,8 +229,16 @@ public sealed record MetadataV2Field
     [JsonPropertyName("name")]
     public string Name { get; init; } = string.Empty;
 
+    [JsonIgnore]
+    public MetadataV2FieldType Type
+    {
+        get => TypeValue.Value;
+        init => TypeValue = value;
+    }
+
     [JsonPropertyName("type")]
-    public MetadataV2FieldType Type { get; init; } = MetadataV2FieldType.Unknown;
+    [JsonConverter(typeof(PreservedEnumJsonConverter<MetadataV2FieldType>))]
+    public PreservedEnumValue<MetadataV2FieldType> TypeValue { get; init; } = MetadataV2FieldType.Unknown;
 
     [JsonPropertyName("title")]
     public string? Title { get; init; }
@@ -265,7 +289,7 @@ public sealed record MetadataV2Field
     public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
 }
 
-public sealed record MetadataV2FieldDomain
+public sealed record MetadataV2FieldDomain : ExtensibleJsonRecord
 {
     [JsonPropertyName("name")]
     public string? Name { get; init; }
@@ -286,7 +310,7 @@ public sealed record MetadataV2FieldDomain
     public string? SplitPolicy { get; init; }
 }
 
-public sealed record MetadataV2CodedValue
+public sealed record MetadataV2CodedValue : ExtensibleJsonRecord
 {
     [JsonPropertyName("code")]
     public JsonElement Code { get; init; }
@@ -295,7 +319,7 @@ public sealed record MetadataV2CodedValue
     public string Name { get; init; } = string.Empty;
 }
 
-public sealed record MetadataV2Subtypes
+public sealed record MetadataV2Subtypes : ExtensibleJsonRecord
 {
     [JsonPropertyName("subtypeField")]
     public string SubtypeField { get; init; } = string.Empty;
@@ -307,7 +331,7 @@ public sealed record MetadataV2Subtypes
     public IReadOnlyList<MetadataV2Subtype> Subtypes { get; init; } = Array.Empty<MetadataV2Subtype>();
 }
 
-public sealed record MetadataV2Subtype
+public sealed record MetadataV2Subtype : ExtensibleJsonRecord
 {
     [JsonPropertyName("code")]
     public JsonElement Code { get; init; }
@@ -320,7 +344,7 @@ public sealed record MetadataV2Subtype
         = new Dictionary<string, MetadataV2SubtypeFieldOverride>(StringComparer.OrdinalIgnoreCase);
 }
 
-public sealed record MetadataV2SubtypeFieldOverride
+public sealed record MetadataV2SubtypeFieldOverride : ExtensibleJsonRecord
 {
     private JsonElement? _defaultValue;
     private static readonly JsonElement ExplicitNull = CreateExplicitNull();
@@ -346,7 +370,7 @@ public sealed record MetadataV2SubtypeFieldOverride
     }
 }
 
-public sealed record MetadataV2ContingentValueGroup
+public sealed record MetadataV2ContingentValueGroup : ExtensibleJsonRecord
 {
     [JsonPropertyName("name")]
     public string Name { get; init; } = string.Empty;
@@ -362,7 +386,7 @@ public sealed record MetadataV2ContingentValueGroup
         = Array.Empty<MetadataV2ContingentValue>();
 }
 
-public sealed record MetadataV2ContingentValue
+public sealed record MetadataV2ContingentValue : ExtensibleJsonRecord
 {
     [JsonPropertyName("id")]
     public int Id { get; init; }
@@ -375,7 +399,7 @@ public sealed record MetadataV2ContingentValue
         = new Dictionary<string, MetadataV2ContingentFieldValue>(StringComparer.OrdinalIgnoreCase);
 }
 
-public sealed record MetadataV2ContingentFieldValue
+public sealed record MetadataV2ContingentFieldValue : ExtensibleJsonRecord
 {
     [JsonPropertyName("type")]
     public string Type { get; init; } = "any";
@@ -388,13 +412,21 @@ public sealed record MetadataV2ContingentFieldValue
 }
 
 // An Arcade expression outside the supported subset is skipped rather than failing the edit.
-public sealed record MetadataV2AttributeRule
+public sealed record MetadataV2AttributeRule : ExtensibleJsonRecord
 {
     [JsonPropertyName("name")]
     public string Name { get; init; } = string.Empty;
 
+    [JsonIgnore]
+    public MetadataV2AttributeRuleType Type
+    {
+        get => TypeValue.Value;
+        init => TypeValue = value;
+    }
+
     [JsonPropertyName("type")]
-    public MetadataV2AttributeRuleType Type { get; init; } = MetadataV2AttributeRuleType.Calculation;
+    [JsonConverter(typeof(PreservedNumericEnumJsonConverter<MetadataV2AttributeRuleType>))]
+    public PreservedEnumValue<MetadataV2AttributeRuleType> TypeValue { get; init; } = MetadataV2AttributeRuleType.Calculation;
 
     [JsonPropertyName("fieldName")]
     public string? FieldName { get; init; }
@@ -423,10 +455,12 @@ public enum MetadataV2AttributeRuleType
 
     Validation,
 
-    Exclusion
+    Exclusion,
+
+    Unknown = -1
 }
 
-public sealed record MetadataV2OwnerEditPolicy
+public sealed record MetadataV2OwnerEditPolicy : ExtensibleJsonRecord
 {
     [JsonPropertyName("enabled")]
     public bool Enabled { get; init; }
