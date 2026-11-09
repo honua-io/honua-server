@@ -207,13 +207,16 @@ public sealed partial class LayerPublishingIntegrationTests
 
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("jsonb")]
+    [InlineData("json")]
+    [InlineData("text")]
     [Protocol(TestProtocols.Admin, TestProtocols.OgcApiFeatures)]
     [Operation(Operations.Create)]
     [Operation(Operations.Query)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
-    public async Task PublishExistingJsonPropertiesTable_StillServesTheDocument()
+    public async Task PublishExistingJsonPropertiesTable_StillServesTheDocument(string propertiesType)
     {
         await InstallImportFunctionsAsync();
         var tableName = $"legacy_json_{Guid.NewGuid():N}";
@@ -221,14 +224,14 @@ public sealed partial class LayerPublishingIntegrationTests
         _legacyImportedTableName = tableName;
 
         await _fixture.Postgres.ExecuteDdlUnderLockAsync($$"""
-            SELECT honua.create_import_table('public', '{{tableName}}', 4326);
-            ALTER TABLE public.{{tableName}} ADD COLUMN name text;
+            CREATE TABLE public.{{tableName}} (
+                id serial PRIMARY KEY, geometry geometry(Point, 4326), name text, properties {{propertiesType}});
             INSERT INTO public.{{tableName}} (geometry, name, properties)
-            VALUES (ST_SetSRID(ST_MakePoint(-122.4, 37.8), 4326), 'Top-level', '{"name":"Legacy","population":2}'::jsonb);
+            VALUES (ST_SetSRID(ST_MakePoint(-122.4, 37.8), 4326), 'Top-level', '{"name":"Legacy","population":2}'::{{propertiesType}});
             """);
 
         var columns = await ColumnNamesAsync("public", tableName);
-        columns.Should().BeEquivalentTo(["id", "geometry", "name", "properties", "created_at"]);
+        columns.Should().BeEquivalentTo(["id", "geometry", "name", "properties"]);
 
         var published = await PublishLayerAsync(new PublishLayerRequest
         {
@@ -252,8 +255,17 @@ public sealed partial class LayerPublishingIntegrationTests
         var properties = features[0].GetProperty("properties");
         properties.GetProperty("name").GetString().Should().Be("Top-level");
         properties.TryGetProperty("created_at", out _).Should().BeFalse(payload);
-        properties.GetProperty("properties").GetProperty("name").GetString().Should().Be("Legacy");
-        (await ColumnNamesAsync("public", tableName)).Should().NotContain("name");
+        var residual = properties.GetProperty("properties");
+        if (propertiesType == "text")
+        {
+            residual.GetString().Should().Be("{\"name\":\"Legacy\",\"population\":2}");
+        }
+        else
+        {
+            residual.GetProperty("name").GetString().Should().Be("Legacy");
+            residual.GetProperty("population").GetInt32().Should().Be(2);
+        }
+        (await ColumnNamesAsync("public", tableName)).Should().BeEquivalentTo(columns);
     }
 
     private async Task<string> ReadOgcItemsAsync(string query)

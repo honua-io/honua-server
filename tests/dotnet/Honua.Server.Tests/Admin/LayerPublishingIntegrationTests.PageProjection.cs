@@ -12,19 +12,23 @@ namespace Honua.Server.Tests.Admin;
 public sealed partial class LayerPublishingIntegrationTests
 {
     [IntegrationTheory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
     [Operation(Operations.Create)]
-    public async Task SnapshotPage_ProjectionFailureOutsideSelectedRows_DoesNotBlockFirstPage(bool geometryFailure)
+    public async Task SnapshotPage_ProjectionFailureOutsideSelectedRows_DoesNotBlockFirstPage(
+        bool geometryFailure, bool sourceAliasColumn)
     {
         await using var connection = await _fixture.Postgres.GetConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
-        await using (var setup = new NpgsqlCommand("""
+        var additionalColumn = sourceAliasColumn ? ", i AS src" : string.Empty;
+        await using (var setup = new NpgsqlCommand($"""
             SET LOCAL min_parallel_table_scan_size = 0;
             SET LOCAL parallel_setup_cost = 0;
             SET LOCAL parallel_tuple_cost = 0;
             CREATE TEMP TABLE projection_source ON COMMIT DROP AS
-                SELECT i AS id, ST_SetSRID(ST_MakePoint(i % 100, i % 40), 4326) AS geom
+                SELECT i AS id, ST_SetSRID(ST_MakePoint(i % 100, i % 40), 4326) AS geom{additionalColumn}
                 FROM generate_series(1, 20000) AS i;
             CREATE TEMP TABLE projection_features (layer_id integer, geometry geometry, attributes jsonb) ON COMMIT DROP;
             ANALYZE projection_source;
