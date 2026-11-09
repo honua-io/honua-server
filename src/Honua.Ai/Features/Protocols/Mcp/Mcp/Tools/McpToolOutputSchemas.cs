@@ -1089,6 +1089,23 @@ internal static class McpToolOutputSchemas
         }
         """);
 
+    public static readonly JsonElement StudioItemsOutputSchema = Parse("""
+        {"type":"object","required":["items","total"],"properties":{
+        "items":{"type":"array","items":{"type":"object","required":["itemId","packageKey","family","state"],"properties":{
+        "itemId":{"type":"string","format":"uuid"},"packageKey":{"type":"string"},"family":{"type":"string"},
+        "state":{"type":"string"},"currentVersionId":{"type":["string","null"]},"publishedVersionId":{"type":["string","null"]}}}},
+        "total":{"type":"integer","minimum":0},"nextCursor":{"type":["string","null"]}}}
+        """);
+
+    public static readonly JsonElement StudioVersionsOutputSchema = Parse("""
+        {"type":"object","required":["itemId","versions"],"properties":{
+        "itemId":{"type":"string","format":"uuid"},"versions":{"type":"array","items":{"type":"object",
+        "required":["versionId","versionNumber","contentHash","createdAt"],"properties":{
+        "versionId":{"type":"string","format":"uuid"},"versionNumber":{"type":"integer","minimum":1},
+        "contentHash":{"type":"string","minLength":1},"createdAt":{"type":"string","format":"date-time"},
+        "changeNote":{"type":["string","null"]}}}},"nextBeforeVersionNumber":{"type":["integer","null"],"minimum":1}}}
+        """);
+
     public static readonly JsonElement StudioGetVersionOutputSchema = Parse("""
         {"type":"object","required":["versionId","contentHash"],"additionalProperties":false,"properties":{
           "versionId":{"type":"string","format":"uuid"},

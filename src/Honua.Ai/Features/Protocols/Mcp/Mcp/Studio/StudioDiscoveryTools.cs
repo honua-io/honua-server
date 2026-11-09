@@ -23,8 +23,8 @@ internal sealed class ListStudioItemsTool(IGeoprocessingJobService jobs, ILogger
         Name = Name, Title = "List saved Studio items",
         Description = "Find saved maps and other Studio items in the caller's authorized owner and tenant scope. "
             + "Use items[].itemId and currentVersionId with honua_studio_get_version, or list its version history. Follow nextCursor for more items.",
-        InputSchema = StudioDiscoverySchemas.ListItems,
-        OutputSchema = StudioDiscoverySchemas.ItemsOutput,
+        InputSchema = StudioMcpSchemas.ListItemsArgumentSchema,
+        OutputSchema = McpToolOutputSchemas.StudioItemsOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("List saved Studio items")
     };
 
@@ -41,11 +41,9 @@ internal sealed class ListStudioItemsTool(IGeoprocessingJobService jobs, ILogger
         var callerId = authorization.ResolveCallerId(principal);
         await EnsureStudioAuthorizedAsync(context, authorization, principal, StudioAuthorizationOperation.ListOwn,
             callerId, RequestTenantId(context), null, "studio-content-item", OperatorOperation.Read, cancellationToken).ConfigureAwait(false);
-        if (!authorization.IsAdmin(principal) && authorization.IsEndUserAuthorizationEnabled && string.IsNullOrWhiteSpace(callerId))
-            throw new GeoprocessingAuthorizationException(requiresAuthentication: true);
         var result = await RequireLifecycleService(context).ListContentItemsAsync(new StudioContentItemQuery
         {
-            OwnerId = authorization.IsAdmin(principal) || !authorization.IsEndUserAuthorizationEnabled ? null : callerId,
+            OwnerId = authorization.IsAdmin(principal) ? null : callerId,
             Tenant = authorization.CreateTenantScopeFilter(principal), SearchTerm = argument.Query,
             Cursor = argument.Cursor, Limit = limit
         }, cancellationToken).ConfigureAwait(false);
@@ -65,8 +63,8 @@ internal sealed class ListStudioVersionsTool(IGeoprocessingJobService jobs, ILog
         Name = Name, Title = "List saved Studio versions",
         Description = "List authorized immutable versions of an item, newest first, including versionId and contentHash. "
             + "Use nextBeforeVersionNumber as beforeVersionNumber to continue. No draft or publication pointer changes.",
-        InputSchema = StudioDiscoverySchemas.ListVersions,
-        OutputSchema = StudioDiscoverySchemas.VersionsOutput,
+        InputSchema = StudioMcpSchemas.ListVersionsArgumentSchema,
+        OutputSchema = McpToolOutputSchemas.StudioVersionsOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("List saved Studio versions")
     };
 
@@ -89,10 +87,11 @@ internal sealed class ListStudioVersionsTool(IGeoprocessingJobService jobs, ILog
             throw new GeoprocessingNotFoundException("Studio content item was not found.");
         var versions = await lifecycle.ListVersionsAsync(argument.ItemId, cancellationToken).ConfigureAwait(false);
         var visible = new List<McpStudioVersionSummary>();
+        var callerId = authorization.ResolveCallerId(principal);
         foreach (var version in versions.Where(version => !argument.BeforeVersionNumber.HasValue || version.VersionNumber < argument.BeforeVersionNumber.Value)
             .OrderByDescending(version => version.VersionNumber))
         {
-            var decision = await authorization.AuthorizeAsync(principal, authorization.ResolveCallerId(principal),
+            var decision = await authorization.AuthorizeAsync(principal, callerId,
                 StudioAuthorizationOperation.ReadContentItem, version.OwnerId, version.TenantId,
                 resourceId: version.VersionId.ToString("D"), cancellationToken: cancellationToken).ConfigureAwait(false);
             if (!decision.IsAllowed)

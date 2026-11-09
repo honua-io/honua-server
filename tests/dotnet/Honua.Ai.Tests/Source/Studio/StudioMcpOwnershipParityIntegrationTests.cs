@@ -146,8 +146,8 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
         var alice = await keys.CreateAsync("discovery-alice", ["studio:enduser"], null, null, default);
         var bob = await keys.CreateAsync("discovery-bob", ["studio:enduser"], null, null, default);
         var store = _fixture.Services.GetRequiredService<IStudioPackageStore>();
-        var aliceDraft = await SeedDiscoveryDraftAsync(store, alice.Record.Id.ToString("D"));
-        var bobDraft = await SeedDiscoveryDraftAsync(store, bob.Record.Id.ToString("D"));
+        var aliceDraft = await SeedDiscoveryDraftAsync(store, alice.Record.Id.ToString("D"), "discovery-map-alice");
+        var bobDraft = await SeedDiscoveryDraftAsync(store, bob.Record.Id.ToString("D"), "discovery-map-bob");
         var first = await store.CreateVersionAsync(aliceDraft, "first", null);
         var second = await store.CreateVersionAsync(aliceDraft, "second", null);
         _ = await store.CreateVersionAsync(bobDraft, "foreign", null);
@@ -172,10 +172,10 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
         (await store.ListVersionsAsync(aliceDraft.ItemId)).Should().HaveCount(2);
     }
 
-    private static Task<StudioPackageDraft> SeedDiscoveryDraftAsync(IStudioPackageStore store, string owner) =>
+    private static Task<StudioPackageDraft> SeedDiscoveryDraftAsync(IStudioPackageStore store, string owner, string packageKey) =>
         store.CreateDraftAsync(new StudioPackageDraft
         {
-            DraftId = Guid.NewGuid(), ItemId = Guid.NewGuid(), PackageKey = "discovery-map",
+            DraftId = Guid.NewGuid(), ItemId = Guid.NewGuid(), PackageKey = packageKey,
             OwnerId = owner, Family = StudioPackageFamily.Map, Generation = 1,
             Envelope = new StudioPackageEnvelope { Family = StudioPackageFamily.Map, SchemaVersion = "1.0" },
             CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow

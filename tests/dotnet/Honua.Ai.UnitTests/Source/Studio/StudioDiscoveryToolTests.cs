@@ -9,6 +9,7 @@ using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.MultiTenancy;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
+using Honua.Core.Features.Studio.Services;
 using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -49,16 +50,19 @@ public sealed class StudioDiscoveryToolTests
     }
 
     [UnitTheory]
-    [InlineData(10)]
-    [InlineData(null)]
+    [InlineData(10, false)]
+    [InlineData(null, false)]
+    [InlineData(10, true)]
+    [InlineData(null, true)]
     [Endpoint("POST /mcp tools/call honua_studio_list_items")]
-    public async Task ListItems_NonAdminCaller_ForcesOwnerAndTenantBeforePaging(int? limit)
+    public async Task ListItems_CallerScope_AppliesOwnerAndTenantBeforePaging(int? limit, bool isAdmin)
     {
         var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
         lifecycle.ListContentItemsAsync(Arg.Any<StudioContentItemQuery>(), Arg.Any<CancellationToken>())
             .Returns(new StudioContentItemListResult { Total = 0, NextCursor = "next-page" });
         var authorization = Substitute.For<IStudioAuthorizationService>();
         authorization.IsEndUserAuthorizationEnabled.Returns(true);
+        authorization.IsAdmin(Arg.Any<ClaimsPrincipal>()).Returns(isAdmin);
         authorization.ResolveCallerId(Arg.Any<ClaimsPrincipal>()).Returns("alice");
         authorization.CreateTenantScopeFilter(Arg.Any<ClaimsPrincipal>()).Returns(new TenantScopeFilter("tenant-a", false));
         authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<string>(), Arg.Any<StudioAuthorizationOperation>(),
@@ -80,7 +84,7 @@ public sealed class StudioDiscoveryToolTests
         result.IsError.Should().BeFalse();
         result.StructuredContent!.Value.GetProperty("nextCursor").GetString().Should().Be("next-page");
         await lifecycle.Received(1).ListContentItemsAsync(Arg.Is<StudioContentItemQuery>(query =>
-            query.OwnerId == "alice" && query.Tenant != null && query.Tenant.TenantId == "tenant-a" &&
+            query.OwnerId == (isAdmin ? null : "alice") && query.Tenant != null && query.Tenant.TenantId == "tenant-a" &&
             query.SearchTerm == "roads" && query.Cursor == "page-one" && query.Limit == expectedLimit), Arg.Any<CancellationToken>());
     }
 
@@ -89,10 +93,17 @@ public sealed class StudioDiscoveryToolTests
     public async Task ListVersions_MixedOwnersAndTenants_PagesOnlyAuthorizedVersionHashes()
     {
         var itemId = Guid.NewGuid();
-        var newest = Version(itemId, 4, "alice", "tenant-a");
-        var foreignOwner = Version(itemId, 3, "bob", "tenant-a");
-        var foreignTenant = Version(itemId, 2, "alice", "tenant-b");
-        var oldest = Version(itemId, 1, "alice", "tenant-a");
+        StudioContentVersion Version(int number, string owner, string tenant) => new()
+        {
+            ItemId = itemId, VersionId = Guid.NewGuid(), VersionNumber = number, PackageKey = "roads",
+            OwnerId = owner, TenantId = tenant, ContentHash = $"hash-{owner}-{tenant}-{number}",
+            Envelope = new StudioPackageEnvelope { Family = StudioPackageFamily.Map, SchemaVersion = "1.0" },
+            Validation = StudioValidationSummary.NotValidated, CreatedAt = DateTimeOffset.UnixEpoch
+        };
+        var newest = Version(4, "alice", "tenant-a");
+        var foreignOwner = Version(3, "bob", "tenant-a");
+        var foreignTenant = Version(2, "alice", "tenant-b");
+        var oldest = Version(1, "alice", "tenant-a");
         var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
         lifecycle.GetPointersAsync(itemId, Arg.Any<CancellationToken>()).Returns(new StudioContentItemPointers
         {
@@ -130,6 +141,9 @@ public sealed class StudioDiscoveryToolTests
         var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
         var authorization = OwnerAuthorization();
         authorization.ResolveCallerId(Arg.Any<ClaimsPrincipal>()).Returns((string?)null);
+        authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<string?>(), Arg.Any<StudioAuthorizationOperation>(),
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(StudioAuthorizationDecision.Deny(StudioAuthorizationService.AuthenticationRequiredCode, "Authentication is required."));
         var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
         {
             services.AddSingleton(lifecycle);
@@ -138,7 +152,8 @@ public sealed class StudioDiscoveryToolTests
 
         var call = () => ResolveTool("honua_studio_list_items").InvokeAsync(context, McpTestFactory.ParseJson("{}"), default);
 
-        await call.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        var denied = await call.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        denied.Which.PolicyCode.Should().Be(StudioAuthorizationService.AuthenticationRequiredCode);
         await lifecycle.DidNotReceive().ListContentItemsAsync(Arg.Any<StudioContentItemQuery>(), Arg.Any<CancellationToken>());
     }
 
@@ -155,14 +170,6 @@ public sealed class StudioDiscoveryToolTests
 
     private static StudioAuthorizationDecision StudioAuthorizationDecisionFor(string? owner, string? tenant) =>
         owner == "alice" && tenant is null or "tenant-a" ? StudioAuthorizationDecision.Allow() : StudioAuthorizationDecision.Deny("owner_required", "Not authorized.");
-
-    private static StudioContentVersion Version(Guid itemId, int number, string owner, string tenant) => new()
-    {
-        ItemId = itemId, VersionId = Guid.NewGuid(), VersionNumber = number, PackageKey = "roads",
-        OwnerId = owner, TenantId = tenant, ContentHash = $"hash-{owner}-{tenant}-{number}",
-        Envelope = new StudioPackageEnvelope { Family = StudioPackageFamily.Map, SchemaVersion = "1.0" },
-        Validation = StudioValidationSummary.NotValidated, CreatedAt = DateTimeOffset.UnixEpoch
-    };
 
     private static IMcpTool ResolveTool(string name)
     {

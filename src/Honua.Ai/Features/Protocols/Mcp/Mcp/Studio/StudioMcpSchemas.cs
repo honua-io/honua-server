@@ -19,6 +19,18 @@ namespace Honua.Ai.Protocols.Mcp.Studio;
 /// </summary>
 internal static class StudioMcpSchemas
 {
+    public static readonly JsonElement ListItemsArgumentSchema = Parse("""
+        {"type":"object","additionalProperties":false,"properties":{
+        "q":{"type":"string","maxLength":200},"cursor":{"type":"string","maxLength":2000},
+        "limit":{"type":"integer","minimum":1,"maximum":100,"default":25}}}
+        """);
+
+    public static readonly JsonElement ListVersionsArgumentSchema = Parse("""
+        {"type":"object","required":["itemId"],"additionalProperties":false,"properties":{
+        "itemId":{"type":"string","format":"uuid"},"beforeVersionNumber":{"type":"integer","minimum":1},
+        "limit":{"type":"integer","minimum":1,"maximum":100,"default":25}}}
+        """);
+
     public static readonly JsonElement SaveVersionArgumentSchema = Parse("""
         {"type":"object","required":["draftId","generation"],"additionalProperties":false,"properties":{
           "draftId":{"type":"string","format":"uuid"},"generation":{"type":"integer","minimum":1},
