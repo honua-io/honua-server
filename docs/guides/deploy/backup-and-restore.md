@@ -25,13 +25,29 @@ restore that accounts for Redis and referenced file/object bytes as well.
 |---|---|---|
 | PostGIS database | Features, layers, service metadata, connections, roles, database-backed audit data, migration journal and enabled transactional outbox rows | Dump/PITR plus the matching restore point for every other enabled store; PostgreSQL is not the only durable substrate |
 | File storage (`FileStorage__Provider`) and other configured output stores | Uploaded files, attachments and job/workflow output bytes referenced by database or Redis records; local volumes or object storage | Preserve the actual referenced bytes and object versions, including outputs outside the default file-storage volume; replication alone is not a historical recovery point |
-| Redis durable state | Enabled execution-job records and queue membership, execution logs, workflow definitions/runs/watermarks, proposals, operation state and GP result packages/references | Include every configured Redis database/namespace in the recovery inventory. Persist and back up durable state; do not omit it or flush a mixed cache/job instance |
+| Redis durable state | Enabled execution-job records and queue membership, execution logs, version reconcile/post job status, workflow definitions/runs/watermarks, proposals, operation state and GP result packages/references | Include every configured Redis database/namespace in the recovery inventory. Persist and back up durable state; do not omit it or flush a mixed cache/job instance |
 | Redis disposable cache | Reconstructible cache entries only, where the deployment inventory proves they share no required durable state | May be rebuilt after restore; exclude only the explicitly identified disposable state, never Redis as a whole |
 | Deployment configuration and recovery keys | Store locations, namespaces, image/config versions and access to encryption/signing keys and secrets needed to read restored state | Retain versioned configuration and a tested secret-manager recovery/access procedure; do not put plaintext credentials in the backup manifest |
 
 Application replicas are replaceable only when their durable bytes live on the
 declared persistent stores. Inventory container-local uploads/outputs before
 replacement; the older Compose migration below covers a known exception.
+
+## Version job status during Redis outages
+
+Version reconcile/post status saved during a Redis outage stays in memory on
+that process. On recovery, polling that process can advance an existing Redis
+record from pending or running to its locally retained terminal result. An
+existing distributed terminal result always wins. Polling does not recreate
+missing Redis records; a job admitted during an outage becomes shared only if
+a later status save succeeds.
+
+Until Redis acknowledges a transition, another replica or replacement process
+can report an older status or no job. Process loss discards unacknowledged
+local transitions. Once a transition is acknowledged, the local pending copy
+is removed; another Redis outage can leave that process unable to report the
+job. Recovery of status does not replay the underlying feature mutation.
+Redis job records expire seven days after their last successful status write.
 
 ## Consistent recovery set
 

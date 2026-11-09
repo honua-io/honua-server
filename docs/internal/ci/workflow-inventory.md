@@ -39,6 +39,24 @@ repository, and every entry in `/code-scanning/analyses` carries
 GitHub **Code Quality**, a different product that publishes no security
 analysis.
 
+## Draft PR admission and superseded work
+
+CodeQL, Compose Release Lifecycle, GeoArrow/GeoParquet interop, OGC API
+building-block conformance, and serving/GDAL image verification defer heavy jobs
+until the PR is ready. They subscribe to `ready_for_review` and ready-head
+`synchronize` events; conversion back to draft cancels the active run. PR Gate,
+its affected-shard verdict, clean code and repository hygiene continue on drafts.
+PR Gate also runs on `ready_for_review`, waking the trusted Claude observer after
+its exact-head verification completes.
+
+PR workflows cancel superseded admission per PR. Trusted observers resolve the
+current PR before expensive jobs: prebuild producers/parity legs cancel by PR
+and matrix identity. Claude cancels resolver admission per PR and serializes
+duplicate exact-head reviews; unrelated comments cannot interrupt paid work. Review-attestation publication
+remains serialized so cancellation cannot interrupt its status/dispatch update.
+New validation concurrency uses a unique run ID outside PR events, keeping manual
+qualification independent of trunk pushes. Existing release cancellation policy is retained.
+
 ## Required PR lane
 
 | Workflow file | Name | Triggers | Notes |
