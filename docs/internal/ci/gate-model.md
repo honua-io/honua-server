@@ -346,6 +346,33 @@ rather than treated as a silent addition (rule 4).
 
 ## Adding New Checks
 
+### Archived quickstart bootstrap
+
+`shipped-quickstart.yml` runs nightly and on package-related PRs. Nightly/manual
+runs consume the newest available official candidate archive and its source-bound
+customer document. PRs package their exact source revision with that candidate's
+immutable image lock, then transport the archive to a separate installation job;
+their receipts identify this as a prospective PR package, not a shipped artifact.
+The installation job replaces the disposable hosted runner's Docker daemon with
+one using an empty data directory. It compiles no server code and never prunes a
+shared developer host.
+
+The assertions cover both documented profiles, completed initialization services,
+healthy runtime services, secret-free rendered Compose configuration, documented
+sample publication/query, preserved initializer/credentials on restart, removal
+of all containers and volumes, and fresh credentials on a second installation.
+Missing Console package files or release pins fail rather than being synthesized.
+The external installed proof is an explicit package-path PR exception to the
+ordinary five-minute deterministic PR guidance below; its offline controls run
+separately. This workflow does not dispatch full CI or change required contexts.
+
+Receipts have scope `archived-bootstrap-and-data-plane`. Authenticated Console and
+Studio sign-in remains a separate prerequisite: `customerJourneyComplete` stays
+false even when these bootstrap assertions pass. This workflow cannot by itself
+qualify the complete customer journey or close the clean-host installation work.
+
+### Check registration
+
 Before adding a new workflow or check:
 
 1. **Identify the tier.** Default to nightly unless the check meets PR-lane criteria.

@@ -1,0 +1,122 @@
+name: Archived quickstart bootstrap and data
+
+on:
+  schedule:
+    - cron: '30 9 * * *'
+  workflow_dispatch:
+  pull_request:
+    branches: [trunk]
+    paths:
+      - 'docs/get-started/**'
+      - 'docker-compose*.yml'
+      - 'docker/compose/**'
+      - 'docs/guides/connect/working-with-ai-agents.md'
+      - 'scripts/docker/*quickstart*.py'
+      - 'scripts/docs-validation/validate_public_install.py'
+      - 'scripts/ci/start-empty-quickstart-docker.sh'
+      - 'skills/**'
+      - 'release/**'
+      - '.github/workflows/nightly-container-build.yml'
+      - '.github/workflows/shipped-quickstart.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: archived-quickstart-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  controls:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Check archive and assertion refusal controls
+        run: |
+          python3 -m unittest discover -s scripts/docker -p 'test_shipped_quickstart.py' -v
+          python3 -m unittest discover -s scripts/docs-validation -p 'test_install_artifacts.py' -v
+
+  package:
+    needs: controls
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Prepare official archive or prospective PR package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          args=(--output "$RUNNER_TEMP/quickstart-proof")
+          if [[ -n "$PR_SOURCE_SHA" ]]; then
+            args+=(--prospective-source-sha "$PR_SOURCE_SHA")
+          fi
+          python3 scripts/docker/prepare_quickstart_proof.py "${args[@]}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: quickstart-proof-input
+          path: |
+            ${{ runner.temp }}/quickstart-proof/honua-compose-quickstart.tar.gz*
+            ${{ runner.temp }}/quickstart-proof/quickstart.md
+            ${{ runner.temp }}/quickstart-proof/input.json
+          if-no-files-found: error
+          retention-days: 7
+
+  install:
+    name: Archive bootstrap, all profiles, publish/query and fresh reinstall
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: quickstart-proof-input
+          path: ${{ runner.temp }}/quickstart-proof
+      - name: Start a dedicated empty Docker daemon
+        run: bash scripts/ci/start-empty-quickstart-docker.sh
+      - name: Install only archive files and execute documented data access
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP']) / 'quickstart-proof'
+          metadata = json.loads((root / 'input.json').read_text())
+          subprocess.run([
+              'python3', 'scripts/docker/validate_shipped_quickstart.py',
+              '--archive', str(root / 'honua-compose-quickstart.tar.gz'),
+              '--document', str(root / 'quickstart.md'),
+              '--receipt', 'artifacts/shipped-quickstart/receipt.json',
+              '--server-source-sha', metadata['serverSourceSha'],
+              '--package-source-sha', metadata['packageSourceSha'],
+              '--package-kind', metadata['packageKind'],
+          ], check=True)
+          PY
+      - name: Upload bounded bootstrap evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: archived-quickstart-bootstrap
+          path: artifacts/shipped-quickstart/receipt.json
+          if-no-files-found: warn
+          retention-days: 14

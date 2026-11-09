@@ -24,8 +24,8 @@ fences = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fences)
 
 
-def public_blocks() -> dict[str, str]:
-    blocks = fences.parse(ROOT / "docs/get-started/quickstart.md",
+def public_blocks(document: Path | None = None) -> dict[str, str]:
+    blocks = fences.parse(document or ROOT / "docs/get-started/quickstart.md",
                           languages=("bash", "sh", "yaml", "python", "powershell"))
     runnable = {name.removeprefix("install."): body
                 for name, mode, body in blocks if mode == "run"}
@@ -159,7 +159,7 @@ def main() -> int:
             shell("seed")
             shell("clients", 600)
             env["PATH"] = str(work / ".venv/bin") + os.pathsep + env["PATH"]
-            (work / "quickstart.py").write_text(blocks["publish"])
+            (work / "publish-quickstart.py").write_text(blocks["publish"])
             output = shell("query")
             match = re.fullmatch(r"published service quickstart layer (\d+)\n(.*)\s*", output, re.S)
             if not match:
