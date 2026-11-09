@@ -19,6 +19,8 @@ on:
       - 'docker/Dockerfile.compose-executor'
       - 'scripts/docker/*quickstart*.py'
       - 'scripts/docker/test_compose_release_lifecycle_polling.py'
+      - 'scripts/docker/*lifecycle*approval*.py'
+      - 'scripts/docker/lifecycle_identity_provider.py'
       - 'scripts/docker/test_operating_skills.py'
       - 'skills/**'
 
@@ -45,6 +47,8 @@ jobs:
           scripts/ci/server-test-shard-free-disk.sh --await
       - name: Verify proposal lifecycle polling
         run: python3 -m unittest discover -s scripts/docker -p 'test_compose_release_lifecycle_polling.py' -v
+      - name: Verify interactive lifecycle approval contract
+        run: python3 -m unittest discover -s scripts/docker -p 'test_lifecycle_human_approval.py' -v
       - name: Verify operating skill package bytes and checksums
         run: python3 -m unittest discover -s scripts/docker -p 'test_operating_skills.py' -v
       - name: Build production candidate image

@@ -20,6 +20,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts/docker'))
 from package_quickstart import package
 from compose_quickstart import ALL_SECRET_KEYS, initialize, read_secret
+from lifecycle_human_approval import HumanApprovalClient
+from lifecycle_identity_provider import IdentityProvider, prepare_identity_files
 
 RC1 = "ghcr.io/honua-io/honua-server@sha256:2c3ce36be9b6a4c8b3911d150de329be002131609933bc3ca4a3932ea95dc574"
 
@@ -92,6 +94,30 @@ def wait_for_approval(base, key, proposal, timeout=30):
     raise AssertionError("proposal did not enter awaiting approval")
 
 
+def create_identity_fixture(project_dir, human_port, identity_port):
+    identity_dir = project_dir / "identity-fixture"
+    identity_dir.mkdir(mode=0o755)
+    prepare_identity_files(identity_dir)
+    identity = IdentityProvider(identity_dir, f"https://lifecycle-identity:{identity_port}")
+    human_base = f"https://localhost:{human_port}"
+    overlay = project_dir / "compose.identity-fixture.json"
+    overlay.write_text(json.dumps({"services": {"compose-manager": {
+        "ports": [f"127.0.0.1:{human_port}:8443"],
+        "extra_hosts": ["lifecycle-identity:host-gateway"],
+        "volumes": ["./identity-fixture:/identity-fixture:ro"],
+        "environment": {
+            "Kestrel__Endpoints__Human__Url": "https://+:8443",
+            "Kestrel__Endpoints__Human__Protocols": "Http1",
+            "Kestrel__Endpoints__Human__Certificate__Path": "/identity-fixture/server.pfx",
+            "SSL_CERT_FILE": "/identity-fixture/cert.pem",
+            "Public__BaseUrl": human_base,
+            "Oidc__Enabled": "true", "Oidc__Generic__Enabled": "true",
+            "Oidc__Generic__Authority": identity.issuer,
+            "Oidc__Generic__ClientId": "lifecycle-console",
+            "Oidc__AdminAuthCallbackUri": human_base + "/admin/auth/callback"}}}}))
+    return identity, human_base, overlay
+
+
 def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
     candidate = os.environ["HONUA_LIFECYCLE_IMAGE"]
     candidate_schema = max(int(path.name.split("_", 1)[0]) for path in (ROOT / "src/Honua.Server/Migrations").glob("[0-9]*_*.sql"))
@@ -100,13 +126,14 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
     run(["docker", "pull", "--platform", "linux/amd64", RC1])
     prior_id = run(["docker", "image", "inspect", "--format", "{{.Id}}", RC1])
     project = "honua-lifecycle-" + secrets.token_hex(4)
-    port, manager_port = free_port(), free_port()
+    port, manager_port, human_port, identity_port = (free_port() for _ in range(4))
     project_dir = Path(tempfile.mkdtemp(prefix="honua-lifecycle-"))
     project_dir.chmod(0o755)
     executor = os.environ["HONUA_LIFECYCLE_EXECUTOR_IMAGE"]
     assert run(["docker", "image", "inspect", "--format", '{{index .Config.Labels "honua.runtime.profile"}}', executor]) == "compose-executor"
     # Install the customer package, not a test-owned executor or Compose substitute.
     package(project_dir, dict(server=candidate, executor=executor, worker=candidate), "2026.1-rc.2")
+    identity, human_base, overlay = create_identity_fixture(project_dir, human_port, identity_port)
     env = os.environ.copy()
     settings = {"COMPOSE_PROJECT_NAME": project, "HONUA_IMAGE": RC1, "HONUA_HTTP_PORT": str(port),
         "HONUA_GRPC_PORT": str(free_port()), "HONUA_MANAGER_PORT": str(manager_port),
@@ -122,7 +149,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
     manager_master = read_secret(project_dir, "HONUA_MANAGER_MASTER_KEY")
     assert not set(ALL_SECRET_KEYS) & set(env), "secrets must not reach Compose as environment"
     compose = ["docker", "compose", "--project-directory", str(project_dir), "-p", project,
-        "-f", str(project_dir / "compose.yaml"), "-f", str(project_dir / "compose.executor.yaml")]
+        "-f", str(project_dir / "compose.yaml"), "-f", str(project_dir / "compose.executor.yaml"), "-f", str(overlay)]
     def dc(*args, check=True):
         return run(compose + list(args), env=env, cwd=project_dir, check=check)
     def sql(statement):
@@ -133,6 +160,7 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
     def schema():
         return int(sql("SELECT max(substring(scriptname from '([0-9]+)_')::int) FROM public.schema_versions"))
     base = f"http://127.0.0.1:{manager_port}"
+    identity.start()
     try:
         try:
             dc("up", "-d", "--wait", "--wait-timeout", "300")
@@ -165,8 +193,8 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
             "docker compose config printed a secret"
         sql("CREATE TABLE public.rc2_lifecycle_marker (id integer PRIMARY KEY, value text NOT NULL); INSERT INTO public.rc2_lifecycle_marker VALUES (1, 'retained')")
         proposer, _ = request(base, "/api/v1/admin/api-keys/", key, {"name": "proposer", "permissions": ["admin:*"]})
-        approver, _ = request(base, "/api/v1/admin/api-keys/", key, {"name": "approver", "permissions": ["admin:*"]})
-        proposer_key, approver_key = proposer["data"]["key"], approver["data"]["key"]
+        proposer_key = proposer["data"]["key"]
+        human = HumanApprovalClient.login(human_base, identity_dir / "cert.pem")
         _, session = rpc(base, proposer_key, None, "initialize", {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "lifecycle", "version": "1"}}, 1)
         def call(name, arguments, ident):
             result, _ = rpc(base, proposer_key, session, "tools/call", {"name": name, "arguments": arguments}, ident)
@@ -192,11 +220,11 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
             "reason": "convergence failure regression", "idempotencyKey": "failed-convergence"}, 20)
         failed_proposal = failed["targets"][0]["proposalId"]
         assert failed_proposal
-        wait_for_approval(base, approver_key, failed_proposal)
+        wait_for_approval(base, key, failed_proposal)
         # The stable manager keeps its own Redis; only the serving stack loses Redis.
         dc("stop", "redis")
-        request(base, f"/api/v1/admin/proposals/{failed_proposal}/approve", approver_key, {})
-        wait_for_proposal(base, approver_key, failed_proposal, "failed", proposer_key, session)
+        human.approve(failed_proposal)
+        wait_for_proposal(base, key, failed_proposal, "failed", proposer_key, session)
         dc("start", "redis")
         deadline = time.monotonic() + 120
         while time.monotonic() < deadline:
@@ -214,17 +242,17 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
             "reason": "candidate convergence after failed operation"}, 2)
         proposal = convergence["targets"][0]["proposalId"]
         assert proposal
-        wait_for_approval(base, approver_key, proposal)
+        wait_for_approval(base, key, proposal)
         assert image_id() == prior_id and schema() == 140
         try:
             request(base, f"/api/v1/admin/proposals/{proposal}/approve", proposer_key, {})
-            raise AssertionError("self approval succeeded")
+            raise AssertionError("API-key approval succeeded")
         except urllib.error.HTTPError as error:
-            assert error.code in (400, 403, 409)
+            assert error.code == 403
         detail, _ = request(base, f"/api/v1/admin/proposals/{proposal}", key)
         assert detail["status"].lower() == "awaitingapproval"
-        request(base, f"/api/v1/admin/proposals/{proposal}/approve", approver_key, {})
-        first_convergence = wait_for_proposal(base, approver_key, proposal, "succeeded", proposer_key, session)
+        human.approve(proposal)
+        first_convergence = wait_for_proposal(base, key, proposal, "succeeded", proposer_key, session)
         assert image_id() == candidate and schema() == candidate_schema
         assert_live_revision(candidate, False)
         assert sql("SELECT count(*) FROM public.schema_versions WHERE scriptname LIKE '%142_CreateAiFinancialAccounting.sql'") == "1"
@@ -242,9 +270,9 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         wrong = call("honua_propose_rollback", {"targetId": "compose-local", "toRevision": prior_id,
             "backupId": "backup-" + "0" * 32, "idempotencyKey": "wrong-backup"}, 3)
         if wrong.get("proposalId"):
-            wait_for_approval(base, approver_key, wrong["proposalId"])
-            request(base, f"/api/v1/admin/proposals/{wrong['proposalId']}/approve", approver_key, {})
-            wait_for_proposal(base, approver_key, wrong["proposalId"], "failed", proposer_key, session)
+            wait_for_approval(base, key, wrong["proposalId"])
+            human.approve(wrong['proposalId'])
+            wait_for_proposal(base, key, wrong["proposalId"], "failed", proposer_key, session)
         else:
             assert wrong.get("outcome", "").lower() in ("blocked", "rejected", "failed")
         assert image_id() == candidate and schema() == candidate_schema
@@ -252,20 +280,20 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         rollback = call("honua_propose_rollback", {"targetId": "compose-local",
             "idempotencyKey": "verified-backup"}, 4)
         assert rollback["proposalId"]
-        preview = wait_for_approval(base, approver_key, rollback["proposalId"])
+        preview = wait_for_approval(base, key, rollback["proposalId"])
         assert any(prior_id in line for line in preview["diff"])
         assert any(backup["backupId"] in line for line in preview["diff"])
         assert any(backup["backupId"] in line for line in preview["dryRun"])
         assert image_id() == candidate and schema() == candidate_schema
-        request(base, f"/api/v1/admin/proposals/{rollback['proposalId']}/approve", approver_key, {})
-        restored = wait_for_proposal(base, approver_key, rollback["proposalId"], "succeeded", proposer_key, session)
+        human.approve(rollback['proposalId'])
+        restored = wait_for_proposal(base, key, rollback["proposalId"], "succeeded", proposer_key, session)
         assert image_id() == prior_id and schema() == 140
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "retained"
         assert sql("SELECT to_regclass('honua.ai_financial_invocations') IS NULL") == "t"
         assert sql("SELECT PostGIS_Version()")
         assert_live_revision(prior_id, True)
         # Fault injection stops only services in this disposable install. The product
-        # must find and restart each one through MCP and a distinct approver.
+        # must find and restart each one through MCP and an interactive human approval.
         for service_name in ("honua", "redis", "postgres", "honua"):
             dc("stop", service_name)
             health = call("honua_ops_health", {}, 41)
@@ -286,19 +314,19 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
             proposed = call("honua_propose_finding", {"findingId": finding["id"], "candidateId": "compose-local"}, 43)
             remediation = proposed["proposalId"]
             assert remediation
-            detail = wait_for_approval(base, approver_key, remediation)
+            detail = wait_for_approval(base, key, remediation)
             assert detail["status"].lower() == "awaitingapproval"
             assert detail["actionDiscriminator"] == "compose.restart_service"
-            # Proposing and self-approval must not repair the stopped service.
+            # A proposal or an API-key approval attempt must leave the service stopped.
             assert dc("ps", "--status", "running", "-q", service_name) == ""
             try:
                 request(base, f"/api/v1/admin/proposals/{remediation}/approve", proposer_key, {})
-                raise AssertionError("self approval succeeded")
+                raise AssertionError("API-key approval succeeded")
             except urllib.error.HTTPError as error:
-                assert error.code in (400, 403, 409)
+                assert error.code == 403
             assert dc("ps", "--status", "running", "-q", service_name) == ""
-            request(base, f"/api/v1/admin/proposals/{remediation}/approve", approver_key, {})
-            wait_for_proposal(base, approver_key, remediation, "succeeded", proposer_key, session, timeout=180)
+            human.approve(remediation)
+            wait_for_proposal(base, key, remediation, "succeeded", proposer_key, session, timeout=180)
             deadline = time.monotonic() + 90
             while True:
                 health = call("honua_ops_health", {}, 44)
@@ -329,19 +357,19 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         next_proposal = next_target.get("proposalId")
         assert next_proposal, f"re-convergence did not produce a proposal: {next_target.get('outcome')}"
         assert next_proposal != proposal
-        wait_for_approval(base, approver_key, next_proposal)
-        request(base, f"/api/v1/admin/proposals/{next_proposal}/approve", approver_key, {})
+        wait_for_approval(base, key, next_proposal)
+        human.approve(next_proposal)
         try:
-            converged_again = wait_for_proposal(base, approver_key, next_proposal, "succeeded", proposer_key, session)
+            converged_again = wait_for_proposal(base, key, next_proposal, "succeeded", proposer_key, session)
         except AssertionError as error:
-            detail, _ = request(base, f"/api/v1/admin/proposals/{next_proposal}", approver_key)
+            detail, _ = request(base, f"/api/v1/admin/proposals/{next_proposal}", key)
             restore_id = detail.get("executionOperationId", "")
             diagnostics = []
             if re.fullmatch(r"restore-[a-f0-9]{32}", restore_id):
                 child_id = f"deploy-{restore_id}-{hashlib.sha256(restore_id.encode()).hexdigest()[:12]}"
                 for operation_id in (restore_id, child_id):
                     try:
-                        operation, _ = request(base, f"/api/v1/admin/deploy/operations/{operation_id}", approver_key)
+                        operation, _ = request(base, f"/api/v1/admin/deploy/operations/{operation_id}", key)
                         diagnostics.append({name: operation.get(name) for name in
                                             ("operationId", "kind", "status", "currentPhase", "errorMessage")})
                     except (urllib.error.URLError, ValueError):
@@ -386,16 +414,17 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
         second_rollback = call("honua_propose_rollback", {"targetId": "compose-local",
             "backupId": new_backup["backupId"], "idempotencyKey": "second-verified-backup"}, 6)
         assert second_rollback["proposalId"] != rollback["proposalId"]
-        preview = wait_for_approval(base, approver_key, second_rollback["proposalId"])
+        preview = wait_for_approval(base, key, second_rollback["proposalId"])
         assert any(new_backup["backupId"] in line for line in preview["diff"])
-        request(base, f"/api/v1/admin/proposals/{second_rollback['proposalId']}/approve", approver_key, {})
-        restored_again = wait_for_proposal(base, approver_key, second_rollback["proposalId"], "succeeded", proposer_key, session)
+        human.approve(second_rollback['proposalId'])
+        restored_again = wait_for_proposal(base, key, second_rollback["proposalId"], "succeeded", proposer_key, session)
         assert restored_again["executionOperationId"] not in restore_ids
         assert image_id() == prior_id and schema() == 140
         assert_live_revision(prior_id, True)
         assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "after-first-rollback"
         assert sql("SELECT to_regclass('honua.ai_financial_invocations') IS NULL") == "t"
     finally:
+        identity.close()
         dc("down", "-v", "--remove-orphans", check=False)
         run(["docker", "run", "--rm", "-v", f"{project_dir}:{project_dir}", "redis:7.4-alpine", "chown", "-R", f"{os.getuid()}:{os.getgid()}", str(project_dir)], check=False)
         shutil.rmtree(project_dir, ignore_errors=True)
