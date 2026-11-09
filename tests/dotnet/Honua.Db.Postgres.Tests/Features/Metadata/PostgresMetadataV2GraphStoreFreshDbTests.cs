@@ -24,7 +24,7 @@ namespace Honua.Db.Postgres.Tests.Features.Metadata;
 /// failure and prove ordinary reads/writes never self-apply the migration (#3899).
 /// </summary>
 [Collection("Database")]
-public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fixture)
+public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fixture)
 {
     [IntegrationTest]
     public async Task GetCurrentAsync_WhenMigration031Missing_FailsWithTypedSchemaFloorError()

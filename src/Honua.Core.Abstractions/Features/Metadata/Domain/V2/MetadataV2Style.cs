@@ -3,9 +3,11 @@
 
 using System.Text.Json.Serialization;
 
+using Honua.Core.Serialization;
+
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-public sealed record MetadataV2ResourceStyle
+public sealed record MetadataV2ResourceStyle : ExtensibleJsonRecord
 {
     private IReadOnlyList<MetadataV2StyleEncoding>? _encodings;
 
@@ -29,7 +31,7 @@ public sealed record MetadataV2ResourceStyle
     }
 }
 
-public sealed record MetadataV2StyleEncoding
+public sealed record MetadataV2StyleEncoding : ExtensibleJsonRecord
 {
     [JsonPropertyName("encoding")]
     public string Encoding { get; init; } = string.Empty;
