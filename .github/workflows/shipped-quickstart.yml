@@ -12,7 +12,8 @@ on:
       - 'docker/compose/**'
       - 'docs/guides/connect/working-with-ai-agents.md'
       - 'scripts/docker/*quickstart*.py'
-      - 'scripts/docs-validation/validate_public_install.py'
+      - 'scripts/docs-validation/**'
+      - 'src/Honua.Server/Migrations/**'
       - 'scripts/ci/start-empty-quickstart-docker.sh'
       - 'skills/**'
       - 'release/**'
@@ -98,18 +99,15 @@ jobs:
       - name: Install only archive files and execute documented data access
         run: |
           python3 - <<'PY'
-          import json, os, subprocess
+          import os, subprocess
           from pathlib import Path
           root = Path(os.environ['RUNNER_TEMP']) / 'quickstart-proof'
-          metadata = json.loads((root / 'input.json').read_text())
           subprocess.run([
               'python3', 'scripts/docker/validate_shipped_quickstart.py',
               '--archive', str(root / 'honua-compose-quickstart.tar.gz'),
               '--document', str(root / 'quickstart.md'),
               '--receipt', 'artifacts/shipped-quickstart/receipt.json',
-              '--server-source-sha', metadata['serverSourceSha'],
-              '--package-source-sha', metadata['packageSourceSha'],
-              '--package-kind', metadata['packageKind'],
+              '--input', str(root / 'input.json'),
           ], check=True)
           PY
       - name: Upload bounded bootstrap evidence

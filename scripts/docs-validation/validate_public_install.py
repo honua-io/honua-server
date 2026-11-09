@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 import re
+import shlex
 import shutil
 import socket
 import subprocess
@@ -64,6 +65,29 @@ def verify_features(features: list[dict]) -> None:
                  row["geometry"]["x"], row["geometry"]["y"]) for row in features}
     if len(features) != 2 or observed != expected:
         raise ValueError("Published sample identities, names or coordinates differ from the quickstart")
+
+
+def publication_filename(blocks: dict[str, str]) -> str:
+    command = shlex.split(blocks["query"])
+    if len(command) != 2 or command[0] != "python":
+        raise ValueError("Review the documented publication command")
+    name = command[1]
+    if not re.fullmatch(r"[a-zA-Z0-9_-]+\.py", name) or name == "quickstart.py":
+        raise ValueError("Documented publication must preserve the packaged initializer")
+    return name
+
+
+def publish_sample(work: Path, blocks: dict[str, str], run) -> tuple[str, list[dict]]:
+    for name in ("seed", "clients"):
+        run(["bash", "-euo", "pipefail", "-c", blocks[name]], 600)
+    (work / publication_filename(blocks)).write_text(blocks["publish"])
+    output = run(["bash", "-euo", "pipefail", "-c", ". .venv/bin/activate\n" + blocks["query"]], 300)
+    match = re.fullmatch(r"published service quickstart layer (\d+)\n(.*)\s*", output, re.S)
+    if not match:
+        raise ValueError("Quickstart did not return a published layer and features")
+    features = json.loads(match[2])
+    verify_features(features)
+    return match[1], features
 
 
 def main() -> int:
@@ -156,17 +180,7 @@ def main() -> int:
             shell("start")
             base = f"http://localhost:{http}"
             wait_ready(base)
-            shell("seed")
-            shell("clients", 600)
-            env["PATH"] = str(work / ".venv/bin") + os.pathsep + env["PATH"]
-            (work / "publish-quickstart.py").write_text(blocks["publish"])
-            output = shell("query")
-            match = re.fullmatch(r"published service quickstart layer (\d+)\n(.*)\s*", output, re.S)
-            if not match:
-                raise ValueError("Quickstart did not return a published layer and features")
-            layer_id, payload = match.groups()
-            features = json.loads(payload)
-            verify_features(features)
+            layer_id, _ = publish_sample(work, blocks, run)
             receipt["publishQuery"] = True
             run(compose + ["restart", "honua", "postgres", "redis"])
             wait_ready(base)

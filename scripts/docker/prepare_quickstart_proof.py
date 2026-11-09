@@ -26,6 +26,9 @@ def select_candidate() -> tuple[dict, str]:
     runs = json.loads(github("api", f"repos/{REPOSITORY}/actions/workflows/nightly-container-build.yml/runs"
                             "?status=success&per_page=30"))["workflow_runs"]
     for run in runs:
+        if run.get("event") not in ("schedule", "workflow_dispatch") or run.get(
+                "head_repository", {}).get("full_name") != REPOSITORY:
+            continue
         sha = run["head_sha"]
         if not re.fullmatch(r"[a-f0-9]{40}", sha):
             continue
@@ -49,12 +52,13 @@ def main() -> None:
         raise ValueError("Prospective source revision must be a full commit identifier")
     args.output.mkdir(parents=True)
     run, name = select_candidate()
+    print(f"Selected official candidate run {run['id']} at {run['head_sha']}: {name}", flush=True)
     download = args.output / "published"
     github("run", "download", str(run["id"]), "--repo", REPOSITORY, "--name", name, "--dir", str(download))
     archive = download / "honua-compose-quickstart.tar.gz"
     lock = unpack(archive, download / "contents")
     published_digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-    kind = "shipped"
+    kind = "candidate"
     source = run["head_sha"]
     if args.prospective_source_sha:
         actual_source = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
@@ -62,8 +66,6 @@ def main() -> None:
             raise ValueError("Prospective package source must match the checked-out commit")
         kind = "prospective-pr"
         source = args.prospective_source_sha
-        if "console" not in lock:
-            raise ValueError("The candidate release lock does not yet pin Console; release packaging is required")
         command = ["python3", str(ROOT / "scripts/docker/package_quickstart.py")]
         for component in ("server", "executor", "worker", "console"):
             command.extend([f"--{component}-image", lock[component]])

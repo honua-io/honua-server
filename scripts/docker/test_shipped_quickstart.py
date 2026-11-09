@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Refusal controls for archived installation, credential, health and teardown proofs."""
 import hashlib
+import base64
 import io
 import json
 from pathlib import Path
@@ -12,6 +13,11 @@ from unittest.mock import Mock, patch
 
 import validate_shipped_quickstart as proof
 import prepare_quickstart_proof as prepare
+
+
+def official_run(**overrides):
+    return dict({"id": 1, "head_branch": "trunk", "head_sha": "a" * 40,
+                 "event": "workflow_dispatch", "head_repository": {"full_name": prepare.REPOSITORY}}, **overrides)
 
 
 class ArchiveTests(unittest.TestCase):
@@ -150,11 +156,20 @@ class AssertionTests(unittest.TestCase):
 
 
 class CandidateTests(unittest.TestCase):
+    def test_fork_and_unexpected_event_cannot_supply_candidate_inputs(self):
+        for field, value in (("event", "pull_request"), ("head_repository", {"full_name": "other/server"})):
+            run = official_run()
+            run[field] = value
+            results = [json.dumps({"workflow_runs": [run]}), json.dumps({"artifacts": [{
+                "name": "honua-compose-quickstart-" + "a" * 7, "expired": False}]})]
+            with self.subTest(field=field), patch.object(prepare, "github", side_effect=results), \
+                    self.assertRaisesRegex(ValueError, "No successful"):
+                prepare.select_candidate()
+
     def test_only_official_artifact_bearing_runs_are_selected(self):
         sha = "b" * 40
-        runs = [{"id": 1, "head_branch": "feature", "head_sha": "a" * 40},
-                {"id": 2, "head_branch": "trunk", "head_sha": "c" * 40},
-                {"id": 3, "head_branch": "nightly-candidate-" + sha[:7], "head_sha": sha}]
+        runs = [official_run(head_branch="feature"), official_run(id=2, head_sha="c" * 40),
+                official_run(id=3, head_branch="nightly-candidate-" + sha[:7], head_sha=sha)]
         results = [json.dumps({"workflow_runs": runs}), json.dumps({"artifacts": []}),
                    json.dumps({"artifacts": [{"name": "honua-compose-quickstart-" + sha[:7], "expired": False}]})]
         with patch.object(prepare, "github", side_effect=results):
@@ -165,10 +180,15 @@ class CandidateTests(unittest.TestCase):
     def test_missing_or_expired_candidate_package_is_not_a_pass(self):
         for artifacts in ([], [{"name": "honua-compose-quickstart-" + "a" * 7, "expired": True}]):
             with self.subTest(artifacts=artifacts):
-                results = [json.dumps({"workflow_runs": [{"id": 1, "head_branch": "trunk", "head_sha": "a" * 40}]}),
+                results = [json.dumps({"workflow_runs": [official_run()]}),
                            json.dumps({"artifacts": artifacts})]
                 with patch.object(prepare, "github", side_effect=results), self.assertRaisesRegex(ValueError, "No successful"):
                     prepare.select_candidate()
+
+    def test_non_hex_source_is_not_eligible(self):
+        with patch.object(prepare, "github", return_value=json.dumps({
+                "workflow_runs": [official_run(head_sha="z" * 40)]})), self.assertRaises(ValueError):
+            prepare.select_candidate()
 
 
 class LifecycleTests(unittest.TestCase):
@@ -179,9 +199,14 @@ class LifecycleTests(unittest.TestCase):
         self.archive = self.root / "archive.tar.gz"
         self.archive.write_bytes(b"fixture")
         self.receipt = self.root / "receipt.json"
+        self.input = self.root / "input.json"
+        self.metadata = {"packageKind": "prospective-pr", "packageSourceSha": "b" * 40,
+                         "serverSourceSha": "a" * 40, "publishedRunId": 123,
+                         "publishedArchiveSha256": "c" * 64,
+                         "archiveSha256": hashlib.sha256(self.archive.read_bytes()).hexdigest()}
+        self.input.write_text(json.dumps(self.metadata))
         self.arguments = ["proof", "--archive", str(self.archive), "--document", str(self.root / "quickstart.md"),
-                          "--receipt", str(self.receipt), "--server-source-sha", "a" * 40,
-                          "--package-source-sha", "b" * 40, "--package-kind", "prospective-pr"]
+                          "--receipt", str(self.receipt), "--input", str(self.input)]
 
     def execute(self, installation, outcome):
         with patch.object(proof.sys, "argv", self.arguments), \
@@ -222,6 +247,157 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(2, len(receipt["installations"]))
         self.assertFalse(receipt["customerJourneyComplete"])
         self.assertEqual("prospective-pr", receipt["packageKind"])
+        self.assertEqual(123, receipt["publishedRunId"])
+        self.assertEqual("c" * 64, receipt["publishedArchiveSha256"])
+
+    def test_mismatched_or_missing_image_revision_never_passes(self):
+        for label in ("b" * 40, "<no value>"):
+            installations = [Mock(), Mock()]
+            for index, installation in enumerate(installations):
+                installation.run.return_value = label
+                installation.credentials.return_value = {"admin": str(index)}
+            with self.subTest(label=label):
+                self.assertEqual(1, self.execute(installations, [{}, {}]))
+                self.assertFalse(json.loads(self.receipt.read_text())["passed"])
+
+    def test_transported_archive_identity_cannot_be_changed(self):
+        self.archive.write_bytes(b"different archive")
+        with self.assertRaisesRegex(ValueError, "transported input identity"):
+            proof.proof_inputs(self.input, self.archive)
+
+    def test_invalid_provenance_fields_are_refused(self):
+        invalid = {"packageSourceSha": "short", "serverSourceSha": None, "publishedRunId": 0,
+                   "archiveSha256": "invalid", "publishedArchiveSha256": "z" * 64, "packageKind": "shipped"}
+        for key, value in invalid.items():
+            with self.subTest(key=key):
+                self.input.write_text(json.dumps(dict(self.metadata, **{key: value})))
+                with self.assertRaises(ValueError):
+                    proof.proof_inputs(self.input, self.archive)
+
+    def test_candidate_identity_requires_the_official_archive_and_source(self):
+        self.metadata["packageKind"] = "candidate"
+        self.metadata["publishedArchiveSha256"] = self.metadata["archiveSha256"]
+        self.input.write_text(json.dumps(self.metadata))
+        with self.assertRaisesRegex(ValueError, "official publication"):
+            proof.proof_inputs(self.input, self.archive)
+        self.metadata["packageSourceSha"] = self.metadata["serverSourceSha"]
+        self.input.write_text(json.dumps(self.metadata))
+        self.assertEqual("candidate", proof.proof_inputs(self.input, self.archive)["packageKind"])
+
+
+class InstallationTests(unittest.TestCase):
+    def test_credential_inventory_requires_every_secret_and_sufficient_length(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            secrets = work / "secrets"
+            secrets.mkdir()
+            installation = proof.Installation(work)
+            for key in proof.ALL_SECRET_KEYS:
+                (secrets / key.lower()).write_text("s" * 32)
+            self.assertEqual(len(proof.ALL_SECRET_KEYS), len(installation.credentials()))
+            path = secrets / proof.ALL_SECRET_KEYS[0].lower()
+            path.write_text("short")
+            with self.assertRaises(ValueError):
+                installation.credentials()
+            path.unlink()
+            with self.assertRaises(ValueError):
+                installation.credentials()
+
+    def test_health_scans_each_rendered_secret_surface(self):
+        for surface in ("config", "environment", "dotenv"):
+            with self.subTest(surface=surface), tempfile.TemporaryDirectory() as directory:
+                work = Path(directory)
+                secret = "s" * 32
+                (work / ".env").write_text(secret if surface == "dotenv" else "SETTING=value")
+                config = {"services": {"server": {}}}
+                if surface == "config":
+                    config["leaked"] = secret
+                rendered = {("config", "--format", "json"): json.dumps(config),
+                            ("config", "--environment"): secret if surface == "environment" else "SETTING=value",
+                            ("ps", "--all", "--format", "json"): json.dumps([
+                                {"Service": "server", "State": "running", "Health": "healthy"}])}
+                installation = proof.Installation(work)
+                with patch.object(installation, "credentials", return_value={"admin": secret}), \
+                        patch.object(installation, "compose", side_effect=lambda *args: rendered[args]), \
+                        self.assertRaisesRegex(ValueError, "rendered configuration"):
+                    installation.health()
+
+    def test_exercise_refuses_missing_console_changed_initializer_or_credentials(self):
+        for defect in ("none", "console", "initializer", "credentials"):
+            with self.subTest(defect=defect), tempfile.TemporaryDirectory() as directory:
+                work = Path(directory)
+                (work / "quickstart.py").write_text("initializer")
+                installation = Mock()
+                installation.directory = work
+                installation.health.side_effect = [5, 5 if defect == "console" else 6, 6]
+                installation.credentials.side_effect = [{"admin": "first"}, {
+                    "admin": "changed" if defect == "credentials" else "first"}]
+                if defect == "initializer":
+                    installation.publish.side_effect = lambda _: (work / "quickstart.py").write_text("overwritten")
+                response = io.BytesIO(b"{}")
+                response.status = 200
+                with patch.object(proof, "wait_ready"), patch.object(proof.urllib.request, "urlopen", return_value=response):
+                    if defect == "none":
+                        result = proof.exercise(installation, {})
+                        self.assertTrue(result["reinitializePreservesCredentials"])
+                        self.assertNotIn("restart", result)
+                    else:
+                        with self.assertRaises(ValueError):
+                            proof.exercise(installation, {})
+
+    def test_shared_publish_reader_validates_real_output_shape(self):
+        blocks = {"seed": "seed", "clients": "clients", "publish": "example", "query": "python publish.py"}
+        features = [{"attributes": {"id": 1, "name": "west"}, "geometry": {"x": -157.875, "y": 21.3125}},
+                    {"attributes": {"id": 2, "name": "east"}, "geometry": {"x": -155.0625, "y": 19.6875}}]
+        for output in ("malformed", "published service quickstart layer 3\n[]",
+                       "published service quickstart layer 3\n" + json.dumps(features)):
+            with self.subTest(output=output), tempfile.TemporaryDirectory() as directory:
+                run = Mock(side_effect=["", "", output])
+                if output.endswith(json.dumps(features)):
+                    self.assertEqual(("3", features), proof.publish_sample(Path(directory), blocks, run))
+                else:
+                    with self.assertRaises(ValueError):
+                        proof.publish_sample(Path(directory), blocks, run)
+
+
+class PrepareTests(unittest.TestCase):
+    def test_existing_output_and_invalid_prospective_source_are_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for arguments in (["--output", directory], ["--output", str(Path(directory) / "new"),
+                                                      "--prospective-source-sha", "invalid"]):
+                with self.subTest(arguments=arguments), patch.object(proof.sys, "argv", ["prepare", *arguments]), \
+                        self.assertRaises(ValueError):
+                    prepare.main()
+
+    def test_document_source_binding_and_prospective_checkout_refusal(self):
+        for prospective in (False, True):
+            with self.subTest(prospective=prospective), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory) / "proof"
+                arguments = ["prepare", "--output", str(output)]
+                if prospective:
+                    arguments.extend(["--prospective-source-sha", "b" * 40])
+                def github(*args):
+                    if args[0] == "run":
+                        target = output / "published"
+                        target.mkdir()
+                        archive = target / "honua-compose-quickstart.tar.gz"
+                        archive.write_bytes(b"fixture")
+                        archive.with_name(archive.name + ".sha256").write_text("fixture checksum")
+                        return ""
+                    self.assertIn("ref=" + "a" * 40, args[1])
+                    return json.dumps({"content": base64.b64encode(b"source-bound document").decode()})
+                with patch.object(proof.sys, "argv", arguments), \
+                        patch.object(prepare, "select_candidate", return_value=(official_run(), "artifact")), \
+                        patch.object(prepare, "github", side_effect=github), \
+                        patch.object(prepare, "unpack", return_value={}), \
+                        patch.object(prepare.subprocess, "check_output", return_value="c" * 40):
+                    if prospective:
+                        with self.assertRaisesRegex(ValueError, "checked-out commit"):
+                            prepare.main()
+                    else:
+                        prepare.main()
+                        self.assertEqual(b"source-bound document", (output / "quickstart.md").read_bytes())
+                        self.assertEqual("candidate", json.loads((output / "input.json").read_text())["packageKind"])
 
 
 if __name__ == "__main__":

@@ -8,7 +8,6 @@ import json
 import os
 from pathlib import Path
 import re
-import shlex
 import subprocess
 import sys
 import tarfile
@@ -18,7 +17,7 @@ import urllib.request
 from compose_quickstart import ALL_SECRET_KEYS
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "docs-validation"))
-from validate_public_install import public_blocks, verify_features, wait_ready
+from validate_public_install import public_blocks, publication_filename, publish_sample, wait_ready
 
 REQUIRED = {"compose.yaml", "compose.executor.yaml", "compose.console.yaml", "quickstart.py", "images.json"}
 IMAGE = re.compile(r"ghcr\.io/honua-io/[a-z0-9.-]+@sha256:[a-f0-9]{64}\Z")
@@ -49,16 +48,6 @@ def unpack(archive: Path, destination: Path) -> dict:
     if any(not IMAGE.fullmatch(lock.get(name, "")) for name in ("server", "executor", "worker", "console")):
         raise ValueError("Quickstart archive lacks immutable release image pins, including Console")
     return lock
-
-
-def publication_filename(blocks: dict[str, str]) -> str:
-    command = shlex.split(blocks["query"])
-    if len(command) != 2 or command[0] != "python":
-        raise ValueError("Review the documented publication command")
-    name = command[1]
-    if not re.fullmatch(r"[a-zA-Z0-9_-]+\.py", name) or name == "quickstart.py":
-        raise ValueError("Documented publication must preserve the packaged initializer")
-    return name
 
 
 def check_no_secrets(text: str, credentials: dict[str, str]) -> None:
@@ -125,15 +114,7 @@ class Installation:
         return len(observed)
 
     def publish(self, blocks: dict[str, str]) -> None:
-        self.run(["bash", "-euo", "pipefail", "-c", blocks["seed"]])
-        self.run(["bash", "-euo", "pipefail", "-c", blocks["clients"]])
-        self.environment["PATH"] = str(self.directory / ".venv/bin") + os.pathsep + self.environment["PATH"]
-        (self.directory / publication_filename(blocks)).write_text(blocks["publish"])
-        output = self.run(["bash", "-euo", "pipefail", "-c", blocks["query"]])
-        match = re.fullmatch(r"published service quickstart layer (\d+)\n(.*)\s*", output, re.S)
-        if not match:
-            raise ValueError("Documented publication did not return a layer and sample features")
-        verify_features(json.loads(match[2]))
+        publish_sample(self.directory, blocks, self.run)
 
     def down(self) -> None:
         if not (self.directory / ".env").exists():
@@ -145,7 +126,7 @@ class Installation:
 def check_empty(installation: Installation, resources: tuple[str, ...]) -> None:
     for resource in resources:
         command = ["docker", resource, "ls", "--quiet"]
-        if resource == "container":
+        if resource in ("image", "container"):
             command.append("--all")
         if installation.run(command).strip():
             raise ValueError("The dedicated Docker host contains leftover " + resource + " resources")
@@ -172,7 +153,29 @@ def exercise(installation: Installation, blocks: dict[str, str]) -> dict:
     if installation.credentials() != credentials:
         raise ValueError("Restart changed the installation's saved credentials")
     return {"defaultServices": default_count, "consoleServices": console_count,
-            "secretFreeConfiguration": True, "publishQuery": True, "restart": True}
+            "secretFreeConfiguration": True, "publishQuery": True, "reinitializePreservesCredentials": True}
+
+
+def proof_inputs(path: Path, archive: Path) -> dict:
+    metadata = json.loads(path.read_text())
+    for key in ("packageSourceSha", "serverSourceSha"):
+        if not isinstance(metadata.get(key), str) or not re.fullmatch(r"[a-f0-9]{40}", metadata[key]):
+            raise ValueError("Package and server source revisions must be full commit identifiers")
+    for key in ("archiveSha256", "publishedArchiveSha256"):
+        if not isinstance(metadata.get(key), str) or not re.fullmatch(r"[a-f0-9]{64}", metadata[key]):
+            raise ValueError("Input archive digests must be full SHA256 values")
+    if type(metadata.get("publishedRunId")) is not int or metadata["publishedRunId"] <= 0:
+        raise ValueError("Input must identify its official candidate publication run")
+    if metadata.get("packageKind") not in ("candidate", "prospective-pr"):
+        raise ValueError("Input must distinguish candidate and prospective PR archives")
+    if hashlib.sha256(archive.read_bytes()).hexdigest() != metadata["archiveSha256"]:
+        raise ValueError("Downloaded archive does not match its transported input identity")
+    if metadata["packageKind"] == "candidate" and (
+            metadata["archiveSha256"] != metadata["publishedArchiveSha256"] or
+            metadata["packageSourceSha"] != metadata["serverSourceSha"]):
+        raise ValueError("Candidate archive identity differs from its official publication")
+    return {key: metadata[key] for key in ("packageSourceSha", "serverSourceSha", "archiveSha256",
+                                          "publishedArchiveSha256", "publishedRunId", "packageKind")}
 
 
 def main() -> int:
@@ -180,21 +183,15 @@ def main() -> int:
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--document", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
-    parser.add_argument("--server-source-sha", required=True)
-    parser.add_argument("--package-source-sha", required=True)
-    parser.add_argument("--package-kind", choices=("shipped", "prospective-pr"), required=True)
+    parser.add_argument("--input", type=Path, required=True)
     args = parser.parse_args()
     receipt = {"scope": "archived-bootstrap-and-data-plane", "passed": False, "customerJourneyComplete": False,
                "authenticatedConsoleStudio": "pending-package-and-identity-journey",
-               "archiveSha256": hashlib.sha256(args.archive.read_bytes()).hexdigest(), "installations": []}
-    receipt.update(packageKind=args.package_kind, packageSourceSha=args.package_source_sha,
-                   serverSourceSha=args.server_source_sha)
+               "installations": []}
     args.receipt.parent.mkdir(parents=True, exist_ok=True)
     stage = "validate-document"
     try:
-        if not all(re.fullmatch(r"[a-f0-9]{40}", value) for value in (
-                args.server_source_sha, args.package_source_sha)):
-            raise ValueError("Package and server source revisions must be full commit identifiers")
+        receipt.update(proof_inputs(args.input, args.archive))
         blocks = public_blocks(args.document)
         publication_filename(blocks)
         previous = None
@@ -212,7 +209,7 @@ def main() -> int:
                     result = exercise(installation, blocks)
                     revision = installation.run(["docker", "image", "inspect", lock["server"], "--format",
                                                  '{{index .Config.Labels "org.opencontainers.image.revision"}}']).strip()
-                    if revision != args.server_source_sha:
+                    if revision != receipt["serverSourceSha"]:
                         raise ValueError("Installed serving image does not match the selected candidate source")
                     current = installation.credentials()
                     if previous is not None:

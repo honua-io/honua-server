@@ -359,14 +359,17 @@ shared developer host.
 
 The assertions cover both documented profiles, completed initialization services,
 healthy runtime services, secret-free rendered Compose configuration, documented
-sample publication/query, preserved initializer/credentials on restart, removal
+sample publication/query, idempotent initializer/credential preservation, removal
 of all containers and volumes, and fresh credentials on a second installation.
-Missing Console package files or release pins fail rather than being synthesized.
+Missing Console package files or release pins fail rather than being synthesized;
+nightly and package-path PR runs remain red until those package prerequisites land.
 The external installed proof is an explicit package-path PR exception to the
 ordinary five-minute deterministic PR guidance below; its offline controls run
 separately. This workflow does not dispatch full CI or change required contexts.
 
-Receipts have scope `archived-bootstrap-and-data-plane`. Authenticated Console and
+Receipts have scope `archived-bootstrap-and-data-plane`, distinguish `candidate`
+from `prospective-pr`, and retain the official publication run and archive digests.
+Authenticated Console and
 Studio sign-in remains a separate prerequisite: `customerJourneyComplete` stays
 false even when these bootstrap assertions pass. This workflow cannot by itself
 qualify the complete customer journey or close the clean-host installation work.
