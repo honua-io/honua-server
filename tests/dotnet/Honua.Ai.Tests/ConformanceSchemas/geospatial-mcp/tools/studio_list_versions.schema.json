@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "required": [
+    "itemId"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "itemId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "beforeVersionNumber": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "default": 25
+    }
+  }
+}
