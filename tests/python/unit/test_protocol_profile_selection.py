@@ -58,7 +58,7 @@ class ProtocolProfileSelectionTests(unittest.TestCase):
     def test_module_change_selects_profiles_that_include_it(self):
         completed = run_selector([
             "--changed-file",
-            "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerEndpoints.cs",
+            "src/Honua.Protocols/GeoServices/FeatureServer/FeatureServerEndpoints.cs",
         ])
         self.assertEqual(completed.returncode, 0, completed.stderr)
         payload = json.loads(completed.stdout)

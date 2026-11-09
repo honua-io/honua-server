@@ -13,8 +13,8 @@ name: GDAL Worker Image
 # helper it depends on (honua-server#4401 — this workflow is the ONLY lane that
 # runs Category=PDAL, so a PR that deletes the attribute, retraits the case or
 # weakens its assertions must land here to be seen), and this workflow. Shared managed-source and build-graph
-# inputs (`src/Honua.Core/**`, `src/Honua.Core.Abstractions/**`,
-# `src/Honua.Analyzers/**`, `src/Honua.Geoprocessing/**`, `src/Honua.Jobs/**`,
+# inputs (`src/Honua.Core/Core/**`, `src/Honua.Core/Abstractions/**`,
+# `src/Honua.Analyzers/**`, `src/Honua.Geoprocessing/Core/**`, `src/Honua.Jobs/**`,
 # `src/Honua.Geometry/**`, `src/Honua.Hosting/**`,
 # `src/Honua.ServiceDefaults/**`, `eng/**`, the solution, build props/targets,
 # package configuration, and `.editorconfig`) are NOT PR triggers, because they
@@ -38,6 +38,7 @@ name: GDAL Worker Image
 # and excluded shared-input risk moves from "every push" to "within seven days."
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches: [trunk]
     paths:
       - 'docker/worker-gdal/**'
@@ -84,6 +85,7 @@ concurrency:
 
 jobs:
   publication-contract:
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     name: Verify worker publication guards
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -98,6 +100,7 @@ jobs:
       - run: python3 -m unittest discover -s scripts/ci -p test_worker_publication.py -v
 
   build-and-scan:
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     name: Build, verify, and scan GDAL worker
     needs: publication-contract
     runs-on: ubuntu-24.04
@@ -434,9 +437,13 @@ jobs:
     name: Publish verified nightly GDAL worker
     needs: [build-and-scan, publish-sarif]
     if: >-
-      github.event_name == 'workflow_dispatch' && inputs.publish_nightly == true &&
-      github.repository == 'honua-io/honua-server' && github.ref == 'refs/heads/trunk' &&
-      needs.build-and-scan.result == 'success' && needs.publish-sarif.result == 'success'
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft) &&
+      (github.event_name == 'workflow_dispatch' &&
+      inputs.publish_nightly == true &&
+      github.repository == 'honua-io/honua-server' &&
+      github.ref == 'refs/heads/trunk' &&
+      needs.build-and-scan.result == 'success' &&
+      needs.publish-sarif.result == 'success')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -495,9 +502,10 @@ jobs:
     name: Publish GDAL worker SARIF
     needs: build-and-scan
     if: >-
-      always() &&
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft) &&
+      (always() &&
       needs.build-and-scan.outputs.sarif-created == 'true' &&
-      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

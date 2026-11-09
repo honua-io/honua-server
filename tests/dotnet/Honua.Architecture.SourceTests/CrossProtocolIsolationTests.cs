@@ -168,11 +168,11 @@ public sealed class CrossProtocolIsolationTests
     private static readonly Dictionary<string, string[]> _extractedFamilyRoots =
         new(StringComparer.Ordinal)
         {
-            ["OData"] = new[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols.OData") },
-            ["Scene"] = new[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols.Scene") },
-            ["Stac"] = new[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols.Stac") },
-            ["SensorThings"] = new[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols.SensorThings") },
-            ["GeoServices"] = new[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols.GeoServices") },
+            ["OData"] = new[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols", "OData") },
+            ["Scene"] = new[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols", "Scene") },
+            ["Stac"] = new[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols", "Stac") },
+            ["SensorThings"] = new[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols", "SensorThings") },
+            ["GeoServices"] = new[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols", "GeoServices") },
             // MCP is the AI module's protocol surface (consolidated into Honua.Ai
             // rather than a standalone Honua.Protocols.Mcp, because Ai and Mcp are
             // mutually dependent — MCP tools delegate to AiBuilder/Grounding).
@@ -183,9 +183,9 @@ public sealed class CrossProtocolIsolationTests
             // allowed intra-family reference.
             ["Ogc"] = new[]
             {
-                ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols.OgcApi"),
-                ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols.OgcClassic"),
-                ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols.Ogc.Shared"),
+                ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols", "OgcApi"),
+                ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols", "OgcClassic"),
+                ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols", "Ogc.Shared"),
             },
         };
 
