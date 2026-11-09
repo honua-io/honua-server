@@ -43,6 +43,8 @@ public sealed class StudioPostgresPublicationTests : IAsyncLifetime
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
                 builder.UseSetting("ConnectionStrings:redis", "");
+                builder.UseSetting("HONUA_REGISTER_TEST_INFRASTRUCTURE", "true");
+                builder.UseSetting("DataSource:Provider", "postgres");
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
                 builder.UseSetting("Operations:Policy:Enabled", "true");
                 builder.UseSetting("Operations:Policy:DefaultDecision", "Allow");
