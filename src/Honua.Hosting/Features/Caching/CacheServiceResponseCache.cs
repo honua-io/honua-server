@@ -40,7 +40,7 @@ internal sealed class CacheServiceResponseCache : IResponseCache
     private readonly int _maxEntries;
     private long _reservedBytes;
     private long _reservationSequence;
-    private readonly Dictionary<string, string> _observedRecoveryEpochs = new(StringComparer.Ordinal);
+    private string? _observedRecoveryEpoch;
     private readonly SortedSet<ResponseReservation> _expirationOrder = new(Comparer<ResponseReservation>.Create((left, right) =>
     {
         var expiration = left.ExpiresAt.CompareTo(right.ExpiresAt);
@@ -195,25 +195,24 @@ internal sealed class CacheServiceResponseCache : IResponseCache
             }
             if (missIndices[0] == 0)
             {
-                ReleaseObsoleteEpochReservations(resolved[0], reservationsBeforeRead, scope);
+                ReleaseObsoleteEpochReservations(resolved[0], reservationsBeforeRead);
             }
         }
 
         return resolved;
     }
 
-    private void ReleaseObsoleteEpochReservations(string epoch, long reservationsBeforeRead, string scope)
+    private void ReleaseObsoleteEpochReservations(string epoch, long reservationsBeforeRead)
     {
         lock (_budgetLock)
         {
-            if (_observedRecoveryEpochs.GetValueOrDefault(scope) == epoch)
+            if (_observedRecoveryEpoch == epoch)
             {
                 return;
             }
-            _observedRecoveryEpochs[scope] = epoch;
+            _observedRecoveryEpoch = epoch;
             var epochMarker = $":v:{epoch}:";
             var invalidated = _reservations.Values.Where(reservation =>
-                reservation.ScopePrefix == scope &&
                 reservation.Sequence <= reservationsBeforeRead &&
                 GetNamespaceKeysForCacheKey(reservation.Key).Count > 0 &&
                 !reservation.Key.Contains(epochMarker, StringComparison.Ordinal)).ToArray();
