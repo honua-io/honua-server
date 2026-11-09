@@ -88,7 +88,7 @@ internal static class McpConsoleEntities
             yield return new Entity { Kind = "layer", Id = layer!, ServiceName = service };
     }
 
-    private static IEnumerable<Entity> Catalog(JsonElement payload, string operation)
+    private static Entity[] Catalog(JsonElement payload, string operation)
     {
         if (!payload.TryGetProperty("details", out var details))
             return [];
