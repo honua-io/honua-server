@@ -71,7 +71,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: capability-matrix-aggregation-${{ github.ref }}
+  group: capability-matrix-aggregation-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
