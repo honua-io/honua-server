@@ -2699,7 +2699,7 @@ jobs:
         # Scoped to Honua.Core's transitive ProjectReferences; the package
         # job only pack's Honua.Core. Full-sln restore was over-fetching
         # for the entire repo every run.
-        run: scripts/ci/dotnet-restore-retry.sh src/Honua.Core/Honua.Core.csproj
+        run: scripts/ci/dotnet-restore-retry.sh src/Honua.Core/Core/Honua.Core.csproj
 
       - name: Build Honua.Core package
         run: |
@@ -2708,13 +2708,13 @@ jobs:
           # (the Phase-0 contract split), so the compatibility consumer can only
           # restore Honua.Core if Honua.Core.Abstractions is in the same feed.
           # Pack both at the same version.
-          dotnet pack src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj \
+          dotnet pack src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj \
             --configuration Release \
             --output ./packages \
             --no-restore \
             -p:PackageVersion="${package_version}" \
             -p:Version="${package_version}"
-          dotnet pack src/Honua.Core/Honua.Core.csproj \
+          dotnet pack src/Honua.Core/Core/Honua.Core.csproj \
             --configuration Release \
             --output ./packages \
             --no-restore \

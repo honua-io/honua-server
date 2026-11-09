@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
+using Honua.Server.Features.Admin.Models;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -15,6 +16,61 @@ namespace Honua.Server.Tests.Features.Admin;
 
 public sealed partial class CoordinatedReleaseControlEndpointsTests
 {
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approval-review/{gate}")]
+    public async Task OpenGateReview_InteractiveHuman_ReturnsBoundReviewWithoutApproving()
+    {
+        using var human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identity);
+        foreach (var (gate, route) in new[]
+        {
+            (CoordinatedReleaseStep.ContainerRollout, "container"),
+            (CoordinatedReleaseStep.MetadataAndSchema, "data"),
+        })
+        {
+            var operation = await PrepareHumanGateAsync(gate);
+
+            using var response = await human.Client.GetAsync(
+                $"/api/v1/admin/metadata/coordinated-releases/operations/{operation.OperationId}/approval-review/{route}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Headers.CacheControl!.NoStore.Should().BeTrue();
+            var snapshot = await response.Content.ReadFromJsonAsync(
+                CoordinatedReleaseJsonContext.Default.CoordinatedReleaseHumanReviewResponse);
+            snapshot.Should().NotBeNull();
+            snapshot!.Review.WorkflowId.Should().Be(operation.OperationId);
+            snapshot.Review.WorkflowVersion.Should().Be(operation.Version);
+            snapshot.Review.PlanHash.Should().Be(CoordinatedReleaseApprovalBinding.ComputePlanHash(operation, gate));
+            snapshot.Plan.MetadataPlan.Should().BeEquivalentTo(operation.CoordinatedRelease!.MetadataPlan);
+            (await _workflowStore.GetAsync(operation.OperationId)).Should().BeEquivalentTo(operation);
+        }
+        _container.StartCalls.Should().Be(0);
+        _metadata.StartCalls.Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approval-review/{gate}")]
+    public async Task OpenGateReview_ApiKey_RefusesWithoutChangingTheGate()
+    {
+        foreach (var (gate, route) in new[]
+        {
+            (CoordinatedReleaseStep.ContainerRollout, "container"),
+            (CoordinatedReleaseStep.MetadataAndSchema, "data"),
+        })
+        {
+            var operation = await PrepareHumanGateAsync(gate);
+
+            using var response = await _client.GetAsync(
+                $"/api/v1/admin/metadata/coordinated-releases/operations/{operation.OperationId}/approval-review/{route}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            response.Headers.CacheControl!.NoStore.Should().BeTrue();
+            (await response.Content.ReadAsStringAsync()).Should().Contain("interactive");
+            (await _workflowStore.GetAsync(operation.OperationId)).Should().BeEquivalentTo(operation);
+        }
+        _container.StartCalls.Should().Be(0);
+        _metadata.StartCalls.Should().Be(0);
+    }
+
     [IntegrationTheory]
     [Endpoint("GET /api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approval-review/{gate}")]
     [Endpoint("POST /api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approve/{gate}")]

@@ -21,7 +21,7 @@ both stand, but the inference that serves them moves to the client.
 `QueryGeneration`, `ReportGeneration`, `WorkflowGeneration` — plus two in-server
 model provider adapters, `Providers/AzureOpenAi` and `Providers/Bedrock`. (#3255's
 body says seven; `WorkflowGeneration` is uncounted. `src/Honua.Scene/Generation`
-and `src/Honua.Core/Features/WorkflowPackages/Generation` are unrelated despite
+and `src/Honua.Core/Core/Features/WorkflowPackages/Generation` are unrelated despite
 the name and are **not** in scope.)
 
 Each family is a server-side, prompt-driven, whole-artifact generator: a natural
@@ -267,14 +267,14 @@ regression this work caused.
   a browser can reach a model without holding a key.
 - Removing NL-to-spatial-SQL. The pipeline is
   `NL -> FilterPlan -> FilterPlanCompiler -> SQL`, and both load-bearing pieces
-  sit outside this deletion: `FilterPlan` in `Honua.Core/Features/NlQuery/Domain`
+  sit outside this deletion: `FilterPlan` in `Honua.Core/Core/Features/NlQuery/Domain`
   and `FilterPlanCompiler` in `Honua.Geometry/Features/NlQuery/Services`. Only
   the step that decides *who runs the model* changes. A client-planned
   `FilterPlan` is also strictly better than a generated SQL string, because it is
   inspectable and dry-runnable before it reaches the database.
 - D4 model routing (#3254).
 - Touching `src/Honua.Scene/Generation` or
-  `src/Honua.Core/Features/WorkflowPackages/Generation`, which are not AI
+  `src/Honua.Core/Core/Features/WorkflowPackages/Generation`, which are not AI
   generation despite the name.
 
 ## Amendment (2026-08-16): where the persisted draft lives (#3262)
