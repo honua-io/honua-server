@@ -26,6 +26,7 @@ public sealed class OperationSchemaNullabilityTests
                   "referenced": { "$ref": "#/components/schemas/Selection" },
                   "wrapped": { "allOf": [ { "$ref": "#/components/schemas/Name" } ], "nullable": true },
                   "plain": { "$ref": "#/components/schemas/Name" },
+                  "choice": { "type": "string", "nullable": true, "enum": ["survey", null] },
                   "list": { "type": "array", "items": { "type": "integer", "nullable": true } }
                 }
               }
@@ -51,6 +52,8 @@ public sealed class OperationSchemaNullabilityTests
         schema.Properties["referenced"].AllowsNull.Should().BeTrue();
         schema.Properties["wrapped"].AllowsNull.Should().BeTrue();
         schema.Properties["plain"].AllowsNull.Should().BeFalse();
+        schema.Properties["choice"].AllowsNull.Should().BeTrue();
+        schema.Properties["choice"].EnumValues.Should().Equal("survey", null);
         schema.Properties["list"].AllowsNull.Should().BeFalse();
         schema.Properties["list"].Items!.AllowsNull.Should().BeTrue();
     }

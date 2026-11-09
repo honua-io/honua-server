@@ -165,7 +165,7 @@ internal static class AdminConnectImportOperationCatalog
             Type = type switch { "integer" => WorkflowSchemaValueType.WholeNumber, "number" => WorkflowSchemaValueType.DecimalNumber, "boolean" => WorkflowSchemaValueType.Flag, "array" => WorkflowSchemaValueType.List, "object" => WorkflowSchemaValueType.Structured, _ => WorkflowSchemaValueType.Text },
             AllowsNull = allowsNull,
             Format = resolved.TryGetProperty("format", out var format) ? format.GetString() : null,
-            EnumValues = resolved.TryGetProperty("enum", out var values) ? values.EnumerateArray().Select(static value => value.ToString()).ToArray() : [],
+            EnumValues = resolved.TryGetProperty("enum", out var values) ? values.EnumerateArray().Select(static value => value.ValueKind == JsonValueKind.Null ? null : value.ToString()).ToArray() : [],
             Items = resolved.TryGetProperty("items", out var items) ? ConvertSchema(root, items) : null,
             Properties = resolved.TryGetProperty("properties", out var properties) ? properties.EnumerateObject().ToDictionary(static item => item.Name, item => ConvertSchema(root, item.Value), StringComparer.Ordinal) : new Dictionary<string, WorkflowSchemaDefinition>()
         };

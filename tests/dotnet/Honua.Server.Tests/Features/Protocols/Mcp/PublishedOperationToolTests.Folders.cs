@@ -85,7 +85,7 @@ public sealed partial class PublishedOperationToolTests
     }
 
     [UnitTheory]
-    [InlineData(true, "null", true)]
+    [InlineData(true, "null", false)]
     [InlineData(true, "\"survey\"", true)]
     [InlineData(true, "\"other\"", false)]
     [InlineData(true, "42", false)]
@@ -93,23 +93,41 @@ public sealed partial class PublishedOperationToolTests
     [InlineData(false, "\"survey\"", true)]
     public void Describe_EnumSelection_ValidatesNullableAndNonnullableValues(bool allowsNull, string selection, bool expected)
     {
-        var operation = DeterministicReadOnlyDescriptor() with
+        var schema = SelectionSchema(new()
         {
-            InputSchema = [Param("selection", true) with
-            {
-                Schema = new WorkflowSchemaDefinition
-                {
-                    Type = WorkflowSchemaValueType.Text,
-                    AllowsNull = allowsNull,
-                    EnumValues = ["survey"]
-                }
-            }]
-        };
-        var advertised = new PublishedOperationTool(operation, "catalog", NullLogger.Instance).Describe().InputSchema;
-        var schema = JSchema.Parse(advertised.GetRawText());
+            Type = WorkflowSchemaValueType.Text,
+            AllowsNull = allowsNull,
+            EnumValues = ["survey"]
+        });
         var arguments = new JObject { ["selection"] = JToken.Parse(selection) };
 
         arguments.IsValid(schema).Should().Be(expected);
+    }
+
+    [UnitTheory]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    public void Describe_ExplicitNullEnumMember_StillRequiresNullableType(bool allowsNull, bool expected)
+    {
+        var schema = SelectionSchema(new()
+        {
+            Type = WorkflowSchemaValueType.Text,
+            AllowsNull = allowsNull,
+            EnumValues = ["survey", null]
+        });
+
+        JObject.Parse("""{"selection":null}""").IsValid(schema).Should().Be(expected);
+    }
+
+
+    private static JSchema SelectionSchema(WorkflowSchemaDefinition selection)
+    {
+        var operation = DeterministicReadOnlyDescriptor() with
+        {
+            InputSchema = [Param("selection", true) with { Schema = selection }]
+        };
+        var advertised = new PublishedOperationTool(operation, "catalog", NullLogger.Instance).Describe().InputSchema;
+        return JSchema.Parse(advertised.GetRawText());
     }
 
 }

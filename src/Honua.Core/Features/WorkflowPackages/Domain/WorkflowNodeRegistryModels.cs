@@ -98,7 +98,7 @@ public sealed record WorkflowSchemaDefinition
 
     public string? Crs { get; init; }
 
-    public IReadOnlyList<string> EnumValues { get; init; } = [];
+    public IReadOnlyList<string?> EnumValues { get; init; } = [];
 
     public WorkflowSchemaDefinition? Items { get; init; }
 

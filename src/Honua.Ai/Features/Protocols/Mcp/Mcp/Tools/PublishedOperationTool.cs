@@ -615,7 +615,6 @@ internal sealed class PublishedOperationTool : IMcpTool
         {
             writer.WriteStartArray("enum");
             foreach (var value in schema.EnumValues) writer.WriteStringValue(value);
-            if (schema.AllowsNull) writer.WriteNullValue();
             writer.WriteEndArray();
         }
         if (schema.Items is not null)
