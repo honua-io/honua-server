@@ -123,6 +123,20 @@ class OwnedServerTests(unittest.TestCase):
             result = allocation(path, {"CI": "true", "COMPOSE_PROJECT_NAME": "owned-ci", "HTTP_PORT": "23456"})
             self.assertEqual(result, {"HTTP_PORT": "23456", "POSTGRES_PORT": "5432", "COMPOSE_PROJECT_NAME": "owned-ci"})
 
+    def test_login_redirect_requires_explicit_same_origin_path(self):
+        for location, allowed in (("/auth/login?returnTo=%2Foperate", True),
+                                  ("http://127.0.0.1:1/auth/login", False),
+                                  ("/other", False)):
+            with self.subTest(location=location):
+                script = HTTP.replace("self.send_response(200)",
+                                      f"self.send_response(302); self.send_header('Location', {location!r})")
+                with child(script) as process:
+                    check = probe(process)
+                    check.options.body = None
+                    self.assertFalse(check.healthy())
+                    check.options.redirect_path = "/auth/login"
+                    self.assertEqual(check.healthy(), allowed)
+
     def test_owned_http_listener_is_accepted(self):
         with child(HTTP) as process:
             probe(process).wait()

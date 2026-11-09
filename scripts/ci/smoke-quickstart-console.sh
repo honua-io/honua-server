@@ -55,9 +55,11 @@ compose_down() {
 
 wait_for_url() {
   local url="$1" service="$2" attempts="${3:-60}" container
+  local response_options=()
+  if [[ -n "${4:-}" ]]; then response_options+=(--redirect-path "$4"); fi
   container="$(compose ps -q "$service")"
   python3 "${OWNED_SERVER}" wait --container "$container" --container-port 8080 \
-    --url "$url" --timeout "$((attempts * 2))"
+    --url "$url" --timeout "$((attempts * 2))" "${response_options[@]}"
 }
 
 assert_proposal_roundtrip() {
@@ -125,8 +127,8 @@ compose up -d --build postgres redis honua console
 wait_for_url "http://127.0.0.1:${HONUA_HTTP_PORT}/healthz/ready" "honua" 90
 assert_proposal_roundtrip
 wait_for_url "http://127.0.0.1:${HONUA_CONSOLE_PORT}/version.json" "console" 60
-wait_for_url "http://127.0.0.1:${HONUA_CONSOLE_PORT}/operate" "console" 60
-wait_for_url "http://127.0.0.1:${HONUA_CONSOLE_PORT}/operate/health" "console" 60
-wait_for_url "http://127.0.0.1:${HONUA_CONSOLE_PORT}/operate/copilot" "console" 60
+wait_for_url "http://127.0.0.1:${HONUA_CONSOLE_PORT}/operate" "console" 60 "/auth/login"
+wait_for_url "http://127.0.0.1:${HONUA_CONSOLE_PORT}/operate/health" "console" 60 "/auth/login"
+wait_for_url "http://127.0.0.1:${HONUA_CONSOLE_PORT}/operate/copilot" "console" 60 "/auth/login"
 
 compose ps

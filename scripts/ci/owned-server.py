@@ -10,8 +10,8 @@ import re
 import secrets
 import sys
 import time
-from urllib.error import URLError
-from urllib.parse import urlsplit
+from urllib.error import HTTPError, URLError
+from urllib.parse import urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/python"))
@@ -126,7 +126,18 @@ class ReadinessProbe:
 
     def healthy(self):
         try:
-            with self.client.open(Request(self.options.url), timeout=2) as response:
+            response = self.client.open(Request(self.options.url), timeout=2)
+        except HTTPError as error:
+            response = error
+        except (OSError, URLError):
+            return False
+        try:
+            with response:
+                if response.status == 302 and getattr(self.options, "redirect_path", None):
+                    source = urlsplit(self.options.url)
+                    target = urlsplit(urljoin(self.options.url, response.headers.get("Location", "")))
+                    return (target.scheme, target.netloc, target.path) == (
+                        source.scheme, source.netloc, self.options.redirect_path) and self.options.body is None
                 if response.status != 200:
                     return False
                 return self.options.body is None or response.read(4096).decode() == self.options.body
@@ -158,6 +169,7 @@ def arguments():
         probe.add_argument("--url", required=True)
         probe.add_argument("--timeout", type=float, default=90)
         probe.add_argument("--body")
+        probe.add_argument("--redirect-path", help="accept HTTP 302 to this same-origin path without following it")
     return parser.parse_args()
 
 
