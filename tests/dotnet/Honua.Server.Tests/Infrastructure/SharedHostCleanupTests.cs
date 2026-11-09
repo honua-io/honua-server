@@ -19,9 +19,10 @@ public sealed class SharedHostCleanupGroup
 
 [Collection(SharedHostCleanupGroup.Name)]
 [Protocol(TestProtocols.TestQuality)]
+[Operation(Operations.TestInfrastructure)]
 public sealed partial class SharedHostCleanupTests
 {
-    [Theory]
+    [IntegrationTheory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task EnsureInitializedAsync_StartupFails_ReleasesResourcesAndAllowsRetry(bool cleanupFails)
@@ -66,7 +67,7 @@ public sealed partial class SharedHostCleanupTests
         Assert.Equal(referencesBefore, PostgresReferenceCount());
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task DisposeAsync_BeforeInitialization_CanBeRepeated()
     {
         var fixture = new WebAppFixture();
@@ -74,7 +75,7 @@ public sealed partial class SharedHostCleanupTests
         await fixture.DisposeAsync();
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task DisposeAsync_AfterSharedInitialization_ReleasesOnlyItsOwnReference()
     {
         var first = new WebAppFixture();

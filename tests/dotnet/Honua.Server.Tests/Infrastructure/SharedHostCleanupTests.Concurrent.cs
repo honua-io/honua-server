@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.TestKit;
+using Honua.TestKit.Attributes;
 using Honua.TestKit.Mixins;
 using Microsoft.AspNetCore.Hosting;
 
@@ -9,7 +10,7 @@ namespace Honua.Server.Tests.Infrastructure;
 
 public sealed partial class SharedHostCleanupTests
 {
-    [Fact]
+    [IntegrationTest]
     public async Task EnsureInitializedAsync_ConcurrentColdStart_HoldsBootstrapLockUntilHostStarts()
     {
         await using var anchor = new AsyncDisposalScope(new PostgresFixture());
