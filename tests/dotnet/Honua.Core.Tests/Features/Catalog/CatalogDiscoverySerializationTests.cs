@@ -38,6 +38,17 @@ public sealed class CatalogDiscoverySerializationTests
         Assert.False(CatalogMembershipPolicy.AllowsAudience(catalog.Configuration!.Audience, new(new ClaimsIdentity())));
     }
     [UnitTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Serialize_LayerAdvertising_WritesOneBooleanField(bool advertised)
+    {
+        var layer = new MetadataV2Publication { Advertised = advertised };
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(layer, MetadataV2JsonContext.Default.MetadataV2Publication));
+        Assert.Equal(advertised, document.RootElement.GetProperty("advertised").GetBoolean());
+        Assert.False(document.RootElement.TryGetProperty("advertisedValue", out _));
+    }
+
+    [UnitTheory]
     [InlineData("{}", true)]
     [InlineData("{\"advertised\":true}", true)]
     [InlineData("{\"advertised\":false}", false)]

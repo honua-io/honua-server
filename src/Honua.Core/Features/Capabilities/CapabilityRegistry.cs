@@ -22,6 +22,21 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             static f => f.MinimumEdition,
             StringComparer.Ordinal);
 
+    private static readonly (string Id, string Category, string? EntitlementKey, CapabilityKind Kind,
+        string? PackageSchemaVersion, CapabilityMaturity Maturity)[] CatalogReadCapabilities =
+    [
+        ("serve.geoservices-featureserver", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
+        ("serve.geoservices-mapserver", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
+        ("serve.geoservices-vectortileserver", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
+        ("serve.ogc-api-features", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
+        ("serve.ogc-api-maps", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
+        ("serve.ogc-api-tiles", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
+        ("serve.wms", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
+        ("serve.wfs", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
+        ("serve.stac", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
+        ("discovery.catalog", "discovery", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+    ];
+
     private static readonly IReadOnlyList<CapabilityDescriptor> AllDescriptors = BuildAll();
 
     private static readonly Dictionary<string, CapabilityDescriptor> ById =
@@ -299,15 +314,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // only (honua-release#266 / #264); #5238, #6492 and #3558 were pulled into
             // 2026.1. It already serves by default, so only the maturity changes.
             // WMTS and OGC API Coverages stay Preview in 2026.1 under the 2026-09-03 ruling.
-            ("serve.geoservices-featureserver", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
-            ("serve.geoservices-mapserver", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
-            ("serve.geoservices-vectortileserver", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
-            ("serve.ogc-api-features", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
-            ("serve.ogc-api-maps", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
-            ("serve.ogc-api-tiles", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
-            ("serve.wms", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
-            ("serve.wfs", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
-            ("serve.stac", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
+            .. CatalogReadCapabilities,
             ("serve.geoservices-imageserver", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
             ("serve.wmts", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
             ("serve.ogc-api-coverages", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),

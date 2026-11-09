@@ -255,6 +255,13 @@
       "description": "Non-sellable demo/showcase endpoints used for product demonstrations."
     },
     {
+      "key": "discovery.catalog",
+      "displayName": "Catalog Discovery",
+      "category": "Discovery",
+      "edition": "Community",
+      "description": "Read configured catalogs with caller-filtered items, search and facets."
+    },
+    {
       "key": "discovery.capability-manifest",
       "displayName": "Capability Manifest",
       "category": "Discovery",

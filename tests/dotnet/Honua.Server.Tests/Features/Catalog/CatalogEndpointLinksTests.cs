@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Text.Json;
+using System.Xml.Linq;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -50,7 +51,7 @@ public sealed class CatalogEndpointLinksTests : IAsyncLifetime
         foreach (var href in endpoints.Select(endpoint => endpoint.GetProperty("href").GetString()!).Distinct(StringComparer.Ordinal))
         {
             using var target = await _fixture.Client.GetAsync(href);
-            Assert.Equal(HttpStatusCode.OK, target.StatusCode);
+            await AssertSuccessfulMetadataAsync(target);
         }
     }
 
@@ -58,13 +59,16 @@ public sealed class CatalogEndpointLinksTests : IAsyncLifetime
     [Endpoint("GET /api/v1/catalogs/{catalogId}/items")]
     public async Task ListItems_ServiceInFolder_UsesSharedPublicPathAndResolvableEndpoint()
     {
-        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
-        var service = graph.Services.Single(service => service.Metadata.Name == WebAppFixture.TestServiceId);
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var graph = snapshot.Graph;
+        var service = snapshot.FindService(WebAppFixture.TestServiceId);
+        Assert.NotNull(service);
         var provider = (TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>();
         provider.SetGraph(graph with
         {
-            Folders = [new() { Metadata = new() { Id = "survey", Name = "survey" } }],
-            Services = graph.Services.Select(current => current.Metadata.Id == service.Metadata.Id
+            Folders = [.. graph.Folders, new() { Metadata = new() { Id = "survey", Name = "survey" } }],
+            Services = graph.Services.Select(current => current.Metadata.Name == service.Metadata.Name &&
+                MetadataV2ServicePaths.SameTenant(current.Metadata.Tenant, service.Metadata.Tenant)
                 ? current with { FolderId = "survey", PublicName = "parcels" } : current).ToArray()
         }, schema: _fixture.CurrentSchema);
         using var response = await _fixture.Client.GetAsync("/api/v1/catalogs/links/items/service?id=" + Uri.EscapeDataString(service.Metadata.Id));
@@ -75,6 +79,23 @@ public sealed class CatalogEndpointLinksTests : IAsyncLifetime
         var href = endpoint.GetProperty("href").GetString()!;
         Assert.Contains("/rest/services/survey/parcels/FeatureServer", href, StringComparison.Ordinal);
         using var target = await _fixture.Client.GetAsync(href);
-        Assert.Equal(HttpStatusCode.OK, target.StatusCode);
+        await AssertSuccessfulMetadataAsync(target);
+    }
+
+    private static async Task AssertSuccessfulMetadataAsync(HttpResponseMessage response)
+    {
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var mediaType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
+        var body = await response.Content.ReadAsStringAsync();
+        if (mediaType.EndsWith("json", StringComparison.OrdinalIgnoreCase))
+        {
+            using var document = JsonDocument.Parse(body);
+            Assert.False(document.RootElement.TryGetProperty("error", out _));
+            return;
+        }
+        Assert.True(mediaType.EndsWith("xml", StringComparison.OrdinalIgnoreCase));
+        var root = XDocument.Parse(body).Root;
+        Assert.NotNull(root);
+        Assert.DoesNotContain(root.Name.LocalName, new[] { "ExceptionReport", "ServiceExceptionReport" });
     }
 }

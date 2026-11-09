@@ -15,43 +15,48 @@ namespace Honua.Core.Features.Catalog;
 
 public sealed class CatalogGraphProjection(PublishedMetadataProjection metadataProjection, ICoordinateTransformService coordinateTransform)
 {
-    public async Task<IReadOnlyList<CatalogItem>> ProjectAsync(PublishedMetadataRequest request,
-        IReadOnlyList<CatalogProtocolDescriptor> protocols, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<CatalogItem>> ProjectAsync(CatalogProjectionRequest request, CancellationToken cancellationToken)
     {
         var items = new List<CatalogItem>();
-        var endpoints = new CatalogEndpointLinks(request, protocols);
-        foreach (var service in request.Snapshot.Index.ServicesById.Values)
+        var endpoints = new CatalogEndpointLinks(request.Metadata, request.Protocols);
+        var membership = new CatalogMembershipPolicy(request.Configuration);
+        foreach (var service in request.Metadata.Snapshot.Index.ServicesById.Values)
         {
-            var visible = metadataProjection.ProjectDiscoverableService(request, service);
+            var visible = metadataProjection.ProjectDiscoverableService(request.Metadata, service);
             if (visible is null) continue;
             var layers = new List<CatalogItem>();
-            foreach (var group in visible.Publications.GroupBy(layer => layer.ResourceId, StringComparer.Ordinal))
+            foreach (var layer in visible.Publications)
             {
-                var layer = group.FirstOrDefault(candidate => candidate.IsPrimary) ?? group.First();
-                var dataset = request.Snapshot.ResolveResource(layer)!;
+                var dataset = request.Metadata.Snapshot.ResolveResource(layer)!;
                 var item = FromMetadata(dataset.Metadata) with
                 {
                     Id = layer.Metadata.Id, Title = layer.TitleOverride ?? dataset.Metadata.Title ?? dataset.Metadata.Name,
-                    Revision = Fingerprint(request.Snapshot, layer),
+                    Revision = Fingerprint(request.Metadata.Snapshot, layer),
                     Access = metadataProjection.DeriveAccessTier(dataset.AccessPolicy, service.AccessPolicy),
-                    Folder = Folder(request.Snapshot, service), Endpoints = endpoints.Resolve(group.ToArray()),
+                    Folder = Folder(request.Metadata.Snapshot, service), Endpoints = endpoints.Resolve([layer]),
+                    SourceLayerIds = [layer.Metadata.Id],
                     Spatial = dataset.Spatial?.GeometryType is not null, Extent = await ExtentAsync(dataset, cancellationToken).ConfigureAwait(false),
-                    TemporalExtent = dataset.Temporal?.Extent
+                    TemporalExtent = dataset.Temporal?.Extent, Status = Status(layer.Status)
                 };
-                layers.Add(item);
+                if (membership.AllowsContribution(item)) layers.Add(item);
             }
             if (visible.Publications.Count > 0 && layers.Count == 0) continue;
             items.Add(FromMetadata(service.Metadata) with
             {
-                Kind = "service", Access = visible.Access, Folder = Folder(request.Snapshot, service),
+                Kind = "service", Status = Status(service.Status), Access = visible.Access, Folder = Folder(request.Metadata.Snapshot, service),
                 Revision = ServiceRevision(service, layers),
                 Spatial = layers.Any(layer => layer.Spatial), Extent = UnionExtent(layers), TemporalExtent = UnionTime(layers),
-                Endpoints = layers.SelectMany(item => item.Endpoints).Distinct().ToArray()
+                Endpoints = layers.SelectMany(item => item.Endpoints).Distinct().ToArray(),
+                SourceLayerIds = layers.Select(item => item.Id).ToArray()
             });
             items.AddRange(layers);
         }
+        items.AddRange(DatasetItems(request.Metadata.Snapshot, items));
         return items;
     }
+
+    private static string Status(MetadataV2Status? status)
+        => status?.Lifecycle == MetadataV2LifecycleStatus.Deprecated ? "deprecated" : "active";
 
     private static string ServiceRevision(MetadataV2Service service, IReadOnlyList<CatalogItem> layers)
     {
@@ -60,6 +65,37 @@ public sealed class CatalogGraphProjection(PublishedMetadataProjection metadataP
         foreach (var layer in layers.OrderBy(layer => layer.Id, StringComparer.Ordinal))
             hash.AppendData(Encoding.UTF8.GetBytes(layer.Revision));
         return Convert.ToHexStringLower(hash.GetHashAndReset());
+    }
+
+    private static IReadOnlyList<CatalogItem> DatasetItems(MetadataV2GraphSnapshot snapshot, IReadOnlyList<CatalogItem> items)
+    {
+        var datasets = new List<CatalogItem>();
+        foreach (var group in items.Where(item => item.Kind == "layer").GroupBy(item => snapshot.Index.PublicationsById[item.Id].ResourceId))
+        {
+            var dataset = snapshot.Index.ResourcesById[group.Key];
+            var kind = dataset.Type switch
+            {
+                MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table => "feature-type",
+                MetadataV2ResourceType.RasterDataset => "coverage",
+                _ => null
+            };
+            if (kind is null) continue;
+            var layers = group.OrderBy(item => item.Id, StringComparer.Ordinal).ToArray();
+            var folders = layers.SelectMany(item => item.VisibleFolders).DistinctBy(folder => folder.Id).ToArray();
+            datasets.Add(FromMetadata(dataset.Metadata) with
+            {
+                Kind = "dataset", DatasetKind = kind, Status = Status(dataset.Status),
+                Spatial = dataset.Type != MetadataV2ResourceType.Table && layers.Any(layer => layer.Spatial),
+                Access = new[] { PortalAccessLevels.Public, PortalAccessLevels.Org, PortalAccessLevels.Private }
+                    .First(access => layers.Any(layer => layer.Access == access)),
+                Folder = folders.Length == 1 ? folders[0] : null, FolderContexts = folders,
+                Extent = layers[0].Extent, TemporalExtent = dataset.Temporal?.Extent,
+                Endpoints = layers.SelectMany(layer => layer.Endpoints).Distinct().ToArray(),
+                SourceLayerIds = layers.Select(layer => layer.Id).ToArray(),
+                Revision = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(string.Concat(layers.Select(layer => layer.Revision)))))
+            });
+        }
+        return datasets;
     }
 
     private static MetadataV2Bbox? UnionExtent(IReadOnlyList<CatalogItem> layers)
@@ -121,3 +157,6 @@ public sealed class CatalogGraphProjection(PublishedMetadataProjection metadataP
         return Convert.ToHexStringLower(SHA256.HashData(buffer.ToArray()));
     }
 }
+
+public sealed record CatalogProjectionRequest(PublishedMetadataRequest Metadata,
+    IReadOnlyList<CatalogProtocolDescriptor> Protocols, MetadataV2CatalogConfiguration Configuration);

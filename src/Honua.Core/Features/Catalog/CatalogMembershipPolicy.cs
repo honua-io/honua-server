@@ -21,20 +21,27 @@ public sealed class CatalogMembershipPolicy(MetadataV2CatalogConfiguration confi
         };
 
     private readonly string _configurationRevision = ConfigurationRevision(configuration);
+    private readonly bool _invalidMembership = configuration.Memberships.Any(membership => membership?.Item is null);
+    private readonly ILookup<(string Kind, string Id), MetadataV2CatalogMembership> _memberships = configuration.Memberships
+        .Where(membership => membership?.Item is not null).ToLookup(membership => (membership.Item.Kind, membership.Item.Id));
+
+    public bool AllowsContribution(CatalogItem item)
+    {
+        if (_invalidMembership || !item.CanAppearInCatalogs) return false;
+        var entries = _memberships[(item.Kind, item.Id)].ToArray();
+        if (entries.Length > 1) return false;
+        var membership = entries.SingleOrDefault();
+        return membership is null || (!membership.HiddenHere && membership.Inclusion is ("scope" or "include"));
+    }
 
     public IReadOnlyList<CatalogItem> Apply(IReadOnlyList<CatalogItem> items)
     {
-        if (configuration.Memberships.Any(membership => membership?.Item is null)) return [];
-        var memberships = configuration.Memberships.ToLookup(membership => (membership.Item.Kind, membership.Item.Id));
         var listed = new List<CatalogItem>();
         foreach (var item in items.DistinctBy(item => (item.Kind, item.Id)))
         {
-            var entries = memberships[(item.Kind, item.Id)].ToArray();
-            if (entries.Length > 1 || !item.CanAppearInCatalogs ||
-                !configuration.Scope.Kinds.Contains(item.Kind, StringComparer.Ordinal)) continue;
-            var membership = entries.SingleOrDefault();
-            if (membership?.HiddenHere == true || membership?.Inclusion == "exclude" ||
-                !AllowsMembership(item, membership)) continue;
+            if (!AllowsContribution(item) || !configuration.Scope.Kinds.Contains(item.Kind, StringComparer.Ordinal)) continue;
+            var membership = _memberships[(item.Kind, item.Id)].SingleOrDefault();
+            if (!AllowsMembership(item, membership)) continue;
             listed.Add(ApplyAppearance(item, membership));
         }
         return listed;
@@ -49,7 +56,6 @@ public sealed class CatalogMembershipPolicy(MetadataV2CatalogConfiguration confi
 
     private bool AllowsMembership(CatalogItem item, MetadataV2CatalogMembership? membership)
     {
-        if (membership is not null && membership.Inclusion is not ("scope" or "include")) return false;
         if (membership?.Inclusion != "include" && !MatchesScope(configuration.Scope, item)) return false;
         return configuration.DefaultListing switch
         {
@@ -63,7 +69,7 @@ public sealed class CatalogMembershipPolicy(MetadataV2CatalogConfiguration confi
 
     private static bool MatchesScope(MetadataV2CatalogScope scope, CatalogItem item)
         => scope.FolderIds.Count == 0 && scope.Tags.Count == 0 ||
-           item.Folder is not null && scope.FolderIds.Contains(item.Folder.Id, StringComparer.Ordinal) ||
+           item.VisibleFolders.Any(folder => scope.FolderIds.Contains(folder.Id, StringComparer.Ordinal)) ||
            item.Tags.Intersect(scope.Tags, StringComparer.OrdinalIgnoreCase).Any();
 
     private static CatalogItem ApplyAppearance(CatalogItem item, MetadataV2CatalogMembership? membership)

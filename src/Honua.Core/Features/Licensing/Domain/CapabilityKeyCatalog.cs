@@ -126,6 +126,8 @@ public static class CapabilityKeyCatalog
             HonuaEdition.Community, "The durable job substrate behind imports, tile operations, geoprocessing and workflow orchestration. Advertised as jobs.runner on the honua.capability_manifest.v1 wire and named by typed dependency-unavailable refusals, so a client receiving one can resolve the id. The runtime itself is Community; durable persistence across restarts and nodes requires Redis, which caching.redis gates."),
 
         // Discovery
+        new("discovery.catalog", "Catalog Discovery", Categories.Discovery,
+            HonuaEdition.Community, "Read configured catalogs with caller-filtered items, search and facets."),
         new("discovery.capability-manifest", "Capability Manifest", Categories.Discovery,
             HonuaEdition.Community, "Advertise the server's capability manifest for SDK/agent discovery (#1186)."),
 

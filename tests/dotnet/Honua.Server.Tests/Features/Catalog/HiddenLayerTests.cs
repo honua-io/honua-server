@@ -86,7 +86,10 @@ public sealed partial class HiddenLayerTests : IAsyncLifetime
             { Advertised = false, Status = new() { Lifecycle = MetadataV2LifecycleStatus.Retired } }).ToArray() }, schema: _fixture.CurrentSchema);
         }
         using var retired = await _fixture.Client.GetAsync(route + $"/{WebAppFixture.TestLayerId}/query?where=1%3D1&returnCountOnly=true&f=json");
-        Assert.NotEqual(HttpStatusCode.OK, retired.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, retired.StatusCode);
+        using var refusal = JsonDocument.Parse(await retired.Content.ReadAsStringAsync());
+        Assert.Equal(404, refusal.RootElement.GetProperty("error").GetProperty("code").GetInt32());
+        Assert.False(refusal.RootElement.TryGetProperty("count", out _));
     }
 
     [IntegrationTheory]

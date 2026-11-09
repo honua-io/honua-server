@@ -7,6 +7,8 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 
 public static class MetadataV2GraphSnapshotExtensions
 {
+    public static bool IsRoutable(this MetadataV2Catalog catalog) => IsServingStatus(catalog.Status);
+
     public static bool IsDiscoverable(this MetadataV2GraphSnapshot snapshot, MetadataV2Publication publication)
         => publication.Advertised && snapshot.IsRoutable(publication);
 

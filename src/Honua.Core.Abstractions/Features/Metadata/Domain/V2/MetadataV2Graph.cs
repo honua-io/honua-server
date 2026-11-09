@@ -487,8 +487,21 @@ public sealed record MetadataV2ServiceSettings : ExtensibleJsonRecord
 
 public sealed record MetadataV2Publication : ExtensibleJsonRecord
 {
+    private bool? _advertised;
+
     [JsonPropertyName("advertised")]
-    public bool Advertised { get; init; } = true;
+    public bool? AdvertisedValue
+    {
+        get => Advertised;
+        init => _advertised = value;
+    }
+
+    [JsonIgnore]
+    public bool Advertised
+    {
+        get => _advertised ?? true;
+        init => _advertised = value;
+    }
 
     private int? _layerIndex;
     private string? _path;

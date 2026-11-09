@@ -35,7 +35,7 @@ public sealed class CatalogReader(IMetadataV2GraphProvider graphProvider, Catalo
         {
             ReadCeiling = catalog.Configuration!.Audience.Kind == "public" ? Anonymous : null
         };
-        var candidates = await projection.ProjectAsync(metadataRequest, protocols, cancellationToken).ConfigureAwait(false);
+        var candidates = await projection.ProjectAsync(new(metadataRequest, protocols, catalog.Configuration), cancellationToken).ConfigureAwait(false);
         var prefix = $"/api/v1/catalogs/{Uri.EscapeDataString(catalogId)}/items/";
         var items = new CatalogMembershipPolicy(catalog.Configuration).Apply(candidates)
             .Select(item => item with { DetailHref = prefix + item.Kind + "?id=" + Uri.EscapeDataString(item.Id) }).ToArray();
@@ -48,9 +48,10 @@ public sealed class CatalogReader(IMetadataV2GraphProvider graphProvider, Catalo
     }
 
     private IEnumerable<MetadataV2Catalog> Catalogs(MetadataV2GraphSnapshot snapshot, ClaimsPrincipal principal)
-        => snapshot.Graph.Catalogs.DistinctBy(catalog => catalog.Metadata.Id)
+        => snapshot.Graph.Catalogs.GroupBy(catalog => catalog.Metadata.Id, StringComparer.Ordinal)
+            .Where(group => group.Count() == 1).Select(group => group.Single())
             .Where(catalog => catalog.Target == "discovery" && catalog.Configuration is not null &&
-                catalog.Status?.Lifecycle == MetadataV2LifecycleStatus.Active &&
+                catalog.IsRoutable() &&
                 MetadataV2TenantVisibility.IsVisibleToTenant(catalog.Metadata.Tenant, tenantContext.TenantId) &&
                 CatalogMembershipPolicy.AllowsAudience(catalog.Configuration.Audience, principal));
 }

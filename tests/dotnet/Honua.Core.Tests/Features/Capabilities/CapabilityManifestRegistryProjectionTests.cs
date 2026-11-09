@@ -59,6 +59,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "serve.wms",
         "serve.wfs",
         "serve.stac",
+        "discovery.catalog",
         "serve.geoservices-imageserver",
         "serve.wmts",
         "serve.ogc-api-coverages",

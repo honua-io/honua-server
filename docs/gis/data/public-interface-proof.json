@@ -3,6 +3,49 @@
   "updatedUtc": "2026-06-23T00:00:00Z",
   "surfaces": [
     {
+      "surfaceId": "catalog-discovery",
+      "displayName": "Catalog discovery reads",
+      "surfaceKind": "http-route",
+      "protocol": "Honua Catalog HTTP",
+      "canonicalIdentifier": "/api/v1/catalogs",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/catalogs"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry and catalog integration tests exercise audience, caller access, visible-only facets, membership, hidden items and protocol endpoint links.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/Catalog/CatalogDiscoveryEndpoints.cs",
+            "src/Honua.Server/EndpointRegistry.CatalogExtras.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Catalog/CatalogAudienceEndpointsTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Catalog/CatalogEndpointLinksTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#7091"
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "The HTTP adapter consumes the shared Core reader and serializes public models through CatalogJsonContext; the graph snapshot and source contexts are excluded from response serialization.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Core/Features/Catalog/CatalogReader.cs",
+            "src/Honua.Core/Features/Catalog/Domain/CatalogJsonContext.cs",
+            "src/Honua.Core/Features/Catalog/Abstractions/ICatalogReader.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#7091"
+        }
+      ]
+    },
+    {
       "surfaceId": "capability-manifest",
       "displayName": "Server capability manifest",
       "surfaceKind": "http-route",

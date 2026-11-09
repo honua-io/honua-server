@@ -46,6 +46,10 @@ public sealed record CatalogItem
     public string? LaunchHref { get; init; }
     public string? ReleasedVersionId { get; init; }
     public IReadOnlyList<CatalogEndpoint> Endpoints { get; init; } = [];
+    [JsonIgnore] public IReadOnlyList<string> SourceLayerIds { get; init; } = [];
+    [JsonIgnore] internal IReadOnlyList<CatalogFolder> FolderContexts { get; init; } = [];
+    [JsonIgnore] internal IEnumerable<CatalogFolder> VisibleFolders
+        => FolderContexts.Count > 0 ? FolderContexts : Folder is { } folder ? [folder] : [];
     [JsonIgnore] public string Revision { get; init; } = string.Empty;
     [JsonIgnore] public bool CanAppearInCatalogs { get; init; } = true;
 }

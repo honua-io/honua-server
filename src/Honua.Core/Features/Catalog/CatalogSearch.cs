@@ -42,7 +42,7 @@ public sealed record CatalogSearch
             {
                 ["kind"] = Count(filtered, item => [new(item.Kind, item.Kind)]),
                 ["protocol"] = Count(filtered, item => item.Endpoints.Select(endpoint => new FacetValue(endpoint.Protocol, endpoint.Protocol))),
-                ["folder"] = Count(filtered, item => item.Folder is { } folder ? [new(folder.Id, folder.Title)] : []),
+                ["folder"] = Count(filtered, item => item.VisibleFolders.Select(folder => new FacetValue(folder.Id, folder.Title))),
                 ["tag"] = Count(filtered, item => item.Tags.Select(tag => new FacetValue(tag, tag))),
                 ["owner"] = Count(filtered, item => [new(item.Owner, item.Owner)]),
                 ["category"] = Count(filtered, item => item.Categories.Select(category => new FacetValue(category, category))),
@@ -57,7 +57,7 @@ public sealed record CatalogSearch
            && Contains(Kinds, item.Kind) && Contains(Owners, item.Owner)
            && Intersects(Protocols, item.Endpoints.Select(endpoint => endpoint.Protocol))
            && Intersects(Tags, item.Tags) && Intersects(Categories, item.Categories)
-           && (FolderId is null || item.Folder?.Id == FolderId)
+           && (FolderId is null || item.VisibleFolders.Any(folder => folder.Id == FolderId))
            && (Status is null || item.Status == Status)
            && (Bbox is null || item.Extent is { } extent && Bbox.Value.Intersects(
                BoundingBox.Create(extent.West, extent.South, extent.East, extent.North, 4326)))

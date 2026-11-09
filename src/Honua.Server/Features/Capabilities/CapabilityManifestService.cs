@@ -479,6 +479,7 @@ internal sealed class CapabilityManifestService(
                 maturity: CapabilityMaturity.Preview,
                 configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("serve.sensorthings")),
             .. BuildCatalogProtocolCapabilities(context),
+            Capability("discovery.catalog", "discovery", context),
             Capability("serve.geoservices-imageserver", "raster", context,
                 maturity: CapabilityMaturity.Implemented),
             Capability("serve.wmts", "raster", context,
