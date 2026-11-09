@@ -1460,7 +1460,7 @@ The completed-run nearest-rank p90 is 17.9 minutes. The failed batch produced
 output two seconds before termination and no final TRX; its 22.1-minute duration
 is censored and does not establish the time needed to finish. Including that
 lower bound, `audit-shard-headroom.py` recommends a 32-minute inner cap:
-`ceil(22.1 / 0.7)`. The 42-minute outer cap preserves ten minutes for setup and
+`ceil(22 / 0.7)` using the recorded 22-minute cap. The 42-minute outer cap preserves ten minutes for setup and
 artifact upload. Test selection and the five-minute silence detector stay the same.
 
 Release coordination authorized this provisional capacity rebase for #7210 as
