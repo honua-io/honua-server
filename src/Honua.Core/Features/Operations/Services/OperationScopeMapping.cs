@@ -53,7 +53,8 @@ public static class OperationScopeMapping
             "admin.ai.admission.initialize" or "admin.ai.admission.policy-update" or
                 "admin.ai.admission.stop" or "admin.ai.admission.resume" => OperatorOperation.Update,
             "admin.layer.publish" => OperatorOperation.Publish,
-            "admin.connections.list" or "admin.connections.tables.discover" => OperatorOperation.Read,
+            "admin.connections.list" or "admin.connections.tables.discover" or
+                "admin.connections.layers.list" => OperatorOperation.Read,
             "admin.connections.create" or "admin.import.upload" or "admin.import.upload-url" or
                 "admin.import.upload-object" => OperatorOperation.Create,
             "admin.connections.delete" or "admin.import.jobs.cancel" => OperatorOperation.Delete,

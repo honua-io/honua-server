@@ -25,6 +25,7 @@ internal static class AdminConnectImportOperationCatalog
         Read("admin.connections.get", "Get connection", "/connections/{id}", "getConnection"),
         Write("admin.connections.update", "Update connection", HttpMethod.Put, "/connections/{id}", "updateConnection", OperationSideEffectClass.MutatesMetadata),
         Write("admin.connections.delete", "Delete connection", HttpMethod.Delete, "/connections/{id}", "deleteConnection", OperationSideEffectClass.DestroysState),
+        Read("admin.connections.layers.list", "List connection layers", "/connections/{id}/layers", "getPublishedLayers"),
         Read("admin.connections.tables.discover", "Discover connection tables", "/connections/{id}/tables", "getConnectionTables"),
         new("admin.connections.test-draft", "Test draft connection", HttpMethod.Post, "/connections/test", "testDraftConnection", OperationSideEffectClass.ReadOnly, SupportsDryRun: true, DryRunPath: "/connections/test"),
         new("admin.connections.test", "Test connection", HttpMethod.Post, "/connections/{id}/test", "testConnection", OperationSideEffectClass.ReadOnly, SupportsDryRun: true, DryRunPath: "/connections/{id}/test"),

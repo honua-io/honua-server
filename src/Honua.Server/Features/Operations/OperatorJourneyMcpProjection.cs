@@ -13,6 +13,7 @@ internal sealed class OperatorJourneyMcpProjection : IAuditedAdminMcpProjection
             "admin.server.status",
             "admin.connections.list",
             "admin.connections.tables.discover",
+            "admin.connections.layers.list",
             "admin.connections.create",
             "admin.connections.test",
             "admin.import.upload-url",

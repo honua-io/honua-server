@@ -51,7 +51,8 @@ internal sealed class PublishedOperationTool : IMcpTool
         _inputSchema = BuildInputSchema(
             descriptor.InputSchema.Select(parameter => parameter with
             {
-                Name = McpConnectionDiscoveryProjection.InputName(descriptor.OperationId, parameter.Name)
+                Name = McpConnectionDiscoveryProjection.InputName(descriptor.OperationId, parameter.Name),
+                Title = McpInputDescriptions.Describe(descriptor.OperationId, parameter.Name, parameter.Title)
             }).ToArray(), descriptor.Policy.SupportsDryRun);
     }
 
@@ -88,6 +89,9 @@ internal sealed class PublishedOperationTool : IMcpTool
     {
         if (operationId == McpConnectionDiscoveryProjection.TablesOperationId)
             return "honua_admin_connection_tables_list";
+
+        if (operationId == McpConnectionDiscoveryProjection.LayersOperationId)
+            return "honua_admin_connection_layers_list";
 
         var isAdminOperation = operationId.StartsWith("admin.", StringComparison.Ordinal);
         var operationName = isAdminOperation ? operationId["admin.".Length..] : operationId;

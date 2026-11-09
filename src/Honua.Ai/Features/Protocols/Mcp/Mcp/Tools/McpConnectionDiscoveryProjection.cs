@@ -14,6 +14,7 @@ internal static class McpConnectionDiscoveryProjection
 {
     internal const string ConnectionsOperationId = "admin.connections.list";
     internal const string TablesOperationId = "admin.connections.tables.discover";
+    internal const string LayersOperationId = "admin.connections.layers.list";
 
     private static readonly JsonElement ConnectionsOutputSchema = Parse("""
         {
@@ -104,13 +105,14 @@ internal static class McpConnectionDiscoveryProjection
         """);
 
     internal static bool Contains(string operationId) =>
-        operationId is ConnectionsOperationId or TablesOperationId;
+        operationId is ConnectionsOperationId or TablesOperationId or LayersOperationId;
 
     internal static string InputName(string operationId, string parameterName) =>
-        operationId == TablesOperationId && parameterName == "id" ? "connectionId" : parameterName;
+        (operationId is TablesOperationId or LayersOperationId) && parameterName == "id" ? "connectionId" : parameterName;
 
     internal static McpToolDescriptor Describe(string operationId, string name, JsonElement inputSchema)
     {
+        if (operationId == LayersOperationId) return McpPublishedLayerDiscovery.Describe(name, inputSchema);
         var connections = operationId == ConnectionsOperationId;
         var title = connections ? "List connections" : "List connection tables";
         return new McpToolDescriptor
@@ -154,6 +156,7 @@ internal static class McpConnectionDiscoveryProjection
     internal static JsonElement ProjectResponse(string operationId, string response)
     {
         using var document = JsonDocument.Parse(response);
+        if (operationId == LayersOperationId) return McpPublishedLayerDiscovery.Project(document.RootElement);
         var connections = operationId == ConnectionsOperationId;
         var arrayName = connections ? "data" : "tables";
         var rows = document.RootElement.GetProperty(arrayName);
