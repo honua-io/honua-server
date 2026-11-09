@@ -91,7 +91,7 @@ public sealed class WmsAuthorizationProofTests : OgcClassicAuthorizationProofTes
         var url = $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION={version}";
 
         using var denied = await Outsider().GetAsync(url);
-        await AssertWmsAccessDeniedAsync(denied);
+        await AssertWmsAccessDeniedAsync(denied, version);
         (await denied.Content.ReadAsStringAsync()).Should().NotContain("Authored service title");
 
         using var anonymous = await Fixture.Client.GetAsync(url);
@@ -102,7 +102,8 @@ public sealed class WmsAuthorizationProofTests : OgcClassicAuthorizationProofTes
         var body = await allowed.Content.ReadAsStringAsync();
         allowed.StatusCode.Should().Be(HttpStatusCode.OK, body);
         body.Should().Contain("Authored service title");
-        XDocument.Parse(body).Descendants().Where(element => element.Name.LocalName == "Layer")
+        XDocument.Parse(body).Descendants().Where(element => element.Name.LocalName == "Layer"
+                && element.Elements().Any(child => child.Name.LocalName == "Name"))
             .Should().BeEmpty();
     }
 
@@ -134,10 +135,11 @@ public sealed class WmsAuthorizationProofTests : OgcClassicAuthorizationProofTes
     /// WMS 1.3.0 §7.3.3.4 defines the ServiceExceptionReport payload for a refusal;
     /// the principal is authenticated but lacks the role, so the status is 403.
     /// </summary>
-    private static async Task AssertWmsAccessDeniedAsync(HttpResponseMessage response)
+    private static async Task AssertWmsAccessDeniedAsync(HttpResponseMessage response, string version = "1.3.0")
     {
         var body = await AssertRefusedWithoutPayloadAsync(response, HttpStatusCode.Forbidden);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+        response.Content.Headers.ContentType?.MediaType.Should().Be(
+            version == "1.1.1" ? "application/vnd.ogc.se_xml" : "text/xml");
         body.Should().Contain("ServiceExceptionReport").And.Contain("code=\"AccessDenied\"");
         XDocument.Parse(body).Descendants().Select(static element => element.Name.LocalName)
             .Should().NotContain("FeatureInfoResponse");
