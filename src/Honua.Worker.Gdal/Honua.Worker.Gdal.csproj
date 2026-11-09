@@ -46,8 +46,8 @@
       data-layer surface. GDAL is NOT referenced as a package — it is provided
       by the worker image base layer via the gdalwarp / ogr2ogr CLI tools.
     -->
-    <ProjectReference Include="..\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj" />
-    <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\Honua.Core\Abstractions\Honua.Core.Abstractions.csproj" />
+    <ProjectReference Include="..\Honua.Core\Core\Honua.Core.csproj" />
     <ProjectReference Include="..\Honua.Jobs\Honua.Jobs.csproj" />
     <ProjectReference Include="..\Honua.Cloud\Aws\Honua.Aws.csproj" />
     <ProjectReference Include="..\Honua.Cloud\Azure\Honua.Azure.csproj" />
