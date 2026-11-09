@@ -752,7 +752,7 @@ internal static partial class FeatureStreamEndpoints
 
     private static StreamLayerDescriptor? CreateStreamLayer(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Service? service)
     {
         var resource = snapshot.ResolveResource(publication);
@@ -777,7 +777,7 @@ internal static partial class FeatureStreamEndpoints
             publication.LayerIndex);
     }
 
-    private static MetadataV2Publication? ResolvePrimaryStreamPublication(
+    private static MetadataV2Layer? ResolvePrimaryStreamPublication(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Resource resource)
         => snapshot.Graph.Publications
@@ -795,7 +795,7 @@ internal static partial class FeatureStreamEndpoints
     internal sealed record StreamLayerDescriptor(
         MetadataV2Resource Resource,
         MetadataV2Service? Service,
-        MetadataV2Publication? Publication,
+        MetadataV2Layer? Publication,
         int LayerId,
         int? PublicLayerId);
 

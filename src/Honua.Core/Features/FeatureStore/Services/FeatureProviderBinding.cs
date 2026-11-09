@@ -22,7 +22,7 @@ namespace Honua.Core.Features.FeatureStore.Services;
 public sealed record FeatureProviderBinding(
     MetadataV2Service Service,
     MetadataV2Resource Resource,
-    MetadataV2Publication Publication,
+    MetadataV2Layer Publication,
     MetadataV2StorageBinding StorageBinding,
     FeatureStorageMapping StorageMapping,
     int StorageLayerId,

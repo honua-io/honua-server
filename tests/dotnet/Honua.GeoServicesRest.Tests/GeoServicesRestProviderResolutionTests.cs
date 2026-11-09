@@ -396,7 +396,7 @@ public class GeoServicesRestProviderResolutionTests
             connection);
     }
 
-    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Publication Publication)
+    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Layer Publication)
         CreateSnapshot(Guid connectionId)
     {
         var service = new MetadataV2Service
@@ -448,13 +448,13 @@ public class GeoServicesRestProviderResolutionTests
             Metadata = new MetadataV2ObjectMetadata { Id = connectionId.ToString(), Name = "remote-parcels" },
             Provider = DataProviderNames.GeoServicesRest
         };
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "pub-parcels", Name = "Parcels" },
             ServiceId = service.Metadata.Id,
             ResourceId = resource.Metadata.Id,
             StorageBindingId = storageBinding.Metadata.Id,
-            Identifier = new MetadataV2PublicationIdentifier { Value = LayerId.ToString(CultureInfo.InvariantCulture), IsNumeric = true }
+            Identifier = new MetadataV2LayerIdentifier { Value = LayerId.ToString(CultureInfo.InvariantCulture), IsNumeric = true }
         };
         var graph = new MetadataV2Graph
         {

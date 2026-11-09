@@ -85,7 +85,7 @@ public sealed class AdminLayerConfigurationTargetTests
         target.IsAmbiguous.Should().BeFalse();
         target.Resource!.Metadata.Id.Should().Be("res-legacy");
         snapshot.Graph.Publications.Single().Identifier.Should().BeNull();
-        JsonSerializer.Serialize(snapshot.Graph.Publications.Single(), MetadataV2JsonContext.Default.MetadataV2Publication)
+        JsonSerializer.Serialize(snapshot.Graph.Publications.Single(), MetadataV2JsonContext.Default.MetadataV2Layer)
             .Should().Contain("\"identifier\":null").And.Contain("\"layerIndex\":4");
     }
 
@@ -135,7 +135,7 @@ public sealed class AdminLayerConfigurationTargetTests
             ],
             Publications =
             [
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub-" + resourceId, Name = resourceId },
                     Status = Active,
@@ -143,7 +143,7 @@ public sealed class AdminLayerConfigurationTargetTests
                     ResourceId = resourceId,
                     Identifier = legacyIdentifier
                         ? null!
-                        : new MetadataV2PublicationIdentifier
+                        : new MetadataV2LayerIdentifier
                         {
                             Value = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
                             IsNumeric = true,

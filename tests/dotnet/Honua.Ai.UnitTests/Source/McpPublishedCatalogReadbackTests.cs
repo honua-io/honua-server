@@ -142,7 +142,7 @@ public sealed class McpPublishedCatalogReadbackTests
                     route: $"/rest/services/{id}/FeatureServer", protocols: ServiceProtocols.All)
                 .AddPublication($"publication-{id}", $"service-{id}", $"resource-{id}",
                     layerIndex: index, storageBindingId: $"binding-{id}",
-                    publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                    publicationType: MetadataV2LayerType.EsriFeatureLayer);
         }
 
         var resource = new PromotionSurfaceIndexResource(
@@ -669,7 +669,7 @@ public sealed class McpPublishedCatalogReadbackTests
                 route: "/rest/services/roads/FeatureServer", protocols: ServiceProtocols.All)
             .AddPublication("road-publication", "service-internal-id", "road-data",
                 layerIndex: 3, storageBindingId: "road-binding",
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                publicationType: MetadataV2LayerType.EsriFeatureLayer)
             .Build();
 
     private static PublishedServiceRecord Promotion() => new()

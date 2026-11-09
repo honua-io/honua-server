@@ -332,7 +332,7 @@ public sealed class OutputCacheInvalidationServiceTests
                 layerIndex: null,
                 storageBindingId: "binding-parcels",
                 serviceLocalId: "parcels",
-                publicationType: MetadataV2PublicationType.OgcCollection);
+                publicationType: MetadataV2LayerType.OgcCollection);
         return builder.Build();
     }
 
@@ -418,7 +418,7 @@ public sealed class OutputCacheInvalidationServiceTests
                     resourceId: $"res-layer-{layerId}",
                     layerIndex: layerId,
                     serviceLocalId: layerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                    publicationType: MetadataV2LayerType.EsriFeatureLayer);
             }
         }
 

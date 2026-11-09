@@ -292,7 +292,7 @@ internal static partial class FeatureServerEndpoints
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         CancellationToken cancellationToken)
     {

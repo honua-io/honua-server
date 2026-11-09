@@ -18,7 +18,7 @@ public sealed class AttachmentDeclaredCapabilityTests
     {
         var denial = AttachmentEndpoints.DescribeDeniedAttachmentAccess(
             new MetadataV2Service(),
-            new MetadataV2Publication { Capabilities = ["Query"] },
+            new MetadataV2Layer { Capabilities = ["Query"] },
             AttachmentLayer(),
             AccessScope.Write,
             AuthorizationOperation.Insert);
@@ -31,7 +31,7 @@ public sealed class AttachmentDeclaredCapabilityTests
     {
         var denial = AttachmentEndpoints.DescribeDeniedAttachmentAccess(
             new MetadataV2Service(),
-            new MetadataV2Publication(),
+            new MetadataV2Layer(),
             AttachmentLayer(),
             AccessScope.Write,
             AuthorizationOperation.Delete);
@@ -42,7 +42,7 @@ public sealed class AttachmentDeclaredCapabilityTests
     [UnitTest]
     public void Write_WhenCapabilityIsDeclared_AllowsThatOperationOnly()
     {
-        var publication = new MetadataV2Publication { Capabilities = ["Query", "Update"] };
+        var publication = new MetadataV2Layer { Capabilities = ["Query", "Update"] };
 
         AttachmentEndpoints.DescribeDeniedAttachmentAccess(
                 new MetadataV2Service(),
@@ -66,7 +66,7 @@ public sealed class AttachmentDeclaredCapabilityTests
     {
         AttachmentEndpoints.DescribeDeniedAttachmentAccess(
                 new MetadataV2Service(),
-                new MetadataV2Publication { Capabilities = ["Query"] },
+                new MetadataV2Layer { Capabilities = ["Query"] },
                 AttachmentLayer(),
                 AccessScope.Read,
                 writeOperation: null)
@@ -83,7 +83,7 @@ public sealed class AttachmentDeclaredCapabilityTests
 
         AttachmentEndpoints.DescribeDeniedAttachmentAccess(
                 new MetadataV2Service(),
-                new MetadataV2Publication { Capabilities = ["Query", "Create", "Update", "Delete"] },
+                new MetadataV2Layer { Capabilities = ["Query", "Create", "Update", "Delete"] },
                 resource,
                 AccessScope.Read,
                 writeOperation: null)
@@ -91,7 +91,7 @@ public sealed class AttachmentDeclaredCapabilityTests
 
         AttachmentEndpoints.DescribeDeniedAttachmentAccess(
                 ServiceCapabilities("Create"),
-                new MetadataV2Publication(),
+                new MetadataV2Layer(),
                 resource,
                 AccessScope.Write,
                 AuthorizationOperation.Insert)
@@ -103,7 +103,7 @@ public sealed class AttachmentDeclaredCapabilityTests
     {
         AttachmentEndpoints.DescribeDeniedAttachmentAccess(
                 ServiceCapabilities("Query", "Editing"),
-                new MetadataV2Publication(),
+                new MetadataV2Layer(),
                 AttachmentLayer(),
                 AccessScope.Write,
                 AuthorizationOperation.Update)

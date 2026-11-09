@@ -26,7 +26,7 @@ internal sealed class NullLayerAccessAuthorizer : ILayerAccessAuthorizer
 
     public Task<AccessDecision> AuthorizePublicationAsync(
         ClaimsPrincipal principal,
-        Honua.Core.Features.Metadata.Domain.V2.MetadataV2Publication publication,
+        Honua.Core.Features.Metadata.Domain.V2.MetadataV2Layer publication,
         Honua.Core.Features.Metadata.Domain.V2.MetadataV2Resource resource,
         Honua.Core.Features.Metadata.Domain.V2.MetadataV2Service? service,
         AuthorizationOperation operation,

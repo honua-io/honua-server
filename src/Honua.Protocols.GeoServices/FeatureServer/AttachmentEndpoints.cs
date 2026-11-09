@@ -936,7 +936,7 @@ internal static partial class AttachmentEndpoints
 
     internal static string? DescribeDeniedAttachmentAccess(
         MetadataV2Service service,
-        MetadataV2Publication? publication,
+        MetadataV2Layer? publication,
         MetadataV2Resource resource,
         AccessScope scope,
         AuthorizationOperation? writeOperation)

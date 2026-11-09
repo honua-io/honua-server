@@ -149,7 +149,7 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
             .AddStorageBinding("binding", "resource", "test.layers.7", storageLayerId: 7)
             .AddService("service", "cities", protocols: [ServiceProtocols.OgcFeatures])
             .AddPublication("pub-cities", "service", "resource", layerIndex: 1,
-                storageBindingId: "binding", publicationType: MetadataV2PublicationType.OgcCollection)
+                storageBindingId: "binding", publicationType: MetadataV2LayerType.OgcCollection)
             .Build();
         return new TestMetadataV2GraphProvider(graph with
         {

@@ -111,7 +111,7 @@ internal static partial class FeatureServerEndpoints
     private static async Task<IResult> GetServiceMetadataAsync(
         HttpContext context,
         MetadataV2Service service,
-        IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
+        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Resource Resource)> publications,
         MetadataV2GraphSnapshot snapshot,
         QueryLimits limits,
         ILogger logger,
@@ -275,7 +275,7 @@ internal static partial class FeatureServerEndpoints
         HttpContext context,
         string serviceId,
         MetadataV2Service service,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Resource resource,
         MetadataV2GraphSnapshot snapshot,
         QueryLimits limits,

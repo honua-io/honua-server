@@ -929,7 +929,7 @@ public sealed class FeatureServerQueryExecutorTests
         await featureReader.DidNotReceive().QueryObjectIdsAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
     }
 
-    private static (FeatureServerQueryExecutor Sut, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Publication Publication)
+    private static (FeatureServerQueryExecutor Sut, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Layer Publication)
         CreateFederatedGeoServicesSut(IGeoServicesRestFeatureClient upstream)
     {
         var service = CreateService();
@@ -1140,7 +1140,7 @@ public sealed class FeatureServerQueryExecutorTests
             SpatialReference = MetadataV2SpatialReference.Wgs84
         };
 
-    private static MetadataV2Publication CreatePublication(
+    private static MetadataV2Layer CreatePublication(
         MetadataV2Service service,
         MetadataV2Resource resource,
         string? storageBindingId = null)
@@ -1150,18 +1150,18 @@ public sealed class FeatureServerQueryExecutorTests
             ServiceId = service.Metadata.Id,
             ResourceId = resource.Metadata.Id,
             StorageBindingId = storageBindingId,
-            Identifier = new MetadataV2PublicationIdentifier
+            Identifier = new MetadataV2LayerIdentifier
             {
                 Value = "7",
                 IsNumeric = true
             },
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer
+            PublicationType = MetadataV2LayerType.EsriFeatureLayer
         };
 
     private static TestMetadataV2GraphProvider CreateGraphProvider(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2StorageBinding? storageBinding = null)
         => new(new MetadataV2Graph
         {

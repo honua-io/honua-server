@@ -153,7 +153,7 @@ public class DatabricksMetadataV2QueryTests
             });
     }
 
-    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Publication Publication)
+    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Layer Publication)
         CreateLayer0Snapshot(Guid connectionId)
     {
         var service = new MetadataV2Service
@@ -214,13 +214,13 @@ public class DatabricksMetadataV2QueryTests
             Metadata = new MetadataV2ObjectMetadata { Id = connectionId.ToString(), Name = "warehouse" },
             Provider = DataProviderNames.Databricks
         };
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "pub-parcels", Name = "Parcels" },
             ServiceId = service.Metadata.Id,
             ResourceId = resource.Metadata.Id,
             StorageBindingId = storageBinding.Metadata.Id,
-            Identifier = new MetadataV2PublicationIdentifier { Value = "0", IsNumeric = true }
+            Identifier = new MetadataV2LayerIdentifier { Value = "0", IsNumeric = true }
         };
         var graph = new MetadataV2Graph
         {

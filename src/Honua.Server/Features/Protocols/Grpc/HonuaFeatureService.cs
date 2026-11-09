@@ -883,7 +883,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
     private static GrpcLayerContext CreateLayerContext(
         MetadataV2Service service,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Resource resource,
         int storageLayerId,
         MetadataV2GraphSnapshot? snapshot)
@@ -1262,7 +1262,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     // An edit kind the publication omits is rejected.
     private static void EnsureDeclaredEditCapabilities(
         MetadataV2Service service,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         FeatureEditBatch editBatch)
     {
         Check(!editBatch.Creates.IsDefaultOrEmpty, AuthorizationOperation.Insert);
@@ -1344,7 +1344,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
     private readonly record struct GrpcLayerContext(
         MetadataV2Service Service,
-        MetadataV2Publication Publication,
+        MetadataV2Layer Publication,
         MetadataV2Resource Resource,
         int StorageLayerId,
         MetadataV2GraphSnapshot? Snapshot,

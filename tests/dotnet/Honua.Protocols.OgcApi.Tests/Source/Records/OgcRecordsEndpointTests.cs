@@ -183,13 +183,13 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
         {
             Metadata = sourcePublication.Metadata with { Id = activePublicationId },
             ServiceId = activeServiceId,
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer
+            PublicationType = MetadataV2LayerType.EsriFeatureLayer
         };
         var retiredPublication = activePublication with
         {
             Metadata = activePublication.Metadata with { Id = retiredPublicationId },
             ServiceId = retiredServiceId,
-            PublicationType = MetadataV2PublicationType.EsriMapLayer
+            PublicationType = MetadataV2LayerType.EsriMapLayer
         };
         var mutatedGraph = snapshot.Graph with
         {

@@ -291,7 +291,7 @@ public sealed class LayerAccessAuthorizerTests
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
         };
 
-        MetadataV2Publication Publish(MetadataV2Service service, MetadataV2LifecycleStatus lifecycle) => new()
+        MetadataV2Layer Publish(MetadataV2Service service, MetadataV2LifecycleStatus lifecycle) => new()
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -306,7 +306,7 @@ public sealed class LayerAccessAuthorizerTests
         };
 
         List<MetadataV2Service> serviceList = addOpenDraftService ? [open, restricted] : [restricted];
-        List<MetadataV2Publication> publicationList = [];
+        List<MetadataV2Layer> publicationList = [];
         if (withPublication)
         {
             if (addOpenDraftService)
@@ -352,7 +352,7 @@ public sealed class LayerAccessAuthorizerTests
             StorageLayerId = storageLayerId,
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
         };
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata
             {

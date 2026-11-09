@@ -84,7 +84,7 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
 
     public async Task<AccessDecision> AuthorizePublicationAsync(
         ClaimsPrincipal principal,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Resource resource,
         MetadataV2Service? service,
         AuthorizationOperation operation,
@@ -308,7 +308,7 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
         bool applyTenantScope,
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Resource storageResource,
-        IReadOnlyList<MetadataV2Publication> publications,
+        IReadOnlyList<MetadataV2Layer> publications,
         AuthorizationOperation operation,
         IDictionary<object, object?> requestCache,
         CancellationToken cancellationToken)

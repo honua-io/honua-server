@@ -51,11 +51,11 @@ internal sealed record DiscoveryMetadataTarget(
         };
 
     private static DiscoveryPublicationImpact[] Impact(MetadataV2GraphSnapshot snapshot,
-        IEnumerable<MetadataV2Publication> publications) => publications.Select(publication => new DiscoveryPublicationImpact(
+        IEnumerable<MetadataV2Layer> publications) => publications.Select(publication => new DiscoveryPublicationImpact(
             publication.Metadata.Id, snapshot.Index.ServicesById[publication.ServiceId].Metadata.Name,
             ReadPublicationIdentifier(publication))).ToArray();
 
-    private static string ReadPublicationIdentifier(MetadataV2Publication publication)
+    private static string ReadPublicationIdentifier(MetadataV2Layer publication)
     {
         var publicationWithIdentifier = publication.Identifier is null ? publication with { Identifier = new() } : publication;
         return publicationWithIdentifier.ServiceLocalId ?? publicationWithIdentifier.LayerIndex?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;

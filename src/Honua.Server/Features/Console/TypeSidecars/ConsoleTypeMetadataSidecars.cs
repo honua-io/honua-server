@@ -27,8 +27,8 @@ public sealed record ConsoleServiceTypeMetadata
     public string? RouteBase { get; init; }
 
     [JsonPropertyName("publications")]
-    public IReadOnlyList<MetadataV2PublicationType> Publications { get; init; }
-        = Array.Empty<MetadataV2PublicationType>();
+    public IReadOnlyList<MetadataV2LayerType> Publications { get; init; }
+        = Array.Empty<MetadataV2LayerType>();
 }
 
 public sealed record ConsoleLayerTypeMetadata

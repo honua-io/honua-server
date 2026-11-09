@@ -228,7 +228,7 @@ public sealed class TestMetadataV2GraphBuilder
     private readonly List<MetadataV2Connection> _connections = [];
     private readonly List<MetadataV2StorageBinding> _bindings = [];
     private readonly List<MetadataV2Service> _services = [];
-    private readonly List<MetadataV2Publication> _publications = [];
+    private readonly List<MetadataV2Layer> _publications = [];
 
     public TestMetadataV2GraphBuilder WithRevision(long revision)
     {
@@ -377,11 +377,11 @@ public sealed class TestMetadataV2GraphBuilder
         int? layerIndex = null,
         string? storageBindingId = null,
         string? serviceLocalId = null,
-        MetadataV2PublicationType publicationType = MetadataV2PublicationType.OgcCollection,
+        MetadataV2LayerType publicationType = MetadataV2LayerType.OgcCollection,
         bool isPrimary = false)
     {
         // The three legacy publication-identification slots collapsed onto one
-        // typed MetadataV2PublicationIdentifier in design slice 61/N. Builder
+        // typed MetadataV2LayerIdentifier in design slice 61/N. Builder
         // resolution: layerIndex (numeric) > serviceLocalId (name-based) > "".
         // path is now passed through Identifier.PathOverride.
         string idValue;
@@ -397,14 +397,14 @@ public sealed class TestMetadataV2GraphBuilder
             isNumeric = false;
         }
 
-        _publications.Add(new MetadataV2Publication
+        _publications.Add(new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = id, Name = serviceLocalId ?? id },
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             ServiceId = serviceId,
             ResourceId = resourceId,
             StorageBindingId = storageBindingId,
-            Identifier = new MetadataV2PublicationIdentifier
+            Identifier = new MetadataV2LayerIdentifier
             {
                 Value = idValue,
                 IsNumeric = isNumeric,

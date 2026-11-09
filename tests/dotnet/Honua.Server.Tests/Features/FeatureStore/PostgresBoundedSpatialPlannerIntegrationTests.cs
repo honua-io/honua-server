@@ -156,7 +156,7 @@ public sealed class PostgresBoundedSpatialPlannerIntegrationTests(DatabaseFixtur
         {
             Options = "-c max_parallel_workers_per_gather=2"
         }.ConnectionString;
-        var binding = new FeatureProviderBinding(new MetadataV2Service(), resource, new MetadataV2Publication(),
+        var binding = new FeatureProviderBinding(new MetadataV2Service(), resource, new MetadataV2Layer(),
             new MetadataV2StorageBinding { ResourceId = resource.Metadata.Id }, CreateMapping(sourceBacked: true),
             1, store, new DataConnection { Id = "planner-bound", IsEncrypted = false, ConnectionString = connectionString });
         var reader = (IPagedFeatureReader)((IBindableFeatureDataProvider)store).CreateReaderForBinding(binding);

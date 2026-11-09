@@ -66,7 +66,7 @@ public sealed record MetadataV2Graph : ExtensibleJsonRecord
     public IReadOnlyList<MetadataV2Service> Services { get; init; } = Array.Empty<MetadataV2Service>();
 
     [JsonPropertyName("publications")]
-    public IReadOnlyList<MetadataV2Publication> Publications { get; init; } = Array.Empty<MetadataV2Publication>();
+    public IReadOnlyList<MetadataV2Layer> Publications { get; init; } = Array.Empty<MetadataV2Layer>();
 
     [JsonPropertyName("projectionProfiles")]
     public IReadOnlyList<MetadataV2ProjectionProfile> ProjectionProfiles { get; init; } =
@@ -485,7 +485,7 @@ public sealed record MetadataV2ServiceSettings : ExtensibleJsonRecord
     public long? MaxPayloadBytes { get; init; }
 }
 
-public sealed record MetadataV2Publication : ExtensibleJsonRecord
+public sealed record MetadataV2Layer : ExtensibleJsonRecord
 {
     private int? _layerIndex;
     private string? _path;
@@ -504,22 +504,22 @@ public sealed record MetadataV2Publication : ExtensibleJsonRecord
     public string? StorageBindingId { get; init; }
 
     [JsonIgnore]
-    public MetadataV2PublicationType PublicationType
+    public MetadataV2LayerType PublicationType
     {
         get => PublicationTypeValue.Value;
         init => PublicationTypeValue = value;
     }
 
     [JsonPropertyName("publicationType")]
-    [JsonConverter(typeof(PreservedEnumJsonConverter<MetadataV2PublicationType>))]
-    public PreservedEnumValue<MetadataV2PublicationType> PublicationTypeValue { get; init; } = MetadataV2PublicationType.OgcCollection;
+    [JsonConverter(typeof(PreservedEnumJsonConverter<MetadataV2LayerType>))]
+    public PreservedEnumValue<MetadataV2LayerType> PublicationTypeValue { get; init; } = MetadataV2LayerType.OgcCollection;
 
     [JsonPropertyName("titleOverride")]
     public string? TitleOverride { get; init; }
 
     // One protocol-facing identifier replaces the separate layer index, service-local id, and path so the three cannot diverge.
     [JsonPropertyName("identifier")]
-    public MetadataV2PublicationIdentifier Identifier { get; init; } = new();
+    public MetadataV2LayerIdentifier Identifier { get; init; } = new();
 
     [JsonPropertyName("layerIndex")]
     public int? LayerIndex

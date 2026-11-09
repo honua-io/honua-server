@@ -280,7 +280,7 @@ internal sealed class MetadataV2ImageServerLayerResolver(
         MetadataV2Resource? Resource);
 
     private readonly record struct ImageServerPublishedLayer(
-        MetadataV2Publication Publication,
+        MetadataV2Layer Publication,
         int? StorageLayerId,
         MetadataV2Resource? Resource,
         MetadataV2Service? Service);

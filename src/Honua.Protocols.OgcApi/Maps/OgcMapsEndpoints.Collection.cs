@@ -141,7 +141,7 @@ public static partial class OgcMapsEndpoints
     private static async Task<OgcCommon.CollectionInfo> BuildCollectionInfoAsync(
         HttpContext context,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         string canonicalId,
         string outputFormat,
         ICoordinateTransformService coordinateTransformService,

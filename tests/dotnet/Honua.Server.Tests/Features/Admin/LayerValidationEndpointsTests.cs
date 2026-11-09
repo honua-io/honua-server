@@ -279,7 +279,7 @@ public sealed class LayerValidationEndpointsTests : IAsyncLifetime
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             Route = "/api/v1/admin/metadata/layers"
         };
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -290,12 +290,12 @@ public sealed class LayerValidationEndpointsTests : IAsyncLifetime
             ResourceId = resourceId,
             StorageBindingId = bindingId,
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
-            Identifier = new MetadataV2PublicationIdentifier
+            Identifier = new MetadataV2LayerIdentifier
             {
                 Value = layerIdText,
                 IsNumeric = true
             },
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+            PublicationType = MetadataV2LayerType.EsriFeatureLayer,
             IsPrimary = true
         };
 

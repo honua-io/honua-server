@@ -509,7 +509,7 @@ public static class MetadataV2GraphValidator
     }
 
     private static void ValidatePublicationPrimary(
-        List<string> errors, IReadOnlyList<MetadataV2Publication> publications)
+        List<string> errors, IReadOnlyList<MetadataV2Layer> publications)
     {
         // At most one publication per (resourceId, serviceId) may set IsPrimary = true.
         // Not rewritten as .Select(): the loop accumulates a frequency count into a shared
@@ -531,7 +531,7 @@ public static class MetadataV2GraphValidator
 
     private static void ValidatePublications(
         List<string> errors,
-        IEnumerable<MetadataV2Publication> publications,
+        IEnumerable<MetadataV2Layer> publications,
         Dictionary<string, MetadataV2Resource> resourcesById,
         Dictionary<string, MetadataV2StorageBinding> storageBindingsById,
         HashSet<string> serviceIds)
@@ -820,7 +820,7 @@ public static class MetadataV2GraphValidator
     private static void ValidateServices(
         List<string> errors,
         IEnumerable<MetadataV2Service> services,
-        Dictionary<string, MetadataV2Publication> publicationsById)
+        Dictionary<string, MetadataV2Layer> publicationsById)
     {
         // Service→publications is now derived from publication.ServiceId only;
         // the redundant Service.PublicationIds slot was removed in design slice 55/N.

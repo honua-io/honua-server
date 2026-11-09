@@ -186,7 +186,7 @@ internal static class OgcFeatureIdentifierResolver
         IFeatureReader featureReader,
         IQueryProcessor queryProcessor,
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Resource resource,
         string featureId,
         CancellationToken cancellationToken)
@@ -196,7 +196,7 @@ internal static class OgcFeatureIdentifierResolver
         IFeatureReader featureReader,
         IQueryProcessor queryProcessor,
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Resource resource,
         string featureId,
         bool requireEditSnapshot,
@@ -254,7 +254,7 @@ internal static class OgcFeatureIdentifierResolver
         IFeatureReader featureReader,
         IQueryProcessor queryProcessor,
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Resource resource,
         IReadOnlyCollection<string> featureIds,
         CancellationToken cancellationToken)

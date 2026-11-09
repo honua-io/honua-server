@@ -161,7 +161,7 @@ public sealed class OgcFeatureIdentifierResolverResolveManyTests
         return Feature.Create(objectId, geometry: null, builder.ToImmutable());
     }
 
-    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Publication Publication, MetadataV2Resource Resource) BuildGraph(
+    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Layer Publication, MetadataV2Resource Resource) BuildGraph(
         bool objectIdField)
     {
         MetadataV2Field[] fields = objectIdField

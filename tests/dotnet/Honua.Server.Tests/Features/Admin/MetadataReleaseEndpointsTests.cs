@@ -922,13 +922,13 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
             ],
             Publications =
             [
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub.parcels", Name = "parcels" },
                     ResourceId = "res.parcels",
                     ServiceId = "svc.features",
                     StorageBindingId = "storage.parcels",
-                    PublicationType = MetadataV2PublicationType.OgcCollection,
+                    PublicationType = MetadataV2LayerType.OgcCollection,
                     Path = "parcels",
                     ServiceLocalId = "parcels",
                 },

@@ -64,14 +64,14 @@ public sealed class StacFilterHelpersTests
                 "res-two",
                 layerIndex: 2,
                 serviceLocalId: "second",
-                publicationType: MetadataV2PublicationType.StacCollection)
+                publicationType: MetadataV2LayerType.StacCollection)
             .AddPublication(
                 "pub-one",
                 "svc-alpha",
                 "res-one",
                 layerIndex: 1,
                 serviceLocalId: "first",
-                publicationType: MetadataV2PublicationType.StacCollection)
+                publicationType: MetadataV2LayerType.StacCollection)
             .Build();
 
         var secondGraph = new TestMetadataV2GraphBuilder()
@@ -84,14 +84,14 @@ public sealed class StacFilterHelpersTests
                 "res-one",
                 layerIndex: 1,
                 serviceLocalId: "first",
-                publicationType: MetadataV2PublicationType.StacCollection)
+                publicationType: MetadataV2LayerType.StacCollection)
             .AddPublication(
                 "pub-two",
                 "svc-alpha",
                 "res-two",
                 layerIndex: 2,
                 serviceLocalId: "second",
-                publicationType: MetadataV2PublicationType.StacCollection)
+                publicationType: MetadataV2LayerType.StacCollection)
             .Build();
 
         var firstOrder = await ResolveVisiblePublicationsAsync(firstGraph);
@@ -114,7 +114,7 @@ public sealed class StacFilterHelpersTests
                 "res-published",
                 layerIndex: 2,
                 serviceLocalId: "published",
-                publicationType: MetadataV2PublicationType.StacCollection)
+                publicationType: MetadataV2LayerType.StacCollection)
             .Build();
 
         var visible = await ResolveVisiblePublicationsAsync(graph);
@@ -137,14 +137,14 @@ public sealed class StacFilterHelpersTests
                 "res-non-stac",
                 layerIndex: 1,
                 serviceLocalId: "non-stac",
-                publicationType: MetadataV2PublicationType.StacCollection)
+                publicationType: MetadataV2LayerType.StacCollection)
             .AddPublication(
                 "pub-stac",
                 "svc-stac",
                 "res-stac",
                 layerIndex: 2,
                 serviceLocalId: "stac",
-                publicationType: MetadataV2PublicationType.StacCollection)
+                publicationType: MetadataV2LayerType.StacCollection)
             .Build();
 
         var visible = await ResolveVisiblePublicationsAsync(graph);
@@ -168,7 +168,7 @@ public sealed class StacFilterHelpersTests
                 "res-stac",
                 layerIndex: 0,
                 serviceLocalId: "0",
-                publicationType: MetadataV2PublicationType.StacCollection)
+                publicationType: MetadataV2LayerType.StacCollection)
             .Build();
 
         using var provider = new ServiceCollection()
@@ -208,21 +208,21 @@ public sealed class StacFilterHelpersTests
                 "res-active",
                 layerIndex: 0,
                 serviceLocalId: "active",
-                publicationType: MetadataV2PublicationType.StacCollection)
+                publicationType: MetadataV2LayerType.StacCollection)
             .AddPublication(
                 "pub-retired-publication",
                 "svc-stac",
                 "res-retired-publication",
                 layerIndex: 1,
                 serviceLocalId: "retired-publication",
-                publicationType: MetadataV2PublicationType.StacCollection)
+                publicationType: MetadataV2LayerType.StacCollection)
             .AddPublication(
                 "pub-retired-resource",
                 "svc-stac",
                 "res-retired-resource",
                 layerIndex: 2,
                 serviceLocalId: "retired-resource",
-                publicationType: MetadataV2PublicationType.StacCollection)
+                publicationType: MetadataV2LayerType.StacCollection)
             .Build();
         var graph = baseGraph with
         {

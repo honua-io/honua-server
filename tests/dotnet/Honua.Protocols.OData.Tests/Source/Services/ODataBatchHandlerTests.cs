@@ -624,7 +624,7 @@ public sealed class ODataBatchHandlerTests
                 "svc-cities",
                 "res-layer-1",
                 layerIndex: 1,
-                publicationType: MetadataV2PublicationType.ODataEntitySet);
+                publicationType: MetadataV2LayerType.ODataEntitySet);
         if (ownerPolicy is not null)
         {
             builder = builder.WithOwnerEditPolicy("res-layer-1", ownerPolicy);

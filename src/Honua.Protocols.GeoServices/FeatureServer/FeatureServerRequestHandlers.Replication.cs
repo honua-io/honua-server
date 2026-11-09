@@ -2167,7 +2167,7 @@ internal static partial class FeatureServerEndpoints
     private sealed record ReplicaLayerV2(
         int PublicLayerId,
         int StorageLayerId,
-        MetadataV2Publication Publication,
+        MetadataV2Layer Publication,
         MetadataV2Resource Resource);
 
     private static async Task<ReplicationServiceValidationResult> ValidateReplicationServiceV2Async(
@@ -2226,7 +2226,7 @@ internal static partial class FeatureServerEndpoints
                 // Replication needs one deterministic feature/table resource per public
                 // ID; otherwise dictionary lookups throw before access checks run.
                 .Where(layer => layer.Resource.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table)
-                .OrderBy(layer => layer.Publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer ? 0 : 1)
+                .OrderBy(layer => layer.Publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer ? 0 : 1)
                 .ThenByDescending(layer => layer.Publication.IsPrimary)
                 .ThenBy(layer => layer.Publication.Metadata.Id, StringComparer.Ordinal)
                 .DistinctBy(layer => layer.PublicLayerId)

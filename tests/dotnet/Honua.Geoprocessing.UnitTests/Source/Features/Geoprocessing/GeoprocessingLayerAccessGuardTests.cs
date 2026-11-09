@@ -423,7 +423,7 @@ public sealed class GeoprocessingLayerAccessGuardTests
         Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
     };
 
-    private static MetadataV2Publication Publication(
+    private static MetadataV2Layer Publication(
         string id,
         string serviceId,
         string resourceId,

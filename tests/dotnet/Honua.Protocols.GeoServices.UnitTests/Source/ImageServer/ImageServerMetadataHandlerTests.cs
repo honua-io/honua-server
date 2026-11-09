@@ -667,7 +667,7 @@ public class ImageServerMetadataHandlerTests
                     "resource-1",
                     layerIndex: 1,
                     serviceLocalId: "test-layer",
-                    publicationType: MetadataV2PublicationType.EsriImageLayer)
+                    publicationType: MetadataV2LayerType.EsriImageLayer)
                 .BuildProvider(),
             _rasterStore,
             _multidimensionalInfoBuilder,
@@ -724,7 +724,7 @@ public class ImageServerMetadataHandlerTests
                 $"resource-{layerIndex}",
                 layerIndex: layerIndex,
                 serviceLocalId: "test-layer",
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2LayerType.EsriImageLayer)
             .BuildProvider();
 
     private static RasterInfo CreateTestRasterInfo(int? srid = 4326) => new()

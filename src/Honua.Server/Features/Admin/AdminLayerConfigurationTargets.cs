@@ -122,7 +122,7 @@ internal static class AdminLayerConfigurationTargets
         }
     }
 
-    private static string ServiceName(MetadataV2GraphSnapshot snapshot, MetadataV2Publication publication)
+    private static string ServiceName(MetadataV2GraphSnapshot snapshot, MetadataV2Layer publication)
     {
         if (snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service)
             && !string.IsNullOrWhiteSpace(service.Metadata.Name))

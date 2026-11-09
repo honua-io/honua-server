@@ -37,7 +37,7 @@ public static class ODataProviderTestData
             new FeatureDataProviderRegistry([provider]));
     }
 
-    public static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Publication Publication)
+    public static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Layer Publication)
         CreateSnapshot(string? connectionId)
     {
         var service = new MetadataV2Service
@@ -71,7 +71,7 @@ public static class ODataProviderTestData
             Locator = "dbo.secondary",
             StorageLayerId = 41
         };
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "pub-secondary", Name = "secondary" },
             ServiceId = service.Metadata.Id,

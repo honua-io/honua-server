@@ -611,7 +611,7 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var resourceId = snapshot.Graph.Publications.Single(publication =>
             publication.LayerIndex == published.LayerId &&
-            publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer).ResourceId;
+            publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer).ResourceId;
         var publishingServiceIds = snapshot.Graph.Publications
             .Where(publication => string.Equals(publication.ResourceId, resourceId, StringComparison.Ordinal))
             .Select(publication => publication.ServiceId)
@@ -3203,7 +3203,7 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.Single(publication =>
             publication.LayerIndex == _layerId &&
-            publication.PublicationType == MetadataV2PublicationType.StacCollection);
+            publication.PublicationType == MetadataV2LayerType.StacCollection);
         var binding = snapshot.ResolveStorageBinding(publication)
             ?? throw new InvalidOperationException("Published STAC collection did not resolve a storage binding.");
         var bindings = snapshot.Graph.StorageBindings
@@ -3247,7 +3247,7 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.Single(publication =>
             publication.LayerIndex == _layerId &&
-            publication.PublicationType == MetadataV2PublicationType.StacCollection);
+            publication.PublicationType == MetadataV2LayerType.StacCollection);
         var publications = snapshot.Graph.Publications
             .Select(candidate => candidate.Metadata.Id == publication.Metadata.Id
                 ? candidate with { StorageBindingId = "missing-stac-binding" }

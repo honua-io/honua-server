@@ -38,7 +38,7 @@ internal static partial class MapServerEndpoints
         int PublicLayerId,
         int StorageLayerId,
         string Name,
-        MetadataV2Publication Publication,
+        MetadataV2Layer Publication,
         MetadataV2Resource Resource);
 
     private static async Task<IResult> HandleGetServiceMetadata(HttpContext context)
@@ -415,7 +415,7 @@ internal static partial class MapServerEndpoints
 
     internal static MapServerLayerResponse MapLayerToMapServerLayerResponse(
         MetadataV2Service service,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Resource resource,
         MetadataV2GraphSnapshot snapshot,
         int maxRecordCount,
@@ -541,7 +541,7 @@ internal static partial class MapServerEndpoints
 
     private static async Task<FeatureServerTimeInfo?> BuildTimeInfoSafeAsync(
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2GraphSnapshot snapshot,
         IFeatureReader featureReader,
         ILogger logger,

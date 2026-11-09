@@ -407,14 +407,14 @@ public sealed class PortalItemProjectorTests
             Services = [service],
             Publications =
             [
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub.parcels", Name = "parcels" },
                     Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                     ResourceId = resource.Metadata.Id,
                     ServiceId = service.Metadata.Id,
-                    PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
-                    Identifier = new MetadataV2PublicationIdentifier { Value = "0", IsNumeric = true },
+                    PublicationType = MetadataV2LayerType.EsriFeatureLayer,
+                    Identifier = new MetadataV2LayerIdentifier { Value = "0", IsNumeric = true },
                 }
             ],
         };
@@ -439,7 +439,7 @@ public sealed class PortalItemProjectorTests
     private sealed class FakePortalReadAuthorizer : IPortalResourceReadAuthorizer
     {
         public AccessDecision Evaluate(ClaimsPrincipal principal, MetadataV2Resource? resource, MetadataV2Service service,
-            MetadataV2Publication? publication = null)
+            MetadataV2Layer? publication = null)
             => new FakeAccessPolicyEvaluator().Evaluate(principal, resource?.AccessPolicy, service.AccessPolicy);
 
         public bool HasServiceAudience(ClaimsPrincipal principal, MetadataV2Service service) => false;

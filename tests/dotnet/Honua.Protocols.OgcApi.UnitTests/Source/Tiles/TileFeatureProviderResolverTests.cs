@@ -271,7 +271,7 @@ public sealed class TileFeatureProviderResolverTests
             new FeatureDataProviderRegistry([provider]));
     }
 
-    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Publication Publication)
+    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Layer Publication)
         CreateSnapshot(
             string? connectionId,
             bool publicationUsesExplicitBinding = true,
@@ -316,7 +316,7 @@ public sealed class TileFeatureProviderResolverTests
                 }
                 : new Dictionary<string, JsonElement>()
         };
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "pub-secondary", Name = "secondary" },
             ServiceId = service.Metadata.Id,

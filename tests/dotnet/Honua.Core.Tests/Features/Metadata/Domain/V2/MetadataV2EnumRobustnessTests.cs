@@ -15,7 +15,7 @@ public sealed class MetadataV2EnumRobustnessTests
     [
         typeof(MetadataV2ResourceType), typeof(MetadataV2ConnectionType),
         typeof(MetadataV2StorageType), typeof(MetadataV2ServiceType),
-        typeof(MetadataV2PublicationType), typeof(MetadataV2StorageBindingCapability),
+        typeof(MetadataV2LayerType), typeof(MetadataV2StorageBindingCapability),
         typeof(MetadataV2GeometryType), typeof(MetadataV2FieldType),
         typeof(MetadataV2AttributeRuleType), typeof(Symbology3DComparison)
     ];
@@ -84,8 +84,8 @@ public sealed class MetadataV2EnumRobustnessTests
     [InlineData(typeof(MetadataV2StorageType), "\"stac-asset\"", 15)]
     [InlineData(typeof(MetadataV2ServiceType), "\"ogc-api-features\"", 0)]
     [InlineData(typeof(MetadataV2ServiceType), "\"custom\"", 12)]
-    [InlineData(typeof(MetadataV2PublicationType), "\"ogc-collection\"", 0)]
-    [InlineData(typeof(MetadataV2PublicationType), "\"custom\"", 13)]
+    [InlineData(typeof(MetadataV2LayerType), "\"ogc-collection\"", 0)]
+    [InlineData(typeof(MetadataV2LayerType), "\"custom\"", 13)]
     [InlineData(typeof(MetadataV2StorageBindingCapability), "\"query\"", 0)]
     [InlineData(typeof(MetadataV2StorageBindingCapability), "\"search\"", 9)]
     [InlineData(typeof(MetadataV2GeometryType), "\"none\"", 0)]

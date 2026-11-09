@@ -99,7 +99,7 @@ public sealed class FeatureServerServiceEstimateLayerIdsTests
             StorageLayerId = storageLayerId,
         };
 
-    private static MetadataV2Publication Publication(
+    private static MetadataV2Layer Publication(
         string id,
         string resourceId,
         string? storageBindingId,
@@ -111,7 +111,7 @@ public sealed class FeatureServerServiceEstimateLayerIdsTests
             ResourceId = resourceId,
             ServiceId = "service.features",
             StorageBindingId = storageBindingId,
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+            PublicationType = MetadataV2LayerType.EsriFeatureLayer,
             IsPrimary = true,
             LayerIndex = layerIndex,
         };

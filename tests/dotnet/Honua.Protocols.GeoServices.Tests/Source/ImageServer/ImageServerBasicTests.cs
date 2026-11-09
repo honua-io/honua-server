@@ -633,7 +633,7 @@ public class ImageServerBasicTests : IClassFixture<WebAppFixture>
                         "res-2024-imagery",
                         layerIndex: 0,
                         serviceLocalId: "Imagery",
-                        publicationType: MetadataV2PublicationType.EsriImageLayer)
+                        publicationType: MetadataV2LayerType.EsriImageLayer)
                     .BuildProvider();
 
                 services.RemoveAll<IMetadataV2GraphProvider>();

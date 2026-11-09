@@ -625,7 +625,7 @@ public sealed class MetadataCompatibilityAnalyzerTests
                         Exists = true,
                         ResourceId = includeRequiredDetails ? "res.parcels" : null,
                         ServiceId = includeRequiredDetails ? "svc.features" : null,
-                        PublicationType = includeRequiredDetails ? MetadataV2PublicationType.OgcCollection : null,
+                        PublicationType = includeRequiredDetails ? MetadataV2LayerType.OgcCollection : null,
                         Path = includeRequiredDetails ? "parcels" : null,
                         ServiceLocalId = includeRequiredDetails ? "parcels" : null,
                     },
@@ -836,18 +836,18 @@ public sealed class MetadataCompatibilityAnalyzerTests
             Publications = includePublication
                 ?
                 [
-                    new MetadataV2Publication
+                    new MetadataV2Layer
                     {
                         Metadata = new MetadataV2ObjectMetadata { Id = "pub.parcels", Name = "parcels" },
                         ResourceId = publicationResourceId,
                         ServiceId = publicationServiceId,
                         StorageBindingId = "storage.parcels",
-                        PublicationType = MetadataV2PublicationType.OgcCollection,
+                        PublicationType = MetadataV2LayerType.OgcCollection,
                         Path = "parcels",
                         ServiceLocalId = "parcels",
                     },
                 ]
-                : Array.Empty<MetadataV2Publication>(),
+                : Array.Empty<MetadataV2Layer>(),
             ProjectionProfiles = includeProjectionProfile
                 ?
                 [

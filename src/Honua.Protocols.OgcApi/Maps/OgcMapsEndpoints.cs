@@ -505,7 +505,7 @@ public static partial class OgcMapsEndpoints
     /// collection, otherwise 404).
     /// </summary>
     private readonly record struct MapsCollectionResolution(
-        MetadataV2Publication? Publication,
+        MetadataV2Layer? Publication,
         MetadataV2Resource? Resource,
         int? LayerId,
         IResult? Error);

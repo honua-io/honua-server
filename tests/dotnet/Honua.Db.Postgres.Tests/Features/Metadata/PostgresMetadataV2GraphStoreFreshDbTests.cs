@@ -617,24 +617,24 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFix
             ],
             Publications =
             [
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub-1", Name = "pub-1" },
                     ResourceId = "res-1",
                     ServiceId = "svc-1",
                     StorageBindingId = "bind-1",
-                    PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
-                    Identifier = new MetadataV2PublicationIdentifier { Value = "7", IsNumeric = true },
+                    PublicationType = MetadataV2LayerType.EsriFeatureLayer,
+                    Identifier = new MetadataV2LayerIdentifier { Value = "7", IsNumeric = true },
                     IsPrimary = true,
                 },
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub-2", Name = "pub-2" },
                     ResourceId = "res-1",
                     ServiceId = "svc-1",
                     StorageBindingId = "bind-1",
-                    PublicationType = MetadataV2PublicationType.StacCollection,
-                    Identifier = new MetadataV2PublicationIdentifier { Value = string.Empty, IsNumeric = false },
+                    PublicationType = MetadataV2LayerType.StacCollection,
+                    Identifier = new MetadataV2LayerIdentifier { Value = string.Empty, IsNumeric = false },
                     IsPrimary = false,
                 },
             ],

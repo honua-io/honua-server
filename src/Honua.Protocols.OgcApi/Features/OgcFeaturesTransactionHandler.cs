@@ -326,7 +326,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         HttpContext context,
         MetadataV2Resource resource,
         MetadataV2Service? service,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         BatchRequest batchRequest,
         CancellationToken cancellationToken)
     {
@@ -1211,7 +1211,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     /// </summary>
     private async Task<IReadOnlyDictionary<string, OgcFeatureIdentifierResolver.ResolvedFeature>> ResolveBatchOperationTargetsAsync(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Resource resource,
         BatchRequest batchRequest,
         CancellationToken cancellationToken)
@@ -1516,7 +1516,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         int layerId,
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service? service,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Resource resource,
         BatchRequest batchRequest,
         CrsDefinition inputCrs,

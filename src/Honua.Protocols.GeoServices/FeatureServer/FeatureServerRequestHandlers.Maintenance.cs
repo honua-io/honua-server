@@ -213,7 +213,7 @@ internal static partial class FeatureServerEndpoints
         HttpContext context,
         string serviceId,
         int layerId,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Service service,
         MetadataV2Resource resource,
         IReadOnlyDictionary<string, StringValues> values,
@@ -984,7 +984,7 @@ internal static partial class FeatureServerEndpoints
     }
 
     private static DomainInfo MapDomainInfoV2(
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Resource resource,
         MetadataV2Field field,
         MetadataV2GraphSnapshot snapshot)

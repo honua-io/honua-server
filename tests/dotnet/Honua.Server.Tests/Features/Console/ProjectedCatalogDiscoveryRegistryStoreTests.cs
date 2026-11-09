@@ -235,7 +235,7 @@ public sealed class ProjectedCatalogDiscoveryRegistryStoreTests
                 protocols: [ServiceProtocols.FeatureServer, ServiceProtocols.MapServer],
                 accessPolicy: new AccessPolicy { AllowAnonymous = true })
             .AddPublication("publication" + suffix, "service" + suffix, "resource" + suffix, layerIndex: suffix.Length == 0 ? 42 : 43,
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                publicationType: MetadataV2LayerType.EsriFeatureLayer)
             .Build();
         MetadataV2ObjectMetadata Scoped(MetadataV2ObjectMetadata metadata) => metadata with { Tenant = "public", Namespace = metadataNamespace };
         return graph with

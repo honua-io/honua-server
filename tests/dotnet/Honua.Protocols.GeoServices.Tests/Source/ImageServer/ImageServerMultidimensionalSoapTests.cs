@@ -195,7 +195,7 @@ public sealed class ImageServerMultidimensionalSoapTests
     {
         var snapshot = fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.Single(candidate =>
-            candidate.PublicationType == MetadataV2PublicationType.EsriImageLayer &&
+            candidate.PublicationType == MetadataV2LayerType.EsriImageLayer &&
             snapshot.Index.ServicesById.TryGetValue(candidate.ServiceId, out var owningService) &&
             owningService.Metadata.Name == WebAppFixture.TestServiceId &&
             owningService.Protocols.Contains(ServiceProtocols.ImageServer, StringComparer.OrdinalIgnoreCase));

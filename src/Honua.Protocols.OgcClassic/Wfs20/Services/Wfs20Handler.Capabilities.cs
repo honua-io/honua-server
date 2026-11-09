@@ -138,7 +138,7 @@ internal sealed partial class Wfs20Handler
         bool enforceAccess = true)
     {
         var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var candidates = new List<(int StorageLayerId, MetadataV2Resource Resource, MetadataV2Publication Publication, MetadataV2Service Service)>();
+        var candidates = new List<(int StorageLayerId, MetadataV2Resource Resource, MetadataV2Layer Publication, MetadataV2Service Service)>();
         foreach (var publication in snapshot.Graph.Publications)
         {
             if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) ||

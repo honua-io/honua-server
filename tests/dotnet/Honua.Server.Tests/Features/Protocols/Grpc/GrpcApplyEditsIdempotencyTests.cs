@@ -717,12 +717,12 @@ public sealed class GrpcApplyEditsIdempotencyTests
             MetadataV2Resource resource)
             => new(
                 service,
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "publication-test", Name = resource.Metadata.Name },
                     ServiceId = service.Metadata.Id,
                     ResourceId = resource.Metadata.Id,
-                    Identifier = new MetadataV2PublicationIdentifier { Value = "0", IsNumeric = true },
+                    Identifier = new MetadataV2LayerIdentifier { Value = "0", IsNumeric = true },
                     IsPrimary = true,
                 },
                 resource)

@@ -774,7 +774,7 @@ public sealed class MetadataReleaseService(
         };
 
     private static MetadataSemanticInventoryEntry ToInventoryEntry(
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Resource? resource)
         => new()
         {
@@ -871,7 +871,7 @@ public sealed class MetadataReleaseService(
             Route = service.Route,
         };
 
-    private static MetadataBoundPublicationSummary ToPublicationSummary(MetadataV2Publication publication)
+    private static MetadataBoundPublicationSummary ToPublicationSummary(MetadataV2Layer publication)
         => new()
         {
             Id = publication.Metadata.Id,
@@ -1081,7 +1081,7 @@ public sealed class MetadataReleaseService(
         MetadataV2Resource? ParentResource = null,
         MetadataV2Field? Field = null,
         MetadataV2Service? Service = null,
-        MetadataV2Publication? Publication = null,
+        MetadataV2Layer? Publication = null,
         MetadataV2Catalog? Catalog = null,
         MetadataV2Policy? Policy = null,
         MetadataV2Role? Role = null,

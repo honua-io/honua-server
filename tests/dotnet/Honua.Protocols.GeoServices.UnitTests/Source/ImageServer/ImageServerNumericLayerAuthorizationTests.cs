@@ -181,7 +181,7 @@ public sealed class ImageServerNumericLayerAuthorizationTests
                 "res-features",
                 storageBindingId: "binding-features",
                 layerIndex: StorageLayerId,
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer,
+                publicationType: MetadataV2LayerType.EsriFeatureLayer,
                 isPrimary: true)
             .AddResource("res-raster", "imagery", MetadataV2ResourceType.RasterDataset, accessPolicy: rasterPolicy)
             .AddStorageBinding("binding-raster", "res-raster", "rasters", storageLayerId: StorageLayerId)
@@ -192,7 +192,7 @@ public sealed class ImageServerNumericLayerAuthorizationTests
                 "res-raster",
                 storageBindingId: "binding-raster",
                 layerIndex: StorageLayerId,
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2LayerType.EsriImageLayer)
             .BuildProvider();
 
     private static DefaultHttpContext CreateContext(Claim? role = null, string? tenant = null)

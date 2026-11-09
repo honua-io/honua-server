@@ -1098,7 +1098,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service? service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         FeatureProviderReadOperation operation,
         CancellationToken cancellationToken)
@@ -1113,7 +1113,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             .ConfigureAwait(false);
     }
 
-    private static bool ShouldRouteProviderReader(MetadataV2Publication publication)
+    private static bool ShouldRouteProviderReader(MetadataV2Layer publication)
         => !string.IsNullOrEmpty(publication.StorageBindingId);
 
     /// <summary>

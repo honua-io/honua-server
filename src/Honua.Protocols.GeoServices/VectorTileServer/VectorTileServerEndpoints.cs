@@ -149,7 +149,7 @@ internal static partial class VectorTileServerEndpoints
     }
 
     private sealed record VectorTilePublicationDescriptor(
-        MetadataV2Publication Publication,
+        MetadataV2Layer Publication,
         MetadataV2Resource Resource);
 
     private static VectorTilePublicationDescriptor[] ResolveVectorTilePublications(

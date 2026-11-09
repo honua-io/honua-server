@@ -341,7 +341,7 @@ internal static class ServiceSettingsEndpoints
             var targetResourceIds = snapshot.Graph.Publications
                 .Where(publication =>
                     featureServiceIds.Contains(publication.ServiceId) &&
-                    publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                    publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&
                     snapshot.IsRoutable(publication) &&
                     publication.LayerIndex == layerId)
                 .Select(publication => publication.ResourceId)
@@ -546,7 +546,7 @@ internal static class ServiceSettingsEndpoints
            service.Protocols.Contains(ServiceProtocols.FeatureServer, StringComparer.OrdinalIgnoreCase) ||
            graph.Publications.Any(publication =>
                string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
-               publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
+               publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer);
 
     private static ServiceSettingsResponse BuildSettingsResponse(
         string serviceName,
@@ -932,7 +932,7 @@ internal static class ServiceSettingsEndpoints
                     .Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
                 var publicationIds = snapshot.Graph.Publications.Where(publication =>
                         publication.ResourceId == resourceId && serviceIds.Contains(publication.ServiceId) &&
-                        publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                        publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&
                         publication.LayerIndex == layerId && snapshot.IsRoutable(publication))
                     .Select(publication => publication.Metadata.Id).ToHashSet(StringComparer.Ordinal);
                 updated = MetadataV2EditingConfiguration.Apply(updated, resourceId, publicationIds, editingPatch);
@@ -982,7 +982,7 @@ internal static class ServiceSettingsEndpoints
         var currentResourceIds = graph.Publications
             .Where(publication =>
                 featureServiceIds.Contains(publication.ServiceId) &&
-                publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&
                 snapshot.IsRoutable(publication) &&
                 publication.LayerIndex == layerId)
             .Select(publication => publication.ResourceId)

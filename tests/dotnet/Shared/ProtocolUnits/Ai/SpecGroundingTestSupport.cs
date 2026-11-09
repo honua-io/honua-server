@@ -128,7 +128,7 @@ internal static class SpecGroundingTestSupport
             GeneratedAt = DateTimeOffset.UtcNow,
             Resources = layers.ToArray(),
             StorageBindings = bindings,
-            Publications = layers.Select(layer => new MetadataV2Publication
+            Publications = layers.Select(layer => new MetadataV2Layer
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = $"publication-{ParseLayerId(layer)}", Name = layer.Metadata.Name },
                 Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },

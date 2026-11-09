@@ -293,7 +293,7 @@ public sealed class FeatureLockEnforcingFeatureWriterTests
             StorageLayerId = storageLayerId
         };
 
-    private static MetadataV2Publication AliasedPublication(
+    private static MetadataV2Layer AliasedPublication(
         string id,
         string serviceId,
         string resourceId,
@@ -305,7 +305,7 @@ public sealed class FeatureLockEnforcingFeatureWriterTests
             ServiceId = serviceId,
             ResourceId = resourceId,
             StorageBindingId = storageBindingId,
-            Identifier = new MetadataV2PublicationIdentifier
+            Identifier = new MetadataV2LayerIdentifier
             {
                 Value = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 IsNumeric = true
@@ -366,12 +366,12 @@ public sealed class FeatureLockEnforcingFeatureWriterTests
             ],
             Publications =
             [
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub-parcels", Name = "0" },
                     ServiceId = "svc-parcels",
                     ResourceId = "res-parcels",
-                    Identifier = new MetadataV2PublicationIdentifier
+                    Identifier = new MetadataV2LayerIdentifier
                     {
                         Value = StorageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
                         IsNumeric = true

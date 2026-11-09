@@ -18,7 +18,7 @@ internal sealed partial class FeatureServerQueryExecutor
     public async Task<long> CountAsync(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         FeatureQuery query,
         CancellationToken cancellationToken)
@@ -36,7 +36,7 @@ internal sealed partial class FeatureServerQueryExecutor
     public async Task<FeatureExtent?> GetExtentAsync(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         FeatureQuery query,
         CancellationToken cancellationToken)
@@ -54,7 +54,7 @@ internal sealed partial class FeatureServerQueryExecutor
     public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         FeatureQuery query,
         CancellationToken cancellationToken)
@@ -72,7 +72,7 @@ internal sealed partial class FeatureServerQueryExecutor
     public async Task<QueryResult<Feature>> QueryWithValidationAsync(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         FeatureQuery query,
         CancellationToken cancellationToken)
@@ -89,7 +89,7 @@ internal sealed partial class FeatureServerQueryExecutor
     public async Task<QueryResult<Feature>> QueryWithValidationAsync(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         FeatureQuery query,
         string? actor,
@@ -109,7 +109,7 @@ internal sealed partial class FeatureServerQueryExecutor
     public async Task<ImmutableArray<long>> QueryObjectIdsWithValidationAsync(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         FeatureQuery query,
         CancellationToken cancellationToken)
@@ -159,7 +159,7 @@ internal sealed partial class FeatureServerQueryExecutor
     public async Task<byte[]?> QueryFlatGeobufWithValidationAsync(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         FeatureQuery query,
         CancellationToken cancellationToken)
@@ -177,7 +177,7 @@ internal sealed partial class FeatureServerQueryExecutor
     public async Task<byte[]?> QueryGeobufWithValidationAsync(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         FeatureQuery query,
         CancellationToken cancellationToken)
@@ -195,7 +195,7 @@ internal sealed partial class FeatureServerQueryExecutor
     public async Task<bool> SupportsGeobufOutputAsync(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         CancellationToken cancellationToken)
     {
@@ -212,7 +212,7 @@ internal sealed partial class FeatureServerQueryExecutor
     public async Task<bool> SupportsFlatGeobufOutputAsync(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         CancellationToken cancellationToken)
     {
@@ -229,7 +229,7 @@ internal sealed partial class FeatureServerQueryExecutor
     public async Task<bool> SupportsRawGeoServicesPointOutputAsync(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         CancellationToken cancellationToken)
     {
@@ -246,7 +246,7 @@ internal sealed partial class FeatureServerQueryExecutor
     public async Task<bool> SupportsDistinctValuesAsync(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         CancellationToken cancellationToken)
     {
@@ -263,7 +263,7 @@ internal sealed partial class FeatureServerQueryExecutor
     public async Task<(ReadOnlyMemory<byte> Payload, int Count)> QueryRawGeoServicesPointJsonWithValidationAsync(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         FeatureQuery query,
         bool returnGeometry,
@@ -290,7 +290,7 @@ internal sealed partial class FeatureServerQueryExecutor
     public async Task StreamIdsAsync(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         FeatureQuery query,
         string objectIdFieldName,
@@ -331,7 +331,7 @@ internal sealed partial class FeatureServerQueryExecutor
     public async Task StreamQueryAsync(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         FeatureQuery query,
         QueryParameters queryParams,
@@ -426,7 +426,7 @@ internal sealed partial class FeatureServerQueryExecutor
     private async Task<IStreamingFeatureStore> ResolveStreamingFeatureStoreV2Async(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         FeatureProviderReadOperation operation,
         CancellationToken cancellationToken)
@@ -452,7 +452,7 @@ internal sealed partial class FeatureServerQueryExecutor
     private async Task<IFeatureReader?> ResolveRoutedReaderV2Async(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         FeatureProviderReadOperation operation,
         CancellationToken cancellationToken)
@@ -473,7 +473,7 @@ internal sealed partial class FeatureServerQueryExecutor
     public async Task<BoundedObjectIds?> TryQueryNonStreamingObjectIdsAsync(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         FeatureQuery query,
         CancellationToken cancellationToken)
@@ -563,7 +563,7 @@ internal sealed partial class FeatureServerQueryExecutor
     private async Task<IFeatureReader> ResolveReaderV2Async(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         FeatureProviderReadOperation operation,
         CancellationToken cancellationToken)

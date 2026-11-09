@@ -12,7 +12,7 @@ namespace Honua.Protocols.GeoServices.ImageServer.Services;
 internal static class ImageServerV2Lookups
 {
     internal readonly record struct ResolvedImageLayer(
-        MetadataV2Publication Publication,
+        MetadataV2Layer Publication,
         MetadataV2Resource? Resource,
         string DisplayName,
         string? Description);
@@ -135,14 +135,14 @@ internal static class ImageServerV2Lookups
 
     private static bool IsVisibleForRequest(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         HttpContext? context)
         => snapshot.IsRoutable(publication)
             && (context is null || TenantScopeHelpers.IsPublicationVisible(
                 context, publication, snapshot.ResolveResource(publication),
                 snapshot.Index.ServicesById.GetValueOrDefault(publication.ServiceId)));
 
-    private static ResolvedImageLayer Project(MetadataV2Publication publication, MetadataV2Resource? resource)
+    private static ResolvedImageLayer Project(MetadataV2Layer publication, MetadataV2Resource? resource)
     {
         var displayName = publication.TitleOverride
             ?? publication.Metadata.Title

@@ -138,7 +138,7 @@ public sealed class PublicationTenantVisibilityTests
                 StorageLayerId = i + 1,
                 Locator = r.Metadata.Id
             }).ToArray(),
-            Publications = resources.Select((r, i) => new MetadataV2Publication
+            Publications = resources.Select((r, i) => new MetadataV2Layer
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = r.Metadata.Id + "-pub", Tenant = i == 0 ? "tenant-b" : null },
                 ServiceId = "maps",
@@ -146,7 +146,7 @@ public sealed class PublicationTenantVisibilityTests
                 StorageBindingId = r.Metadata.Id + "-binding",
                 Status = active,
                 LayerIndex = (i + 1) * 11,
-                PublicationType = MetadataV2PublicationType.EsriMapLayer
+                PublicationType = MetadataV2LayerType.EsriMapLayer
             }).ToArray()
         };
     }

@@ -665,7 +665,7 @@ public static class MetadataCompatibilityAnalyzer
     }
 
     private static void ComparePublication(
-        MetadataV2Publication source,
+        MetadataV2Layer source,
         MetadataV2GraphSnapshot targetSnapshot,
         List<MetadataCompatibilityFinding> findings)
     {
@@ -1701,7 +1701,7 @@ public static class MetadataCompatibilityAnalyzer
             ["enabledProtocols"] = JoinTokens(service.EnabledProtocols ?? Array.Empty<string>()),
         };
 
-    private static Dictionary<string, string> PublicationDetails(MetadataV2Publication publication)
+    private static Dictionary<string, string> PublicationDetails(MetadataV2Layer publication)
         => new(StringComparer.Ordinal)
         {
             ["resourceId"] = publication.ResourceId,
@@ -1810,7 +1810,7 @@ public static class MetadataCompatibilityAnalyzer
                 fields.TrackIdField,
             }.Where(static value => !string.IsNullOrWhiteSpace(value)));
 
-    private static string FormatPublicationRoute(MetadataV2Publication publication)
+    private static string FormatPublicationRoute(MetadataV2Layer publication)
         => string.Concat(
             publication.ResourceId,
             "|",
@@ -1862,7 +1862,7 @@ public static class MetadataCompatibilityAnalyzer
         MetadataV2Resource? ParentResource = null,
         MetadataV2Field? Field = null,
         MetadataV2Service? Service = null,
-        MetadataV2Publication? Publication = null,
+        MetadataV2Layer? Publication = null,
         MetadataV2Catalog? Catalog = null,
         MetadataV2Policy? Policy = null,
         MetadataV2Role? Role = null)

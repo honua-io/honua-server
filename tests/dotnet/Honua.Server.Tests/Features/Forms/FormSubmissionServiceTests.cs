@@ -754,7 +754,7 @@ public sealed class FormSubmissionServiceTests
                 "resource-inspections",
                 layerIndex: TargetLayerId,
                 storageBindingId: "binding-inspections",
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                publicationType: MetadataV2LayerType.EsriFeatureLayer);
         if (ownerPolicy is not null)
         {
             builder.WithOwnerEditPolicy("resource-inspections", ownerPolicy);

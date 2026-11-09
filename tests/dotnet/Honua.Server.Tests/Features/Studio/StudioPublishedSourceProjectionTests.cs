@@ -162,7 +162,7 @@ public sealed class StudioPublishedSourceProjectionTests : IAsyncLifetime
         var conflicting = _graph.Publications.Single(publication => publication.Metadata.Id == "publication-10") with
         {
             LayerIndex = 7,
-            Identifier = new MetadataV2PublicationIdentifier { Value = "7", IsNumeric = true },
+            Identifier = new MetadataV2LayerIdentifier { Value = "7", IsNumeric = true },
         };
         SetGraph(_graph with
         {
@@ -277,7 +277,7 @@ public sealed class StudioPublishedSourceProjectionTests : IAsyncLifetime
         var conflicting = _graph.Publications.Single(publication => publication.Metadata.Id == "publication-10") with
         {
             LayerIndex = 7,
-            Identifier = new MetadataV2PublicationIdentifier { Value = "7", IsNumeric = true },
+            Identifier = new MetadataV2LayerIdentifier { Value = "7", IsNumeric = true },
         };
         SetGraph(_graph with
         {
@@ -308,7 +308,7 @@ public sealed class StudioPublishedSourceProjectionTests : IAsyncLifetime
             },
             ServiceId = "other-parcels",
             LayerIndex = 7,
-            Identifier = new MetadataV2PublicationIdentifier { Value = "7", IsNumeric = true },
+            Identifier = new MetadataV2LayerIdentifier { Value = "7", IsNumeric = true },
         };
         SetGraph(_graph with
         {

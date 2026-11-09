@@ -100,7 +100,7 @@ internal static partial class WmsRequestHandlers
 
     private readonly record struct WmsLayer(
         MetadataV2Resource Resource,
-        MetadataV2Publication Publication,
+        MetadataV2Layer Publication,
         int StorageLayerId,
         string Identifier,
         MetadataV2GraphSnapshot Snapshot);

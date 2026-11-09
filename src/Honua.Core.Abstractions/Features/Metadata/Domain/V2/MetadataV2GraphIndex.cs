@@ -18,9 +18,9 @@ public sealed class MetadataV2GraphIndex
         IReadOnlyDictionary<int, MetadataV2Resource> resourcesByStorageLayerId,
         IReadOnlyDictionary<string, MetadataV2Service> servicesById,
         IReadOnlyDictionary<string, MetadataV2Service> servicesByName,
-        IReadOnlyDictionary<string, MetadataV2Publication> publicationsById,
-        ILookup<string, MetadataV2Publication> publicationsByService,
-        ILookup<string, MetadataV2Publication> publicationsByResource,
+        IReadOnlyDictionary<string, MetadataV2Layer> publicationsById,
+        ILookup<string, MetadataV2Layer> publicationsByService,
+        ILookup<string, MetadataV2Layer> publicationsByResource,
         IReadOnlyDictionary<string, ImmutableArray<string>> serviceNamesByResource,
         IReadOnlyDictionary<string, MetadataV2ProjectionProfile> projectionProfilesById,
         ILookup<string, MetadataV2ProjectionProfile> projectionProfilesByTarget,
@@ -69,11 +69,11 @@ public sealed class MetadataV2GraphIndex
 
     public IReadOnlyDictionary<string, MetadataV2Service> ServicesByName { get; }
 
-    public IReadOnlyDictionary<string, MetadataV2Publication> PublicationsById { get; }
+    public IReadOnlyDictionary<string, MetadataV2Layer> PublicationsById { get; }
 
-    public ILookup<string, MetadataV2Publication> PublicationsByService { get; }
+    public ILookup<string, MetadataV2Layer> PublicationsByService { get; }
 
-    public ILookup<string, MetadataV2Publication> PublicationsByResource { get; }
+    public ILookup<string, MetadataV2Layer> PublicationsByResource { get; }
 
     public IReadOnlyDictionary<string, ImmutableArray<string>> ServiceNamesByResource { get; }
 
@@ -145,7 +145,7 @@ public sealed class MetadataV2GraphIndex
             servicesByName.TryAdd(s.Metadata.Name, s);
         }
 
-        var publicationsById = new Dictionary<string, MetadataV2Publication>(StringComparer.Ordinal);
+        var publicationsById = new Dictionary<string, MetadataV2Layer>(StringComparer.Ordinal);
         foreach (var p in graph.Publications) publicationsById.TryAdd(p.Metadata.Id, p);
 
         var publicationsByService = graph.Publications.ToLookup(p => p.ServiceId, StringComparer.Ordinal);

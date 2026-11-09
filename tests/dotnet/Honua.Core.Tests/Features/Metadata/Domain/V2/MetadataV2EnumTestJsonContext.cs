@@ -14,7 +14,7 @@ namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
     typeof(TolerantEnumJsonConverter<MetadataV2ConnectionType>),
     typeof(TolerantEnumJsonConverter<MetadataV2StorageType>),
     typeof(TolerantEnumJsonConverter<MetadataV2ServiceType>),
-    typeof(TolerantEnumJsonConverter<MetadataV2PublicationType>),
+    typeof(TolerantEnumJsonConverter<MetadataV2LayerType>),
     typeof(TolerantEnumJsonConverter<MetadataV2StorageBindingCapability>),
     typeof(TolerantEnumJsonConverter<MetadataV2GeometryType>),
     typeof(TolerantEnumJsonConverter<MetadataV2FieldType>),
@@ -25,7 +25,7 @@ namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 [JsonSerializable(typeof(MetadataV2ConnectionType))]
 [JsonSerializable(typeof(MetadataV2StorageType))]
 [JsonSerializable(typeof(MetadataV2ServiceType))]
-[JsonSerializable(typeof(MetadataV2PublicationType))]
+[JsonSerializable(typeof(MetadataV2LayerType))]
 [JsonSerializable(typeof(MetadataV2StorageBindingCapability))]
 [JsonSerializable(typeof(MetadataV2GeometryType))]
 [JsonSerializable(typeof(MetadataV2FieldType))]

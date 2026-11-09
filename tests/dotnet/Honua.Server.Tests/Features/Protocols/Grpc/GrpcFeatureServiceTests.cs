@@ -2253,7 +2253,7 @@ public sealed class GrpcFeatureServiceTests
         MetadataV2Resource resource)
         => new(
             service,
-            new MetadataV2Publication
+            new MetadataV2Layer
             {
                 Metadata = new MetadataV2ObjectMetadata
                 {
@@ -2262,7 +2262,7 @@ public sealed class GrpcFeatureServiceTests
                 },
                 ServiceId = service.Metadata.Id,
                 ResourceId = resource.Metadata.Id,
-                Identifier = new MetadataV2PublicationIdentifier
+                Identifier = new MetadataV2LayerIdentifier
                 {
                     Value = "0",
                     IsNumeric = true
@@ -2634,7 +2634,7 @@ public sealed class GrpcFeatureServiceTests
     /// <see cref="AliasedLayerIndex"/> as its own storage handle. Reading the index as a
     /// storage handle therefore lands on the neighbouring resource.
     /// </summary>
-    private (MetadataV2Service Service, MetadataV2Publication Publication, MetadataV2Resource Resource) ArrangeAliasedLayer()
+    private (MetadataV2Service Service, MetadataV2Layer Publication, MetadataV2Resource Resource) ArrangeAliasedLayer()
     {
         var graph = new TestMetadataV2GraphBuilder()
             .AddResource("resource.aliased", "aliased")

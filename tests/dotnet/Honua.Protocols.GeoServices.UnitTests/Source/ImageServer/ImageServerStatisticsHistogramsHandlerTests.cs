@@ -826,7 +826,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
                 $"resource-{layerIndex}",
                 layerIndex: layerIndex,
                 serviceLocalId: "test-layer",
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2LayerType.EsriImageLayer)
             .BuildProvider();
 
     private static RasterInfo CreateTestRasterInfo() => new()

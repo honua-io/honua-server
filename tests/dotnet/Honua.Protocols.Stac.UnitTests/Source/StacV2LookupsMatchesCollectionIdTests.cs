@@ -15,7 +15,7 @@ namespace Honua.Server.Tests.Features.Protocols.Stac;
 /// </summary>
 public sealed class StacV2LookupsMatchesCollectionIdTests
 {
-    private static MetadataV2Publication MakePublication(
+    private static MetadataV2Layer MakePublication(
         string serviceLocalId = "",
         string path = "",
         string metadataName = "",

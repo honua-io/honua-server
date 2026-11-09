@@ -247,7 +247,7 @@ public sealed partial class ReadPolicyLookupTests
         var services = new[] { "alpha", "beta" }.Take(serviceCount)
             .Select(name => new MetadataV2Service { Metadata = new MetadataV2ObjectMetadata { Id = name, Name = name } })
             .ToArray();
-        var publications = services.SelectMany(service => new[] { "first", "duplicate" }.Select(suffix => new MetadataV2Publication
+        var publications = services.SelectMany(service => new[] { "first", "duplicate" }.Select(suffix => new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = service.Metadata.Id + suffix },
             ResourceId = resource.Metadata.Id,

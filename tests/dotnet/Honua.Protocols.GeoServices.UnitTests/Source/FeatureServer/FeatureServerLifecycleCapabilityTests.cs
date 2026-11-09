@@ -67,7 +67,7 @@ public sealed class FeatureServerLifecycleCapabilityTests
                 ["capabilities"] = JsonSerializer.SerializeToElement(AllEditCapabilities)
             }
         };
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "publication", Name = "Publication" },
             Capabilities = ["Query", "Update"]

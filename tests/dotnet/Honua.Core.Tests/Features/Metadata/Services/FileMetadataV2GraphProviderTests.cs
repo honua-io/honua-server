@@ -73,7 +73,7 @@ public sealed class FileMetadataV2GraphProviderTests
         {
             Publications =
             [
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub.dangling", Name = "dangling" },
                     ResourceId = "resource.does-not-exist",
@@ -151,13 +151,13 @@ public sealed class FileMetadataV2GraphProviderTests
             ],
             Publications =
             [
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub.parcels.features", Name = "parcels" },
                     ResourceId = "resource.parcels",
                     ServiceId = "service.features",
                     StorageBindingId = "storage.parcels.postgis",
-                    PublicationType = MetadataV2PublicationType.OgcCollection,
+                    PublicationType = MetadataV2LayerType.OgcCollection,
                 }
             ],
         };

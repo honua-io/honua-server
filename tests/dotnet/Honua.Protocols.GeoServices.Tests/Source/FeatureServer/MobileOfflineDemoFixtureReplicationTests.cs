@@ -277,7 +277,7 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
         };
     }
 
-    private static MetadataV2Publication CreateMobileOfflinePublication(int layerId)
+    private static MetadataV2Layer CreateMobileOfflinePublication(int layerId)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata
@@ -289,12 +289,12 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
             ResourceId = $"res-layer-{layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
             StorageBindingId = $"binding-layer-{layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
-            Identifier = new MetadataV2PublicationIdentifier
+            Identifier = new MetadataV2LayerIdentifier
             {
                 Value = layerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 IsNumeric = true
             },
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer
+            PublicationType = MetadataV2LayerType.EsriFeatureLayer
         };
 
     private static MetadataV2Field Field(

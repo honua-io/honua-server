@@ -196,7 +196,7 @@ public sealed partial class FeatureProviderQueryRouterTests
         return provider.Object;
     }
 
-    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Publication Publication)
+    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Layer Publication)
         CreateSnapshot(string connectionId, string providerName = DataProviderNames.DuckDb)
     {
         var service = new MetadataV2Service
@@ -248,13 +248,13 @@ public sealed partial class FeatureProviderQueryRouterTests
             Metadata = new MetadataV2ObjectMetadata { Id = connectionId, Name = "warehouse" },
             Provider = providerName
         };
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "pub-roads", Name = "roads" },
             ServiceId = service.Metadata.Id,
             ResourceId = resource.Metadata.Id,
             StorageBindingId = binding.Metadata.Id,
-            Identifier = new MetadataV2PublicationIdentifier { Value = "1", IsNumeric = true }
+            Identifier = new MetadataV2LayerIdentifier { Value = "1", IsNumeric = true }
         };
         var graph = new MetadataV2Graph
         {

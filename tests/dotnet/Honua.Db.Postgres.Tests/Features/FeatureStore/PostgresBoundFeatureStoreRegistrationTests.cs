@@ -84,7 +84,7 @@ public sealed class PostgresBoundFeatureStoreRegistrationTests(PostgresFixture f
             SchemaFields = [new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }]
         };
         var binding = new FeatureProviderBinding(
-            new MetadataV2Service(), resource, new MetadataV2Publication(),
+            new MetadataV2Service(), resource, new MetadataV2Layer(),
             new MetadataV2StorageBinding { ConnectionId = "registered-source", ResourceId = resource.Metadata.Id },
             new FeatureStorageMapping("registration_pool_probe", SchemaName: "public", PrimaryKeyColumn: "id", GeometryColumn: null),
             1, featureStore,

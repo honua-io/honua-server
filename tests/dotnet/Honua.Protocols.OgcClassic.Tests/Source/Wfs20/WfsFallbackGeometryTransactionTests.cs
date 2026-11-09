@@ -298,7 +298,7 @@ public sealed class WfsFallbackGeometryTransactionTests : IAsyncLifetime
                     ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes")
                 })
             .AddPublication("native-edit-publication", "native-edit-service", TypeName, layerIndex: 0,
-                storageBindingId: "native-edit-storage", publicationType: MetadataV2PublicationType.WfsFeatureType);
+                storageBindingId: "native-edit-storage", publicationType: MetadataV2LayerType.WfsFeatureType);
         return new TestMetadataV2GraphProvider(builder.Build());
     }
 }

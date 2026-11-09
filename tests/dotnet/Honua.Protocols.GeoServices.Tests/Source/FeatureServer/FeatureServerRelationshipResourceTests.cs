@@ -254,18 +254,18 @@ public sealed class FeatureServerRelationshipResourceTests
                 .AddService("other-service", "other-relationships", protocols: [ServiceProtocols.FeatureServer]);
             // Put the other service first to expose accidental global publication lookup.
             builder.AddPublication("other-origin", "other-service", "origin", layerIndex: 50,
-                storageBindingId: "origin-binding", publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                storageBindingId: "origin-binding", publicationType: MetadataV2LayerType.EsriFeatureLayer);
             builder.AddPublication("other-destination", "other-service", "destination", layerIndex: 60,
-                storageBindingId: "destination-binding", publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                storageBindingId: "destination-binding", publicationType: MetadataV2LayerType.EsriFeatureLayer);
             if (destinationOnCurrentService)
             {
                 builder.AddPublication("destination-publication", "service", "destination", layerIndex: 20,
-                    storageBindingId: "destination-binding", publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                    storageBindingId: "destination-binding", publicationType: MetadataV2LayerType.EsriFeatureLayer);
             }
             builder.AddPublication("origin-alias", "service", "origin", layerIndex: 15,
-                storageBindingId: "origin-binding", publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                storageBindingId: "origin-binding", publicationType: MetadataV2LayerType.EsriFeatureLayer);
             builder.AddPublication("origin-publication", "service", "origin", layerIndex: 10,
-                storageBindingId: "origin-binding", publicationType: MetadataV2PublicationType.EsriFeatureLayer, isPrimary: true);
+                storageBindingId: "origin-binding", publicationType: MetadataV2LayerType.EsriFeatureLayer, isPrimary: true);
             if (collision)
             {
                 builder.AddResource("extra-origin", "Extra origin", fields: [PrimaryKey("origin_id")],
@@ -275,9 +275,9 @@ public sealed class FeatureServerRelationshipResourceTests
                         accessPolicy: ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["related-reader"]))
                     .AddStorageBinding("extra-destination-binding", "extra-destination", "test.layers.3", storageLayerId: 3)
                     .AddPublication("extra-origin-publication", "service", "extra-origin", layerIndex: 30,
-                        storageBindingId: "extra-origin-binding", publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                        storageBindingId: "extra-origin-binding", publicationType: MetadataV2LayerType.EsriFeatureLayer)
                     .AddPublication("extra-destination-publication", "service", "extra-destination", layerIndex: 40,
-                        storageBindingId: "extra-destination-binding", publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                        storageBindingId: "extra-destination-binding", publicationType: MetadataV2LayerType.EsriFeatureLayer);
             }
             var graph = builder.Build();
             var relationshipGraph = graph with

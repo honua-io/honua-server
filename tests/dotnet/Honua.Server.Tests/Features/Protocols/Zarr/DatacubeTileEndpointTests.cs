@@ -175,7 +175,7 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
                 "res-zarr-layer-0",
                 layerIndex: WebAppFixture.TestLayerId,
                 storageBindingId: "binding-zarr-layer-0",
-                publicationType: MetadataV2PublicationType.OgcCollection)
+                publicationType: MetadataV2LayerType.OgcCollection)
             .BuildProvider();
 
     public Task InitializeAsync() => Task.CompletedTask;

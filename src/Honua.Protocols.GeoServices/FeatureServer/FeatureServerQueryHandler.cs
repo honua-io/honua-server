@@ -68,7 +68,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
     private sealed record QueryLayerContext(
         MetadataV2Service Service,
-        MetadataV2Publication Publication,
+        MetadataV2Layer Publication,
         MetadataV2Resource Resource,
         int PublicLayerId,
         int StorageLayerId);
@@ -3516,7 +3516,7 @@ internal sealed partial class FeatureServerQueryHandler(
     private async Task<(long Count, string? Error)> ResolveReturnCountAsync(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         FeatureQuery query,
         QueryParameters validatedParams,

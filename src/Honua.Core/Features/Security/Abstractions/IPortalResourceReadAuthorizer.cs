@@ -9,7 +9,7 @@ namespace Honua.Core.Features.Security.Abstractions;
 
 public interface IPortalResourceReadAuthorizer
 {
-    DomainAccessDecision Evaluate(ClaimsPrincipal principal, MetadataV2Resource? resource, MetadataV2Service service, MetadataV2Publication? publication = null);
+    DomainAccessDecision Evaluate(ClaimsPrincipal principal, MetadataV2Resource? resource, MetadataV2Service service, MetadataV2Layer? publication = null);
 
     // Group membership is only an alternate read audience; callers must still enforce tenant, credential scope, and resource policy.
     bool HasServiceAudience(ClaimsPrincipal principal, MetadataV2Service service);

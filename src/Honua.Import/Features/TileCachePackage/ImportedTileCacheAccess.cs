@@ -14,7 +14,7 @@ namespace Honua.Import.TileCachePackage;
 /// A publication a served tile cache is bound to, resolved from the current metadata graph.
 /// </summary>
 internal sealed record ImportedTileCacheSource(
-    MetadataV2Publication Publication,
+    MetadataV2Layer Publication,
     MetadataV2Resource Resource,
     MetadataV2Service Service);
 
@@ -97,7 +97,7 @@ internal static class ImportedTileCacheAccess
     internal static IReadOnlyList<ImportedTileCacheSource> ResolveSources(
         MetadataV2GraphSnapshot snapshot,
         string layerIdentifier,
-        Func<MetadataV2Publication, MetadataV2Resource, MetadataV2Service, bool> isVisible)
+        Func<MetadataV2Layer, MetadataV2Resource, MetadataV2Service, bool> isVisible)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(isVisible);

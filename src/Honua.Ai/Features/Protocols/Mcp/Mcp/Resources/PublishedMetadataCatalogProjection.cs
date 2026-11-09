@@ -151,7 +151,7 @@ internal static class PublishedMetadataCatalogProjection
         var publications = snapshot.Graph.Publications
             .Where(publication =>
                 string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
-                publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&
                 publication.LayerIndex is >= 0)
             .Select(publication =>
             {
@@ -186,7 +186,7 @@ internal static class PublishedMetadataCatalogProjection
             return null;
         }
 
-        var allowed = new List<MetadataV2Publication>();
+        var allowed = new List<MetadataV2Layer>();
         var denied = false;
         foreach (var (publication, resource, _) in publications)
         {

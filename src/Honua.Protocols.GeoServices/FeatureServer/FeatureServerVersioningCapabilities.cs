@@ -11,7 +11,7 @@ namespace Honua.Protocols.GeoServices.FeatureServer;
 
 internal static partial class FeatureServerEndpoints
 {
-    internal static (MetadataV2Publication Publication, MetadataV2Resource Resource)[] GetRoutableFeaturePublicationsV2(
+    internal static (MetadataV2Layer Publication, MetadataV2Resource Resource)[] GetRoutableFeaturePublicationsV2(
         MetadataV2Service service, MetadataV2GraphSnapshot snapshot, HttpContext context)
         => GetRoutableServicePublicationsV2(service, snapshot, context)
             .Where(pair => ServiceProtocols.IsPreferredPublicationType(
@@ -31,7 +31,7 @@ internal static partial class FeatureServerEndpoints
 
     private static async Task<bool> HasBranchVersionedPublicationsAsync(
         HttpContext context, MetadataV2Service service,
-        IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
+        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Resource Resource)> publications,
         MetadataV2GraphSnapshot snapshot, CancellationToken cancellationToken)
     {
         if (!IsBranchVersioningAvailable(context))
@@ -52,7 +52,7 @@ internal static partial class FeatureServerEndpoints
 
     private static async Task<bool> IsPublicationBranchVersioningAvailableAsync(
         HttpContext context, MetadataV2Service service, MetadataV2Resource resource,
-        MetadataV2Publication publication, MetadataV2GraphSnapshot snapshot,
+        MetadataV2Layer publication, MetadataV2GraphSnapshot snapshot,
         CancellationToken cancellationToken)
     {
         if (!IsBranchVersioningAvailable(context)

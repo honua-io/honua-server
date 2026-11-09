@@ -111,14 +111,14 @@ public sealed class CompositeRelationshipMetadataTests
                 ["capabilities"] = JsonSerializer.SerializeToElement(EditableCapabilities)
             }
         };
-        var publication = new MetadataV2Publication();
+        var publication = new MetadataV2Layer();
         var composite = new MetadataV2Resource
         {
             Relationships = [new MetadataV2Relationship { Composite = true }]
         };
         FeatureServerEndpoints.BuildServiceCapabilitiesV2(service, [(publication, composite)]).Should().Be("Query");
         FeatureServerEndpoints.BuildServiceCapabilitiesV2(service,
-                [(publication, composite), (new MetadataV2Publication(), new MetadataV2Resource())])
+                [(publication, composite), (new MetadataV2Layer(), new MetadataV2Resource())])
             .Should().Contain("Create").And.Contain("Update").And.Contain("Delete");
 
         var snapshot = new MetadataV2GraphSnapshot(new MetadataV2Graph(), "test", DateTimeOffset.UnixEpoch);
@@ -133,7 +133,7 @@ public sealed class CompositeRelationshipMetadataTests
             service, [(publication, composite)], snapshot, new QueryLimits(), false, false, false, false, offlineSyncEnabled: false);
         readOnlyService.AllowGeometryUpdates.Should().BeFalse();
         var mixedService = FeatureServerEndpoints.MapServiceToResponseV2(
-            service, [(publication, composite), (new MetadataV2Publication(), new MetadataV2Resource())],
+            service, [(publication, composite), (new MetadataV2Layer(), new MetadataV2Resource())],
             snapshot, new QueryLimits(), false, false, false, false, offlineSyncEnabled: false);
         mixedService.AllowGeometryUpdates.Should().BeTrue();
     }
@@ -160,7 +160,7 @@ public sealed class CompositeRelationshipMetadataTests
                 "parent",
                 layerIndex: 0,
                 storageBindingId: "bind-parent",
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer,
+                publicationType: MetadataV2LayerType.EsriFeatureLayer,
                 isPrimary: true)
             .AddPublication(
                 "pub-child",
@@ -168,7 +168,7 @@ public sealed class CompositeRelationshipMetadataTests
                 "child",
                 layerIndex: 1,
                 storageBindingId: "bind-child",
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer,
+                publicationType: MetadataV2LayerType.EsriFeatureLayer,
                 isPrimary: true);
 
         var drafted = builder.Build();
@@ -268,7 +268,7 @@ public sealed class CompositeRelationshipMetadataTests
     private static LayerResponse MapLayer(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2GraphSnapshot snapshot)
         => FeatureServerEndpoints.MapLayerToResponseV2(
             service, resource, publication, snapshot, new QueryLimits(),
@@ -283,7 +283,7 @@ public sealed class CompositeRelationshipMetadataTests
             var resource = resources[index];
             builder.AddResource(resource.Metadata.Id, resource.Metadata.Id)
                 .AddPublication($"publication-{index}", "service", resource.Metadata.Id,
-                    layerIndex: index, publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                    layerIndex: index, publicationType: MetadataV2LayerType.EsriFeatureLayer);
         }
 
         var graph = builder.Build() with

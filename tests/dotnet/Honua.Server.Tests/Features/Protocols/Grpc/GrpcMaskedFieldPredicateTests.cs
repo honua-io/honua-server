@@ -317,7 +317,7 @@ public sealed class GrpcMaskedFieldPredicateTests
     private static MetadataV2ServiceLayerTriple CreateTriple()
         => new(
             _service,
-            new MetadataV2Publication
+            new MetadataV2Layer
             {
                 Metadata = new MetadataV2ObjectMetadata
                 {
@@ -326,7 +326,7 @@ public sealed class GrpcMaskedFieldPredicateTests
                 },
                 ServiceId = _service.Metadata.Id,
                 ResourceId = _resource.Metadata.Id,
-                Identifier = new MetadataV2PublicationIdentifier
+                Identifier = new MetadataV2LayerIdentifier
                 {
                     Value = "0",
                     IsNumeric = true

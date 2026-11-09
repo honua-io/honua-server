@@ -98,7 +98,7 @@ public sealed class MapServerCachedLayerExtentTests
         extent.Ymin.Should().BeLessThanOrEqualTo(extent.Ymax);
     }
 
-    private static (MetadataV2Service Service, MetadataV2Publication Publication, MetadataV2Resource Resource, MetadataV2GraphSnapshot Snapshot)
+    private static (MetadataV2Service Service, MetadataV2Layer Publication, MetadataV2Resource Resource, MetadataV2GraphSnapshot Snapshot)
         Layer(double west, double south, double east, double north)
     {
         var service = new MetadataV2Service
@@ -118,13 +118,13 @@ public sealed class MapServerCachedLayerExtentTests
                 Bbox = new MetadataV2Bbox { West = west, South = south, East = east, North = north },
             },
         };
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "pub-points", Name = "points" },
             ServiceId = service.Metadata.Id,
             ResourceId = resource.Metadata.Id,
             LayerIndex = 0,
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+            PublicationType = MetadataV2LayerType.EsriFeatureLayer,
         };
         var snapshot = new MetadataV2GraphSnapshot(
             new MetadataV2Graph

@@ -30,7 +30,7 @@ public static class MetadataV2TenantVisibility
         => service is null || IsVisibleToTenant(service.Metadata.Tenant, requestTenant);
 
     public static bool IsVisibleToTenant(
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Resource? resource,
         MetadataV2Service? service,
         string? requestTenant)

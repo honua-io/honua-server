@@ -233,13 +233,13 @@ public sealed class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
             Locator = $"dbo.{tableName}",
             StorageLayerId = LayerId
         };
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "pub-test", Name = "Test" },
             ServiceId = service.Metadata.Id,
             ResourceId = resource.Metadata.Id,
             StorageBindingId = storageBinding.Metadata.Id,
-            Identifier = new MetadataV2PublicationIdentifier { Value = LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture), IsNumeric = true }
+            Identifier = new MetadataV2LayerIdentifier { Value = LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture), IsNumeric = true }
         };
 
         return new FeatureProviderBinding(

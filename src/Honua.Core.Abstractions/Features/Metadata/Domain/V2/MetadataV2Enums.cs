@@ -183,8 +183,8 @@ public enum MetadataV2ServiceType
     Unknown = -1
 }
 
-[JsonConverter(typeof(JsonStringEnumConverter<MetadataV2PublicationType>))]
-public enum MetadataV2PublicationType
+[JsonConverter(typeof(JsonStringEnumConverter<MetadataV2LayerType>))]
+public enum MetadataV2LayerType
 {
     [JsonStringEnumMemberName("ogc-collection")]
     OgcCollection,

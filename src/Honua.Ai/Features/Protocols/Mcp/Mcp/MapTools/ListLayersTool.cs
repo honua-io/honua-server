@@ -172,7 +172,7 @@ internal sealed class ListLayersTool : IMcpTool
 
     private static McpLayerSummary ToSummary(
         MetadataV2Service service,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Resource resource,
         int layerIndex)
     {

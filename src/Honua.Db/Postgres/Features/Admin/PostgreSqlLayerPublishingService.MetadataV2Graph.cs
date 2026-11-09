@@ -178,7 +178,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             layerIdText,
             graphLayerKey,
             request.LayerName.Trim(),
-            MetadataV2PublicationType.EsriFeatureLayer,
+            MetadataV2LayerType.EsriFeatureLayer,
             isPrimary: true,
             idPrefix: "pub",
             request.Enabled,
@@ -191,7 +191,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             layerIdText,
             graphLayerKey,
             request.LayerName.Trim(),
-            MetadataV2PublicationType.StacCollection,
+            MetadataV2LayerType.StacCollection,
             isPrimary: false,
             idPrefix: "pub-stac",
             request.Enabled,
@@ -547,7 +547,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                HasStorageBindingBeenRepurposed(currentBinding, persistedBinding);
 
         static string? ResolveBindingId(
-            MetadataV2Publication publication,
+            MetadataV2Layer publication,
             IReadOnlyDictionary<string, MetadataV2Resource> resources,
             IReadOnlyDictionary<string, MetadataV2StorageBinding> bindings)
         {
@@ -572,13 +572,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 string.Equals(binding.ResourceId, resource.Metadata.Id, StringComparison.Ordinal))?.Metadata.Id;
         }
 
-        string? ResolveCurrentBindingId(MetadataV2Publication publication)
+        string? ResolveCurrentBindingId(MetadataV2Layer publication)
             => ResolveBindingId(
                 publication,
                 currentResourcesForPublicationCleanup,
                 currentBindingsForPublicationCleanup);
 
-        bool UsesRepurposedFailedDataTarget(MetadataV2Publication publication)
+        bool UsesRepurposedFailedDataTarget(MetadataV2Layer publication)
         {
             currentResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var currentResource);
             persistedResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var persistedResource);
@@ -599,7 +599,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                        addedBindingIdsForPublicationCleanup);
         }
 
-        bool UsesUnrepurposedFailedDataTarget(MetadataV2Publication publication)
+        bool UsesUnrepurposedFailedDataTarget(MetadataV2Layer publication)
         {
             currentResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var currentResource);
             persistedResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var persistedResource);
@@ -619,7 +619,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return usesFailedResource || usesFailedBinding;
         }
 
-        var replacedPublicationsByPersistedId = new Dictionary<string, MetadataV2Publication>(StringComparer.Ordinal);
+        var replacedPublicationsByPersistedId = new Dictionary<string, MetadataV2Layer>(StringComparer.Ordinal);
         foreach (var previous in previousGraph.Publications.Where(previous =>
                      !persistedPublicationsById.ContainsKey(previous.Metadata.Id)))
         {
@@ -632,7 +632,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             }
         }
 
-        var publications = new List<MetadataV2Publication>(currentGraph.Publications.Count);
+        var publications = new List<MetadataV2Layer>(currentGraph.Publications.Count);
         foreach (var current in currentGraph.Publications)
         {
             if (addedPublicationIds.Contains(current.Metadata.Id) &&
@@ -669,7 +669,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             .ToHashSet(StringComparer.Ordinal);
 
         bool RepairedTargetSurvives(
-            MetadataV2Publication publication,
+            MetadataV2Layer publication,
             string? previousEffectiveBindingId)
         {
             if (!rebasedResourcesForPublicationCleanup.TryGetValue(publication.ResourceId, out var resource))
@@ -918,15 +918,15 @@ internal sealed partial class PostgreSqlLayerPublishingService
     }
 
     private static bool HasSamePublicationSlot(
-        MetadataV2Publication left,
-        MetadataV2Publication right)
+        MetadataV2Layer left,
+        MetadataV2Layer right)
         => string.Equals(left.ServiceId, right.ServiceId, StringComparison.Ordinal) &&
            left.LayerIndex == right.LayerIndex &&
            left.PublicationTypeValue == right.PublicationTypeValue;
 
     private static bool StillUsesFailedPublicationDataTarget(
-        MetadataV2Publication current,
-        MetadataV2Publication persisted)
+        MetadataV2Layer current,
+        MetadataV2Layer persisted)
         => string.Equals(current.ResourceId, persisted.ResourceId, StringComparison.Ordinal) ||
            string.Equals(current.StorageBindingId, persisted.StorageBindingId, StringComparison.Ordinal);
 
@@ -1033,10 +1033,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
         JsonTypeInfo<T> typeInfo)
         => !JsonEquivalent(current, persisted, typeInfo);
 
-    private static MetadataV2Publication RestorePublicationMutation(
-        MetadataV2Publication current,
-        MetadataV2Publication previous,
-        MetadataV2Publication persisted)
+    private static MetadataV2Layer RestorePublicationMutation(
+        MetadataV2Layer current,
+        MetadataV2Layer previous,
+        MetadataV2Layer persisted)
         => current with
         {
             Metadata = RestoreObjectMetadataMutation(current.Metadata, previous.Metadata, persisted.Metadata),
@@ -1058,7 +1058,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 current.Identifier,
                 previous.Identifier,
                 persisted.Identifier,
-                static value => new MetadataV2Publication { Identifier = value }),
+                static value => new MetadataV2Layer { Identifier = value }),
             LayerIndex = RestoreMutationValue(current.LayerIndex, previous.LayerIndex, persisted.LayerIndex),
             Path = RestoreMutationValue(current.Path, previous.Path, persisted.Path),
             ServiceLocalId = RestoreMutationValue(
@@ -2469,13 +2469,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
         T current,
         T previous,
         T persisted,
-        Func<T, MetadataV2Publication> containerFactory)
+        Func<T, MetadataV2Layer> containerFactory)
         => RestoreJsonMutationValue(
             current,
             previous,
             persisted,
             containerFactory,
-            MetadataV2JsonContext.Default.MetadataV2Publication);
+            MetadataV2JsonContext.Default.MetadataV2Layer);
 
     private static T RestoreSchemaFieldMutationValue<T>(
         T current,
@@ -2902,8 +2902,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
             string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
             string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) &&
             string.Equals(publication.StorageBindingId, binding.Metadata.Id, StringComparison.Ordinal) &&
-            publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
-        MetadataV2Publication featurePublication;
+            publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer);
+        MetadataV2Layer featurePublication;
         if (existingFeaturePublication is not null)
         {
             featurePublication = existingFeaturePublication with
@@ -2915,7 +2915,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             var collidingFeaturePublication = graph.Publications.FirstOrDefault(publication =>
                 string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
-                publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&
                 publication.LayerIndex == layerId &&
                 (!string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) ||
                  !string.Equals(publication.StorageBindingId, binding.Metadata.Id, StringComparison.Ordinal)));
@@ -2935,7 +2935,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 layerIdText,
                 BuildLayerGraphId("layer", layerId, storageScope?.ManagedLayerIds?.Contains(layerId) == true ? null : storageScope?.ConnectionId),
                 layerName,
-                MetadataV2PublicationType.EsriFeatureLayer,
+                MetadataV2LayerType.EsriFeatureLayer,
                 isPrimary: true,
                 idPrefix: "pub",
                 enabled,
@@ -3132,7 +3132,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
            service.Protocols.Contains(MetadataV2ServiceProtocols.FeatureServer, StringComparer.OrdinalIgnoreCase) ||
            graph.Publications.Any(publication =>
                string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
-               publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
+               publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer);
 
     // Loads the active Metadata v2 graph for mutation, tolerating a fresh-DB
     // container where no snapshot has been activated yet (e.g. migration 031 ran
@@ -3627,21 +3627,21 @@ internal sealed partial class PostgreSqlLayerPublishingService
         };
     }
 
-    private static MetadataV2Publication BuildPublishedPublication(
+    private static MetadataV2Layer BuildPublishedPublication(
         MetadataV2Service service,
         MetadataV2Resource resource,
         MetadataV2StorageBinding binding,
         string layerIdText,
         string graphLayerKey,
         string layerTitle,
-        MetadataV2PublicationType publicationType,
+        MetadataV2LayerType publicationType,
         bool isPrimary,
         string idPrefix,
         bool enabled,
         DateTimeOffset now,
         IReadOnlyList<string>? capabilities = null)
     {
-        return new MetadataV2Publication
+        return new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -3655,7 +3655,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             ServiceId = service.Metadata.Id,
             StorageBindingId = binding.Metadata.Id,
             PublicationType = publicationType,
-            Identifier = new MetadataV2PublicationIdentifier
+            Identifier = new MetadataV2LayerIdentifier
             {
                 Value = layerIdText,
                 IsNumeric = true
@@ -3846,11 +3846,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return result;
     }
 
-    private static List<MetadataV2Publication> UpsertPublication(
-        IReadOnlyList<MetadataV2Publication> publications,
-        MetadataV2Publication publication)
+    private static List<MetadataV2Layer> UpsertPublication(
+        IReadOnlyList<MetadataV2Layer> publications,
+        MetadataV2Layer publication)
     {
-        var result = new List<MetadataV2Publication>(publications.Count + 1);
+        var result = new List<MetadataV2Layer>(publications.Count + 1);
         var replaced = false;
 
         foreach (var existing in publications)

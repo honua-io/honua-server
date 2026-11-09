@@ -38,7 +38,7 @@ public interface IResourceValidator
 
 public readonly record struct MetadataV2ServiceLayerTriple(
     MetadataV2Service Service,
-    MetadataV2Publication Publication,
+    MetadataV2Layer Publication,
     MetadataV2Resource Resource)
 {
     public int? StorageLayerId { get; init; }

@@ -180,7 +180,7 @@ public sealed class SourceBackedRelationshipStoreIntegrationTests(PostgresFixtur
             Locator = _schema + "." + resource.Metadata.Id,
             Options = new Dictionary<string, JsonElement> { ["sourceBacked"] = JsonSerializer.SerializeToElement(true) }
         }).ToArray();
-        var publications = bindings.Select(binding => new MetadataV2Publication
+        var publications = bindings.Select(binding => new MetadataV2Layer
         {
             Metadata = new() { Id = "pub-" + binding.ResourceId },
             ResourceId = binding.ResourceId,

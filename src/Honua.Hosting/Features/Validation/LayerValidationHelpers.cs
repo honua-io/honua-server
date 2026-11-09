@@ -31,7 +31,7 @@ internal static class LayerValidationHelpers
 
     internal readonly record struct MetadataV2ValidationResult(
         bool IsValid,
-        MetadataV2Publication? Publication,
+        MetadataV2Layer? Publication,
         MetadataV2Resource? Resource,
         MetadataV2Service? Service,
         IResult? ErrorResult,
@@ -302,21 +302,21 @@ internal static class LayerValidationHelpers
         => ValidateCollectionWithAccessV2CoreAsync(
             context, collectionId, true, scope, requiredProtocol, cancellationToken: cancellationToken);
 
-    internal static string? AdvertisedCollectionId(MetadataV2Publication publication, MetadataV2Resource? resource)
+    internal static string? AdvertisedCollectionId(MetadataV2Layer publication, MetadataV2Resource? resource)
     {
         var collectionId = publication.ServiceLocalId ?? publication.Path ?? resource?.Metadata.Name;
         return string.IsNullOrWhiteSpace(collectionId) ? resource?.Metadata.Id : collectionId;
     }
 
-    internal static int QueryCacheLayerId(MetadataV2Publication publication, int storageLayerId)
+    internal static int QueryCacheLayerId(MetadataV2Layer publication, int storageLayerId)
         => publication.LayerIndex ?? storageLayerId;
 
-    internal static MetadataV2Publication? SelectMatchingCollectionPublication(
-        IEnumerable<MetadataV2Publication> publications,
-        Func<MetadataV2Publication, bool> matches,
-        Func<MetadataV2Publication, bool> isTenantVisible,
-        Func<MetadataV2Publication, bool> isProtocolEnabled,
-        Func<MetadataV2Publication, bool> isPreferredType)
+    internal static MetadataV2Layer? SelectMatchingCollectionPublication(
+        IEnumerable<MetadataV2Layer> publications,
+        Func<MetadataV2Layer, bool> matches,
+        Func<MetadataV2Layer, bool> isTenantVisible,
+        Func<MetadataV2Layer, bool> isProtocolEnabled,
+        Func<MetadataV2Layer, bool> isPreferredType)
     {
         ArgumentNullException.ThrowIfNull(publications);
         ArgumentNullException.ThrowIfNull(matches);
@@ -324,8 +324,8 @@ internal static class LayerValidationHelpers
         ArgumentNullException.ThrowIfNull(isProtocolEnabled);
         ArgumentNullException.ThrowIfNull(isPreferredType);
 
-        MetadataV2Publication? firstVisible = null;
-        MetadataV2Publication? bestEnabled = null;
+        MetadataV2Layer? firstVisible = null;
+        MetadataV2Layer? bestEnabled = null;
         var bestRank = int.MinValue;
         foreach (var publication in publications)
         {
@@ -385,7 +385,7 @@ internal static class LayerValidationHelpers
                     StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found."));
         }
 
-        bool MatchesCollectionId(MetadataV2Publication p)
+        bool MatchesCollectionId(MetadataV2Layer p)
         {
             if (string.Equals(p.ServiceLocalId, collectionId, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(p.Path, collectionId, StringComparison.OrdinalIgnoreCase) ||
@@ -403,7 +403,7 @@ internal static class LayerValidationHelpers
                  string.Equals(resource.Metadata.Id, collectionId, StringComparison.OrdinalIgnoreCase));
         }
 
-        MetadataV2Publication? publication = null;
+        MetadataV2Layer? publication = null;
 
         // When a protocol is specified, prefer the matching publication so a STAC
         // collection request that shares a serviceLocalId with another protocol's
@@ -415,7 +415,7 @@ internal static class LayerValidationHelpers
         // service enables every protocol, so without the publication-type preference the
         // first publication in document order wins — which routes feature reads to the
         // raster image binding and 500s.
-        bool IsTenantVisible(MetadataV2Publication p)
+        bool IsTenantVisible(MetadataV2Layer p)
         {
             var matchedResource = snapshot.ResolveResource(p);
             var matchedService = snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var s) ? s : null;
@@ -594,13 +594,13 @@ internal static class LayerValidationHelpers
     public static IReadOnlyDictionary<int, MetadataV2Service> BuildPrimaryServiceMapV2(
         MetadataV2GraphSnapshot snapshot,
         string? requiredProtocol = null,
-        IEnumerable<MetadataV2Publication>? publications = null)
+        IEnumerable<MetadataV2Layer>? publications = null)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
         // Track the chosen publication alongside the service so subsequent tie-break
         // decisions can consult publication.IsPrimary.
-        var byLayer = new Dictionary<int, (MetadataV2Publication Publication, MetadataV2Service Service)>();
+        var byLayer = new Dictionary<int, (MetadataV2Layer Publication, MetadataV2Service Service)>();
         foreach (var pub in publications ?? snapshot.Graph.Publications)
         {
             if (!pub.LayerIndex.HasValue || !snapshot.IsRoutable(pub))
@@ -709,7 +709,7 @@ internal static class LayerValidationHelpers
     private static MetadataV2Service? ResolveVisibleProtocolService(
         HttpContext context,
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         string? requiredProtocol)
     {
         if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service))
@@ -742,7 +742,7 @@ internal static class LayerValidationHelpers
         return await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static (MetadataV2Publication? Publication, MetadataV2Resource? Resource, MetadataV2Service? Service)
+    private static (MetadataV2Layer? Publication, MetadataV2Resource? Resource, MetadataV2Service? Service)
         ResolveV2Triple(
             HttpContext context,
             MetadataV2GraphSnapshot snapshot,
@@ -755,7 +755,7 @@ internal static class LayerValidationHelpers
             TenantScopeHelpers.ResolveRequestTenantId(context),
             applyTenantScope: true);
 
-    internal static (MetadataV2Publication? Publication, MetadataV2Resource? Resource, MetadataV2Service? Service)
+    internal static (MetadataV2Layer? Publication, MetadataV2Resource? Resource, MetadataV2Service? Service)
         ResolveV2TripleForTenant(
             MetadataV2GraphSnapshot snapshot,
             int layerId,
@@ -938,7 +938,7 @@ internal static class LayerValidationHelpers
     // A publication that declares no capabilities keeps the legacy allow; a declared set that omits this operation rejects the mutation.
     internal static string? FindUndeclaredEditCapability(
         MetadataV2Service? service,
-        MetadataV2Publication? publication,
+        MetadataV2Layer? publication,
         AuthorizationOperation operation)
     {
         if (service is null || MapToEditCapability(operation) is not { } capability)
@@ -957,7 +957,7 @@ internal static class LayerValidationHelpers
     internal static IResult? ValidateDeclaredEditCapability(
         HttpContext context,
         MetadataV2Service service,
-        MetadataV2Publication? publication,
+        MetadataV2Layer? publication,
         string capability)
     {
         // Only a declared capability set that omits the operation is a denial. Metadata that
@@ -1054,7 +1054,7 @@ internal static class LayerValidationHelpers
         }
 
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
-        MetadataV2Publication? canonical = null;
+        MetadataV2Layer? canonical = null;
         // Not converted to `.FirstOrDefault(...)`: the predicate needs two intermediate
         // values computed per candidate (the resolved resource and the resolved service),
         // reused across the equality and visibility checks — inlining them into a single
@@ -1232,7 +1232,7 @@ internal static class LayerValidationHelpers
         }
 
         var publications = snapshot.PublicationsForService(service.Metadata.Id);
-        var visiblePublications = new List<MetadataV2Publication>(publications.Count);
+        var visiblePublications = new List<MetadataV2Layer>(publications.Count);
         var resources = new List<MetadataV2Resource>(publications.Count);
         foreach (var pub in publications)
         {
@@ -1261,6 +1261,6 @@ internal static class LayerValidationHelpers
 internal readonly record struct MetadataV2ServiceValidationResult(
     bool IsValid,
     MetadataV2Service? Service,
-    IReadOnlyList<MetadataV2Publication> Publications,
+    IReadOnlyList<MetadataV2Layer> Publications,
     IReadOnlyList<MetadataV2Resource> AccessibleResources,
     IResult? ErrorResult);

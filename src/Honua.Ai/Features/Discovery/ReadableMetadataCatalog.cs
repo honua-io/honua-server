@@ -73,5 +73,5 @@ internal static class ReadableMetadataCatalog
 
 internal sealed record ReadableMetadataPublication(
     MetadataV2Service Service,
-    MetadataV2Publication Publication,
+    MetadataV2Layer Publication,
     MetadataV2Resource Resource);

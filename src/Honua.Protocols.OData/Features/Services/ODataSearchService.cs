@@ -632,7 +632,7 @@ internal sealed partial class ODataSearchService
 
     private static string ResolveServiceName(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication)
+        MetadataV2Layer publication)
     {
         return snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service)
             ? service.Metadata.Name
@@ -647,7 +647,7 @@ internal sealed partial class ODataSearchService
 
     private sealed record ResolvedODataLayer(
         IFeatureReader Reader,
-        MetadataV2Publication Publication,
+        MetadataV2Layer Publication,
         MetadataV2Resource Resource,
         int PublicLayerId,
         int StorageLayerId);

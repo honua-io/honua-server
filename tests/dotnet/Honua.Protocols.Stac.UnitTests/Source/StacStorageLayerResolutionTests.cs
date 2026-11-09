@@ -181,14 +181,14 @@ public sealed class StacStorageLayerResolutionTests
     /// A STAC collection publication with no storage binding of its own, so the handle is
     /// resolved from its resource.
     /// </summary>
-    private static MetadataV2Publication Publication(string id, string resourceId)
+    private static MetadataV2Layer Publication(string id, string resourceId)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id },
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             ResourceId = resourceId,
             ServiceId = "service.stac",
-            PublicationType = MetadataV2PublicationType.StacCollection,
+            PublicationType = MetadataV2LayerType.StacCollection,
             IsPrimary = true,
             LayerIndex = CollectionLayerIndex,
         };

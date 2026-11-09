@@ -23,7 +23,7 @@ internal static class ServiceResourceValidationHelpers
     internal readonly record struct ServiceLayerValidationV2Result(
         bool IsValid,
         MetadataV2Service? Service,
-        MetadataV2Publication? Publication,
+        MetadataV2Layer? Publication,
         MetadataV2Resource? Resource,
         IResult? ErrorResult);
 

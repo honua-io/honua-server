@@ -10,7 +10,7 @@ internal static partial class FeatureServerEndpoints
 {
     // Destination-side metadata is reversed when the relationship class is described from the other resource.
     internal static ServiceRelationshipInfo[] BuildServiceRelationshipResponseV2(
-        IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
+        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Resource Resource)> publications,
         MetadataV2GraphSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(publications);

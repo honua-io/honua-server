@@ -190,14 +190,14 @@ internal static partial class VectorTileServerEndpoints
         }
     }
 
-    private static async Task<(MetadataV2Publication Publication, MetadataV2Resource Resource)?> ResolvePrimaryVectorTilePublicationAsync(
+    private static async Task<(MetadataV2Layer Publication, MetadataV2Resource Resource)?> ResolvePrimaryVectorTilePublicationAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
         HttpContext context,
         AuthorizationOperation operation,
         CancellationToken cancellationToken)
     {
-        (MetadataV2Publication Publication, MetadataV2Resource Resource)? best = null;
+        (MetadataV2Layer Publication, MetadataV2Resource Resource)? best = null;
         foreach (var publication in TenantScopeHelpers.FilterVisiblePublications(
                      context, snapshot, snapshot.Index.PublicationsByService[service.Metadata.Id]))
         {
@@ -224,11 +224,11 @@ internal static partial class VectorTileServerEndpoints
     }
 
     private static bool IsPreferredPublication(
-        MetadataV2Publication candidate,
-        MetadataV2Publication current)
+        MetadataV2Layer candidate,
+        MetadataV2Layer current)
     {
-        var candidateIsVector = candidate.PublicationType == MetadataV2PublicationType.EsriVectorTileLayer;
-        var currentIsVector = current.PublicationType == MetadataV2PublicationType.EsriVectorTileLayer;
+        var candidateIsVector = candidate.PublicationType == MetadataV2LayerType.EsriVectorTileLayer;
+        var currentIsVector = current.PublicationType == MetadataV2LayerType.EsriVectorTileLayer;
         if (candidateIsVector != currentIsVector)
         {
             return candidateIsVector;

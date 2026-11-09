@@ -178,7 +178,7 @@ public sealed class WfsWmsStorageBoundReadTests : IAsyncLifetime
                 layerIndex: 1,
                 storageBindingId: bindingId,
                 serviceLocalId: TypeName,
-                publicationType: MetadataV2PublicationType.WfsFeatureType)
+                publicationType: MetadataV2LayerType.WfsFeatureType)
             .Build();
     }
 }

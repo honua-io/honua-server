@@ -184,7 +184,7 @@ public abstract class MapServerEndpointTestBase : IAsyncLifetime
     private static void AddGenerateKmlLayer(
         List<MetadataV2Resource> resources,
         List<MetadataV2StorageBinding> bindings,
-        List<MetadataV2Publication> publications,
+        List<MetadataV2Layer> publications,
         string serviceId,
         int layerId,
         string name,
@@ -239,15 +239,15 @@ public abstract class MapServerEndpointTestBase : IAsyncLifetime
             StorageLayerId = layerId,
         });
 
-        publications.Add(new MetadataV2Publication
+        publications.Add(new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = $"pub-{serviceId}-{layerId}", Name = name },
             ServiceId = serviceId,
             ResourceId = resourceId,
             StorageBindingId = bindingId,
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
-            PublicationType = MetadataV2PublicationType.EsriMapLayer,
-            Identifier = new MetadataV2PublicationIdentifier
+            PublicationType = MetadataV2LayerType.EsriMapLayer,
+            Identifier = new MetadataV2LayerIdentifier
             {
                 Value = layerId.ToString(CultureInfo.InvariantCulture),
                 IsNumeric = true,

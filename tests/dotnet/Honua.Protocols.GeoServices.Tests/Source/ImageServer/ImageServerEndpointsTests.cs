@@ -727,7 +727,7 @@ public class ImageServerEndpointsTests
                     "aliased-image-resource",
                     layerIndex: publicationLayerIndex,
                     storageBindingId: "aliased-image-binding",
-                    publicationType: MetadataV2PublicationType.EsriImageLayer)
+                    publicationType: MetadataV2LayerType.EsriImageLayer)
                 .Build());
         var rasterStore = CreateTileExportRasterStoreSubstitute();
         var fixture = new WebAppFixture().ConfigureServices(services =>
@@ -802,7 +802,7 @@ public class ImageServerEndpointsTests
                     protocols: [MetadataV2ServiceProtocols.ImageServer], accessPolicy: anonymous)
                 .AddPublication("aliased-image-publication", "aliased-image-service", "aliased-image-resource",
                     layerIndex: aliasedLayerIndex, storageBindingId: "aliased-image-binding",
-                    publicationType: MetadataV2PublicationType.EsriImageLayer)
+                    publicationType: MetadataV2LayerType.EsriImageLayer)
                 .AddResource("colliding-image-resource", "Colliding image", MetadataV2ResourceType.RasterDataset, accessPolicy: anonymous)
                 .AddStorageBinding("colliding-image-binding", "colliding-image-resource", "raster_data_other",
                     storageType: MetadataV2StorageType.RelationalTable, storageLayerId: collidingStorageLayerId)
@@ -810,7 +810,7 @@ public class ImageServerEndpointsTests
                     protocols: [MetadataV2ServiceProtocols.ImageServer], accessPolicy: anonymous)
                 .AddPublication("colliding-image-publication", "colliding-image-service", "colliding-image-resource",
                     layerIndex: TestLayerId, storageBindingId: "colliding-image-binding",
-                    publicationType: MetadataV2PublicationType.EsriImageLayer)
+                    publicationType: MetadataV2LayerType.EsriImageLayer)
                 .Build());
         var rasterStore = CreateSamplingRasterStoreSubstitute();
         var fixture = new WebAppFixture().ConfigureServices(services =>

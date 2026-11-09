@@ -21,7 +21,7 @@ internal static partial class FeatureServerEndpoints
 {
     internal static FeatureServerResponse MapServiceToResponseV2(
         MetadataV2Service service,
-        IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
+        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Resource Resource)> publications,
         MetadataV2GraphSnapshot snapshot,
         QueryLimits queryLimits,
         bool supportsGeobufOutput,
@@ -101,7 +101,7 @@ internal static partial class FeatureServerEndpoints
     internal static LayerResponse MapLayerToResponseV2(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2GraphSnapshot snapshot,
         QueryLimits queryLimits,
         FeatureServerTimeInfo? timeInfo,
@@ -251,7 +251,7 @@ internal static partial class FeatureServerEndpoints
 
     private static LayerInfo MapLayerInfoV2(
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2GraphSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -314,12 +314,12 @@ internal static partial class FeatureServerEndpoints
 
     internal static string BuildServiceCapabilitiesV2(
         MetadataV2Service service,
-        IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications)
+        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Resource Resource)> publications)
         => BuildServiceCapabilitiesV2(service, publications, supportsAttachmentUploads: false, offlineSyncEnabled: true);
 
     private static string BuildServiceCapabilitiesV2(
         MetadataV2Service service,
-        IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
+        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Resource Resource)> publications,
         bool supportsAttachmentUploads,
         bool offlineSyncEnabled)
     {
@@ -362,7 +362,7 @@ internal static partial class FeatureServerEndpoints
     private static string BuildLayerCapabilitiesV2(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         bool supportsAttachmentUploads,
         bool offlineSyncEnabled)
     {
@@ -434,7 +434,7 @@ internal static partial class FeatureServerEndpoints
     }
 
     private static ExtentInfo? ResolveServiceExtentV2(
-        IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
+        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Resource Resource)> publications,
         int fallbackSrid)
     {
         double? west = null;
@@ -506,7 +506,7 @@ internal static partial class FeatureServerEndpoints
 
     internal static async Task<FeatureServerTimeInfo?> BuildTimeInfoV2Async(
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2GraphSnapshot snapshot,
         IFeatureReader featureReader,
         CancellationToken cancellationToken)
@@ -553,7 +553,7 @@ internal static partial class FeatureServerEndpoints
         };
     }
 
-    internal static (MetadataV2Publication Publication, MetadataV2Resource Resource)[] GetRoutableServicePublicationsV2(
+    internal static (MetadataV2Layer Publication, MetadataV2Resource Resource)[] GetRoutableServicePublicationsV2(
         MetadataV2Service service, MetadataV2GraphSnapshot snapshot, HttpContext context)
         => snapshot.Index.PublicationsByService[service.Metadata.Id]
             .Where(snapshot.IsRoutable)
@@ -570,7 +570,7 @@ internal static partial class FeatureServerEndpoints
 
     internal static bool TryResolveRequestedServiceLayersV2(
         ServiceLayerSelectionRequest request,
-        out (MetadataV2Publication Publication, MetadataV2Resource Resource)[] layers,
+        out (MetadataV2Layer Publication, MetadataV2Resource Resource)[] layers,
         out bool selectorSpecified,
         out string? error)
     {
@@ -635,10 +635,10 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
-    internal static (MetadataV2Publication Publication, MetadataV2Resource Resource)[] FilterAccessibleLayersV2(
+    internal static (MetadataV2Layer Publication, MetadataV2Resource Resource)[] FilterAccessibleLayersV2(
         ResourceAccessSet access,
         MetadataV2GraphSnapshot snapshot,
-        IEnumerable<(MetadataV2Publication Publication, MetadataV2Resource Resource)> layers)
+        IEnumerable<(MetadataV2Layer Publication, MetadataV2Resource Resource)> layers)
     {
         ArgumentNullException.ThrowIfNull(access);
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -815,14 +815,14 @@ internal static partial class FeatureServerEndpoints
 
     private static bool ServiceSupportsEditingV2(
         MetadataV2Service service,
-        IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications)
+        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Resource Resource)> publications)
         => publications.Count == 0
             ? ServiceSupportsEditingV2(service)
             : publications.Any(pair =>
                 !MetadataV2RelationshipEditPolicy.RequiresReadOnly(pair.Resource) &&
                 ServiceSupportsEditingV2(service, pair.Publication));
 
-    private static bool ServiceSupportsEditingV2(MetadataV2Service service, MetadataV2Publication publication)
+    private static bool ServiceSupportsEditingV2(MetadataV2Service service, MetadataV2Layer publication)
         => ServiceSupportsOperationV2(service, "Create", publication) ||
            ServiceSupportsOperationV2(service, "Update", publication) ||
            ServiceSupportsOperationV2(service, "Delete", publication);
@@ -835,13 +835,13 @@ internal static partial class FeatureServerEndpoints
     internal static bool ServiceSupportsOperationV2(
         MetadataV2Service service,
         string operation,
-        MetadataV2Publication? publication)
+        MetadataV2Layer? publication)
         => MetadataV2EditCapabilities.Supports(service, publication, operation);
 
     private static void AddDeclaredEditCapabilities(
         List<string> capabilities,
         MetadataV2Service service,
-        IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)>? publications = null)
+        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Resource Resource)>? publications = null)
     {
         var hasPublications = publications is { Count: > 0 };
         var supportsCreate = hasPublications

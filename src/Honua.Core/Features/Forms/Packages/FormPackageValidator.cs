@@ -171,7 +171,7 @@ public sealed class FormPackageValidator
     private static void ValidateSubmitPolicy(
         FormPackageDocument package,
         MetadataV2Service service,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Resource resource,
         List<FormValidationIssue> issues)
     {
@@ -1014,7 +1014,7 @@ public sealed class FormPackageValidator
 
     private static bool TargetSupportsOperation(
         MetadataV2Service service,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Resource resource,
         string operation)
     {

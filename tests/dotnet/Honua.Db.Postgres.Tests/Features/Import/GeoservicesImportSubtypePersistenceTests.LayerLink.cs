@@ -149,7 +149,7 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests
             }
             else
             {
-                AssertUnchangedMetadata(previous, layer, MetadataV2JsonContext.Default.MetadataV2Publication);
+                AssertUnchangedMetadata(previous, layer, MetadataV2JsonContext.Default.MetadataV2Layer);
             }
         }
         foreach (var layer in after.Publications.Where(candidate => before.Publications.All(

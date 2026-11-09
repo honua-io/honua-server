@@ -78,21 +78,21 @@ public sealed class EdrStorageCollectionTests
                 storageBindingId: "west-binding",
                 serviceLocalId: "west-dem",
                 isPrimary: true,
-                publicationType: MetadataV2PublicationType.OgcCollection)
+                publicationType: MetadataV2LayerType.OgcCollection)
             .AddPublication(
                 "pub-east",
                 "svc",
                 "east",
                 storageBindingId: "east-binding",
                 serviceLocalId: "east-dem",
-                publicationType: MetadataV2PublicationType.OgcCollection)
+                publicationType: MetadataV2LayerType.OgcCollection)
             .AddPublication(
                 "pub-decoy",
                 "svc",
                 "decoy",
                 storageBindingId: "decoy-binding",
                 serviceLocalId: SharedStorageId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                publicationType: MetadataV2PublicationType.OgcCollection)
+                publicationType: MetadataV2LayerType.OgcCollection)
             .BuildProvider();
         var services = new ServiceCollection()
             .AddSingleton<IMetadataV2GraphProvider>(graph)

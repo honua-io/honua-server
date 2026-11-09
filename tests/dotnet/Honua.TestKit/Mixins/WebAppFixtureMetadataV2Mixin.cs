@@ -160,7 +160,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 resourceId: "res-image-test",
                 layerIndex: TestLayerId,
                 serviceLocalId: "test-layer",
-                publicationType: MetadataV2PublicationType.EsriImageLayer);
+                publicationType: MetadataV2LayerType.EsriImageLayer);
 
         // VectorTileServer publication for the canonical "test" service. The
         // GeoServices VectorTileServer adapter resolves the service by NAME against
@@ -174,7 +174,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 resourceId: "res-layer-0",
                 layerIndex: 0,
                 serviceLocalId: "0",
-                publicationType: MetadataV2PublicationType.EsriVectorTileLayer);
+                publicationType: MetadataV2LayerType.EsriVectorTileLayer);
 
         // FeatureServer and MapServer publications for the canonical "test" service.
         // The GeoServices REST catalog endpoint enumerates these directly from the V2
@@ -196,21 +196,21 @@ internal static class WebAppFixtureMetadataV2Mixin
                     resourceId: resourceId,
                     layerIndex: layerIndex,
                     serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                    publicationType: MetadataV2LayerType.EsriFeatureLayer)
                 .AddPublication(
                     id: $"pub-map-{layerIndex}",
                     serviceId: "svc-test-map",
                     resourceId: resourceId,
                     layerIndex: layerIndex,
                     serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    publicationType: MetadataV2PublicationType.EsriMapLayer)
+                    publicationType: MetadataV2LayerType.EsriMapLayer)
                 .AddPublication(
                     id: $"pub-stac-{layerIndex}",
                     serviceId: "svc-test-stac",
                     resourceId: resourceId,
                     layerIndex: layerIndex,
                     serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    publicationType: MetadataV2PublicationType.StacCollection);
+                    publicationType: MetadataV2LayerType.StacCollection);
         }
 
         var graph = builder.Build();
@@ -417,7 +417,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                      SpatialReferenceTestLayerCatalog.PolygonLayerId
                  })
         {
-            publications.Add(new MetadataV2Publication
+            publications.Add(new MetadataV2Layer
             {
                 Metadata = new MetadataV2ObjectMetadata
                 {
@@ -428,14 +428,14 @@ internal static class WebAppFixtureMetadataV2Mixin
                 ServiceId = "svc-srid-feature",
                 ResourceId = $"res-layer-{layerIndex}",
                 StorageBindingId = $"binding-layer-{layerIndex}",
-                Identifier = new MetadataV2PublicationIdentifier
+                Identifier = new MetadataV2LayerIdentifier
                 {
                     Value = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     IsNumeric = true
                 },
-                PublicationType = MetadataV2PublicationType.EsriFeatureLayer
+                PublicationType = MetadataV2LayerType.EsriFeatureLayer
             });
-            publications.Add(new MetadataV2Publication
+            publications.Add(new MetadataV2Layer
             {
                 Metadata = new MetadataV2ObjectMetadata
                 {
@@ -446,14 +446,14 @@ internal static class WebAppFixtureMetadataV2Mixin
                 ServiceId = "svc-srid-odata",
                 ResourceId = $"res-layer-{layerIndex}",
                 StorageBindingId = $"binding-layer-{layerIndex}",
-                Identifier = new MetadataV2PublicationIdentifier
+                Identifier = new MetadataV2LayerIdentifier
                 {
                     Value = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     IsNumeric = true
                 },
-                PublicationType = MetadataV2PublicationType.ODataEntitySet
+                PublicationType = MetadataV2LayerType.ODataEntitySet
             });
-            publications.Add(new MetadataV2Publication
+            publications.Add(new MetadataV2Layer
             {
                 Metadata = new MetadataV2ObjectMetadata
                 {
@@ -464,14 +464,14 @@ internal static class WebAppFixtureMetadataV2Mixin
                 ServiceId = "svc-srid-stac",
                 ResourceId = $"res-layer-{layerIndex}",
                 StorageBindingId = $"binding-layer-{layerIndex}",
-                Identifier = new MetadataV2PublicationIdentifier
+                Identifier = new MetadataV2LayerIdentifier
                 {
                     Value = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     IsNumeric = true
                 },
-                PublicationType = MetadataV2PublicationType.StacCollection
+                PublicationType = MetadataV2LayerType.StacCollection
             });
-            publications.Add(new MetadataV2Publication
+            publications.Add(new MetadataV2Layer
             {
                 Metadata = new MetadataV2ObjectMetadata
                 {
@@ -482,12 +482,12 @@ internal static class WebAppFixtureMetadataV2Mixin
                 ServiceId = "svc-srid-ogc-features",
                 ResourceId = $"res-layer-{layerIndex}",
                 StorageBindingId = $"binding-layer-{layerIndex}",
-                Identifier = new MetadataV2PublicationIdentifier
+                Identifier = new MetadataV2LayerIdentifier
                 {
                     Value = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     IsNumeric = true
                 },
-                PublicationType = MetadataV2PublicationType.OgcCollection
+                PublicationType = MetadataV2LayerType.OgcCollection
             });
         }
 
@@ -531,7 +531,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                     resourceId: resourceId,
                     layerIndex: layerIndex,
                     serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                    publicationType: MetadataV2LayerType.EsriFeatureLayer);
         }
 
         return builder.Build();
@@ -572,7 +572,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 layerIndex: layerIndex,
                 storageBindingId: bindingId,
                 serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                publicationType: MetadataV2PublicationType.ODataEntitySet);
+                publicationType: MetadataV2LayerType.ODataEntitySet);
     }
 
     /// <summary>

@@ -165,7 +165,7 @@ public sealed class MetadataV2EditingConfigurationTests
             ],
             Publications =
             [
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "publication" }, ResourceId = "resource",
                     ServiceId = "service", StorageBindingId = "storage", Capabilities = ["Query", "Extract"]

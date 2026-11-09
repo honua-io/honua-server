@@ -30,7 +30,7 @@ public sealed class EditFieldsInfoTests
         var layer = FeatureServerEndpoints.MapLayerToResponseV2(
             new MetadataV2Service(),
             resource,
-            new MetadataV2Publication(),
+            new MetadataV2Layer(),
             snapshot,
             new QueryLimits(),
             null,
@@ -56,7 +56,7 @@ public sealed class EditFieldsInfoTests
         var layer = FeatureServerEndpoints.MapLayerToResponseV2(
             new MetadataV2Service(),
             new MetadataV2Resource(),
-            new MetadataV2Publication(),
+            new MetadataV2Layer(),
             snapshot,
             new QueryLimits(),
             null,

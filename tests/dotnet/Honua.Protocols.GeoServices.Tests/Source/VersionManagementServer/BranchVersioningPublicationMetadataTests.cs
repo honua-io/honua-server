@@ -28,7 +28,7 @@ public sealed class BranchVersioningPublicationMetadataTests(BranchVersioningPub
 {
     private WebAppFixture App => fixture.App;
     private MetadataV2Graph Baseline => fixture.Baseline;
-    private MetadataV2Publication ManagedPublication => Baseline.Publications.Single(publication =>
+    private MetadataV2Layer ManagedPublication => Baseline.Publications.Single(publication =>
         publication.ServiceId == fixture.Service.Metadata.Id && publication.LayerIndex == 0
         && ServiceProtocols.IsPreferredPublicationType(ServiceProtocols.FeatureServer, publication.PublicationType));
     private MetadataV2Resource ManagedResource => Baseline.Resources.Single(resource => resource.Metadata.Id == ManagedPublication.ResourceId);
@@ -206,13 +206,13 @@ public sealed class BranchVersioningPublicationMetadataTests(BranchVersioningPub
         fixture.UnversionedReader.ReceivedCalls().Should().BeEmpty("metadata must never execute feature reads");
     }
 
-    private MetadataV2Graph WithPublications(params MetadataV2Publication[] publications)
+    private MetadataV2Graph WithPublications(params MetadataV2Layer[] publications)
         => Baseline with
         {
             Publications = [.. Baseline.Publications.Where(publication => publication.ServiceId != fixture.Service.Metadata.Id), .. publications]
         };
 
-    private (MetadataV2Publication Publication, MetadataV2StorageBinding Binding) ExternalPublication(bool sourceBacked = true)
+    private (MetadataV2Layer Publication, MetadataV2StorageBinding Binding) ExternalPublication(bool sourceBacked = true)
     {
         var options = new Dictionary<string, JsonElement>(ManagedBinding.Options)
         {
@@ -361,7 +361,7 @@ public sealed class BranchVersioningPublicationFixture : IAsyncLifetime
         var snapshot = app.GetCurrentV2GraphSnapshot();
         var service = snapshot.Index.ServicesByName[WebAppFixture.TestServiceId];
         var publications = snapshot.Graph.Publications.Select(publication => publication.ServiceId == service.Metadata.Id
-            ? publication with { PublicationType = MetadataV2PublicationType.EsriFeatureLayer } : publication).ToArray();
+            ? publication with { PublicationType = MetadataV2LayerType.EsriFeatureLayer } : publication).ToArray();
         var bindingIds = publications.Where(publication => publication.ServiceId == service.Metadata.Id)
             .Select(publication => snapshot.ResolveStorageBinding(publication)!.Metadata.Id).ToHashSet(StringComparer.Ordinal);
         var bindings = snapshot.Graph.StorageBindings.Select(binding => bindingIds.Contains(binding.Metadata.Id)

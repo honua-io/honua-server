@@ -18,7 +18,7 @@ internal static class StorageBoundFeatureReader
         MetadataV2GraphSnapshot? snapshot,
         MetadataV2Service? service,
         MetadataV2Resource resource,
-        MetadataV2Publication? publication,
+        MetadataV2Layer? publication,
         int storageLayerId,
         FeatureProviderReadOperation operation,
         CancellationToken cancellationToken)

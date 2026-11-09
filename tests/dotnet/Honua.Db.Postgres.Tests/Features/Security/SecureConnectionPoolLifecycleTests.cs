@@ -172,7 +172,7 @@ public partial class SecureConnectionRegistryTests
             Locator = "public.proof",
             StorageLayerId = 1
         };
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new() { Id = "pub", Name = "pub" },
             ServiceId = "svc",

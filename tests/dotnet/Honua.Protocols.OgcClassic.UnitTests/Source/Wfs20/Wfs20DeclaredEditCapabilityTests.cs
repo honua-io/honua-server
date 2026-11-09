@@ -239,7 +239,7 @@ public sealed class Wfs20DeclaredEditCapabilityTests
                 "res-layer-1",
                 layerIndex: 1,
                 storageBindingId: "binding-layer-1",
-                publicationType: MetadataV2PublicationType.OgcCollection);
+                publicationType: MetadataV2LayerType.OgcCollection);
         if (capabilities is not null)
         {
             builder = builder.WithPublicationCapabilities(PublicationId, capabilities);

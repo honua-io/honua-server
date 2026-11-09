@@ -184,15 +184,15 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
             Protocols = [ServiceProtocols.Wmts, ServiceProtocols.MapServer],
         };
 
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "pub-projected", Name = "projected-layer" },
             ServiceId = "svc-projected",
             ResourceId = "res-projected",
             StorageBindingId = "binding-projected",
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
-            PublicationType = MetadataV2PublicationType.EsriMapLayer,
-            Identifier = new MetadataV2PublicationIdentifier
+            PublicationType = MetadataV2LayerType.EsriMapLayer,
+            Identifier = new MetadataV2LayerIdentifier
             {
                 Value = storageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 IsNumeric = true,

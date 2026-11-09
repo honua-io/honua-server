@@ -429,7 +429,7 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
             snapshot.Graph.Resources.Should().ContainSingle(r => r.Metadata.Id == "res-layer-0")
                 .Which.Metadata.Name.Should().Be("CITE Features");
             snapshot.Graph.Publications.Should().Contain(
-                p => p.ResourceId == "res-layer-0" && p.PublicationType == MetadataV2PublicationType.OgcCollection,
+                p => p.ResourceId == "res-layer-0" && p.PublicationType == MetadataV2LayerType.OgcCollection,
                 "the bare layer must be published as an OGC collection so /collections lists it");
         }
         finally

@@ -187,7 +187,7 @@ public sealed class MetadataV2GraphSnapshotTests
         var draft = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Draft };
         var retired = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired };
         var archived = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Archived };
-        var publication = new MetadataV2Publication { Status = active };
+        var publication = new MetadataV2Layer { Status = active };
         var resource = new MetadataV2Resource { Status = active };
 
         publication.IsRoutable(resource).Should().BeTrue();
@@ -462,7 +462,7 @@ public sealed class MetadataV2GraphSnapshotTests
             ],
             Publications =
             [
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub", Name = "parcels" },
                     ServiceId = "svc",
@@ -534,15 +534,15 @@ public sealed class MetadataV2GraphSnapshotTests
             ],
             Publications =
             [
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub.parcels.features", Name = "parcels" },
                     Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                     ResourceId = "resource.parcels",
                     ServiceId = "service.features",
                     StorageBindingId = "storage.parcels.postgis",
-                    PublicationType = MetadataV2PublicationType.OgcCollection,
-                    Identifier = new MetadataV2PublicationIdentifier
+                    PublicationType = MetadataV2LayerType.OgcCollection,
+                    Identifier = new MetadataV2LayerIdentifier
                     {
                         Value = "0",
                         IsNumeric = true,
@@ -828,7 +828,7 @@ public sealed class MetadataV2GraphSnapshotTests
             StorageLayerId = storageLayerId,
         };
 
-    private static MetadataV2Publication Publication(
+    private static MetadataV2Layer Publication(
         string id,
         string resourceId,
         string? storageBindingId,
@@ -840,9 +840,9 @@ public sealed class MetadataV2GraphSnapshotTests
             ResourceId = resourceId,
             ServiceId = "service.features",
             StorageBindingId = storageBindingId,
-            PublicationType = MetadataV2PublicationType.OgcCollection,
+            PublicationType = MetadataV2LayerType.OgcCollection,
             IsPrimary = true,
-            Identifier = new MetadataV2PublicationIdentifier
+            Identifier = new MetadataV2LayerIdentifier
             {
                 Value = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 IsNumeric = true,

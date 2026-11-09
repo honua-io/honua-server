@@ -23,7 +23,7 @@ public sealed class StacTemporalMappingTests
         };
         var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty.Add("timestamp", "2024-01-01T00:00:00Z"));
 
-        var item = StacMappingService.MapFeatureToItem(feature, resource, new MetadataV2Publication(), 0, "https://example.test");
+        var item = StacMappingService.MapFeatureToItem(feature, resource, new MetadataV2Layer(), 0, "https://example.test");
 
         item.Properties.Should().NotBeNull();
         item.Properties!["honua:datetime_source"].Should().Be("unknown");
@@ -43,10 +43,10 @@ public sealed class StacTemporalMappingTests
         reader.GetTemporalExtentAsync(0, "TIMESTAMP", Arg.Any<TemporalPropertyType>(), Arg.Any<CancellationToken>())
             .Returns(TemporalExtentResult.Create(instant, instant));
 
-        var item = StacMappingService.MapFeatureToItem(feature, resource, new MetadataV2Publication(), 0, "https://example.test");
+        var item = StacMappingService.MapFeatureToItem(feature, resource, new MetadataV2Layer(), 0, "https://example.test");
         var filter = StacFilterHelpers.ParseDatetime("2024-01-01T00:00:00Z", resource);
         var collection = await StacMappingService.MapResourceToCollectionAsync(
-            resource, new MetadataV2Publication(), new MetadataV2Service(), 0, 0, reader, "https://example.test", null, CancellationToken.None);
+            resource, new MetadataV2Layer(), new MetadataV2Service(), 0, 0, reader, "https://example.test", null, CancellationToken.None);
 
         item.Properties.Should().NotBeNull();
         item.Properties!["datetime"].Should().Be(instant.ToString("o", System.Globalization.CultureInfo.InvariantCulture));

@@ -159,13 +159,13 @@ public sealed class MetadataV2LifecycleRoutingTests
             StorageLayerId = 7,
             Status = new MetadataV2Status { Lifecycle = bindingLifecycle }
         };
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "publication-7", Name = "layer-7" },
             ServiceId = service.Metadata.Id,
             ResourceId = resource.Metadata.Id,
             StorageBindingId = binding.Metadata.Id,
-            Identifier = new MetadataV2PublicationIdentifier { Value = "7", IsNumeric = true },
+            Identifier = new MetadataV2LayerIdentifier { Value = "7", IsNumeric = true },
             Status = new MetadataV2Status { Lifecycle = publicationLifecycle }
         };
         var graph = new MetadataV2Graph

@@ -17,7 +17,7 @@ public static class MetadataV2EditCapabilities
 
     private static readonly string[] _queryOnly = ["Query"];
 
-    public static IReadOnlyList<string>? ResolveDeclared(MetadataV2Service service, MetadataV2Publication? publication)
+    public static IReadOnlyList<string>? ResolveDeclared(MetadataV2Service service, MetadataV2Layer? publication)
     {
         ArgumentNullException.ThrowIfNull(service);
 
@@ -44,14 +44,14 @@ public static class MetadataV2EditCapabilities
         return null;
     }
 
-    public static IReadOnlyList<string> Resolve(MetadataV2Service service, MetadataV2Publication? publication)
+    public static IReadOnlyList<string> Resolve(MetadataV2Service service, MetadataV2Layer? publication)
         => ResolveDeclared(service, publication) ?? _queryOnly;
 
-    public static bool Supports(MetadataV2Service service, MetadataV2Publication? publication, string operation)
+    public static bool Supports(MetadataV2Service service, MetadataV2Layer? publication, string operation)
         => Contains(Resolve(service, publication), operation);
 
     // Silence is not a denial, because a missing capability list would otherwise turn editing off.
-    public static bool? SupportsDeclared(MetadataV2Service service, MetadataV2Publication? publication, string operation)
+    public static bool? SupportsDeclared(MetadataV2Service service, MetadataV2Layer? publication, string operation)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(operation);
 

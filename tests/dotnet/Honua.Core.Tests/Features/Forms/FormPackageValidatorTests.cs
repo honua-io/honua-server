@@ -616,7 +616,7 @@ public sealed partial class FormPackageValidatorTests
                 ["capabilities"] = JsonArray(serviceCapabilities ?? ["Query", "Extract", "Create", "Update", "Delete"])
             }
         };
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "publication-inspections", Name = "0" },
             ServiceId = service.Metadata.Id,

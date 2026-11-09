@@ -515,7 +515,7 @@ internal sealed class FeatureServerEditsHandler(
 
     private static int? ResolveStorageLayerIdV2(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Resource resource)
         => snapshot.ResolveStorageLayerId(publication, resource);
 
@@ -1546,7 +1546,7 @@ internal sealed class FeatureServerEditsHandler(
     private async Task<EditLockScope?> ResolveEditLockScopeAsync(
         HttpContext httpContext,
         MetadataV2Service service,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int layerId,
         CancellationToken cancellationToken)
     {

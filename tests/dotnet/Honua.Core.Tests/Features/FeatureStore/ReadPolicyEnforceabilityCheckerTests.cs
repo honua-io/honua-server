@@ -160,13 +160,13 @@ public sealed class ReadPolicyEnforceabilityCheckerTests
         StorageLayerId = storageLayerId
     };
 
-    private static MetadataV2Publication CreatePublication(string id, string resourceId, string bindingId, string identifier) => new()
+    private static MetadataV2Layer CreatePublication(string id, string resourceId, string bindingId, string identifier) => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id },
         ServiceId = "svc-maps",
         ResourceId = resourceId,
         StorageBindingId = bindingId,
-        Identifier = new MetadataV2PublicationIdentifier { Value = identifier, IsNumeric = true }
+        Identifier = new MetadataV2LayerIdentifier { Value = identifier, IsNumeric = true }
     };
 
     private sealed class StubGraphProvider(MetadataV2GraphSnapshot snapshot) : IMetadataV2GraphProvider

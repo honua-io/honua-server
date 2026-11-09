@@ -603,7 +603,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     /// <summary>
     /// Sets the edit capabilities advertised by every publication on the service(s) named
     /// <paramref name="serviceName"/> in the Metadata v2 graph. The FormPackage validator
-    /// (and other capability gates) read <see cref="MetadataV2Publication.Capabilities"/>
+    /// (and other capability gates) read <see cref="MetadataV2Layer.Capabilities"/>
     /// from the graph — not the legacy <c>honua.services</c> table — so this is how a test
     /// makes a service advertise Create/Update/Delete for edit-path coverage.
     /// </summary>

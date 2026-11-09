@@ -174,7 +174,7 @@ public sealed class Wfs20EnablementTests
                 resourceId,
                 layerIndex: storageLayerId,
                 storageBindingId: bindingId,
-                publicationType: MetadataV2PublicationType.OgcCollection)
+                publicationType: MetadataV2LayerType.OgcCollection)
             .Build();
         graph = graph with
         {

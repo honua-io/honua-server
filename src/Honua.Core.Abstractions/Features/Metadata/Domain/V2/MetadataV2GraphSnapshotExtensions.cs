@@ -9,7 +9,7 @@ public static class MetadataV2GraphSnapshotExtensions
 {
     public static bool IsRoutable(
         this MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication)
+        MetadataV2Layer publication)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) ||
@@ -43,11 +43,11 @@ public static class MetadataV2GraphSnapshotExtensions
 
     // Retired entries stay addressable for administration and must not be served.
     public static bool IsRoutable(
-        this MetadataV2Publication publication,
+        this MetadataV2Layer publication,
         MetadataV2Resource? resource)
     {
         ArgumentNullException.ThrowIfNull(publication);
-        return IsKnownEnumValue(publication.PublicationType, MetadataV2PublicationType.Unknown) &&
+        return IsKnownEnumValue(publication.PublicationType, MetadataV2LayerType.Unknown) &&
                IsServingStatus(publication.Status) && IsServingResource(resource);
     }
 
@@ -90,7 +90,7 @@ public static class MetadataV2GraphSnapshotExtensions
         return snapshot.Index.ServicesByName.TryGetValue(serviceName, out var service) ? service : null;
     }
 
-    public static IReadOnlyList<MetadataV2Publication> PublicationsForService(
+    public static IReadOnlyList<MetadataV2Layer> PublicationsForService(
         this MetadataV2GraphSnapshot snapshot, string serviceId)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -98,7 +98,7 @@ public static class MetadataV2GraphSnapshotExtensions
     }
 
     public static MetadataV2Resource? ResolveResource(
-        this MetadataV2GraphSnapshot snapshot, MetadataV2Publication publication)
+        this MetadataV2GraphSnapshot snapshot, MetadataV2Layer publication)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(publication);
@@ -106,7 +106,7 @@ public static class MetadataV2GraphSnapshotExtensions
     }
 
     public static MetadataV2StorageBinding? ResolveStorageBinding(
-        this MetadataV2GraphSnapshot snapshot, MetadataV2Publication publication)
+        this MetadataV2GraphSnapshot snapshot, MetadataV2Layer publication)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(publication);
@@ -133,7 +133,7 @@ public static class MetadataV2GraphSnapshotExtensions
 
     public static int? ResolveStorageLayerId(
         this MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication)
+        MetadataV2Layer publication)
     {
         var binding = snapshot.ResolveStorageBinding(publication);
         return binding?.StorageLayerId;
@@ -142,7 +142,7 @@ public static class MetadataV2GraphSnapshotExtensions
     // The storage handle is resolved from the binding before the service-local index, because those numbers name different resources when they diverge.
     public static int? ResolveStorageLayerId(
         this MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Resource? resource)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -191,7 +191,7 @@ public static class MetadataV2GraphSnapshotExtensions
         return any?.StorageLayerId;
     }
 
-    public static IEnumerable<MetadataV2Publication> PublicationsForStorageLayer(
+    public static IEnumerable<MetadataV2Layer> PublicationsForStorageLayer(
         this MetadataV2GraphSnapshot snapshot,
         int storageLayerId)
     {
@@ -213,7 +213,7 @@ public static class MetadataV2GraphSnapshotExtensions
         return snapshot.Index.ConnectionsById.TryGetValue(binding.ConnectionId, out var c) ? c : null;
     }
 
-    public static MetadataV2Publication? FindPublicationOnService(
+    public static MetadataV2Layer? FindPublicationOnService(
         this MetadataV2GraphSnapshot snapshot,
         string serviceId,
         string serviceLocalIdOrPath)
@@ -235,7 +235,7 @@ public static class MetadataV2GraphSnapshotExtensions
         return null;
     }
 
-    public static MetadataV2Publication? FindPublicationByLayerIndex(
+    public static MetadataV2Layer? FindPublicationByLayerIndex(
         this MetadataV2GraphSnapshot snapshot,
         string serviceId,
         int layerIndex)

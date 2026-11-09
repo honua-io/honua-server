@@ -108,7 +108,7 @@ internal static class TileJsonEndpoints
 
     internal static int ResolveExtentStorageLayerId(
         MetadataV2GraphSnapshot? snapshot,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Resource? resource,
         int routeLayerId)
     {
@@ -116,7 +116,7 @@ internal static class TileJsonEndpoints
         return storageLayerId ?? publication.LayerIndex ?? routeLayerId;
     }
 
-    internal static int ResolvePublicTileLayerId(MetadataV2Publication publication, int routeLayerId)
+    internal static int ResolvePublicTileLayerId(MetadataV2Layer publication, int routeLayerId)
         => publication.LayerIndex ?? routeLayerId;
 
     private static async Task<FeatureExtent?> ResolveExtentAsync(

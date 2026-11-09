@@ -76,7 +76,7 @@ public class PrintingToolsRequestHandlerTests
                 ResourceId = "resource", StorageLayerId = 7,
                 Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
             }],
-            Publications = [new MetadataV2Publication
+            Publications = [new MetadataV2Layer
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = "publication", Name = "publication", Tenant = tenantVisible ? "tenant-a" : "tenant-b" },
                 ServiceId = "service", ResourceId = "resource", StorageBindingId = "binding", LayerIndex = 1,
@@ -149,7 +149,7 @@ public class PrintingToolsRequestHandlerTests
                 ResourceId = "resource", StorageLayerId = 7,
                 Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
             }],
-            Publications = [new MetadataV2Publication
+            Publications = [new MetadataV2Layer
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = "publication", Name = "publication" },
                 ServiceId = "service", ResourceId = "resource", StorageBindingId = "binding", LayerIndex = 1,

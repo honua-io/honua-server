@@ -63,7 +63,7 @@ public sealed record MetadataSemanticInventoryEntry
     public MetadataV2ServiceType? ServiceType { get; init; }
 
     [JsonPropertyName("publicationType")]
-    public MetadataV2PublicationType? PublicationType { get; init; }
+    public MetadataV2LayerType? PublicationType { get; init; }
 
     [JsonPropertyName("parentSemanticId")]
     public string? ParentSemanticId { get; init; }
@@ -229,7 +229,7 @@ public sealed record MetadataBoundPublicationSummary
     public required string ServiceId { get; init; }
 
     [JsonPropertyName("publicationType")]
-    public required MetadataV2PublicationType PublicationType { get; init; }
+    public required MetadataV2LayerType PublicationType { get; init; }
 
     [JsonPropertyName("path")]
     public string? Path { get; init; }

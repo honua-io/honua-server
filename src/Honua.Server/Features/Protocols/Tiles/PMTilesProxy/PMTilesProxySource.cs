@@ -11,7 +11,7 @@ namespace Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 internal sealed record PMTilesPublishedSource(
     MetadataV2Resource Resource,
     MetadataV2Service Service,
-    MetadataV2Publication Publication);
+    MetadataV2Layer Publication);
 
 internal static class PMTilesProxySourceResolver
 {
@@ -270,7 +270,7 @@ internal static class PMTilesProxySourceResolver
         return source;
     }
 
-    private static MetadataV2Publication? FindLayerPublication(
+    private static MetadataV2Layer? FindLayerPublication(
         MetadataV2GraphSnapshot snapshot,
         string serviceId,
         int layerId)

@@ -30,7 +30,7 @@ public sealed class MetadataV2EditCapabilitiesTests
     public void ResolveDeclared_PublicationCapabilities_WinOverService()
     {
         var service = ServiceWithCapabilities("Query", "Create", "Update", "Delete");
-        var publication = new MetadataV2Publication { Capabilities = ["Query", "Extract"] };
+        var publication = new MetadataV2Layer { Capabilities = ["Query", "Extract"] };
 
         MetadataV2EditCapabilities.ResolveDeclared(service, publication)
             .Should().BeEquivalentTo(["Query", "Extract"]);
@@ -41,7 +41,7 @@ public sealed class MetadataV2EditCapabilitiesTests
     public void ResolveDeclared_EmptyPublicationCapabilities_FallsBackToService()
     {
         var service = ServiceWithCapabilities("Query", "Create");
-        var publication = new MetadataV2Publication();
+        var publication = new MetadataV2Layer();
 
         MetadataV2EditCapabilities.ResolveDeclared(service, publication)
             .Should().BeEquivalentTo(["Query", "Create"]);
@@ -52,7 +52,7 @@ public sealed class MetadataV2EditCapabilitiesTests
     public void ResolveDeclared_NothingDeclaredAnywhere_ReturnsNull()
     {
         MetadataV2EditCapabilities
-            .ResolveDeclared(new MetadataV2Service(), new MetadataV2Publication())
+            .ResolveDeclared(new MetadataV2Service(), new MetadataV2Layer())
             .Should().BeNull();
     }
 
@@ -61,7 +61,7 @@ public sealed class MetadataV2EditCapabilitiesTests
     public void Resolve_NothingDeclaredAnywhere_FallsBackToQueryOnly()
     {
         MetadataV2EditCapabilities
-            .Resolve(new MetadataV2Service(), new MetadataV2Publication())
+            .Resolve(new MetadataV2Service(), new MetadataV2Layer())
             .Should().BeEquivalentTo(["Query"]);
     }
 
@@ -73,7 +73,7 @@ public sealed class MetadataV2EditCapabilitiesTests
         // publication it creates, and it is exactly the set that used to let an OGC API
         // Features insert through unannounced (#4707).
         var service = new MetadataV2Service();
-        var publication = new MetadataV2Publication { Capabilities = ["Query", "Extract"] };
+        var publication = new MetadataV2Layer { Capabilities = ["Query", "Extract"] };
 
         MetadataV2EditCapabilities.Supports(service, publication, MetadataV2EditCapabilities.Create)
             .Should().BeFalse();
@@ -88,7 +88,7 @@ public sealed class MetadataV2EditCapabilitiesTests
     public void Supports_EditingUmbrellaToken_CoversEveryEditKind()
     {
         var service = new MetadataV2Service();
-        var publication = new MetadataV2Publication { Capabilities = ["Query", "Editing"] };
+        var publication = new MetadataV2Layer { Capabilities = ["Query", "Editing"] };
 
         MetadataV2EditCapabilities.Supports(service, publication, MetadataV2EditCapabilities.Create)
             .Should().BeTrue();
@@ -103,7 +103,7 @@ public sealed class MetadataV2EditCapabilitiesTests
     public void Supports_CapabilityTokenComparisonIgnoresCase()
     {
         var service = new MetadataV2Service();
-        var publication = new MetadataV2Publication { Capabilities = ["query", "create"] };
+        var publication = new MetadataV2Layer { Capabilities = ["query", "create"] };
 
         MetadataV2EditCapabilities.Supports(service, publication, MetadataV2EditCapabilities.Create)
             .Should().BeTrue();
@@ -114,7 +114,7 @@ public sealed class MetadataV2EditCapabilitiesTests
     public void SupportsDeclared_DeclaredSetOmittingOperation_IsFalse()
     {
         var service = new MetadataV2Service();
-        var publication = new MetadataV2Publication { Capabilities = ["Query", "Extract"] };
+        var publication = new MetadataV2Layer { Capabilities = ["Query", "Extract"] };
 
         MetadataV2EditCapabilities
             .SupportsDeclared(service, publication, MetadataV2EditCapabilities.Create)
@@ -128,7 +128,7 @@ public sealed class MetadataV2EditCapabilitiesTests
         var service = ServiceWithCapabilities("Query", "Create");
 
         MetadataV2EditCapabilities
-            .SupportsDeclared(service, new MetadataV2Publication(), MetadataV2EditCapabilities.Create)
+            .SupportsDeclared(service, new MetadataV2Layer(), MetadataV2EditCapabilities.Create)
             .Should().BeTrue();
     }
 
@@ -140,7 +140,7 @@ public sealed class MetadataV2EditCapabilitiesTests
         // publications. Enforcement must read that silence as "no statement" rather than as
         // a denial, or editing disappears for deployments that never opted out of it.
         MetadataV2EditCapabilities
-            .SupportsDeclared(new MetadataV2Service(), new MetadataV2Publication(), MetadataV2EditCapabilities.Create)
+            .SupportsDeclared(new MetadataV2Service(), new MetadataV2Layer(), MetadataV2EditCapabilities.Create)
             .Should().BeNull();
     }
 }

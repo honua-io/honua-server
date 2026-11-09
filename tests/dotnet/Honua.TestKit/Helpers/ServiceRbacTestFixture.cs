@@ -368,14 +368,14 @@ public sealed class RbacTestLayerCatalog : ITestMetadataV2GraphSource
                     serviceId,
                     $"res-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
                     layerIndex: layerId,
-                    publicationType: MetadataV2PublicationType.ODataEntitySet,
+                    publicationType: MetadataV2LayerType.ODataEntitySet,
                     isPrimary: isPrimary);
                 builder.AddPublication(
                     $"{serviceId}-feature-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
                     serviceId,
                     $"res-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
                     layerIndex: layerId,
-                    publicationType: MetadataV2PublicationType.EsriFeatureLayer,
+                    publicationType: MetadataV2LayerType.EsriFeatureLayer,
                     isPrimary: isPrimary);
             }
         }

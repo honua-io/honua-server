@@ -272,7 +272,7 @@ public static class MobileOfflineDemoGraphPublisher
         };
     }
 
-    private static MetadataV2Publication CreateFeaturePublication(int layerId)
+    private static MetadataV2Layer CreateFeaturePublication(int layerId)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata
@@ -284,15 +284,15 @@ public static class MobileOfflineDemoGraphPublisher
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             ResourceId = ResourceId(layerId),
             StorageBindingId = BindingId(layerId),
-            Identifier = new MetadataV2PublicationIdentifier
+            Identifier = new MetadataV2LayerIdentifier
             {
                 Value = layerId.ToString(CultureInfo.InvariantCulture),
                 IsNumeric = true
             },
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer
+            PublicationType = MetadataV2LayerType.EsriFeatureLayer
         };
 
-    private static MetadataV2Publication CreateOgcPublication(int layerId)
+    private static MetadataV2Layer CreateOgcPublication(int layerId)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata
@@ -304,12 +304,12 @@ public static class MobileOfflineDemoGraphPublisher
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             ResourceId = ResourceId(layerId),
             StorageBindingId = BindingId(layerId),
-            Identifier = new MetadataV2PublicationIdentifier
+            Identifier = new MetadataV2LayerIdentifier
             {
                 Value = layerId.ToString(CultureInfo.InvariantCulture),
                 IsNumeric = true
             },
-            PublicationType = MetadataV2PublicationType.OgcCollection
+            PublicationType = MetadataV2LayerType.OgcCollection
         };
 
     private static MetadataV2Field Field(

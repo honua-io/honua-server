@@ -31,7 +31,7 @@ internal sealed class StacMappingService
     private static GeoJsonWriter GetGeoJsonWriter() => _geoJsonWriter ??= new GeoJsonWriter();
     public static async Task<StacCollection> MapResourceToCollectionAsync(
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Service service,
         int layerIndex,
         int? storageLayerId,
@@ -207,7 +207,7 @@ internal sealed class StacMappingService
     }
 
     internal static string ResolveDisplayName(
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Resource resource,
         int layerIndex)
     {
@@ -222,7 +222,7 @@ internal sealed class StacMappingService
     public static StacItem MapFeatureToItem(
         Feature feature,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int layerIndex,
         string baseUrl,
         IReadOnlySet<string>? selectedProperties = null,

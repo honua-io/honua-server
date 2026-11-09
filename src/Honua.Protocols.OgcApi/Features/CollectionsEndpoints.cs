@@ -129,7 +129,7 @@ internal static class CollectionsEndpoints
             // canonical publication leaks the canonical boundary (see
             // OgcServiceBoundaryTests.GetCollections_WithSharedLayerInSecondaryService_DoesNotLeakCanonicalBoundary).
             // First pass: discover the canonical (IsPrimary) OgcFeatures publication per resource.
-            var canonicalByResource = new Dictionary<string, (MetadataV2Publication Publication, MetadataV2Service Service)>(StringComparer.OrdinalIgnoreCase);
+            var canonicalByResource = new Dictionary<string, (MetadataV2Layer Publication, MetadataV2Service Service)>(StringComparer.OrdinalIgnoreCase);
             foreach (var publication in snapshot.Graph.Publications)
             {
                 if (!publication.IsPrimary)
@@ -156,7 +156,7 @@ internal static class CollectionsEndpoints
                 canonicalByResource[resource!.Metadata.Id] = (publication, service);
             }
 
-            var publicationsByResource = new Dictionary<string, (MetadataV2Publication Publication, MetadataV2Service Service, MetadataV2Resource Resource)>(StringComparer.OrdinalIgnoreCase);
+            var publicationsByResource = new Dictionary<string, (MetadataV2Layer Publication, MetadataV2Service Service, MetadataV2Resource Resource)>(StringComparer.OrdinalIgnoreCase);
             foreach (var publication in snapshot.Graph.Publications)
             {
                 if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service))
@@ -518,7 +518,7 @@ internal static class CollectionsEndpoints
     /// </summary>
     private static async Task<CollectionInfo> CreateCollectionAsync(
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Service? service,
         MetadataV2GraphSnapshot snapshot,
         string baseUrl,

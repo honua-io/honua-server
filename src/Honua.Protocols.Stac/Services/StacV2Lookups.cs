@@ -11,7 +11,7 @@ namespace Honua.Protocols.Stac.Services;
 internal static class StacV2Lookups
 {
     internal readonly record struct ResolvedStacPublication(
-        MetadataV2Publication Publication,
+        MetadataV2Layer Publication,
         MetadataV2Resource Resource,
         MetadataV2Service Service,
         int LayerIndex,
@@ -153,7 +153,7 @@ internal static class StacV2Lookups
         return null;
     }
 
-    internal static bool MatchesCollectionId(MetadataV2Publication publication, string collectionId, int? numericId)
+    internal static bool MatchesCollectionId(MetadataV2Layer publication, string collectionId, int? numericId)
     {
         if (string.Equals(publication.ServiceLocalId, collectionId, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(publication.Path, collectionId, StringComparison.OrdinalIgnoreCase) ||
@@ -166,8 +166,8 @@ internal static class StacV2Lookups
         return numericId.HasValue && publication.LayerIndex == numericId.Value;
     }
 
-    private static bool IsStacCollectionPublication(MetadataV2Publication publication)
-        => publication.PublicationType == MetadataV2PublicationType.StacCollection;
+    private static bool IsStacCollectionPublication(MetadataV2Layer publication)
+        => publication.PublicationType == MetadataV2LayerType.StacCollection;
 
     private static async Task<MetadataV2GraphSnapshot> GetSnapshotAsync(
         HttpContext context,

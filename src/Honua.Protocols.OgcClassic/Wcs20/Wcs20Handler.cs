@@ -585,7 +585,7 @@ internal sealed partial class Wcs20Handler
         // Walk publications on the WCS-enabled service, dedupe by resource (prefer
         // IsPrimary) so a resource exposed through multiple publications is listed once,
         // then keep only those backed by a raster the IRasterStore can serve.
-        var byResource = new Dictionary<string, (MetadataV2Publication Publication, MetadataV2Resource Resource, int StorageLayerId)>(StringComparer.Ordinal);
+        var byResource = new Dictionary<string, (MetadataV2Layer Publication, MetadataV2Resource Resource, int StorageLayerId)>(StringComparer.Ordinal);
         foreach (var publication in snapshot.Index.PublicationsByService[service.Service!.Metadata.Id])
         {
             var resource = snapshot.ResolveResource(publication);

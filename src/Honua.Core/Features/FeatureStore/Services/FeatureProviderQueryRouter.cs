@@ -63,7 +63,7 @@ public sealed class FeatureProviderQueryRouter
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         FeatureProviderReadOperation operation,
         CancellationToken cancellationToken = default)
@@ -98,7 +98,7 @@ public sealed class FeatureProviderQueryRouter
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
         MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int storageLayerId,
         FeatureProviderReadOperation operation,
         CancellationToken cancellationToken = default)
@@ -191,7 +191,7 @@ public sealed class FeatureProviderQueryRouter
     }
 
     private static MetadataV2StorageBinding ResolveAuthorizedStorageBinding(
-        MetadataV2GraphSnapshot snapshot, MetadataV2Resource resource, MetadataV2Publication publication)
+        MetadataV2GraphSnapshot snapshot, MetadataV2Resource resource, MetadataV2Layer publication)
     {
         if (publication.ResourceId != resource.Metadata.Id ||
             (!string.IsNullOrWhiteSpace(publication.StorageBindingId) &&

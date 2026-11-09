@@ -479,7 +479,7 @@ internal static class OgcRecordsEndpoints
 
     private static CatalogRecord CreateServiceRecord(
         MetadataV2Service service,
-        (MetadataV2Publication Publication, MetadataV2Resource? Resource)[] visiblePublications,
+        (MetadataV2Layer Publication, MetadataV2Resource? Resource)[] visiblePublications,
         MetadataV2GraphSnapshot snapshot,
         string baseUrl,
         DateTimeOffset? modified,
@@ -540,7 +540,7 @@ internal static class OgcRecordsEndpoints
 
     private static CatalogRecord CreateResourceRecord(
         MetadataV2Resource resource,
-        MetadataV2Publication? publication,
+        MetadataV2Layer? publication,
         MetadataV2Service? service,
         MetadataV2GraphSnapshot snapshot,
         string baseUrl,

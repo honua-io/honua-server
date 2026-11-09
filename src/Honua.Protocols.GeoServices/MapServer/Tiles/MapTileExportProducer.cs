@@ -170,8 +170,8 @@ internal static class MapTileExportLayerResolver
         return true;
     }
 
-    private static MetadataV2Publication ResolvePublication(
-        Dictionary<int, MetadataV2Publication> publicationsByLayerId,
+    private static MetadataV2Layer ResolvePublication(
+        Dictionary<int, MetadataV2Layer> publicationsByLayerId,
         MetadataV2Service service,
         TileExportMapLayerSelection selection)
     {
@@ -182,7 +182,7 @@ internal static class MapTileExportLayerResolver
                 $"MapServer layer '{selection.LayerId}' is not published on service '{service.Metadata.Id}' in the pinned metadata revision.");
     }
 
-    private static Dictionary<int, MetadataV2Publication> ResolvePublicationsByLayerId(
+    private static Dictionary<int, MetadataV2Layer> ResolvePublicationsByLayerId(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service)
         => MapServerPublicationResolver.ResolveLayerPublications(

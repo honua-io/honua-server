@@ -57,7 +57,7 @@ internal static class WmtsRequestHandlers
 
     private readonly record struct WmtsLayer(
         MetadataV2Resource Resource,
-        MetadataV2Publication Publication,
+        MetadataV2Layer Publication,
         int StorageLayerId,
         string Identifier);
 
@@ -1945,7 +1945,7 @@ internal static class WmtsRequestHandlers
 
         // Treat all WmtsLayer wrappers identically here: dimension validation only consults
         // the resource (name + temporal extension), not the publication or storage handle.
-        var dummyLayer = new WmtsLayer(resource, new MetadataV2Publication(), 0, string.Empty);
+        var dummyLayer = new WmtsLayer(resource, new MetadataV2Layer(), 0, string.Empty);
         var dimensions = GetWmtsDimensionDefinitions(dummyLayer);
 
         // WMTS 1.0 sections 7.2.2.2 and 7.3.2.2 require unknown KVP keys,

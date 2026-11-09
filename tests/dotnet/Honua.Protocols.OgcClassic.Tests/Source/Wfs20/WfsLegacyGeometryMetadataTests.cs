@@ -401,7 +401,7 @@ public sealed class WfsLegacyGeometryMetadataTests
                 .AddPublication($"publication-{name}", "legacy-geometry-service", name,
                     layerIndex: layerId,
                     storageBindingId: $"binding-{name}", serviceLocalId: name,
-                    publicationType: MetadataV2PublicationType.WfsFeatureType);
+                    publicationType: MetadataV2LayerType.WfsFeatureType);
         }
 
         return new TestMetadataV2GraphProvider(builder.Build());

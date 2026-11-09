@@ -96,12 +96,12 @@ public sealed partial class LayerReadSecurityResolverTests
             Protocols = [ServiceProtocols.OData],
             SpatialReference = MetadataV2SpatialReference.Wgs84
         }).ToArray();
-        var publications = resources.Select((item, index) => new MetadataV2Publication
+        var publications = resources.Select((item, index) => new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = $"pub-{item.Metadata.Id}", Name = item.Metadata.Name },
             ServiceId = services[index].Metadata.Id,
             ResourceId = item.Metadata.Id,
-            PublicationType = MetadataV2PublicationType.ODataEntitySet,
+            PublicationType = MetadataV2LayerType.ODataEntitySet,
             LayerIndex = LayerId
         }).ToArray();
         var graph = new MetadataV2Graph { Revision = 1, Resources = resources, Services = services, Publications = publications };

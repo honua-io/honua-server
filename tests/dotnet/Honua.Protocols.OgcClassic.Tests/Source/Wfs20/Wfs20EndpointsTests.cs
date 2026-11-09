@@ -366,7 +366,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
                 layerIndex: ProjectedExtentLayerCatalog.LayerId,
                 storageBindingId: StorageBindingId,
                 serviceLocalId: "projected_metadata_layer",
-                publicationType: MetadataV2PublicationType.WfsFeatureType)
+                publicationType: MetadataV2LayerType.WfsFeatureType)
             .Build();
 
         return new TestMetadataV2GraphProvider(graph);
@@ -420,14 +420,14 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
                 layerIndex: WebAppFixture.TestLayerId,
                 storageBindingId: StorageBindingId,
                 serviceLocalId: "prefixed_fields_layer",
-                publicationType: MetadataV2PublicationType.WfsFeatureType)
+                publicationType: MetadataV2LayerType.WfsFeatureType)
             .AddPublication(
                 "pub-prefixed-fields-ogc-features",
                 OgcFeaturesServiceId,
                 ResourceId,
                 storageBindingId: StorageBindingId,
                 serviceLocalId: "prefixed_fields_layer",
-                publicationType: MetadataV2PublicationType.OgcCollection)
+                publicationType: MetadataV2LayerType.OgcCollection)
             .Build();
 
         return new TestMetadataV2GraphProvider(graph);
@@ -473,7 +473,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
                 layerIndex: 0,
                 storageBindingId: StorageBindingId,
                 serviceLocalId: "field_types",
-                publicationType: MetadataV2PublicationType.WfsFeatureType)
+                publicationType: MetadataV2LayerType.WfsFeatureType)
             .Build();
 
         return new TestMetadataV2GraphProvider(graph);
@@ -592,7 +592,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
                 layerIndex: SeededPointStorageLayerId,
                 storageBindingId: StorageBindingId,
                 serviceLocalId: GeometryFromTypeTypeName,
-                publicationType: MetadataV2PublicationType.WfsFeatureType)
+                publicationType: MetadataV2LayerType.WfsFeatureType)
             .Build();
 
         return new TestMetadataV2GraphProvider(graph);

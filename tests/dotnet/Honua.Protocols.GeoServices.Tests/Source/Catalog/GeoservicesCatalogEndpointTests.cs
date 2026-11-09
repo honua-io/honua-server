@@ -950,7 +950,7 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
                 "res-soap-competing",
                 layerIndex: publicationLayerIndex,
                 serviceLocalId: publicationLayerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2LayerType.EsriImageLayer)
             .AddResource(
                 "res-soap-storage",
                 "SOAP storage raster",
@@ -973,7 +973,7 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
                 "res-soap-storage",
                 layerIndex: publicationLayerIndex,
                 serviceLocalId: publicationLayerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2LayerType.EsriImageLayer)
             .Build();
         var provider = new TestMetadataV2GraphProvider(graph);
         var rasterStore = Substitute.For<IRasterStore>();
@@ -1103,13 +1103,13 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
                 "selection-image",
                 "res-soap-empty",
                 layerIndex: 0,
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2LayerType.EsriImageLayer)
             .AddPublication(
                 "pub-soap-data",
                 "selection-image",
                 "res-soap-data",
                 layerIndex: 1,
-                publicationType: MetadataV2PublicationType.EsriImageLayer)
+                publicationType: MetadataV2LayerType.EsriImageLayer)
             .Build();
         var provider = new TestMetadataV2GraphProvider(graph);
         var rasterStore = Substitute.For<IRasterStore>();

@@ -77,7 +77,7 @@ public sealed class SnowflakeFeatureStoreIntegrationTests
         return ((IBindableFeatureDataProvider)provider).CreateReaderForBinding(binding);
     }
 
-    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Publication Publication)
+    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Layer Publication)
         CreateSnapshot()
     {
         var connectionId = Guid.NewGuid();
@@ -117,13 +117,13 @@ public sealed class SnowflakeFeatureStoreIntegrationTests
             Metadata = new MetadataV2ObjectMetadata { Id = connectionId.ToString(), Name = "secure" },
             Provider = DataProviderNames.Snowflake
         };
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "pub-parcels", Name = "Parcels" },
             ServiceId = service.Metadata.Id,
             ResourceId = resource.Metadata.Id,
             StorageBindingId = storageBinding.Metadata.Id,
-            Identifier = new MetadataV2PublicationIdentifier { Value = "1", IsNumeric = true }
+            Identifier = new MetadataV2LayerIdentifier { Value = "1", IsNumeric = true }
         };
         var graph = new MetadataV2Graph
         {

@@ -157,9 +157,9 @@ public sealed class GeoServicesPublicationTenantTests
             .AddService("maps", "maps", protocols: [ServiceProtocols.MapServer, ServiceProtocols.VectorTileServer],
                 accessPolicy: new() { AllowAnonymous = true })
             .AddPublication("public-pub", "maps", "public", layerIndex: 11, storageBindingId: "public-binding",
-                publicationType: MetadataV2PublicationType.EsriMapLayer)
+                publicationType: MetadataV2LayerType.EsriMapLayer)
             .AddPublication("private-pub", "maps", "private", layerIndex: 22, storageBindingId: "private-binding",
-                publicationType: MetadataV2PublicationType.EsriMapLayer, isPrimary: true)
+                publicationType: MetadataV2LayerType.EsriMapLayer, isPrimary: true)
             .Build();
         return graph with
         {

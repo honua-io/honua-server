@@ -309,7 +309,7 @@ public class SnowflakeProviderResolutionTests
             connection);
     }
 
-    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Publication Publication)
+    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Layer Publication)
         CreateSnapshot(Guid connectionId, string providerAlias = DataProviderNames.Snowflake)
     {
         var service = new MetadataV2Service
@@ -361,13 +361,13 @@ public class SnowflakeProviderResolutionTests
             Metadata = new MetadataV2ObjectMetadata { Id = connectionId.ToString(), Name = "secure" },
             Provider = providerAlias
         };
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "pub-parcels", Name = "Parcels" },
             ServiceId = service.Metadata.Id,
             ResourceId = resource.Metadata.Id,
             StorageBindingId = storageBinding.Metadata.Id,
-            Identifier = new MetadataV2PublicationIdentifier { Value = LayerId.ToString(CultureInfo.InvariantCulture), IsNumeric = true }
+            Identifier = new MetadataV2LayerIdentifier { Value = LayerId.ToString(CultureInfo.InvariantCulture), IsNumeric = true }
         };
         var graph = new MetadataV2Graph
         {

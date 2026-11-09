@@ -527,7 +527,7 @@ internal static partial class FeatureServerEndpoints
 
     private static int? ResolveFeatureServerStorageLayerIdV2(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Resource resource)
         => snapshot.ResolveStorageLayerId(publication)
            ?? snapshot.ResolveStorageLayerId(resource)

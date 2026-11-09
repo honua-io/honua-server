@@ -112,13 +112,13 @@ public sealed class FeatureLayerCopyPublicationTenantTests
         Locator = "public." + suffix
     };
 
-    private static MetadataV2Publication CreatePublication(string suffix, string tenant) => new()
+    private static MetadataV2Layer CreatePublication(string suffix, string tenant) => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "publication-" + suffix, Tenant = tenant },
         ResourceId = "resource",
         ServiceId = "service",
         StorageBindingId = "binding-" + suffix,
         LayerIndex = suffix == "allowed" ? 1 : 999,
-        PublicationType = MetadataV2PublicationType.EsriFeatureLayer
+        PublicationType = MetadataV2LayerType.EsriFeatureLayer
     };
 }
