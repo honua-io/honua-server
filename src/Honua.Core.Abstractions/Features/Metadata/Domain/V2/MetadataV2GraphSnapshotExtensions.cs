@@ -25,13 +25,20 @@ public static class MetadataV2GraphSnapshotExtensions
         }
 
         var binding = snapshot.ResolveStorageBinding(publication);
-        return binding is null || binding.IsRoutable(resource);
+        return binding is null || snapshot.IsRoutable(binding, resource);
     }
+
+    public static bool IsRoutable(
+        this MetadataV2GraphSnapshot snapshot,
+        MetadataV2StorageBinding binding,
+        MetadataV2Resource? resource)
+        => binding.IsRoutable(resource) && IsUnderstoodConnection(snapshot.ResolveConnection(binding));
 
     public static bool IsRoutable(this MetadataV2Service service)
     {
         ArgumentNullException.ThrowIfNull(service);
-        return IsServingStatus(service.Status);
+        return IsKnownEnumValue(service.ServiceType, MetadataV2ServiceType.Unknown) &&
+            IsServingStatus(service.Status);
     }
 
     // Retired entries stay addressable for administration and must not be served.
@@ -40,20 +47,32 @@ public static class MetadataV2GraphSnapshotExtensions
         MetadataV2Resource? resource)
     {
         ArgumentNullException.ThrowIfNull(publication);
-        return IsServingStatus(publication.Status) &&
-               resource is not null &&
-               IsServingStatus(resource.Status);
+        return IsKnownEnumValue(publication.PublicationType, MetadataV2PublicationType.Unknown) &&
+               IsServingStatus(publication.Status) && IsServingResource(resource);
     }
 
-    public static bool IsRoutable(
+    private static bool IsRoutable(
         this MetadataV2StorageBinding binding,
         MetadataV2Resource? resource)
     {
         ArgumentNullException.ThrowIfNull(binding);
-        return IsServingStatus(binding.Status) &&
-               resource is not null &&
-               IsServingStatus(resource.Status);
+        return IsKnownEnumValue(binding.StorageType, MetadataV2StorageType.Unknown) &&
+               IsServingStatus(binding.Status) && IsServingResource(resource);
     }
+
+    private static bool IsServingResource(MetadataV2Resource? resource)
+        => resource is not null &&
+           IsKnownEnumValue(resource.Type, MetadataV2ResourceType.Unknown) && IsServingStatus(resource.Status);
+
+    private static bool IsUnderstoodConnection(MetadataV2Connection? connection)
+        => connection is null ||
+           IsKnownEnumValue(connection.Type, MetadataV2ConnectionType.Unknown) &&
+           (connection.Status is null ||
+            IsKnownEnumValue(connection.Status.Lifecycle, MetadataV2LifecycleStatus.Unknown));
+
+    private static bool IsKnownEnumValue<TEnum>(TEnum value, TEnum unknownValue)
+        where TEnum : struct, Enum
+        => Enum.IsDefined(value) && !EqualityComparer<TEnum>.Default.Equals(value, unknownValue);
 
     // A missing status object is an omitted caller value, not an explicit draft.
     // JSON deserialization can leave the non-nullable property null when the

@@ -6,9 +6,11 @@ using System.Text.Json.Serialization;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Core.Features.Security.Domain;
 
+using Honua.Core.Serialization;
+
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-public sealed record MetadataV2Graph
+public sealed record MetadataV2Graph : ExtensibleJsonRecord
 {
     private IReadOnlyList<MetadataV2Folder>? _folders;
     private IReadOnlyList<MetadataV2ServicePathAlias>? _servicePathAliases;
@@ -86,7 +88,7 @@ public sealed record MetadataV2Graph
     public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
 }
 
-public sealed record MetadataV2Resource
+public sealed record MetadataV2Resource : ExtensibleJsonRecord
 {
     private string? _primaryStorageBindingId;
     private IReadOnlyList<string>? _storageBindingIds;
@@ -101,8 +103,16 @@ public sealed record MetadataV2Resource
     [JsonPropertyName("metadata")]
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
 
+    [JsonIgnore]
+    public MetadataV2ResourceType Type
+    {
+        get => TypeValue.Value;
+        init => TypeValue = value;
+    }
+
     [JsonPropertyName("type")]
-    public MetadataV2ResourceType Type { get; init; } = MetadataV2ResourceType.FeatureDataset;
+    [JsonConverter(typeof(PreservedEnumJsonConverter<MetadataV2ResourceType>))]
+    public PreservedEnumValue<MetadataV2ResourceType> TypeValue { get; init; } = MetadataV2ResourceType.FeatureDataset;
 
     [JsonPropertyName("storageBindingIds")]
     public IReadOnlyList<string> StorageBindingIds
@@ -209,7 +219,7 @@ public sealed record MetadataV2Resource
         new Dictionary<string, JsonElement>();
 }
 
-public sealed record MetadataV2ResourceDisplay
+public sealed record MetadataV2ResourceDisplay : ExtensibleJsonRecord
 {
     [JsonPropertyName("minScale")]
     public double? MinScale { get; init; }
@@ -233,7 +243,7 @@ public sealed record MetadataV2ResourceDisplay
     public bool HasM { get; init; }
 }
 
-public sealed record MetadataV2ResourceEditing
+public sealed record MetadataV2ResourceEditing : ExtensibleJsonRecord
 {
     [JsonPropertyName("globalIdField")]
     public string? GlobalIdField { get; init; }
@@ -260,13 +270,21 @@ public sealed record MetadataV2ResourceEditing
     public bool SupportsRelatedRecords { get; init; } = true;
 }
 
-public sealed record MetadataV2Connection
+public sealed record MetadataV2Connection : ExtensibleJsonRecord
 {
     [JsonPropertyName("metadata")]
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
 
+    [JsonIgnore]
+    public MetadataV2ConnectionType Type
+    {
+        get => TypeValue.Value;
+        init => TypeValue = value;
+    }
+
     [JsonPropertyName("type")]
-    public MetadataV2ConnectionType Type { get; init; } = MetadataV2ConnectionType.Managed;
+    [JsonConverter(typeof(PreservedEnumJsonConverter<MetadataV2ConnectionType>))]
+    public PreservedEnumValue<MetadataV2ConnectionType> TypeValue { get; init; } = MetadataV2ConnectionType.Managed;
 
     [JsonPropertyName("provider")]
     public string? Provider { get; init; }
@@ -287,7 +305,7 @@ public sealed record MetadataV2Connection
     public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
 }
 
-public sealed record MetadataV2StorageBinding
+public sealed record MetadataV2StorageBinding : ExtensibleJsonRecord
 {
     [JsonPropertyName("metadata")]
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
@@ -298,8 +316,16 @@ public sealed record MetadataV2StorageBinding
     [JsonPropertyName("connectionId")]
     public string? ConnectionId { get; init; }
 
+    [JsonIgnore]
+    public MetadataV2StorageType StorageType
+    {
+        get => StorageTypeValue.Value;
+        init => StorageTypeValue = value;
+    }
+
     [JsonPropertyName("storageType")]
-    public MetadataV2StorageType StorageType { get; init; } = MetadataV2StorageType.RelationalTable;
+    [JsonConverter(typeof(PreservedEnumJsonConverter<MetadataV2StorageType>))]
+    public PreservedEnumValue<MetadataV2StorageType> StorageTypeValue { get; init; } = MetadataV2StorageType.RelationalTable;
 
     [JsonPropertyName("locator")]
     public string Locator { get; init; } = string.Empty;
@@ -308,9 +334,16 @@ public sealed record MetadataV2StorageBinding
     [JsonPropertyName("storageLayerId")]
     public int? StorageLayerId { get; init; }
 
+    [JsonIgnore]
+    public IReadOnlyList<MetadataV2StorageBindingCapability> Capabilities
+    {
+        get => CapabilityValues.Select(value => value.Value).ToArray();
+        init => CapabilityValues = value.Select(capability => new PreservedEnumValue<MetadataV2StorageBindingCapability>(capability)).ToArray();
+    }
+
     [JsonPropertyName("capabilities")]
-    public IReadOnlyList<MetadataV2StorageBindingCapability> Capabilities { get; init; } =
-        Array.Empty<MetadataV2StorageBindingCapability>();
+    [JsonConverter(typeof(PreservedEnumListJsonConverter<MetadataV2StorageBindingCapability>))]
+    public IReadOnlyList<PreservedEnumValue<MetadataV2StorageBindingCapability>> CapabilityValues { get; init; } = [];
 
     [JsonPropertyName("options")]
     public IReadOnlyDictionary<string, JsonElement> Options { get; init; } = new Dictionary<string, JsonElement>();
@@ -323,11 +356,11 @@ public sealed record MetadataV2StorageBinding
 
     public bool Supports(MetadataV2StorageBindingCapability capability)
     {
-        return Capabilities.Contains(capability);
+        return CapabilityValues.Any(value => value.Value == capability);
     }
 }
 
-public sealed record MetadataV2Service
+public sealed record MetadataV2Service : ExtensibleJsonRecord
 {
     [JsonPropertyName("folderId")]
     public string? FolderId { get; init; }
@@ -346,8 +379,16 @@ public sealed record MetadataV2Service
 
     private IReadOnlyList<string>? _protocols;
 
+    [JsonIgnore]
+    public MetadataV2ServiceType ServiceType
+    {
+        get => ServiceTypeValue.Value;
+        init => ServiceTypeValue = value;
+    }
+
     [JsonPropertyName("serviceType")]
-    public MetadataV2ServiceType ServiceType { get; init; } = MetadataV2ServiceType.OgcApiFeatures;
+    [JsonConverter(typeof(PreservedEnumJsonConverter<MetadataV2ServiceType>))]
+    public PreservedEnumValue<MetadataV2ServiceType> ServiceTypeValue { get; init; } = MetadataV2ServiceType.OgcApiFeatures;
 
     [JsonPropertyName("route")]
     public string? Route { get; init; }
@@ -399,7 +440,7 @@ public sealed record MetadataV2Service
         new Dictionary<string, JsonElement>();
 }
 
-public sealed record MetadataV2ServiceSettings
+public sealed record MetadataV2ServiceSettings : ExtensibleJsonRecord
 {
     [JsonPropertyName("maxRecordCount")]
     public int? MaxRecordCount { get; init; }
@@ -444,7 +485,7 @@ public sealed record MetadataV2ServiceSettings
     public long? MaxPayloadBytes { get; init; }
 }
 
-public sealed record MetadataV2Publication
+public sealed record MetadataV2Publication : ExtensibleJsonRecord
 {
     private int? _layerIndex;
     private string? _path;
@@ -462,8 +503,16 @@ public sealed record MetadataV2Publication
     [JsonPropertyName("storageBindingId")]
     public string? StorageBindingId { get; init; }
 
+    [JsonIgnore]
+    public MetadataV2PublicationType PublicationType
+    {
+        get => PublicationTypeValue.Value;
+        init => PublicationTypeValue = value;
+    }
+
     [JsonPropertyName("publicationType")]
-    public MetadataV2PublicationType PublicationType { get; init; } = MetadataV2PublicationType.OgcCollection;
+    [JsonConverter(typeof(PreservedEnumJsonConverter<MetadataV2PublicationType>))]
+    public PreservedEnumValue<MetadataV2PublicationType> PublicationTypeValue { get; init; } = MetadataV2PublicationType.OgcCollection;
 
     [JsonPropertyName("titleOverride")]
     public string? TitleOverride { get; init; }
@@ -520,7 +569,7 @@ public sealed record MetadataV2Publication
     public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
 }
 
-public sealed record MetadataV2Catalog
+public sealed record MetadataV2Catalog : ExtensibleJsonRecord
 {
     [JsonPropertyName("metadata")]
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
@@ -538,7 +587,7 @@ public sealed record MetadataV2Catalog
     public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
 }
 
-public sealed record MetadataV2ProjectionProfile
+public sealed record MetadataV2ProjectionProfile : ExtensibleJsonRecord
 {
     [JsonPropertyName("metadata")]
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
@@ -559,7 +608,7 @@ public sealed record MetadataV2ProjectionProfile
     public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
 }
 
-public sealed record MetadataV2Policy
+public sealed record MetadataV2Policy : ExtensibleJsonRecord
 {
     [JsonPropertyName("metadata")]
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
@@ -580,7 +629,7 @@ public sealed record MetadataV2Policy
     public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
 }
 
-public sealed record MetadataV2Role
+public sealed record MetadataV2Role : ExtensibleJsonRecord
 {
     [JsonPropertyName("metadata")]
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
@@ -598,7 +647,7 @@ public sealed record MetadataV2Role
     public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
 }
 
-public sealed record MetadataV2RuntimeSnapshot
+public sealed record MetadataV2RuntimeSnapshot : ExtensibleJsonRecord
 {
     [JsonPropertyName("metadata")]
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();

@@ -2,10 +2,14 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+using Honua.Core.Serialization;
 
 namespace Honua.Core.Features.Scene.Domain;
 
-public sealed record Symbology3D
+public sealed record Symbology3D : ExtensibleJsonRecord
 {
     public Symbology3DColor? DefaultColor { get; init; }
 
@@ -14,11 +18,20 @@ public sealed record Symbology3D
     public IReadOnlyList<Symbology3DRule> Rules { get; init; } = [];
 }
 
-public sealed record Symbology3DRule
+public sealed record Symbology3DRule : ExtensibleJsonRecord
 {
     public required string Attribute { get; init; }
 
-    public Symbology3DComparison Comparison { get; init; } = Symbology3DComparison.Equals;
+    [JsonIgnore]
+    public Symbology3DComparison Comparison
+    {
+        get => ComparisonValue.Value;
+        init => ComparisonValue = value;
+    }
+
+    [JsonPropertyName("comparison")]
+    [JsonConverter(typeof(PreservedNumericEnumJsonConverter<Symbology3DComparison>))]
+    public PreservedEnumValue<Symbology3DComparison> ComparisonValue { get; init; } = Symbology3DComparison.Equals;
 
     public string? Value { get; init; }
 
@@ -41,11 +54,29 @@ public enum Symbology3DComparison
 
     LessThan,
 
-    LessThanOrEqual
+    LessThanOrEqual,
+
+    Unknown = -1
 }
 
-public readonly record struct Symbology3DColor(byte Red, byte Green, byte Blue)
+public record struct Symbology3DColor(byte Red, byte Green, byte Blue)
 {
+    public byte Red { get; init; } = Red;
+
+    public byte Green { get; init; } = Green;
+
+    public byte Blue { get; init; } = Blue;
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? AdditionalProperties { get; set; }
+
+    public bool Equals(Symbology3DColor other)
+        => Red == other.Red && Green == other.Green && Blue == other.Blue &&
+           JsonExtensionDataEquality.Equals(AdditionalProperties, other.AdditionalProperties);
+
+    public override int GetHashCode()
+        => HashCode.Combine(Red, Green, Blue, JsonExtensionDataEquality.PropertyNamesHashCode(AdditionalProperties));
+
     public static Symbology3DColor White => new(255, 255, 255);
 
     public string ToHex() => string.Create(
