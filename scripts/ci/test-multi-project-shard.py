@@ -18,6 +18,21 @@ spec.loader.exec_module(multi)
 
 
 class MultiProjectTests(unittest.TestCase):
+    def test_every_registered_group_accepts_its_catalogued_resources(self):
+        config = json.loads(Path('.github/ci-shards.json').read_text())
+        catalog = json.loads(Path('.github/test-projects.json').read_text())['projects']
+        for shard in config['shards']:
+            if 'csprojs' in shard:
+                with self.subTest(shard=shard['name']):
+                    multi.validate_projects(shard['csprojs'], catalog)
+
+    def test_unknown_roles_and_resources_fail_closed(self):
+        for entry in ({}, {'role': 'integration', 'resources': []},
+                      {'role': 'unit', 'resources': None},
+                      {'role': 'component', 'resources': ['cloud']}):
+            with self.subTest(entry=entry), self.assertRaises(ValueError):
+                multi.validate_projects(['project'], {'project': entry})
+
     def run_group(self, outcomes):
         config = json.loads(Path('.github/ci-shards.json').read_text())
         projects = next(s['csprojs'] for s in config['shards'] if 'csprojs' in s)[:2]
