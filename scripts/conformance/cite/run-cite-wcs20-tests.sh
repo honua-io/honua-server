@@ -11,8 +11,6 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 CITE_COMPOSE_FILE="docker/cite/wcs20/compose.yml"
-source "$(dirname "${BASH_SOURCE[0]}")/../../ci/lib/isolate-test-compose.sh"
-honua_isolate_test_compose "$CITE_COMPOSE_FILE"
 CITE_RESULTS_DIR="cite-wcs20-results"
 CITE_TIMEOUT=2700
 HONUA_HEALTHCHECK_TIMEOUT=300

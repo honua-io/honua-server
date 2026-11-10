@@ -37,12 +37,6 @@ const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
   const pathname = url.pathname;
 
-  if (process.env.OL_TEST_PAGE_NONCE && pathname === `/__honua_test_page/${process.env.OL_TEST_PAGE_NONCE}`) {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Ready');
-    return;
-  }
-
   if (API_PROXY_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
     const upstreamBaseUrl = process.env.HONUA_BASE_URL;
     if (!upstreamBaseUrl) {

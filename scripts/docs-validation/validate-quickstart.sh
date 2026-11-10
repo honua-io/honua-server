@@ -4,15 +4,14 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 document="${repo_root}/docs/internal/developer/source-quickstart.md"
 extractor="${repo_root}/scripts/docs-validation/extract-fenced-commands.py"
-project_name="${HONUA_DOCS_COMPOSE_PROJECT:-honua-docs-quickstart-$$}"
-owned_server="${repo_root}/scripts/ci/owned-server.py"
+project_name="${HONUA_DOCS_COMPOSE_PROJECT:-honua-docs-quickstart}"
 artifacts="${HONUA_DOCS_ARTIFACTS:-${repo_root}/artifacts/docs-validation/quickstart}"
-http_port="$(python3 "${owned_server}" port --variable HONUA_DOCS_HTTP_PORT --ci-default 18080)"
-grpc_port="$(python3 "${owned_server}" port --variable HONUA_DOCS_GRPC_PORT --ci-default 18081)"
-postgres_port="$(python3 "${owned_server}" port --variable HONUA_DOCS_POSTGRES_PORT --ci-default 15432)"
-redis_port="$(python3 "${owned_server}" port --variable HONUA_DOCS_REDIS_PORT --ci-default 16379)"
+http_port="${HONUA_DOCS_HTTP_PORT:-18080}"
+grpc_port="${HONUA_DOCS_GRPC_PORT:-18081}"
+postgres_port="${HONUA_DOCS_POSTGRES_PORT:-15432}"
+redis_port="${HONUA_DOCS_REDIS_PORT:-16379}"
 preserve_stack="${HONUA_DOCS_PRESERVE_STACK:-0}"
-base_url="http://127.0.0.1:${http_port}"
+base_url="http://localhost:${http_port}"
 run_dir=$(mktemp -d "${repo_root}/.docs-validation-quickstart.XXXXXX")
 extracted="${run_dir}/quickstart.sh"
 export HONUA_HTTP_PORT="${http_port}"
@@ -32,7 +31,7 @@ cleanup() {
   else
     "${compose[@]}" down --volumes --remove-orphans || true
   fi
-  rm -rf "${run_dir:?}"
+  rm -rf "${run_dir}"
   exit "${exit_code}"
 }
 trap cleanup EXIT
@@ -62,8 +61,7 @@ python3 "${repo_root}/scripts/docker/quickstart.py" --init-only
 )
 
 layer_id=$(cat "${run_dir}/.quickstart-layer-id")
-python3 "${owned_server}" wait --container "$("${compose[@]}" ps -q honua)" --container-port 8080 \
-  --url "${base_url}/healthz/ready" --body Ready --timeout 90
+test "$(curl --silent --fail "${base_url}/healthz/ready")" = "Ready"
 "${compose[@]}" ps --format json | jq -s -e '
   length == 3 and all(.[]; .State == "running" and .Health == "healthy")'
 curl --fail --silent --show-error \

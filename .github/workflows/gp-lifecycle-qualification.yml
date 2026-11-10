@@ -12,8 +12,6 @@ on:
       - 'src/Honua.Worker.Gdal/Execution/NativeEntryQualification.cs'
       - 'src/Honua.Worker.Gdal/Execution/ProcessGdalCommandRunner.cs'
       - 'scripts/qualification/mcp/**'
-      - 'tests/dotnet/Honua.Ai.Tests/Source/McpJobToolsInstalledClientTests.cs'
-      - 'src/Honua.Ai/Features/Protocols/Mcp/**'
       - '.github/workflows/gp-lifecycle-qualification.yml'
   push:
     branches: [trunk]
@@ -26,8 +24,6 @@ on:
       - 'src/Honua.Worker.Gdal/Execution/NativeEntryQualification.cs'
       - 'src/Honua.Worker.Gdal/Execution/ProcessGdalCommandRunner.cs'
       - 'scripts/qualification/mcp/**'
-      - 'tests/dotnet/Honua.Ai.Tests/Source/McpJobToolsInstalledClientTests.cs'
-      - 'src/Honua.Ai/Features/Protocols/Mcp/**'
       - '.github/workflows/gp-lifecycle-qualification.yml'
   workflow_dispatch:
     inputs:
@@ -53,55 +49,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  job-tools-journey:
-    name: Published MCP SDK job tools journey
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-      - uses: ./.github/actions/setup-dotnet-ci
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '22.19.0'
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: honua-io/geospatial-mcp
-          ref: 372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4
-          path: .mcp-client
-          persist-credentials: false
-      - name: Install pinned published SDK
-        run: |
-          set -euo pipefail
-          cd .mcp-client/certification
-          echo '5e6b28f4c29b82b799190e9e92083c7aca38b879afc7e242bee4320a711e195f  package-lock.json' | sha256sum -c -
-          npm ci --ignore-scripts
-          ln -s "${GITHUB_WORKSPACE}/.mcp-client/certification/node_modules" "${GITHUB_WORKSPACE}/scripts/qualification/mcp/node_modules"
-      - name: Submit, poll, verify geometry and deny another caller through tools
-        env:
-          HONUA_MCP_JOB_CLIENT: '1'
-        run: |
-          set -euo pipefail
-          dotnet test tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj --configuration Release \
-            --filter FullyQualifiedName~McpJobToolsInstalledClientTests \
-            --logger 'trx;LogFileName=job-tools.trx' --results-directory artifacts/mcp-job-tools
-          python3 - <<'PYTHON'
-          import xml.etree.ElementTree as ET
-          root = ET.parse('artifacts/mcp-job-tools/job-tools.trx').getroot()
-          rows = root.findall('.//{*}UnitTestResult')
-          assert len(rows) == 1 and rows[0].get('outcome') == 'Passed', [(r.get('testName'), r.get('outcome')) for r in rows]
-          PYTHON
-      - name: Retain actual client journey and test result
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: mcp-job-tools-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/mcp-job-tools/
-          if-no-files-found: error
-          retention-days: 30
-
   mcp-adapter-controls:
     name: Durable GP installed MCP adapter controls
     runs-on: ubuntu-latest
@@ -143,7 +90,7 @@ jobs:
           from pathlib import Path
           text = Path('artifacts/gp-mcp-controls/wire.tap').read_text()
           counts = {key: int(value) for key, value in re.findall(r'^# (tests|pass|fail|skipped|cancelled) (\d+)$', text, re.M)}
-          assert counts.get('tests', 0) >= 38, counts
+          assert counts.get('tests', 0) >= 12, counts
           assert counts.get('pass') == counts['tests'], counts
           assert all(counts.get(key) == 0 for key in ('fail', 'skipped', 'cancelled')), counts
           log = Path('artifacts/gp-mcp-controls/harness.log').read_text()
@@ -194,7 +141,7 @@ jobs:
           echo '5e6b28f4c29b82b799190e9e92083c7aca38b879afc7e242bee4320a711e195f  package-lock.json' | sha256sum -c -
           npm ci --ignore-scripts
           ln -s "${GITHUB_WORKSPACE}/.mcp-client/certification/node_modules" "${GITHUB_WORKSPACE}/scripts/qualification/mcp/node_modules"
-      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

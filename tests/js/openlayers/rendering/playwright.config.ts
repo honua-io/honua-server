@@ -1,13 +1,4 @@
 import { defineConfig } from '@playwright/test';
-import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
-
-const ownershipScript = fileURLToPath(new URL('../../../../scripts/ci/owned-server.py', import.meta.url));
-const port = execFileSync('python3', [ownershipScript, 'port', '--variable', 'OL_TEST_PAGE_PORT',
-  '--ci-default', '9876'], { encoding: 'utf8', timeout: 5000 }).trim();
-process.env.OL_TEST_PAGE_PORT = port;
-process.env.OL_TEST_PAGE_NONCE = randomUUID();
 
 export default defineConfig({
   testDir: '.',
@@ -28,9 +19,9 @@ export default defineConfig({
   ],
   webServer: {
     command: 'node node_modules/tsx/dist/cli.mjs openlayers/rendering/serve-test-page.ts',
-    url: `http://127.0.0.1:${port}/__honua_test_page/${process.env.OL_TEST_PAGE_NONCE}`,
+    port: 9876,
     cwd: '../../',
-    reuseExistingServer: false,
+    reuseExistingServer: true,
     timeout: 15_000,
   },
 });

@@ -4,7 +4,6 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
-using Honua.ControlPlane;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -15,7 +14,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure;
 using Honua.Infrastructure.Authentication;
-using Microsoft.Extensions.Options;
+using Honua.ControlPlane;
 
 namespace Honua.Server.Features.Admin.Jobs;
 
@@ -206,11 +205,10 @@ internal sealed partial class ConsoleJobService(
         var itemCount = Math.Min(artifactRefs.Length, effectiveLimit);
         var items = new ConsoleJobArtifact[itemCount];
         var artifactStore = serviceProvider.GetService<IArtifactStore>();
-        var resultsExpired = ResultsExpired(job, timeProvider.GetUtcNow());
 
         for (var i = 0; i < itemCount; i++)
         {
-            items[i] = await MapArtifactAsync(artifactRefs[i], artifactStore, resultsExpired, cancellationToken).ConfigureAwait(false);
+            items[i] = await MapArtifactAsync(artifactRefs[i], artifactStore, cancellationToken).ConfigureAwait(false);
         }
 
         return new ConsoleJobArtifactPageResponse
@@ -613,16 +611,9 @@ internal sealed partial class ConsoleJobService(
             Metadata = entry.Metadata is null ? null : new Dictionary<string, string>(entry.Metadata)
         };
 
-    private bool ResultsExpired(ExecutionJobRecord job, DateTimeOffset now)
-    {
-        var retention = serviceProvider.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>().CurrentValue.ResultRetention;
-        return GeoprocessingResultRetention.HasExpired(job, now, retention);
-    }
-
     private async Task<ConsoleJobArtifact> MapArtifactAsync(
         string reference,
         IArtifactStore? artifactStore,
-        bool resultsExpired,
         CancellationToken cancellationToken)
     {
         var customArtifact = await MapCustomCodeArtifactAsync(reference, cancellationToken).ConfigureAwait(false);
@@ -642,7 +633,7 @@ internal sealed partial class ConsoleJobService(
                     // being registered does not turn those references into missing IDs.
                     if (IsDirectArtifactReference(reference))
                     {
-                        return MapDirectArtifact(reference, resultsExpired);
+                        return MapDirectArtifact(reference);
                     }
                     return new ConsoleJobArtifact
                     {
@@ -666,7 +657,7 @@ internal sealed partial class ConsoleJobService(
             }
         }
 
-        return MapDirectArtifact(reference, resultsExpired);
+        return MapDirectArtifact(reference);
     }
 
     private static string SafeArtifactIdentifier(string reference)
@@ -678,15 +669,15 @@ internal sealed partial class ConsoleJobService(
             || reference.Contains('/') || reference.Contains('\\')
             || RasterOutputJson.LooksLikeDescriptor(reference);
 
-    private static ConsoleJobArtifact MapDirectArtifact(string reference, bool expired)
+    private static ConsoleJobArtifact MapDirectArtifact(string reference)
     {
         var safe = IsSafeProviderLink(reference);
         return new ConsoleJobArtifact
         {
             ArtifactId = SafeArtifactIdentifier(reference),
-            Availability = expired ? "Expired" : safe ? "Available" : "Redacted",
-            ProviderLink = safe && !expired ? reference : null,
-            Message = expired ? "The job result retention period has elapsed." : safe ? null : "Artifact reference is not safe to expose."
+            Availability = safe ? "Available" : "Redacted",
+            ProviderLink = safe ? reference : null,
+            Message = safe ? null : "Artifact reference is not safe to expose."
         };
     }
 

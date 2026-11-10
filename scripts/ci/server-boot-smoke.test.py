@@ -3,7 +3,6 @@
 import os
 from pathlib import Path
 import subprocess
-import sys
 import tempfile
 import unittest
 
@@ -36,7 +35,7 @@ class BootSmokeReadinessTests(unittest.TestCase):
             (root / "server.dll").touch()
             commands = {
                 "docker": DOCKER,
-                "dotnet": '#!/usr/bin/env bash\nexec "$HONUA_FIXTURE_PYTHON" "$HONUA_FIXTURE_READY_SERVER"\n',
+                "dotnet": '#!/usr/bin/env bash\ntouch "$MOCK_ROOT/server-started"\nexec /bin/sleep 30\n',
                 "curl": '#!/usr/bin/env bash\necho Ready\n',
                 "timeout": '#!/usr/bin/env bash\nif [[ "$2" == bash ]]; then shift; exec /usr/bin/timeout 0.7s "$@"; fi\nshift; exec "$@"\n',
                 "sleep": '#!/usr/bin/env bash\nexec /bin/sleep 0.01\n',
@@ -49,11 +48,6 @@ class BootSmokeReadinessTests(unittest.TestCase):
                                MOCK_ROOT=str(root), READY_AFTER=str(ready_after),
                                HONUA_PR_GATE_POSTGIS_IMAGE="mock-postgis",
                                HONUA_SERVER_BOOT_SMOKE_DLL=str(root / "server.dll"),
-                               HONUA_FIXTURE_PYTHON=sys.executable,
-                               HONUA_FIXTURE_READY_SERVER=str(SCRIPT.parent / "fixtures/ready-server.py"),
-                               HONUA_FIXTURE_STARTED_FILE=str(root / "server-started"),
-                               HONUA_SERVER_BOOT_SMOKE_PORT="0",
-                               HONUA_PR_GATE_POSTGRES_PORT="0",
                                HONUA_SERVER_BOOT_SMOKE_LOG=str(root / "server.log"),
                                HONUA_SERVER_BOOT_SMOKE_DB_LOG=str(root / "db.log"))
             result = subprocess.run(["bash", str(SCRIPT)], env=environment,

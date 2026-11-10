@@ -19,7 +19,7 @@ namespace Honua.Server.Features.Admin;
 /// <summary>
 /// Admin endpoints for managing per-service protocol toggles and MapServer settings.
 /// </summary>
-internal static partial class ServiceSettingsEndpoints
+internal static class ServiceSettingsEndpoints
 {
     private const int DefaultMapServerMaxImageWidth = 4096;
     private const int DefaultMapServerMaxImageHeight = 4096;
@@ -66,20 +66,8 @@ internal static partial class ServiceSettingsEndpoints
             .WithDisplayName("Update Time Info")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
 
-        group.MapGet("/{serviceName}/layers/{layerId:int}/metadata", HandleGetLayerMetadata)
-            .WithDisplayName("Get Layer Metadata")
-            .Produces<ApiResponse<LayerMetadataResponse>>(200)
-            .Produces<ApiResponse<object>>(404)
-            .ProducesProblem(409);
-
         group.MapPut("/{serviceName}/layers/{layerId:int}/metadata", HandleUpdateLayerMetadata)
             .WithDisplayName("Update Layer Metadata")
-            .Produces<ApiResponse<LayerMetadataResponse>>(200)
-            .Produces<ApiResponse<object>>(400)
-            .Produces<ApiResponse<object>>(404)
-            .ProducesProblem(409)
-            .ProducesProblem(500)
-            .ProducesProblem(501)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
     }
 
@@ -317,7 +305,7 @@ internal static partial class ServiceSettingsEndpoints
                 statusCode: StatusCodes.Status501NotImplemented));
     }
 
-    private static async Task<IResult>
+    private static async Task<Results<Ok<ApiResponse<LayerMetadataResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
         HandleUpdateLayerMetadata(
             string serviceName,
             int layerId,
@@ -330,10 +318,51 @@ internal static partial class ServiceSettingsEndpoints
         try
         {
             var snapshot = await GetSnapshotForServiceAsync(graphProvider, graphStore, serviceName, context.RequestAborted).ConfigureAwait(false);
-            var target = ResolveFeatureLayerTarget(snapshot, serviceName, layerId);
-            if (target.Error is not null)
-                return target.Error;
-            var resource = target.Resource!;
+            if (!TryResolveServicesByName(snapshot, serviceName, out var services))
+            {
+                return TypedResults.NotFound(ApiResponse<object>.Failure($"Service '{serviceName}' not found."));
+            }
+
+            var featureServices = services
+                .Where(service => ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.FeatureServer))
+                .Where(service => IsFeatureServerService(snapshot.Graph, service))
+                .ToArray();
+            if (featureServices.Length == 0)
+            {
+                return TypedResults.Problem(
+                    title: "FeatureServer service not found",
+                    detail: $"Service '{serviceName}' does not resolve to a FeatureServer service.",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+
+            var featureServiceIds = featureServices
+                .Select(service => service.Metadata.Id)
+                .ToHashSet(StringComparer.Ordinal);
+            var targetResourceIds = snapshot.Graph.Publications
+                .Where(publication =>
+                    featureServiceIds.Contains(publication.ServiceId) &&
+                    publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                    snapshot.IsRoutable(publication) &&
+                    publication.LayerIndex == layerId)
+                .Select(publication => publication.ResourceId)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (targetResourceIds.Length > 1)
+            {
+                return TypedResults.Problem(
+                    title: "Ambiguous FeatureServer layer",
+                    detail: $"Layer {layerId} in service '{serviceName}' resolves to multiple resources.",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+
+            var resource = targetResourceIds.Length == 1
+                ? snapshot.Graph.Resources.FirstOrDefault(candidate =>
+                    string.Equals(candidate.Metadata.Id, targetResourceIds[0], StringComparison.Ordinal))
+                : null;
+            if (resource is null)
+            {
+                return TypedResults.NotFound(ApiResponse<object>.Failure($"Layer {layerId} not found in service '{serviceName}'."));
+            }
 
             // Raster mosaic settings have no Metadata v2 home. Refuse the whole
             // request so a 200 cannot echo a merge strategy that was not stored.
@@ -939,14 +968,26 @@ internal static partial class ServiceSettingsEndpoints
             return FeatureLayerBindingState.NotFound;
         }
 
-        var featureServiceIds = FindFeatureServiceIds(graph, matchingServices);
+        var featureServiceIds = matchingServices
+            .Where(service => ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.FeatureServer))
+            .Where(service => IsFeatureServerService(graph, service))
+            .Select(service => service.Metadata.Id)
+            .ToHashSet(StringComparer.Ordinal);
         if (featureServiceIds.Count == 0)
         {
             return FeatureLayerBindingState.Conflict;
         }
 
         var snapshot = new MetadataV2GraphSnapshot(graph, "\"feature-layer-binding\"", DateTimeOffset.UtcNow);
-        var currentResourceIds = FindLayerMetadataResourceIds(snapshot, featureServiceIds, layerId);
+        var currentResourceIds = graph.Publications
+            .Where(publication =>
+                featureServiceIds.Contains(publication.ServiceId) &&
+                publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                snapshot.IsRoutable(publication) &&
+                publication.LayerIndex == layerId)
+            .Select(publication => publication.ResourceId)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
         if (currentResourceIds.Length == 0)
         {
             return FeatureLayerBindingState.NotFound;

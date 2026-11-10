@@ -3,8 +3,6 @@
 set -euo pipefail
 
 CITE_COMPOSE_FILE="docker/cite/ogc-api-processes/compose.yml"
-source "$(dirname "${BASH_SOURCE[0]}")/../../ci/lib/isolate-test-compose.sh"
-honua_isolate_test_compose "$CITE_COMPOSE_FILE"
 CITE_CONFIG_FILE="docker/cite/ogc-api-processes/config/test-run-props.xml"
 CITE_RESULTS_DIR="${HONUA_CITE_OGCAPI_PROCESSES_RESULTS_DIR:-cite-ogcapi-processes-results}"
 CITE_TIMEOUT="${HONUA_CITE_OGCAPI_PROCESSES_TIMEOUT:-2700}"

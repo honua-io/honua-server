@@ -22,7 +22,7 @@ internal static class McpWorkflowViewCatalog
         Name = DefaultViewName,
         Title = "Bounded discovery workflow",
         Description = "The default bounded search, describe, propose, execute, and inspect surface.",
-        Revision = "default.v2",
+        Revision = "default.v1",
         Stages =
         [
             new McpWorkflowViewStageDefinition
@@ -52,7 +52,7 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_dry_run_plan"),
                     McpWorkflowViewMemberRule.Exact("honua_execute_plan"),
                     McpWorkflowViewMemberRule.Exact("honua_list_jobs"),
-                    McpWorkflowViewMemberRule.Exact("honua_get_job_results"),
+                    McpWorkflowViewMemberRule.Exact("honua_render_map"),
                 ],
             },
         ],

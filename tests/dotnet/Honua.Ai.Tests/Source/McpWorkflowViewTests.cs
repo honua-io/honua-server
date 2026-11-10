@@ -659,11 +659,7 @@ public sealed class McpWorkflowViewTests
             "honua_describe_layer",
             "honua_plan_analysis",
             "honua_execute_plan",
-            "honua_list_jobs",
-            "honua_get_job_results",
         ]);
-        McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Default, BuildCatalogEntries())
-            .BudgetViolations.Should().BeEmpty();
     }
 
     [UnitTest]

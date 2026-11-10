@@ -47,17 +47,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 STATE_DIR="${RUNNER_TEMP:-/tmp}"
-if [[ -z "${GITHUB_RUN_ID:-}" ]]; then
-    STATE_DIR="$(mktemp -d "${STATE_DIR}/honua-post-apply.XXXXXX")"
-fi
 IMAGE="${HONUA_LOCAL_TARGET_POSTGIS_IMAGE:-$(grep -oE 'postgis/postgis:[0-9]+(\.[0-9]+)*-[0-9]+(\.[0-9]+)*' tests/dotnet/Honua.TestKit.Postgres/PostgresFixture.cs | head -n 1)}"
-DB_CONTAINER="honua-post-apply-postgis-${GITHUB_RUN_ID:-local-$$}-${GITHUB_RUN_ATTEMPT:-1}"
-OWNED_SERVER="${REPO_ROOT}/scripts/ci/owned-server.py"
-DB_PORT="$(python3 "${OWNED_SERVER}" port --variable HONUA_LOCAL_TARGET_DB_PORT --ci-default 5432)"
+DB_CONTAINER="honua-post-apply-postgis-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
+DB_PORT="${HONUA_LOCAL_TARGET_DB_PORT:-5432}"
 DB_NAME="honua_post_apply"
 DB_USER="honua_post_apply"
 DB_PASSWORD="honua_post_apply"
-SERVER_PORT="$(python3 "${OWNED_SERVER}" port --variable HONUA_LOCAL_TARGET_PORT --ci-default 5000)"
+SERVER_PORT="${HONUA_LOCAL_TARGET_PORT:-5000}"
 SERVER_LOG="${STATE_DIR}/honua-post-apply-server.log"
 DB_INIT_LOG="${STATE_DIR}/honua-post-apply-postgis.init.log"
 SERVER_PID_FILE="${STATE_DIR}/honua-post-apply-server.pid"
@@ -66,20 +62,7 @@ DB_CONTAINER_FILE="${STATE_DIR}/honua-post-apply-db.container"
 # static credential is baked into the repository or the lane.
 ADMIN_API_KEY="${HONUA_LOCAL_TARGET_ADMIN_API_KEY:-$(head -c 24 /dev/urandom | base64 | tr -d '=+/' )}"
 POSTGIS_INIT_WAIT_SECONDS=120
-SERVER_READY_WAIT_SECONDS="${HONUA_LOCAL_TARGET_READY_SECONDS:-150}"
-SERVER_PID=""
-DB_CONTAINER_ID=""
-DB_LOG_FOLLOW_PID=""
-
-cleanup_failed_launch() {
-    for pid in "${SERVER_PID}" "${DB_LOG_FOLLOW_PID}"; do
-        [[ -z "${pid}" ]] || kill "${pid}" 2>/dev/null || true
-    done
-    if [[ -n "${DB_CONTAINER_ID}" ]]; then
-        docker rm --force "${DB_CONTAINER_ID}" >/dev/null 2>&1 || true
-    fi
-}
-trap cleanup_failed_launch ERR
+SERVER_READY_WAIT_SECONDS=150
 
 SERVER_DLL="${HONUA_LOCAL_TARGET_SERVER_DLL:-${REPO_ROOT}/src/Honua.Server/bin/Release/net10.0/Honua.Server.dll}"
 
@@ -93,19 +76,18 @@ if [[ ! -f "${SERVER_DLL}" ]]; then
 fi
 
 echo "Starting PostGIS sidecar ${IMAGE} for the local post-apply target."
-DB_CONTAINER_ID="$(docker run --detach --rm \
+docker run --detach --rm \
     --name "${DB_CONTAINER}" \
     --publish "0.0.0.0:${DB_PORT}:5432" \
     --env POSTGRES_DB="${DB_NAME}" \
     --env POSTGRES_USER="${DB_USER}" \
     --env POSTGRES_PASSWORD="${DB_PASSWORD}" \
     --env POSTGIS_GDAL_ENABLED_DRIVERS=ENABLE_ALL \
-    "${IMAGE}" -c max_connections=200)"
+    "${IMAGE}" -c max_connections=200 >/dev/null
 printf '%s\n' "${DB_CONTAINER}" >"${DB_CONTAINER_FILE}"
 
 rm -f "${DB_INIT_LOG}"
 docker logs --follow "${DB_CONTAINER}" >"${DB_INIT_LOG}" 2>&1 &
-DB_LOG_FOLLOW_PID=$!
 
 echo "Waiting for PostGIS initialization on localhost:${DB_PORT}."
 for _ in $(seq 1 "${POSTGIS_INIT_WAIT_SECONDS}"); do
@@ -155,10 +137,23 @@ SERVER_PID=$!
 printf '%s\n' "${SERVER_PID}" >"${SERVER_PID_FILE}"
 
 echo "Waiting up to ${SERVER_READY_WAIT_SECONDS}s for /healthz/ready."
-if ! python3 "${OWNED_SERVER}" wait --pid "${SERVER_PID}" \
-    --url "http://127.0.0.1:${SERVER_PORT}/healthz/ready" --body Ready --timeout "${SERVER_READY_WAIT_SECONDS}"; then
+ready=false
+for _ in $(seq 1 "${SERVER_READY_WAIT_SECONDS}"); do
+    if response="$(curl --silent --show-error --fail --max-time 2 "http://127.0.0.1:${SERVER_PORT}/healthz/ready" 2>/dev/null)" && [[ "${response}" == Ready ]]; then
+        ready=true
+        break
+    fi
+    server_state="$(ps -o stat= -p "${SERVER_PID}" 2>/dev/null | tr -d ' ' || true)"
+    if [[ -z "${server_state}" || "${server_state}" == Z* ]]; then
+        echo "::error::Honua.Server exited before becoming ready." >&2
+        sed -n '1,240p' "${SERVER_LOG}" >&2 || true
+        exit 1
+    fi
+    sleep 1
+done
+if [[ "${ready}" != true ]]; then
+    echo "::error::Honua.Server did not become ready within ${SERVER_READY_WAIT_SECONDS}s." >&2
     sed -n '1,240p' "${SERVER_LOG}" >&2 || true
-    cleanup_failed_launch
     exit 1
 fi
 
@@ -201,4 +196,4 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     } >>"${GITHUB_STEP_SUMMARY}"
 fi
 
-echo "Local post-apply target is ready at http://127.0.0.1:${SERVER_PORT}; owned state: ${STATE_DIR}."
+echo "Local post-apply target is ready at http://127.0.0.1:${SERVER_PORT}."

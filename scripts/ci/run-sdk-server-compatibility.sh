@@ -33,15 +33,6 @@ MIGRATION_SERVER_IMAGE="${HONUA_SDK_MIGRATION_SERVER_IMAGE:-}"
 COMPAT_SERVER_LABEL="${HONUA_SDK_COMPAT_SERVER_LABEL:-unknown-server}"
 COMPAT_SDK_LABEL="${HONUA_SDK_COMPAT_SDK_LABEL:-unknown-sdk}"
 
-OWNED_SERVER="$ROOT_DIR/scripts/ci/owned-server.py"
-if [[ -z "${HONUA_SDK_MIGRATION_SERVER_BASE_URL:-}" ]]; then
-    MIGRATION_SERVER_BASE_URL="http://127.0.0.1:$(python3 "$OWNED_SERVER" port --variable HONUA_SDK_MIGRATION_SERVER_PORT --ci-default 5001)"
-fi
-if [[ -z "${HONUA_SDK_MIGRATION_GEOSERVER_URL:-}" ]]; then
-    MIGRATION_GEOSERVER_URL="http://127.0.0.1:$(python3 "$OWNED_SERVER" port --variable HONUA_SDK_MIGRATION_GEOSERVER_PORT --ci-default 5011)/geoserver/rest"
-fi
-MIGRATION_GRPC_PORT="$(python3 "$OWNED_SERVER" port --variable HONUA_SDK_MIGRATION_GRPC_PORT --ci-default 5002)"
-
 cleanup_pids=()
 cleanup_containers=()
 
@@ -74,15 +65,6 @@ else:
 PY
 }
 
-is_external_fixture_url() {
-    python - "$1" <<'PYTHON'
-import sys
-from urllib.parse import urlsplit
-url = urlsplit(sys.argv[1])
-sys.exit(0 if url.scheme == "https" or url.hostname not in {"localhost", "127.0.0.1", "::1"} else 1)
-PYTHON
-}
-
 cleanup() {
     local pid
     local container
@@ -110,16 +92,15 @@ start_geoserver_fixture() {
         fixture_path="$ROOT_DIR/$fixture_path"
     fi
 
-    if [[ "${HONUA_SDK_GEOSERVER_EXTERNAL:-false}" == true ]] || is_external_fixture_url "$MIGRATION_GEOSERVER_URL"; then
-        curl -fsS --max-time 5 "$MIGRATION_GEOSERVER_URL/about/version.xml" >/dev/null
-        return
-    fi
-
     fixture_port="$(url_port "$MIGRATION_GEOSERVER_URL")"
 
     if [[ ! -f "$fixture_path" ]]; then
         echo "Missing GeoServer migration fixture at $fixture_path" >&2
         exit 1
+    fi
+
+    if curl -fsS "$MIGRATION_GEOSERVER_URL/about/version.xml" >/dev/null 2>&1; then
+        return
     fi
 
     python - "$fixture_path" "$fixture_port" > "$log_path" 2>&1 <<'PY' &
@@ -166,34 +147,40 @@ class FixtureHandler(BaseHTTPRequestHandler):
 
 ThreadingHTTPServer(("127.0.0.1", port), FixtureHandler).serve_forever()
 PY
-    local fixture_pid=$!
-    cleanup_pids+=("$fixture_pid")
-    if ! python3 "$OWNED_SERVER" wait --pid "$fixture_pid" \
-        --url "$MIGRATION_GEOSERVER_URL/about/version.xml" --timeout "${HONUA_SDK_FIXTURE_READY_SECONDS:-20}"; then
-        tail -n 80 "$log_path" >&2
-        exit 1
-    fi
+    cleanup_pids+=("$!")
+
+    for _ in $(seq 1 20); do
+        if curl -fsS "$MIGRATION_GEOSERVER_URL/about/version.xml" >/dev/null 2>&1; then
+            return
+        fi
+        sleep 1
+    done
+
+    echo "GeoServer fixture did not become ready at $MIGRATION_GEOSERVER_URL" >&2
+    tail -n 80 "$log_path" >&2 || true
+    exit 1
 }
 
 start_migration_honua_server() {
     local log_path="$RESULTS_DIR/honua-server-sdk-migration.log"
     local migration_container=""
-    if [[ "${HONUA_SDK_MIGRATION_EXTERNAL:-false}" == true ]] || is_external_fixture_url "$MIGRATION_SERVER_BASE_URL"; then
-        curl -fsS --max-time 5 "$MIGRATION_SERVER_BASE_URL/healthz/ready" >/dev/null
+
+    if curl -fsS "$MIGRATION_SERVER_BASE_URL/healthz/ready" >/dev/null 2>&1; then
         return
     fi
-
 
     if [[ -n "$MIGRATION_SERVER_IMAGE" ]]; then
         case "$MIGRATION_SERVER_IMAGE" in
             *@sha256:*) ;;
             *) echo "Migration server image must be immutable: $MIGRATION_SERVER_IMAGE" >&2; exit 2 ;;
         esac
-        migration_container="$(docker create --rm --network host \
+        migration_container="honua-sdk-migration-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
+        cleanup_containers+=("$migration_container")
+        docker run --rm --network host --name "$migration_container" \
             --env "ConnectionStrings__DefaultConnection=Host=localhost;Database=honua_test;Username=honua;Password=honua" \
             --env "ASPNETCORE_URLS=$MIGRATION_SERVER_BASE_URL" \
             --env "Kestrel__Endpoints__Http__Url=$MIGRATION_SERVER_BASE_URL" \
-            --env "Kestrel__Endpoints__Grpc__Url=http://127.0.0.1:$MIGRATION_GRPC_PORT" \
+            --env "Kestrel__Endpoints__Grpc__Url=http://localhost:5002" \
             --env "ASPNETCORE_ENVIRONMENT=Test" \
             --env "HONUA_REGISTER_TEST_INFRASTRUCTURE=true" \
             --env "HONUA_TEST_ALLOW_UNSAFE_GEOSERVER_URLS=true" \
@@ -201,14 +188,10 @@ start_migration_honua_server() {
             --env "Licensing__DevGrantEdition=Enterprise" \
             --env "Security__ConnectionEncryption__MasterKey=test-master-key-that-is-at-least-32-characters-long-for-security" \
             --env "Security__ConnectionEncryption__Salt=dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=" \
-            "$MIGRATION_SERVER_IMAGE")"
-        cleanup_containers+=("$migration_container")
-        docker start --attach "$migration_container" > "$log_path" 2>&1 &
+            "$MIGRATION_SERVER_IMAGE" > "$log_path" 2>&1 &
     else
         ConnectionStrings__DefaultConnection="Host=localhost;Database=honua_test;Username=honua;Password=honua" \
         ASPNETCORE_URLS="$MIGRATION_SERVER_BASE_URL" \
-        Kestrel__Endpoints__Http__Url="$MIGRATION_SERVER_BASE_URL" \
-        Kestrel__Endpoints__Grpc__Url="http://127.0.0.1:$MIGRATION_GRPC_PORT" \
         ASPNETCORE_ENVIRONMENT="Test" \
         HONUA_REGISTER_TEST_INFRASTRUCTURE="true" \
         HONUA_TEST_ALLOW_UNSAFE_GEOSERVER_URLS="true" \
@@ -219,17 +202,18 @@ start_migration_honua_server() {
         dotnet run --project src/Honua.Server --configuration Release --no-build --no-launch-profile \
             > "$log_path" 2>&1 &
     fi
-    local server_pid=$!
-    cleanup_pids+=("$server_pid")
-    local ownership=(--pid "$server_pid")
-    if [[ -n "$migration_container" ]]; then
-        ownership+=(--container "$migration_container")
-    fi
-    if ! python3 "$OWNED_SERVER" wait "${ownership[@]}" \
-        --url "$MIGRATION_SERVER_BASE_URL/healthz/ready" --timeout "${HONUA_SDK_FIXTURE_READY_SECONDS:-80}"; then
-        tail -n 80 "$log_path" >&2
-        exit 1
-    fi
+    cleanup_pids+=("$!")
+
+    for _ in $(seq 1 40); do
+        if curl -fsS "$MIGRATION_SERVER_BASE_URL/healthz/ready" >/dev/null 2>&1; then
+            return
+        fi
+        sleep 2
+    done
+
+    echo "Migration Honua Server did not become ready at $MIGRATION_SERVER_BASE_URL" >&2
+    tail -n 120 "$log_path" >&2 || true
+    exit 1
 }
 
 write_migration_automation_summary() {

@@ -11,21 +11,17 @@ REPO_ROOT="${HONUA_PR_GATE_REPO_ROOT:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
 cd "${REPO_ROOT}"
 
 IMAGE="${HONUA_PR_GATE_POSTGIS_IMAGE:-$(grep -oE 'postgis/postgis:[0-9]+(\.[0-9]+)*-[0-9]+(\.[0-9]+)*' tests/dotnet/Honua.TestKit.Postgres/PostgresFixture.cs | head -n 1)}"
-DB_CONTAINER="honua-pr-gate-postgis-${GITHUB_RUN_ID:-local-$$}-${GITHUB_RUN_ATTEMPT:-1}"
-OWNED_SERVER="${SCRIPT_DIR}/owned-server.py"
-SERVER_PORT="$(python3 "${OWNED_SERVER}" port --variable HONUA_SERVER_BOOT_SMOKE_PORT --ci-default 5000)"
-DB_PORT="$(python3 "${OWNED_SERVER}" port --variable HONUA_PR_GATE_POSTGRES_PORT --ci-default 5432)"
-LOG_SUFFIX=""
-[[ -n "${GITHUB_RUN_ID:-}" ]] || LOG_SUFFIX="-$$"
-SERVER_LOG="${HONUA_SERVER_BOOT_SMOKE_LOG:-${RUNNER_TEMP:-/tmp}/honua-server-boot-smoke${LOG_SUFFIX}.log}"
-DB_LOG="${HONUA_SERVER_BOOT_SMOKE_DB_LOG:-${RUNNER_TEMP:-/tmp}/honua-server-boot-smoke-postgis${LOG_SUFFIX}.log}"
+DB_CONTAINER="honua-pr-gate-postgis-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
+SERVER_PORT="${HONUA_SERVER_BOOT_SMOKE_PORT:-5000}"
+DB_PORT="${HONUA_PR_GATE_POSTGRES_PORT:-5432}"
+SERVER_LOG="${HONUA_SERVER_BOOT_SMOKE_LOG:-${RUNNER_TEMP:-/tmp}/honua-server-boot-smoke.log}"
+DB_LOG="${HONUA_SERVER_BOOT_SMOKE_DB_LOG:-${RUNNER_TEMP:-/tmp}/honua-server-boot-smoke-postgis.log}"
 DB_INIT_LOG="${HONUA_SERVER_BOOT_SMOKE_DB_INIT_LOG:-${DB_LOG}.init}"
 SERVER_DLL="${HONUA_SERVER_BOOT_SMOKE_DLL:-${REPO_ROOT}/src/Honua.Server/bin/Release/net10.0/Honua.Server.dll}"
 # Keep the smoke below the workflow's 175-second wrapper while allowing the
 # image's first-boot init to absorb the occasional slow Docker daemon.
 POSTGIS_INIT_WAIT_SECONDS=75
-SERVER_READY_WAIT_SECONDS="${HONUA_SERVER_BOOT_SMOKE_READY_SECONDS:-90}"
-DB_CONTAINER_ID=""
+SERVER_READY_WAIT_SECONDS=90
 SERVER_PID=""
 DB_LOG_FOLLOW_PID=""
 
@@ -50,7 +46,7 @@ cleanup() {
         kill "${DB_LOG_FOLLOW_PID}" 2>/dev/null || true
         wait "${DB_LOG_FOLLOW_PID}" 2>/dev/null || true
     fi
-    if [[ -n "${DB_CONTAINER_ID}" ]]; then
+    if docker inspect "${DB_CONTAINER}" >/dev/null 2>&1; then
         docker logs "${DB_CONTAINER}" >"${DB_LOG}" 2>&1 || true
         docker rm --force "${DB_CONTAINER}" >/dev/null 2>&1 || true
     fi
@@ -77,14 +73,14 @@ if ! docker image inspect "${IMAGE}" >/dev/null 2>&1; then
 fi
 
 echo "Starting PostGIS sidecar ${IMAGE}."
-DB_CONTAINER_ID="$(docker run --detach --rm \
+docker run --detach --rm \
     --name "${DB_CONTAINER}" \
     --publish "0.0.0.0:${DB_PORT}:5432" \
     --env POSTGRES_DB=honua_test \
     --env POSTGRES_USER=test \
     --env POSTGRES_PASSWORD=test \
     --env POSTGIS_GDAL_ENABLED_DRIVERS=ENABLE_ALL \
-    "${IMAGE}" -c max_connections=200)"
+    "${IMAGE}" -c max_connections=200 >/dev/null
 
 rm -f "${DB_INIT_LOG}"
 docker logs --follow "${DB_CONTAINER}" >"${DB_INIT_LOG}" 2>&1 &
@@ -159,9 +155,19 @@ echo "Starting ${SERVER_DLL} with migrations enabled."
 SERVER_PID=$!
 
 echo "Waiting up to ${SERVER_READY_WAIT_SECONDS}s for /healthz/ready."
-if python3 "${OWNED_SERVER}" wait --pid "${SERVER_PID}" \
-    --url "http://127.0.0.1:${SERVER_PORT}/healthz/ready" --body Ready --timeout "${SERVER_READY_WAIT_SECONDS}"; then
-    echo "Honua.Server booted, migrations completed, and owned readiness is Ready."
-    exit 0
-fi
+for _ in $(seq 1 "${SERVER_READY_WAIT_SECONDS}"); do
+    if response="$(curl --silent --show-error --fail --max-time 2 "http://127.0.0.1:${SERVER_PORT}/healthz/ready" 2>/dev/null)" && [[ "${response}" == Ready ]]; then
+        echo "Honua.Server booted, migrations completed, and readiness is Ready."
+        exit 0
+    fi
+
+    server_state="$(ps -o stat= -p "${SERVER_PID}" 2>/dev/null | tr -d ' ' || true)"
+    if [[ -z "${server_state}" || "${server_state}" == Z* ]]; then
+        echo "::error::Honua.Server exited before becoming ready." >&2
+        exit 1
+    fi
+    sleep 1
+done
+
+echo "::error::Honua.Server did not become ready within ${SERVER_READY_WAIT_SECONDS}s." >&2
 exit 1

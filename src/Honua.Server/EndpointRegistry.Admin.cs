@@ -125,11 +125,6 @@ public static partial class EndpointRegistry
         new("PUT", "/api/v1/admin/services/{serviceName}/access-policy"),
         new("PUT", "/api/v1/admin/services/{serviceName}/timeinfo"),
         new("PUT", "/api/v1/admin/services/{serviceName}/layers/{layerId}/metadata"),
-        new("GET", "/api/v1/admin/services/{serviceName}/layers/{layerId}/metadata"),
-        new("GET", "/api/v1/admin/metadata/layers/{layerId}/display"),
-        new("PUT", "/api/v1/admin/metadata/layers/{layerId}/display"),
-        new("GET", "/api/v1/admin/metadata/layers/{layerId}/spatial"),
-        new("PUT", "/api/v1/admin/metadata/layers/{layerId}/spatial"),
 
         // v1 admin named-replica management endpoints (#1167, slice 1)
         new("GET", "/api/v1/admin/services/{serviceId}/replicas"),

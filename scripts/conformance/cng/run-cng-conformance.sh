@@ -38,8 +38,6 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$REPO_ROOT"
 
 CNG_COMPOSE_FILE="docker/cng/compose.yml"
-source "$(dirname "${BASH_SOURCE[0]}")/../../ci/lib/isolate-test-compose.sh"
-honua_isolate_test_compose "$CNG_COMPOSE_FILE"
 CNG_COMPOSE_ARGS=(-f "$CNG_COMPOSE_FILE")
 if [[ "${HONUA_CNG_DERIVED_ZARR:-false}" == "true" ]]; then
     CNG_COMPOSE_ARGS+=(-f docker/cng/derived-zarr.yml)

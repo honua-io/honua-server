@@ -36,9 +36,8 @@ namespace Honua.Server.Tests.Features.Admin.Jobs;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.OperationsProgress)]
-public sealed partial class ConsoleJobEndpointsTests : IAsyncLifetime
+public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
 {
-    private readonly RetentionTestClock _retentionClock = new();
     private readonly InMemoryJobStore _jobStore = new();
     private readonly InMemoryLogStore _logStore = new();
     private readonly RecordingJobQueue _jobQueue = new();
@@ -53,8 +52,6 @@ public sealed partial class ConsoleJobEndpointsTests : IAsyncLifetime
         _fixture = new WebAppFixture()
             .ConfigureServices(services =>
             {
-                services.RemoveAll<TimeProvider>();
-                services.AddSingleton<TimeProvider>(_retentionClock);
                 services.RemoveAll<IExecutionJobStore>();
                 services.RemoveAll<IExecutionLogStore>();
                 services.RemoveAll<IJobQueue>();
@@ -1731,14 +1728,11 @@ public sealed partial class ConsoleJobEndpointsTests : IAsyncLifetime
 
     private sealed class StubArtifactStore : IArtifactStore
     {
-        public Action? OnLookup { get; set; }
-
         public Task<Artifact> CreateAsync(Artifact artifact, CancellationToken cancellationToken = default)
             => Task.FromResult(artifact);
 
         public Task<Artifact?> GetAsync(string artifactId, CancellationToken cancellationToken = default)
         {
-            OnLookup?.Invoke();
             if (artifactId == "provider-error" || artifactId.StartsWith("https://provider-error.test/", StringComparison.Ordinal))
             {
                 throw new InvalidOperationException("provider failed");

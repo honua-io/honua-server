@@ -15,13 +15,10 @@ set -euo pipefail
 
 IMAGE="${1:?image reference required (tag or image@sha256:...)}"
 OUT="${2:-$(mktemp -d)}"
-PORT="${3:-}"
-PG_PORT="${4:-}"
+PORT="${3:-18912}"
+PG_PORT="${4:-18913}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-OWNED_SERVER="$REPO_ROOT/scripts/ci/owned-server.py"
-PORT="${PORT:-$(python3 "$OWNED_SERVER" port --variable HONUA_AOT_GEOPARQUET_PORT --ci-default 18912)}"
-PG_PORT="${PG_PORT:-$(python3 "$OWNED_SERVER" port --variable HONUA_AOT_GEOPARQUET_POSTGRES_PORT --ci-default 18913)}"
 COMPOSE_FILE="$REPO_ROOT/docker/cng/compose.yml"
 SEED_FILE="$REPO_ROOT/docker/cng/seed.sql"
 PROJECT="honua-aot-geoparquet-smoke-$$"
@@ -41,7 +38,7 @@ compose() { docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$work/override.y
 cleanup() {
   compose logs --no-color honua-server > "$OUT/honua-server.log" 2>&1 || true
   compose down --remove-orphans --volumes >/dev/null 2>&1 || true
-  rm -rf "${work:?}"
+  rm -rf "$work"
 }
 trap cleanup EXIT
 
@@ -76,11 +73,8 @@ docker exec -i "$pg" psql -v ON_ERROR_STOP=1 -U postgres -d honua_cng -f /tmp/cn
 compose up -d --no-build honua-server
 wait_healthy honua-server 300
 
-python3 "$OWNED_SERVER" wait --container "$(compose ps -q honua-server)" --container-port 8080 \
-  --url "http://127.0.0.1:${PORT}/healthz/ready" --body Ready --timeout 60
-
 path="/rest/services/cng/FeatureServer/1000/query?where=1=1&outFields=*&f=parquet"
-code="$(curl -sS --retry 3 --retry-all-errors -o "$OUT/cng.parquet" -w '%{http_code}' "http://127.0.0.1:${PORT}${path}")" \
+code="$(curl -sS --retry 3 --retry-all-errors -o "$OUT/cng.parquet" -w '%{http_code}' "http://localhost:${PORT}${path}")" \
   || fail "request failed (server crashed or refused the connection)"
 bytes="$(wc -c < "$OUT/cng.parquet")"
 head_magic="$(head -c 4 "$OUT/cng.parquet")"

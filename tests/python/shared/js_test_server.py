@@ -10,7 +10,6 @@ Honua server, prints connection details as JSON, and waits until terminated.
 
 from __future__ import annotations
 
-from contextlib import ExitStack
 import json
 import os
 import signal
@@ -36,27 +35,35 @@ def main() -> None:
     port = server_port("HONUA_TEST_PORT", HonuaServer.DEFAULT_PORT)
     timeout = float(os.getenv("HONUA_TEST_TIMEOUT", "120"))
 
+    postgis = PostGISFixture()
+    postgis.start()
+
+    schema = postgis.create_isolated_schema("js")
+    postgis.seed_test_catalog(service_name=service_id, layer_id=layer_id, schema=schema)
+    postgis.seed_test_features(schema=schema, layer_id=layer_id)
+
+    connection_string = postgis.get_npgsql_connection_string(search_path=f"{schema}, public")
+    server = HonuaServer(connection_string=connection_string, port=port)
+    server.start(timeout=timeout)
+
+    payload = {
+        "base_url": server.base_url,
+        "service_id": service_id,
+        "layer_id": layer_id,
+    }
+    print(json.dumps(payload), flush=True)
+
     def shutdown(*_args) -> None:
-        raise SystemExit(0)
+        server.stop()
+        postgis.drop_schema(schema)
+        postgis.stop()
+        sys.exit(0)
 
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
 
-    with ExitStack() as cleanup:
-        postgis = PostGISFixture()
-        cleanup.callback(postgis.stop)
-        postgis.start()
-        schema = postgis.create_isolated_schema("js")
-        cleanup.callback(postgis.drop_schema, schema)
-        postgis.seed_test_catalog(service_name=service_id, layer_id=layer_id, schema=schema)
-        postgis.seed_test_features(schema=schema, layer_id=layer_id)
-        connection_string = postgis.get_npgsql_connection_string(search_path=f"{schema}, public")
-        server = HonuaServer(connection_string=connection_string, port=port)
-        cleanup.callback(server.stop)
-        server.start(timeout=timeout)
-        print(json.dumps({"base_url": server.base_url, "service_id": service_id, "layer_id": layer_id}), flush=True)
-        while True:
-            time.sleep(1)
+    while True:
+        time.sleep(1)
 
 
 if __name__ == "__main__":

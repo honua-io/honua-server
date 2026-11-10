@@ -351,7 +351,8 @@ internal sealed class GeoprocessingJobArtifactService
 
     private void EnsureResultsRetained(ExecutionJobRecord job)
     {
-        if (!GeoprocessingResultRetention.HasExpired(job, _timeProvider.GetUtcNow(), ProgressRetention))
+        var finishedAt = job.CompletedAt ?? job.UpdatedAt;
+        if (_timeProvider.GetUtcNow() - finishedAt < ProgressRetention)
         {
             return;
         }

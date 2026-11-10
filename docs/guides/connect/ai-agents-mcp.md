@@ -155,8 +155,6 @@ Start with the safe ones; everything in the planning family is read-only:
 Once a plan validates:
 
 - `honua_execute_plan` — submits the plan (supports an `idempotencyKey`); returns a `jobId` and a `honua://jobs/{jobId}` resource URI.
-- `honua_list_jobs` — poll the submitted `jobId` to `Succeeded`, `Failed`, or `Cancelled`; follow `nextCursor` when present. Submission alone does not establish completion.
-- `honua_get_job_results` — retrieve the terminal result package by `jobId`, including typed artifact references. Check the artifact content before reporting a successful analysis. Both tools are available in default discovery.
 - `honua_cancel_job` — requests cancellation by `jobId`.
 - `honua_diagnose_job` — read-only diagnosis of a job you can read: `observed` facts (status, timestamps, heartbeat, structured failure, release identity, artifacts) kept apart from `inferred` explanations (canonical phase, liveness verdict, failure classification, recovery, retry disposition), with `evidence.missing` and `evidence.truncated` listed. A returned diagnosis is never proof the job succeeded; read `observed.status`.
 - `honua_job_evidence` — the bounded evidence behind a diagnosis: sanitized steps, the most recent events (`events`, maximum 500) and artifact availability, with no inferred layer. Both tools read the same projection as `GET /api/v1/admin/jobs/{jobId}/diagnostics`; see [Diagnose a remote geoprocessing job](../query-analyze/gp-job-diagnostics.md).

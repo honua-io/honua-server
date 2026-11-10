@@ -14,8 +14,6 @@ NC='\033[0m' # No Color
 
 # Configuration
 CITE_COMPOSE_FILE="docker/cite/wfs20/compose.yml"
-source "$(dirname "${BASH_SOURCE[0]}")/../../ci/lib/isolate-test-compose.sh"
-honua_isolate_test_compose "$CITE_COMPOSE_FILE"
 # Results dir is overridable so the transactional evidence leg can write to its
 # own directory (cite-wfs20-transactional-results) without clobbering the basic
 # run that shares this same runner. The compose `cite-runner` /results mount
@@ -253,7 +251,7 @@ if [[ "$INTERACTIVE" == "true" ]]; then
     echo "Services are running at:"
     echo "  Honua Server:        $HONUA_BASE_URL"
     echo "  WFS GetCapabilities: $HONUA_WFS_URL"
-    echo "  CITE Team Engine:    http://localhost:${HONUA_CITE_WFS20_TEAMENGINE_PORT}/teamengine"
+    echo "  CITE Team Engine:    http://localhost:8081/teamengine"
     echo "  PostgreSQL:          localhost:${HONUA_CITE_WFS20_POSTGRES_PORT}"
     echo ""
     echo "Manual WFS 2.0 testing commands:"
@@ -261,7 +259,7 @@ if [[ "$INTERACTIVE" == "true" ]]; then
     echo "  DescribeFeatureType: curl '${HONUA_BASE_URL}/wfs?service=WFS&version=2.0.0&request=DescribeFeatureType'"
     echo "  GetFeature:          curl '${HONUA_BASE_URL}/wfs?service=WFS&version=2.0.0&request=GetFeature'"
     echo ""
-    echo "CITE Team Engine web interface: http://localhost:${HONUA_CITE_WFS20_TEAMENGINE_PORT}/teamengine"
+    echo "CITE Team Engine web interface: http://localhost:8081/teamengine"
     echo ""
     echo "Press Ctrl+C to stop all services"
 
@@ -372,7 +370,7 @@ cat > "$CITE_RESULTS_DIR/cite-summary.md" << EOF
 
 - **Honua Server**: $HONUA_BASE_URL
 - **WFS Endpoint**: ${HONUA_BASE_URL}/wfs
-- **CITE Team Engine**: http://localhost:${HONUA_CITE_WFS20_TEAMENGINE_PORT}/teamengine
+- **CITE Team Engine**: http://localhost:8081/teamengine
 - **Database**: PostgreSQL with PostGIS + CITE test data
 
 ## CITE Team Engine Results

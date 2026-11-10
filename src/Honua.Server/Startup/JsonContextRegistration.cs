@@ -61,7 +61,6 @@ internal static class JsonContextRegistration
         Honua.Server.Features.Admin.Models.LayerFieldConfigurationJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerAuthoringJsonContext.Default,
         Honua.Server.Features.Admin.Models.DiscoveryMetadataJsonContext.Default,
-        Honua.Server.Features.Admin.Models.LayerDisplaySpatialJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerValidationJsonContext.Default,
         Honua.Server.Features.Admin.Models.StyleSuggestionJsonContext.Default,
         Honua.Server.Features.Admin.Models.AlertAdminJsonContext.Default,

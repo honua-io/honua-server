@@ -1,8 +1,8 @@
 {
   "$schema": "./mcp-tool-roster.v1.schema.json",
   "schemaVersion": 1,
-  "serverSha": "a60d188ec375d829151a3613be1c374cf4f38a66",
-  "generatedAt": "2026-11-09T05:54:41Z",
+  "serverSha": "d99f9597fa84dd43fcd20031469a321b703b4cba",
+  "generatedAt": "2026-11-08T10:09:59Z",
   "regenerate": "bash scripts/ci/generate-mcp-tool-roster.sh",
   "static": [
     "honua_alert_events",
@@ -246,12 +246,12 @@
       "honua_describe_layer",
       "honua_dry_run_plan",
       "honua_execute_plan",
-      "honua_get_job_results",
       "honua_list_capabilities",
       "honua_list_jobs",
       "honua_list_layers",
       "honua_plan_analysis",
       "honua_query_features",
+      "honua_render_map",
       "honua_resolve_entity",
       "honua_supported_operation_kinds",
       "honua_validate_plan"

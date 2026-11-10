@@ -11,8 +11,6 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 CITE_COMPOSE_FILE="docker/cite/wfs11/compose.yml"
-source "$(dirname "${BASH_SOURCE[0]}")/../../ci/lib/isolate-test-compose.sh"
-honua_isolate_test_compose "$CITE_COMPOSE_FILE"
 CITE_RESULTS_DIR="cite-wfs11-results"
 CITE_TIMEOUT=1800
 HEALTHCHECK_TIMEOUT=300
@@ -193,7 +191,7 @@ if [[ "$INTERACTIVE" == "true" ]]; then
     echo -e "${BLUE}Interactive mode enabled${NC}"
     echo "Honua Server:        $HONUA_BASE_URL"
     echo "WFS GetCapabilities: $HONUA_WFS_URL"
-    echo "CITE Team Engine:    http://localhost:${HONUA_CITE_WFS11_TEAMENGINE_PORT}/teamengine"
+    echo "CITE Team Engine:    http://localhost:8089/teamengine"
     tail -f /dev/null
 fi
 
