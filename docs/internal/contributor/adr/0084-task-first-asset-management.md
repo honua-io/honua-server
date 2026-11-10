@@ -36,13 +36,14 @@ those capabilities and split authorization and conflict handling.
    completion observations made in the field are retained without restoring an
    obsolete assignee. Conflicts are explicit and never silently discard work.
 6. Anonymous reporting uses a dedicated restricted form intake into triage,
-   with rate limits, spam protection and no caching. Anonymous callers never
+   with edge rate limits under ADR-0004, service-side quotas, spam protection and no caching. Anonymous callers never
    receive general write access to tasks or asset layers.
 7. Console provides setup and planning; mobile SDK provides runtime primitives;
    Collect provides staff task UX. Studio supplies reporter and dashboard
    templates. Agent mutations require the existing human approval path.
 8. All migrations are expand-only under #7276. Reuse published shared contracts;
-   mobile-specific storage and sync adapters do not duplicate neutral SDK rules.
+   mobile-specific storage and sync adapters do not duplicate neutral SDK rules,
+   subject to the contract-placement ruling in NEEDS-MAIN 6.
 
 ## Alternatives considered
 A separate asset database would duplicate spatial queries and access control.
