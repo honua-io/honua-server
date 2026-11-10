@@ -34,14 +34,13 @@ THE CAP IS THE WHOLE SAFETY ARGUMENT
     budget, never a re-derivation of the full matrix.
 
 THE TIME BUDGET
-    With `--time-budget`, the walk down the ranking also honours
-    `pr_time_budget` from the shard map: a shard whose `dispatch_rank` exceeds
-    `max_shard_minutes` is not run, and a shard that would push the selection
-    past `max_total_minutes` runner-minutes is not run. Both are named under
-    `deferred_to_trunk` and covered by the post-merge trunk run. When every
-    candidate is deferred the selection skips with
-    `affected_shards_deferred_to_trunk`, which the verdict reports as a green
-    `deferred` result naming those shards.
+    With `--time-budget`, the ranking is re-spent against `pr_time_budget`
+    from the shard map (scripts/ci/shard_time_budget.py): a shard over
+    `max_shard_minutes`, or one that would push the selection past
+    `max_total_minutes` runner-minutes, is named under `deferred_to_trunk`
+    and left to the next trunk run. When every candidate is deferred the
+    selection skips with `affected_shards_deferred_to_trunk`, which the
+    verdict reports as a green `deferred` result naming those shards.
 
 ORDERING ("largest-impact first")
     Sorted by, in order:
@@ -123,11 +122,20 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 
+def _load_sibling(name: str) -> Any:
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name(f"{name}.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+time_budget = _load_sibling("shard_time_budget")
+apply_time_budget = time_budget.apply_time_budget
+
+
 CONTRACT = "honua.pr-gate-affected-shards/v1"
 DEFAULT_CAP = 6
 SPLIT_CHILD_SUFFIX = re.compile(r" \d+$")
-TIME_BUDGET_KEY = "pr_time_budget"
-DEFERRED_SKIP_REASON = "affected_shards_deferred_to_trunk"
 DEFAULT_CONFIG = ".github/ci-shards.json"
 DEFAULT_ROUTER = "scripts/ci/honua-server-targeted-tests.sh"
 DEFAULT_PROJECTS_SCRIPT = "scripts/ci/compute-affected-projects.sh"
@@ -539,7 +547,6 @@ def select(
     affected_projects: list[str] | None,
     cap: int,
     test_class_hits: dict[str, int] | None = None,
-    time_budget: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Pure selection. Every I/O-bound input is already resolved by the caller."""
     shards_by_name = {shard["name"]: shard for shard in config["shards"]}
@@ -644,7 +651,8 @@ def select(
     )
     ranked = interleave_split_families(ranked)
 
-    selected, dropped, deferred = spend_budget(ranked, cap, time_budget)
+    selected = ranked[:cap]
+    dropped = [entry["name"] for entry in ranked[cap:]]
 
     result: dict[str, Any] = {
         "contract": CONTRACT,
@@ -668,21 +676,14 @@ def select(
         "selected": selected,
         "shards": [entry["name"] for entry in selected],
         "dropped": dropped,
-        "time_budget": time_budget,
-        "deferred_to_trunk": deferred,
-        # dispatch_rank is the observed shard duration in minutes that ci.yml
-        # dispatches by (commit 27bd481f0, "dispatch longest test shards
-        # first"), so these two are the runner-minute and wall-clock estimates
-        # for the fan-out this selection asks for.
-        "projected_runner_minutes": round(sum(entry["dispatch_rank"] for entry in selected), 1),
-        "projected_wall_clock_minutes": round(
-            max((entry["dispatch_rank"] for entry in selected), default=0.0), 1
-        ),
+        "time_budget": None,
+        "deferred_to_trunk": [],
+        **time_budget.projected_minutes(selected),
     }
 
     if not selected:
         result["skip"] = True
-        result["reason"] = DEFERRED_SKIP_REASON if deferred else "no_shards_selected"
+        result["reason"] = "no_shards_selected"
     return result
 
 
@@ -700,48 +701,6 @@ def interleave_split_families(ranked: Sequence[dict[str, Any]]) -> list[dict[str
 
     keyed = [(tie(entry), round_of(entry), position, entry) for position, entry in enumerate(ranked)]
     return [entry for *_, entry in sorted(keyed, key=lambda item: item[:3])]
-
-
-def spend_budget(
-    ranked: Sequence[dict[str, Any]], cap: int, time_budget: dict[str, float] | None
-) -> tuple[list[dict[str, Any]], list[str], list[dict[str, Any]]]:
-    """Walk the ranking once, keeping what fits the cap and the pull-request time budget.
-
-    A shard slower than `max_shard_minutes` would set the gate's wall clock on its own, and a
-    selection past `max_total_minutes` spends more runners than one pull request may hold. Both
-    stay in the full trunk matrix, so they are deferred and named instead of silently dropped.
-    """
-    max_shard = (time_budget or {}).get("max_shard_minutes")
-    max_total = (time_budget or {}).get("max_total_minutes")
-    selected: list[dict[str, Any]] = []
-    dropped: list[str] = []
-    deferred: list[dict[str, Any]] = []
-    spent = 0.0
-    for entry in ranked:
-        minutes = entry["dispatch_rank"]
-        if max_shard is not None and minutes > max_shard:
-            deferred.append({"name": entry["name"], "minutes": minutes, "reason": "over_shard_budget"})
-        elif len(selected) >= cap:
-            dropped.append(entry["name"])
-        elif max_total is not None and spent + minutes > max_total:
-            deferred.append({"name": entry["name"], "minutes": minutes, "reason": "over_total_budget"})
-        else:
-            selected.append(entry)
-            spent += minutes
-    return selected, dropped, deferred
-
-
-def load_time_budget(config: dict[str, Any]) -> dict[str, float]:
-    policy = config.get(TIME_BUDGET_KEY)
-    if not isinstance(policy, dict):
-        raise SelectionError(f"the shard map declares no {TIME_BUDGET_KEY}")
-    budget = {}
-    for field in ("max_shard_minutes", "max_total_minutes"):
-        value = policy.get(field)
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
-            raise SelectionError(f"{TIME_BUDGET_KEY}.{field} must be a positive number")
-        budget[field] = float(value)
-    return budget
 
 
 def skipped(reason: str, *, cap: int, changed_file_count: int = 0, **extra: Any) -> dict[str, Any]:
@@ -785,8 +744,8 @@ def matrix_include(result: dict[str, Any], config: dict[str, Any]) -> list[dict[
 
 def render_summary(result: dict[str, Any]) -> str:
     lines = ["### PR Gate / Affected shards — selection", ""]
-    if result["skip"] and result["reason"] == DEFERRED_SKIP_REASON:
-        return "\n".join(lines + deferred_summary(result)) + "\n"
+    if result["skip"] and result["reason"] == time_budget.DEFERRED_SKIP_REASON:
+        return "\n".join(lines + time_budget.deferred_summary(result)) + "\n"
     if result["skip"]:
         lines += [
             f"No shards selected (`{result['reason']}`).",
@@ -824,26 +783,9 @@ def render_summary(result: dict[str, Any]) -> str:
             "The trailing matrix still runs these per trunk tip. The cap is what "
             + "keeps this lane a bounded detector instead of a second full fan-out.",
         ]
-    if result.get("deferred_to_trunk"):
-        lines += [""] + deferred_summary(result)
+    if result["deferred_to_trunk"]:
+        lines += [""] + time_budget.deferred_summary(result)
     return "\n".join(lines) + "\n"
-
-
-def deferred_summary(result: dict[str, Any]) -> list[str]:
-    budget = result.get("time_budget") or {}
-    lines = [
-        f"Deferred to the trunk matrix by the time budget (shard <= "
-        f"`{budget.get('max_shard_minutes')}` min, selection <= `{budget.get('max_total_minutes')}` "
-        "runner-minutes):",
-        "",
-        "| Shard | Measured minutes | Reason |",
-        "|---|---:|---|",
-    ]
-    lines += [
-        f"| {entry['name']} | {entry['minutes']} | `{entry['reason']}` |"
-        for entry in result["deferred_to_trunk"]
-    ]
-    return lines
 
 
 def append_github_output(result: dict[str, Any], include: list[dict[str, Any]]) -> None:
@@ -879,11 +821,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--router", default=DEFAULT_ROUTER)
     parser.add_argument("--projects-script", default=DEFAULT_PROJECTS_SCRIPT)
     parser.add_argument("--cap", type=int, default=DEFAULT_CAP)
-    parser.add_argument(
-        "--time-budget",
-        action="store_true",
-        help=f"apply the {TIME_BUDGET_KEY} policy from the shard map",
-    )
+    parser.add_argument("--time-budget", action="store_true",
+                        help=f"apply the {time_budget.TIME_BUDGET_KEY} policy from the shard map")
     parser.add_argument("--annotate-resources", action="store_true",
                         help="annotate execution matrix using the shared conservative catalog policy")
     parser.add_argument("--json", dest="json_path", help="write the receipt JSON here")
@@ -905,7 +844,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     root = _repo_root()
     config_path = root / args.config
     config = load_config(config_path)
-    time_budget = load_time_budget(config) if args.time_budget else None
+    budget = time_budget.load_time_budget(config) if args.time_budget else None
 
     if args.changed_files:
         changed_files = read_lines(args.changed_files)
@@ -941,10 +880,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         changed_files=changed_files,
         descriptor=descriptor,
         affected_projects=affected_projects,
-        cap=args.cap,
+        cap=len(config["shards"]) if budget else args.cap,
         test_class_hits=count_test_class_hits(root, config, changed_files),
-        time_budget=time_budget,
     )
+    if budget:
+        result = apply_time_budget(result, args.cap, budget)
     return emit(result, config, args)
 
 
@@ -973,6 +913,6 @@ def emit(result: dict[str, Any], config: dict[str, Any], args: argparse.Namespac
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except SelectionError as error:
+    except (SelectionError, time_budget.TimeBudgetError) as error:
         print(f"::error::compute-affected-shards: {error}", file=sys.stderr)
         raise SystemExit(2)
