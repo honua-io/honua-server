@@ -21,7 +21,7 @@ Temporal behavior is opt-in: a layer advertises a time dimension only after you 
 
 1. Mark the layer time-aware by naming its time fields. The fields must resolve to `Date`/`DateTime` columns on the layer:
 
-   In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `PUT /api/v1/admin/services/{service}/layers/{layerId}/metadata` with this body:
+   In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `PUT /api/v1/admin/services/{service}/layers/{serviceLayerIndex}/metadata` with this body:
 
    ```json
    {

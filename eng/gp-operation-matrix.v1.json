@@ -20,8 +20,7 @@
     "workspaceOwnerAudit": "https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/certification/gp-workspace-owner-audit-20261003.md",
     "routingWebToolsAudit": "https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/certification/gp-routing-webtool-audit-20261012.md",
     "managedFeatureStreamAudit": "docs/reference/gp-managed-feature-streams.md",
-    "aiAdmissionSourceAudit": "https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/certification/gp-ai-admission-source-audit-20261026.md",
-    "publicIdentifierSourceAudit": "certification/gp-public-identifiers-source-audit.md"
+    "aiAdmissionSourceAudit": "https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/certification/gp-ai-admission-source-audit-20261026.md"
   },
   "scope": "Every process returned by BuiltInProcessCatalog.ListProcesses(). A proven row requires concrete input, the production operation/executor path, and a semantic output-content assertion.",
   "statusDefinitions": {

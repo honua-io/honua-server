@@ -144,7 +144,7 @@ For example, publish `{"schema":"public","table":"parcels","layerName":"parcels-
 | PUT | `/api/v1/admin/services/{serviceName}/mapserver` | Update MapServer defaults and limits |
 | PUT | `/api/v1/admin/services/{serviceName}/access-policy` | Update service access policy (read/write roles, anonymous access) |
 | PUT | `/api/v1/admin/services/{serviceName}/timeinfo` | Update service-level temporal metadata |
-| PUT | `/api/v1/admin/services/{serviceName}/layers/{layerId}/metadata` | Patch layer-level governance, editing bindings, access policy, time info, and raster mosaic defaults |
+| PUT | `/api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata` | Patch layer-level governance, editing bindings, access policy, time info, and raster mosaic defaults |
 
 Layer metadata accepts `rasterMosaic.mergeStrategy` values `newest`, `oldest`, `average`, `max`, and `min` (case-insensitive). An empty string clears the layer default; a missing or `null` field preserves the existing value; unknown values return `400`.
 
