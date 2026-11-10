@@ -5,6 +5,11 @@ description: "You'll pick a 2026.1 deployment pattern for Honua — Compose and 
 ---
 # Deploy on AWS and Azure
 
+> **2026.1 rc.2 deployment scope:** Lambda and Kubernetes/Helm are not certified
+> in this release candidate. The supported production deployment is AWS ECS
+> Fargate with RDS PostGIS, ElastiCache, and Console in S3/CloudFront.
+> Docker Compose remains the local evaluation path, not a certified production target.
+
 You'll pick a 2026.1 deployment pattern for Honua — Compose and ECS are GA, Lambda and Kubernetes are Preview, Azure is not offered — and know which image, configuration, and rollout mechanism each one uses.
 
 **Prerequisites:** A PostGIS database (RDS or Azure Database for PostgreSQL Flexible Server), the required env vars from [Configure Honua Server](configuration.md) (`ConnectionStrings__DefaultConnection`, `HONUA_ADMIN_PASSWORD`, `Security__ConnectionEncryption__MasterKey`, `Cors__AllowedOrigins__0`), and TLS terminated at the edge (ALB, API Gateway, Front Door) — Honua does not terminate TLS.

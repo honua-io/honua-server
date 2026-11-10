@@ -5,6 +5,11 @@ description: "Take a single-node Compose install to production: a TLS edge, back
 ---
 # Deploy with Docker Compose
 
+> **2026.1 rc.2 deployment scope:** Lambda and Kubernetes/Helm are not certified
+> in this release candidate. The supported production deployment is AWS ECS
+> Fargate with RDS PostGIS, ElastiCache, and Console in S3/CloudFront.
+> Docker Compose remains the local evaluation path, not a certified production target.
+
 Before choosing an image, review [default and full serving images](choose-serving-image.md).
 That guide distinguishes the planned rc.2 store variants from older published
 images and explains when the deployment health probe must change with the image.

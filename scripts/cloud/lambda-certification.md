@@ -1,5 +1,10 @@
 # Lambda certification lane
 
+> **2026.1 rc.2 deployment scope:** Lambda and Kubernetes/Helm are not certified
+> in this release candidate. The supported production deployment is AWS ECS
+> Fargate with RDS PostGIS, ElastiCache, and Console in S3/CloudFront.
+> Docker Compose remains the local evaluation path, not a certified production target.
+
 `lambda-preview-certification.yml` certifies the manifest's exact image digest and
 `awsLambdaArchitecture` (`x86_64` → OCI `amd64`, or `arm64`), using the matching
 native GitHub runner for the executable runtime-adapter check. It preserves the true
