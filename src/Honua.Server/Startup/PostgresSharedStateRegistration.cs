@@ -56,7 +56,9 @@ internal static class PostgresSharedStateRegistration
             provider.GetService<NpgsqlDataSource>() is not null
                 ? provider.GetRequiredService<PostgresIdempotencyReservationStore>()
                 : new InMemoryIdempotencyReservationStore());
-        services.TryAddSingleton<PostgresTokenReplayStore>();
+        services.TryAddSingleton(provider => new PostgresTokenReplayStore(
+            provider.GetRequiredService<NpgsqlDataSource>(),
+            provider.GetRequiredService<JobStoreDatabase>()));
         services.RemoveAll<ITokenReplayStore>();
         services.AddSingleton<ITokenReplayStore>(static provider =>
             provider.GetService<NpgsqlDataSource>() is not null
