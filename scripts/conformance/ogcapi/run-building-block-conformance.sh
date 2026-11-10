@@ -8,10 +8,15 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HERE/../../.." && pwd)"
 COMPOSE_FILE="$REPO_ROOT/docker/cite/ogc-api-features/compose.yml"
+if [[ -n "${HONUA_CONFORMANCE_SERVER_PORT:-}" ]]; then
+    export HONUA_CITE_FEATURES_SERVER_PORT="$HONUA_CONFORMANCE_SERVER_PORT"
+fi
+source "$REPO_ROOT/scripts/ci/lib/isolate-test-compose.sh"
+honua_isolate_test_compose "$COMPOSE_FILE"
 COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-honua-ogcapi-building-blocks}"
 SERVER_IMAGE="${HONUA_CONFORMANCE_SERVER_IMAGE:-honua-server:latest}"
 SOURCE_SHA="${HONUA_CONFORMANCE_SOURCE_SHA:-$(git -C "$REPO_ROOT" rev-parse HEAD)}"
-SERVER_PORT="${HONUA_CONFORMANCE_SERVER_PORT:-8091}"
+SERVER_PORT="${HONUA_CONFORMANCE_SERVER_PORT:-$HONUA_CITE_FEATURES_SERVER_PORT}"
 BASE_URL="${HONUA_BASE_URL:-http://127.0.0.1:${SERVER_PORT}}"
 RESULTS_DIR="${HONUA_CONFORMANCE_RESULTS_DIR:-ogcapi-conformance-results}"
 COLLECTION_ID="${HONUA_CONFORMANCE_COLLECTION_ID:-}"
