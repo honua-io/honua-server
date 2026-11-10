@@ -18,9 +18,9 @@ def select(closure, roots):
         return list(GROUPS)
     if not closure:
         return []
-    # Architecture checks inspect repository files beyond ProjectReference edges.
+    # Architecture and Server governance inspect repository files beyond P2P edges.
     return [group for group in GROUPS
-            if group == 'architecture' or set(closure).intersection(roots[group])]
+            if group in {'architecture', 'server-governance'} or set(closure).intersection(roots[group])]
 
 
 def linked_patterns(project):

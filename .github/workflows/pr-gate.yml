@@ -111,13 +111,13 @@ jobs:
       # independent path an admission failure too, otherwise a skipped-success
       # format job would never execute on enforced attempt 2.
       - name: Await exact-head review
-        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt == 1
+        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.event.pull_request.draft != true && github.run_attempt == 1
         run: |
           echo "Admission passed; exact-head review has not released format verification yet."
           exit 1
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.event.pull_request.draft == true || github.run_attempt > 1
         with:
           fetch-depth: 2
 
@@ -148,17 +148,17 @@ jobs:
         run: scripts/ci/docs-only-diff.sh --github-output
 
       - name: Setup .NET
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.event.pull_request.draft == true || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.event.pull_request.draft == true || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         run: scripts/ci/dotnet-restore-retry.sh Honua.sln
 
       - name: Format Check
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.event.pull_request.draft == true || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: ./.github/actions/format-check
         with:
           format-scope: affected

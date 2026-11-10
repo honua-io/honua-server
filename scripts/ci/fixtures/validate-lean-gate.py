@@ -243,6 +243,12 @@ assert [row['check'] for row in _draft] == ['Format']
 assert [(row['check'], row['analyzer-partition'], row['analyzer-build']) for row in _ready] == [
     ('Format', 'all', 'false'), ('Analyzers', 'source', 'true'), ('Analyzers (tests)', 'tests', 'true')]
 assert _draft == _ready[:1]
+_format_job = PR_GATE.read_text().split('  format:\n', 1)[1].split('\n  fast-tests:', 1)[0]
+_wait = _format_job.split('- name: Await exact-head review', 1)[1].split('- uses:', 1)[0]
+assert "github.event.pull_request.draft != true" in _wait
+for _name in ['Setup .NET', 'Restore', 'Format Check']:
+    _step = _format_job.split('- name: ' + _name, 1)[1].split('- name:', 1)[0]
+    assert "github.event.pull_request.draft == true" in _step
 require(
     r"format-scope: affected\n\s+format: \$\{\{ matrix\.format \}\}\n"
     r"\s+analyzer-build: \$\{\{ matrix\.analyzer-build \}\}\n"
