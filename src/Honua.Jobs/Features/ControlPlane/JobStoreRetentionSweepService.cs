@@ -21,6 +21,7 @@ internal sealed partial class JobStoreRetentionSweepService(
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
+            // Host shutdown ends the sweep loop.
         }
     }
 

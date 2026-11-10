@@ -421,8 +421,7 @@ public sealed class PostgresJobClaimContentionTests(DatabaseFixtureAdapter datab
 
         public async Task<bool> TrySetIfLeaseOwnedAsync(
             ExecutionJobRecord job,
-            string leaseOperationId,
-            string leaseOwnerId,
+            OwnedJobLease lease,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default)
         {
@@ -432,7 +431,7 @@ public sealed class PostgresJobClaimContentionTests(DatabaseFixtureAdapter datab
             }
 
             return await inner
-                .TrySetIfLeaseOwnedAsync(job, leaseOperationId, leaseOwnerId, ttl, cancellationToken)
+                .TrySetIfLeaseOwnedAsync(job, lease, ttl, cancellationToken)
                 .ConfigureAwait(false);
         }
 

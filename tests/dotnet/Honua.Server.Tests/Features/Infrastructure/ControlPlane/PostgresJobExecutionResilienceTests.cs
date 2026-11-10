@@ -65,16 +65,7 @@ public sealed class PostgresJobExecutionResilienceTests
         var callback = new RecordingTerminalCallback();
         var executor = new CountingDelayedExecutor(TimeSpan.FromSeconds(30));
         using var worker = substrate.CreateWorker(executor, callback);
-        using var reconciler = new JobReconciliationService(
-            substrate.JobStore,
-            substrate.Queue,
-            substrate.Queue,
-            new ExecutionJobCancellationTokens(),
-            [callback],
-            substrate.LogStore,
-            NullLogger<JobReconciliationService>.Instance,
-            substrate.JobStore,
-            substrate.JobStore);
+        using var reconciler = substrate.CreateReconciler(callback);
         // One attempt only: an expiry would fail the job outright instead of hiding behind a retry.
         await substrate.JobStore.TryCreateAsync(CreateQueuedJob(operationId, heartbeat, maxAttempts: 1));
         await substrate.Queue.EnqueueAsync(operationId);
@@ -194,6 +185,18 @@ public sealed class PostgresJobExecutionResilienceTests
         public JobExecutionService CreateWorker(IJobExecutor executor, IJobTerminalCallback callback)
             => new(Queue, JobStore, [executor], new ExecutionJobCancellationTokens(), [callback], LogStore,
                 NullLogger<JobExecutionService>.Instance);
+
+        public JobReconciliationService CreateReconciler(IJobTerminalCallback callback)
+            => new(
+                JobStore,
+                Queue,
+                Queue,
+                new ExecutionJobCancellationTokens(),
+                [callback],
+                LogStore,
+                NullLogger<JobReconciliationService>.Instance,
+                JobStore,
+                JobStore);
 
         public async Task RestartAsync(TimeSpan downFor)
         {

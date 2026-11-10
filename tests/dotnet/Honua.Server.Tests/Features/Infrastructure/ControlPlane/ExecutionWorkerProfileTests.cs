@@ -34,6 +34,22 @@ public sealed class ExecutionWorkerProfileTests
 {
     private const string OperationId = "gp-512eacce12104f1aa4f4a092c4c17408";
 
+    private static readonly Type[] _serviceTypesTheWorkerNeverComposes =
+    [
+        typeof(IBatchComputeBackend),
+        typeof(IDeployBackend),
+        typeof(IExecutionJobReconciler),
+        typeof(IOperationReconcileDispatcher),
+        typeof(IScheduledTickDispatcher),
+        typeof(IScheduledTickHandler),
+        typeof(IOperationGateway),
+        typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor),
+        typeof(PostgresJobQueue),
+        typeof(IQueueClaimReconciler),
+        typeof(ExecutionJobBackstopSweepService),
+        typeof(JobReconciliationService),
+    ];
+
     // ---------------------------------------------------------------------
     // Worker-mode detection and the launch contract
     // ---------------------------------------------------------------------
@@ -155,21 +171,7 @@ public sealed class ExecutionWorkerProfileTests
             .Should().ContainSingle().Which.ImplementationType.Should().Be<NoHttpServer>(
                 "the worker binds no port, so no HTTP surface is served");
 
-        foreach (var removed in new[]
-        {
-            typeof(IBatchComputeBackend),
-            typeof(IDeployBackend),
-            typeof(IExecutionJobReconciler),
-            typeof(IOperationReconcileDispatcher),
-            typeof(IScheduledTickDispatcher),
-            typeof(IScheduledTickHandler),
-            typeof(IOperationGateway),
-            typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor),
-            typeof(PostgresJobQueue),
-            typeof(IQueueClaimReconciler),
-            typeof(ExecutionJobBackstopSweepService),
-            typeof(JobReconciliationService),
-        })
+        foreach (var removed in _serviceTypesTheWorkerNeverComposes)
         {
             services.Should().NotContain(descriptor => descriptor.ServiceType == removed,
                 $"the execution worker profile never composes {removed.Name}");

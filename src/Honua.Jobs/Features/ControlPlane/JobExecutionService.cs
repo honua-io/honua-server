@@ -914,8 +914,7 @@ internal sealed partial class JobExecutionService(
                 ? await jobStore.TrySetAsync(final, cancellationToken: cancellationToken).ConfigureAwait(false)
                 : await jobStore.TrySetIfLeaseOwnedAsync(
                         final,
-                        partitionLeaseId,
-                        partitionLeaseOwner!,
+                        new OwnedJobLease(partitionLeaseId, partitionLeaseOwner!),
                         cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
             if (finalized)

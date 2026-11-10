@@ -10,6 +10,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;

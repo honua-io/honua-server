@@ -17,6 +17,7 @@ internal sealed class PostgresJobSubstrateHarness : IAsyncDisposable
     private const string MigrationResourceName = "Honua.Server.Migrations.147_CreateJobSubstrate.sql";
 
     private readonly IIsolatedSchemaFixture _fixture;
+    private readonly IOptions<JobStoreOptions> _options;
 
     private PostgresJobSubstrateHarness(IIsolatedSchemaFixture fixture, NpgsqlDataSource dataSource, string schema, JobStoreOptions options)
     {
@@ -24,9 +25,10 @@ internal sealed class PostgresJobSubstrateHarness : IAsyncDisposable
         DataSource = dataSource;
         Schema = schema;
         Database = new JobStoreDatabase(dataSource, schema);
-        JobStore = new PostgresExecutionJobStore(Database, Options.Create(options), NullLogger<PostgresExecutionJobStore>.Instance);
+        _options = Options.Create(options);
+        JobStore = CreateNodeJobStore();
         Queue = new PostgresJobQueue(Database, NullLogger<PostgresJobQueue>.Instance);
-        LogStore = new PostgresExecutionLogStore(Database, Options.Create(options), NullLogger<PostgresExecutionLogStore>.Instance);
+        LogStore = new PostgresExecutionLogStore(Database, _options, NullLogger<PostgresExecutionLogStore>.Instance);
     }
 
     public NpgsqlDataSource DataSource { get; }
@@ -57,6 +59,10 @@ internal sealed class PostgresJobSubstrateHarness : IAsyncDisposable
         await fixture.ExecuteDdlUnderLockAsync(ReadMigration().Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal));
         return new PostgresJobSubstrateHarness(fixture, dataSource, schema, new JobStoreOptions());
     }
+
+    // A job store instance of its own over this schema, as each server node has.
+    public PostgresExecutionJobStore CreateNodeJobStore()
+        => new(Database, _options, NullLogger<PostgresExecutionJobStore>.Instance);
 
     public async Task ExecuteAsync(string sql, params NpgsqlParameter[] parameters)
     {

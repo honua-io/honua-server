@@ -20,9 +20,9 @@ using Honua.TestKit.Helpers;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Npgsql;
 using Xunit;
 using Xunit.Abstractions;
+using static Honua.TestKit.DockerHostGateway;
 
 namespace Honua.Worker.Gdal.Tests;
 
@@ -34,7 +34,6 @@ namespace Honua.Worker.Gdal.Tests;
 public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper output)
 {
     private const string ImageEnvironmentVariable = "HONUA_WORKER_IMAGE";
-    private const string DockerHostAlias = "host.docker.internal";
     private const string AssignedJobBackend = "production-container-certification";
     private const string ContainerOutputRoot = "/var/lib/honua/gp-outputs";
 
@@ -250,18 +249,6 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
                 }).ConfigurationDigest)
             .WithBindMount(hostOutputRoot, ContainerOutputRoot)
             .Build();
-
-    // The test database is published on the Docker host, which a container reaches through the host gateway.
-    private static string ConnectionStringReachableFromContainer(string hostConnectionString)
-    {
-        var builder = new NpgsqlConnectionStringBuilder(hostConnectionString);
-        if (builder.Host is "localhost" or "127.0.0.1" or "::1")
-        {
-            builder.Host = DockerHostAlias;
-        }
-
-        return builder.ConnectionString;
-    }
 
     private async Task RecordNativeVersionsAsync(IContainer worker)
     {

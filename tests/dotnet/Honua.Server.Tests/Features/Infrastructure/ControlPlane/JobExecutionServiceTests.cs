@@ -460,8 +460,7 @@ public sealed class JobExecutionServiceTests
             .Returns(true);
         jobStore.TrySetIfLeaseOwnedAsync(
                 Arg.Any<ExecutionJobRecord>(),
-                Arg.Any<string>(),
-                Arg.Any<string>(),
+                Arg.Any<OwnedJobLease>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<CancellationToken>())
             .Returns(true);
@@ -522,8 +521,7 @@ public sealed class JobExecutionServiceTests
             .Returns(true);
         jobStore.TrySetIfLeaseOwnedAsync(
                 Arg.Any<ExecutionJobRecord>(),
-                Arg.Any<string>(),
-                Arg.Any<string>(),
+                Arg.Any<OwnedJobLease>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<CancellationToken>())
             .Returns(false);
@@ -552,8 +550,9 @@ public sealed class JobExecutionServiceTests
 
         await jobStore.Received(1).TrySetIfLeaseOwnedAsync(
             Arg.Is<ExecutionJobRecord>(job => job.Status == ExecutionJobStatus.Succeeded),
-            Arg.Is<string>(value => value.StartsWith("partition:", StringComparison.Ordinal)),
-            $"{provisioning.ClaimedBy}:{provisioning.OperationId}",
+            Arg.Is<OwnedJobLease>(lease =>
+                lease.LeaseOperationId.StartsWith("partition:", StringComparison.Ordinal)
+                && lease.OwnerId == $"{provisioning.ClaimedBy}:{provisioning.OperationId}"),
             Arg.Any<TimeSpan?>(),
             CancellationToken.None);
         await jobStore.DidNotReceive().TrySetAsync(
@@ -3058,15 +3057,14 @@ public sealed class JobExecutionServiceTests
 
         public Task<bool> TrySetIfLeaseOwnedAsync(
             ExecutionJobRecord job,
-            string leaseOperationId,
-            string leaseOwnerId,
+            OwnedJobLease lease,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default)
         {
             lock (_gate)
             {
                 ThrowIfFailingAfterFault();
-                if (!_leases.TryGetValue(leaseOperationId, out var owner) || owner != leaseOwnerId)
+                if (!_leases.TryGetValue(lease.LeaseOperationId, out var owner) || owner != lease.OwnerId)
                 {
                     return Task.FromResult(false);
                 }

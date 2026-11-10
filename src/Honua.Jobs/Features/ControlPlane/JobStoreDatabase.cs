@@ -19,10 +19,16 @@ internal sealed class JobStoreDatabase(NpgsqlDataSource dataSource, string? sche
         TimeSpan.FromSeconds(2)
     ];
 
-    private readonly string _quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(
+    private readonly string _quotedSchema = QuoteIdentifier(
         string.IsNullOrWhiteSpace(schemaName) ? DefaultSchemaName : schemaName);
 
     public string Table(string tableName) => $"{_quotedSchema}.{tableName}";
+
+    internal static string QuoteIdentifier(string identifier)
+    {
+        using var builder = new NpgsqlCommandBuilder();
+        return builder.QuoteIdentifier(identifier);
+    }
 
     // Runs statement on a pooled connection. A transient failure to open the
     // connection is always retried. A transient failure after the statement was sent is retried

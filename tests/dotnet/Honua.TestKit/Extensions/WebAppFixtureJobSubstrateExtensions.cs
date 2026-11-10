@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.ControlPlane;
 using Microsoft.AspNetCore.Hosting;
 using Npgsql;
 
@@ -30,7 +31,7 @@ public static class WebAppFixtureJobSubstrateExtensions
     public static async Task ClearJobSubstrateAsync(this NpgsqlDataSource dataSource, string schema = "honua")
     {
         ArgumentNullException.ThrowIfNull(dataSource);
-        var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(schema);
+        var quotedSchema = JobStoreDatabase.QuoteIdentifier(schema);
         var tables = string.Join(", ", _jobSubstrateTables.Select(table => $"{quotedSchema}.{table}"));
         await using var command = dataSource.CreateCommand($"TRUNCATE {tables} CASCADE");
         await command.ExecuteNonQueryAsync().ConfigureAwait(false);

@@ -82,8 +82,7 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
               AND backend = '{ExecutionJobRow.LocalBackend}' AND queue_visible_at IS NULL
             """,
             operationId,
-            priority,
-            visibleAfter: null,
+            new QueuePlacement(priority, VisibleAfter: null),
             cancellationToken).ConfigureAwait(false);
 
         Log.JobEnqueued(_logger, operationId, priority.ToString());
@@ -159,8 +158,7 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
               AND status NOT IN ({ExecutionJobRow.TerminalStatusList})
             """,
             operationId,
-            priority,
-            visibleAfter is { } delay && delay > TimeSpan.Zero ? delay : TimeSpan.Zero,
+            new QueuePlacement(priority, visibleAfter is { } delay && delay > TimeSpan.Zero ? delay : TimeSpan.Zero),
             cancellationToken).ConfigureAwait(false);
 
         Log.JobRequeued(_logger, operationId);
@@ -177,8 +175,7 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
               AND queue_visible_at IS NOT NULL
             """,
             operationId,
-            priority: null,
-            visibleAfter: null,
+            QueuePlacement.Unplaced,
             cancellationToken).ConfigureAwait(false);
 
         Log.JobRemovedFromQueue(_logger, operationId);
@@ -267,28 +264,32 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
     private Task ExecuteQueueStatementAsync(
         string statement,
         string operationId,
-        OperationPriority? priority,
-        TimeSpan? visibleAfter,
+        QueuePlacement placement,
         CancellationToken cancellationToken)
         => _database.ExecuteAsync(
             async (connection, token) =>
             {
                 await using var command = new NpgsqlCommand(statement, connection);
                 command.Parameters.Add(new NpgsqlParameter("operation_id", NpgsqlDbType.Text) { Value = operationId });
-                if (priority.HasValue)
+                if (placement.Priority.HasValue)
                 {
-                    command.Parameters.Add(new NpgsqlParameter("queue_priority", NpgsqlDbType.Smallint) { Value = ExecutionJobRow.PriorityBand(priority.Value) });
+                    command.Parameters.Add(new NpgsqlParameter("queue_priority", NpgsqlDbType.Smallint) { Value = ExecutionJobRow.PriorityBand(placement.Priority.Value) });
                 }
 
-                if (visibleAfter.HasValue)
+                if (placement.VisibleAfter.HasValue)
                 {
-                    command.Parameters.Add(new NpgsqlParameter("visible_after", NpgsqlDbType.Interval) { Value = visibleAfter.Value });
+                    command.Parameters.Add(new NpgsqlParameter("visible_after", NpgsqlDbType.Interval) { Value = placement.VisibleAfter.Value });
                 }
 
                 await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
             },
             StatementRepeat.SafeToRepeat,
             cancellationToken);
+
+    private readonly record struct QueuePlacement(OperationPriority? Priority, TimeSpan? VisibleAfter)
+    {
+        public static QueuePlacement Unplaced => default;
+    }
 
     private static partial class Log
     {

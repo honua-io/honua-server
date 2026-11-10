@@ -587,7 +587,7 @@ internal sealed class CapabilityManifestService(
                 supported: spec.Supported && served,
                 configured: configured,
                 unavailableReasonOverride: lifecycleEnabled
-                    ? null
+                    ? spec.UnavailableReason
                     : Core.Features.Capabilities.CapabilityReasonCodes.ExperimentalDisabled,
                 entitlementKey: spec.EntitlementKey,
                 entitlementKeys: spec.EntitlementKeys,
@@ -595,8 +595,7 @@ internal sealed class CapabilityManifestService(
                 requiresAuthentication: spec.RequiresAuthentication,
                 requiresEnvironment: spec.RequiresEnvironment,
                 requiresWorkspace: spec.RequiresWorkspace,
-                requiresDurableJobStore: spec.RequiresDurableJobStore,
-                requiresProposalStore: spec.RequiresProposalStore));
+                requiresDurableJobStore: spec.RequiresDurableJobStore));
         }
 
         // codeql[cs/linq/missed-where]: adds a capability only when that id is not already present
@@ -623,8 +622,9 @@ internal sealed class CapabilityManifestService(
             // calls one, that a Redis-off host refuses with the typed capability-unavailable
             // receipt (dependency-unavailable; license-required when Redis is unentitled).
             Capability(OperationsProposalsCapabilityId, "operate", context,
-                requiresAuthentication: true,
-                requiresProposalStore: true),
+                configured: options.ProposalStoreAvailable,
+                unavailableReasonOverride: SubstrateUnavailableReason(options.ProposalStoreUnavailableCause),
+                requiresAuthentication: true),
             Capability("ops.autonomy", "operate", context,
                 configured: operationCapabilities.HasAutonomyPolicyStore,
                 requiresAuthentication: true),
@@ -723,7 +723,7 @@ internal sealed class CapabilityManifestService(
             ["versioning.branch"] = new() { EntitlementKey = FeatureCatalog.BranchVersioningKey },
             ["operate.status"] = new() { RequiresAuthentication = true },
             ["ops.findings"] = new() { RequiresAuthentication = true },
-            [OperationsProposalsCapabilityId] = new() { RequiresAuthentication = true, RequiresProposalStore = true },
+            [OperationsProposalsCapabilityId] = ProposalStoreSpec(),
             ["ops.autonomy"] = new()
             {
                 Configured = operationCapabilities.HasAutonomyPolicyStore,
@@ -737,6 +737,14 @@ internal sealed class CapabilityManifestService(
             },
         };
     }
+
+    private ManifestCapabilitySpec ProposalStoreSpec()
+        => new()
+        {
+            Configured = options.ProposalStoreAvailable,
+            UnavailableReason = SubstrateUnavailableReason(options.ProposalStoreUnavailableCause),
+            RequiresAuthentication = true,
+        };
 
     private ManifestCapabilitySpec WarehouseSpec(WarehouseProviderDecision decision)
         => new()
@@ -796,7 +804,6 @@ internal sealed class CapabilityManifestService(
         bool requiresEnvironment = false,
         bool requiresWorkspace = false,
         bool requiresDurableJobStore = false,
-        bool requiresProposalStore = false,
         string? unavailableReasonOverride = null)
     {
         var available = true;
@@ -832,11 +839,6 @@ internal sealed class CapabilityManifestService(
         {
             available = false;
             reasonCode = SubstrateUnavailableReason(options.DurableJobSubstrateCause);
-        }
-        else if (requiresProposalStore && !options.ProposalStoreAvailable)
-        {
-            available = false;
-            reasonCode = SubstrateUnavailableReason(options.ProposalStoreUnavailableCause);
         }
         else if (requiresEnvironment && !context.EnvironmentAvailable)
         {
@@ -1580,6 +1582,8 @@ internal sealed class CapabilityManifestService(
 
         public bool Configured { get; init; } = true;
 
+        public string? UnavailableReason { get; init; }
+
         public string? EntitlementKey { get; init; }
 
         public string[]? EntitlementKeys { get; init; }
@@ -1593,8 +1597,6 @@ internal sealed class CapabilityManifestService(
         public bool RequiresWorkspace { get; init; }
 
         public bool RequiresDurableJobStore { get; init; }
-
-        public bool RequiresProposalStore { get; init; }
     }
 
     private sealed record CapabilityPolicyContext(

@@ -75,8 +75,7 @@ public sealed class InMemoryExecutionJobStore : IExecutionJobStore
     /// </summary>
     public Task<bool> TrySetIfLeaseOwnedAsync(
         ExecutionJobRecord job,
-        string leaseOperationId,
-        string leaseOwnerId,
+        OwnedJobLease lease,
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default)
         => TrySetAsync(job, ttl, cancellationToken);

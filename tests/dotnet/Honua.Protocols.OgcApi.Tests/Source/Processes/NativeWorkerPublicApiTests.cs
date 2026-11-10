@@ -9,12 +9,13 @@ using System.Text.Json;
 using DotNet.Testcontainers.Builders;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using NativeWorker::Honua.Worker.Gdal;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Npgsql;
 using Xunit.Abstractions;
+using static Honua.TestKit.DockerHostGateway;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 
@@ -23,8 +24,6 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 public sealed class NativeWorkerPublicApiTests(ITestOutputHelper output)
 {
-    private const string DockerHostAlias = "host.docker.internal";
-
     [RequiredEnvironmentFact("HONUA_WORKER_IMAGE")]
     [Trait("Category", "NativePublicApi")]
     [Trait("Tier", "Integration")]
@@ -109,18 +108,6 @@ public sealed class NativeWorkerPublicApiTests(ITestOutputHelper output)
         var geometry = feature.GetProperty("geometry");
         geometry.GetProperty("type").GetString().Should().Be("Point");
         geometry.GetProperty("coordinates").EnumerateArray().Select(c => c.GetDouble()).Should().Equal(coordinates);
-    }
-
-    // The test database is published on the Docker host, which a container reaches through the host gateway.
-    private static string ConnectionStringReachableFromContainer(string hostConnectionString)
-    {
-        var builder = new NpgsqlConnectionStringBuilder(hostConnectionString);
-        if (builder.Host is "localhost" or "127.0.0.1" or "::1")
-        {
-            builder.Host = DockerHostAlias;
-        }
-
-        return builder.ConnectionString;
     }
 
     private static async Task<JsonDocument> PollUntilTerminalAsync(HttpClient client, string jobId)

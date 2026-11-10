@@ -4,13 +4,13 @@
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
-using Honua.TestKit;
+using Honua.TestKit.Extensions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using StackExchange.Redis;
 
-namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
+namespace Honua.TestKit;
 
 internal static class NoRedisJobHost
 {

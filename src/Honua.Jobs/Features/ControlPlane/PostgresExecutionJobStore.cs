@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Text;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Npgsql;
@@ -13,11 +12,6 @@ namespace Honua.ControlPlane;
 // expiry and stamp uses the database clock.
 internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJobStoreClock, IReconcilableJobSource
 {
-    private const int MinQueryLimit = 1;
-    private const int MaxQueryLimit = 200;
-    private const int ActiveListOverfetchFactor = 2;
-    private const string InvalidCursorMessage = "Invalid job cursor.";
-
     // A compare-and-set write turns a timestamp the writer changed into the database time and
     // keeps one the writer left as it read it. A job written back to Queued after a local worker
     // claimed it re-enters the queue here, in the statement that changes its status.
@@ -90,52 +84,6 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
 
             """;
     }
-
-    public Task<bool> TryAcquireLeaseAsync(
-        string operationId,
-        string ownerId,
-        TimeSpan leaseDuration,
-        CancellationToken cancellationToken = default)
-        => ExecuteLeaseStatementAsync(
-            $"""
-            INSERT INTO {_leases} AS lease (lease_key, owner_id, expires_at)
-            VALUES (@lease_key, @lease_owner_id, now() + @duration)
-            ON CONFLICT (lease_key) DO UPDATE SET owner_id = EXCLUDED.owner_id, expires_at = EXCLUDED.expires_at
-            WHERE lease.expires_at <= now()
-            """,
-            operationId,
-            ownerId,
-            leaseDuration,
-            StatementRepeat.NotAfterSend,
-            cancellationToken);
-
-    public Task<bool> RenewLeaseAsync(
-        string operationId,
-        string ownerId,
-        TimeSpan leaseDuration,
-        CancellationToken cancellationToken = default)
-        => ExecuteLeaseStatementAsync(
-            $"""
-            UPDATE {_leases} SET expires_at = now() + @duration
-            WHERE lease_key = @lease_key AND owner_id = @lease_owner_id AND expires_at > now()
-            """,
-            operationId,
-            ownerId,
-            leaseDuration,
-            StatementRepeat.SafeToRepeat,
-            cancellationToken);
-
-    public Task ReleaseLeaseAsync(
-        string operationId,
-        string ownerId,
-        CancellationToken cancellationToken = default)
-        => ExecuteLeaseStatementAsync(
-            $"DELETE FROM {_leases} WHERE lease_key = @lease_key AND owner_id = @lease_owner_id",
-            operationId,
-            ownerId,
-            leaseDuration: null,
-            StatementRepeat.SafeToRepeat,
-            cancellationToken);
 
     public async Task<bool> TryCreateAsync(
         ExecutionJobRecord job,
@@ -230,147 +178,6 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
         CancellationToken cancellationToken = default)
         => CompareAndSetAsync(job, ttl, ownedLease: null, cancellationToken);
 
-    public Task<bool> TrySetIfLeaseOwnedAsync(
-        ExecutionJobRecord job,
-        string leaseOperationId,
-        string leaseOwnerId,
-        TimeSpan? ttl = null,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(leaseOperationId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(leaseOwnerId);
-        return CompareAndSetAsync(job, ttl, new OwnedLease(leaseOperationId, leaseOwnerId), cancellationToken);
-    }
-
-    public async Task<ExecutionJobPage> QueryAsync(
-        ExecutionJobQuery query,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(query);
-
-        ExecutionJobCursor? cursor = null;
-        if (!string.IsNullOrWhiteSpace(query.Cursor))
-        {
-            if (!ExecutionJobCursor.TryDecode(query.Cursor, out var decoded))
-            {
-                throw new ArgumentException(InvalidCursorMessage, nameof(query));
-            }
-
-            cursor = decoded;
-        }
-
-        var limit = Math.Clamp(query.Limit, MinQueryLimit, MaxQueryLimit);
-        var jobs = await _database.ExecuteAsync(
-            async (connection, _, token) =>
-            {
-                await using var command = BuildQueryCommand(connection, query, cursor, limit);
-                return await ReadJobsAsync(command, token).ConfigureAwait(false);
-            },
-            StatementRepeat.SafeToRepeat,
-            cancellationToken).ConfigureAwait(false);
-
-        if (jobs.Count <= limit)
-        {
-            return new ExecutionJobPage { Items = jobs };
-        }
-
-        jobs.RemoveAt(jobs.Count - 1);
-        var last = jobs[^1];
-        return new ExecutionJobPage
-        {
-            Items = jobs,
-            NextCursor = new ExecutionJobCursor(last.CreatedAt, last.OperationId).Encode()
-        };
-    }
-
-    public async Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(
-        ExecutionJobKind? kind = null,
-        int? limit = null,
-        CancellationToken cancellationToken = default)
-        => await _database.ExecuteAsync(
-            async (connection, _, token) =>
-            {
-                var text = new StringBuilder(
-                    $"SELECT {ExecutionJobRow.SelectColumns} FROM {_jobs} WHERE status IN ({ExecutionJobRow.ActiveStatusList})");
-                await using var command = new NpgsqlCommand { Connection = connection };
-                if (kind.HasValue)
-                {
-                    text.Append(" AND kind = @kind");
-                    command.Parameters.Add(new NpgsqlParameter("kind", NpgsqlDbType.Text) { Value = kind.Value.ToString() });
-                }
-
-                text.Append(" ORDER BY updated_at DESC");
-                if (limit.HasValue)
-                {
-                    text.Append(" LIMIT @limit");
-                    command.Parameters.Add(new NpgsqlParameter("limit", NpgsqlDbType.Bigint)
-                    {
-                        Value = (long)limit.Value * ActiveListOverfetchFactor
-                    });
-                }
-
-                command.CommandText = text.ToString();
-                return await ReadJobsAsync(command, token).ConfigureAwait(false);
-            },
-            StatementRepeat.SafeToRepeat,
-            cancellationToken).ConfigureAwait(false);
-
-    public async Task<IReadOnlyList<ExecutionJobRecord>> ListExpiryAndDispatchCandidatesAsync(CancellationToken cancellationToken)
-        => await _database.ExecuteAsync(
-            async (connection, _, token) =>
-            {
-                await using var command = new NpgsqlCommand(
-                    $"""
-                    SELECT {ExecutionJobRow.SelectColumns} FROM {_jobs}
-                    WHERE (status IN ('{nameof(ExecutionJobStatus.Provisioning)}', '{nameof(ExecutionJobStatus.Running)}')
-                           AND (COALESCE(last_heartbeat_at, claimed_at) <= now() - heartbeat_timeout
-                                OR claimed_at <= now() - max_duration))
-                       OR (status = '{nameof(ExecutionJobStatus.Queued)}' AND queue_visible_at IS NULL
-                           AND backend = '{ExecutionJobRow.LocalBackend}')
-                    """,
-                    connection);
-                return await ReadJobsAsync(command, token).ConfigureAwait(false);
-            },
-            StatementRepeat.SafeToRepeat,
-            cancellationToken).ConfigureAwait(false);
-
-    public async Task<IReadOnlyList<string>> ListBackendReconciliationCandidateIdsAsync(CancellationToken cancellationToken)
-        => await _database.ExecuteAsync(
-            async (connection, _, token) =>
-            {
-                // The predicate is the one idx_execution_jobs_reconcilable is built on.
-                await using var command = new NpgsqlCommand(
-                    $"""
-                    SELECT operation_id FROM {_jobs}
-                    WHERE status IN ({ExecutionJobRow.ActiveStatusList})
-                      AND NOT (status = '{nameof(ExecutionJobStatus.Queued)}' AND backend = '{ExecutionJobRow.LocalBackend}'
-                               AND attempt_count = 0 AND NOT cancellation_requested)
-                    """,
-                    connection);
-                var operationIds = new List<string>();
-                await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
-                while (await reader.ReadAsync(token).ConfigureAwait(false))
-                {
-                    operationIds.Add(reader.GetString(0));
-                }
-
-                return operationIds;
-            },
-            StatementRepeat.SafeToRepeat,
-            cancellationToken).ConfigureAwait(false);
-
-    public async Task<DateTimeOffset> GetUtcNowAsync(CancellationToken cancellationToken = default)
-        => await _database.ExecuteAsync(
-            async (connection, _, token) =>
-            {
-                await using var command = new NpgsqlCommand("SELECT now()", connection);
-                await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
-                await reader.ReadAsync(token).ConfigureAwait(false);
-                return reader.GetFieldValue<DateTimeOffset>(0);
-            },
-            StatementRepeat.SafeToRepeat,
-            cancellationToken).ConfigureAwait(false);
-
     private async Task<bool> CompareAndSetAsync(
         ExecutionJobRecord job,
         TimeSpan? ttl,
@@ -441,138 +248,6 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
         return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
     }
 
-    private async Task<bool> ExecuteLeaseStatementAsync(
-        string statement,
-        string leaseKey,
-        string ownerId,
-        TimeSpan? leaseDuration,
-        StatementRepeat repeat,
-        CancellationToken cancellationToken)
-        => await _database.ExecuteAsync(
-            async (connection, _, token) =>
-            {
-                await using var command = new NpgsqlCommand(statement, connection);
-                command.Parameters.Add(new NpgsqlParameter("lease_key", NpgsqlDbType.Text) { Value = leaseKey });
-                command.Parameters.Add(new NpgsqlParameter("lease_owner_id", NpgsqlDbType.Text) { Value = ownerId });
-                if (leaseDuration.HasValue)
-                {
-                    command.Parameters.Add(new NpgsqlParameter("duration", NpgsqlDbType.Interval) { Value = leaseDuration.Value });
-                }
-
-                return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
-            },
-            repeat,
-            cancellationToken).ConfigureAwait(false);
-
-    private NpgsqlCommand BuildQueryCommand(
-        NpgsqlConnection connection,
-        ExecutionJobQuery query,
-        ExecutionJobCursor? cursor,
-        int limit)
-    {
-        var command = new NpgsqlCommand { Connection = connection };
-        var predicates = new List<string>();
-
-        if (query.Statuses.Count > 0)
-        {
-            predicates.Add("status = ANY (@statuses)");
-            command.Parameters.Add(new NpgsqlParameter("statuses", NpgsqlDbType.Array | NpgsqlDbType.Text)
-            {
-                Value = query.Statuses.Select(status => status.ToString()).Distinct().ToArray()
-            });
-        }
-
-        if (query.Kind.HasValue)
-        {
-            predicates.Add("kind = @kind");
-            command.Parameters.Add(new NpgsqlParameter("kind", NpgsqlDbType.Text) { Value = query.Kind.Value.ToString() });
-        }
-
-        if (query.ApplyTenantScope)
-        {
-            predicates.Add("tenant_id IS NOT DISTINCT FROM @tenant_id");
-            command.Parameters.Add(new NpgsqlParameter("tenant_id", NpgsqlDbType.Text) { Value = (object?)query.TenantId ?? DBNull.Value });
-        }
-
-        if (query.CreatedFrom.HasValue)
-        {
-            predicates.Add("created_at >= @created_from");
-            command.Parameters.Add(ExecutionJobRow.Timestamp("created_from", query.CreatedFrom));
-        }
-
-        if (query.CreatedTo.HasValue)
-        {
-            predicates.Add("created_at < @created_to");
-            command.Parameters.Add(ExecutionJobRow.Timestamp("created_to", query.CreatedTo));
-        }
-
-        var requiredLookupKeys = RequiredLookupKeys(query);
-        if (requiredLookupKeys.Length > 0)
-        {
-            predicates.Add("lookup_keys @> @required_lookup_keys");
-            command.Parameters.Add(new NpgsqlParameter("required_lookup_keys", NpgsqlDbType.Array | NpgsqlDbType.Text)
-            {
-                Value = requiredLookupKeys
-            });
-        }
-
-        if (cursor is { } position)
-        {
-            predicates.Add("(created_at, operation_id) < (@cursor_created_at, @cursor_operation_id)");
-            command.Parameters.Add(ExecutionJobRow.Timestamp("cursor_created_at", position.CreatedAt));
-            command.Parameters.Add(new NpgsqlParameter("cursor_operation_id", NpgsqlDbType.Text) { Value = position.OperationId });
-        }
-
-        var text = new StringBuilder($"SELECT {ExecutionJobRow.SelectColumns} FROM {_jobs}");
-        if (predicates.Count > 0)
-        {
-            text.Append(" WHERE ").AppendJoin(" AND ", predicates);
-        }
-
-        text.Append(" ORDER BY created_at DESC, operation_id DESC LIMIT @limit");
-        command.Parameters.Add(new NpgsqlParameter("limit", NpgsqlDbType.Integer) { Value = limit + 1 });
-        command.CommandText = text.ToString();
-        return command;
-    }
-
-    private static string[] RequiredLookupKeys(ExecutionJobQuery query)
-    {
-        var keys = new List<string>();
-        Add(ExecutionJobLookupDimensions.Backend, query.Backend);
-        Add(ExecutionJobLookupDimensions.Queue, query.Queue);
-        Add(ExecutionJobLookupDimensions.RequestedBy, query.RequestedBy);
-        Add(ExecutionJobLookupDimensions.Correlation, query.CorrelationId);
-        Add(ExecutionJobLookupDimensions.Trace, query.TraceId);
-        Add(ExecutionJobLookupDimensions.Definition, query.DefinitionId);
-        Add(ExecutionJobLookupDimensions.Resource, query.ResourceRef);
-        Add(ExecutionJobLookupDimensions.Environment, query.Environment);
-        Add(ExecutionJobLookupDimensions.Server, query.Server);
-        Add(ExecutionJobLookupDimensions.Release, query.ReleaseId);
-        Add(ExecutionJobLookupDimensions.ChangeSet, query.ChangeSetId);
-        Add(ExecutionJobLookupDimensions.Alert, query.AlertId);
-        return [.. keys];
-
-        void Add(string dimension, string? value)
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                keys.Add(ExecutionJobRow.LookupKey(dimension, value));
-            }
-        }
-    }
-
-    private static async Task<List<ExecutionJobRecord>> ReadJobsAsync(NpgsqlCommand command, CancellationToken cancellationToken)
-    {
-        var jobs = new List<ExecutionJobRecord>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            jobs.Add(ExecutionJobRow.Read(reader));
-        }
-
-        return jobs;
-    }
-
     private void AddInsertParameters(NpgsqlCommand command, ExecutionJobRecord job, ExecutionJobRow row, TimeSpan? ttl)
     {
         AddAttemptStateParameters(command, job);
@@ -610,8 +285,6 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
 
     private NpgsqlParameter RetentionParameter(TimeSpan? ttl)
         => new("retention", NpgsqlDbType.Interval) { Value = ttl ?? _options.JobRetention };
-
-    private readonly record struct OwnedLease(string LeaseKey, string OwnerId);
 
     private static partial class Log
     {

@@ -5,8 +5,6 @@ using System.Globalization;
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.ControlPlane;
-using Honua.Core.Features.Authorization.Abstractions;
-using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
@@ -223,50 +221,32 @@ public sealed class TileExportAdmissionSharedLeaseTests
         Func<IExecutionJobStore, IExecutionJobStore>? wrapStore = null)
     {
         var multiplexer = await ConnectionMultiplexer.ConnectAsync(_redis.ConnectionString);
-        IExecutionJobStore store = new PostgresExecutionJobStore(
-            _jobs.Database,
-            Options.Create(new JobStoreOptions()),
-            NullLogger<PostgresExecutionJobStore>.Instance);
+        IExecutionJobStore store = _jobs.CreateNodeJobStore();
         if (wrapStore is not null)
         {
             store = wrapStore(store);
         }
 
-        var monitor = new StaticOptionsMonitor<ExecutionAdmissionOptions>(limits);
-        var evaluator = new ExecutionAdmissionEvaluator(
-            monitor,
-            TimeProvider.System,
-            NullLogger<ExecutionAdmissionEvaluator>.Instance,
+        var admission = AdmissionNodeComposition.Compose(
+            multiplexer,
             store,
-            multiplexer);
-        var coordinator = new ExecutionAdmissionCoordinator(
-            monitor,
-            NullLogger<ExecutionAdmissionCoordinator>.Instance,
-            sharedLease ? multiplexer : null);
-
-        var authorization = Substitute.For<IOperatorAuthorizationEvaluator>();
-        authorization
-            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(AccessDecision.Allowed()));
-        var approval = Substitute.For<IOperatorApprovalEvaluator>();
-        approval
-            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
-            .Returns(ApprovalRequirement.NotRequired());
+            new StaticOptionsMonitor<ExecutionAdmissionOptions>(limits),
+            sharedLease);
 
         var queue = Substitute.For<IJobQueue>();
         var progress = Substitute.For<IUniversalProgressStore>();
         var geoprocessing = new GeoprocessingJobService(
             progress,
             [Substitute.For<IJobCancellationNotifier>()],
-            authorization,
-            approval,
+            admission.OperatorAuthorization,
+            admission.OperatorApproval,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
             ExecutorOptions,
             store,
             queue,
-            admissionEvaluator: evaluator,
-            admissionCoordinator: coordinator);
+            admissionEvaluator: admission.Evaluator,
+            admissionCoordinator: admission.Coordinator);
         var tiles = new TileExportJobService(
             TimeProvider.System,
             Options.Create(new CloudStorageOptions()),
@@ -274,8 +254,8 @@ public sealed class TileExportAdmissionSharedLeaseTests
             store,
             queue,
             storage: null,
-            admissionEvaluator: evaluator,
-            admissionCoordinator: coordinator);
+            admissionEvaluator: admission.Evaluator,
+            admissionCoordinator: admission.Coordinator);
 
         var node = new Node(name, multiplexer, geoprocessing, tiles);
         _nodes.Add(node);
@@ -605,11 +585,10 @@ public sealed class TileExportAdmissionSharedLeaseTests
 
         public Task<bool> TrySetIfLeaseOwnedAsync(
             ExecutionJobRecord job,
-            string leaseOperationId,
-            string leaseOwnerId,
+            OwnedJobLease lease,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default)
-            => inner.TrySetIfLeaseOwnedAsync(job, leaseOperationId, leaseOwnerId, ttl, cancellationToken);
+            => inner.TrySetIfLeaseOwnedAsync(job, lease, ttl, cancellationToken);
 
         public Task<ExecutionJobPage> QueryAsync(ExecutionJobQuery query, CancellationToken cancellationToken = default)
             => inner.QueryAsync(query, cancellationToken);

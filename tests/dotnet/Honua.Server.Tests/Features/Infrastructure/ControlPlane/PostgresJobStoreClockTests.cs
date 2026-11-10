@@ -78,13 +78,17 @@ public sealed class PostgresJobStoreClockTests(DatabaseFixtureAdapter database) 
         await Task.Delay(TimeSpan.FromSeconds(3.5));
         (await harness.Queue.TryClaimAsync("skewed-worker")).Should().Be(job.OperationId);
 
-        // A lease lasts its duration on the database clock.
+        await AssertALeaseLastsItsDurationOnTheDatabaseClockAsync(harness.JobStore);
+    }
+
+    private static async Task AssertALeaseLastsItsDurationOnTheDatabaseClockAsync(PostgresExecutionJobStore jobStore)
+    {
         var leaseKey = $"partition:{Guid.NewGuid():N}";
-        (await harness.JobStore.TryAcquireLeaseAsync(leaseKey, "owner-a", TimeSpan.FromSeconds(2))).Should().BeTrue();
-        (await harness.JobStore.TryAcquireLeaseAsync(leaseKey, "owner-b", TimeSpan.FromSeconds(2))).Should().BeFalse();
+        (await jobStore.TryAcquireLeaseAsync(leaseKey, "owner-a", TimeSpan.FromSeconds(2))).Should().BeTrue();
+        (await jobStore.TryAcquireLeaseAsync(leaseKey, "owner-b", TimeSpan.FromSeconds(2))).Should().BeFalse();
         await Task.Delay(TimeSpan.FromSeconds(2.5));
-        (await harness.JobStore.RenewLeaseAsync(leaseKey, "owner-a", TimeSpan.FromSeconds(2))).Should().BeFalse("an expired lease cannot be renewed");
-        (await harness.JobStore.TryAcquireLeaseAsync(leaseKey, "owner-b", TimeSpan.FromSeconds(2))).Should().BeTrue();
+        (await jobStore.RenewLeaseAsync(leaseKey, "owner-a", TimeSpan.FromSeconds(2))).Should().BeFalse("an expired lease cannot be renewed");
+        (await jobStore.TryAcquireLeaseAsync(leaseKey, "owner-b", TimeSpan.FromSeconds(2))).Should().BeTrue();
     }
 
     private static ExecutionJobRecord CreateQueuedJob(string operationId, DateTimeOffset nodeNow)

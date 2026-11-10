@@ -297,15 +297,13 @@ public sealed class PostgresExecutionSubstrateIntegrationTests(DatabaseFixtureAd
         };
         (await harness.JobStore.TrySetIfLeaseOwnedAsync(
             succeeded,
-            leaseOperationId,
-            "worker-b:job")).Should().BeFalse();
+            new OwnedJobLease(leaseOperationId, "worker-b:job"))).Should().BeFalse();
         (await harness.JobStore.GetAsync(operationId)).Should().Match<ExecutionJobRecord>(
             value => value.Status == ExecutionJobStatus.Running);
 
         (await harness.JobStore.TrySetIfLeaseOwnedAsync(
             succeeded,
-            leaseOperationId,
-            owner)).Should().BeTrue();
+            new OwnedJobLease(leaseOperationId, owner))).Should().BeTrue();
         (await harness.JobStore.GetAsync(operationId)).Should().Match<ExecutionJobRecord>(
             value => value.Status == ExecutionJobStatus.Succeeded);
     }

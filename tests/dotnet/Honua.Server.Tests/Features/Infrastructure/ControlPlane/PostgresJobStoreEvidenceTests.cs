@@ -34,22 +34,7 @@ public sealed class PostgresJobStoreEvidenceTests(DatabaseFixtureAdapter databas
     public async Task HeartbeatLoad_200RunningJobsFor3Minutes_ReportsRowVersionsAndGrowth()
     {
         await using var harness = await PostgresJobSubstrateHarness.CreateAsync(database, nameof(PostgresJobStoreEvidenceTests));
-        var operationIds = new List<string>(RunningJobs);
-        for (var index = 0; index < RunningJobs; index++)
-        {
-            var job = CreateJobWithFourKilobyteRecord($"heartbeat-load-{index:D3}-{Guid.NewGuid():N}");
-            (await harness.JobStore.TryCreateAsync(job)).Should().BeTrue();
-            await harness.Queue.EnqueueAsync(job.OperationId);
-            operationIds.Add(job.OperationId);
-        }
-
-        for (var index = 0; index < RunningJobs; index++)
-        {
-            var claimedId = (await harness.Queue.TryClaimAsync($"worker-{index:D3}"))!;
-            var claimed = (await harness.JobStore.GetAsync(claimedId))!;
-            (await harness.JobStore.TrySetAsync(claimed with { Status = ExecutionJobStatus.Running, CurrentPhase = "Running" }))
-                .Should().BeTrue();
-        }
+        var operationIds = await StartRunningJobsAsync(harness);
 
         await harness.ExecuteAsync($"VACUUM ANALYZE {harness.JobsTable}");
         var before = await MeasureAsync(harness);
@@ -102,6 +87,39 @@ public sealed class PostgresJobStoreEvidenceTests(DatabaseFixtureAdapter databas
     public async Task QueryPlans_OnASeededTable_ArePrinted()
     {
         await using var harness = await PostgresJobSubstrateHarness.CreateAsync(database, nameof(PostgresJobStoreEvidenceTests));
+        await SeedJobsInEveryStatusAsync(harness);
+        await PrintSeededRowCountsAsync(harness);
+
+        await ExplainClaimAsync(harness);
+        await ExplainListQueriesAsync(harness);
+        await ExplainReconcilerAndQueueDepthQueriesAsync(harness);
+        await ExplainRetentionSweepAsync(harness);
+    }
+
+    private static async Task<List<string>> StartRunningJobsAsync(PostgresJobSubstrateHarness harness)
+    {
+        var operationIds = new List<string>(RunningJobs);
+        for (var index = 0; index < RunningJobs; index++)
+        {
+            var job = CreateJobWithFourKilobyteRecord($"heartbeat-load-{index:D3}-{Guid.NewGuid():N}");
+            (await harness.JobStore.TryCreateAsync(job)).Should().BeTrue();
+            await harness.Queue.EnqueueAsync(job.OperationId);
+            operationIds.Add(job.OperationId);
+        }
+
+        for (var index = 0; index < RunningJobs; index++)
+        {
+            var claimedId = (await harness.Queue.TryClaimAsync($"worker-{index:D3}"))!;
+            var claimed = (await harness.JobStore.GetAsync(claimedId))!;
+            (await harness.JobStore.TrySetAsync(claimed with { Status = ExecutionJobStatus.Running, CurrentPhase = "Running" }))
+                .Should().BeTrue();
+        }
+
+        return operationIds;
+    }
+
+    private static async Task SeedJobsInEveryStatusAsync(PostgresJobSubstrateHarness harness)
+    {
         var jobs = harness.JobsTable;
         await harness.ExecuteAsync(
             $$"""
@@ -131,7 +149,11 @@ public sealed class PostgresJobStoreEvidenceTests(DatabaseFixtureAdapter databas
             CROSS JOIN LATERAL (SELECT CASE WHEN i % 50 = 0 THEN 'aws-batch' ELSE 'local' END AS backend) AS b
             """);
         await harness.ExecuteAsync($"VACUUM ANALYZE {jobs}");
+    }
 
+    private async Task PrintSeededRowCountsAsync(PostgresJobSubstrateHarness harness)
+    {
+        var jobs = harness.JobsTable;
         var counts = new StringBuilder("seeded rows by status:");
         await using (var command = harness.DataSource.CreateCommand($"SELECT status, count(*) FROM {jobs} GROUP BY status ORDER BY status"))
         await using (var reader = await command.ExecuteReaderAsync())
@@ -143,7 +165,11 @@ public sealed class PostgresJobStoreEvidenceTests(DatabaseFixtureAdapter databas
         }
 
         output.WriteLine(counts.ToString());
+    }
 
+    private async Task ExplainClaimAsync(PostgresJobSubstrateHarness harness)
+    {
+        var jobs = harness.JobsTable;
         await ExplainAsync(harness, "claim, one runtime profile (rolled back)",
             $"""
             WITH next_job AS (
@@ -161,6 +187,11 @@ public sealed class PostgresJobStoreEvidenceTests(DatabaseFixtureAdapter databas
             RETURNING job.operation_id
             """,
             rollBack: true);
+    }
+
+    private async Task ExplainListQueriesAsync(PostgresJobSubstrateHarness harness)
+    {
+        var jobs = harness.JobsTable;
         await ExplainAsync(harness, "list, no filter, second page",
             $"SELECT record FROM {jobs} WHERE (created_at, operation_id) < (now() - interval '1 hour', 'job-0003600') ORDER BY created_at DESC, operation_id DESC LIMIT 51");
         await ExplainAsync(harness, "list by status Failed",
@@ -175,6 +206,11 @@ public sealed class PostgresJobStoreEvidenceTests(DatabaseFixtureAdapter databas
             $"SELECT record FROM {jobs} WHERE lookup_keys @> ARRAY['correlation:CORR-777'] ORDER BY created_at DESC, operation_id DESC LIMIT 51");
         await ExplainAsync(harness, "all jobs of one orchestration run",
             $"SELECT record FROM {jobs} WHERE lookup_keys @> ARRAY['run:WF-77'] ORDER BY created_at DESC, operation_id DESC LIMIT 201");
+    }
+
+    private async Task ExplainReconcilerAndQueueDepthQueriesAsync(PostgresJobSubstrateHarness harness)
+    {
+        var jobs = harness.JobsTable;
         await ExplainAsync(harness, "active jobs",
             $"SELECT record FROM {jobs} WHERE status IN ('Queued', 'Provisioning', 'Running') ORDER BY updated_at DESC LIMIT 100");
         await ExplainAsync(harness, "30 s sweep candidates",
@@ -192,6 +228,11 @@ public sealed class PostgresJobStoreEvidenceTests(DatabaseFixtureAdapter databas
             """);
         await ExplainAsync(harness, "queue depth",
             $"SELECT count(*) FROM {jobs} WHERE status = 'Queued' AND queue_visible_at IS NOT NULL");
+    }
+
+    private async Task ExplainRetentionSweepAsync(PostgresJobSubstrateHarness harness)
+    {
+        var jobs = harness.JobsTable;
         await ExplainAsync(harness, "retention sweep batch (rolled back)",
             $"""
             WITH expired AS (
