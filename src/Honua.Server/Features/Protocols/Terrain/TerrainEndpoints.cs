@@ -144,7 +144,7 @@ internal static class TerrainEndpoints
             activity?.SetTag("honua.output.bytes", tile.Data.Length);
             activity?.SetTag("honua.terrain.all_nodata", tile.IsAllNoData);
 
-                return Results.Bytes(tile.Data, tile.ContentType);
+            return Results.Bytes(tile.Data, tile.ContentType);
         }
         catch (TerrainTileException ex)
         {
