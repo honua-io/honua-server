@@ -45,13 +45,14 @@ def pr_admissions():
                 yield path.name, definition.get("concurrency", job.get("concurrency", {}))
 
 
-def evaluate(condition, event):
+def evaluate(condition, event, needs=None, cancelled=False):
     expression = condition.removeprefix("${{").removesuffix("}}").strip()
-    probe = """const {expression, github} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
-process.stdout.write(JSON.stringify(new Function('github', `return (${expression});`)(github)));
+    expression = expression.replace("needs.runner-select", 'needs["runner-select"]')
+    probe = """const {expression, github, needs, cancelled} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+process.stdout.write(JSON.stringify(new Function('github', 'needs', 'always', 'cancelled', `return (${expression});`)(github, needs, () => true, () => cancelled)));
 """
     result = subprocess.run(["node", "-e", probe], input=json.dumps({
-        "expression": expression, "github": event,
+        "expression": expression, "github": event, "needs": needs or {}, "cancelled": cancelled,
     }), text=True, capture_output=True, check=True, timeout=10)
     return json.loads(result.stdout)
 
@@ -129,6 +130,17 @@ class PullRequestLoadTests(unittest.TestCase):
             self.assertIn("!github.event.pull_request.draft", jobs[key]["if"])
         self.assertEqual(jobs["required"]["if"], "always()")
         self.assertIn("!github.event.pull_request.draft", jobs["runner-select"].get("if", ""))
+
+    def test_format_runs_for_drafts_despite_skipped_runner_selection(self):
+        condition = workflow("pr-gate.yml")["jobs"]["format"]["if"]
+        event = {"event_name": "pull_request", "event": {"pull_request": {"draft": True}}}
+        needs = {"runner-select": {"result": "skipped"}}
+        self.assertTrue(evaluate(condition, event, needs))
+        self.assertFalse(evaluate(condition, event, needs, cancelled=True))
+        event["event"]["pull_request"]["draft"] = False
+        self.assertFalse(evaluate(condition, event, needs))
+        needs["runner-select"]["result"] = "success"
+        self.assertTrue(evaluate(condition, event, needs))
 
     def test_required_aggregate_rejects_skipped_heavy_work(self):
         required = workflow("pr-gate.yml")["jobs"]["required"]
