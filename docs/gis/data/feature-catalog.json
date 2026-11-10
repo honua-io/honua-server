@@ -12,6 +12,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEditionGateTests.DeregisterDataset_CommunityEdition_ReturnsPaymentRequired",
         "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Deregister_RemovesDataset",
         "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Deregister_UnknownDataset_ReturnsNotFound"
       ],
@@ -1211,7 +1212,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEditionFilterTests.List_CommunityEdition_HidesProDatasets",
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEditionGateTests.ListDatasets_CommunityEdition_ReturnsPaymentRequired",
+        "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEditionFilterTests.List_ProEdition_HidesEnterpriseDatasets",
         "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.List_IncludesRegisteredDataset"
       ],
       "proof_ledger_surface": "data-enrichment",
@@ -1226,6 +1228,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEditionGateTests.GetDataset_CommunityEdition_ReturnsPaymentRequired",
         "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Get_ReturnsRegisteredDataset",
         "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Get_UnknownDataset_ReturnsNotFound"
       ],
@@ -16220,6 +16223,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEditionGateTests.RegisterDataset_CommunityEdition_ReturnsPaymentRequired",
         "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Register_DuplicateId_ReturnsConflict",
         "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Register_InvalidCategory_ReturnsBadRequest",
         "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Register_ValidDataset_ReturnsCreatedWithAttribution",
@@ -25275,6 +25279,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEditionGateTests.UpdateDataset_CommunityEdition_ReturnsPaymentRequired",
         "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Update_ModifiesDataset",
         "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Update_UnknownDataset_ReturnsNotFound"
       ],
