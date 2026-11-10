@@ -6,6 +6,8 @@ resource: "https://github.com/honua-io/honua-server/pkgs/container/honua-server"
 ---
 # Quickstart: install, publish, and query
 
+> Docker Compose is the local evaluation path; see [rc.2 deployment scope](../guides/deploy/cloud-deployments.md#pick-a-pattern) for the certified production target.
+
 See the [Honua vocabulary](../concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
 
 The customer Compose package runs Honua beside PostGIS and Redis, plus a stable
@@ -142,8 +144,8 @@ The clients are pinned:
 [honua-admin 0.1.12](https://pypi.org/project/honua-admin/0.1.12/) and
 [honua-sdk 0.1.19](https://pypi.org/project/honua-sdk/0.1.19/).
 
-For a lasting deployment, continue to
-[production Compose](../guides/deploy/docker-compose.md). For a locked-down
+For a certified rc.2 production deployment, continue to
+[ECS Fargate](../guides/deploy/cloud-deployments.md#pick-a-pattern). For a locked-down
 single-host install of the same image and pinned clients, with startup and
 recovery checks scripted, see [Linux](linux-packages.md) or
 [Windows](windows-packages.md).
@@ -515,7 +517,7 @@ uncertain execution records keep ownership until their state can be established.
 | **[Publish your own data](first-dataset.md)** | Connect an existing PostGIS database instead of the bundled one. |
 | **[Put it on a map](first-map.md)** | A MapLibre map reading the layer you just published. |
 | **[Pick a protocol](../concepts/protocols.md)** | What each surface is for, and which clients speak it. |
-| **[Deploy it properly](../guides/deploy/docker-compose.md)** | Production Compose: TLS, backups, resource limits. |
+| **[Harden the evaluation install](../guides/deploy/docker-compose.md)** | Local Compose: TLS, backups, resource limits. |
 
 ## Stop or remove it
 

@@ -6,12 +6,13 @@ on:
   #   query suite to keep the required security gate on the PR critical path.
   # - schedule: performs a full instrumented build with security-extended
   #   queries to catch lower-confidence findings and dependency churn.
+  #   It also covers test code, which never ships, so test-only PRs skip the
+  #   PR lane.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches: [trunk]
     paths:
       - 'src/**'
-      - 'tests/**'
       - 'Directory.Packages.props'
       - 'Directory.Build.props'
       - 'Honua.sln'

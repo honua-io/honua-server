@@ -101,7 +101,7 @@ internal sealed partial class ConsoleJobService
             notes.Add("step timingSource identifies measured harness durations or durations inferred from consecutive log timestamps");
         }
 
-        var artifacts = await BuildDiagnosticArtifactsAsync(job, missing, cancellationToken).ConfigureAwait(false);
+        var artifacts = await BuildDiagnosticArtifactsAsync(job, now, missing, cancellationToken).ConfigureAwait(false);
         var release = BuildRelease(job, missing, operatorView);
         var lifecycle = BuildLifecycle(job, now, missing);
         var worker = BuildWorker(job, now, operatorView);
@@ -702,6 +702,7 @@ internal sealed partial class ConsoleJobService
 
     private async Task<ConsoleJobDiagnosticArtifacts> BuildDiagnosticArtifactsAsync(
         ExecutionJobRecord job,
+        DateTimeOffset now,
         List<string> missing,
         CancellationToken cancellationToken)
     {
@@ -722,11 +723,11 @@ internal sealed partial class ConsoleJobService
             };
         }
 
-        var artifactStore = serviceProvider.GetService<IArtifactStore>();
+        var projection = CreateArtifactProjection(job, now);
         var items = new List<ConsoleJobArtifact>(job.ArtifactReferences.Count);
         foreach (var reference in job.ArtifactReferences)
         {
-            items.Add(await MapArtifactAsync(reference, artifactStore, cancellationToken).ConfigureAwait(false));
+            items.Add(await MapArtifactAsync(reference, projection, cancellationToken).ConfigureAwait(false));
         }
 
         var available = items.Count(static a => a.Availability is "Available" or "Redacted");
