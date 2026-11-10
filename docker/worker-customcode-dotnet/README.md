@@ -52,7 +52,7 @@ using var ds = Gdal.Open(path, Access.GA_ReadOnly);
   regresses.
 
 See the raster sample below and
-[`docs/customcode/raster-gp-pattern.md`](../../docs/customcode/raster-gp-pattern.md) for
+[`docs/guides/raster-gp-pattern.md`](../../docs/guides/raster-gp-pattern.md) for
 the SDK-as-transport / GDAL-as-engine pattern.
 - The harness host `Honua.CustomCode.Harness` is published to `/opt/harness`; the
   `ENTRYPOINT` runs `dotnet /opt/harness/Honua.CustomCode.Harness.dll`.
