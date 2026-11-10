@@ -3064,7 +3064,7 @@ jobs:
           # outside a diff. Do not "align" this with PR Gate either.
           format-scope: full
 
-  # Summary gate: a single job that branch-protection can require.
+  # Scheduled runtime coverage shares the full-CI managed build producer.
   pr-gate-tests:
     name: Full CI / Tests and runtime proofs
     if: ${{ github.event_name != 'merge_group' }}
@@ -3506,6 +3506,7 @@ jobs:
           python3 scripts/ci/fixtures/validate-promote-verified-image.py
 
 
+  # Summary gate: a single job that branch-protection can require.
   # Add every job whose failure should block merge.
   ci-gate:
     name: CI Gate
