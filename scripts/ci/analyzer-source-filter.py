@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exclude evaluated test-only roots from the source analyzer compilation."""
+"""Compile every source root without compiling test-only roots."""
 
 import argparse
 import json
@@ -44,7 +44,6 @@ def source_roots(root: Path, projects: list[str]) -> list[str]:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
-    parser.add_argument("--input-filter", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     root = args.root.resolve()
@@ -52,13 +51,6 @@ def main():
         r'^Project\([^\n]+? = "[^"]+", "([^"]+\.csproj)"',
         (root / "Honua.sln").read_text(), re.MULTILINE)}
     projects = sorted(members)
-    if args.input_filter:
-        selected = json.loads(args.input_filter.read_text())["solution"]["projects"]
-        if not isinstance(selected, list) or any(not isinstance(p, str) for p in selected):
-            raise ValueError("Analyzer scope must contain an array of project paths")
-        projects = sorted({p.replace("\\", "/") for p in selected})
-        if not set(projects) <= members.keys():
-            raise ValueError("Analyzer scope contains projects outside the solution")
     roots = source_roots(root, projects) if projects else []
     args.output.write_text(json.dumps({"solution": {"path": str(root / "Honua.sln"),
                                                   "projects": [members[p] for p in roots]}}, indent=2) + "\n")

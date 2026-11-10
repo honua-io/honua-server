@@ -11,11 +11,14 @@
 
   <!-- Both PR analyzer partitions compile the dependency graph; each owns diagnostics
        for one disjoint set. Unpartitioned builds keep their existing analyzer policy. -->
-  <PropertyGroup Condition="'$(HonuaAnalyzerPartition)' != ''">
-    <RunAnalyzers>true</RunAnalyzers>
-    <RunAnalyzers Condition="'$(HonuaAnalyzerPartition)' == 'source' and '$(IsTestProject)' == 'true'">false</RunAnalyzers>
-    <RunAnalyzers Condition="'$(HonuaAnalyzerPartition)' == 'tests' and '$(IsTestProject)' != 'true'">false</RunAnalyzers>
-  </PropertyGroup>
+  <Target Name="HonuaSetAnalyzerPartition" BeforeTargets="_ComputeSkipAnalyzers"
+          Condition="'$(HonuaAnalyzerPartition)' != ''">
+    <PropertyGroup>
+      <RunAnalyzers>true</RunAnalyzers>
+      <RunAnalyzers Condition="'$(HonuaAnalyzerPartition)' == 'source' and '$(IsTestProject)' == 'true'">false</RunAnalyzers>
+      <RunAnalyzers Condition="'$(HonuaAnalyzerPartition)' == 'tests' and '$(IsTestProject)' != 'true'">false</RunAnalyzers>
+    </PropertyGroup>
+  </Target>
 
   <Target Name="ValidateHonuaAnalyzerPartition" BeforeTargets="PrepareForBuild"
           Condition="'$(HonuaAnalyzerPartition)' != '' and '$(HonuaAnalyzerPartition)' != 'all' and '$(HonuaAnalyzerPartition)' != 'source' and '$(HonuaAnalyzerPartition)' != 'tests'">

@@ -72,10 +72,19 @@ with tempfile.TemporaryDirectory(prefix="honua-analyzer-partitions-") as tempora
     imported = root / "Imported.csproj"
     imported.write_text(
         '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework>'
-        '</PropertyGroup><Import Project="ownership.props" />'
-        f'<Import Project="{TARGETS}" /></Project>', encoding="utf-8")
+        '<EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup>'
+        f'<Import Project="{TARGETS}" /><Import Project="ownership.props" />'
+        '<ItemGroup><Compile Include="Imported.cs" /></ItemGroup></Project>', encoding="utf-8")
     if source_filter.source_roots(root, [imported.name]):
         raise AssertionError("Imported IsTestProject must control source ownership")
+    (root / "Imported.cs").write_text("public class Imported { public static int[] Values() => new int[0]; }\n")
+    subprocess.run(["dotnet", "restore", str(imported), "--verbosity", "quiet"], check=True)
+    for partition in ("source", "tests"):
+        result = build(imported, partition)
+        if (result.returncode != 0) != (partition == "tests"):
+            raise AssertionError(f"Late imported ownership/{partition}: {result.stdout}{result.stderr}")
+        if partition == "tests" and "error CA1825" not in result.stdout:
+            raise AssertionError("Late imported test project must retain analyzer coverage")
     imported.write_text(imported.read_text().replace(
         '<TargetFramework>net10.0</TargetFramework>', '<TargetFrameworks>net10.0</TargetFrameworks>'))
     if source_filter.source_roots(root, [imported.name]) != [imported.name]:
