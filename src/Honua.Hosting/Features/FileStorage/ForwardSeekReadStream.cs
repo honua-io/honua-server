@@ -79,14 +79,10 @@ internal sealed class ForwardSeekReadStream(Stream source, long length) : Stream
 
     public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 
-    protected override void Dispose(bool disposing)
+    public override void Close()
     {
-        if (disposing)
-        {
-            source.Dispose();
-        }
-
-        base.Dispose(disposing);
+        source.Dispose();
+        base.Close();
     }
 
     public override async ValueTask DisposeAsync()

@@ -52,26 +52,18 @@ public static class GeoprocessingOutputStagingServiceCollectionExtensions
                 "Geoprocessing:OutputStaging:ReadLeaseDuration must be greater than zero and no more than one day.")
             .ValidateOnStart();
 
-        if (section.GetValue<bool>(nameof(GeoprocessingOutputStagingOptions.Enabled)))
+        if (!section.GetValue<bool>(nameof(GeoprocessingOutputStagingOptions.Enabled)))
         {
-            if (string.Equals(
-                    section[nameof(GeoprocessingOutputStagingOptions.Provider)],
-                    GeoprocessingOutputStagingOptions.ObjectStorageProvider,
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                services.TryAddSingleton(storageKeyPrefix);
-                services.TryAddSingleton<IGeoprocessingOutputObjectStore, ObjectStorageGeoprocessingOutputObjectStore>();
-                services.TryAddSingleton<ObjectStorageGeoprocessingOutputStoreHealthCheck>();
-                services.AddHealthChecks()
-                    .AddCheck<ObjectStorageGeoprocessingOutputStoreHealthCheck>(OutputStoreHealthCheckName, tags: ["ready"]);
-            }
-            else
-            {
-                services.TryAddSingleton<IGeoprocessingOutputObjectStore, FileSystemGeoprocessingOutputObjectStore>();
-                services.TryAddSingleton<GeoprocessingOutputStoreHealthCheck>();
-                services.AddHostedService<GeoprocessingOutputStoreAttestationReporter>();
-                services.AddHealthChecks().AddCheck<GeoprocessingOutputStoreHealthCheck>(OutputStoreHealthCheckName, tags: ["ready"]);
-            }
+            return services;
+        }
+
+        if (IsObjectStorage(section[nameof(GeoprocessingOutputStagingOptions.Provider)]))
+        {
+            AddObjectStorageOutputStore(services, storageKeyPrefix);
+        }
+        else
+        {
+            AddLocalOutputStore(services);
         }
 
         return services;
@@ -79,11 +71,33 @@ public static class GeoprocessingOutputStagingServiceCollectionExtensions
 
     private const string OutputStoreHealthCheckName = "gp-output-store";
 
+    private static void AddObjectStorageOutputStore(
+        IServiceCollection services,
+        GeoprocessingOutputStorageKeyPrefix storageKeyPrefix)
+    {
+        services.TryAddSingleton(storageKeyPrefix);
+        services.TryAddSingleton<IGeoprocessingOutputObjectStore, ObjectStorageGeoprocessingOutputObjectStore>();
+        services.TryAddSingleton<ObjectStorageGeoprocessingOutputStoreHealthCheck>();
+        services.AddHealthChecks()
+            .AddCheck<ObjectStorageGeoprocessingOutputStoreHealthCheck>(OutputStoreHealthCheckName, tags: ["ready"]);
+    }
+
+    private static void AddLocalOutputStore(IServiceCollection services)
+    {
+        services.TryAddSingleton<IGeoprocessingOutputObjectStore, FileSystemGeoprocessingOutputObjectStore>();
+        services.TryAddSingleton<GeoprocessingOutputStoreHealthCheck>();
+        services.AddHostedService<GeoprocessingOutputStoreAttestationReporter>();
+        services.AddHealthChecks().AddCheck<GeoprocessingOutputStoreHealthCheck>(OutputStoreHealthCheckName, tags: ["ready"]);
+    }
+
     private static bool IsLocal(GeoprocessingOutputStagingOptions options)
         => string.Equals(options.Provider, GeoprocessingOutputStagingOptions.LocalProvider, StringComparison.OrdinalIgnoreCase);
 
     private static bool IsObjectStorage(GeoprocessingOutputStagingOptions options)
-        => string.Equals(options.Provider, GeoprocessingOutputStagingOptions.ObjectStorageProvider, StringComparison.OrdinalIgnoreCase);
+        => IsObjectStorage(options.Provider);
+
+    private static bool IsObjectStorage(string? provider)
+        => string.Equals(provider, GeoprocessingOutputStagingOptions.ObjectStorageProvider, StringComparison.OrdinalIgnoreCase);
 
     private static bool IsKnownProvider(string provider)
         => string.Equals(provider, GeoprocessingOutputStagingOptions.LocalProvider, StringComparison.OrdinalIgnoreCase)

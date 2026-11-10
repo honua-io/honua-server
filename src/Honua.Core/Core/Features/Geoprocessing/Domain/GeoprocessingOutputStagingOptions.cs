@@ -36,11 +36,7 @@ public sealed class GeoprocessingOutputStagingOptions
     /// <summary>Whether referenced output staging is enabled.</summary>
     public bool Enabled { get; set; }
 
-    /// <summary>
-    /// Staging store provider: <see cref="LocalProvider"/> (a filesystem root shared between the
-    /// worker and serving hosts) or <see cref="ObjectStorageProvider"/> (the host's S3 or Azure Blob
-    /// file storage). Any other value fails registration closed.
-    /// </summary>
+    // Any value other than LocalProvider or ObjectStorageProvider fails registration closed.
     [Required(AllowEmptyStrings = false)]
     public string Provider { get; set; } = LocalProvider;
 

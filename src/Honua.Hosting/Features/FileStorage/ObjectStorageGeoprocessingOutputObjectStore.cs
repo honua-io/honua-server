@@ -142,7 +142,7 @@ internal sealed class ObjectStorageGeoprocessingOutputObjectStore : IGeoprocessi
         }
 
         var expiresAt = _timeProvider.GetUtcNow().Add(duration).UtcTicks.ToString(CultureInfo.InvariantCulture);
-        var written = await WriteSidecarAsync(objectKey + ReadLeaseSuffix, expiresAt, replaceExisting: true, cancellationToken)
+        var written = await ReplaceSidecarAsync(objectKey + ReadLeaseSuffix, expiresAt, cancellationToken)
             .ConfigureAwait(false);
         return written && await _storage.ExistsAsync(objectKey, cancellationToken).ConfigureAwait(false);
     }
@@ -162,7 +162,7 @@ internal sealed class ObjectStorageGeoprocessingOutputObjectStore : IGeoprocessi
         CancellationToken cancellationToken = default)
     {
         var holdKey = objectKey + RetentionHoldSuffix;
-        var added = await WriteSidecarAsync(holdKey, "held", replaceExisting: false, cancellationToken).ConfigureAwait(false);
+        var added = await CreateSidecarAsync(holdKey, "held", cancellationToken).ConfigureAwait(false);
         if (await _storage.ExistsAsync(objectKey, cancellationToken).ConfigureAwait(false))
         {
             return added ? GeoprocessingRetentionHoldResult.Added : GeoprocessingRetentionHoldResult.AlreadyHeld;
@@ -178,10 +178,27 @@ internal sealed class ObjectStorageGeoprocessingOutputObjectStore : IGeoprocessi
     public Task<bool> HasRetentionHoldAsync(string objectKey, CancellationToken cancellationToken = default)
         => _storage.ExistsAsync(objectKey + RetentionHoldSuffix, cancellationToken);
 
-    private async Task<bool> WriteSidecarAsync(string key, string text, bool replaceExisting, CancellationToken cancellationToken)
+    private async Task<bool> ReplaceSidecarAsync(string key, string text, CancellationToken cancellationToken)
     {
-        using var content = new MemoryStream(Encoding.ASCII.GetBytes(text), writable: false);
-        var request = new FileUploadRequest
+        using var content = SidecarContent(text);
+        var upload = await _storage.UploadAsync(SidecarUploadRequest(key, content), cancellationToken).ConfigureAwait(false);
+        return upload.Success;
+    }
+
+    private async Task<bool> CreateSidecarAsync(string key, string text, CancellationToken cancellationToken)
+    {
+        using var content = SidecarContent(text);
+        var upload = await _storage
+            .UploadIfMatchAsync(SidecarUploadRequest(key, content), expectedETag: null, cancellationToken)
+            .ConfigureAwait(false);
+        return upload.Success;
+    }
+
+    private static MemoryStream SidecarContent(string text)
+        => new(Encoding.ASCII.GetBytes(text), writable: false);
+
+    private static FileUploadRequest SidecarUploadRequest(string key, MemoryStream content)
+        => new()
         {
             Content = content,
             FileName = Path.GetFileName(key),
@@ -190,11 +207,6 @@ internal sealed class ObjectStorageGeoprocessingOutputObjectStore : IGeoprocessi
             ObjectKeyOverride = key,
             EnableChunkedUpload = false
         };
-        var upload = replaceExisting
-            ? await _storage.UploadAsync(request, cancellationToken).ConfigureAwait(false)
-            : await _storage.UploadIfMatchAsync(request, expectedETag: null, cancellationToken).ConfigureAwait(false);
-        return upload.Success;
-    }
 
     // The storage lists by a folder under its own key prefix, while staged keys are whole bucket keys.
     private string FolderWithinStorage(string keyPrefix)
