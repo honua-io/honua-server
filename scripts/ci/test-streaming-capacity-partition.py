@@ -5,7 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 
-from shard_capacity_partition import PartitionSource, check_method_partition
+from shard_capacity_partition import PartitionSource, capacity_split_names, check_method_partition
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("coverage", REPOSITORY_ROOT / "scripts/ci/check-server-test-shard-coverage.py")
@@ -13,7 +13,7 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 config = json.loads((REPOSITORY_ROOT / ".github/ci-shards.json").read_text())
 original = json.loads((REPOSITORY_ROOT / "scripts/ci/fixtures/streaming-capacity-contract.json").read_text())["originalShard"]
-names = ["Server Features Streaming Transports", original["name"]]
+names = ["Server Features Streaming Transports", *capacity_split_names(config, original["name"])]
 children = [next(shard for shard in config["shards"] if shard["name"] == name) for name in names]
 classes = MODULE.enumerate_test_classes()
 
@@ -21,11 +21,13 @@ def verify(shards):
     owners = check_method_partition(PartitionSource(MODULE, classes), original, shards)
     parsed = {shard["name"]: MODULE._FilterParser(shard["filter"]).parse() for shard in shards}
     endpoint = "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests"
-    for method, owner in (("Sse_FutureCase", names[0]), ("WebSocket_FutureCase", names[0]),
-                          ("FutureCase_Sse_WebSocket", names[1])):
-        assert [name for name in names if MODULE._eval(parsed[name], endpoint + "." + method)] == [owner]
+    for method, transport in (("Sse_FutureCase", True), ("WebSocket_FutureCase", True),
+                              ("FutureCase_Sse_WebSocket", False)):
+        claimants = [name for name in names if MODULE._eval(parsed[name], endpoint + "." + method)]
+        assert len(claimants) == 1 and (claimants[0] == names[0]) == transport
     admission = "Honua.Server.Tests.Features.Streaming.FeatureStreamAdmissionTests.WebSocket_FutureCase"
-    assert [name for name in names if MODULE._eval(parsed[name], admission)] == [names[1]]
+    claimants = [name for name in names if MODULE._eval(parsed[name], admission)]
+    assert len(claimants) == 1 and claimants[0] != names[0]
     return owners
 
 selected = verify(children)
