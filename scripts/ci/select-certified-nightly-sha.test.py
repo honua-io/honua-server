@@ -48,16 +48,19 @@ class Recording:
         self._ids = iter(range(1000, 100000))
 
     def run(self, commit: str, *, event="workflow_dispatch", status="completed", conclusion="success",
-            updated="2026-10-04T05:00:00Z", path=CI, lanes=None, skipped=(), failed=(), title="CI ") -> int:
+            updated="2026-10-04T05:00:00Z", path=CI, lanes=None, skipped=(), failed=()) -> int:
         run_id = next(self._ids)
         self.runs[commit].append({"id": run_id, "path": path, "event": event, "status": status,
                                   "conclusion": conclusion if status == "completed" else None,
-                                  "head_sha": commit, "updated_at": updated, "display_title": title,
+                                  "head_sha": commit, "updated_at": updated,
                                   "html_url": f"https://github.com/{REPOSITORY}/actions/runs/{run_id}"})
         for lane in RESOLVER_LANES if lanes is None else lanes:
             result = "skipped" if lane in skipped else "failure" if lane in failed else "success"
             self.check(commit, run_id, lane, result)
         return run_id
+
+    def retitle(self, commit: str, run_id: int, title: str) -> None:
+        next(row for row in self.runs[commit] if row["id"] == run_id)["display_title"] = title
 
     def check(self, commit: str, run_id: int, name: str, conclusion: str, status="completed") -> None:
         self.checks[commit].append({
@@ -168,8 +171,9 @@ class SelectionTests(unittest.TestCase):
         commit = sha("a")
         recording = Recording([commit])
         recording.run(commit, event="schedule", updated="2026-10-04T06:00:00Z")
-        recording.run(commit, updated="2026-10-04T07:00:00Z", title=f"CI affected {sha('9')[:12]}..{commit[:12]}",
-                      skipped={"Build & Format Check", ".NET Foundation Tests", "Python Integration Tests"})
+        affected = recording.run(commit, updated="2026-10-04T07:00:00Z",
+                                 skipped={"Build & Format Check", ".NET Foundation Tests", "Python Integration Tests"})
+        recording.retitle(commit, affected, f"CI affected {sha('9')[:12]}..{commit[:12]}")
         chosen, run, _ = choose(recording)
         self.assertEqual(chosen, commit)
         self.assertEqual(run["event"], "schedule")
@@ -177,7 +181,7 @@ class SelectionTests(unittest.TestCase):
     def test_post_merge_affected_run_alone_does_not_certify(self) -> None:
         commit = sha("b")
         recording = Recording([commit])
-        recording.run(commit, title=f"CI affected {sha('9')[:12]}..{commit[:12]}")
+        recording.retitle(commit, recording.run(commit), f"CI affected {sha('9')[:12]}..{commit[:12]}")
         with self.assertRaisesRegex(MODULE.SelectionError, "no completed"):
             choose(recording)
 
