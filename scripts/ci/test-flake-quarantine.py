@@ -201,6 +201,7 @@ class RunnerTests(unittest.TestCase):
                         try:
                             os.kill(int(path.read_text()), signal.SIGKILL)
                         except ProcessLookupError:
+                            # The timeout supervisor may already have reaped this process.
                             pass
             command = ['timeout', *(['--foreground'] if foreground else []), '--kill-after=1', '1', sys.executable,
                        str(Path(runner.__file__).with_name('run-quarantine-filtered-tests.py')),
