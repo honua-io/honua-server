@@ -1,0 +1,68 @@
+name: auto-merge ready pull requests
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auto-merge-ready-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  enable:
+    name: Enable ruleset-governed auto-merge
+    if: >-
+      !github.event.pull_request.draft
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && !contains(github.event.pull_request.labels.*.name, 'hold')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Create repository-scoped bot token
+        id: bot
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Enable auto-merge for the live pull request
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          github-token: ${{ steps.bot.outputs.token }}
+          script: |
+            const { repository: { pullRequest: pr } } = await github.graphql(`
+              query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    id state isDraft headRepository { nameWithOwner }
+                    labels(first: 100) { nodes { name } pageInfo { hasNextPage } }
+                    commits { totalCount }
+                    autoMergeRequest { enabledAt }
+                  }
+                }
+              }`, { ...context.repo, number: context.issue.number });
+            const eligible = pr && pr.state === 'OPEN' && !pr.isDraft
+              && pr.headRepository?.nameWithOwner === `${context.repo.owner}/${context.repo.repo}`
+              && !pr.labels.pageInfo.hasNextPage
+              && !pr.labels.nodes.some(label => label.name === 'hold');
+            if (!eligible || pr.autoMergeRequest) {
+              core.notice('Auto-merge unchanged: pull request is ineligible or already enabled.');
+              return;
+            }
+            const mergeMethod = pr.commits.totalCount > 1 ? 'MERGE' : 'SQUASH';
+            await github.graphql(`
+              mutation($pullRequestId: ID!, $mergeMethod: PullRequestMergeMethod!) {
+                enablePullRequestAutoMerge(input: {
+                  pullRequestId: $pullRequestId, mergeMethod: $mergeMethod
+                }) { pullRequest { number } }
+              }`, { pullRequestId: pr.id, mergeMethod });
+            await core.summary.addHeading('Auto-merge enabled')
+              .addRaw(`${mergeMethod}: repository rulesets and required checks decide when this PR merges.`)
+              .write();

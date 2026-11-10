@@ -558,3 +558,12 @@ unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
+
+## Automatic merge admission
+
+`auto-merge-ready.yml` enables auto-merge on opened, reopened, or ready same-repository
+PRs using the repository-scoped bot App token. Drafts, forks, and `hold` labels are
+excluded again against live state before mutation. One commit uses squash; bundles
+use merge commits. Existing auto-merge requests are preserved. Required checks,
+review admission, and rulesets still control the merge. The helper checks out no
+contributor code and queues without cancellation.

@@ -539,3 +539,9 @@ unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
+
+## Automatic merge admission
+
+[Automatic merge admission](workflow-inventory.md#automatic-merge-admission) uses
+the bot App to enable GitHub auto-merge. Required checks, review admission, and
+rulesets retain authority over when a PR merges.
