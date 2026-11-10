@@ -84,7 +84,7 @@ A required workflow failed on honua-server. Find the cause and fix it, so nobody
 
 ## Steps
 
-0. First check whether this head SHA was already handled: an open pull request comment or issue containing `ci-doctor: <head SHA>`, or a draft pull request titled `fix(ci):` naming it. If so, stop with no output.
+0. First check whether this head SHA was already handled: an open pull request comment or issue containing `ci-doctor: <head SHA>`, or a draft pull request titled `fix(ci):` naming it. Ignore earlier doctor comments or issues that only report checkout access failures ("couldn't fetch the PR branch", "PR head commit was not available", or "isn't available to the doctor's checkout"): those did not reach the code and do not count as an attempt. If any other matching attempt exists, stop with no output.
 1. List the failed jobs and read the earliest failing step's log. Find the first real error, not its consequences.
 2. Decide the class: code or test failure, generated-file or format drift, budget check (descriptor, shard time), workflow/config, runner or network flake, external service.
 3. Runner, network or GitHub flake: change nothing; add one comment on the pull request (or nothing for trunk) saying it is a flake, so a rerun is enough, ending with the marker `ci-doctor: <head SHA>`.
