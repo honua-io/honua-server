@@ -832,7 +832,7 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Update)]
     [Endpoint("PUT /ogc/styles/{styleId}")]
-    public async Task PutStyle_AssociatedCatalogStyle_UpdatesOnlyRequestedStyle()
+    public async Task PutStyle_AssociatedCatalogDefault_UpdatesRenderedDefaultAndPreservesOtherStyle()
     {
         var client = _fixture.CreateAdminClient();
         await SeedTestLayerStyleAsync(client);
@@ -869,6 +869,12 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         layerStyle.Be200Ok();
         using var layerDocument = JsonDocument.Parse(await layerStyle.Content.ReadAsStringAsync());
         layerDocument.RootElement.GetProperty("data").GetProperty("mapLibreStyle")
+            .GetProperty("layers")[0].GetProperty("type").GetString().Should().Be("line");
+
+        var seededStyle = await client.GetAsync($"/ogc/styles/style-layer-{WebAppFixture.TestLayerId}");
+        seededStyle.Be200Ok();
+        using var seededDocument = JsonDocument.Parse(await seededStyle.Content.ReadAsStringAsync());
+        seededDocument.RootElement
             .GetProperty("layers")[0].GetProperty("type").GetString().Should().Be("circle");
 
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();

@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Styling;
 using Honua.Protocols.GeoServices.MapServer.Models;
@@ -83,6 +84,13 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
     [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/style")]
     public async Task UnstyledLayer_ReadsAtVersionZero_AndFirstPutLandsAsRevisionOne()
     {
+        // The seed recreates the layer, cascading its associations, but retains
+        // independent styles in the shared metadata schema. Remove the orphan
+        // from earlier tests so this proof starts with a genuinely new style.
+        var catalog = _fixture.GetService<IStyleCatalog>();
+        var removed = await catalog.DeleteStyleAsync($"style-layer-{WebAppFixture.TestLayerId}");
+        removed.AssociatedLayerIds.Should().BeEmpty();
+
         // Regression for the schema-level styleVersion contract: an unstyled
         // Postgres-backed layer (seed inserts the row without maplibre_style)
         // must read at styleVersion 0 with null revision metadata, so the

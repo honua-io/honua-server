@@ -212,7 +212,16 @@ internal sealed class LayerStyleService : ILayerStyleService
 
         if (_styleGraphSync is not null)
         {
-            await _styleGraphSync.SyncLayerStylesAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await _styleGraphSync.SyncLayerStylesAsync(storageLayerId, CancellationToken.None).ConfigureAwait(false);
+            }
+            // The authoritative catalog writes have committed; a failed graph mirror must
+            // not report the applied edit as a failure and encourage a duplicate revision.
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                LayerStyleLog.StandaloneStyleGraphSyncFailed(_logger, styleId, ex);
+            }
         }
     }
 
