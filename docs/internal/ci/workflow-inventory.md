@@ -569,3 +569,18 @@ The budget job records each run's phase and credits, total triage/fix credits,
 paid-run counts and the share of triage events reaching a paid Opus run. Deterministic
 skips use zero model credits. The combined envelopes are 2500 credits ($25) per day;
 triage and fix do not each receive a separate allowance.
+
+Optional PR input audit: Capability Impact Comparison is limited to runtime,
+proving tests, capability data, selector and report inputs (currently disabled in
+repository settings). Docs Link Gate runs per PR for documentation/checker/data
+edits; runtime/config-only URL validation runs in ci.yml's existing changes job
+on affected trunk and twice-daily full runs. Capability Matrix Aggregation,
+OpenAPI Contract Governance and GeoParquet Interop Evidence retain their existing
+input-specific filters. GeoArrow Interop Fixture additionally watches global.json
+and NuGet.config so dependency resolution changes cannot bypass its fixture.
+
+Derived Artifact Normalization watches .NET generator/proving-test code and
+client compatibility receipts instead of every test language, and GIS data
+instead of GIS prose. Runtime source, generator scripts, CITE status and all
+existing build/setup inputs remain covered. Its producer/consumer security
+boundary and deterministic replay are unchanged.

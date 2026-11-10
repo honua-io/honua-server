@@ -2,6 +2,26 @@ name: Capability Impact Comparison
 
 on:
   pull_request:
+    # The report compares runtime/proving-test edits and its graph/selector
+    # inputs. Unrelated prose, images, and other workflow edits cannot change
+    # those inputs and do not need two advisory runners.
+    paths:
+      - 'src/**'
+      - 'tests/dotnet/**'
+      - 'tests/baselines/client-compat/**'
+      - 'docs/gis/data/**'
+      - '.github/ci-shards.json'
+      - '.github/capability-impact-allowlist.json'
+      - '.github/workflows/capability-impact-comparison.yml'
+      - 'scripts/ci/capability-impact.py'
+      - 'scripts/ci/capability-impact-observation-report.py'
+      - 'scripts/ci/honua-server-targeted-tests.sh'
+      - 'scripts/ci/pre-pr-check.sh'
+      - 'scripts/ci/generate-capability-matrix.py'
+      - 'tests/python/unit/test_capability_impact.py'
+      - 'tests/python/unit/test_pre_pr_scoped_selection.py'
+      - 'tests/python/unit/test_capability_impact_observation_report.py'
+      - 'tests/python/unit/test_generate_capability_matrix.py'
   workflow_dispatch:
     inputs:
       observation_days:

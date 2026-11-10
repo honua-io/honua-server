@@ -17,14 +17,11 @@ name: Docs Link Gate
 # hard error until the marker is deleted, so the escape hatch cannot be forgotten.
 #
 # ROUTING. Path-filtered rather than folded into `PR Gate`: `pr-gate.yml` carries
-# an explicit "do not add a paths filter" contract because it is the required
-# verification context, and this check has nothing to say about a change that
-# touches no documentation. It is also not a step in `ci.yml` — that workflow has
-# no `pull_request` trigger (schedule / merge_group / workflow_dispatch only), so
-# a step there would never grade a pull request. `scripts/ci/**` is deliberately
-# NOT a trigger beyond this checker's own files and data manifests: a shared-infrastructure edit
-# already escalates `pre-pr-check.sh` to a full run, and widening the trigger to
-# the whole directory would fire this lane on every CI script change for nothing.
+# an explicit "do not add a paths filter" contract because it is required.
+# Documentation/checker edits retain the full PR result. Runtime/config-only URL
+# changes are checked in ci.yml's existing changes job on affected trunk runs and
+# twice-daily full runs; this avoids a separate PR runner without losing the scan.
+# Keep scripts/ci triggers limited to the actual checkers and their manifests.
 on:
   pull_request:
     branches: [trunk]
@@ -34,9 +31,6 @@ on:
       - 'skills/**'
       - 'scripts/ci/check-skill-links.py'
       - 'scripts/ci/check-skill-links.test.py'
-      - 'src/**'
-      - 'docker/**'
-      - 'eng/**'
       - 'scripts/ci/check-doc-links.py'
       - 'scripts/ci/check-doc-links.test.py'
       - 'scripts/ci/code-referenced-anchors.v1.json'

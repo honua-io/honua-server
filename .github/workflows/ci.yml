@@ -313,6 +313,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Source/config-only documentation URLs move out of the PR workflow, but
+      # remain fail-closed on every affected/full trunk run before lane routing.
+      - name: Install documentation link reader
+        run: python3 -m pip install -r scripts/ci/okf-requirements.txt
+
+      - name: Verify runtime documentation links and anchors
+        run: |
+          python3 scripts/ci/check-doc-links.test.py
+          python3 scripts/ci/check-doc-links.py
+
       - name: Determine diff range
         id: diff
         env:
