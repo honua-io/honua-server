@@ -547,7 +547,7 @@ public sealed class ServingImageBoundaryTests
         workflow.Should().Contain("--filter 'Category=NativePublicApi'");
         workflow.Should().Contain("ET.parse('artifacts/test-results/native-public-api.trx')");
         workflow.Should().Contain("if passed < 1 or nonpassing:");
-        workflow.Should().Contain("redis:");
+        workflow.Should().Contain("postgis/postgis:");
         workflow.Should().Contain("aquasecurity/trivy-action");
         workflow.Should().Contain("severity: CRITICAL,HIGH", Exactly.Twice());
         workflow.Should().Contain("ignore-unfixed: true", Exactly.Twice());
