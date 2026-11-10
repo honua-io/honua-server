@@ -10,6 +10,7 @@ using Honua.Infrastructure.Models;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Features.Models;
 using Microsoft.Extensions.DependencyInjection;
+using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Protocols.Ogc.Api.Features;
 
@@ -32,6 +33,7 @@ internal static partial class FeaturesEndpoints
             .WithSummary("Get features from a collection")
             .WithDescription("Get features from a collection with optional filtering using CQL2-Text")
             .WithTags("OGC API Features")
+            .WithSharedCacheClass(ResponseCacheClass.FeatureQuery)
             .Produces<FeatureCollection>(200, MediaTypes.GeoJson)
             .Produces<FeatureCollection>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Gml)
