@@ -112,6 +112,7 @@ async function main({ github, context, core, kind }) {
   const sourceId = context.payload.inputs?.source_run_id || context.payload.workflow_run?.id;
   if (sourceId) core.info(`Doctor source run: ${Number(sourceId)}`);
   const result = await ({ ci: ciEligibility, review: reviewEligibility, sync: syncEligibility })[kind](github, context);
+  core.info(`Doctor eligibility: ${result.decision}; ${result.reason || 'Actionable evidence found'}`);
   core.setOutput('eligible', result.decision === 'needs-triage' ? 'true' : 'false');
   core.setOutput('context', JSON.stringify(result));
   await core.summary.addHeading('Doctor deterministic triage').addCodeBlock(JSON.stringify(result, null, 2), 'json').write();

@@ -49,6 +49,8 @@ async function main({ github, context, core, accounting, name, phase, threshold,
 
   async function report(eligible, reason) {
     core.setOutput('eligible', String(eligible));
+    core.info(`Doctor budget: eligible=${eligible}; ${reason}; cap=${threshold}; ` +
+      `triage=${totals.triage}; fix=${totals.fix}; reservation=${reserved}`);
     const cohortFixes = firstTriageAt ? paidFixStarts.filter(start => start >= firstTriageAt).length : 0;
     const share = triageEvents ? cohortFixes / triageEvents : 0;
     await core.summary.addHeading(`${name}: ${phase} shared daily budget`).addRaw(

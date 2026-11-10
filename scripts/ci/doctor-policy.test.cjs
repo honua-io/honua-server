@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { handled, ciEligibility, reviewEligibility, syncEligibility } = require('./doctor-eligibility.cjs');
+const { main: eligibilityCheck, handled, ciEligibility, reviewEligibility, syncEligibility } = require('./doctor-eligibility.cjs');
 const { main: budgetCheck } = require('./doctor-budget.cjs');
 const repo = { owner: 'honua-io', repo: 'honua-server' };
 const pr = { number: 12, state: 'open', draft: false, head: { sha: 'abc', ref: 'fix/example', repo: { full_name: 'honua-io/honua-server' } } };
@@ -77,10 +77,10 @@ test('resolved and outdated review threads are deterministic skips', async () =>
   g.graphql = async () => ({ repository: { pullRequest: { reviewThreads: { pageInfo: {}, nodes: [{ isResolved: true }, { isResolved: false, isOutdated: true }] } } } });
   assert.equal((await reviewEligibility(g, { repo, payload: { pull_request: pr } })).decision, 'not-actionable');
 });
-async function checkBudget({ triage = [], fix = [], credits = {}, threshold = 1300, summaries = [] }) {
+async function checkBudget({ triage = [], fix = [], credits = {}, threshold = 1300, maxCredits = 15, summaries = [], logs = [] }) {
   const outputs = {};
   const summary = { addHeading() { return this; }, addRaw(text) { summaries.push(text); return this; }, async write() {} };
-  await budgetCheck({ github: { rest: { actions: { listWorkflowRuns: 'runs' } }, paginate: async (_, args) => args.workflow_id.includes('triage') ? triage : fix }, context: { repo, runId: 99 }, core: { setOutput: (k, v) => { outputs[k] = v; }, info() {}, summary }, accounting: { getArtifactClient: async () => ({}), getRunAIC: async (_, id) => credits[id] }, name: 'ci-doctor', phase: 'triage', threshold, maxCredits: 15, apiBudget: {} });
+  await budgetCheck({ github: { rest: { actions: { listWorkflowRuns: 'runs' } }, paginate: async (_, args) => args.workflow_id.includes('triage') ? triage : fix }, context: { repo, runId: 99 }, core: { setOutput: (k, v) => { outputs[k] = v; }, info: text => logs.push(text), summary }, accounting: { getArtifactClient: async () => ({}), getRunAIC: async (_, id) => credits[id] }, name: 'ci-doctor', phase: 'triage', threshold, maxCredits, apiBudget: {} });
   return outputs.eligible;
 }
 test('triage and fix spend share a single daily envelope', async () => {
@@ -140,4 +140,41 @@ test('CI dispatch cannot bypass head serialization with a mismatched head input'
     context.payload.inputs = { head_sha };
     assert.equal((await ciEligibility(g, context)).reason, 'Dispatch head does not match source run');
   }
+});
+
+// Preserve the production webhook shape to exercise admission without a live API call.
+test('real failed PR Gate payload admits triage and writes the downstream job output', async () => {
+  const run = {
+    id: 42896382619, path: '.github/workflows/pr-gate.yml', status: 'completed',
+    conclusion: 'failure', head_branch: 'ci/s-ci-stages-analyzers',
+    head_sha: 'c336132cd065e10120853af382b60b0bc3decc96',
+    head_repository: { full_name: 'honua-io/honua-server' },
+  };
+  const pull = { ...pr, number: 7296, head: { ...pr.head, sha: run.head_sha, ref: run.head_branch } };
+  const { g } = fake();
+  const paginate = g.paginate;
+  g.rest.pulls.get = async () => ({ data: pull });
+  g.paginate = async (method, args) => method === 'pulls' ? [pull] : paginate(method, args);
+  const outputs = {}, logs = [];
+  const summary = { addHeading() { return this; }, addCodeBlock() { return this; }, async write() {} };
+  const context = { repo, eventName: 'workflow_run', payload: { action: 'completed', workflow_run: run } };
+  const core = { setOutput: (key, value) => { outputs[key] = value; }, info: text => logs.push(text), summary };
+  await eligibilityCheck({ github: g, context, core, kind: 'ci' });
+  assert.equal(outputs.eligible, 'true');
+  assert.equal(JSON.parse(outputs.context).run_id, run.id);
+  assert.match(logs.join('\n'), /Doctor eligibility: needs-triage/);
+  run.conclusion = 'cancelled';
+  await eligibilityCheck({ github: g, context, core, kind: 'ci' });
+  assert.equal(outputs.eligible, 'false');
+  assert.match(logs.join('\n'), /not-actionable; Source run has not failed/);
+});
+
+test('legacy spend plus concurrent reservations blocks admission without raising the cap', async () => {
+  const fix = [{ id: 1, status: 'completed' }];
+  const triage = [2, 3, 4].map(id => ({ id, status: 'in_progress' }));
+  const logs = [];
+  assert.equal(await checkBudget({ fix, triage, credits: { 1: 1255.00432 }, logs }), 'false');
+  assert.match(logs.join('\n'), /Doctor budget: eligible=false;.*cap=1300; triage=0; fix=1255.00432; reservation=60/);
+  assert.equal(await checkBudget({ fix, credits: { 1: 1255.00432 } }), 'true');
+  assert.equal(await checkBudget({ fix, credits: { 1: 1255.00432 }, maxCredits: 150 }), 'false');
 });
