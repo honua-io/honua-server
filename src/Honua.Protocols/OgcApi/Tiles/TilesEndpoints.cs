@@ -23,6 +23,7 @@ using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Features;
 using Honua.Infrastructure.Rendering;
+using Honua.Infrastructure.SharedCaching;
 using Honua.Protocols.Ogc.Api.Tiles.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
@@ -50,6 +51,7 @@ internal static partial class TilesEndpoints
             .WithDescription("Lists available tilesets for the dataset")
             .WithTags("OGC API Tiles")
             .CacheOutput("OgcTilesTilesets")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces<TileSetsList>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html);
 
@@ -60,6 +62,7 @@ internal static partial class TilesEndpoints
             .WithDescription("Returns tileset metadata for the dataset and tile matrix set")
             .WithTags("OGC API Tiles")
             .CacheOutput("OgcTilesDatasetTileset")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces<TileSet>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html);
 
@@ -69,7 +72,8 @@ internal static partial class TilesEndpoints
             .WithSummary("Get a tile for the dataset")
             .WithDescription("Returns a Mapbox Vector Tile or PNG tile for the dataset and tile coordinates")
             .WithTags("OGC API Tiles")
-            .CacheOutput("OgcTilesDatasetTile");
+            .CacheOutput("OgcTilesDatasetTile")
+            .WithSharedCacheClass(ResponseCacheClass.Tile);
 
         endpoints.MapGet("/ogc/tiles/collections/{collectionId}/tiles", HandleGetCollectionTilesets)
             .WithDisplayName("OGC API Tiles Collection Tilesets List")
@@ -78,6 +82,7 @@ internal static partial class TilesEndpoints
             .WithDescription("Lists available tilesets for the specified collection")
             .WithTags("OGC API Tiles")
             .CacheOutput("OgcTilesCollectionTilesets")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces<TileSetsList>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html);
 
@@ -88,6 +93,7 @@ internal static partial class TilesEndpoints
             .WithDescription("Returns tileset metadata for the specified collection and tile matrix set")
             .WithTags("OGC API Tiles")
             .CacheOutput("OgcTilesCollectionTileset")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces<TileSet>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html);
 
@@ -97,7 +103,8 @@ internal static partial class TilesEndpoints
             .WithSummary("Get a tile for a collection")
             .WithDescription("Returns a Mapbox Vector Tile or PNG tile for the specified collection and tile coordinates")
             .WithTags("OGC API Tiles")
-            .CacheOutput("OgcTilesTile");
+            .CacheOutput("OgcTilesTile")
+            .WithSharedCacheClass(ResponseCacheClass.Tile);
 
         return endpoints;
     }
@@ -755,8 +762,8 @@ internal static partial class TilesEndpoints
         var tileLimits = renderContext.TileLimits;
         var tileOptionsValue = renderContext.TileOptions;
         var activity = renderContext.Activity;
-        var cacheMaxAge = TilesetTtlResolver.Resolve(
-            tileOptionsValue, "OgcApiTiles", layer.CollectionId, renderContext.TileMatrixSetId);
+        var tileset = new TilesetAddress("OgcApiTiles", layer.CollectionId, renderContext.TileMatrixSetId);
+        SharedCacheResponse.UseTileset(context, tileOptionsValue, tileset);
 
         // Record-but-don't-render the vertical selection (see the documented divergence at
         // the raster/vector dispatch). The feature query below is unchanged — there is no
@@ -805,7 +812,6 @@ internal static partial class TilesEndpoints
         {
             activity?.SetStatus(ActivityStatusCode.Ok);
             activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, 0);
-            SetTileCacheHeaders(context, cacheMaxAge);
             return Results.NoContent();
         }
 
@@ -821,7 +827,7 @@ internal static partial class TilesEndpoints
         activity?.SetTag("honua.tile.bytes", imageBytes.Length);
         activity?.SetTag("honua.tile.format", "png");
 
-        return CreatePngTileResult(imageBytes, cacheMaxAge);
+        return Results.Bytes(imageBytes, MediaTypes.Png);
     }
 
     private static async Task<IResult> HandleDatasetRasterTileAsync(
@@ -837,10 +843,11 @@ internal static partial class TilesEndpoints
         var tileLimits = renderContext.TileLimits;
         var tileOptionsValue = renderContext.TileOptions;
         var activity = renderContext.Activity;
-        var cacheMaxAge = layers.Length == 0
-            ? tileOptionsValue.CacheMaxAge
-            : TilesetTtlResolver.Resolve(
-                tileOptionsValue, "OgcApiTiles", layers[0].CollectionId, renderContext.TileMatrixSetId);
+        if (layers.Length > 0)
+        {
+            var tileset = new TilesetAddress("OgcApiTiles", layers[0].CollectionId, renderContext.TileMatrixSetId);
+            SharedCacheResponse.UseTileset(context, tileOptionsValue, tileset);
+        }
 
         var fallbackFeatureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var renderedLayers = new List<TileRenderer.TileRenderLayer>(layers.Length);
@@ -908,7 +915,6 @@ internal static partial class TilesEndpoints
         {
             activity?.SetStatus(ActivityStatusCode.Ok);
             activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, 0);
-            SetTileCacheHeaders(context, cacheMaxAge);
             return Results.NoContent();
         }
 
@@ -919,7 +925,7 @@ internal static partial class TilesEndpoints
         activity?.SetTag("honua.tile.bytes", imageBytes.Length);
         activity?.SetTag("honua.tile.format", "png");
 
-        return CreatePngTileResult(imageBytes, cacheMaxAge);
+        return Results.Bytes(imageBytes, MediaTypes.Png);
     }
 
     private static FeatureQuery CreateVectorTileQuery(
@@ -1977,60 +1983,6 @@ internal static partial class TilesEndpoints
         };
 
         return StandardErrorHelpers.CreateBadRequest(context, detail);
-    }
-
-    private static void SetTileCacheHeaders(HttpContext context, int cacheMaxAge)
-    {
-        var credentialed = context.User.Identity?.IsAuthenticated == true
-            || context.Request.Headers.ContainsKey("Authorization")
-            || context.Request.Headers.ContainsKey("X-API-Key");
-        context.Response.Headers["Cache-Control"] = $"{(credentialed ? "private" : "public")}, max-age={cacheMaxAge}";
-        if (credentialed)
-        {
-            context.Response.Headers["Vary"] = "Authorization, X-API-Key";
-        }
-    }
-
-    private static TileResult CreateTileResult(byte[] tileData, int cacheMaxAge)
-        => new TileResult(tileData, cacheMaxAge);
-
-    private static PngTileResult CreatePngTileResult(byte[] imageData, int cacheMaxAge)
-        => new PngTileResult(imageData, cacheMaxAge);
-
-    private sealed class TileResult : IResult
-    {
-        private readonly IResult _inner;
-        private readonly int _cacheMaxAge;
-
-        public TileResult(byte[] tileData, int cacheMaxAge)
-        {
-            _inner = Results.Bytes(tileData, MediaTypes.Mvt);
-            _cacheMaxAge = cacheMaxAge;
-        }
-
-        public async Task ExecuteAsync(HttpContext httpContext)
-        {
-            SetTileCacheHeaders(httpContext, _cacheMaxAge);
-            await _inner.ExecuteAsync(httpContext);
-        }
-    }
-
-    private sealed class PngTileResult : IResult
-    {
-        private readonly IResult _inner;
-        private readonly int _cacheMaxAge;
-
-        public PngTileResult(byte[] imageData, int cacheMaxAge)
-        {
-            _inner = Results.Bytes(imageData, MediaTypes.Png);
-            _cacheMaxAge = cacheMaxAge;
-        }
-
-        public async Task ExecuteAsync(HttpContext httpContext)
-        {
-            SetTileCacheHeaders(httpContext, _cacheMaxAge);
-            await _inner.ExecuteAsync(httpContext);
-        }
     }
 
     private static TileRenderer.GeometryKind ToTileGeometryKind(MetadataV2GeometryType geometryType)

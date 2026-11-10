@@ -8,6 +8,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.SharedCaching;
 using Honua.Infrastructure.Validation;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,6 +32,7 @@ internal static class AccessPolicyHelpers
 
     internal static IResult? CreateAccessDeniedResult(HttpContext context, AccessDecision decision)
     {
+        ResponseAccessVerdict.Record(context, decision);
         if (decision.IsAllowed)
         {
             return null;
@@ -701,6 +703,7 @@ internal static class AccessPolicyHelpers
             var decision = evaluate(resource);
             if (decision.IsAllowed)
             {
+                ResponseAccessVerdict.Record(context, decision);
                 return null;
             }
 

@@ -18,6 +18,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Middleware;
 using Microsoft.Extensions.Primitives;
+using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Protocols.GeoServices.ImageServer;
 
@@ -46,7 +47,8 @@ internal static class ImageServerEndpoints
             .WithDescription("Returns comprehensive metadata about the image service including extent, capabilities, and raster properties")
             .Produces<ImageServerServiceInfo>()
             .Produces(404)
-            .CacheOutput("ImageServerMetadata");
+            .CacheOutput("ImageServerMetadata")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument);
         // Esri clients hydrate metadata by POSTing {"f":"json"}; mirror the GET
         // root so discovery succeeds. The group is already AllowAnonymous and the
         // POST companion omits CacheOutput to match the other POST variants.
@@ -118,6 +120,7 @@ internal static class ImageServerEndpoints
 
         // Image tile endpoint - pre-tiled access
         group.MapGet("/tile/{level}/{row}/{col}", GetImageTile)
+            .WithSharedCacheClass(ResponseCacheClass.Tile)
             .WithDisplayName("Get Image Tile")
             .WithName("GetImageTile")
             .WithSummary("Get pre-tiled image")
@@ -713,7 +716,8 @@ internal static class ImageServerEndpoints
             .WithDescription("Returns comprehensive metadata about the named image service")
             .Produces<ImageServerServiceInfo>()
             .Produces(404)
-            .CacheOutput("ImageServerMetadata");
+            .CacheOutput("ImageServerMetadata")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument);
         serviceGroup.MapPost("", GetServiceInfoByService)
             .WithDisplayName("Get Image Service Info by Service (POST)")
             .WithName("GetImageServiceInfoByServicePost")
@@ -769,6 +773,7 @@ internal static class ImageServerEndpoints
             .Produces(404);
 
         serviceGroup.MapGet("/tile/{level}/{row}/{col}", GetImageTileByService)
+            .WithSharedCacheClass(ResponseCacheClass.Tile)
             .WithDisplayName("Get Image Tile by Service")
             .WithName("GetImageTileByService")
             .WithSummary("Get pre-tiled image")

@@ -28,7 +28,7 @@ response whose class cannot be decided, is sent as `Cache-Control: private, no-s
 | Condition | Where it is checked |
 | --- | --- |
 | The route declares a public response class (`WithSharedCacheClass`) | Endpoint metadata; routes without it are never shared-cacheable |
-| The request is `GET` or `HEAD` and the status is 200, 206 or 304 | Guard, when the response starts |
+| The request is `GET` or `HEAD` and the status is 200, 204, 206 or 304 (or 404 at a generation address) | Guard, when the response starts |
 | The request carries no credential (any header, query parameter, cookie or client certificate the server accepts) and the principal is anonymous with no claims | Guard, when the response starts |
 | The access pipeline granted this request as an anonymous caller, and denied nothing | Recorded where access is decided (`AccessPolicyHelpers.CreateAccessDeniedResult`) |
 | No authentication decision was made and no cookie is set | Guard, when the response starts |
@@ -49,18 +49,29 @@ which can.
 
 | Response class | `Cache-Control` | `ETag` | `Vary` | Lifetime comes from |
 | --- | --- | --- | --- | --- |
-| Public tile, generation-addressed (`g` matches the current generation) | `public, max-age=31536000, s-maxage=31536000, immutable` | Yes | `Accept-Encoding` | Fixed: the address changes instead |
-| Public tile, plain address | `public, max-age=3600, s-maxage=3600` | Yes | `Accept-Encoding` | Per-layer setting, then the tileset setting, then `SharedCache:Tile` |
-| Public feature query | `public, max-age=0, s-maxage=60` | Yes | `Accept, Accept-Encoding, Prefer` | Per-layer setting, then `SharedCache:FeatureQuery` |
-| Capabilities and metadata documents | `public, max-age=30, s-maxage=60` | Yes | `Accept, Accept-Encoding, Accept-Language` | `SharedCache:MetadataDocument` |
-| Static map image | `public, max-age=300, s-maxage=300` | Yes | `Accept-Encoding` | Per-layer setting, then `SharedCache:StaticMapImage` |
-| Static stored object served by the server (scene assets, raster and tile archives) | `public, max-age=3600, s-maxage=3600` | Yes | `Accept-Encoding` | The dataset's own setting, then `SharedCache:StaticObject` |
+| Public tile, generation-addressed (`g` matches the current generation) | `public, max-age=31536000, s-maxage=31536000, immutable, stale-if-error=86400` | Yes | `Accept-Encoding` | Fixed: the address changes instead |
+| Public tile, plain address | `public, max-age=60, s-maxage=300, stale-while-revalidate=60, stale-if-error=86400` | Yes | `Accept-Encoding` | Per-layer setting, then the tileset setting, then `SharedCache:Tile` |
+| Public feature query | `public, max-age=0, s-maxage=30, stale-while-revalidate=30, stale-if-error=86400` | Yes | `Accept, Accept-Encoding, Prefer` | Per-layer setting, then `SharedCache:FeatureQuery` |
+| Capabilities and metadata documents, including every document that hands out a tile address | `public, max-age=30, s-maxage=60` | Yes | `Accept, Accept-Encoding, Accept-Language` | `SharedCache:MetadataDocument` |
+| Static map image | `public, max-age=0, s-maxage=60, stale-while-revalidate=30` | Yes | `Accept-Encoding` | Per-layer setting, then `SharedCache:StaticMapImage` |
+| Stored object served by the server from a key that is overwritten in place (scene assets, raster and tile archives) | `public, max-age=60, s-maxage=300` | Yes, from the store | `Accept-Encoding` | The dataset's own setting, then `SharedCache:StaticObject` |
 | Secured anything (credential on the request, authenticated principal, denied or undecided access) | `private, no-store` | Unchanged | Unchanged | Not configurable |
 | Admin | `private, no-store` | Unchanged | Unchanged | Not configurable |
 | Editing (any method other than `GET` or `HEAD`) | `private, no-store` | Unchanged | Unchanged | Not configurable |
+| Errors (every 5xx, and every 4xx except a 404 at a generation address) | `private, no-store` | Unchanged | Unchanged | Not configurable |
 
-`SharedCache:EmergencyLifetimeSeconds` caps every public lifetime, and removes `immutable`, in one
-step.
+Objects written to object storage carry the same two shapes: `public, max-age=31536000, immutable`
+when the key is content-addressed or generation-addressed, `public, max-age=60, s-maxage=300` when
+the key is overwritten in place, and `private, no-store` for everything that is not public.
+
+Three controls set a public lifetime, in increasing precedence: the product default above; a
+per-layer lifetime (or the per-tileset lifetime where one is configured) for the classes that are
+not generation-addressed; and the emergency setting. The emergency setting forces `max-age=0,
+s-maxage=15` and drops `immutable` for the named public layers, or for all of them, without
+changing any stored per-layer value, and is reversed by unsetting it.
+
+`stale-if-error` is written only together with `public`, by the one component that writes `public`,
+so it never appears on a secured response.
 
 ### 3. A generation in long-lived addresses
 
@@ -111,8 +122,11 @@ each release has its own addresses. When the operation completes, `/*` is invali
   which is safe and costs cache efficiency until they declare one.
 - A route-table test fails if an admin route, an authorized route or a write route declares a public
   class, and sweeps every route with credentials to prove the guard.
-- CloudFront must forward `g` in the cache key and must not cache on its own defaults. The
-  distribution, the task-role permission and the Console's static assets are configured outside this
-  repository.
+- CloudFront must forward `g` in the cache key. Its cache policies need a minimum lifetime of 0, a
+  default equal to the product default for that behaviour, a maximum of one year, and an error
+  caching minimum of 0 (CloudFront otherwise caches errors for 10 seconds). The distribution, the
+  task-role permission and the Console's static assets are configured outside this repository.
+- `TileOptions:CacheMaxAge` no longer sets the tile lifetime: its default of one hour would override
+  the product default on every tile. A tileset entry under `TileOptions:TilesetLifecycle` still does.
 - An anonymous caller that edits a public layer can read a feature query up to `s-maxage` old through
   the CDN. Layers that allow anonymous writes should set the feature query lifetime to 0.

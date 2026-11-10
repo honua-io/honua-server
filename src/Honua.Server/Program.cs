@@ -834,6 +834,7 @@ builder.Services.AddScoped<Honua.ControlPlane.IAutonomousOperationConvergence,
 
 // Configure tile options
 InfrastructureCompositionRoot.ConfigureTileOptions(builder.Services, builder.Configuration);
+Honua.Infrastructure.SharedCaching.SharedCacheExtensions.AddSharedCachePolicy(builder.Services, builder.Configuration);
 
 // Configure caching options and register cache services
 InfrastructureCompositionRoot.ConfigureCaching(builder.Services, builder.Configuration, redisCacheEntitled);
@@ -1358,6 +1359,10 @@ if (activeDbConnectionTracker != null)
 {
     EnhancedTelemetry.ConfigureActiveDbConnectionsProvider(activeDbConnectionTracker.GetActiveCount);
 }
+
+// First in the pipeline so its response-start callback runs last: a response that is not provably
+// public leaves as private, no-store, including every response short-circuited below.
+Honua.Infrastructure.SharedCaching.SharedCacheExtensions.UseSharedCacheGuard(app);
 
 app.UseGeoServicesPublicPaths();
 
