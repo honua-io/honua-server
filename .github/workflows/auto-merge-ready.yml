@@ -16,6 +16,8 @@ jobs:
     name: Enable ruleset-governed auto-merge
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login != 'dependabot[bot]'
+      && (github.event.pull_request.base.ref == 'trunk' || github.event.action == 'edited')
       && (!github.event.pull_request.draft || github.event.action == 'converted_to_draft')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -40,7 +42,7 @@ jobs:
               query($owner: String!, $repo: String!, $number: Int!) {
                 repository(owner: $owner, name: $repo) {
                   pullRequest(number: $number) {
-                    id state isDraft baseRefName headRepository { nameWithOwner }
+                    id state isDraft baseRefName mergeStateStatus headRepository { nameWithOwner }
                     labels(first: 100) { nodes { name } pageInfo { hasNextPage } }
                     commits { totalCount }
                     autoMergeRequest { mergeMethod }
@@ -65,6 +67,10 @@ jobs:
             }
             if (!eligible) {
               core.notice('Auto-merge disabled or unchanged: live pull request is ineligible.');
+              return;
+            }
+            if (['CLEAN', 'UNSTABLE', 'HAS_HOOKS'].includes(pr.mergeStateStatus)) {
+              core.notice('PR is already mergeable; auto-merge cannot be armed. Existing merge authority handles it.');
               return;
             }
             await github.graphql(`

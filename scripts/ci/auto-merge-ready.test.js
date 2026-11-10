@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const workflow = fs.readFileSync('.github/workflows/auto-merge-ready.yml', 'utf8');
 const script = workflow.split('          script: |\n')[1].replace(/^            /gm, '');
 const ready = () => ({
-  id: 'PR_1', state: 'OPEN', isDraft: false, baseRefName: 'trunk',
+  id: 'PR_1', state: 'OPEN', isDraft: false, baseRefName: 'trunk', mergeStateStatus: 'BLOCKED',
   headRepository: { nameWithOwner: 'honua-io/honua-server' },
   labels: { nodes: [], pageInfo: { hasNextPage: false } },
   commits: { totalCount: 1 }, autoMergeRequest: null,
@@ -88,4 +88,13 @@ test('live commit-count changes replace the previous merge method', async () => 
   assert.equal(single[0].action, 'disable');
   assert.equal(single[1].action, 'enable');
   assert.equal(single[1].mergeMethod, 'SQUASH');
+});
+
+test('already mergeable pull requests stay neutral without direct merging', async () => {
+  for (const mergeStateStatus of ['CLEAN', 'UNSTABLE', 'HAS_HOOKS']) {
+    assert.equal((await run({ ...ready(), mergeStateStatus })).length, 0);
+  }
+});
+test('Dependabot PRs are skipped before requesting unavailable App secrets', () => {
+  assert.match(workflow, /github.event.pull_request.user.login != 'dependabot\[bot\]'/);
 });

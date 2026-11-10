@@ -546,3 +546,5 @@ twice-daily full matrix are preserved.
 the bot App to enable GitHub auto-merge. Repository rulesets and required checks decide when a PR merges.
 The workflow does not override protections. Exact-head review admission must be
 configured as a required check to be enforced by GitHub auto-merge.
+
+The event-driven auto-merge workflow skips Dependabot PRs before minting App credentials. Already mergeable PRs remain with the existing merge authority because GitHub cannot arm deferred auto-merge for them.
