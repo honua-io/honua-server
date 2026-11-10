@@ -245,7 +245,8 @@
       "displayName": "Map Collaboration Sessions",
       "category": "Collaboration",
       "edition": "Community",
-      "description": "Collaborative saved-map session operations (comments, activity, shared editing coordination)."
+      "description": "Collaborative saved-map session operations (comments, activity, shared editing coordination).",
+      "status": "experimental"
     },
     {
       "key": "demo.showcase",
@@ -307,8 +308,8 @@
       "key": "enrichment.datasets",
       "displayName": "Data Enrichment Datasets",
       "category": "Enrichment",
-      "edition": "Community",
-      "description": "Register and manage third-party data-enrichment dataset sources."
+      "edition": "Pro",
+      "description": "Register, discover and run enrichment against third-party data-enrichment dataset sources. Every enrichment route is gated by the analytics.spatial-join entitlement."
     },
     {
       "key": "fieldops.forms",
@@ -366,7 +367,7 @@
       "displayName": "Claims Mapping",
       "category": "Identity",
       "edition": "Enterprise",
-      "description": "Custom claim-to-role mapping and identity governance for OIDC providers."
+      "description": "Arbitrary custom claim mappings and tenant mapping for OIDC providers. Choosing which claim carries roles is part of identity.oidc."
     },
     {
       "key": "identity.mtls-client-certificate",
@@ -380,7 +381,7 @@
       "displayName": "OIDC Authentication",
       "category": "Identity",
       "edition": "Pro",
-      "description": "Single-provider OpenID Connect authentication with Azure AD, Google, Okta, Auth0, or generic OIDC."
+      "description": "Single-provider OpenID Connect authentication with Azure AD, Google, Okta, Auth0, or generic OIDC, including the choice of which claims carry roles."
     },
     {
       "key": "identity.oidc-multi-provider",
@@ -803,7 +804,8 @@
       "displayName": "Real-Time Feature Streams",
       "category": "Streaming",
       "edition": "Pro",
-      "description": "Subscribe to WebSocket and SSE feature-change streams with filters and replay cursors."
+      "description": "Subscribe to WebSocket and SSE feature-change streams with filters and replay cursors.",
+      "status": "experimental"
     },
     {
       "key": "styling.auto-suggest",

@@ -550,7 +550,7 @@ internal static partial class FeatureServerEndpoints
                 new Honua.Core.Exceptions.TileSizeLimitExceededException().Message);
         }
 
-        VectorTileExecution.ApplyCacheHeaders(
+        VectorTileExecution.UseTilesetLifetime(
             context,
             tileOptions,
             FeatureServerProtocolName,

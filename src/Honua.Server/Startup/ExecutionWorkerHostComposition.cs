@@ -33,7 +33,7 @@ internal static class ExecutionWorkerHostComposition
         typeof(IOperationGateway),
         typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor),
         typeof(IQueueClaimReconciler),
-        typeof(RedisJobQueue),
+        typeof(PostgresJobQueue),
         typeof(IJobQueue),
     ];
 
@@ -48,8 +48,8 @@ internal static class ExecutionWorkerHostComposition
         {
             throw new InvalidOperationException(
                 $"Execution worker for operation '{launch.OperationId}' cannot start: the durable job store is not "
-                + "composed. Configure ConnectionStrings:redis (the same Redis the serving host uses) so the worker "
-                + "can claim the job and report its outcome.");
+                + "composed. Configure ConnectionStrings:DefaultConnection (the system database the serving host "
+                + "uses) so the worker can claim the job and report its outcome.");
         }
 
         for (var index = services.Count - 1; index >= 0; index--)

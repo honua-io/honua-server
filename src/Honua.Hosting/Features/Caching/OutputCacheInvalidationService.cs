@@ -10,6 +10,8 @@ using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Validation;
 using Microsoft.AspNetCore.OutputCaching;
 
+using Honua.Infrastructure.SharedCaching;
+
 namespace Honua.Infrastructure.Caching;
 
 internal sealed partial class OutputCacheInvalidationService : IQueryResponseCacheInvalidator
@@ -20,6 +22,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ICacheRefreshCoordinator? _refreshCoordinator;
     private readonly ILogger<OutputCacheInvalidationService> _logger;
+    private readonly CdnInvalidationService? _cdnInvalidation;
 
     public OutputCacheInvalidationService(
         IOutputCacheStore? cacheStore,
@@ -27,8 +30,10 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
         ICacheService? metadataCache,
         IServiceScopeFactory scopeFactory,
         ICacheRefreshCoordinator? refreshCoordinator,
-        ILogger<OutputCacheInvalidationService> logger)
+        ILogger<OutputCacheInvalidationService> logger,
+        CdnInvalidationService? cdnInvalidation = null)
     {
+        _cdnInvalidation = cdnInvalidation;
         _cacheStore = cacheStore;
         _responseCache = responseCache;
         _metadataCache = metadataCache;
@@ -38,6 +43,12 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
     }
 
     public async Task InvalidateLayerAsync(string? serviceId, int? layerId, CancellationToken cancellationToken)
+    {
+        await EvictLayerAsync(serviceId, layerId, cancellationToken).ConfigureAwait(false);
+        await InvalidateCdnForAdministrativeChangeAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task EvictLayerAsync(string? serviceId, int? layerId, CancellationToken cancellationToken)
     {
         var normalizedServiceIds = await ResolveLayerServiceIdsAsync(serviceId, layerId, cancellationToken).ConfigureAwait(false);
         var ogcCollectionIds = layerId.HasValue
@@ -91,6 +102,12 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
 
     public async Task InvalidateCollectionAsync(string collectionId, CancellationToken cancellationToken)
     {
+        await EvictCollectionAsync(collectionId, cancellationToken).ConfigureAwait(false);
+        await InvalidateCdnForAdministrativeChangeAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task EvictCollectionAsync(string collectionId, CancellationToken cancellationToken)
+    {
         var collectionIds = await ResolveCollectionIdsAsync(collectionId, cancellationToken).ConfigureAwait(false);
         var tags = new List<string>
         {
@@ -123,10 +140,14 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
             ],
             cancellationToken);
 
-    public Task InvalidateOgcMetadataAsync(CancellationToken cancellationToken)
+    public async Task InvalidateOgcMetadataAsync(CancellationToken cancellationToken)
     {
-        return EvictTagsAsync(["ogc-metadata", "ogc-tiles", "ogc-maps"], cancellationToken);
+        await EvictOgcMetadataAsync(cancellationToken).ConfigureAwait(false);
+        await InvalidateCdnForAdministrativeChangeAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    private Task EvictOgcMetadataAsync(CancellationToken cancellationToken)
+        => EvictTagsAsync(["ogc-metadata", "ogc-tiles", "ogc-maps"], cancellationToken);
 
     public Task InvalidateSceneAsync(string? sceneId, CancellationToken cancellationToken)
     {
@@ -135,7 +156,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
         {
             tags.Add($"scene:{sceneId.Trim().ToLowerInvariant()}");
         }
-        return EvictTagsAsync(tags, cancellationToken);
+        return Task.WhenAll(EvictTagsAsync(tags, cancellationToken), InvalidateCdnForAdministrativeChangeAsync(cancellationToken));
     }
 
     public async Task InvalidateServiceCatalogAsync(
@@ -207,6 +228,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
             EvictTagsAsync(tags, cancellationToken),
             EvictResponseCacheAsync(responsePatterns, cancellationToken),
             EvictCatalogCacheAsync(normalizedServiceId, layerIdList, cancellationToken)).ConfigureAwait(false);
+        await InvalidateCdnForAdministrativeChangeAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task EvictTagsAsync(IEnumerable<string> tags, CancellationToken cancellationToken)

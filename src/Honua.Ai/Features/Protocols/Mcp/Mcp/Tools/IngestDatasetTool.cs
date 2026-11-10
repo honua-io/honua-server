@@ -26,6 +26,12 @@ internal sealed partial class IngestDatasetTool : IMcpTool
 
     public const string GeocodeEntitlementKey = GeocodeAddressesTool.EntitlementKey;
 
+    internal const string AddressColumnNotEntitledMessage =
+        "'addressColumn' geocodes during ingest and requires the Enterprise edition ('" + GeocodeEntitlementKey
+        + "' entitlement), which is not active on this server. Provide coordinate columns "
+        + "('longitudeColumn'/'latitudeColumn') or a GeoJSON payload instead, or install a licence that includes '"
+        + GeocodeEntitlementKey + "'.";
+
     public const string ImportedGeometryColumn = "geometry";
 
     public const string ImportedPrimaryKey = "id";
@@ -56,7 +62,8 @@ internal sealed partial class IngestDatasetTool : IMcpTool
             + "lon/lng/long/longitude/x and lat/latitude/y, or set longitudeColumn/latitudeColumn explicitly — or from a WKT column named "
             + "wkt/geom/geometry/shape; coordinate order is lon/lat and the coordinate CRS defaults to EPSG:4326, override with sourceSrid). "
             + "For a CSV that only has addresses, either geocode it first with honua_geocode_addresses and ingest the returned lon/lat values, or "
-            + "set addressColumn to geocode server-side during ingest (up to 100 rows; requires the 'geocoding.batch' entitlement). "
+            + "set addressColumn to geocode server-side during ingest (up to 100 rows). addressColumn requires the Enterprise edition "
+            + "('geocoding.batch' entitlement); on Community and Pro the call is refused, so use coordinate columns or a GeoJSON payload there. "
             + "Returns the {connectionId, schema, table} triple plus row count and per-row errors — pass those values straight to "
             + "honua_publish_service (with the returned geometryColumn and primaryKey) to finish the CSV → geocode → ingest → publish workflow. "
             + "Re-ingesting the same datasetName replaces that dataset. For data larger than 4 MB use the REST upload path "
@@ -234,7 +241,7 @@ internal sealed partial class IngestDatasetTool : IMcpTool
         var entitlement = LicenseGate.CheckEntitlement(httpContext.RequestServices, GeocodeEntitlementKey);
         if (!entitlement.IsActive)
         {
-            throw new GeoprocessingPreconditionFailedException(entitlement.UpgradeMessage);
+            throw new GeoprocessingPreconditionFailedException(AddressColumnNotEntitledMessage);
         }
 
         var allowFailover = LicenseGate
