@@ -508,3 +508,6 @@ quarantined methods without exclusions or retries and is explicitly non-gating.
 The publisher has issue-write permission only on a trusted `workflow_run` path. It checks
 same-repository provenance, checks out default-branch code, validates raw case evidence and
 hashes, and never executes downloaded data or checks out the triggering branch.
+Publication uses GitHub's FIFO concurrency queue (`queue: max`, up to 100 pending
+runs), keeping issue mutations serial without replacing a pending completion event.
+If that service limit is reached, rerun canceled publishers to recover their evidence.

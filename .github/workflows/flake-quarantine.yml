@@ -11,8 +11,10 @@ permissions:
   issues: write
 
 # Serialize the read/modify/write of the repository-wide twenty-five-test cap.
+# Keep completed-run events queued instead of replacing the pending publisher.
 concurrency:
   group: publish-flaky-test-quarantine
+  queue: max
   cancel-in-progress: false
 
 jobs:
