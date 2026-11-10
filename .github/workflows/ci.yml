@@ -6,62 +6,10 @@ on:
     # Full integration lane. PR CI is selective; release workflows own
     # packaging/publishing smoke.
     - cron: '0 9 * * *'
-  # NO per-PR `pull_request` trigger. In the optimistic merge-train model the
-  # ONE batch CI (dispatched by the train on a `train/batch/*` branch via
-  # workflow_dispatch) is the authoritative gate; running the full matrix on
-  # every individual PR too is pure double-work — N per-PR runs + the batch run
-  # — and the flood of per-PR CI completions storms the train's `workflow_run`
-  # trigger so badly that no train run survives to land. The heavy jobs below
-  # gate on `event_name != 'merge_group'`, so the train's workflow_dispatch (and
-  # the nightly schedule) still run them; only the per-PR fan-out is dropped.
-  # A genuinely-broken PR is caught when the train batches it (attribute+drop).
-  #
-  # PER-PR GATING LIVES IN pr-gate.yml, NOT HERE (#2865). Dropping the per-PR
-  # fan-out was right; leaving `CI Gate` as trunk's required context was not.
-  # `CI Gate` is produced only by a train/batch/* dispatch, so it never appears
-  # on a PR head SHA — every PR was permanently BLOCKED and `--admin` became the
-  # only merge path, which meant the batch CI never ran on merged work (that is
-  # how a stale feature-catalog.json reached trunk). The fix is a SEPARATE
-  # workflow, `.github/workflows/pr-gate.yml`, publishing the context `PR Gate`:
-  # one cheap runner (build + format + Fast unit + architecture/MCP governance
-  # smoke plus the required Server Governance/Drift Testcontainers check, no
-  # `services:` orchestration), sharing its steps
-  # with `merge-queue-gate`
-  # below via ./.github/actions/lean-gate.
-  # DO NOT "simplify" that by adding a `pull_request` trigger to THIS workflow.
-  # The heavy jobs below guard on `event_name != 'pull_request' || <not
-  # dependabot>`, which is TRUE for an ordinary PR — the trigger alone would fan
-  # the full CI matrix — every server-test shard in `.github/ci-shards.json`
-  # plus the AOT/Docker/browser/MCP/provider lanes — out per PR and rebuild the
-  # exact runner storm this header exists to prevent. Three gates, three
-  # distinct contexts, none interchangeable: `PR Gate` (per-PR) / `Merge Queue Gate` (per-batch,
-  # dormant) / `CI Gate` (the train's batch CI).
-  #
-  # SELECTIVE BATCHES: a train/batch/* dispatch is gated like a PR diffed against
-  # trunk — the `changes` + `targeted-shards` jobs run only the shards/lanes the
-  # batch's cumulative diff touches (the smart-ci subset the train computes),
-  # not the whole fanout every batch. The targeted-tests selector self-escalates
-  # to run_all on infra/shared/unmapped changes, and the nightly `schedule` still
-  # runs the FULL matrix as the backstop, so coverage is preserved while the
-  # per-batch rerun of already-green shards is eliminated. `-f full_ci=true`
-  # (or a schedule/non-train dispatch) forces the full lane.
-  # Merge queue (LEAN gate): GitHub batches approved PRs and runs CI once on
-  # the combined commit before fast-forwarding trunk. The full CI matrix (every
-  # server-test shard in `.github/ci-shards.json` plus the AOT, Docker, browser,
-  # MCP and provider lanes) already gated each PR on its own `pull_request` run
-  # BEFORE it entered the queue, so
-  # re-running that matrix on every batch is pure waste — and at batch sizes of
-  # 5 it caused runner starvation, ejected the front PR, reformed the group,
-  # spawned zombie runs, and spiralled (merge queue disabled 2026-06-18,
-  # ruleset 17808547). The merge_group event therefore runs ONLY the lean
-  # `merge-queue-gate` job (build + format + fast unit/architecture smoke) to
-  # catch semantic conflicts from BATCHING — not to re-validate each PR. Every
-  # heavy job is `if:`-gated to `pull_request`/schedule and SKIPS on
-  # merge_group; the PR-time aggregator `CI Gate` likewise does not run on
-  # merge_group. The merge-queue REQUIRED check must be `Merge Queue Gate`,
-  # NOT `CI Gate`. See docs/internal/ci/gate-model.md.
-  merge_group:
-    types: [checks_requested]
+    - cron: '0 21 * * *'
+  # Per-PR verification lives in pr-gate.yml. Full CI runs on trunk twice
+  # daily or by dispatch, keeping runtime proofs and protocol builds off the
+  # per-push critical path while preserving complete integration coverage.
   workflow_dispatch:
     inputs:
       merge_train_nonce:
@@ -88,18 +36,12 @@ on:
         default: ''
 
 concurrency:
-  # PR runs key on the PR number (re-push cancels the prior run). Trunk runs
-  # serialize without cancellation so at least one trailing matrix always
-  # reaches a terminal result for the fleet lander's red/green brake. merge_group
-  # and other non-PR events key on github.ref. For merge_group, github.ref is
-  # the unique per-batch queue ref (refs/heads/gh-readonly-queue/trunk/pr-...),
-  # so each batch gets its OWN concurrency group: a reformed group runs under a
-  # NEW ref and is NOT cancelled-in-progress by the prior batch (and cannot be
-  # cancelled BY it). This is deliberate — the historical zombie-run spiral came
-  # from re-running the full matrix per batch, not from this key; with the lean
-  # gate the per-batch group is cheap, so leave cancel-in-progress on (it still
-  # collapses duplicate checks_requested events for the SAME batch ref).
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  # Trunk runs serialize without cancellation so at least one trailing matrix
+  # always reaches a terminal result for the fleet lander's red/green brake.
+  # Selective runs (selective_base set, from trunk-affected.yml or the lander)
+  # queue in their own group, so a burst of merges can only replace a pending
+  # selective run, never a pending scheduled full run.
+  group: ci-${{ github.event.pull_request.number || github.ref }}${{ inputs.selective_base && '-affected' || '' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/trunk' }}
 
 env:
@@ -365,6 +307,7 @@ jobs:
       integration_reason: ${{ steps.filter.outputs.integration_reason }}
       full_ci: ${{ steps.filter.outputs.full_ci }}
       postgres_matrix: ${{ steps.filter.outputs.postgres_matrix }}
+      specialized_lanes: ${{ steps.specialized.outputs.lanes }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -407,6 +350,12 @@ jobs:
             echo "range=origin/trunk...${{ github.sha }}" >> "$GITHUB_OUTPUT"
             echo "trailing_selective=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Record suspect merge range
+        if: steps.diff.outputs.trailing_selective == 'true'
+        env:
+          SELECTIVE_BASE: ${{ inputs.selective_base }}
+        run: scripts/ci/trunk-suspect-range.sh "${SELECTIVE_BASE}" "${GITHUB_SHA}" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Check for non-test changes
         id: filter
@@ -533,16 +482,6 @@ jobs:
                 | sed '/^$/d' || true
             )
 
-            # A trailing run is selective across a range of already-landed commits,
-            # but the compatibility jobs below are currently routed by full_ci rather
-            # than by individual path selectors. Keep docs/CI-only ranges cheap; when
-            # the range contains runtime or test changes, run those compatibility
-            # lanes instead of silently suppressing them.
-            if [ "${{ steps.diff.outputs.trailing_selective }}" = "true" ] &&
-               [ -n "$INTEGRATION_FILES" ]; then
-              FULL_CI=true
-            fi
-
             if [ "${FULL_CI}" = "true" ]; then
               echo "build_changes=true" >> "$GITHUB_OUTPUT"
               echo "integration_changes=true" >> "$GITHUB_OUTPUT"
@@ -581,6 +520,13 @@ jobs:
           echo "Full CI:"
           echo "${FULL_CI:-true}"
 
+      - name: Select expensive affected lanes
+        id: specialized
+        env:
+          DIFF_RANGE: ${{ steps.diff.outputs.range }}
+          SELECTIVE: ${{ steps.diff.outputs.trailing_selective == 'true' && steps.filter.outputs.full_ci != 'true' && 'true' || 'false' }}
+        run: python3 scripts/ci/affected-ci-lanes.py --range "$DIFF_RANGE" --selective "$SELECTIVE" >> "$GITHUB_OUTPUT"
+
   # Compute the server-tests shard subset for this PR. Scheduled/manual full
   # integration runs execute every shard. See ADR-0037.
   # Per ADR-0037 .github/ci-shards.json is the single source of truth for both
@@ -602,6 +548,7 @@ jobs:
     outputs:
       descriptor: ${{ steps.compute.outputs.descriptor }}
       matrix_include: ${{ steps.compute.outputs.matrix_include }}
+      matrix_artifact: ${{ steps.compute.outputs.matrix_artifact }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -684,9 +631,18 @@ jobs:
             echo "::error::matrix_include is empty — targeted-shards selected no shards"
             exit 1
           fi
-          echo "matrix_include: ${matrix_include}"
+          printf '%s\n' "${matrix_include}" > "${RUNNER_TEMP}/managed-matrix.json"
           echo "descriptor=${descriptor}" >> "$GITHUB_OUTPUT"
           echo "matrix_include=${matrix_include}" >> "$GITHUB_OUTPUT"
+          echo "matrix_artifact=selected-server-test-matrix-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload selected shard matrix
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: selected-server-test-matrix-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/managed-matrix.json
+          if-no-files-found: error
+          retention-days: 7
 
   ci-router-validation:
     name: CI Router Validation
@@ -732,6 +688,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Canonical Instruction Check
         run: bash scripts/ci/check-instructions-sync.sh
@@ -759,15 +717,18 @@ jobs:
         # affected by this PR + their reverse-dependency closure. Force-fulls
         # whenever shared infra changes (Directory.Packages.props, Honua.sln,
         # .github/, scripts/ci/) so a graph change cannot bypass the gate.
-        # The trunk-merge build is unaffected: push events resolve to BASE_REF
-        # 'origin/trunk' against HEAD 'HEAD'; on trunk that diff is empty so
-        # the script emits nothing and the build step short-circuits — meaning
-        # the canonical correctness gate is the PR check that landed it.
+        # Trailing dispatches use the verified range base, rather than comparing
+        # trunk to itself and unnecessarily rebuilding the entire solution.
         env:
-          BASE_REF: ${{ github.event.pull_request.base.sha || 'origin/trunk' }}
+          FULL_CI: ${{ needs.changes.outputs.full_ci }}
+          BASE_REF: ${{ github.event.pull_request.base.sha || inputs.selective_base || 'origin/trunk' }}
           HEAD_REF: ${{ github.event.pull_request.head.sha || 'HEAD' }}
         run: |
-          affected="$(scripts/ci/compute-affected-projects.sh)"
+          if [[ "${FULL_CI}" == true ]]; then
+            affected=ALL
+          else
+            affected="$(scripts/ci/compute-affected-projects.sh)"
+          fi
           if [[ -z "${affected}" || "${affected}" == "ALL" ]]; then
             mode="full"
             projects=""
@@ -786,14 +747,18 @@ jobs:
           python3 scripts/ci/protocol-profile-selection.py --dry-run --changed-from-git > "${RUNNER_TEMP}/protocol-profiles.json"
           cat "${RUNNER_TEMP}/protocol-profiles.json"
 
+      - name: Download selected shard matrix
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.targeted-shards.outputs.matrix_artifact }}
+          path: ${{ runner.temp }}
+
       - name: Select managed producer outputs and build graph
         id: managed-plan
         env:
-          SELECTED_MATRIX: ${{ needs.targeted-shards.outputs.matrix_include }}
           AFFECTED_MODE: ${{ steps.affected.outputs.mode }}
           AFFECTED_PROJECTS: ${{ steps.affected.outputs.projects }}
         run: |
-          printf '%s' "${SELECTED_MATRIX:-[]}" > "${RUNNER_TEMP}/managed-matrix.json"
           python3 scripts/ci/managed-test-build.py projects --lane ci \
             --matrix-file "${RUNNER_TEMP}/managed-matrix.json" --output "${RUNNER_TEMP}/managed-projects.json"
           target=Honua.sln
@@ -1208,7 +1173,8 @@ jobs:
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
-      max-parallel: 24
+      # Bound trailing shard fanout so PR Gate can obtain runners. Full runs retain their budget.
+      max-parallel: ${{ inputs.selective_base && needs.changes.outputs.full_ci != 'true' && 6 || 24 }}
       matrix:
         include: ${{ fromJson(needs.targeted-shards.outputs.matrix_include) }}
     env:
@@ -1279,6 +1245,12 @@ jobs:
           RESTORED_PROJECTS: ${{ steps.managed-consume.outputs.restored-projects-file }}
         run: echo "restored=$(jq -r 'length > 0' "${RESTORED_PROJECTS}")" >> "$GITHUB_OUTPUT"
 
+      - name: Download selected shard matrix
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.targeted-shards.outputs.matrix_artifact }}
+          path: ${{ runner.temp }}
+
       - name: Plan shard-local exact-head cache
         id: shard-cache-plan
         if: steps.managed-status.outputs.restored != 'true'
@@ -1286,7 +1258,6 @@ jobs:
         env:
           SHARD_NAME: ${{ matrix.shard_name }}
           SHARD_CSPROJ: ${{ matrix.csproj }}
-          SELECTED_SHARDS_JSON: ${{ needs.targeted-shards.outputs.matrix_include }}
           # Attempt-1 opportunistic reuse (#3213). Contract, fail-open behaviour
           # and rollback: docs/internal/ci/server-test-binary-artifacts.md.
           # The raw repository variable is forwarded verbatim; the single
@@ -1296,7 +1267,7 @@ jobs:
           scripts/ci/server-test-shard-cache.sh plan \
             --shard "${SHARD_NAME}" \
             --project "${SHARD_CSPROJ}" \
-            --matrix-json "${SELECTED_SHARDS_JSON}" \
+            --matrix-file "${RUNNER_TEMP}/managed-matrix.json" \
             --source-sha '${{ github.sha }}' \
             --runner-os '${{ runner.os }}' \
             --sdk "$(dotnet --version)" \
@@ -1485,10 +1456,10 @@ jobs:
           # Only these current shard filters select explicit Redis fixtures.
           images=()
           case "${SERVER_SHARD}" in
-            'Admin & Infrastructure'| \
+            'Admin & Infrastructure '[0-9]*| \
             'Migration'| \
             'FeatureServer Editing and Relationships'| \
-            'FeatureServer Query Services and Replication'| \
+            'FeatureServer Query Services and Replication '[0-9]*| \
             'OGC API Tiles Coverages and Processes'| \
             'GeoServices GPServer and NAServer'| \
             'Caching File Storage Styling and Infrastructure'| \
@@ -1499,7 +1470,7 @@ jobs:
             'Server Features Admin Authorization'| \
             'Server Features Admin Authorization Matrix'| \
             'Server Features Admin Network and Jobs'| \
-            'Server Features Admin Integrations and Automation'| \
+            'Server Features Admin Integrations and Automation '[0-9]*| \
             'Server Features Admin Alert Endpoints'| \
             'Server Features Streaming Snapshot and Conformance'| \
             'Server Features Data Enrichment and Capabilities'| \
@@ -1655,6 +1626,7 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Install GDAL CLI
+        timeout-minutes: 30
         # The real-GDAL cases need gdal-bin plus the Python bindings, NumPy and
         # SciPy. The production worker image pins a richer GDAL base; this job
         # asserts the CLI contract, not the driver universe, which stays owned by
@@ -1773,6 +1745,60 @@ jobs:
           fi
           echo "OK: ${passed} real-GDAL case(s) executed, 0 skipped."
 
+      - name: Prove raster execution with production GDAL
+        id: raster-execution-proof
+        timeout-minutes: 10
+        run: |
+          image=$(sed -n 's/^ARG GDAL_BASE_IMAGE=//p' docker/worker-gdal/Dockerfile)
+          test -n "$image"
+          docker pull "$image"
+          dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
+            --no-build --no-restore --configuration Release -maxcpucount:4 \
+            --filter 'Category=RasterExecutionProof' \
+            --logger 'trx;LogFileName=raster-execution-proof.trx' \
+            --results-directory artifacts/test-results
+
+      - name: Prove the raster execution cases ran, not skipped
+        # `dotnet test` exits 0 when a --filter matches nothing and when every
+        # matched case skips — so a deleted trait, a renamed category or a
+        # cleanly-skipping fixture would turn this gate green with zero executed
+        # raster receipts. Assert on the TRX outcome counts, not the exit code.
+        #
+        # Runs whenever the proof step itself ran, pass or fail: a failing run can
+        # still have skipped every case, and that is the regression being guarded.
+        if: ${{ !cancelled() && steps.raster-execution-proof.conclusion != 'skipped' }}
+        run: |
+          set -euo pipefail
+          trx=artifacts/test-results/raster-execution-proof.trx
+          if [[ ! -f "${trx}" ]]; then
+            echo "::error::no TRX produced for the Category=RasterExecutionProof subset — the required raster receipts did not run"
+            exit 1
+          fi
+          # `|| true` is load-bearing under `set -euo pipefail`: grep exits 1 when
+          # it matches nothing, and on the healthy path the Failed and NotExecuted
+          # counts are both zero.
+          count_outcome() {
+            { grep -o "outcome=\"$1\"" "${trx}" || true; } | wc -l | tr -d '[:space:]'
+          }
+          passed=$(count_outcome Passed)
+          failed=$(count_outcome Failed)
+          skipped=$(count_outcome NotExecuted)
+          {
+            echo '### Raster catalog execution proof'
+            echo
+            echo "- Passed: ${passed}"
+            echo "- Failed: ${failed}"
+            echo "- Skipped: ${skipped}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${skipped}" -gt 0 ]]; then
+            echo "::error::${skipped} raster execution proof case(s) were skipped — a skipped required cell is non-passing evidence"
+            exit 1
+          fi
+          if [[ "${passed}" -lt 1 ]]; then
+            echo "::error::no raster execution proof case passed — the RasterExecutionProof trait or the cases themselves are gone"
+            exit 1
+          fi
+
       - name: Upload Worker GDAL test results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -1784,7 +1810,7 @@ jobs:
 
   python-integration-tests:
     name: Python Integration Tests
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && (needs.changes.outputs.full_ci == 'true' || (inputs.selective_base && fromJson(needs.changes.outputs.specialized_lanes).python)) }}
     runs-on: ubuntu-24.04
     needs: changes
     timeout-minutes: 25
@@ -1926,6 +1952,13 @@ jobs:
           path: artifacts/server-shard-results
           merge-multiple: true
 
+      - name: Download selected shard matrix
+        if: always() && needs.changes.outputs.integration_changes == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.targeted-shards.outputs.matrix_artifact }}
+          path: ${{ runner.temp }}
+
       - name: Verify server shard execution receipts
         if: always() && needs.changes.outputs.integration_changes == 'true'
         env:
@@ -1933,12 +1966,11 @@ jobs:
           SELECT_RESULT: ${{ needs.targeted-shards.result }}
           SELECT_SKIP: 'false'
           SELECT_REASON: selected_server_shards
-          SELECT_MATRIX: ${{ needs.targeted-shards.outputs.matrix_include }}
           SHARDS_RESULT: ${{ needs.server-tests.result }}
         run: |
           export SELECT_COUNT
-          SELECT_COUNT=$(jq 'length' <<< "${SELECT_MATRIX}")
-          python3 scripts/ci/affected-shard-verdict.py --timings artifacts/server-shard-results --receipt artifacts/server-shard-verdict.json
+          SELECT_COUNT=$(jq 'length' "${RUNNER_TEMP}/managed-matrix.json")
+          python3 scripts/ci/affected-shard-verdict.py --matrix-file "${RUNNER_TEMP}/managed-matrix.json" --timings artifacts/server-shard-results --receipt artifacts/server-shard-verdict.json
 
       - name: Check required test job results
         env:
@@ -1965,7 +1997,7 @@ jobs:
 
   js-integration-tests:
     name: JavaScript Integration Tests
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && (needs.changes.outputs.full_ci == 'true' || (inputs.selective_base && fromJson(needs.changes.outputs.specialized_lanes).browser)) }}
     runs-on: ubuntu-24.04
     needs: changes
     timeout-minutes: 15
@@ -2105,7 +2137,7 @@ jobs:
 
   esri-leaflet-browser-tests:
     name: Esri Leaflet Browser Tests
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && (needs.changes.outputs.full_ci == 'true' || (inputs.selective_base && fromJson(needs.changes.outputs.specialized_lanes).browser)) }}
     runs-on: ubuntu-24.04
     needs: changes
     timeout-minutes: 15
@@ -2221,7 +2253,7 @@ jobs:
 
   maplibre-compat:
     name: MapLibre GL JS Browser Compatibility
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && (needs.changes.outputs.full_ci == 'true' || (inputs.selective_base && fromJson(needs.changes.outputs.specialized_lanes).browser)) }}
     runs-on: ubuntu-24.04
     needs: changes
     timeout-minutes: 15
@@ -2343,7 +2375,7 @@ jobs:
 
   mcp-certification:
     name: MCP Certification (${{ matrix.transport }})
-    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
+    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && (needs.changes.outputs.full_ci == 'true' || (inputs.selective_base && fromJson(needs.changes.outputs.specialized_lanes).mcp)) }}
     runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: [build, changes, core-package-compatibility, postgres-compat]
     timeout-minutes: 15
@@ -2553,7 +2585,7 @@ jobs:
 
   postgres-compat:
     name: Postgres Compatibility (${{ matrix.pg_image }})
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && fromJson(needs.changes.outputs.specialized_lanes).postgres }}
     runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: changes
     timeout-minutes: 40
@@ -2797,7 +2829,7 @@ jobs:
     # builds per review-fix push. It runs alongside the shard matrix (p90 88.6m)
     # under a 45-minute ceiling, so it is not expected to extend the batch
     # critical path.
-    if: ${{ success() && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
+    if: ${{ success() && needs.changes.outputs.integration_changes == 'true' && fromJson(needs.changes.outputs.specialized_lanes).aot && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: [build, changes, core-package-compatibility, postgres-compat]
     timeout-minutes: 45
@@ -2848,7 +2880,7 @@ jobs:
 
   docker-build:
     name: Docker Build & Integration Test
-    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
+    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.full_ci == 'true' || (inputs.selective_base && fromJson(needs.changes.outputs.specialized_lanes).docker)) && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: changes
     # A cold BuildKit build consumed 13m45s in run 29088883576, leaving no
@@ -3032,7 +3064,7 @@ jobs:
 
   quickstart-console-smoke:
     name: Quickstart Console Compose Smoke
-    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
+    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.full_ci == 'true' || (inputs.selective_base && fromJson(needs.changes.outputs.specialized_lanes).quickstart)) && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: changes
     timeout-minutes: 30
@@ -3116,6 +3148,244 @@ jobs:
           # outside a diff. Do not "align" this with PR Gate either.
           format-scope: full
 
+  # Scheduled runtime coverage shares the full-CI managed build producer.
+  runtime-proofs:
+    name: Full CI / Runtime proofs
+    needs: build
+    runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+
+      # The consumer runs on a separate runner from the build producer. Free the same
+      # unused hosted tools before restoring binaries and pulling the production GDAL image.
+      - name: Start freeing runtime proof disk space
+        run: scripts/ci/server-test-shard-free-disk.sh
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          artifact-sdk-version: ${{ needs.build.outputs.managed_sdk_version }}
+
+      - name: Wait for runtime proof disk cleanup
+        run: scripts/ci/server-test-shard-free-disk.sh --await
+
+      - name: Plan managed test consumer
+        run: |
+          mkdir -p artifacts/runtime-proofs
+          python3 scripts/ci/managed-test-build.py projects --lane shard --project tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --output "artifacts/runtime-proofs/managed-projects.json"
+
+      - name: Restore verified managed test outputs
+        id: managed-consumer
+        uses: ./.github/actions/managed-test-artifacts
+        with:
+          mode: consume
+          projects-file: artifacts/runtime-proofs/managed-projects.json
+          producer-attempt: ${{ needs.build.outputs.producer_attempt }}
+          enabled: ${{ vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' && 'true' || 'false' }}
+
+      - name: Build missing managed test outputs
+        timeout-minutes: 30
+        env:
+          RESTORED_PROJECTS: ${{ steps.managed-consumer.outputs.restored-projects-file }}
+        run: python3 scripts/ci/managed-test-build.py fallback --projects-file "artifacts/runtime-proofs/managed-projects.json" --restored-file "${RESTORED_PROJECTS}"
+
+      # Warm PostGIS for the remote-source, layer and fidelity proofs.
+      - name: Pre-pull Testcontainers PostGIS image (background)
+        run: scripts/ci/prepull-testcontainers-postgis.sh
+
+      - name: Prepare secondary Testcontainers proof images
+        timeout-minutes: 10
+        run: scripts/ci/prepull-pr-gate-proof-images.sh
+
+      - name: Prove remote source execution with real HTTP and PostGIS
+        timeout-minutes: 10
+        run: |
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-build --no-restore --configuration Release --filter 'Category=RemoteSourceExecutionProof' \
+            --logger 'trx;LogFileName=remote-source-execution-proof.trx' --results-directory artifacts/test-results
+
+      - name: Upload remote source execution proof
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: remote-source-execution-proof
+          path: artifacts/test-results/remote-source-execution-proof.trx
+
+      - name: Prove server execution with production GDAL
+        id: server-execution-proof
+        timeout-minutes: 10
+        run: |
+          image=$(sed -n 's/^ARG GDAL_BASE_IMAGE=//p' docker/worker-gdal/Dockerfile)
+          test -n "$image"
+          docker pull "$image"
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-build --no-restore --configuration Release -maxcpucount:4 \
+            --filter 'Category=CopyFeaturesExecutionProof' \
+            --logger 'trx;LogFileName=copy-features-execution-proof.trx' \
+            --results-directory artifacts/test-results
+
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-build --no-restore --configuration Release -maxcpucount:4 \
+            --filter 'Category=LayerExecutionProof' \
+            --logger 'trx;LogFileName=layer-execution-proof.trx' \
+            --results-directory artifacts/test-results
+
+          # Imagery classification delegates inference to a model server. The
+          # proof stands one up on loopback and runs the committed classifier in
+          # the same pinned image, so it belongs to this Docker-bearing step.
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-build --no-restore --configuration Release -maxcpucount:4 \
+            --filter 'Category=ImageryClassifyExecutionProof' \
+            --logger 'trx;LogFileName=imagery-classify-execution-proof.trx' \
+            --results-directory artifacts/test-results
+
+          # Validate geometry-format and calculate-field command surfaces
+          # alongside the other server execution proofs.
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-build --no-restore --configuration Release -maxcpucount:4 \
+            --filter 'Category=GeometryFormatExecutionProof|Category=CalculateFieldExecutionProof' \
+            --logger 'trx;LogFileName=protocol-tier-execution-proof.trx' \
+            --results-directory artifacts/test-results
+
+      - name: Prove the layer execution cases ran, not skipped
+        # `dotnet test` exits 0 when a --filter matches nothing and
+        # when every matched case skips, and the Honua source/sink proofs need a
+        # real Docker PostGIS — so a renamed trait or a cleanly-skipping database
+        # fixture would leave this full CI lane green with zero layer receipts
+        # while eng/gp-operation-matrix.v1.json still calls those rows
+        # proven. Assert on the TRX outcomes, not the exit code.
+        #
+        # Counts alone are too weak here: the Esri cases are in-process HTTP
+        # fixtures that would hold `passed` above zero on their own even if both
+        # PostGIS-backed classes vanished. Require a passing receipt for every
+        # test the matrix cites as proven evidence for these rows.
+        #
+        # GeoprocessingOperationEvidenceMatrixTests already proves those test
+        # names still exist in those files; this step proves they actually ran
+        # here. Read the names from the matrix to keep the receipt contract aligned.
+        if: ${{ !cancelled() && steps.server-execution-proof.conclusion != 'skipped' }}
+        run: |
+          set -euo pipefail
+          trx=artifacts/test-results/layer-execution-proof.trx
+          if [[ ! -f "${trx}" ]]; then
+            echo "::error::no TRX produced for the Category=LayerExecutionProof subset — the required layer receipts did not run"
+            exit 1
+          fi
+          # Split on '<' so each result element is one line: a testName can then
+          # be paired with the outcome of that same element rather than matching
+          # the two attributes anywhere in the file. `|| true` is load-bearing
+          # under `set -euo pipefail` — grep exits 1 when it matches nothing, and
+          # on the healthy path Failed and NotExecuted are both zero.
+          results=$(tr '<' '\n' < "${trx}")
+          count_outcome() {
+            { grep -c "^UnitTestResult .*outcome=\"$1\"" <<< "${results}" || true; }
+          }
+          passed=$(count_outcome Passed)
+          failed=$(count_outcome Failed)
+          skipped=$(count_outcome NotExecuted)
+          {
+            echo '### Layer catalog execution proof'
+            echo
+            echo "- Passed: ${passed}"
+            echo "- Failed: ${failed}"
+            echo "- Skipped: ${skipped}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${skipped}" -gt 0 ]]; then
+            echo "::error::${skipped} layer execution proof case(s) were skipped — a skipped required cell is non-passing evidence"
+            exit 1
+          fi
+          if [[ "${passed}" -lt 1 ]]; then
+            echo "::error::no layer execution proof case passed — the LayerExecutionProof trait or the cases themselves are gone"
+            exit 1
+          fi
+          # Every still-proven evidence receipt these three rows cite in the
+          # Category=LayerExecutionProof files. A row honestly downgraded away
+          # from `proven` drops out here and takes a gap issue instead, which
+          # GeoprocessingOperationEvidenceMatrixTests requires.
+          mapfile -t required < <(jq -r '
+            .operations[]
+            | select(.processId == "source.honua-layer"
+                or .processId == "source.esri-featureserver"
+                or .processId == "sink.honua-layer")
+            | select(.status == "proven")
+            | .evidence[]
+            | select(.path | test("/Execution/(LayerSource|EsriSource|LayerSink)ExecutionProofTests[.]cs$"))
+            | .test' eng/gp-operation-matrix.v1.json | sort -u)
+          echo "matrix cites ${#required[@]} layer execution receipt(s)"
+          # A broken selection must not pass vacuously: process substitution hides
+          # a jq failure from mapfile, and an empty list would skip the loop
+          # entirely. An empty list is only legitimate when no row claims proven.
+          if [[ "${#required[@]}" -eq 0 ]]; then
+            proven=$(jq '[.operations[]
+              | select(.processId == "source.honua-layer"
+                  or .processId == "source.esri-featureserver"
+                  or .processId == "sink.honua-layer")
+              | select(.status == "proven")] | length' eng/gp-operation-matrix.v1.json)
+            if [[ "${proven}" -ne 0 ]]; then
+              echo "::error::the matrix still calls ${proven} layer row(s) proven but no LayerExecutionProof evidence test was read out of it — the receipt selection is broken"
+              exit 1
+            fi
+          fi
+          missing=0
+          for name in "${required[@]}"; do
+            # This project renders xUnit display names with underscores replaced
+            # by spaces and no class prefix, so the matrix's method name
+            # `HonuaLayerSink_FailingRow_...` appears in the TRX as
+            # `HonuaLayerSink FailingRow ...`. Accept either separator rather
+            # than depending on that display setting.
+            pattern="${name//_/[ _]}"
+            receipts=$({ grep -c "^UnitTestResult .*testName=\"[^\"]*${pattern}[^\"]*\".*outcome=\"Passed\"" <<< "${results}" || true; })
+            if [[ "${receipts}" -lt 1 ]]; then
+              echo "::error::no passing receipt for ${name} — the operation matrix cites it as proven execution evidence"
+              missing=1
+            fi
+          done
+          if [[ "${missing}" -ne 0 ]]; then
+            exit 1
+          fi
+
+      - name: Upload imagery classify execution proof
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: imagery-classify-execution-proof
+          path: artifacts/test-results/imagery-classify-execution-proof.trx
+          if-no-files-found: warn
+
+      - name: Upload server execution proofs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: server-execution-proofs
+          path: |
+            artifacts/test-results/copy-features-execution-proof.trx
+            artifacts/test-results/layer-execution-proof.trx
+            artifacts/test-results/protocol-tier-execution-proof.trx
+          if-no-files-found: warn
+
+      - name: Execute import and independent vector export fidelity proofs
+        id: fidelity-proof
+        timeout-minutes: 25
+        run: |
+          python3 tests/python/unit/test_import_export_fidelity_proof.py
+          python3 tests/python/unit/test_diff_baselines.py
+          python3 scripts/ci/run-import-export-fidelity-proof.py
+
+      - name: Upload import and independent vector export fidelity evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: import-export-fidelity-proof
+          path: artifacts/import-export-fidelity/
+          # Missing evidence is an error only when the proof itself ran. When an
+          # earlier step failed (or timed out) the proof never runs, and an error
+          # here would bury that step's real failure under a second one.
+          if-no-files-found: ${{ steps.fidelity-proof.outcome != 'skipped' && 'error' || 'warn' }}
+
   # Summary gate: a single job that branch-protection can require.
   # Add every job whose failure should block merge.
   ci-gate:
@@ -3129,7 +3399,7 @@ jobs:
     # NOT this one. Keeping CI Gate off merge_group avoids a misleading all-
     # skipped "pass" status appearing in the queue context.
     if: ${{ github.event_name != 'merge_group' && always() && !cancelled() }}
-    needs: [pr-template-check, pr-readiness, changes, targeted-shards, ci-router-validation, build, format, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build, quickstart-console-smoke]
+    needs: [pr-template-check, pr-readiness, changes, targeted-shards, ci-router-validation, build, runtime-proofs, format, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build, quickstart-console-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -3137,11 +3407,16 @@ jobs:
         env:
           REQUIRE_MANAGED_BUILD: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
           REQUIRE_FORMAT: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.build_changes == 'true' }}
+          RUNTIME_PROOFS_RESULT: ${{ needs.runtime-proofs.result }}
           BUILD_RESULT: ${{ needs.build.result }}
           FORMAT_RESULT: ${{ needs.format.result }}
         run: |
           if [[ "${REQUIRE_MANAGED_BUILD}" == true && "${BUILD_RESULT}" != success ]]; then
             echo "::error::Selected managed producer must succeed, got ${BUILD_RESULT}."
+            exit 1
+          fi
+          if [[ "${REQUIRE_MANAGED_BUILD}" == true && "${RUNTIME_PROOFS_RESULT}" != success ]]; then
+            echo "::error::Selected runtime proofs must succeed, got ${RUNTIME_PROOFS_RESULT}."
             exit 1
           fi
           if [[ "${REQUIRE_FORMAT}" == true && "${FORMAT_RESULT}" != success ]]; then

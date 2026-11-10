@@ -2,8 +2,8 @@
 """Select the server-test shard families a pull request should run in PR Gate.
 
 WHY THIS EXISTS
-    `PR Gate` is deliberately lean (build + fast unit + architecture). The 71
-    entries of `.github/ci-shards.json` run per trunk tip in the trailing
+    `PR Gate` is deliberately lean (build + fast unit + architecture). Every
+    entry of `.github/ci-shards.json` runs per trunk tip in the trailing
     matrix, so a shard regression is detected AFTER the merge that caused it.
     This module picks a small, bounded subset of those shard families for the
     diff so the same red appears BEFORE the merge.
@@ -26,12 +26,21 @@ WHY THIS EXISTS
     the red one.
 
 THE CAP IS THE WHOLE SAFETY ARGUMENT
-    A router answer of `run_all` means 71 shard jobs. Fanning that out per
+    A router answer of `run_all` means one job per shard entry. Fanning that out per
     pull request is the 2026-06-18 runner-starvation spiral that #2865 removed
     and that ./.github/actions/lean-gate is explicitly written to avoid. So the
     selection is truncated to `--cap` shards (default 6) and the dropped
     families are named in the receipt. This lane is a DETECTOR with a fixed
     budget, never a re-derivation of the full matrix.
+
+THE TIME BUDGET
+    With `--time-budget`, the ranking is re-spent against `pr_time_budget`
+    from the shard map (scripts/ci/shard_time_budget.py): a shard over
+    `max_shard_minutes`, or one that would push the selection past
+    `max_total_minutes` runner-minutes, is named under `deferred_to_trunk`
+    and left to the next trunk run. When every candidate is deferred the
+    selection skips with `affected_shards_deferred_to_trunk`, which the
+    verdict reports as a green `deferred` result naming those shards.
 
 ORDERING ("largest-impact first")
     Sorted by, in order:
@@ -45,7 +54,7 @@ ORDERING ("largest-impact first")
          Scored against the EFFECTIVE runner filter. run-server-test-shard.sh
          composes integration filters with `&Tier!=Slow&Tier!=Fast`, so a
          changed class whose tests are all Fast or all Slow is run by none of
-         the 71 families and must credit none of them -- otherwise the shard
+         the shard families and must credit none of them -- otherwise the shard
          claiming it by name receives the top-priority ranking signal for tests
          it never runs, and under a capped run_all answer that spends a slot a
          genuinely runnable affected shard needed.
@@ -54,7 +63,7 @@ ORDERING ("largest-impact first")
          individual test FILES for the protocol-split projects, so a diff that
          ADDS a test file to a directory a shard already owns is claimed by no
          `paths` entry at all and escalates to run_all -- and then the cap has
-         to choose among 71 families with no routing signal. Measured on the
+         to choose among every family with no routing signal. Measured on the
          merge commits of #4465 and #4489, this term moves the shard family
          that actually went red on trunk to rank 4 and rank 2 respectively;
          without it, #4465's owner sat at rank 10, outside the cap.
@@ -74,6 +83,12 @@ ORDERING ("largest-impact first")
          front-loads the slowest job, which is what keeps six parallel shards
          near one shard of wall clock.
       5. Shard name, so the selection is deterministic.
+
+    Numbered children of a shard split for capacity ("WFS 1" .. "WFS 9") are
+    one family. Among candidates that tie on the first three terms, each
+    family's first child ranks before any family's second child, so a change to
+    a class split across many children cannot spend the whole cap and time
+    budget on that one class while another changed test's owner waits.
 
     `path_hits` is computed here with the same `startswith` prefix test the
     router's jq uses. Both it and `test_class_hits` are RANKING inputs only --
@@ -107,8 +122,20 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 
+def _load_sibling(name: str) -> Any:
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name(f"{name}.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+time_budget = _load_sibling("shard_time_budget")
+apply_time_budget = time_budget.apply_time_budget
+
+
 CONTRACT = "honua.pr-gate-affected-shards/v1"
 DEFAULT_CAP = 6
+SPLIT_CHILD_SUFFIX = re.compile(r" \d+$")
 DEFAULT_CONFIG = ".github/ci-shards.json"
 DEFAULT_ROUTER = "scripts/ci/honua-server-targeted-tests.sh"
 DEFAULT_PROJECTS_SCRIPT = "scripts/ci/compute-affected-projects.sh"
@@ -622,6 +649,7 @@ def select(
             entry["name"],
         )
     )
+    ranked = interleave_split_families(ranked)
 
     selected = ranked[:cap]
     dropped = [entry["name"] for entry in ranked[cap:]]
@@ -648,20 +676,31 @@ def select(
         "selected": selected,
         "shards": [entry["name"] for entry in selected],
         "dropped": dropped,
-        # dispatch_rank is the observed shard duration in minutes that ci.yml
-        # dispatches by (commit 27bd481f0, "dispatch longest test shards
-        # first"), so these two are the runner-minute and wall-clock estimates
-        # for the fan-out this selection asks for.
-        "projected_runner_minutes": round(sum(entry["dispatch_rank"] for entry in selected), 1),
-        "projected_wall_clock_minutes": round(
-            max((entry["dispatch_rank"] for entry in selected), default=0.0), 1
-        ),
+        "time_budget": None,
+        "deferred_to_trunk": [],
+        **time_budget.projected_minutes(selected),
     }
 
     if not selected:
         result["skip"] = True
         result["reason"] = "no_shards_selected"
     return result
+
+
+def interleave_split_families(ranked: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Within each tie on the routing signals, take one child per split family per round."""
+    rounds: dict[tuple[Any, ...], int] = {}
+
+    def round_of(entry: dict[str, Any]) -> int:
+        family = (tie(entry), SPLIT_CHILD_SUFFIX.sub("", entry["name"]))
+        rounds[family] = rounds.get(family, 0) + 1
+        return rounds[family]
+
+    def tie(entry: dict[str, Any]) -> tuple[Any, ...]:
+        return (-entry["test_class_hits"], -entry["path_hits"], not entry["project_affected"])
+
+    keyed = [(tie(entry), round_of(entry), position, entry) for position, entry in enumerate(ranked)]
+    return [entry for *_, entry in sorted(keyed, key=lambda item: item[:3])]
 
 
 def skipped(reason: str, *, cap: int, changed_file_count: int = 0, **extra: Any) -> dict[str, Any]:
@@ -676,6 +715,8 @@ def skipped(reason: str, *, cap: int, changed_file_count: int = 0, **extra: Any)
         "selected": [],
         "shards": [],
         "dropped": [],
+        "time_budget": None,
+        "deferred_to_trunk": [],
         "projected_runner_minutes": 0.0,
         "projected_wall_clock_minutes": 0.0,
     }
@@ -703,6 +744,8 @@ def matrix_include(result: dict[str, Any], config: dict[str, Any]) -> list[dict[
 
 def render_summary(result: dict[str, Any]) -> str:
     lines = ["### PR Gate / Affected shards — selection", ""]
+    if result["skip"] and result["reason"] == time_budget.DEFERRED_SKIP_REASON:
+        return "\n".join(lines + time_budget.deferred_summary(result)) + "\n"
     if result["skip"]:
         lines += [
             f"No shards selected (`{result['reason']}`).",
@@ -740,6 +783,8 @@ def render_summary(result: dict[str, Any]) -> str:
             "The trailing matrix still runs these per trunk tip. The cap is what "
             + "keeps this lane a bounded detector instead of a second full fan-out.",
         ]
+    if result["deferred_to_trunk"]:
+        lines += [""] + time_budget.deferred_summary(result)
     return "\n".join(lines) + "\n"
 
 
@@ -752,6 +797,10 @@ def append_github_output(result: dict[str, Any], include: list[dict[str, Any]]) 
         handle.write(f"reason={result['reason']}\n")
         handle.write(f"selected_count={len(result['shards'])}\n")
         handle.write(f"matrix_include={json.dumps(include, separators=(',', ':'))}\n")
+        receipt_matrix = [{"shard_name": entry["shard_name"]} for entry in include]
+        handle.write(f"receipt_matrix={json.dumps(receipt_matrix, separators=(',', ':'))}\n")
+        deferred_names = [entry["name"] for entry in result["deferred_to_trunk"]]
+        handle.write(f"deferred_to_trunk={json.dumps(deferred_names, separators=(',', ':'))}\n")
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -774,6 +823,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--router", default=DEFAULT_ROUTER)
     parser.add_argument("--projects-script", default=DEFAULT_PROJECTS_SCRIPT)
     parser.add_argument("--cap", type=int, default=DEFAULT_CAP)
+    parser.add_argument("--time-budget", action="store_true",
+                        help=f"apply the {time_budget.TIME_BUDGET_KEY} policy from the shard map")
     parser.add_argument("--annotate-resources", action="store_true",
                         help="annotate execution matrix using the shared conservative catalog policy")
     parser.add_argument("--json", dest="json_path", help="write the receipt JSON here")
@@ -795,6 +846,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     root = _repo_root()
     config_path = root / args.config
     config = load_config(config_path)
+    budget = time_budget.load_time_budget(config) if args.time_budget else None
 
     if args.changed_files:
         changed_files = read_lines(args.changed_files)
@@ -830,9 +882,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         changed_files=changed_files,
         descriptor=descriptor,
         affected_projects=affected_projects,
-        cap=args.cap,
+        cap=len(config["shards"]) if budget else args.cap,
         test_class_hits=count_test_class_hits(root, config, changed_files),
     )
+    if budget:
+        result = apply_time_budget(result, args.cap, budget)
     return emit(result, config, args)
 
 
@@ -861,6 +915,6 @@ def emit(result: dict[str, Any], config: dict[str, Any], args: argparse.Namespac
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except SelectionError as error:
+    except (SelectionError, time_budget.TimeBudgetError) as error:
         print(f"::error::compute-affected-shards: {error}", file=sys.stderr)
         raise SystemExit(2)

@@ -67,12 +67,13 @@ its source build does not qualify this packaged terminal journey.
 
 ## 2. Establish least privilege and server discovery
 
-Keep a proposer profile and a separate human approver profile backed by
-different server-resolved principals. Give each the needed target permissions;
-the approver's focused API-key recipe is `admin:read` plus `admin:approve`,
-subject to the candidate's tenant/resource authorization. Different profile
-names using the same principal do not satisfy separation of duties.
-Never provide the approver profile, database password or raw key to the model.
+Give the proposer profile only the required target permissions. Approval requires
+one authorized human in the original Server's verified interactive OIDC session;
+the requester may approve. API keys and ordinary bearer tokens cannot approve.
+Keep the private human session and review capability out of model context.
+See [human operation approval](../../guides/secure/authentication.md#human-operation-approval).
+A terminal-only approval journey remains unqualified until a verified human-channel
+client is shipped and tested; a CLI `--yes` confirmation does not establish it.
 
 Use the discovered Admin key-list operation and
 `getAdminApiKeyEffectivePermissions` to verify the installer-created key's
@@ -219,22 +220,20 @@ Do not pass a draft ID to the approval command.
 Verify that the pinned candidate exposes this contract before submitting.
 The source bridge is not an exact-candidate end-to-end execution receipt;
 retain the save/reopen and candidate replay requirements above. Poll the
-returned `proposalUri` from the proposer session. A separate authorized
-principal must approve the proposal. The
-human reviews the immutable version/hash, target route, visibility, risk,
-diff and policy. For a real canonical proposal, the approval command is:
+returned `proposalUri` from the proposer session. One authorized human signs in
+to the original Server through Console and reviews that proposal's immutable
+version/hash, target route, visibility, risk, diff and policy in the approval
+inbox. The requester may approve. The private session and one-use capability
+remain outside the terminal/model context.
 
-```powershell
-honua admin operate approveOperationProposal --path "id=$proposalId" --profile approver --yes
-```
-
-The corresponding read is:
+The terminal can continue reading the same proposal:
 
 ```powershell
 honua admin operate getOperationProposal --path "id=$proposalId" --profile proposer
 ```
 
-The proposer must be denied self-approval. Approval must preserve the original
+A key or ordinary bearer must be denied approval. The verified requester may
+approve their own proposal. Approval must preserve the original
 tenant, owner and scope boundary. Poll the canonical operation to terminal
 success, then read and verify the final URL under its intended visibility.
 Join deployment, resource, render, job, draft/version/hash, proposal, operation,
@@ -256,8 +255,9 @@ Optional Studio/Console clients must read the same server IDs. Configure
 `HONUA_CONSOLE_MODE=witness` is read by no shipped Console or server build today, so it takes effect only on a compatible pinned Console package
 that supports that mode. The focused witness shows Operate reads, releases,
 deploy status and proposal approval. Configuration writes go through Admin
-CLI or the agent path. The `admin:read`/`admin:approve` recipe still needs
-the focused candidate receipt tracked by
+CLI or the agent path. Keys with `admin:read`/`admin:approve` can read and reject
+under their existing grants, but approval needs the private human session. The
+focused candidate receipt is tracked by
 [#3365](https://github.com/honua-io/honua-server/issues/3365).
 An optional browser walkthrough neither establishes nor blocks terminal-path
 completeness. Customer alerting and offline sync remain Preview; no hosted model
