@@ -73,12 +73,21 @@ jobs:
               core.notice('PR is already mergeable; auto-merge cannot be armed. Existing merge authority handles it.');
               return;
             }
-            await github.graphql(`
-              mutation($pullRequestId: ID!, $mergeMethod: PullRequestMergeMethod!) {
-                enablePullRequestAutoMerge(input: {
-                  pullRequestId: $pullRequestId, mergeMethod: $mergeMethod
-                }) { pullRequest { number } }
-              }`, { pullRequestId: pr.id, mergeMethod });
+            try {
+              await github.graphql(`
+                mutation($pullRequestId: ID!, $mergeMethod: PullRequestMergeMethod!) {
+                  enablePullRequestAutoMerge(input: {
+                    pullRequestId: $pullRequestId, mergeMethod: $mergeMethod
+                  }) { pullRequest { number } }
+                }`, { pullRequestId: pr.id, mergeMethod });
+            } catch (error) {
+              const messages = error.errors?.map(item => item.message) || [error.message];
+              if (!messages.length || !messages.every(message => message === 'Pull request is in clean status')) {
+                throw error;
+              }
+              core.notice('PR became mergeable before auto-merge could be armed; existing merge authority handles it.');
+              return;
+            }
             await core.summary.addHeading('Auto-merge enabled')
               .addRaw(`${mergeMethod}: repository rulesets and required checks decide when this PR merges.`)
               .write();

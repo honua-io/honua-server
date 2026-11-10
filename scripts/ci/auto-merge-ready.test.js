@@ -11,7 +11,7 @@ const ready = () => ({
   labels: { nodes: [], pageInfo: { hasNextPage: false } },
   commits: { totalCount: 1 }, autoMergeRequest: null,
 });
-async function run(pr, failMutation = false) {
+async function run(pr, mutationError = null) {
   const mutations = [];
   const summary = { addHeading() { return this; }, addRaw() { return this; }, async write() {} };
   await vm.runInNewContext(`(async () => {${script}})()`, {
@@ -19,7 +19,7 @@ async function run(pr, failMutation = false) {
     core: { notice() {}, summary },
     github: { async graphql(query, variables) {
       if (query.includes('query(')) return { repository: { pullRequest: pr } };
-      if (failMutation) throw new Error('publication rejected');
+      if (mutationError) throw new Error(mutationError);
       assert.match(query, /mutation\([^)]*\)\s*\{\s*(enable|disable)PullRequestAutoMerge\(/);
       mutations.push({ ...variables, action: query.includes('disablePullRequestAutoMerge') ? 'disable' : 'enable' });
       return {};
@@ -45,7 +45,7 @@ test('live draft, hold, fork, closed, deleted, or existing admission is untouche
   assert.equal((await run(null)).length, 0);
 });
 test('real API errors remain failures', async () => {
-  await assert.rejects(run(ready(), true), /publication rejected/);
+  await assert.rejects(run(ready(), 'publication rejected'), /publication rejected/);
 });
 test('bot credentials are scoped and contributor code is never executed', () => {
   assert.match(workflow, /secrets.BOT_APP_ID/);
@@ -97,4 +97,19 @@ test('already mergeable pull requests stay neutral without direct merging', asyn
 });
 test('Dependabot PRs are skipped before requesting unavailable App secrets', () => {
   assert.match(workflow, /github.event.pull_request.user.login != 'dependabot\[bot\]'/);
+});
+
+test('retargeting away from trunk still revokes admission', () => {
+  assert.match(workflow, /\(github\.event\.pull_request\.base\.ref == 'trunk' \|\| github\.event\.action == 'edited'\)/);
+});
+test('already mergeable method changes revoke stale auto-merge', async () => {
+  const actions = await run({ ...ready(), mergeStateStatus: 'CLEAN', commits: { totalCount: 3 },
+    autoMergeRequest: { mergeMethod: 'SQUASH' } });
+  assert.equal(actions.length, 1);
+  assert.equal(actions[0].action, 'disable');
+});
+test('mergeability computation race stays neutral only for the clean-status API error', async () => {
+  const pr = { ...ready(), mergeStateStatus: 'UNKNOWN' };
+  await run(pr, 'Pull request is in clean status');
+  await assert.rejects(run(pr, 'publication rejected'), /publication rejected/);
 });
