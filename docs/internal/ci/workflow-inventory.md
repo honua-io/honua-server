@@ -570,14 +570,5 @@ paid-run counts and the share of triage events reaching a paid Opus run. Determi
 skips use zero model credits. The combined envelopes are 2500 credits ($25) per day;
 triage and fix do not each receive a separate allowance.
 
-Optional PR input audit: Capability Impact Comparison is limited to runtime,
-proving tests, capability data, selector and report inputs (currently disabled in
-repository settings). Docs Link Gate runs per PR for documentation/checker/data
-edits; runtime/config-only URL validation runs in ci.yml's existing CI Router Validation job
-on affected trunk and twice-daily full runs. Capability Matrix Aggregation,
-OpenAPI Contract Governance and GeoParquet Interop Evidence retain their existing
-input-specific filters. GeoArrow Interop Fixture additionally watches global.json
-and NuGet.config so dependency resolution changes cannot bypass its fixture.
-
-Derived Artifact Normalization narrows test and GIS prose inputs while retaining
-transitive .NET plugin inputs; see [optional PR input boundaries](gate-model.md#optional-pr-workflow-input-boundaries).
+Optional PR workflow filters and retained post-merge coverage are documented in
+[optional PR input boundaries](gate-model.md#optional-pr-workflow-input-boundaries).

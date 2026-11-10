@@ -653,12 +653,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Source/config URL checks run after merge without blocking lane routing.
-      - name: Verify runtime documentation links and anchors
-        run: |
-          python3 scripts/ci/check-doc-links.test.py
-          python3 scripts/ci/check-doc-links.py
-
       - name: Validate workflow and shard routing metadata
         run: |
           scripts/ci/validate-ci-router.sh
@@ -682,6 +676,12 @@ jobs:
 
       - name: Validate Kubernetes operator guide contract
         run: scripts/ci/check-kubernetes-guide.sh
+
+      # Source/config URL checks run after merge after the routing and recovery guards.
+      - name: Verify runtime documentation links and anchors
+        run: |
+          python3 scripts/ci/check-doc-links.test.py
+          python3 scripts/ci/check-doc-links.py
 
   build:
     name: Build & Format Check

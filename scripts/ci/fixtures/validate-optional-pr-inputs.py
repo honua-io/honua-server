@@ -41,7 +41,6 @@ def path_matches(path, pattern):
     return re.fullmatch("".join(parts), path) is not None
 
 
-
 class OptionalInputTests(unittest.TestCase):
     def test_normalization_retains_generators_receipts_and_build_inputs(self):
         name = "normalize-derived-artifacts.yml"

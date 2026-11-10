@@ -19,8 +19,8 @@ name: Docs Link Gate
 # ROUTING. Path-filtered rather than folded into `PR Gate`: `pr-gate.yml` carries
 # an explicit "do not add a paths filter" contract because it is required.
 # Documentation/checker edits retain the full PR result. Runtime/config-only URL
-# changes are checked in ci.yml's existing changes job on affected trunk runs and
-# twice-daily full runs; this avoids a separate PR runner without losing the scan.
+# changes are checked after merge in ci.yml's CI Router Validation job on affected
+# trunk runs and twice-daily full runs.
 # Keep scripts/ci triggers limited to the actual checkers and their manifests.
 on:
   pull_request:
