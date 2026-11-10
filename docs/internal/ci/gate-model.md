@@ -56,6 +56,9 @@ Stage 3 details:
   pending run per group and replaces it with a newer one; the newer run diffs
   from the last green head, so it covers every merge the replaced run would
   have. A run whose push is no longer the trunk tip exits for the same reason.
+- Shards the PR gate deferred by time budget run here: the router selects
+  them again from the merged diff, so a deferred shard is verified within one
+  affected run of its merge.
 - `ci.yml` puts selective runs in their own concurrency group, so a burst of
   merges never replaces a pending scheduled full run.
 - The dispatched run is titled `CI affected <base>..<head>`. Its `changes`
