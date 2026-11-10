@@ -174,6 +174,7 @@ When `ConnectionStrings__Redis` is set, MCP session records are shared through R
 | `FileStorage__AwsS3__Region` | `us-east-1` | S3 region. |
 | `FileStorage__AwsS3__ServiceUrl` | — | Custom S3 endpoint (e.g. MinIO). |
 | `FileStorage__AwsS3__ForcePathStyle` | `true` | Path-style addressing for S3-compatible stores. |
+| `FileStorage__AwsS3__KeyPrefix` | — | Key prefix for objects this server names itself. |
 | `FileStorage__AwsS3__AccessKeyId` / `FileStorage__AwsS3__SecretAccessKey` | — | S3 credentials (prefer instance roles where possible). |
 | `HONUA_STORAGE_PROVIDER`, `HONUA_S3_BUCKET`, `HONUA_S3_REGION`, `HONUA_S3_SERVICE_URL`, `HONUA_S3_FORCE_PATH_STYLE`, `HONUA_S3_ACCESS_KEY_ID`, `HONUA_S3_SECRET_ACCESS_KEY` | — | Docker Compose convenience aliases for the `FileStorage__AwsS3__*` keys. |
 
@@ -305,6 +306,11 @@ Geoprocessing job admission and executor guardrails:
 | `Geoprocessing__Executors__MaxArtifactBytes` | `52428800` (50 MiB) | Max single artifact payload a built-in executor publishes. |
 | `Geoprocessing__Executors__OutputRootDirectory` | OS temp dir | Root for file-sink outputs; traversal outside is rejected. |
 | `Geoprocessing__Executors__ResultRetention` | `7.00:00:00` | How long a finished job's results stay available, measured from completion. Also the TTL of the durable result package. After it elapses, results requests return not-found while the job status record may still be readable. |
+| `Geoprocessing__OutputStaging__Enabled` | `false` | Stage outputs above the inline ceiling as referenced objects instead of failing or inlining them. |
+| `Geoprocessing__OutputStaging__Provider` | `local` | `local` (shared persistent volume, see [output persistence](../../guides/gp-output-store-attestation.md)) or `object-storage` (the `FileStorage` bucket; required when instances do not share a disk). |
+| `Geoprocessing__OutputStaging__KeyPrefix` | `gp/outputs` | Key prefix of staged outputs. With `object-storage` it must start with the file storage key prefix when one is set. |
+| `Geoprocessing__OutputStaging__StoreReference` | `gp-outputs` | Opaque store identity recorded on output descriptors; identical on every instance. |
+| `Geoprocessing__OutputStaging__OrphanRetention` | `7.00:00:00` | How long an output whose job record is gone is kept before the sweep deletes it. |
 | `Geoprocessing__ImageryInference__Provider` | *(unset — lane dormant)* | Cloud inference backend for `imagery.classify`. Supported: `http` (generic REST speaking Honua's own JSON inference contract — not the OpenAI chat-completions format; implement it directly or put a thin gateway in front of your model server). `sagemaker`/`vertex`/`azureml` are recognized but fail clearly until SDK adapters land. |
 | `Geoprocessing__ImageryInference__Endpoint` | *(unset)* | Absolute http(s) invocation URL of the inference endpoint. Never echoed to callers. |
 | `Geoprocessing__ImageryInference__ApiKey` | *(unset)* | Backend API key: a secret reference (resolved through the secret store), a literal, or unset to fall back to `HONUA_IMAGERY_INFERENCE_API_KEY`. Never logged. |

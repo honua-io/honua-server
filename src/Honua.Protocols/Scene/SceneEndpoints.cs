@@ -11,6 +11,8 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.SharedCaching;
+using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Scene.Models;
 using Honua.Scene.Assets;
@@ -70,6 +72,7 @@ internal static partial class SceneEndpoints
             .WithDescription("Returns the OGC 3D Tiles root document. Cesium and other 3D Tiles clients resolve nested tile content URIs relative to this URL.")
             .WithTags(ScenesTag)
             .CacheOutput("SceneTilesetMetadata")
+            .WithSharedCacheClass(ResponseCacheClass.StaticObject)
             .Produces(StatusCodes.Status200OK, contentType: SceneContentTypes.JsonContentType)
             .Produces(StatusCodes.Status206PartialContent, contentType: SceneContentTypes.JsonContentType)
             .Produces(StatusCodes.Status304NotModified)
@@ -112,6 +115,7 @@ internal static partial class SceneEndpoints
             .WithDescription("Serves binary tile (b3dm/i3dm/pnts/cmpt), glTF/GLB, texture, JSON, or related payloads under a hosted scene's asset prefix.")
             .WithTags(ScenesTag)
             .CacheOutput("SceneTileAsset")
+            .WithSharedCacheClass(ResponseCacheClass.StaticObject)
             .Produces(StatusCodes.Status200OK, contentType: SceneContentTypes.DefaultContentType)
             .Produces(StatusCodes.Status200OK, contentType: SceneContentTypes.JsonContentType)
             .Produces(StatusCodes.Status200OK, contentType: "model/gltf-binary")
@@ -567,7 +571,7 @@ internal static partial class SceneEndpoints
         }
         else if (isProtected)
         {
-            headers[HeaderNames.CacheControl] = $"private, max-age={maxAgeSeconds}";
+            headers[HeaderNames.CacheControl] = SharedCacheGuard.NotShared;
             if (tokenTransport is SceneAccessTokenTransport.None)
             {
                 headers[HeaderNames.Vary] = CredentialVaryHeaders;
@@ -579,7 +583,7 @@ internal static partial class SceneEndpoints
         }
         else
         {
-            headers[HeaderNames.CacheControl] = $"public, max-age={maxAgeSeconds}";
+            SharePublicScene(context, maxAgeSeconds);
         }
 
         headers[HeaderNames.AcceptRanges] = "bytes";
@@ -610,13 +614,21 @@ internal static partial class SceneEndpoints
         }
         else if (isProtected)
         {
-            headers[HeaderNames.CacheControl] = $"private, max-age={maxAgeSeconds}";
+            headers[HeaderNames.CacheControl] = SharedCacheGuard.NotShared;
             headers[HeaderNames.Vary] = CredentialVaryHeaders;
         }
         else
         {
-            headers[HeaderNames.CacheControl] = $"public, max-age={maxAgeSeconds}";
+            SharePublicScene(context, maxAgeSeconds);
         }
+    }
+
+    // The scene's own access policy stands in for the layer access pipeline: an unprotected scene is the anonymous grant.
+    private static void SharePublicScene(HttpContext context, int maxAgeSeconds)
+    {
+        ResponseAccessVerdict.Record(context, AccessDecision.Allowed());
+        SharedCacheResponse.UseLifetime(context, SharedCacheLifetime.ForBrowserAndCdn(maxAgeSeconds));
+        SharedCacheResponse.Apply(context);
     }
 
     private static bool IfNoneMatchMatches(string headerValue, string currentETag)

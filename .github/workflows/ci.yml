@@ -3472,3 +3472,25 @@ jobs:
             exit 1
           fi
           echo "All required CI jobs passed."
+
+  # workflow_run notifications from workflow-token dispatches can be suppressed.
+  # Explicit workflow_dispatch is exempt from that token recursion restriction.
+  doctor-notify:
+    name: Notify CI doctor of trunk failure
+    needs: ci-gate
+    if: ${{ always() && needs.ci-gate.result == 'failure' && github.ref == 'refs/heads/trunk' && github.repository == 'honua-io/honua-server' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              ...context.repo,
+              workflow_id: 'ci-doctor-triage.lock.yml',
+              ref: context.payload.repository.default_branch,
+              inputs: { source_run_id: String(context.runId) }
+            });
+            core.info(`Notified CI doctor triage of failed CI run ${context.runId}`);
