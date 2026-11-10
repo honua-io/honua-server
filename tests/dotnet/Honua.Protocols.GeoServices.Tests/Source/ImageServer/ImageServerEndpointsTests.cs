@@ -37,10 +37,12 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 /// Each test exercises the actual route through <see cref="WebAppFixture"/> so
 /// route binding, telemetry, JSON formatting, and error handling are all covered
 /// per ADR-0011 API Surface Coverage.
+/// The class fixture keeps the reference-counted PostgreSQL infrastructure alive
+/// between cases; each case still owns its host, schema, and substitutes.
 /// </summary>
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
-public class ImageServerEndpointsTests
+public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
 {
     private const int TestLayerId = 0;
 
