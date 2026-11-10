@@ -478,12 +478,18 @@ internal sealed class ProductionMetricsHealthCheck : IHealthCheck
             {
                 ["memoryUsageMB"] = healthMetrics.MemoryUsageBytes / (1024 * 1024),
                 ["memoryPressureLevel"] = healthMetrics.MemoryPressureLevel,
-                ["cacheHitRatio"] = healthMetrics.CacheHitRatio,
+                ["hasCacheSamples"] = healthMetrics.HasCacheSamples,
+                ["cacheSampleStatus"] = healthMetrics.HasCacheSamples ? "available" : "no samples yet",
                 ["errorRate"] = healthMetrics.ErrorRate,
                 ["dbPoolUtilization"] = healthMetrics.DatabaseConnectionPoolUtilization,
                 ["activeAlerts"] = alertConditions.Count,
                 ["isHealthy"] = healthMetrics.IsHealthy()
             };
+
+            if (healthMetrics.HasCacheSamples)
+            {
+                data["cacheHitRatio"] = healthMetrics.CacheHitRatio;
+            }
 
             if (!healthMetrics.IsHealthy())
             {
@@ -492,7 +498,9 @@ internal sealed class ProductionMetricsHealthCheck : IHealthCheck
                     data: data);
             }
 
-            return HealthCheckResult.Healthy("Production metrics are healthy", data);
+            return HealthCheckResult.Healthy(healthMetrics.HasCacheSamples
+                ? "Production metrics are healthy"
+                : "Production metrics are healthy; cache has no samples yet", data);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
