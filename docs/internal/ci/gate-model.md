@@ -545,6 +545,6 @@ twice-daily full matrix are preserved.
 `ImageServerEndpointsTests` retains a `PostgresFixture` reference for the class
 to avoid repeating shared database initialization between cases. Each case owns
 its configured application, isolated schema, and raster substitutes; the class
-fixture releases the infrastructure after the last case. All cases and assertions
-run in their existing PR and trunk shard selections. Runner counts, required
-check names, and aggregate dependencies are unchanged.
+fixture releases the infrastructure after the last case. Pure capability XML
+coverage lives in `ImageServerWmtsCapabilitiesTests` without a database fixture.
+Full trunk runs include every case; PR routing selects affected ImageServer shards.

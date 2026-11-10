@@ -559,11 +559,8 @@ fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
 
-### ImageServer endpoint database lifetime
+### ImageServer endpoint fixtures
 
-`ImageServerEndpointsTests` retains a `PostgresFixture` reference for the class
-to avoid repeating shared database initialization between cases. Each case owns
-its configured application, isolated schema, and raster substitutes; the class
-fixture releases the infrastructure after the last case. All cases and assertions
-run in their existing PR and trunk shard selections. Runner counts, required
-check names, and aggregate dependencies are unchanged.
+See [ImageServer endpoint database lifetime](gate-model.md#imageserver-endpoint-database-lifetime)
+for endpoint isolation and database reuse. The pure WMTS capability unit test runs
+without a database fixture in the same ImageServer namespace and shard selection.
