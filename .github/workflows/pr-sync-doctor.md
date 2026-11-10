@@ -44,11 +44,9 @@ safe-outputs:
     max: 2
     if-no-changes: "ignore"
     check-branch-protection: false
-    protected-files: fallback-to-issue
-    excluded-files:
-      - ".github/**"
-      - "certification/**"
-      - "**/*.sealed"
+    signed-commits: false
+    allow-workflows: true
+    protected-files: allowed
   add-comment:
     target: "*"
     max: 2
@@ -77,4 +75,5 @@ Keep open pull requests in ${{ github.repository }} mergeable with trunk.
 ## Rules
 
 - Never print secrets, tokens or environment values. Never open certification/ai-arc/heldout*.sealed or certification/agent-e2e/pack.v2.json.
-- Never change files under .github/, never merge pull requests, approve or resolve threads.
+- Never edit `.github/`, `certification/**` or `*.sealed` content yourself, including when resolving conflicts. A merge may carry trunk's existing changes to these files unchanged; if they conflict, push nothing and label `conflict-stuck`.
+- Never merge pull requests, approve or resolve threads.
