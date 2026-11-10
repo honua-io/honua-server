@@ -36,13 +36,12 @@ public sealed class OperationTenantOwnershipTests
         var store = Substitute.For<IOperationProposalStore>();
         store.GetAsync("proposal-a", Arg.Any<CancellationToken>()).Returns(proposal);
         var gateway = Substitute.For<IOperationGateway>();
-        gateway.ApplyApprovedProposalAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(proposal);
+        gateway.ApplyApprovedProposalAsync(Arg.Any<string>(), Arg.Any<OperationProposalApprovalContext>(), Arg.Any<CancellationToken>()).Returns(proposal);
         gateway.RejectProposalAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(proposal);
         using var services = Services("tenant-b", store);
         var context = Context(services);
         var result = await Invoke(typeof(ProposalEndpoints), handler, context, store, gateway);
         ((IStatusCodeHttpResult)result).StatusCode.Should().Be(404);
-        await gateway.DidNotReceiveWithAnyArgs().ApplyApprovedProposalAsync(default!, default(string)!, default);
         await gateway.DidNotReceiveWithAnyArgs().ApplyApprovedProposalAsync(default!, default(OperationProposalApprovalContext)!, default);
         await gateway.DidNotReceiveWithAnyArgs().RejectProposalAsync(default!, default!, default!, default);
     }

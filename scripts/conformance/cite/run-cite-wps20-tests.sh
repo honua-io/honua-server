@@ -3,6 +3,8 @@
 set -euo pipefail
 
 CITE_COMPOSE_FILE="docker/cite/wps20/compose.yml"
+source "$(dirname "${BASH_SOURCE[0]}")/../../ci/lib/isolate-test-compose.sh"
+honua_isolate_test_compose "$CITE_COMPOSE_FILE"
 CITE_RESULTS_DIR="${HONUA_CITE_WPS20_RESULTS_DIR:-cite-wps20-results}"
 CITE_TIMEOUT="${HONUA_CITE_WPS20_TIMEOUT:-2700}"
 HONUA_HEALTHCHECK_TIMEOUT="${HONUA_CITE_WPS20_HEALTHCHECK_TIMEOUT:-300}"

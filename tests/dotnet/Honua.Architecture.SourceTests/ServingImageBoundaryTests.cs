@@ -354,8 +354,11 @@ public sealed class ServingImageBoundaryTests
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var workflow = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/pr-gate.yml"));
 
-        workflow.Should().Contain("validate-serving-image-boundary.py");
-        workflow.Should().Contain("validate-promote-verified-image.py");
+        var router = File.ReadAllText(Path.Join(repositoryRoot, "scripts/ci/validate-ci-router.sh"));
+
+        workflow.Should().Contain("scripts/ci/validate-ci-router.sh");
+        router.Should().Contain("scripts/ci/fixtures/validate-serving-image-boundary.py");
+        router.Should().Contain("scripts/ci/fixtures/validate-promote-verified-image.py");
         workflow.Should().NotContain("docker/build-push-action");
         workflow.Should().NotContain("docker run -d");
     }
@@ -412,7 +415,9 @@ public sealed class ServingImageBoundaryTests
                 "release builds must share the same variant scope before appending their architecture");
         }
 
-        workflow.Should().Contain("http://localhost:8080/healthz/live");
+        workflow.Should().Contain("--variable HONUA_BOUNDARY_SMOKE_PORT --ci-default 8080");
+        workflow.Should().Contain("SERVER_URL=\"http://127.0.0.1:$SERVER_PORT\"");
+        workflow.Should().Contain("wait --container \"$CONTAINER\" --url \"$SERVER_URL/healthz/live\"");
         workflow.Should().Contain("pull_request:");
         workflow.Should().Contain("paths:");
         workflow.Should().Contain("vars.HONUA_SERVING_IMAGE_SKIP == 'true'");
@@ -522,8 +527,10 @@ public sealed class ServingImageBoundaryTests
             "the AOT compile gate must still be scoped to batches that change runtime source");
 
         var prGate = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/pr-gate.yml"));
-        prGate.Should().Contain("validate-serving-image-boundary.py",
-            "boundary detector correctness stays on every pull request");
+        prGate.Should().Contain("scripts/ci/validate-ci-router.sh",
+            "boundary detector correctness stays on every pull request through the CI router");
+        var router = File.ReadAllText(Path.Join(repositoryRoot, "scripts/ci/validate-ci-router.sh"));
+        router.Should().Contain("scripts/ci/fixtures/validate-serving-image-boundary.py");
     }
 
     [ArchitectureTest]

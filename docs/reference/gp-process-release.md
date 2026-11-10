@@ -172,4 +172,4 @@ Exit codes: `0` success, `1` the release cannot be built or verified (every find
 
 ## Binding and admission
 
-Publishing the lock to the server, the per-process binding (versioned, compare-and-set activation, rollback to the previous release) and admission-time pinning of AWS Batch job-definition revisions and Kubernetes worker images are described in the [GP process release bindings runbook](../operator/geoprocessing-process-releases.md).
+Publishing the lock to the server, the per-process binding (versioned, compare-and-set activation, rollback to the previous release) and admission-time pinning of AWS Batch job-definition revisions and Kubernetes worker images are described in the [GP process release bindings runbook](../guides/deploy/geoprocessing-process-releases.md).

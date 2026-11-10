@@ -59,6 +59,9 @@ class Recording:
             self.check(commit, run_id, lane, result)
         return run_id
 
+    def retitle(self, commit: str, run_id: int, title: str) -> None:
+        next(row for row in self.runs[commit] if row["id"] == run_id)["display_title"] = title
+
     def check(self, commit: str, run_id: int, name: str, conclusion: str, status="completed") -> None:
         self.checks[commit].append({
             "id": next(self._ids), "name": name, "status": status, "conclusion": conclusion,
@@ -163,6 +166,24 @@ class SelectionTests(unittest.TestCase):
         skip = next(line for line in log if line.strip().startswith(reverified[:7]))
         self.assertIn("lanes not successful", skip)
         self.assertIn("Build & Format Check=skipped", skip)
+
+    def test_newer_post_merge_affected_run_never_supersedes_a_full_matrix(self) -> None:
+        commit = sha("a")
+        recording = Recording([commit])
+        recording.run(commit, event="schedule", updated="2026-10-04T06:00:00Z")
+        affected = recording.run(commit, updated="2026-10-04T07:00:00Z",
+                                 skipped={"Build & Format Check", ".NET Foundation Tests", "Python Integration Tests"})
+        recording.retitle(commit, affected, f"CI affected {sha('9')[:12]}..{commit[:12]}")
+        chosen, run, _ = choose(recording)
+        self.assertEqual(chosen, commit)
+        self.assertEqual(run["event"], "schedule")
+
+    def test_post_merge_affected_run_alone_does_not_certify(self) -> None:
+        commit = sha("b")
+        recording = Recording([commit])
+        recording.retitle(commit, recording.run(commit), f"CI affected {sha('9')[:12]}..{commit[:12]}")
+        with self.assertRaisesRegex(MODULE.SelectionError, "no completed"):
+            choose(recording)
 
     def test_selective_run_missing_lanes_is_named(self) -> None:
         selective, certified = sha("1"), sha("2")

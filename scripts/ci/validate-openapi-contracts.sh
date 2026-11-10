@@ -432,6 +432,19 @@ studio_doc = load_json(studio_path)
 
 if admin_doc is not None:
     validate_common(admin_path, admin_doc)
+    operation_ids: set[str] = set()
+    for route, path_item in admin_doc.get("paths", {}).items():
+        for method in HTTP_METHODS:
+            operation = path_item.get(method)
+            if not isinstance(operation, dict):
+                continue
+            operation_id = operation.get("operationId")
+            if not isinstance(operation_id, str) or not operation_id.strip():
+                fail(f"{admin_path}: {method.upper()} {route} requires an operationId for SDK generation.")
+            elif operation_id in operation_ids:
+                fail(f"{admin_path}: duplicate operationId '{operation_id}'.")
+            else:
+                operation_ids.add(operation_id)
 
     security_schemes = admin_doc.get("components", {}).get("securitySchemes", {})
     if "ApiKeyAuth" not in security_schemes:

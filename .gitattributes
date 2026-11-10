@@ -42,3 +42,5 @@ docker/cloud/azure-functions/handler.sh text eol=lf
 *.so binary
 *.dylib binary
 *.snk binary
+
+.github/workflows/*.lock.yml linguist-generated=true

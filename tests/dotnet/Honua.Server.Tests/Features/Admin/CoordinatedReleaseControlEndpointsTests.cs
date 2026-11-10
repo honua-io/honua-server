@@ -13,6 +13,10 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.Hosting;
+using Honua.Infrastructure.Authentication;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
@@ -27,19 +31,31 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Metadata)]
-public sealed class CoordinatedReleaseControlEndpointsTests : IAsyncLifetime
+public sealed partial class CoordinatedReleaseControlEndpointsTests : IAsyncLifetime
 {
     private readonly InMemoryWorkflowOperationStore _workflowStore = new();
     private readonly FakeContainerStep _container = new();
     private readonly FakeMetadataStep _metadata = new();
+    private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identity = AdminAuthEndpointsTests.CreateStubFactory();
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
+    private HumanApprovalHttpClient? _human;
 
     public CoordinatedReleaseControlEndpointsTests()
     {
-        _fixture = new WebAppFixture()
+        _fixture = HumanApprovalHttpClient.Configure(new WebAppFixture(), _identity)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            })
             .ConfigureServices(services =>
             {
+                services.RemoveAll<AdminAuthSessionStore>();
+                services.AddSingleton(provider => new AdminAuthSessionStore(
+                    provider.GetRequiredService<IMemoryCache>(), provider.GetRequiredService<ILogger<AdminAuthSessionStore>>(),
+                    CreateSessionCache()));
                 services.RemoveAll<IWorkflowOperationStore>();
                 services.AddSingleton<IWorkflowOperationStore>(_workflowStore);
 
@@ -60,7 +76,12 @@ public sealed class CoordinatedReleaseControlEndpointsTests : IAsyncLifetime
         _client = _fixture.CreateAdminClient();
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        _human?.Dispose();
+        try { await _fixture.DisposeAsync(); }
+        finally { _identity.Dispose(); }
+    }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/metadata/coordinated-releases/operations")]
@@ -141,30 +162,7 @@ public sealed class CoordinatedReleaseControlEndpointsTests : IAsyncLifetime
             .RootElement.GetProperty("operationId").GetString()!;
 
         // Drive + approve each gate as it appears until terminal.
-        JsonElement root = default;
-        for (var i = 0; i < 40; i++)
-        {
-            using var response = await _client.GetAsync($"/api/v1/admin/metadata/coordinated-releases/{packageId}/operation");
-            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            root = document.RootElement.Clone();
-            var status = root.GetProperty("status").GetString();
-
-            if (status == "AwaitingApproval")
-            {
-                var step = root.GetProperty("currentStep").GetString();
-                var gate = step == "ContainerRollout" ? "container" : "data";
-                var approve = await _client.PostAsJsonAsync(
-                    $"/api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approve/{gate}",
-                    new { reason = "approved" });
-                approve.StatusCode.Should().Be(HttpStatusCode.OK);
-                continue;
-            }
-
-            if (status is "Succeeded" or "Failed" or "RolledBack" or "ManualInterventionRequired")
-            {
-                break;
-            }
-        }
+        var root = await DriveWithHumanGatesAsync(packageId, operationId);
 
         root.GetProperty("status").GetString().Should().Be("Succeeded");
         _container.StartCalls.Should().Be(1);
@@ -189,9 +187,8 @@ public sealed class CoordinatedReleaseControlEndpointsTests : IAsyncLifetime
             if (root.GetProperty("status").GetString() == "AwaitingApproval" &&
                 root.GetProperty("currentStep").GetString() == "ContainerRollout")
             {
-                await _client.PostAsJsonAsync(
-                    $"/api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approve/container",
-                    new { reason = "approved" });
+                using var approve = await ApproveGateAsHumanAsync(operationId, "container");
+                approve.StatusCode.Should().Be(HttpStatusCode.OK);
                 break;
             }
         }
@@ -217,29 +214,7 @@ public sealed class CoordinatedReleaseControlEndpointsTests : IAsyncLifetime
         var operationId = JsonDocument.Parse(await created.Content.ReadAsStringAsync())
             .RootElement.GetProperty("operationId").GetString()!;
 
-        JsonElement root = default;
-        for (var i = 0; i < 40; i++)
-        {
-            using var response = await _client.GetAsync($"/api/v1/admin/metadata/coordinated-releases/{packageId}/operation");
-            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            root = document.RootElement.Clone();
-            var status = root.GetProperty("status").GetString();
-
-            if (status == "AwaitingApproval")
-            {
-                var step = root.GetProperty("currentStep").GetString();
-                var gate = step == "ContainerRollout" ? "container" : "data";
-                await _client.PostAsJsonAsync(
-                    $"/api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approve/{gate}",
-                    new { reason = "approved" });
-                continue;
-            }
-
-            if (status is "Succeeded" or "Failed" or "RolledBack" or "ManualInterventionRequired")
-            {
-                break;
-            }
-        }
+        var root = await DriveWithHumanGatesAsync(packageId, operationId);
 
         // The metadata-step fault triggered ONE coordinated rollback. The provider's
         // incomplete rollback evidence is terminal manual intervention, not a claimed
@@ -248,6 +223,37 @@ public sealed class CoordinatedReleaseControlEndpointsTests : IAsyncLifetime
         root.GetProperty("status").GetString().Should().Be("ManualInterventionRequired");
         _container.RollbackCalls.Should().Be(0);
         _metadata.RollbackCalls.Should().Be(1);
+    }
+
+    private async Task<JsonElement> DriveWithHumanGatesAsync(string packageId, string operationId)
+    {
+        JsonElement result = default;
+        for (var attempt = 0; attempt < 40; attempt++)
+        {
+            using var response = await _client.GetAsync($"/api/v1/admin/metadata/coordinated-releases/{packageId}/operation");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            result = document.RootElement.Clone();
+            var status = result.GetProperty("status").GetString();
+            if (status == "AwaitingApproval")
+            {
+                var gate = result.GetProperty("currentStep").GetString() == "ContainerRollout" ? "container" : "data";
+                using var approval = await ApproveGateAsHumanAsync(operationId, gate);
+                approval.StatusCode.Should().Be(HttpStatusCode.OK);
+            }
+            else if (status is "Succeeded" or "Failed" or "RolledBack" or "ManualInterventionRequired")
+            {
+                return result;
+            }
+        }
+
+        return result;
+    }
+
+    private async Task<HttpResponseMessage> ApproveGateAsHumanAsync(string workflowId, string gate)
+    {
+        _human ??= await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identity);
+        return await _human.ApproveGateAsync(workflowId, gate);
     }
 
     private Task<HttpResponseMessage> CreateAsync(string packageId)
@@ -317,6 +323,7 @@ public sealed class CoordinatedReleaseControlEndpointsTests : IAsyncLifetime
 
     private sealed class InMemoryWorkflowOperationStore : IWorkflowOperationStore
     {
+        public bool RefuseWrites { get; set; }
         private readonly ConcurrentDictionary<string, WorkflowOperationRecord> _operations = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, string> _leases = new(StringComparer.Ordinal);
 
@@ -349,8 +356,10 @@ public sealed class CoordinatedReleaseControlEndpointsTests : IAsyncLifetime
 
         public Task<bool> TrySetAsync(WorkflowOperationRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
         {
-            _operations[operation.OperationId] = operation;
-            return Task.FromResult(true);
+            if (RefuseWrites) return Task.FromResult(false);
+            if (!_operations.TryGetValue(operation.OperationId, out var current) || current.Version != operation.Version)
+                return Task.FromResult(false);
+            return Task.FromResult(_operations.TryUpdate(operation.OperationId, operation with { Version = operation.Version + 1 }, current));
         }
 
         public Task<IReadOnlyList<WorkflowOperationRecord>> ListActiveAsync(WorkflowOperationKind? kind = null, CancellationToken cancellationToken = default)

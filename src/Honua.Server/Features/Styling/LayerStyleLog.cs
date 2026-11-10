@@ -32,12 +32,6 @@ internal static partial class LayerStyleLog
     public static partial void ThemeColorParseFailure(ILogger logger, int layerId, string property, string color);
 
     [LoggerMessage(
-        EventId = 6404,
-        Level = LogLevel.Warning,
-        Message = "Failed to mirror layer {LayerId} style into the independent style catalog/graph. The per-layer style update succeeded; StyleResourceIds may lag until the next publish.")]
-    public static partial void StyleCatalogSyncFailed(ILogger logger, int layerId, Exception exception);
-
-    [LoggerMessage(
         EventId = 6405,
         Level = LogLevel.Warning,
         Message = "Failed to synchronize the metadata-v2 style graph for catalog style '{StyleId}'. The catalog update already committed; StyleResourceIds may lag until the next publish.")]
