@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import importlib.util
 import json
 import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -173,7 +174,7 @@ class RunnerTests(unittest.TestCase):
             with patch.dict(os.environ, {'PATH': f'{directory}:{os.environ["PATH"]}',
                                          'HONUA_TEST_QUARANTINE_OBSERVE': 'true'}):
                 result = subprocess.run(command, timeout=5, capture_output=True)
-            self.assertEqual(137, result.returncode)
+            self.assertEqual(-signal.SIGKILL, result.returncode)
             process = Path('/proc') / fake.with_suffix('.pid').read_text() / 'stat'
             if process.exists():
                 self.assertEqual('Z', process.read_text().split(') ', 1)[1].split()[0])
