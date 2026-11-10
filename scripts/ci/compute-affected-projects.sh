@@ -6,6 +6,9 @@ HONUA_NL="$(printf '\nX')"; HONUA_NL="${HONUA_NL%X}"
 #
 # Phase 3 of the modularization plan / ADR-0043 PR #2.
 #
+# Alternate mode: --trunk-overlap [lane-ref] [trunk-ref] emits JSON with
+# refresh_required; unknown history or dependency graphs require refresh.
+#
 # Inputs (env or args):
 #   BASE_REF — git ref to diff against (default: origin/trunk).
 #   HEAD_REF — git ref for the new state (default: HEAD).
@@ -27,6 +30,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${REPO_ROOT}"
+
+if [[ "${1:-}" == "--trunk-overlap" ]]; then
+  shift
+  exec python3 "${SCRIPT_DIR}/compute-project-overlap.py" "$@"
+fi
 
 base_ref="${BASE_REF:-origin/trunk}"
 head_ref="${HEAD_REF:-HEAD}"

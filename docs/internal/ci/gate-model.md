@@ -503,6 +503,16 @@ execution matrix and enforced test filters remain unchanged.
 
 ### Pre-PR and trailing affected execution
 
+Before refreshing a behind branch, lanes and the sync doctor share
+`bash scripts/ci/compute-affected-projects.sh --trunk-overlap HEAD origin/trunk`.
+Its JSON `refresh_required` compares committed changes on both sides of their
+merge base using the canonical reverse-dependency selector. Disjoint project
+closures avoid an unnecessary merge and gate restart. Non-managed files use
+their top-level folder; root files, changed project graphs and unavailable refs
+require revalidation conservatively. This decision does not resolve conflicts
+or attest test execution. Callers must treat an execution or parsing failure
+as requiring revalidation. Commit local changes before using this mode.
+
 `pre-pr-check.sh --affected-tests` restores once, builds the affected unit-test
 closure without analyzers, then runs unit tests by default. Pass `--integration`
 with `--affected-tests` to include affected integration shards. The independent
