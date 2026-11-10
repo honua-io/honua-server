@@ -164,7 +164,10 @@ and omits test-only compilation roots; imports are respected, incomplete evaluat
 fails closed, and multi-targeted projects conservatively remain included. Each
 partition still compiles forward dependencies but runs analyzers only for its own set; source generators remain enabled. The `format` matrix remains
 in `required.needs`, so both partitions must pass. The existing analyzer check
-name is retained for the source partition. Unpartitioned callers default to
+name is retained for the source partition. Analyzer builds disable persistent
+MSBuild servers and node reuse so process teardown does not depend on a shared
+server; compiler, analyzer and timeout failures still fail the job.
+Unpartitioned callers default to
 `all`; invalid partitions fail the build. `PR Gate` still fails on every analyzer finding. Full CI runs
 an independent full-solution format job; `CI Gate` requires it when build inputs
 are selected, without making test consumers wait for formatting.

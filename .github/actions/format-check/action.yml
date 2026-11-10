@@ -103,6 +103,10 @@ runs:
       shell: bash
       env:
         ANALYZER_PARTITION: ${{ inputs.analyzer-partition }}
+        # Avoid persistent MSBuild server teardown affecting the build exit code.
+        DOTNET_CLI_USE_MSBUILD_SERVER: 'false'
+        MSBUILDUSESERVER: '0'
+        MSBUILDDISABLENODEREUSE: '1'
         GATE_BUILD_MODE: ${{ steps.analyzer-build-scope.outputs.mode }}
         GATE_BUILD_FILTER: ${{ steps.analyzer-build-scope.outputs.filter }}
       run: |

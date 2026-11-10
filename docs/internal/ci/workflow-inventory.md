@@ -116,6 +116,9 @@ the changed paths on stdin.
 | `PR Gate / Format`, `PR Gate / Analyzers`, `PR Gate / Analyzers (tests)` | Checkout and classification. | .NET setup, restore, and `dotnet format` or the analyzer build. |
 | `PR Gate / Affected shards (select)` | Classification. The job publishes `skip=true` with `reason=docs_only`, so the aggregate reports `skipped`. | Selector validation and shard selection. |
 
+The analyzer build step disables persistent MSBuild servers and node reuse;
+all compiler, analyzer and timeout failures still fail the check.
+
 Outside `PR Gate`, `docs-link-gate.yml` keeps firing on `docs/**` and
 `README.md` exactly as before: links, anchors, and the gate that rejects
 added raw HTTP shell examples. Review-first enforcement is unchanged, because an enforced attempt 1
