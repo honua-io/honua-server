@@ -528,13 +528,15 @@ fail the producer; real-project metadata observation remains advisory and its
 reports are retained separately as `source-inventory-pilot-<attempt>`.
 
 
-### Grouped resource-free shards
+### Grouped unit and component shards
 
 The server matrix combines 33 small unit/component assemblies into four jobs:
 Provider and AI Units, Runtime Units, Protocol Units, and Protocol and Host
 Components. Each `csprojs` list is an explicit assembly union. Routing, build
 selection, resource classification, and the source coverage guard inspect every
-member. The existing required check names and tier policies remain unchanged.
+member. Catalogued Docker, Postgres, and Redis dependencies remain supported;
+resourceful members retain service provisioning. Unknown resources fail closed.
+The existing required check names and tier policies remain unchanged.
 
 The shared runner executes each member with its own fresh TRX and timing record,
 within one shared 20-minute test budget. Every assembly must execute tests and

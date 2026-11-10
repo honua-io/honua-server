@@ -173,13 +173,21 @@ def timing_record(environment, started, outcome):
             'projects': json.loads(environment['HONUA_SERVER_TEST_CSPROJS']), 'execution': evidence}
 
 
+def validate_projects(projects, catalog):
+    for project in projects:
+        entry = catalog.get(project, {})
+        resources = entry.get('resources')
+        if (entry.get('role') not in ('unit', 'component')
+                or not isinstance(resources, list)
+                or any(resource not in ('docker', 'postgres', 'redis') for resource in resources)):
+            raise ValueError('Grouped shards require catalogued unit/component assemblies with supported resources')
+
+
 def main():
     environment = dict(os.environ)
     projects = shard_projects({'csprojs': json.loads(environment['HONUA_SERVER_TEST_CSPROJS'])})
     catalog = json.loads(Path('.github/test-projects.json').read_text())['projects']
-    if any(catalog.get(p, {}).get('role') not in ('unit', 'component')
-           or catalog[p].get('resources') != [] for p in projects):
-        raise ValueError('Grouped shards require catalogued resource-free unit/component assemblies')
+    validate_projects(projects, catalog)
     results = Path(environment.get('HONUA_SERVER_TEST_RESULTS_DIR', './artifacts/test-results')).resolve()
     name = environment['HONUA_SERVER_TEST_LOG_NAME']
     directory = results / name

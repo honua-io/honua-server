@@ -5915,7 +5915,7 @@
         "src/Honua.Db/Snowflake/",
         "tests/dotnet/Honua.Snowflake.UnitTests/"
       ],
-      "_comment": "Resource-free unit/component assemblies share setup; every assembly retains independent execution evidence and failure checks.",
+      "_comment": "Small unit/component assemblies share setup; every assembly retains independent execution evidence and failure checks.",
       "supplemental_source_paths": true,
       "csprojs": [
         "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj",
@@ -5965,7 +5965,7 @@
         "tests/dotnet/Shared/SceneUnitSupport/SceneExecutorTestStubs.cs",
         "tests/dotnet/Honua.ServiceDefaults.UnitTests/"
       ],
-      "_comment": "Resource-free unit/component assemblies share setup; every assembly retains independent execution evidence and failure checks.",
+      "_comment": "Small unit/component assemblies share setup; every assembly retains independent execution evidence and failure checks.",
       "supplemental_source_paths": true,
       "csprojs": [
         "tests/dotnet/Honua.Geoprocessing.UnitTests/Honua.Geoprocessing.UnitTests.csproj",
@@ -5987,7 +5987,7 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "Resource-free unit/component assemblies share setup; every assembly retains independent execution evidence and failure checks.",
+      "_comment": "Small unit/component assemblies share setup; every assembly retains independent execution evidence and failure checks.",
       "filter": "FullyQualifiedName~Honua",
       "paths": [
         "src/Honua.Core/Abstractions/",
@@ -6034,7 +6034,7 @@
     },
     {
       "name": "Protocol and Host Components",
-      "_comment": "Resource-free unit/component assemblies share setup; every assembly retains independent execution evidence and failure checks.",
+      "_comment": "Small unit/component assemblies share setup; every assembly retains independent execution evidence and failure checks.",
       "shard_name": "Protocol and Host Components",
       "dispatch_rank": 4.3,
       "artifact_suffix": "protocol-host-components",
