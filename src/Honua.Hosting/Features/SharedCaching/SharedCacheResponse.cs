@@ -2,7 +2,10 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Tiles;
+using Honua.Infrastructure.Caching;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
@@ -15,6 +18,7 @@ internal static class SharedCacheResponse
     private static readonly SharedCacheOptions ProductDefaults = new();
     private static readonly object LifetimeKey = new();
     private static readonly object SubjectKey = new();
+    private static readonly object AdHocSpatialKey = new();
 
     internal static void UseLifetime(HttpContext context, SharedCacheLifetime lifetime)
         => context.Items[LifetimeKey] = lifetime;
@@ -22,14 +26,35 @@ internal static class SharedCacheResponse
     internal static void UseSubject(HttpContext context, SharedCacheSubject subject)
         => context.Items[SubjectKey] = subject;
 
+    // A publication resolved without its service leaves the subject to the route.
+    internal static void UsePublication(HttpContext context, MetadataV2Service? service, MetadataV2Publication publication)
+    {
+        if (service is not null)
+        {
+            UseSubject(context, SharedCacheSubject.ForPublication(service, publication));
+        }
+    }
+
+    // Arbitrary extents and spatial predicates make a near-unique address per request, which must not be cached exactly.
+    internal static bool ExcludeIfAdHocSpatial(HttpContext context, FeatureQuery query, string? filterText)
+    {
+        if (!ResponseCacheUtilities.ShouldBypassAdHocSpatialResponseCache(query, filterText))
+        {
+            return false;
+        }
+
+        context.Items[AdHocSpatialKey] = true;
+        return true;
+    }
+
     internal static SharedCacheSubject? Subject(HttpContext context)
         => context.Items.TryGetValue(SubjectKey, out var subject) && subject is SharedCacheSubject declared
             ? declared
             : SharedCacheSubject.FromRoute(context.Request.RouteValues);
 
+    // The tileset key only selects a configured tileset lifetime; the subject comes from the publication that granted access.
     internal static void UseTileset(HttpContext context, TileOptions tileOptions, TilesetAddress tileset)
     {
-        UseSubject(context, new SharedCacheSubject(tileset.ServiceId, tileset.LayerId));
         if (TilesetTtlResolver.ResolveTilesetTtl(tileOptions, tileset.TilesetKey) is { } tilesetTtl)
         {
             UseLifetime(context, SharedCacheLifetime.ForBrowserAndCdn(tilesetTtl));
@@ -43,6 +68,7 @@ internal static class SharedCacheResponse
             || DeclaredClass(context) is not { } cacheClass
             || !SharedCacheGuard.RequestMayBeShared(context)
             || !AccessPermitsSharing(context, cacheClass)
+            || context.Items.ContainsKey(AdHocSpatialKey)
             || HandlerForbadeStorage(context.Response))
         {
             return;
@@ -114,18 +140,17 @@ internal static class SharedCacheResponse
     private static void AddMissingVary(HttpResponse response, string[] requestHeaders)
     {
         var present = response.Headers.Vary.ToString();
-        foreach (var requestHeader in requestHeaders)
+        foreach (var requestHeader in requestHeaders.Where(header => !present.Contains(header, StringComparison.OrdinalIgnoreCase)))
         {
-            if (!present.Contains(requestHeader, StringComparison.OrdinalIgnoreCase))
-            {
-                response.Headers.Append(HeaderNames.Vary, requestHeader);
-            }
+            response.Headers.Append(HeaderNames.Vary, requestHeader);
         }
     }
 
     // Origin is always listed: the CORS policy reflects the request origin, and only on requests that send one.
+    // A tile without an explicit format is PNG or vector by Accept.
     private static string[] VaryFor(ResponseCacheClass cacheClass) => cacheClass switch
     {
+        ResponseCacheClass.Tile => [HeaderNames.Origin, HeaderNames.Accept, HeaderNames.AcceptEncoding],
         ResponseCacheClass.FeatureQuery => [HeaderNames.Origin, HeaderNames.Accept, HeaderNames.AcceptEncoding, "Prefer"],
         ResponseCacheClass.MetadataDocument =>
             [HeaderNames.Origin, HeaderNames.Accept, HeaderNames.AcceptEncoding, HeaderNames.AcceptLanguage],
@@ -139,6 +164,10 @@ internal sealed record SharedCacheSubject(string ServiceId, string? LayerId = nu
     private static readonly string[] ServiceRouteValues = ["serviceId", "collectionId", "sceneId", "datasetId"];
 
     internal string? LayerKey => LayerId is null ? null : $"{ServiceId}/{LayerId}";
+
+    // The same service and layer an operator sees in /rest/services/{serviceId}/FeatureServer/{layerId}, whichever surface serves the response.
+    internal static SharedCacheSubject ForPublication(MetadataV2Service service, MetadataV2Publication publication)
+        => new(service.EffectivePublicName, publication.LayerIndex?.ToString(CultureInfo.InvariantCulture));
 
     // Most routes name their service and layer in the address, so a handler only declares a subject when the route does not.
     internal static SharedCacheSubject? FromRoute(RouteValueDictionary routeValues)

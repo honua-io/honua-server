@@ -63,7 +63,7 @@ the only lifetime it has.
 
 | Response class | `Cache-Control` | `ETag` | `Vary` | Lifetime comes from |
 | --- | --- | --- | --- | --- |
-| Public tile | `public, max-age=60, s-maxage=300, stale-while-revalidate=60, stale-if-error=86400` | Yes | `Origin, Accept-Encoding` | Per-layer setting, then the tileset setting, then `SharedCache:Tile` |
+| Public tile | `public, max-age=60, s-maxage=300, stale-while-revalidate=60, stale-if-error=86400` | Yes | `Origin, Accept, Accept-Encoding` | Per-layer setting, then the tileset setting, then `SharedCache:Tile` |
 | Public feature query | `public, max-age=0, s-maxage=30, stale-while-revalidate=30, stale-if-error=86400` | Yes | `Origin, Accept, Accept-Encoding, Prefer` | Per-layer setting, then `SharedCache:FeatureQuery` |
 | Capabilities and metadata documents | `public, max-age=30, s-maxage=60` | Yes | `Origin, Accept, Accept-Encoding, Accept-Language` | `SharedCache:MetadataDocument` |
 | Static map image | `public, max-age=0, s-maxage=60, stale-while-revalidate=30` | Yes | `Origin, Accept-Encoding` | Per-layer setting, then `SharedCache:StaticMapImage` |
@@ -86,11 +86,15 @@ changing any stored per-layer value, and is reversed by unsetting it.
 `stale-if-error` is written only together with `public`, by the one component that writes `public`,
 so it never appears on a secured response.
 
+A feature query with an arbitrary extent or a spatial predicate (`bbox`, `geometry`, a CQL2 or
+OData spatial function) is never shared: every request is a near-unique address.
+
 If a table is edited outside Honua, the server does not see the change: tiles and queries refresh
 after the layer's cache lifetime, or immediately when an operator purges the layer.
 
-Every response knows its subject (service, layer and style identifiers), read from the route or
-declared by the handler. Lifetimes and the emergency setting are chosen by it today. Invalidation by
+Every response knows its subject: the service and layer an operator sees in
+`/rest/services/{serviceId}/FeatureServer/{layerId}`, taken from the publication that granted access
+on every surface (tiles, queries, scenes), or from the route when no publication was resolved. Lifetimes and the emergency setting are chosen by it today. Invalidation by
 cache tag, planned for the next release candidate, derives its tags from the same subject without
 touching a call site.
 

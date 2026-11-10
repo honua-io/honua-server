@@ -123,6 +123,7 @@ internal static partial class VectorTileServerEndpoints
             }
 
             var (publication, resource) = primary.Value;
+            SharedCacheResponse.UsePublication(context, service, publication);
 
             var storageLayerId = snapshot.ResolveStorageLayerId(publication)
                 ?? snapshot.ResolveStorageLayerId(resource)

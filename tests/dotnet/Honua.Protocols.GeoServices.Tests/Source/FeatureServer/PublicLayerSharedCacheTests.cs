@@ -18,11 +18,15 @@ public sealed class PublicLayerSharedCacheTests : IAsyncLifetime
     private const string VectorTile = "/tiles/0/1/0/0.mvt";
     private const string VectorTileServerTile = "/rest/services/test/VectorTileServer/tile/1/0/0.pbf";
     private const string FeatureQuery = "/rest/services/test/FeatureServer/0/query?f=json&where=1%3D1&outFields=*";
+    private const string EnvelopeQuery =
+        "/rest/services/test/FeatureServer/0/query?f=json&geometryType=esriGeometryEnvelope&geometry=-10,-10,10,10&inSR=4326&outFields=*";
+    private const string LayerLifetimeSeconds = "17";
 
     private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureWebHost(builder =>
     {
         builder.UseSetting("HONUA_DEV_AUTH", "false");
         builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        builder.UseSetting($"SharedCache:Layers:{WebAppFixture.TestServiceId}/{WebAppFixture.TestLayerId}:SharedMaxAgeSeconds", LayerLifetimeSeconds);
     });
 
     public async Task InitializeAsync()
@@ -53,6 +57,35 @@ public sealed class PublicLayerSharedCacheTests : IAsyncLifetime
         response.Headers.CacheControl.SharedMaxAge.Should().NotBeNull();
         response.Headers.CacheControl.NoStore.Should().BeFalse();
         response.Headers.Vary.Should().Contain("Origin");
+    }
+
+    [IntegrationTheory]
+    [Operation(Operations.GetTile, Operations.Query)]
+    [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    [InlineData(VectorTile)]
+    [InlineData(FeatureQuery)]
+    public async Task PublicLayer_LayerLifetimeNamedByServiceAndLayer_AppliesOnEverySurface(string address)
+    {
+        using var client = _fixture.CreateClient();
+
+        using var response = await client.GetAsync(address);
+
+        response.Headers.CacheControl!.SharedMaxAge.Should().Be(TimeSpan.FromSeconds(int.Parse(LayerLifetimeSeconds, System.Globalization.CultureInfo.InvariantCulture)));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task PublicLayer_AnonymousQueryByArbitraryExtent_IsNeverShared()
+    {
+        using var client = _fixture.CreateClient();
+
+        using var response = await client.GetAsync(EnvelopeQuery);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.CacheControl.Should().NotBeNull();
+        response.Headers.CacheControl!.Public.Should().BeFalse();
     }
 
     [IntegrationTheory]

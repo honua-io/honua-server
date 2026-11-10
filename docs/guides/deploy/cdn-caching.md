@@ -23,7 +23,7 @@ A response is public only when the route is a read of public content, the reques
 | Anything requested with a credential, a secured layer, admin routes, edits | never | never | `private, no-store` |
 | Errors | never | never | `private, no-store` |
 
-WMS and WMTS key-value requests, OGC API Maps, exports and imported tile packages are not cached in this release.
+WMS and WMTS key-value requests, OGC API Maps, exports, imported tile packages, and feature queries by an arbitrary extent or spatial predicate are not cached in this release.
 
 A request counts as credentialed when it carries any of: the `Authorization`, `X-API-Key`, `X-Esri-Authorization`, `X-Honua-Embed-Key`, `X-Honua-Token`, `X-Honua-Tenant` or `X-Honua-Job-Id` header, a forwarded client certificate, an admin session cookie, or a `token` or `key` query parameter.
 
@@ -62,7 +62,7 @@ SharedCache__FeatureQuery__SharedMaxAgeSeconds=30
 SharedCache__MetadataDocument__SharedMaxAgeSeconds=60
 ```
 
-3. Give one layer its own lifetime. Layers are named `{serviceId}/{layerId}`. A layer bound to a table that is edited outside Honua should have a lifetime no longer than the staleness you accept.
+3. Give one layer its own lifetime. Layers are named `{serviceId}/{layerId}`, as in `/rest/services/{serviceId}/FeatureServer/{layerId}`; the name applies to that layer on every surface, including `/tiles` and OGC API Tiles. A layer bound to a table that is edited outside Honua should have a lifetime no longer than the staleness you accept.
 
 ```bash
 SharedCache__Layers__parcels/3__MaxAgeSeconds=0

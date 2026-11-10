@@ -16,8 +16,8 @@ public sealed partial class SharedCacheSingleWriterGuardTests
 {
     private static readonly string[] PermittedWriters =
     [
-        Path.Combine("src", "Honua.Hosting", "Features", "SharedCaching") + Path.DirectorySeparatorChar,
-        Path.Combine("src", "Honua.Core", "Core", "Features", "Infrastructure", "Domain", "StoredObjectCachePolicy.cs"),
+        Path.Join("src", "Honua.Hosting", "Features", "SharedCaching") + Path.DirectorySeparatorChar,
+        Path.Join("src", "Honua.Core", "Core", "Features", "Infrastructure", "Domain", "StoredObjectCachePolicy.cs"),
     ];
 
     [ArchitectureTest]
@@ -31,7 +31,7 @@ public sealed partial class SharedCacheSingleWriterGuardTests
                 && !file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
             .Select(file => Path.GetRelativePath(repoRoot, file))
             .Where(relative => !PermittedWriters.Any(permitted => relative.StartsWith(permitted, StringComparison.Ordinal)))
-            .Where(relative => SharedCacheableDirective().IsMatch(File.ReadAllText(Path.Combine(repoRoot, relative))))
+            .Where(relative => SharedCacheableDirective().IsMatch(File.ReadAllText(Path.Join(repoRoot, relative))))
             .ToArray();
 
         offenders.Should().BeEmpty(

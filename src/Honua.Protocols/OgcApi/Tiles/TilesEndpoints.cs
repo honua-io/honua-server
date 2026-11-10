@@ -1562,6 +1562,7 @@ internal static partial class TilesEndpoints
             return new TileRequestLayerResolution(null, accessError);
         }
 
+        SharedCacheResponse.UsePublication(context, service, publication);
         var layer = CreateTileRequestLayer(snapshot, publication, service, resource);
         if (layer is null)
         {
