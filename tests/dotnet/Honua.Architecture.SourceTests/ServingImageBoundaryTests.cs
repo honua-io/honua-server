@@ -354,8 +354,11 @@ public sealed class ServingImageBoundaryTests
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var workflow = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/pr-gate.yml"));
 
-        workflow.Should().Contain("validate-serving-image-boundary.py");
-        workflow.Should().Contain("validate-promote-verified-image.py");
+        var router = File.ReadAllText(Path.Join(repositoryRoot, "scripts/ci/validate-ci-router.sh"));
+
+        workflow.Should().Contain("scripts/ci/validate-ci-router.sh");
+        router.Should().Contain("scripts/ci/fixtures/validate-serving-image-boundary.py");
+        router.Should().Contain("scripts/ci/fixtures/validate-promote-verified-image.py");
         workflow.Should().NotContain("docker/build-push-action");
         workflow.Should().NotContain("docker run -d");
     }
@@ -524,8 +527,10 @@ public sealed class ServingImageBoundaryTests
             "the AOT compile gate must still be scoped to batches that change runtime source");
 
         var prGate = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/pr-gate.yml"));
-        prGate.Should().Contain("validate-serving-image-boundary.py",
-            "boundary detector correctness stays on every pull request");
+        prGate.Should().Contain("scripts/ci/validate-ci-router.sh",
+            "boundary detector correctness stays on every pull request through the CI router");
+        var router = File.ReadAllText(Path.Join(repositoryRoot, "scripts/ci/validate-ci-router.sh"));
+        router.Should().Contain("scripts/ci/fixtures/validate-serving-image-boundary.py");
     }
 
     [ArchitectureTest]
