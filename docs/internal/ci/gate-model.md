@@ -533,7 +533,8 @@ twice-daily full matrix are preserved.
 
 ## OGC release-candidate qualification
 
-External OGC conformance runs manually and after the RC image build, through
-`ogc-rc-conformance.yml`; the RC manifest waits for success. Optional integration flags
+External OGC conformance runs through individual manual dispatchers and, after the
+RC image build, through `ogc-rc-conformance.yml`. The RC manifest waits for success.
+Optional integration flags
 do not bypass it. See the [workflow inventory](workflow-inventory.md#ogc-cite--conformance)
 for the complete dispatchers, source/image binding and separate certification policy.

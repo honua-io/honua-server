@@ -40,7 +40,6 @@ permissions:
   pages: write
   id-token: write
 
-
 jobs:
   evidence:
     name: Build CITE Evidence Bundle
@@ -52,7 +51,6 @@ jobs:
       actions: read
       pages: write
       id-token: write
-
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

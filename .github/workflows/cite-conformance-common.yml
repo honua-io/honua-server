@@ -93,6 +93,7 @@ on:
 permissions:
   contents: read
   packages: write
+
 jobs:
   cite:
     name: ${{ inputs.display-name }} CITE

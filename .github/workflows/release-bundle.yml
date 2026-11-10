@@ -145,7 +145,7 @@ jobs:
       image_ref: ${{ steps.ref.outputs.image_ref }}
       image_tag: ${{ steps.ref.outputs.image_tag }}
       image_digest: ${{ steps.build.outputs.digest }}
-      image_digest_ref: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+      image_digest_ref: ${{ steps.candidate.outputs.image_digest_ref }}
       server_sha: ${{ steps.ref.outputs.server_sha }}
     steps:
       - name: Checkout
@@ -204,10 +204,16 @@ jobs:
             github_actor=${{ github.actor }}
             github_token=${{ secrets.GITHUB_TOKEN }}
 
+      - name: Record immutable candidate reference
+        id: candidate
+        env:
+          CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+        run: echo "image_digest_ref=$CANDIDATE" >> "$GITHUB_OUTPUT"
+
       - name: Verify RC AOT candidate before registry publication
         shell: bash
         env:
-          CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          CANDIDATE: ${{ steps.candidate.outputs.image_digest_ref }}
         run: |
           set -euo pipefail
           docker pull "$CANDIDATE"
@@ -216,7 +222,7 @@ jobs:
       - name: Fail on high or critical RC AOT vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          image-ref: ${{ steps.candidate.outputs.image_digest_ref }}
           format: table
           severity: HIGH,CRITICAL
           exit-code: '1'
@@ -232,7 +238,7 @@ jobs:
       - name: Publish verified RC AOT tag
         shell: bash
         env:
-          CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          CANDIDATE: ${{ steps.candidate.outputs.image_digest_ref }}
           IMAGE_REF: ${{ steps.ref.outputs.image_ref }}
         run: docker buildx imagetools create --prefer-index=false --tag "$IMAGE_REF" "$CANDIDATE"
 

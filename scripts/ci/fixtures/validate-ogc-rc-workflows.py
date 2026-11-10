@@ -98,9 +98,20 @@ class OgcReleaseCandidateTests(unittest.TestCase):
             name = job["uses"].split("/")[-1]
             doc = workflow(name)
             image = "honua_image" if name == "cite-conformance.yml" else "server_image"
-            text = (WORKFLOWS / name).read_text()
-            if image in (doc["on"]["workflow_call"] or {}).get("inputs", {}) and "inputs.source_sha || github.sha" in text:
-                self.assertIn(f"inputs.{image} != '' && inputs.source_sha || github.sha", text, name)
+            inputs = (doc["on"]["workflow_call"] or {}).get("inputs", {})
+            if image not in inputs:
+                continue
+            expected = "${{ inputs.source_sha }}" if inputs[image].get("required") == "true" else (
+                "${{ inputs." + image + " != '' && inputs.source_sha || github.sha }}")
+            identities = []
+            for leaf in doc["jobs"].values():
+                if "tested-honua-git-sha" in leaf.get("with", {}):
+                    identities.append(leaf["with"]["tested-honua-git-sha"])
+                for step in leaf.get("steps", []):
+                    if "HONUA_CITE_TESTED_GIT_SHA" in step.get("env", {}):
+                        identities.append(step["env"]["HONUA_CITE_TESTED_GIT_SHA"])
+            self.assertTrue(identities, name)
+            self.assertEqual(set(identities), {expected}, name)
 
     def test_duplicate_yaml_keys_are_rejected(self):
         with self.assertRaises(ValueError):
