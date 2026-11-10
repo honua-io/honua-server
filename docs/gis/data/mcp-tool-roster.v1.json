@@ -147,11 +147,11 @@
     "honua_admin_user_get",
     "honua_admin_user_list",
     "honua_admin_user_roles_update",
-    "honua_op_folder_create",
-    "honua_op_folder_delete",
-    "honua_op_folder_list",
-    "honua_op_folder_update",
-    "honua_op_service_move"
+    "honua_create_folder",
+    "honua_delete_folder",
+    "honua_list_folders",
+    "honua_move_service",
+    "honua_update_folder"
   ],
   "requiresDurableControlPlane": [
     "honua_admin_connection_tables_list",
@@ -180,11 +180,11 @@
     "honua_admin_services_protocols_set",
     "honua_admin_services_settings_get",
     "honua_admin_services_timeinfo_set",
-    "honua_op_folder_create",
-    "honua_op_folder_delete",
-    "honua_op_folder_list",
-    "honua_op_folder_update",
-    "honua_op_service_move"
+    "honua_create_folder",
+    "honua_delete_folder",
+    "honua_list_folders",
+    "honua_move_service",
+    "honua_update_folder"
   ],
   "views": {
     "analyze": [
@@ -259,6 +259,14 @@
       "honua_resolve_entity",
       "honua_supported_operation_kinds",
       "honua_validate_plan"
+    ],
+    "folders": [
+      "honua_admin_services_list",
+      "honua_create_folder",
+      "honua_delete_folder",
+      "honua_list_folders",
+      "honua_move_service",
+      "honua_update_folder"
     ],
     "operate": [
       "honua_alert_events",
