@@ -7,7 +7,6 @@ using Honua.Server.Features.Admin.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -61,13 +60,7 @@ public sealed class MultiNodeWithoutRedisStartupTests
     {
         var fixture = new WebAppFixture()
             .WithProductionJobSubstrate()
-            .ConfigureWebHost(builder =>
-            {
-                foreach (var setting in _multiNodeSettings)
-                {
-                    builder.UseSetting(setting.Key, setting.Value);
-                }
-            });
+            .OverrideConfiguration(_multiNodeSettings);
         await fixture.InitializeAsync();
         try
         {
