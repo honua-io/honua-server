@@ -24,22 +24,18 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Npgsql;
-using StackExchange.Redis;
+using Honua.StaleAttemptWorker;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Real Redis/PostGIS proof for #3851. The first worker is a separate process so SIGSTOP
-/// pauses its heartbeat pump and executor together; the test never edits durable timestamps,
-/// attempt counts, status, or queue membership to manufacture a stale lease.
-/// </summary>
-[Collection(RedisFixture.CollectionName)]
+// Real PostgreSQL/PostGIS proof of stale-attempt fencing. The first worker is a separate process so SIGSTOP
+// pauses its heartbeat pump and executor together; the test never edits durable timestamps,
+// attempt counts, status, or queue membership to manufacture a stale lease.
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.TestInfrastructure)]
-public sealed class RedisStaleAttemptFencingIntegrationTests(
-    RedisFixture redis,
+public sealed class PostgresStaleAttemptFencingIntegrationTests(
     DatabaseFixtureAdapter database,
     ITestOutputHelper output) : IClassFixture<DatabaseFixtureAdapter>
 {
@@ -48,14 +44,14 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
     [IntegrationTest]
     public async Task StaleAttempt_IsFencedAcrossReclaimDuplicateDeliveryAndTerminalization()
     {
-        await using var harness = await RedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await FencingHarness.CreateAsync(database);
         var operationId = $"job-3851-stale-{Guid.NewGuid():N}";
         var receiptKey = $"controlplane:test:3851:receipt:{operationId}";
         var checkpointKey = $"controlplane:test:3851:checkpoint:{operationId}";
         var resumeKey = $"controlplane:test:3851:resume:{operationId}";
         var rejectedKey = $"controlplane:test:3851:rejected:{operationId}";
         var releaseKey = $"controlplane:test:3851:release:{operationId}";
-        var schema = await database.CreateIsolatedSchemaAsync(nameof(RedisStaleAttemptFencingIntegrationTests));
+        var schema = await database.CreateIsolatedSchemaAsync(nameof(PostgresStaleAttemptFencingIntegrationTests));
         // codeql[cs/missed-using-statement]: assigned after startup and disposed in the finally once Kill has finished; a using variable cannot be reassigned
         Process? staleWorker = null;
         var receipt = new JsonObject
@@ -98,7 +94,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
             File.Exists(workerAssembly).Should().BeTrue();
             staleWorker = StartWorker(
                 workerAssembly,
-                redis.ConnectionString,
+                harness.Schema,
                 operationId,
                 checkpointKey,
                 resumeKey,
@@ -107,7 +103,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
                 database.ConnectionString,
                 schema);
 
-            var checkpoint = await WaitForRedisValueAsync(harness.Database, checkpointKey, TimeSpan.FromSeconds(15));
+            var checkpoint = await WaitForSignalAsync(harness.Signals, checkpointKey, TimeSpan.FromSeconds(15));
             checkpoint.Should().Contain("attempt=1");
             receipt["workerACheckpoint"] = checkpoint;
             var runningA = (await harness.JobStore.GetAsync(operationId))!;
@@ -125,7 +121,9 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
                 new ExecutionJobCancellationTokens(),
                 [],
                 harness.LogStore,
-                NullLogger<JobReconciliationService>.Instance);
+                NullLogger<JobReconciliationService>.Instance,
+                harness.JobStore,
+                harness.JobStore);
             await reconciler.SweepActiveJobsAsync(CancellationToken.None);
 
             var requeued = await WaitForJobAsync(
@@ -137,11 +135,11 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
             requeued.ClaimedBy.Should().BeNull();
             requeued.ClaimedAt.Should().BeNull();
             requeued.LastHeartbeatAt.Should().BeNull();
-            await harness.Database.HashSetAsync(receiptKey, "requeue", "heartbeat-expired");
+            await harness.Signals.SetFieldAsync(receiptKey, "requeue", "heartbeat-expired");
 
             await using var terminalCallback = await CreateTerminalCallbackAsync(harness, receiptKey);
             var releaseAwareExecutor = new ReleaseAwareSinkExecutor(
-                harness.Database,
+                harness.Signals,
                 receiptKey,
                 releaseKey,
                 database.ConnectionString,
@@ -170,9 +168,9 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
                 var heartbeatAt = runningB.LastHeartbeatAt
                     ?? throw new InvalidOperationException(
                         "Attempt 2 must publish a heartbeat timestamp once the job reports Running.");
-                await harness.Database.HashSetAsync(receiptKey, "heartbeat:workerB", heartbeatAt.ToString("O"));
-                await harness.Database.HashSetAsync(receiptKey, $"claim:{workerBId}", "attempt=2");
-                await WaitForRedisValueAsync(harness.Database, releaseAwareExecutor.ReadyKey, TimeSpan.FromSeconds(15));
+                await harness.Signals.SetFieldAsync(receiptKey, "heartbeat:workerB", heartbeatAt.ToString("O"));
+                await harness.Signals.SetFieldAsync(receiptKey, $"claim:{workerBId}", "attempt=2");
+                await WaitForSignalAsync(harness.Signals, releaseAwareExecutor.ReadyKey, TimeSpan.FromSeconds(15));
 
                 // Duplicate delivery while attempt 2 owns the job must not claim a third attempt.
                 await harness.Queue.EnqueueAsync(operationId);
@@ -182,9 +180,9 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
                 duplicateBeforeTerminal.Should().BeNull();
                 (await harness.JobStore.GetAsync(operationId))!.AttemptCount.Should().Be(2);
                 (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
-                await harness.Database.HashSetAsync(receiptKey, "duplicateBeforeTerminal", "rejected");
+                await harness.Signals.SetFieldAsync(receiptKey, "duplicateBeforeTerminal", "rejected");
 
-                await harness.Database.StringSetAsync(releaseKey, "true");
+                await harness.Signals.SetAsync(releaseKey, "true");
                 var terminal = await terminalCallback.WhenCompleted.WaitAsync(TimeSpan.FromSeconds(15));
                 terminal.Status.Should().Be(ExecutionJobStatus.Succeeded);
                 terminalCallback.InvocationCount.Should().Be(1);
@@ -196,7 +194,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
                     new HashSet<ExecutionJobKind> { ExecutionJobKind.Geoprocessing });
                 duplicateAfterTerminal.Should().BeNull();
                 (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
-                await harness.Database.HashSetAsync(receiptKey, "duplicateAfterTerminal", "rejected");
+                await harness.Signals.SetFieldAsync(receiptKey, "duplicateAfterTerminal", "rejected");
             }
             finally
             {
@@ -206,10 +204,10 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
             // Resume the exact stale process after attempt 2 is terminal. Its real executor
             // is allowed to continue, but the durable execution context must reject the sink
             // before it opens/commits the external transaction.
-            await harness.Database.StringSetAsync(resumeKey, "true");
+            await harness.Signals.SetAsync(resumeKey, "true");
             await SendSignalAsync("-CONT", staleWorker.Id);
-            await WaitForRedisValueAsync(harness.Database, $"{checkpointKey}:resumed", TimeSpan.FromSeconds(15));
-            await WaitForRedisValueAsync(harness.Database, rejectedKey, TimeSpan.FromSeconds(15));
+            await WaitForSignalAsync(harness.Signals, $"{checkpointKey}:resumed", TimeSpan.FromSeconds(15));
+            await WaitForSignalAsync(harness.Signals, rejectedKey, TimeSpan.FromSeconds(15));
             if (!staleWorker.HasExited)
             {
                 staleWorker.Kill(entireProcessTree: true);
@@ -224,10 +222,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
             finalJob.AttemptCount.Should().Be(2);
             finalJob.ArtifactReferences.Should().ContainSingle();
 
-            var resultStore = new RedisGeoprocessingResultPackageStore(
-                harness.Multiplexer,
-                TestOptions(),
-                NullLogger<RedisGeoprocessingResultPackageStore>.Instance);
+            var resultStore = harness.CreateResultPackageStore(TestOptions());
             var package = await resultStore.GetAsync(operationId);
             package.Should().NotBeNull();
             package!.Artifacts.Should().ContainSingle();
@@ -292,16 +287,16 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
                 (await reader.ReadAsync()).Should().BeFalse();
             }
 
-            (await harness.Database.HashGetAsync(receiptKey, "executorInvocations")).ToString().Should().Be("2");
-            (await harness.Database.HashGetAsync(receiptKey, "executorCheckpointCount")).ToString().Should().Be("1");
-            (await harness.Database.HashGetAsync(receiptKey, $"invocations:{workerA}")).ToString().Should().Be("1");
-            (await harness.Database.HashGetAsync(receiptKey, $"invocations:{workerBId}")).ToString().Should().Be("1");
-            (await harness.Database.HashGetAsync(receiptKey, $"claim:{workerBId}")).ToString().Should().Be("attempt=2");
-            (await harness.Database.HashGetAsync(receiptKey, "heartbeat:workerB")).Should().NotBe(RedisValue.Null);
-            (await harness.Database.HashGetAsync(receiptKey, "terminalEvents")).ToString().Should().Be("1");
-            (await harness.Database.HashGetAsync(receiptKey, "requeue")).ToString().Should().Be("heartbeat-expired");
-            (await harness.Database.HashGetAsync(receiptKey, "duplicateBeforeTerminal")).ToString().Should().Be("rejected");
-            (await harness.Database.HashGetAsync(receiptKey, "duplicateAfterTerminal")).ToString().Should().Be("rejected");
+            (await harness.Signals.GetFieldAsync(receiptKey, "executorInvocations")).Should().Be("2");
+            (await harness.Signals.GetFieldAsync(receiptKey, "executorCheckpointCount")).Should().Be("1");
+            (await harness.Signals.GetFieldAsync(receiptKey, $"invocations:{workerA}")).Should().Be("1");
+            (await harness.Signals.GetFieldAsync(receiptKey, $"invocations:{workerBId}")).Should().Be("1");
+            (await harness.Signals.GetFieldAsync(receiptKey, $"claim:{workerBId}")).Should().Be("attempt=2");
+            (await harness.Signals.GetFieldAsync(receiptKey, "heartbeat:workerB")).Should().NotBeNull();
+            (await harness.Signals.GetFieldAsync(receiptKey, "terminalEvents")).Should().Be("1");
+            (await harness.Signals.GetFieldAsync(receiptKey, "requeue")).Should().Be("heartbeat-expired");
+            (await harness.Signals.GetFieldAsync(receiptKey, "duplicateBeforeTerminal")).Should().Be("rejected");
+            (await harness.Signals.GetFieldAsync(receiptKey, "duplicateAfterTerminal")).Should().Be("rejected");
             receipt["assertionsPassed"] = true;
         }
         finally
@@ -314,21 +309,21 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
 
             staleWorker?.Dispose();
             var events = new JsonObject();
-            foreach (var entry in await harness.Database.HashGetAllAsync(receiptKey))
+            foreach (var (field, value) in await harness.Signals.GetFieldsAsync(receiptKey))
             {
-                events[entry.Name.ToString()] = entry.Value.ToString();
+                events[field] = value;
             }
 
             receipt["events"] = events;
-            receipt["staleAttemptRejection"] = (await harness.Database.StringGetAsync(rejectedKey)).ToString();
+            receipt["staleAttemptRejection"] = await harness.Signals.GetAsync(rejectedKey);
             try
             {
-                RedisKey[] keys = [receiptKey, checkpointKey, $"{checkpointKey}:resumed", resumeKey,
+                string[] keys = [receiptKey, checkpointKey, $"{checkpointKey}:resumed", resumeKey,
                     rejectedKey, releaseKey, $"{releaseKey}:ready"];
-                await harness.Database.KeyDeleteAsync(keys);
+                await harness.Signals.DeleteAsync(keys);
                 foreach (var key in keys)
                 {
-                    (await harness.Database.KeyExistsAsync(key)).Should().BeFalse();
+                    (await harness.Signals.ExistsAsync(key)).Should().BeFalse();
                 }
 
                 await database.DropSchemaAsync(schema);
@@ -355,7 +350,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
     [IntegrationTest]
     public async Task AutomaticTransientFailure_UsesConfiguredBackoffAndStopsAtExactMaxAttempts()
     {
-        await using var harness = await RedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await FencingHarness.CreateAsync(database);
         var operationId = $"job-3851-retry-{Guid.NewGuid():N}";
         var retryPolicy = new JobRetryPolicy
         {
@@ -436,7 +431,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
     [IntegrationTest]
     public async Task CancellationDuringBackoff_PreventsTheNextAutomaticAttempt()
     {
-        await using var harness = await RedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await FencingHarness.CreateAsync(database);
         var operationId = $"job-3851-cancel-backoff-{Guid.NewGuid():N}";
         var retryPolicy = new JobRetryPolicy
         {
@@ -540,7 +535,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
             Spec = new ExecutionJobSpec
             {
                 Kind = ExecutionJobKind.Geoprocessing,
-                Backend = "integration",
+                Backend = LocalBatchComputeBackend.BackendId,
                 WorkloadName = "sink.external-postgis",
                 TargetKind = BatchComputeTargetKind.KubernetesJob,
                 Parameters = parameters
@@ -563,21 +558,18 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
             Spec = new ExecutionJobSpec
             {
                 Kind = ExecutionJobKind.Geoprocessing,
-                Backend = "integration",
+                Backend = LocalBatchComputeBackend.BackendId,
                 WorkloadName = "retry-proof",
                 TargetKind = BatchComputeTargetKind.KubernetesJob
             }
         };
 
     private async Task<CountingTerminalCallback> CreateTerminalCallbackAsync(
-        RedisHarness harness,
+        FencingHarness harness,
         string receiptKey)
     {
         var options = TestOptions();
-        var packageStore = new RedisGeoprocessingResultPackageStore(
-            harness.Multiplexer,
-            options,
-            NullLogger<RedisGeoprocessingResultPackageStore>.Instance);
+        var packageStore = harness.CreateResultPackageStore(options);
         var serviceProvider = new ServiceCollection().BuildServiceProvider();
         var callback = new GeoprocessingJobTerminalCallback(
             SubstituteProgressStore(),
@@ -586,7 +578,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
             packageStore,
             serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             NullLogger<GeoprocessingJobTerminalCallback>.Instance);
-        return new CountingTerminalCallback(callback, serviceProvider, harness.Database, receiptKey);
+        return new CountingTerminalCallback(callback, serviceProvider, harness.Signals, receiptKey);
     }
 
     private static IUniversalProgressStore SubstituteProgressStore()
@@ -630,28 +622,27 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
         signalProcess.ExitCode.Should().Be(0);
     }
 
-    private static async Task<string> WaitForRedisValueAsync(
-        IDatabase database,
+    private static async Task<string> WaitForSignalAsync(
+        TestSignals signals,
         string key,
         TimeSpan timeout)
     {
         var deadline = DateTimeOffset.UtcNow + timeout;
         while (DateTimeOffset.UtcNow < deadline)
         {
-            var value = await database.StringGetAsync(key);
-            if (value.HasValue)
+            if (await signals.GetAsync(key) is { } value)
             {
-                return value.ToString();
+                return value;
             }
 
             await Task.Delay(50);
         }
 
-        throw new TimeoutException($"Timed out waiting for Redis key '{key}'.");
+        throw new TimeoutException($"Timed out waiting for signal '{key}'.");
     }
 
     private static async Task<ExecutionJobRecord> WaitForJobAsync(
-        RedisExecutionJobStore store,
+        PostgresExecutionJobStore store,
         string operationId,
         Func<ExecutionJobRecord, bool> predicate,
         TimeSpan timeout)
@@ -672,7 +663,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
     }
 
     private sealed class ReleaseAwareSinkExecutor(
-        IDatabase database,
+        TestSignals signals,
         string receiptKey,
         string releaseKey,
         string postgresConnectionString,
@@ -692,8 +683,8 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
             CancellationToken cancellationToken)
         {
             var workerId = job.ClaimedBy ?? "unknown-worker";
-            await database.HashIncrementAsync(receiptKey, $"invocations:{workerId}");
-            await database.HashIncrementAsync(receiptKey, "executorInvocations");
+            await signals.IncrementFieldAsync(receiptKey, $"invocations:{workerId}");
+            await signals.IncrementFieldAsync(receiptKey, "executorInvocations");
             var prefix = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.";
             var parameters = new Dictionary<string, string>(job.Spec.Parameters, StringComparer.Ordinal)
             {
@@ -704,8 +695,8 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
                 job with { Spec = job.Spec with { Parameters = parameters } },
                 context,
                 cancellationToken);
-            await database.StringSetAsync(ReadyKey, "true");
-            while (!await database.KeyExistsAsync(releaseKey))
+            await signals.SetAsync(ReadyKey, "true");
+            while (!await signals.ExistsAsync(releaseKey))
             {
                 await Task.Delay(50, cancellationToken);
             }
@@ -738,7 +729,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
     {
         private readonly IJobTerminalCallback? _inner;
         private readonly ServiceProvider? _serviceProvider;
-        private readonly IDatabase? _receiptDatabase;
+        private readonly TestSignals? _receiptSignals;
         private readonly string? _receiptKey;
         private readonly TaskCompletionSource<ExecutionJobRecord> _whenCompleted =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -747,12 +738,12 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
         public CountingTerminalCallback(
             IJobTerminalCallback? inner = null,
             ServiceProvider? serviceProvider = null,
-            IDatabase? receiptDatabase = null,
+            TestSignals? receiptSignals = null,
             string? receiptKey = null)
         {
             _inner = inner;
             _serviceProvider = serviceProvider;
-            _receiptDatabase = receiptDatabase;
+            _receiptSignals = receiptSignals;
             _receiptKey = receiptKey;
         }
 
@@ -762,9 +753,9 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
         public async ValueTask OnTerminalAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref _invocationCount);
-            if (_receiptDatabase != null && _receiptKey != null)
+            if (_receiptSignals != null && _receiptKey != null)
             {
-                await _receiptDatabase.HashIncrementAsync(_receiptKey, "terminalEvents");
+                await _receiptSignals.IncrementFieldAsync(_receiptKey, "terminalEvents");
             }
 
             if (_inner != null)
@@ -794,37 +785,33 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
             => Task.FromResult<IReadOnlyList<string>>(["test-postgis"]);
     }
 
-    private sealed class RedisHarness : IAsyncDisposable
+    private sealed class FencingHarness : IAsyncDisposable
     {
-        private RedisHarness(ConnectionMultiplexer multiplexer)
+        private readonly PostgresJobSubstrateHarness _substrate;
+
+        private FencingHarness(PostgresJobSubstrateHarness substrate)
         {
-            Multiplexer = multiplexer;
-            Database = multiplexer.GetDatabase();
-            Server = multiplexer.GetServer(multiplexer.GetEndPoints()[0]);
-            JobStore = new RedisExecutionJobStore(multiplexer, NullLogger<RedisExecutionJobStore>.Instance);
-            LogStore = new RedisExecutionLogStore(multiplexer, NullLogger<RedisExecutionLogStore>.Instance);
-            Queue = new RedisJobQueue(multiplexer, JobStore, NullLogger<RedisJobQueue>.Instance);
+            _substrate = substrate;
+            Signals = new TestSignals(substrate.DataSource, substrate.Schema);
         }
 
-        public ConnectionMultiplexer Multiplexer { get; }
-        public IDatabase Database { get; }
-        public IServer Server { get; }
-        public RedisExecutionJobStore JobStore { get; }
-        public RedisExecutionLogStore LogStore { get; }
-        public RedisJobQueue Queue { get; }
+        public string Schema => _substrate.Schema;
+        public TestSignals Signals { get; }
+        public PostgresExecutionJobStore JobStore => _substrate.JobStore;
+        public PostgresExecutionLogStore LogStore => _substrate.LogStore;
+        public PostgresJobQueue Queue => _substrate.Queue;
 
-        public static async Task<RedisHarness> CreateAsync(string connectionString)
+        public static async Task<FencingHarness> CreateAsync(DatabaseFixtureAdapter database)
         {
-            var multiplexer = await ConnectionMultiplexer.ConnectAsync(connectionString);
-            var harness = new RedisHarness(multiplexer);
-            await harness.Database.KeyDeleteAsync(harness.Server.Keys(pattern: "controlplane:*").ToArray());
+            var harness = new FencingHarness(await PostgresJobSubstrateHarness.CreateAsync(
+                database, nameof(PostgresStaleAttemptFencingIntegrationTests)));
+            await harness.Signals.CreateTableAsync();
             return harness;
         }
 
-        public async ValueTask DisposeAsync()
-        {
-            await Database.KeyDeleteAsync(Server.Keys(pattern: "controlplane:*").ToArray());
-            await Multiplexer.DisposeAsync();
-        }
+        public PostgresGeoprocessingResultPackageStore CreateResultPackageStore(IOptionsMonitor<GeoprocessingExecutorOptions> options)
+            => new(_substrate.Database, options, NullLogger<PostgresGeoprocessingResultPackageStore>.Instance);
+
+        public ValueTask DisposeAsync() => _substrate.DisposeAsync();
     }
 }

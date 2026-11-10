@@ -60,6 +60,7 @@ concurrency:
   job-discriminator: ${{ github.run_id }}
   group: ci-doctor-${{ inputs.head_sha }}
   cancel-in-progress: false
+  queue: max
 
 steps:
   - name: Preserve doctor commit messages through excluded-file filtering

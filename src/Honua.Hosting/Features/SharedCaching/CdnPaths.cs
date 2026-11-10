@@ -9,13 +9,13 @@ internal static class CdnPaths
 {
     internal static readonly string[] Everything = ["/*"];
 
-    private const string EveryOgcSurface = "/ogc/*";
+    internal static readonly string[] EveryOgcSurface = ["/ogc/*"];
 
     // Routes match without regard to case and the CDN keys with regard to it; the lower-case spelling and the one given cover what clients are handed.
     internal static string[] ForEditedLayer(int layerId, IEnumerable<string> serviceIds) =>
     [
         $"/tiles/{layerId}/*",
-        EveryOgcSurface,
+        .. EveryOgcSurface,
         .. serviceIds
             .SelectMany(serviceId => new[] { serviceId, serviceId.ToLowerInvariant() })
             .Distinct(StringComparer.Ordinal)

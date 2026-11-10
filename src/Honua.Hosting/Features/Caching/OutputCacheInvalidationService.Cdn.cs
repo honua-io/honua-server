@@ -14,9 +14,24 @@ internal sealed partial class OutputCacheInvalidationService
         if (_cdnInvalidation is not null)
         {
             var paths = await CdnPathsForEditedLayerAsync(serviceId, layerId, cancellationToken).ConfigureAwait(false);
-            await _cdnInvalidation.InvalidateAfterEditAsync(paths, cancellationToken).ConfigureAwait(false);
+            await InvalidateCdnAfterEditAsync(paths, cancellationToken).ConfigureAwait(false);
         }
     }
+
+    public async Task InvalidateEditedCollectionAsync(string collectionId, CancellationToken cancellationToken)
+    {
+        await EvictCollectionAsync(collectionId, cancellationToken).ConfigureAwait(false);
+        await InvalidateCdnAfterEditAsync(CdnPaths.EveryOgcSurface, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task InvalidateEditedOgcMetadataAsync(CancellationToken cancellationToken)
+    {
+        await EvictOgcMetadataAsync(cancellationToken).ConfigureAwait(false);
+        await InvalidateCdnAfterEditAsync(CdnPaths.EveryOgcSurface, cancellationToken).ConfigureAwait(false);
+    }
+
+    private Task InvalidateCdnAfterEditAsync(IReadOnlyCollection<string> paths, CancellationToken cancellationToken)
+        => _cdnInvalidation?.InvalidateAfterEditAsync(paths, cancellationToken) ?? Task.CompletedTask;
 
     // Routes match without regard to case and the CDN keys with regard to it, so a path prefix cannot reach every cached
     // spelling of an address. A change that may reduce access therefore invalidates everything; it is rare, and lifetimes are short.

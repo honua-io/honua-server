@@ -102,7 +102,7 @@ jobs:
     needs: runner-select
     runs-on: ${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 45
-    # Format and the analyzer build run side by side; each needs the restore only.
+    # Format and both analyzer partitions run independently after runner selection.
     strategy:
       fail-fast: false
       matrix:
@@ -110,9 +110,15 @@ jobs:
           - check: Format
             format: 'true'
             analyzer-build: 'false'
+            analyzer-partition: all
           - check: Analyzers
             format: 'false'
             analyzer-build: 'true'
+            analyzer-partition: source
+          - check: Analyzers (tests)
+            format: 'false'
+            analyzer-build: 'true'
+            analyzer-partition: tests
     steps:
       # `rerun-failed-jobs` only releases jobs that failed attempt 1. Make this
       # independent path an admission failure too, otherwise a skipped-success
@@ -171,6 +177,7 @@ jobs:
           format-scope: affected
           format: ${{ matrix.format }}
           analyzer-build: ${{ matrix.analyzer-build }}
+          analyzer-partition: ${{ matrix.analyzer-partition }}
 
   fast-tests:
     name: PR Gate / Fast and architecture (${{ matrix.test-group }})

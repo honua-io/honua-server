@@ -39,6 +39,7 @@ internal sealed partial class AssignedExecutionJobQueue : IJobQueue
     private readonly IServiceProvider? _services;
     private readonly ILogger<AssignedExecutionJobQueue> _logger;
     private readonly TimeProvider _timeProvider;
+    private readonly IJobStoreClock _storeClock;
     private readonly TaskCompletionSource<ExecutionWorkerClaimOutcome> _completion =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _state = Idle;
@@ -50,7 +51,8 @@ internal sealed partial class AssignedExecutionJobQueue : IJobQueue
         IExecutionJobStore jobStore,
         ILogger<AssignedExecutionJobQueue> logger,
         IServiceProvider? services = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IJobStoreClock? storeClock = null)
     {
         ArgumentNullException.ThrowIfNull(launch);
         ArgumentNullException.ThrowIfNull(jobStore);
@@ -60,6 +62,7 @@ internal sealed partial class AssignedExecutionJobQueue : IJobQueue
         _logger = logger;
         _services = services;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _storeClock = storeClock ?? NodeJobStoreClock.Instance;
     }
 
     public string OperationId => _launch.OperationId;
@@ -243,7 +246,8 @@ internal sealed partial class AssignedExecutionJobQueue : IJobQueue
             if (!string.IsNullOrEmpty(job.ClaimedBy)
                 && !string.Equals(job.ClaimedBy, workerId, StringComparison.Ordinal)
                 && (job.LastHeartbeatAt ?? job.ClaimedAt) is { } lastHeartbeat
-                && !(job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default).IsExpired(lastHeartbeat, now))
+                && !(job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default).IsExpired(
+                    lastHeartbeat, await _storeClock.GetUtcNowAsync(cancellationToken).ConfigureAwait(false)))
             {
                 Log.AssignedJobOwnedElsewhere(_logger, _launch.OperationId, job.ClaimedBy);
                 return ExecutionWorkerClaimOutcome.OwnedByAnotherWorker;
