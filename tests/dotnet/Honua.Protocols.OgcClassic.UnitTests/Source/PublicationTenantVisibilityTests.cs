@@ -80,15 +80,17 @@ public sealed class PublicationTenantVisibilityTests
 
     private static async Task<string> GetCapabilitiesAsync(MetadataV2Graph graph, string protocol, string? tenant)
     {
+        var provider = new TestMetadataV2GraphProvider(graph);
+        var snapshot = await provider.GetCurrentAsync();
         var validator = Substitute.For<IResourceValidator>();
         validator.ValidateServiceV2Async("maps", Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.Success(graph.Services[0]));
+            .Returns(ResourceValidationResult.Success(graph.Services[0], snapshot));
         var tenantContext = Substitute.For<ITenantContext>();
         tenantContext.TenantId.Returns(tenant);
         await using var services = new ServiceCollection().AddLogging().AddOptions().AddValidationServices()
             .AddSingleton<IConfiguration>(new ConfigurationBuilder().Build())
             .AddSingleton(validator).AddSingleton(tenantContext)
-            .AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph))
+            .AddSingleton<IMetadataV2GraphProvider>(provider)
             .BuildServiceProvider();
         var context = new DefaultHttpContext { RequestServices = services };
         context.Request.RouteValues["serviceId"] = "maps";

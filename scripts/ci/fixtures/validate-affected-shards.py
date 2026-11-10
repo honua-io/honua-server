@@ -333,18 +333,35 @@ def check_wps_and_h3_tests_select_both_owners(config: dict[str, Any]) -> None:
         f"tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/{name}.cs"
         for name in ("ProviderRoutedTileAndH3EndpointTests", "FeatureServerH3EntitlementTests")
     ]
-    expected = {"WFS", "FeatureServer Editing and Relationships", "FeatureServer Query Services and Replication"}
+    def owners(changed: str) -> set[str]:
+        hits = selector.count_test_class_hits(REPO_ROOT, config, [changed])
+        return {name for name, count in hits.items() if count}
+
+    wps_owners = owners(wps)
 
     def check(candidate: dict[str, Any], path: Path) -> None:
         for h3 in h3_paths:
             changed = [wps, h3]
-            result = select_offline(
+            uncapped = select_offline(
                 candidate, changed, descriptor=router(candidate, changed, config_path=path),
+                cap=len(candidate["shards"]),
             )
-            if not expected.issubset(result["shards"]):
+            result = selector.apply_time_budget(uncapped, 6, selector.time_budget.load_time_budget(candidate))
+            selected = set(result["shards"])
+            if not owners(h3) <= selected or not wps_owners & selected:
                 raise FixtureError(f"mixed WPS/H3 diff omitted an owning shard: {result['shards']}")
 
     check(config, CONFIG_PATH)
+    interleave = selector.interleave_split_families
+    selector.interleave_split_families = list
+    try:
+        check(config, CONFIG_PATH)
+    except FixtureError:
+        pass
+    else:
+        raise FixtureError("mixed WPS/H3 control accepted a ranking that lets one split family take every slot")
+    finally:
+        selector.interleave_split_families = interleave
     mutated = copy.deepcopy(config)
     for shard in mutated["shards"]:
         shard["paths"] = [path for path in shard.get("paths", []) if path not in h3_paths]
