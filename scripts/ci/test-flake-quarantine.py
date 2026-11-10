@@ -172,26 +172,34 @@ class RetryTests(unittest.TestCase):
 
 
 class RunnerTests(unittest.TestCase):
-    def test_duplicate_gate_wrapper_keeps_timeout_ownership_of_term_ignoring_child(self):
+    def test_duplicate_gate_wrapper_cleans_up_term_ignoring_child(self):
+        self.assert_timeout_cleanup(foreground=False)
+
+    def test_foreground_timeout_kills_term_ignoring_test_group(self):
+        self.assert_timeout_cleanup(foreground=True)
+
+    def assert_timeout_cleanup(self, foreground):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             fake = root / 'dotnet'
             fake.write_text('#!/usr/bin/env python3\n'
                             'import os, pathlib, signal, time\n'
                             'signal.signal(signal.SIGTERM, signal.SIG_IGN)\n'
-                            'pathlib.Path(__file__).with_suffix(".pid").write_text(str(os.getpid()))\n'
+                            'suffix = ".descendant.pid" if os.fork() == 0 else ".pid"\n'
+                            'pathlib.Path(__file__).with_suffix(suffix).write_text(str(os.getpid()))\n'
                             'time.sleep(30)\n')
             fake.chmod(0o755)
-            command = ['timeout', '--kill-after=1', '1', sys.executable,
+            command = ['timeout', *(['--foreground'] if foreground else []), '--kill-after=1', '1', sys.executable,
                        str(Path(runner.__file__).with_name('run-quarantine-filtered-tests.py')),
                        'dotnet', 'test', PROJECT]
             with patch.dict(os.environ, {'PATH': f'{directory}:{os.environ["PATH"]}',
                                          'HONUA_TEST_QUARANTINE_OBSERVE': 'true'}):
                 result = subprocess.run(command, timeout=5, capture_output=True)
-            self.assertEqual(-signal.SIGKILL, result.returncode)
-            process = Path('/proc') / fake.with_suffix('.pid').read_text() / 'stat'
-            if process.exists():
-                self.assertEqual('Z', process.read_text().split(') ', 1)[1].split()[0])
+            self.assertEqual(128 + signal.SIGKILL, result.returncode)
+            for suffix in ('.pid', '.descendant.pid'):
+                process = Path('/proc') / fake.with_suffix(suffix).read_text() / 'stat'
+                if process.exists():
+                    self.assertEqual('Z', process.read_text().split(') ', 1)[1].split()[0])
 
     def test_retry_is_bounded_by_the_original_outer_timeout(self):
         with tempfile.TemporaryDirectory() as directory:

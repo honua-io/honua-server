@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Retry only failed methods once, under the shard supervisor's original deadline."""
 import argparse
+from contextlib import suppress
 import hashlib
 import json
 import os
@@ -14,12 +15,21 @@ from flake_quarantine import exclude_filter, load_snapshot, merge_retry, read_ca
 
 
 def call_test(command):
-    # Stay alive through TERM so GNU timeout retains ownership of the whole
-    # process group and can escalate against a child that ignores cancellation.
-    with subprocess.Popen(command) as child:
+    # Own the test process group: foreground supervisors only signal this wrapper.
+    with subprocess.Popen(command, start_new_session=os.name == 'posix') as child:
         def forward(signum, _frame):
-            if child.poll() is None:
+            if child.poll() is not None:
+                return
+            if os.name != 'posix':
                 child.send_signal(signum)
+                return
+            with suppress(ProcessLookupError):
+                os.killpg(child.pid, signum)
+            with suppress(subprocess.TimeoutExpired):
+                child.wait(timeout=0.5)
+            # Descendants can outlive the immediate child after cancellation.
+            with suppress(ProcessLookupError):
+                os.killpg(child.pid, signal.SIGKILL)
         previous = {sig: signal.signal(sig, forward) for sig in (signal.SIGTERM, signal.SIGINT)}
         try:
             return child.wait()
