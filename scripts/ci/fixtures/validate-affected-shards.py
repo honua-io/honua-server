@@ -134,7 +134,7 @@ def unique_owned_prefix(config: dict[str, Any], shard: dict[str, Any]) -> str | 
 def runnable_method_index(classes: dict[str, dict[str, Any]]) -> dict[str, list[str]]:
     """`{class fqn: the methods a shard would actually run}` for the inventory.
 
-    Resolved once and shared. The ownership walk below is 71 shards x ~1400
+    Resolved once and shared. The ownership walk below is every shard x ~1400
     classes, and deriving tiers inside that loop re-reads every test source per
     shard -- the fixture went from 55s to over two minutes before this.
     """
@@ -191,20 +191,26 @@ def check_temporal_source_survives_the_cap(config: dict[str, Any]) -> None:
         "src/Honua.Server/Features/Security/Probe.cs",
     ]
     owner = "Server Features Packages and Temporal"
+    catch_all = "Server Features Miscellaneous"
 
     def require_owner(shards: dict[str, Any]) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "shards.json"
             path.write_text(json.dumps(shards))
-            result = select_offline(shards, changed, descriptor=router(shards, changed, config_path=path))
-        if len(result["shards"]) != 6 or result["candidate_count"] <= 6:
-            raise FixtureError("temporal cap probe must fill six slots and drop other candidates")
+            descriptor = router(shards, changed, config_path=path)
+            uncapped = select_offline(shards, changed, descriptor=descriptor, cap=len(shards["shards"]))
+        result = selector.apply_time_budget(uncapped, 6, selector.time_budget.load_time_budget(shards))
+        deferred = {entry["name"] for entry in result["deferred_to_trunk"]}
+        if result["candidate_count"] <= len(result["shards"]):
+            raise FixtureError("temporal probe must leave some candidates unselected")
         if owner not in result["shards"]:
             raise FixtureError(f"changed temporal source lost its executing owner: {result['shards']}")
+        if catch_all in candidates(result) | deferred:
+            raise FixtureError(f"{catch_all!r} competes with {owner!r} for temporal source")
 
     require_owner(config)
     copied = copy.deepcopy(config)
-    parent = next(shard for shard in copied["shards"] if shard["name"] == "Server Features Miscellaneous")
+    parent = next(shard for shard in copied["shards"] if shard["name"] == catch_all)
     parent["paths"].append("src/Honua.Server/Features/Temporal/")
     try:
         require_owner(copied)
@@ -262,7 +268,7 @@ def check_changed_test_file_selects_its_running_shard(config: dict[str, Any]) ->
     This is the signal that makes the cap usable on a run_all answer. Shard
     `paths` name individual test FILES for the protocol-split projects, so a
     diff that ADDS one is claimed by no routing entry at all and escalates --
-    and then only the filter tells the truth about which of the 71 families
+    and then only the filter tells the truth about which shard family
     executes the changed test. Proven against live test classes rather than
     synthetic paths, because the claim is about the real filter grammar.
     """
@@ -359,7 +365,7 @@ def check_non_runnable_tiers_are_not_credited(config: dict[str, Any]) -> int:
     Every shard runs `(<filter>)&Tier!=Slow&Tier!=Fast`
     (scripts/ci/run-server-test-shard.sh; both exclusions default on and
     pr-gate.yml overrides neither), so a class whose tests are all Fast or all
-    Slow is executed by none of the 71 families no matter which one's
+    Slow is executed by no shard family no matter which one's
     `FullyQualifiedName` filter claims it. Crediting it anyway would hand that
     shard `test_class_hits` -- the top-priority ranking term -- for tests it
     never runs, and under a capped run_all answer that spends a slot a
@@ -472,7 +478,7 @@ def check_advisory_shards_are_excluded(config: dict[str, Any]) -> None:
     mutated["shards"][0]["advisory"] = True
     name = mutated["shards"][0]["name"]
     descriptor = {"run_all": True, "reason": "infrastructure_change", "shards": [s["name"] for s in mutated["shards"]]}
-    result = select_offline(mutated, ["src/Honua.Core/Core/Models/Probe.cs"], descriptor=descriptor, cap=71)
+    result = select_offline(mutated, ["src/Honua.Core/Core/Models/Probe.cs"], descriptor=descriptor, cap=len(mutated["shards"]))
     if name in candidates(result):
         raise FixtureError(f"advisory shard {name!r} was selected")
 
@@ -809,6 +815,8 @@ def main() -> int:
     check_matrix_include_shape(config)
     check_skip_paths()
     check_failure_injections(config)
+    subprocess.run([sys.executable, str(REPO_ROOT / "scripts/ci/fixtures/validate-shard-time-budget.py")],
+                   check=True, cwd=REPO_ROOT)
     print(
         f"affected-shards=ok (namespace routing proven for {covered} and changed-test "
         f"ownership for {owned} of {len(config['shards'])} shard families; "

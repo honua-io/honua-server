@@ -353,12 +353,14 @@ public sealed partial class FolderOperationIntegrationTests
 
         public Task<PrincipalMembership?> ResolveMembershipAsync(string principalId, CancellationToken cancellationToken = default)
         {
+            if (principalId != "folder-requester")
+                return Task.FromResult<PrincipalMembership?>(null);
             if (ReadsBeforeOutage is { } remaining)
             {
                 if (remaining == 0) return Task.FromException<PrincipalMembership?>(new ServiceUnavailableException("Membership service unavailable."));
                 ReadsBeforeOutage = remaining - 1;
             }
-            return Task.FromResult(principalId == "folder-requester" ? Current : null);
+            return Task.FromResult(Current);
         }
     }
 

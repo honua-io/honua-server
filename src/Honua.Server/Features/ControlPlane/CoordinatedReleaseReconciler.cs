@@ -52,8 +52,7 @@ internal sealed partial class CoordinatedReleaseReconciler(
 
             if (!ReferenceEquals(updated, operation) && !Equals(updated, operation))
             {
-                await workflowStore.SetAsync(updated, cancellationToken: token).ConfigureAwait(false);
-                Log.CoordinatedReleaseReconciled(logger, operationId, updated.CoordinatedRelease!.CurrentStep.ToString(), updated.Status.ToString());
+                await PersistProgressAsync(operation, updated, token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
@@ -128,15 +127,14 @@ internal sealed partial class CoordinatedReleaseReconciler(
     {
         var context = operation.CoordinatedRelease!;
 
-        // Gate at the container-swap boundary: require explicit approval before submitting the rollout.
-        if (context.Container.RequiresExplicitApproval && !context.ContainerGateApproved)
-        {
-            return AwaitApproval(operation, CoordinatedReleaseStep.ContainerRollout,
-                "Awaiting explicit approval to swap the running container image.");
-        }
-
         if (string.IsNullOrWhiteSpace(context.ContainerOperationId))
         {
+            if (!CoordinatedReleaseApprovalBinding.HasExecutionAuthority(operation, CoordinatedReleaseStep.ContainerRollout))
+            {
+                return AwaitApproval(operation, CoordinatedReleaseStep.ContainerRollout,
+                    "Awaiting explicit approval to swap the running container image.");
+            }
+
             var started = await containerStep.StartAsync(context, operation, cancellationToken).ConfigureAwait(false);
             if (started.Outcome == CoordinatedStepOutcome.Failed)
             {
@@ -169,15 +167,14 @@ internal sealed partial class CoordinatedReleaseReconciler(
     {
         var context = operation.CoordinatedRelease!;
 
-        // Gate at the data-affecting boundary: require explicit approval before mutating schema/metadata.
-        if (!context.DataGateApproved)
-        {
-            return AwaitApproval(operation, CoordinatedReleaseStep.MetadataAndSchema,
-                "Awaiting explicit approval to apply the DB schema change and activate the new metadata revision.");
-        }
-
         if (string.IsNullOrWhiteSpace(context.MetadataOperationId))
         {
+            if (!CoordinatedReleaseApprovalBinding.HasExecutionAuthority(operation, CoordinatedReleaseStep.MetadataAndSchema))
+            {
+                return AwaitApproval(operation, CoordinatedReleaseStep.MetadataAndSchema,
+                    "Awaiting explicit approval to apply the DB schema change and activate the new metadata revision.");
+            }
+
             var started = await metadataStep.StartAsync(context, operation, cancellationToken).ConfigureAwait(false);
             if (started.Outcome == CoordinatedStepOutcome.Failed)
             {
@@ -201,6 +198,65 @@ internal sealed partial class CoordinatedReleaseReconciler(
                 observed.Detail ?? "Metadata/schema step failed."),
             _ => operation
         };
+    }
+
+    private async Task PersistProgressAsync(
+        WorkflowOperationRecord original, WorkflowOperationRecord checkpoint, CancellationToken cancellationToken)
+    {
+        var startedChild = (string.IsNullOrWhiteSpace(original.CoordinatedRelease!.ContainerOperationId) && !string.IsNullOrWhiteSpace(checkpoint.CoordinatedRelease!.ContainerOperationId))
+            || (string.IsNullOrWhiteSpace(original.CoordinatedRelease.MetadataOperationId) && !string.IsNullOrWhiteSpace(checkpoint.CoordinatedRelease!.MetadataOperationId));
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            if (await workflowStore.TrySetAsync(checkpoint, cancellationToken: cancellationToken).ConfigureAwait(false))
+            {
+                Log.CoordinatedReleaseReconciled(logger, checkpoint.OperationId,
+                    checkpoint.CoordinatedRelease!.CurrentStep.ToString(), checkpoint.Status.ToString());
+                return;
+            }
+            if (!startedChild) return;
+            Log.CoordinatedReleaseCheckpointConflict(logger, checkpoint.OperationId,
+                checkpoint.CoordinatedRelease!.ContainerOperationId, checkpoint.CoordinatedRelease.MetadataOperationId);
+            var latest = await workflowStore.GetAsync(checkpoint.OperationId, cancellationToken).ConfigureAwait(false)
+                ?? throw new ChildCheckpointConflictException(checkpoint);
+            checkpoint = MergeChildCheckpoints(latest, checkpoint);
+        }
+        throw new ChildCheckpointConflictException(checkpoint);
+    }
+
+    private static WorkflowOperationRecord MergeChildCheckpoints(WorkflowOperationRecord latest, WorkflowOperationRecord checkpoint)
+    {
+        var context = latest.CoordinatedRelease!;
+        var started = checkpoint.CoordinatedRelease!;
+        if (string.IsNullOrWhiteSpace(context.ContainerOperationId) && !string.IsNullOrWhiteSpace(started.ContainerOperationId))
+        {
+            context = context with
+            {
+                ContainerOperationId = started.ContainerOperationId,
+                Container = started.Container,
+                Steps = UpsertStep(context.Steps, CoordinatedReleaseStep.ContainerRollout,
+                    CoordinatedReleaseStepStatus.Running, "Accepted container child retained after a checkpoint conflict."),
+            };
+        }
+        if (string.IsNullOrWhiteSpace(context.MetadataOperationId) && !string.IsNullOrWhiteSpace(started.MetadataOperationId))
+        {
+            context = context with
+            {
+                MetadataOperationId = started.MetadataOperationId,
+                Steps = UpsertStep(context.Steps, CoordinatedReleaseStep.MetadataAndSchema,
+                    CoordinatedReleaseStepStatus.Running, "Accepted metadata child retained after a checkpoint conflict."),
+            };
+        }
+        return latest with
+        {
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CoordinatedRelease = context,
+        };
+    }
+
+    private sealed class ChildCheckpointConflictException(WorkflowOperationRecord checkpoint)
+        : InvalidOperationException("A started release child could not be checkpointed after version conflicts.")
+    {
+        public WorkflowOperationRecord Checkpoint { get; } = checkpoint;
     }
 
     private async Task<WorkflowOperationRecord> UnwindAsync(
@@ -397,8 +453,10 @@ internal sealed partial class CoordinatedReleaseReconciler(
     private async Task MarkFailedAsync(string operationId, Exception ex, CancellationToken cancellationToken)
     {
         var operation = await workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-        if (operation is { Kind: WorkflowOperationKind.CoordinatedRelease, CoordinatedRelease: not null } && !IsTerminal(operation.Status))
+        if (operation is { Kind: WorkflowOperationKind.CoordinatedRelease, CoordinatedRelease: not null }
+            && (!IsTerminal(operation.Status) || ex is ChildCheckpointConflictException))
         {
+            if (ex is ChildCheckpointConflictException conflict) operation = MergeChildCheckpoints(operation, conflict.Checkpoint);
             var failedAt = DateTimeOffset.UtcNow;
             var failed = operation with
             {
@@ -407,7 +465,7 @@ internal sealed partial class CoordinatedReleaseReconciler(
                 CompletedAt = failedAt,
                 CurrentPhase = "Coordinated release reconciliation failed and requires manual intervention.",
                 ErrorMessage = $"Coordinated release reconciliation failed due to {ex.GetType().Name}.",
-                CoordinatedRelease = operation.CoordinatedRelease with { CurrentStep = CoordinatedReleaseStep.Failed }
+                CoordinatedRelease = operation.CoordinatedRelease! with { CurrentStep = CoordinatedReleaseStep.Failed }
             };
 
             await workflowStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -443,6 +501,14 @@ internal sealed partial class CoordinatedReleaseReconciler(
         string phase)
     {
         var context = operation.CoordinatedRelease!;
+        if (operation.Status == WorkflowOperationStatus.AwaitingApproval
+            && context.CurrentStep == step
+            && context.Steps.Any(state => state.Step == step
+                && state.Status == CoordinatedReleaseStepStatus.AwaitingApproval))
+        {
+            return operation;
+        }
+
         var steps = UpsertStep(context.Steps, step, CoordinatedReleaseStepStatus.AwaitingApproval, phase);
 
         return operation with
@@ -575,6 +641,9 @@ internal sealed partial class CoordinatedReleaseReconciler(
 
     internal static partial class Log
     {
+        [LoggerMessage(9145, LogLevel.Warning, "Coordinated release {OperationId} checkpoint conflicted after starting child {ContainerId}/{MetadataId}.")]
+        public static partial void CoordinatedReleaseCheckpointConflict(ILogger logger, string operationId, string? containerId, string? metadataId);
+
         [LoggerMessage(9140, LogLevel.Debug, "Reconciled coordinated release {OperationId} at step {Step} to status {Status}")]
         public static partial void CoordinatedReleaseReconciled(ILogger logger, string operationId, string step, string status);
 

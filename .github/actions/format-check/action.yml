@@ -1,5 +1,8 @@
 name: Lean Gate Format Check
-description: Run the shared full or affected-scope solution format verification.
+description: >
+  Run the shared full or affected-scope solution format verification, then the
+  warnings-as-errors Release build with analyzers, code style and documentation
+  diagnostics on for the matching build scope.
 
 inputs:
   format-scope:
@@ -8,6 +11,18 @@ inputs:
       analysis to the pull-request diff and fails safely back to full.
     required: false
     default: 'full'
+  analyzer-build:
+    description: >
+      Whether to run the analyzer build. Defaults to true; only a caller whose
+      own build already ran analyzers as errors passes 'false'. The build scope
+      follows format-scope: 'affected' compiles the diff's reverse-dependency
+      closure and falls back to the full solution exactly like the lean gate.
+    required: false
+    default: 'true'
+  analyzer-build-timeout-minutes:
+    description: 'Cap for the analyzer build step.'
+    required: false
+    default: '25'
 
 runs:
   using: composite
@@ -39,3 +54,48 @@ runs:
         else
           dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic
         fi
+
+    - name: Compute analyzer build scope
+      id: analyzer-build-scope
+      if: inputs.analyzer-build == 'true'
+      shell: bash
+      env:
+        BUILD_SCOPE: ${{ inputs.format-scope }}
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+        GATE_FILTER_PATH: ${{ runner.temp }}/analyzer-build.slnf
+      run: scripts/ci/compute-lean-gate-build-scope.sh
+
+    - name: Restore analyzer build scope
+      if: inputs.analyzer-build == 'true'
+      shell: bash
+      env:
+        GATE_BUILD_MODE: ${{ steps.analyzer-build-scope.outputs.mode }}
+        GATE_BUILD_FILTER: ${{ steps.analyzer-build-scope.outputs.filter }}
+      run: |
+        target=Honua.sln
+        if [[ "${GATE_BUILD_MODE}" == "affected" ]]; then
+          [[ -f "${GATE_BUILD_FILTER}" ]] || { echo "::error::Missing analyzer build filter"; exit 1; }
+          target="${GATE_BUILD_FILTER}"
+        fi
+        scripts/ci/dotnet-restore-retry.sh "${target}" --property:Configuration=Release
+
+    # Composite-action steps do not support `timeout-minutes`.
+    - name: Build with analyzers (warnings as errors)
+      if: inputs.analyzer-build == 'true'
+      shell: bash
+      env:
+        GATE_BUILD_MODE: ${{ steps.analyzer-build-scope.outputs.mode }}
+        GATE_BUILD_FILTER: ${{ steps.analyzer-build-scope.outputs.filter }}
+      run: |
+        target=Honua.sln
+        [[ "${GATE_BUILD_MODE}" == "affected" ]] && target="${GATE_BUILD_FILTER}"
+        timeout "${{ inputs.analyzer-build-timeout-minutes }}m" \
+          dotnet build "${target}" \
+            --no-restore \
+            --configuration Release \
+            -graphBuild \
+            /p:TreatWarningsAsErrors=true \
+            /p:RunAnalyzers=true \
+            /p:EnforceCodeStyleInBuild=true \
+            /p:GenerateDocumentationFile=true \
+            /p:UseSharedCompilation=false

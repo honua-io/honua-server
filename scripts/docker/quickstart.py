@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Initialize private per-install credentials and start the local Compose stack."""
 import argparse
+import base64
+import binascii
 import os
 from pathlib import Path
 import re
@@ -11,6 +13,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 PASSWORD_KEYS = ("POSTGRES_PASSWORD", "MINIO_ROOT_PASSWORD")
+AUDIT_KEY = "AuditLog__ChainVerification__Key"
 
 
 def initialize(env_file):
@@ -18,7 +21,7 @@ def initialize(env_file):
     # dotenv settings, and require explicit migration of old placeholder values.
     existing = env_file.read_text() if env_file.exists() else ""
     additions = []
-    for key in PASSWORD_KEYS:
+    for key in (*PASSWORD_KEYS, AUDIT_KEY):
         match = re.search(rf"^\s*{key}\s*=\s*(.*?)\s*$", existing, re.MULTILINE)
         value = match.group(1).strip("\"'") if match else None
         supplied = os.environ.get(key)
@@ -26,10 +29,20 @@ def initialize(env_file):
             if value is not None and supplied != value:
                 raise ValueError(f"{key} differs between the environment and the saved env file")
             value = supplied
-        if value is not None and (len(value) < 24 or not re.fullmatch(r"[A-Za-z0-9_-]+", value)):
+        if key == AUDIT_KEY and value is not None:
+            try:
+                valid = len(base64.b64decode(value, validate=True)) >= 32
+            except (binascii.Error, ValueError):
+                valid = False
+            if not valid:
+                raise ValueError(f"{key} must be base64 encoding at least 32 bytes; migrate existing credentials explicitly")
+        elif value is not None and (len(value) < 24 or not re.fullmatch(r"[A-Za-z0-9_-]+", value)):
             raise ValueError(f"{key} must contain at least 24 letters, digits, underscores or hyphens; migrate existing credentials explicitly")
         if not match:
-            additions.append(f"{key}={value or secrets.token_hex(32)}\n")
+            if value is None:
+                value = (base64.b64encode(secrets.token_bytes(32)).decode("ascii")
+                         if key == AUDIT_KEY else secrets.token_hex(32))
+            additions.append(f"{key}={value}\n")
     if additions:
         # Exclusive creation prevents two fresh bootstraps from silently choosing
         # different credentials. Existing files retain their non-secret settings.

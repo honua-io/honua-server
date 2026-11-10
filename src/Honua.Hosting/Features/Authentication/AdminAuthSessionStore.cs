@@ -55,7 +55,7 @@ internal sealed partial class AdminAuthSessionStore(
 
     public async Task<AdminAuthPendingSession?> GetPendingSessionAsync(string? sessionId, CancellationToken cancellationToken)
     {
-        return await GetAsync(
+        return await GetSessionWithFallbackAsync(
             PendingSessionKeyPrefix,
             sessionId,
             AdminAuthSessionStoreJsonContext.Default.AdminAuthPendingSession,
@@ -64,31 +64,34 @@ internal sealed partial class AdminAuthSessionStore(
 
     public async Task RemovePendingSessionAsync(string? sessionId, CancellationToken cancellationToken)
     {
-        await RemoveAsync(PendingSessionKeyPrefix, sessionId, cancellationToken).ConfigureAwait(false);
+        await RemoveAsync(CreateSessionKey(PendingSessionKeyPrefix, sessionId), cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<string> CreateAuthenticatedSessionAsync(
+    public Task<string> CreateAuthenticatedSessionAsync(
         string providerKey,
         string accessToken,
         string? idToken,
         IReadOnlyList<AdminAuthSessionClaim> claims,
         DateTimeOffset expiresAt,
         CancellationToken cancellationToken)
-    {
-        var sessionId = CreateSessionId();
-        var session = new AdminAuthAuthenticatedSession
+        => CreateAuthenticatedSessionAsync(new AdminAuthAuthenticatedSession
         {
             ProviderKey = providerKey,
             AccessToken = accessToken,
             IdToken = idToken,
             Claims = claims.ToArray(),
             ExpiresAt = expiresAt
-        };
+        }, cancellationToken);
+
+    public async Task<string> CreateAuthenticatedSessionAsync(
+        AdminAuthAuthenticatedSession session, CancellationToken cancellationToken)
+    {
+        var sessionId = CreateSessionId();
 
         await SetAsync(
             AuthSessionKeyPrefix + sessionId,
             session,
-            expiresAt,
+            session.ExpiresAt,
             AdminAuthSessionStoreJsonContext.Default.AdminAuthAuthenticatedSession,
             cancellationToken).ConfigureAwait(false);
 
@@ -97,7 +100,7 @@ internal sealed partial class AdminAuthSessionStore(
 
     public async Task<AdminAuthAuthenticatedSession?> GetAuthenticatedSessionAsync(string? sessionId, CancellationToken cancellationToken)
     {
-        return await GetAsync(
+        return await GetSessionWithFallbackAsync(
             AuthSessionKeyPrefix,
             sessionId,
             AdminAuthSessionStoreJsonContext.Default.AdminAuthAuthenticatedSession,
@@ -106,7 +109,18 @@ internal sealed partial class AdminAuthSessionStore(
 
     public async Task RemoveAuthenticatedSessionAsync(string? sessionId, CancellationToken cancellationToken)
     {
-        await RemoveAsync(AuthSessionKeyPrefix, sessionId, cancellationToken).ConfigureAwait(false);
+        await RemoveAsync(CreateSessionKey(AuthSessionKeyPrefix, sessionId), cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<AdminAuthAuthenticatedSession?> GetInteractiveSessionForApprovalAsync(
+        string? sessionId, CancellationToken cancellationToken)
+    {
+        var session = await GetAsync(
+            CreateSessionKey(AuthSessionKeyPrefix, sessionId),
+            AdminAuthSessionStoreJsonContext.Default.AdminAuthAuthenticatedSession,
+            SessionReadPolicy.Authoritative,
+            cancellationToken).ConfigureAwait(false);
+        return session?.Origin == AdminAuthSessionOrigin.InteractiveOidc ? session : null;
     }
 
     private async Task SetAsync<T>(
@@ -146,19 +160,30 @@ internal sealed partial class AdminAuthSessionStore(
         }
     }
 
-    private async Task<T?> GetAsync<T>(
+    private async Task<T?> GetSessionWithFallbackAsync<T>(
         string keyPrefix,
         string? sessionId,
         JsonTypeInfo<T> typeInfo,
         CancellationToken cancellationToken)
         where T : AdminAuthSessionState
+        => await GetAsync(CreateSessionKey(keyPrefix, sessionId), typeInfo,
+            SessionReadPolicy.MemoryFallback, cancellationToken).ConfigureAwait(false);
+
+    private static string? CreateSessionKey(string prefix, string? sessionId)
+        => string.IsNullOrWhiteSpace(sessionId) ? null : prefix + sessionId;
+
+    private async Task<T?> GetAsync<T>(
+        string? key,
+        JsonTypeInfo<T> typeInfo,
+        SessionReadPolicy readPolicy,
+        CancellationToken cancellationToken)
+        where T : AdminAuthSessionState
     {
-        if (string.IsNullOrWhiteSpace(sessionId))
+        if (key is null)
         {
             return null;
         }
 
-        var key = keyPrefix + sessionId;
         byte[]? payload = null;
 
         if (_distributedCache is not null)
@@ -175,6 +200,12 @@ internal sealed partial class AdminAuthSessionStore(
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 AdminAuthSessionLog.DistributedCacheReadFailed(_logger, GetKeyFamily(key), LogValueRedactor.Hash(key), ex);
+                if (readPolicy == SessionReadPolicy.Authoritative)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    throw new ServiceUnavailableException("The shared human session could not be verified.", ex);
+                }
+
                 // Distributed cache is unreachable; fall back to the in-process memory tier
                 // if a valid entry is present.  The memory entry was written atomically with
                 // the distributed entry at issuance time, so it remains consistent for its
@@ -196,13 +227,13 @@ internal sealed partial class AdminAuthSessionStore(
         var value = JsonSerializer.Deserialize(payload, typeInfo);
         if (value is null)
         {
-            await RemoveAsync(keyPrefix, sessionId, cancellationToken).ConfigureAwait(false);
+            await RemoveAsync(key, cancellationToken).ConfigureAwait(false);
             return null;
         }
 
         if (value.ExpiresAt <= DateTimeOffset.UtcNow)
         {
-            await RemoveAsync(keyPrefix, sessionId, cancellationToken).ConfigureAwait(false);
+            await RemoveAsync(key, cancellationToken).ConfigureAwait(false);
             return null;
         }
 
@@ -210,14 +241,13 @@ internal sealed partial class AdminAuthSessionStore(
         return value;
     }
 
-    private async Task RemoveAsync(string keyPrefix, string? sessionId, CancellationToken cancellationToken)
+    private async Task RemoveAsync(string? key, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(sessionId))
+        if (key is null)
         {
             return;
         }
 
-        var key = keyPrefix + sessionId;
         _memoryCache.Remove(key);
 
         if (_distributedCache is null)
@@ -232,7 +262,7 @@ internal sealed partial class AdminAuthSessionStore(
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             AdminAuthSessionLog.DistributedCacheRemoveFailed(_logger, GetKeyFamily(key), LogValueRedactor.Hash(key), ex);
-            if (keyPrefix == AuthSessionKeyPrefix)
+            if (key.StartsWith(AuthSessionKeyPrefix, StringComparison.Ordinal))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 try
@@ -276,6 +306,17 @@ internal sealed partial class AdminAuthSessionStore(
         return Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
     }
 
+    private enum SessionReadPolicy
+    {
+        MemoryFallback,
+        Authoritative
+    }
+}
+
+internal enum AdminAuthSessionOrigin
+{
+    Unknown,
+    InteractiveOidc
 }
 
 internal abstract class AdminAuthSessionState
@@ -294,6 +335,8 @@ internal sealed class AdminAuthPendingSession : AdminAuthSessionState
 
 internal sealed class AdminAuthAuthenticatedSession : AdminAuthSessionState
 {
+    public AdminAuthSessionOrigin Origin { get; init; }
+
     public required string ProviderKey { get; init; }
 
     public required string AccessToken { get; init; }
