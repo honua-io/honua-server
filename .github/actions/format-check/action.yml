@@ -108,6 +108,18 @@ runs:
       run: |
         target=Honua.sln
         [[ "${GATE_BUILD_MODE}" == "affected" ]] && target="${GATE_BUILD_FILTER}"
+        if [[ "${ANALYZER_PARTITION}" == "source" ]]; then
+          scope_args=()
+          [[ "${GATE_BUILD_MODE}" == "affected" ]] && scope_args+=(--input-filter "${GATE_BUILD_FILTER}")
+          source_filter="${RUNNER_TEMP}/source-analyzer-build.slnf"
+          python3 scripts/ci/analyzer-source-filter.py "${scope_args[@]}" --output "${source_filter}"
+          source_count=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["solution"]["projects"]))' "${source_filter}")
+          if [[ "${source_count}" == "0" ]]; then
+            echo "No source analyzer roots selected; the test partition owns this scope."
+            exit 0
+          fi
+          target="${source_filter}"
+        fi
         timeout "${{ inputs.analyzer-build-timeout-minutes }}m" \
           dotnet build "${target}" \
             --no-restore \
