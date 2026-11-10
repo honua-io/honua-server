@@ -9,6 +9,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -16,27 +17,26 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.IO;
 using NSubstitute;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 /// <summary>
-/// Runtime handoff over real Redis and the real geometry executor. These are local substrate
-/// tests; the release journey must also run between two candidate images on ECS and Lambda/Batch.
+/// Runtime handoff over the PostgreSQL job store and the real geometry executor. These are local
+/// substrate tests; the release journey must also run between two candidate images on ECS and
+/// Lambda/Batch.
 /// </summary>
-[Collection("Redis")]
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.TestInfrastructure)]
-public sealed class GpDeploymentHandoffTests(RedisFixture redis)
+public sealed class GpDeploymentHandoffTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
     [IntegrationTheory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task EcsDrain_DeadlineExpires_FailsOnceWithoutReexecutingOrExposingPartialOutput(bool ignoresCancellation)
     {
-        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        var store = new RedisExecutionJobStore(connection, NullLogger<RedisExecutionJobStore>.Instance);
-        var queue = new RedisJobQueue(connection, store, NullLogger<RedisJobQueue>.Instance);
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.JobStore;
+        var queue = harness.Queue;
         var executor = new HeldCentroidExecutor { PublishPartialOutput = true, IgnoreCancellation = ignoresCancellation };
         var callback = new TerminalRecorder();
         using var worker = CreateWorker(queue, store, executor, callback);
@@ -80,7 +80,6 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
             {
                 await execution.WaitAsync(TimeSpan.FromSeconds(10));
             }
-            await queue.RemoveAsync(job.OperationId);
         }
     }
 
@@ -92,9 +91,9 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
     public async Task BatchHandoff_AcceptedSubmissionLosesResponse_RecoversOnce(
         string sourceRevision, string targetRevision, bool hostStops)
     {
-        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        var store = new RedisExecutionJobStore(connection, NullLogger<RedisExecutionJobStore>.Instance);
-        var queue = new RedisJobQueue(connection, store, NullLogger<RedisJobQueue>.Instance);
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.JobStore;
+        var queue = harness.Queue;
         var client = Substitute.For<IAwsBatchJobClient>();
         using var shutdown = new CancellationTokenSource();
         const string providerId = "accepted-before-switch";
@@ -124,8 +123,8 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
             JobDefinitions = [new AwsBatchJobDefinitionContractOptions { JobDefinition = targetRevision, MaxSupportedContractVersion = 1 }]
         }), NullLogger<AwsBatchComputeBackend>.Instance);
         var progress = Substitute.For<IUniversalProgressStore>();
-        var source = new ExecutionJobReconciler(store, [sourceBackend], progress, NullLogger<ExecutionJobReconciler>.Instance);
-        var target = new ExecutionJobReconciler(store, [targetBackend], progress, NullLogger<ExecutionJobReconciler>.Instance);
+        var source = CreateReconciler(store, sourceBackend, progress);
+        var target = CreateReconciler(store, targetBackend, progress);
         var local = CreateJob(sourceRevision, targetRevision);
         var job = local with
         {
@@ -150,27 +149,27 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
         var recovered = (await store.GetAsync(job.OperationId))!;
         recovered.ProviderOperationId.Should().Be(providerId);
         recovered.Status.Should().Be(ExecutionJobStatus.Queued);
+        recovered.AttemptCount.Should().Be(hostStops ? 0 : 1);
 
         var executor = new HeldCentroidExecutor();
         var callback = new TerminalRecorder();
-        using var worker = CreateWorker(queue, store, executor, callback);
+        using var worker = CreateWorker(CreateProviderLaunchedQueue(store, job.OperationId), store, executor, callback);
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         try
         {
-            await queue.EnqueueAsync(job.OperationId);
             await worker.StartAsync(CancellationToken.None);
             await executor.Started.Task.WaitAsync(deadline.Token);
             executor.Release.TrySetResult();
             var terminal = await callback.Completed.Task.WaitAsync(deadline.Token);
-            AssertCentroid(terminal, expectedAttempts: hostStops ? 1 : 2);
+            AssertCentroid(terminal, expectedAttempts: recovered.AttemptCount);
             terminal.ProviderOperationId.Should().Be(providerId);
             terminal.Spec.Parameters[AwsBatchParameterKeys.JobDefinitionArn].Should().Be(sourceRevision);
             var version = (await store.GetAsync(job.OperationId))!.Version;
             await target.ReconcileExecutionJobAsync(job.OperationId);
             await source.ReconcileExecutionJobAsync(job.OperationId);
             (await store.GetAsync(job.OperationId))!.Version.Should().Be(version);
-            await queue.EnqueueAsync(job.OperationId);
-            (await queue.TryClaimAsync("duplicate-delivery")).Should().BeNull();
+            await AssertRelaunchedProviderWorkerFindsTheJobTerminalAsync(store, job.OperationId);
+            (await queue.TryClaimAsync("serving-host-worker")).Should().BeNull();
             (await queue.GetQueueDepthAsync()).Should().Be(0);
             executor.Executions.Should().Be(1);
             callback.Count.Should().Be(1);
@@ -183,7 +182,6 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
         {
             executor.Release.TrySetResult();
             await worker.StopAsync(deadline.Token);
-            await queue.RemoveAsync(job.OperationId);
         }
     }
 
@@ -192,9 +190,9 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
     [InlineData("rc.4", "rc.3")]
     public async Task BatchHandoff_ReplacementControllerRetainsOriginalWorkerAndOutput(string sourceRevision, string targetRevision)
     {
-        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        var store = new RedisExecutionJobStore(connection, NullLogger<RedisExecutionJobStore>.Instance);
-        var queue = new RedisJobQueue(connection, store, NullLogger<RedisJobQueue>.Instance);
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.JobStore;
+        var queue = harness.Queue;
         var client = Substitute.For<IAwsBatchJobClient>();
         const string providerId = "original-batch-job";
         client.SubmitJobAsync(Arg.Any<AwsBatchJobSubmission>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
@@ -209,8 +207,8 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
             JobDefinitions = [new AwsBatchJobDefinitionContractOptions { JobDefinition = targetWorker, MaxSupportedContractVersion = 1 }]
         }), NullLogger<AwsBatchComputeBackend>.Instance);
         var progress = Substitute.For<IUniversalProgressStore>();
-        var source = new ExecutionJobReconciler(store, [sourceBackend], progress, NullLogger<ExecutionJobReconciler>.Instance);
-        var target = new ExecutionJobReconciler(store, [targetBackend], progress, NullLogger<ExecutionJobReconciler>.Instance);
+        var source = CreateReconciler(store, sourceBackend, progress);
+        var target = CreateReconciler(store, targetBackend, progress);
         var local = CreateJob(sourceRevision, targetRevision);
         var parameters = new Dictionary<string, string>(local.Spec.Parameters)
         {
@@ -227,14 +225,14 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
         (await store.GetAsync(job.OperationId))!.Status.Should().Be(ExecutionJobStatus.Queued);
 
         // The AWS transport is substituted; provider execution uses the real durable worker,
-        // Redis queue and geometry executor. Changing a serving revision never stops this worker.
+        // the claim a provider-launched worker makes and the geometry executor. Changing a serving
+        // revision never stops this worker.
         var executor = new HeldCentroidExecutor();
         var callback = new TerminalRecorder();
-        using var worker = CreateWorker(queue, store, executor, callback);
+        using var worker = CreateWorker(CreateProviderLaunchedQueue(store, job.OperationId), store, executor, callback);
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         try
         {
-            await queue.EnqueueAsync(job.OperationId);
             await worker.StartAsync(CancellationToken.None);
             await executor.Started.Task.WaitAsync(deadline.Token);
             using var shutdown = new CancellationTokenSource();
@@ -252,8 +250,8 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
             await client.Received(2).DescribeJobAsync(providerId, Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
             executor.Release.TrySetResult();
             var terminal = await callback.Completed.Task.WaitAsync(deadline.Token);
-            // One remote submission and one worker claim are both counted by the canonical store.
-            AssertCentroid(terminal, expectedAttempts: 2);
+            // The provider-launched worker runs the attempt its submission counted.
+            AssertCentroid(terminal, expectedAttempts: 1);
             var version = (await store.GetAsync(job.OperationId))!.Version;
             await target.ReconcileExecutionJobAsync(job.OperationId);
             await source.ReconcileExecutionJobAsync(job.OperationId);
@@ -271,7 +269,6 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
         {
             executor.Release.TrySetResult();
             await worker.StopAsync(deadline.Token);
-            await queue.RemoveAsync(job.OperationId);
         }
     }
 
@@ -280,9 +277,9 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
     [InlineData("rc.4", "rc.3")]
     public async Task EcsDrain_WithRunningGeometryJob_CompletesOnce(string sourceRevision, string targetRevision)
     {
-        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        var store = new RedisExecutionJobStore(connection, NullLogger<RedisExecutionJobStore>.Instance);
-        var queue = new RedisJobQueue(connection, store, NullLogger<RedisJobQueue>.Instance);
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.JobStore;
+        var queue = harness.Queue;
         var executor = new HeldCentroidExecutor();
         var callback = new TerminalRecorder();
         using var source = CreateWorker(queue, store, executor, callback);
@@ -326,14 +323,37 @@ public sealed class GpDeploymentHandoffTests(RedisFixture redis)
             executor.Release.TrySetResult();
             await source.StopAsync(deadline.Token);
             await target.StopAsync(deadline.Token);
-            await queue.RemoveAsync(job.OperationId);
         }
     }
+
+    private Task<PostgresJobSubstrateHarness> CreateHarnessAsync()
+        => PostgresJobSubstrateHarness.CreateAsync(database, nameof(GpDeploymentHandoffTests));
 
     private static JobExecutionService CreateWorker(IJobQueue queue, IExecutionJobStore store,
         IJobExecutor executor, IJobTerminalCallback callback)
         => new(queue, store, [executor], new ExecutionJobCancellationTokens(), [callback], null,
             NullLogger<JobExecutionService>.Instance);
+
+    private static ExecutionJobReconciler CreateReconciler(
+        PostgresExecutionJobStore store, IBatchComputeBackend backend, IUniversalProgressStore progress)
+        => new(store, [backend], progress, NullLogger<ExecutionJobReconciler>.Instance, storeClock: store);
+
+    // A job submitted to a compute provider never enters the local queue: the container the
+    // provider starts claims the one operation it was launched for.
+    private static AssignedExecutionJobQueue CreateProviderLaunchedQueue(PostgresExecutionJobStore store, string operationId)
+        => new(
+            new ExecutionWorkerLaunch { OperationId = operationId, JobKind = ExecutionJobKind.Geoprocessing },
+            store,
+            NullLogger<AssignedExecutionJobQueue>.Instance,
+            storeClock: store);
+
+    private static async Task AssertRelaunchedProviderWorkerFindsTheJobTerminalAsync(
+        PostgresExecutionJobStore store, string operationId)
+    {
+        var relaunched = CreateProviderLaunchedQueue(store, operationId);
+        (await relaunched.TryClaimAsync("duplicate-delivery")).Should().BeNull();
+        (await relaunched.Completion).Should().Be(ExecutionWorkerClaimOutcome.AlreadyTerminal);
+    }
 
     private static ExecutionJobRecord CreateJob(string sourceRevision, string targetRevision)
     {

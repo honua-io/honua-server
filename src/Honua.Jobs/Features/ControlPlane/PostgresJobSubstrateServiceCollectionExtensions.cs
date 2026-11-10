@@ -32,12 +32,17 @@ internal static class PostgresJobSubstrateServiceCollectionExtensions
 
         services.AddOptions<JobStoreOptions>().Configure(options =>
         {
-            options.JobRetention = ReadRetention(configuration, nameof(JobStoreOptions.JobRetention), options.JobRetention);
-            options.LogRetention = ReadRetention(configuration, nameof(JobStoreOptions.LogRetention), options.LogRetention);
+            options.JobRetention = ReadPositiveTimeSpan(configuration, nameof(JobStoreOptions.JobRetention), options.JobRetention);
+            options.LogRetention = ReadPositiveTimeSpan(configuration, nameof(JobStoreOptions.LogRetention), options.LogRetention);
+            options.RetentionSweepInterval = ReadPositiveTimeSpan(
+                configuration, nameof(JobStoreOptions.RetentionSweepInterval), options.RetentionSweepInterval);
+            options.RetentionSweepBatchSize = ReadPositiveInteger(
+                configuration, nameof(JobStoreOptions.RetentionSweepBatchSize), options.RetentionSweepBatchSize);
         });
         services.TryAddSingleton(provider => new JobStoreDatabase(
             provider.GetRequiredService<NpgsqlDataSource>(),
             configuration[SystemSchemaKey]));
+        services.TryAddSingleton<JobStoreRetentionSweeper>();
         services.TryAddSingleton<PostgresExecutionJobStore>();
         services.TryAddSingleton<IExecutionJobStore>(provider => provider.GetRequiredService<PostgresExecutionJobStore>());
         services.TryAddSingleton<IJobStoreClock>(provider => provider.GetRequiredService<PostgresExecutionJobStore>());
@@ -74,13 +79,8 @@ internal static class PostgresJobSubstrateServiceCollectionExtensions
                 + "the serving host uses, which holds the job queue.");
         }
 
-        var maxPoolSize = int.TryParse(
-            configuration[$"{JobStoreOptions.SectionName}:{nameof(JobStoreOptions.WorkerMaxPoolSize)}"],
-            NumberStyles.None,
-            CultureInfo.InvariantCulture,
-            out var configuredMaxPoolSize) && configuredMaxPoolSize > 0
-            ? configuredMaxPoolSize
-            : new JobStoreOptions().WorkerMaxPoolSize;
+        var maxPoolSize = ReadPositiveInteger(
+            configuration, nameof(JobStoreOptions.WorkerMaxPoolSize), new JobStoreOptions().WorkerMaxPoolSize);
 
         services.TryAddSingleton(_ =>
         {
@@ -94,7 +94,16 @@ internal static class PostgresJobSubstrateServiceCollectionExtensions
         return services;
     }
 
-    private static TimeSpan ReadRetention(IConfiguration configuration, string settingName, TimeSpan defaultValue)
+    private static int ReadPositiveInteger(IConfiguration configuration, string settingName, int defaultValue)
+        => int.TryParse(
+            configuration[$"{JobStoreOptions.SectionName}:{settingName}"],
+            NumberStyles.None,
+            CultureInfo.InvariantCulture,
+            out var configured) && configured > 0
+            ? configured
+            : defaultValue;
+
+    private static TimeSpan ReadPositiveTimeSpan(IConfiguration configuration, string settingName, TimeSpan defaultValue)
         => TimeSpan.TryParse(
             configuration[$"{JobStoreOptions.SectionName}:{settingName}"], CultureInfo.InvariantCulture, out var configured)
             && configured > TimeSpan.Zero

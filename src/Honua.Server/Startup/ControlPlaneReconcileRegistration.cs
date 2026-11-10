@@ -89,7 +89,7 @@ internal static class ControlPlaneReconcileRegistration
     }
 
     // Poll mode runs the 5 s reconcile loop; event mode leaves reconciliation to provider events.
-    // The backstop sweep and the queue-depth gauge run in both modes, except on an event-handler
+    // The backstop sweep, the queue-depth gauge and the retention sweep run in both modes, except on an event-handler
     // Lambda, which is frozen between invocations and must not hold a connection in a loop.
     public static IServiceCollection AddExecutionJobReconciliationLoops(
         this IServiceCollection services,
@@ -107,6 +107,7 @@ internal static class ControlPlaneReconcileRegistration
         {
             services.AddHostedService<ExecutionJobBackstopSweepService>();
             services.AddHostedService<ExecutionQueueDepthCollectorBackgroundService>();
+            services.AddHostedService<JobStoreRetentionSweepService>();
         }
 
         return services;

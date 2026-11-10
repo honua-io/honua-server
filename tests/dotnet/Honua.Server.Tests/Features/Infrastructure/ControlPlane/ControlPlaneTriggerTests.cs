@@ -16,8 +16,8 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 /// <summary>
 /// Phase 1 tests for the hybrid-trigger seam: the event handler reconciles one operation once and
 /// is safe under duplicate/out-of-order invocation (lease/CAS no-op), and the backstop sweep
-/// reconciles stale operations while no-opping fresh ones. Both drive the same dispatcher path that
-/// the poll loop uses.
+/// reconciles stale operations while no-opping fresh ones. Both drive the same execution-job
+/// reconciler the poll loop uses.
 /// </summary>
 public sealed class ControlPlaneTriggerTests
 {
@@ -61,7 +61,7 @@ public sealed class ControlPlaneTriggerTests
         var store = new VersionedJobStore(job);
         var progress = new RecordingProgressStore();
         var backend = new CountingBatchBackend(ExecutionJobStatus.Succeeded);
-        var dispatcher = BuildDispatcher(store, progress, backend);
+        var dispatcher = BuildDispatcher(BuildReconciler(store, progress, backend));
         var sut = new ControlPlaneEventHandler(store, Substitute.For<IWorkflowOperationStore>(), dispatcher, NullLogger<ControlPlaneEventHandler>.Instance);
 
         // Fire the same event three times (duplicate delivery) plus a stale "out-of-order" replay.
@@ -83,14 +83,12 @@ public sealed class ControlPlaneTriggerTests
     {
         var stale = CreateJob("op-stale", ExecutionJobStatus.Running, providerOperationId: "p-stale", updatedAt: DateTimeOffset.UtcNow.AddMinutes(-10));
         var store = new VersionedJobStore(stale);
-        var dispatcher = Substitute.For<IOperationReconcileDispatcher>();
-        var sut = BuildBackstop(store, dispatcher, staleThreshold: TimeSpan.FromSeconds(90));
+        var reconciler = Substitute.For<IExecutionJobReconciler>();
+        var sut = BuildBackstop(store, reconciler, staleThreshold: TimeSpan.FromSeconds(90));
 
         await sut.SweepOnceAsync(TimeSpan.FromSeconds(90), CancellationToken.None);
 
-        await dispatcher.Received(1).ReconcileOnceAsync(
-            Arg.Is<OperationRef>(r => r.Kind == OperationKind.ExecutionJob && r.OperationId == "op-stale"),
-            Arg.Any<CancellationToken>());
+        await reconciler.Received(1).ReconcileExecutionJobAsync("op-stale", Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -98,12 +96,12 @@ public sealed class ControlPlaneTriggerTests
     {
         var fresh = CreateJob("op-fresh", ExecutionJobStatus.Running, providerOperationId: "p-fresh", updatedAt: DateTimeOffset.UtcNow);
         var store = new VersionedJobStore(fresh);
-        var dispatcher = Substitute.For<IOperationReconcileDispatcher>();
-        var sut = BuildBackstop(store, dispatcher, staleThreshold: TimeSpan.FromSeconds(90));
+        var reconciler = Substitute.For<IExecutionJobReconciler>();
+        var sut = BuildBackstop(store, reconciler, staleThreshold: TimeSpan.FromSeconds(90));
 
         await sut.SweepOnceAsync(TimeSpan.FromSeconds(90), CancellationToken.None);
 
-        await dispatcher.DidNotReceiveWithAnyArgs().ReconcileOnceAsync(default, default);
+        await reconciler.DidNotReceiveWithAnyArgs().ReconcileExecutionJobAsync(default!, default);
     }
 
     [Fact]
@@ -111,12 +109,12 @@ public sealed class ControlPlaneTriggerTests
     {
         var terminal = CreateJob("op-done", ExecutionJobStatus.Succeeded, providerOperationId: "p-done", updatedAt: DateTimeOffset.UtcNow.AddHours(-1));
         var store = new VersionedJobStore(terminal);
-        var dispatcher = Substitute.For<IOperationReconcileDispatcher>();
-        var sut = BuildBackstop(store, dispatcher, staleThreshold: TimeSpan.FromSeconds(90));
+        var reconciler = Substitute.For<IExecutionJobReconciler>();
+        var sut = BuildBackstop(store, reconciler, staleThreshold: TimeSpan.FromSeconds(90));
 
         await sut.SweepOnceAsync(TimeSpan.FromSeconds(90), CancellationToken.None);
 
-        await dispatcher.DidNotReceiveWithAnyArgs().ReconcileOnceAsync(default, default);
+        await reconciler.DidNotReceiveWithAnyArgs().ReconcileExecutionJobAsync(default!, default);
     }
 
     [Fact]
@@ -128,15 +126,15 @@ public sealed class ControlPlaneTriggerTests
         var store = new VersionedJobStore(stale);
         var progress = new RecordingProgressStore();
         var backend = new CountingBatchBackend(ExecutionJobStatus.Succeeded);
-        var dispatcher = BuildDispatcher(store, progress, backend);
+        var reconciler = BuildReconciler(store, progress, backend);
 
         // Simulate the missed-event self-heal: an event already drove it terminal...
-        var handler = new ControlPlaneEventHandler(store, Substitute.For<IWorkflowOperationStore>(), dispatcher, NullLogger<ControlPlaneEventHandler>.Instance);
+        var handler = new ControlPlaneEventHandler(store, Substitute.For<IWorkflowOperationStore>(), BuildDispatcher(reconciler), NullLogger<ControlPlaneEventHandler>.Instance);
         await handler.HandleExecutionJobEventAsync("batch-heal");
         var afterEvent = store.WriteCount;
 
         // ...then the backstop sweeps the (now terminal) job; the terminal guard makes it a no-op.
-        var sut = BuildBackstop(store, dispatcher, staleThreshold: TimeSpan.FromSeconds(90));
+        var sut = BuildBackstop(store, reconciler, staleThreshold: TimeSpan.FromSeconds(90));
         await sut.SweepOnceAsync(TimeSpan.FromSeconds(90), CancellationToken.None);
 
         afterEvent.Should().Be(1);
@@ -146,31 +144,26 @@ public sealed class ControlPlaneTriggerTests
 
     // ---- Helpers -----------------------------------------------------------
 
-    private static OperationReconcileDispatcher BuildDispatcher(
+    private static ExecutionJobReconciler BuildReconciler(
         IExecutionJobStore store,
         IUniversalProgressStore progress,
         IBatchComputeBackend backend)
-    {
-        var reconciler = new ExecutionJobReconciler(
-            store,
-            [backend],
-            progress,
-            NullLogger<ExecutionJobReconciler>.Instance);
+        => new(store, [backend], progress, NullLogger<ExecutionJobReconciler>.Instance);
 
-        return new OperationReconcileDispatcher(
+    private static OperationReconcileDispatcher BuildDispatcher(IExecutionJobReconciler reconciler)
+        => new(
             Substitute.For<IWorkflowOperationReconciler>(),
             reconciler,
             Substitute.For<IMetadataReleaseOperationReconciler>(),
             Substitute.For<ICoordinatedReleaseReconciler>());
-    }
 
     private static ExecutionJobBackstopSweepService BuildBackstop(
         IExecutionJobStore store,
-        IOperationReconcileDispatcher dispatcher,
+        IExecutionJobReconciler reconciler,
         TimeSpan staleThreshold)
         => new(
             store,
-            dispatcher,
+            reconciler,
             Options.Create(new ControlPlaneTriggerOptions { StaleThreshold = staleThreshold }),
             NullLogger<ExecutionJobBackstopSweepService>.Instance);
 
@@ -202,7 +195,7 @@ public sealed class ControlPlaneTriggerTests
     /// <summary>
     /// In-memory execution-job store that enforces optimistic-concurrency CAS via the record
     /// <see cref="ExecutionJobRecord.Version"/> token, so duplicate/out-of-order reconciles exercise
-    /// the same conflict path the Redis store would. Counts successful advancing writes.
+    /// the same conflict path the durable store would. Counts successful advancing writes.
     /// </summary>
     private sealed class VersionedJobStore(params ExecutionJobRecord[] jobs) : IExecutionJobStore
     {

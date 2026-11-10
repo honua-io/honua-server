@@ -15,6 +15,8 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Security;
+using Honua.Server.Tests.Infrastructure;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -28,9 +30,9 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 
 /// <summary>
 /// Multi-node execution-admission proofs (#3853). Every test composes two or more independent
-/// "server nodes" — each with its own Redis connection, durable job store, admission evaluator,
-/// admission coordinator, and job service, sharing nothing in-process — against one real Redis,
-/// the substrate that holds the durable job records and their active-set index in production.
+/// "server nodes" — each with its own Redis connection, job store instance, admission evaluator,
+/// admission coordinator, and job service, sharing nothing in-process — against the PostgreSQL
+/// job tables that hold the durable job records and one real Redis that holds the admission lease.
 /// Submissions are released together from a barrier across nodes, and an independent observer
 /// samples the durable active set throughout, so the assertions are on what any node could see
 /// at any observation point rather than on a single evaluator's arithmetic.
@@ -43,7 +45,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 /// </remarks>
 [Protocol(TestProtocols.GPServer)]
 public sealed class ExecutionAdmissionMultiNodeTests
-    : IClassFixture<ExecutionAdmissionMultiNodeTests.RedisServer>, IAsyncLifetime
+    : IClassFixture<ExecutionAdmissionMultiNodeTests.RedisServer>, IClassFixture<DatabaseFixtureAdapter>, IAsyncLifetime
 {
     private const int RetryAfterSeconds = 7;
     private const string DefaultPartition = "(default)";
@@ -52,14 +54,17 @@ public sealed class ExecutionAdmissionMultiNodeTests
         new StaticOptionsMonitor<GeoprocessingExecutorOptions>(new GeoprocessingExecutorOptions());
 
     private readonly RedisServer _redis;
+    private readonly DatabaseFixtureAdapter _database;
     private readonly ITestOutputHelper _output;
     private readonly List<Node> _nodes = [];
     private ConnectionMultiplexer _observer = null!;
-    private RedisExecutionJobStore _observerStore = null!;
+    private PostgresJobSubstrateHarness _jobs = null!;
+    private PostgresExecutionJobStore _observerStore = null!;
 
-    public ExecutionAdmissionMultiNodeTests(RedisServer redis, ITestOutputHelper output)
+    public ExecutionAdmissionMultiNodeTests(RedisServer redis, DatabaseFixtureAdapter database, ITestOutputHelper output)
     {
         _redis = redis;
+        _database = database;
         _output = output;
     }
 
@@ -73,7 +78,8 @@ public sealed class ExecutionAdmissionMultiNodeTests
             await _observer.GetServer(endpoint).FlushDatabaseAsync();
         }
 
-        _observerStore = new RedisExecutionJobStore(_observer, NullLogger<RedisExecutionJobStore>.Instance);
+        _jobs = await PostgresJobSubstrateHarness.CreateAsync(_database, nameof(ExecutionAdmissionMultiNodeTests));
+        _observerStore = _jobs.JobStore;
     }
 
     public async Task DisposeAsync()
@@ -84,6 +90,7 @@ public sealed class ExecutionAdmissionMultiNodeTests
         }
 
         await _observer.DisposeAsync();
+        await _jobs.DisposeAsync();
     }
 
     // -----------------------------------------------------------------------
@@ -540,7 +547,10 @@ public sealed class ExecutionAdmissionMultiNodeTests
         Func<IExecutionJobStore, IExecutionJobStore>? wrapStore = null)
     {
         var multiplexer = await ConnectionMultiplexer.ConnectAsync(_redis.ConnectionString);
-        IExecutionJobStore store = new RedisExecutionJobStore(multiplexer, NullLogger<RedisExecutionJobStore>.Instance);
+        IExecutionJobStore store = new PostgresExecutionJobStore(
+            _jobs.Database,
+            Options.Create(new JobStoreOptions()),
+            NullLogger<PostgresExecutionJobStore>.Instance);
         if (wrapStore is not null)
         {
             store = wrapStore(store);

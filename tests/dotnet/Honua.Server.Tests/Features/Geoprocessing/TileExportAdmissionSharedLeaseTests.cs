@@ -14,6 +14,8 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Tiles;
+using Honua.Server.Tests.Infrastructure;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -32,7 +34,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 /// </summary>
 [Protocol(TestProtocols.GPServer)]
 public sealed class TileExportAdmissionSharedLeaseTests
-    : IClassFixture<TileExportAdmissionSharedLeaseTests.RedisServer>, IAsyncLifetime
+    : IClassFixture<TileExportAdmissionSharedLeaseTests.RedisServer>, IClassFixture<DatabaseFixtureAdapter>, IAsyncLifetime
 {
     private const int RetryAfterSeconds = 7;
 
@@ -40,14 +42,17 @@ public sealed class TileExportAdmissionSharedLeaseTests
         new StaticOptionsMonitor<GeoprocessingExecutorOptions>(new GeoprocessingExecutorOptions());
 
     private readonly RedisServer _redis;
+    private readonly DatabaseFixtureAdapter _database;
     private readonly ITestOutputHelper _output;
     private readonly List<Node> _nodes = [];
     private ConnectionMultiplexer _observer = null!;
-    private RedisExecutionJobStore _observerStore = null!;
+    private PostgresJobSubstrateHarness _jobs = null!;
+    private PostgresExecutionJobStore _observerStore = null!;
 
-    public TileExportAdmissionSharedLeaseTests(RedisServer redis, ITestOutputHelper output)
+    public TileExportAdmissionSharedLeaseTests(RedisServer redis, DatabaseFixtureAdapter database, ITestOutputHelper output)
     {
         _redis = redis;
+        _database = database;
         _output = output;
     }
 
@@ -61,7 +66,8 @@ public sealed class TileExportAdmissionSharedLeaseTests
             await _observer.GetServer(endpoint).FlushDatabaseAsync();
         }
 
-        _observerStore = new RedisExecutionJobStore(_observer, NullLogger<RedisExecutionJobStore>.Instance);
+        _jobs = await PostgresJobSubstrateHarness.CreateAsync(_database, nameof(TileExportAdmissionSharedLeaseTests));
+        _observerStore = _jobs.JobStore;
     }
 
     public async Task DisposeAsync()
@@ -72,6 +78,7 @@ public sealed class TileExportAdmissionSharedLeaseTests
         }
 
         await _observer.DisposeAsync();
+        await _jobs.DisposeAsync();
     }
 
     [IntegrationTest]
@@ -216,7 +223,10 @@ public sealed class TileExportAdmissionSharedLeaseTests
         Func<IExecutionJobStore, IExecutionJobStore>? wrapStore = null)
     {
         var multiplexer = await ConnectionMultiplexer.ConnectAsync(_redis.ConnectionString);
-        IExecutionJobStore store = new RedisExecutionJobStore(multiplexer, NullLogger<RedisExecutionJobStore>.Instance);
+        IExecutionJobStore store = new PostgresExecutionJobStore(
+            _jobs.Database,
+            Options.Create(new JobStoreOptions()),
+            NullLogger<PostgresExecutionJobStore>.Instance);
         if (wrapStore is not null)
         {
             store = wrapStore(store);

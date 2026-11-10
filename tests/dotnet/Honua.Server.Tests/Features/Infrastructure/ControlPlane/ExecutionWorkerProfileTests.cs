@@ -18,6 +18,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
 using NSubstitute;
 using StackExchange.Redis;
 
@@ -25,7 +26,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 /// <summary>
 /// e2e-cloud-aws run 38048901509 (aws-serverless/redis-on): the GP Batch worker runs the generic
-/// server image. With Redis connected it booted as a full server, and its execution-job reconciler
+/// server image. It booted as a full server, and its execution-job reconciler
 /// re-dispatched the shared queued GP jobs to AWS Batch from inside the worker (EventId 9046,
 /// <c>batch:SubmitJob</c> denied for the gp-job role), failing <c>geometry.buffer</c> and leaving
 /// <c>geometry.area</c> running. These tests pin the worker-only composition profile that replaces it.
@@ -122,11 +123,11 @@ public sealed class ExecutionWorkerProfileTests
     [InlineData("Production")]
     [InlineData("Development")]
     [Trait("Tier", "Fast")]
-    public void WorkerProfile_WithRedisConnected_ComposesNoDispatcherReconcilerGatewayOrHttpSurface(string environment)
+    public void WorkerProfile_OverTheServingComposition_ComposesNoDispatcherReconcilerGatewayOrHttpSurface(string environment)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environment });
         var services = builder.Services;
-        ComposeRedisConnectedControlPlane(services, builder.Configuration, builder.Environment);
+        ComposeServingControlPlane(services, builder.Configuration, builder.Environment);
 
         // The serving composition the worker used to inherit: proves the assertions below bite.
         HostedImplementations(services).Should().Contain(
@@ -134,8 +135,10 @@ public sealed class ExecutionWorkerProfileTests
             typeof(ExecutionJobReconcilerBackgroundService),
             typeof(DeployWorkflowReconcilerBackgroundService),
             typeof(ExecutionJobBackstopSweepService),
+            typeof(ExecutionQueueDepthCollectorBackgroundService),
             typeof(JobExecutionService),
         ]);
+        services.Should().Contain(static descriptor => descriptor.ServiceType == typeof(IJobQueue));
         services.Should().Contain(static descriptor => descriptor.ServiceType == typeof(HttpServer)
             && descriptor.ImplementationType != typeof(NoHttpServer), "the serving host binds Kestrel");
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IBatchComputeBackend));
@@ -164,7 +167,9 @@ public sealed class ExecutionWorkerProfileTests
             typeof(IScheduledTickHandler),
             typeof(IOperationGateway),
             typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor),
-            typeof(RedisJobQueue),
+            typeof(PostgresJobQueue),
+            typeof(IQueueClaimReconciler),
+            typeof(ExecutionJobBackstopSweepService),
             typeof(JobReconciliationService),
         })
         {
@@ -192,7 +197,7 @@ public sealed class ExecutionWorkerProfileTests
         var apply = () => services.ApplyExecutionWorkerProfile(Launch());
 
         apply.Should().Throw<InvalidOperationException>()
-            .WithMessage($"*{OperationId}*ConnectionStrings:redis*");
+            .WithMessage($"*{OperationId}*ConnectionStrings:DefaultConnection*");
     }
 
     // ---------------------------------------------------------------------
@@ -620,15 +625,17 @@ public sealed class ExecutionWorkerProfileTests
         return builder.Build();
     }
 
-    private static void ComposeRedisConnectedControlPlane(
+    private static void ComposeServingControlPlane(
         IServiceCollection services,
         IConfiguration configuration,
         IHostEnvironment environment)
     {
-        // Mirrors the Redis-connected serving composition of Program.cs with the real
-        // registration extensions where they exist.
+        // Mirrors the serving composition of Program.cs on a host with a system database and an
+        // entitled Redis, with the real registration extensions where they exist. Nothing here
+        // opens a connection: no hosted service is started.
         services.AddSingleton(Substitute.For<IConnectionMultiplexer>());
-        services.AddSingleton(Substitute.For<IExecutionJobStore>());
+        services.AddSingleton(_ => NpgsqlDataSource.Create("Host=localhost;Database=unused"));
+        services.TryAddPostgresExecutionJobStore(configuration).Should().BeTrue();
         services.AddSingleton(Substitute.For<IUniversalProgressStore>());
         // Program.cs also composes these prerequisites before applying the worker profile.
         // Keep Development's ValidateOnBuild enabled so dependencies removed by the profile
@@ -645,14 +652,12 @@ public sealed class ExecutionWorkerProfileTests
         services.AddJobWorker(configuration);
         services.AddHonuaBatchAndDeployBackends();
         services.AddHonuaControlPlaneReconcilers(configuration);
-        services.AddSingleton<IScheduledTickDispatcher, ScheduledTickDispatcher>();
         services.AddHostedService<DeployWorkflowReconcilerBackgroundService>();
-        services.AddHostedService<ExecutionJobReconcilerBackgroundService>();
         services.AddHostedService<MetadataReleaseReconcilerBackgroundService>();
         services.AddHostedService<CoordinatedReleaseReconcilerBackgroundService>();
-        services.AddHostedService<ExecutionJobBackstopSweepService>();
         services.AddHostedService<WorkflowOperationBackstopSweepService>();
-        services.AddHostedService<ExecutionQueueDepthCollectorBackgroundService>();
+        services.AddExecutionJobReconciliation();
+        services.AddExecutionJobReconciliationLoops(configuration);
         services.AddSingleton<IOperationProposalStore, RedisOperationProposalStore>();
         services.AddSingleton<IOperationGateway, OperationGateway>();
         services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
@@ -726,7 +731,7 @@ public sealed class ExecutionWorkerProfileTests
     }
 
     /// <summary>
-    /// Stands in for the Redis-backed store the container owns: it is disposed with the host, and
+    /// Stands in for the connection-backed store the container owns: it is disposed with the host, and
     /// any read after that is recorded and fails the way a disposed connection does.
     /// </summary>
     private sealed class DisposalTrackingJobStore(VersionedJobStore inner) : IExecutionJobStore, IDisposable
@@ -781,7 +786,7 @@ public sealed class ExecutionWorkerProfileTests
             => Live().ListActiveAsync(kind, limit, cancellationToken);
     }
 
-    /// <summary>An in-memory store with the version CAS the Redis store enforces.</summary>
+    /// <summary>An in-memory store with the version CAS the durable store enforces.</summary>
     private sealed class VersionedJobStore(params ExecutionJobRecord[] jobs) : IExecutionJobStore
     {
         private readonly object _gate = new();

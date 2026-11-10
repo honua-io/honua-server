@@ -7,16 +7,11 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Startup;
 
-/// <summary>
-/// Owner ruling (2026-10-10): the governed proposal control plane and the durable job runner
-/// require Redis to be present and working, NOT a <c>CONFIG GET</c>-proven durable policy. The
-/// startup durability attestation is published as information (<c>attested</c> /
-/// <c>unverified</c> / <c>not-durable</c>) and never withholds <c>jobs.runner</c> or
-/// <c>operations.proposals</c>; managed Redis (AWS ElastiCache, MemoryDB) blocks <c>CONFIG</c>
-/// and, for ElastiCache Redis 7, has no AOF at all. Only a Redis that is absent, unentitled or
-/// unreachable withholds the capabilities, and only <c>Jobs:RequireDurableStore=true</c> turns a
-/// non-attested outcome into a startup refusal.
-/// </summary>
+// The startup durability attestation of the Redis that stores operation proposals is published as
+// information (attested, unverified, not-durable). It is never the reason a capability is
+// withheld: managed Redis (AWS ElastiCache, MemoryDB) blocks CONFIG and, for ElastiCache Redis 7,
+// has no AOF at all. Only Jobs:RequireDurableStore=true turns a non-attested outcome into a
+// startup refusal.
 public sealed class RedisDurabilityInformationalTests
 {
     private const string ElastiCacheConfigRefusal =
@@ -33,17 +28,19 @@ public sealed class RedisDurabilityInformationalTests
 
     [UnitTheory]
     [MemberData(nameof(AttestationOutcomes))]
-    public void ConnectedEntitledRedis_AnyAttestationOutcome_KeepsTheRuntimeAvailableAndPublishesTheOutcome(
+    public void ConnectedEntitledRedis_AnyAttestationOutcome_IsPublishedAndIsNeverTheCauseOfAWithheldCapability(
         string scenario,
         DurableJobSubstrateCause? outcome,
         string expectedStatus)
     {
         var options = Connected(outcome);
 
-        options.Classify(jobStorePresent: true, jobQueuePresent: true)
-            .Should().Be(DurableJobSubstrateCause.Available,
-                $"a connected Redis enables jobs.runner and operations.proposals whatever the attestation said ({scenario})");
         options.RedisDurabilityStatus.Should().Be(expectedStatus);
+        options.Classify(jobStorePresent: false, jobQueuePresent: false)
+            .Should().Be(DurableJobSubstrateCause.RuntimeIncomplete,
+                $"a host that composed no job store is not told its Redis is the reason ({scenario})");
+        options.Classify(jobStorePresent: true, jobQueuePresent: true)
+            .Should().Be(DurableJobSubstrateCause.Available, scenario);
     }
 
     [UnitTheory]
@@ -105,38 +102,24 @@ public sealed class RedisDurabilityInformationalTests
     }
 
     [UnitTest]
-    public void UnreachableRedis_WithholdsTheRuntime_AndPublishesNoDurabilityOutcome()
+    public void UnreachableRedis_PublishesNoDurabilityOutcome_AndDoesNotWithholdTheJobRunner()
     {
         var options = Connected(DurableJobSubstrateCause.RedisUnreachable);
 
-        options.Classify(jobStorePresent: true, jobQueuePresent: true)
-            .Should().Be(DurableJobSubstrateCause.RedisUnreachable,
-                "a Redis that never connected is genuinely unavailable, unlike an attestation outcome");
+        options.RedisDurabilityStatus.Should().BeNull("a Redis that never connected was never inspected");
         options.Classify(jobStorePresent: false, jobQueuePresent: false)
             .Should().Be(DurableJobSubstrateCause.RedisUnreachable);
-        options.RedisDurabilityStatus.Should().BeNull();
-    }
-
-    [UnitTest]
-    public void RedisNotConfigured_StillWithholdsTheRuntime()
-    {
-        var options = new DurableJobSubstrateOptions { RedisConfigured = false, RedisEntitled = true };
-
-        options.Classify(jobStorePresent: false, jobQueuePresent: false)
-            .Should().Be(DurableJobSubstrateCause.RedisNotConfigured);
         options.Classify(jobStorePresent: true, jobQueuePresent: true)
-            .Should().Be(DurableJobSubstrateCause.RedisNotConfigured,
-                "only a configured Redis backs the advertised runtime");
-        options.RedisDurabilityStatus.Should().BeNull();
+            .Should().Be(DurableJobSubstrateCause.Available, "the job store and queue do not use Redis");
     }
 
     [UnitTest]
-    public void UnentitledRedis_StillReportsLicenseRequired_WhateverTheAttestation()
+    public void UnentitledRedis_ReportsTheLicenceAheadOfTheAttestationOutcome()
     {
         var options = Connected(DurableJobSubstrateCause.RedisPersistenceDisabled);
         options.RedisEntitled = false;
 
-        options.Classify(jobStorePresent: true, jobQueuePresent: true)
+        options.Classify(jobStorePresent: false, jobQueuePresent: false)
             .Should().Be(DurableJobSubstrateCause.RedisNotEntitled);
     }
 

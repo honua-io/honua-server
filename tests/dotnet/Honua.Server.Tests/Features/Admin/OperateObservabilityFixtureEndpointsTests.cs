@@ -183,7 +183,7 @@ public sealed class OperateObservabilityFixtureEndpointsTests : IAsyncLifetime
 
     private async Task AssertJobDefinitionAndResourceFiltersAsync()
     {
-        // Mirror RedisExecutionJobStore matching: definitionId resolves against both the
+        // Mirror the job store's matching: definitionId resolves against both the
         // DefinitionId and GeoprocessingPlanId parameters, and resource refs match
         // case-insensitively.
         var byPlanId = await _client.GetAsync(

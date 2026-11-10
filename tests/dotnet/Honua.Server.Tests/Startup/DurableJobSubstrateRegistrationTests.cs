@@ -5,115 +5,150 @@ using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
-using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Geoprocessing;
+using Honua.Server.Startup;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using NSubstitute;
+using Microsoft.Extensions.Hosting;
+using Npgsql;
 using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Startup;
 
-/// <summary>
-/// Regression coverage for honua-server#4502: a Redis whose durability attestation is REJECTED
-/// must still compose <see cref="IExecutionJobStore"/>, because every consumer of it is
-/// registered unconditionally on <c>connectedRedis != null</c> in the composition root.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The crash this pins is a <em>registration-contract</em> break, not a lifetime break: #4141
-/// gated the durable job store on an accepted <c>RedisDurabilityAttestation</c> while leaving
-/// <c>ExecutionJobReconciler</c>, <c>ControlPlaneEventHandler</c>,
-/// <c>ExecutionJobBackstopSweepService</c>, <c>ExecutionJobReconcilerBackgroundService</c> and
-/// <c>MetadataReleaseReconciler</c> registered regardless. Against a stock <c>redis:7-alpine</c>
-/// (<c>appendonly no</c>) the attestation rejects with
-/// <see cref="DurableJobSubstrateCause.RedisPersistenceDisabled"/>, so
-/// <c>ServiceProvider</c> descriptor validation threw 31 times with
-/// <c>Unable to resolve service for type 'IExecutionJobStore'</c> and the container exited 139
-/// before binding a port — the whole honua-release Slice-1 candidate stack went BLOCKED on
-/// "server not ready at http://localhost:8080".
-/// </para>
-/// <para>
-/// These are <c>ValidateOnBuild</c> tests for the same reason
-/// <c>ImportExportTileOperationsRegistrationTests</c> is: the harness runs
-/// <c>ASPNETCORE_ENVIRONMENT=Development</c>, where ASP.NET turns descriptor validation ON, and
-/// a lazy resolve only covers the services a test happens to ask for.
-/// </para>
-/// </remarks>
+// The job store, queue, log store and result packages live in the system database, so a host
+// composes them from its NpgsqlDataSource and from nothing else.
 public sealed class DurableJobSubstrateRegistrationTests
 {
-    [UnitTest]
-    public void AddGeoprocessing_RedisWithoutAttestedDurability_StillRegistersExecutionJobStore()
-    {
-        var services = ComposeJobSubstrate(attested: false);
+    private static readonly Type[] _jobSubstrateServices =
+    [
+        typeof(IExecutionJobStore),
+        typeof(IJobStoreClock),
+        typeof(IReconcilableJobSource),
+        typeof(IJobQueue),
+        typeof(IQueueClaimReconciler),
+        typeof(IExecutionLogStore),
+        typeof(IGeoprocessingResultPackageStore),
+    ];
 
-        services.Should().Contain(
-            descriptor => descriptor.ServiceType == typeof(IExecutionJobStore),
-            "durability attestation decides what the server ADVERTISES, never whether the "
-            + "execution-job store is resolvable (honua-server#4502)");
-    }
+    public static TheoryData<bool, bool, DurableJobSubstrateCause?> RedisStates => new()
+    {
+        { false, false, null },
+        { true, false, null },
+        { true, true, DurableJobSubstrateCause.RedisUnreachable },
+        { true, true, DurableJobSubstrateCause.RedisPersistenceDisabled },
+        { true, true, null },
+    };
+
+    public static TheoryData<bool, bool, DurableJobSubstrateCause?, DurableJobSubstrateCause> RedisCauses => new()
+    {
+        { false, true, null, DurableJobSubstrateCause.RedisNotConfigured },
+        { true, false, null, DurableJobSubstrateCause.RedisNotEntitled },
+        { true, true, DurableJobSubstrateCause.RedisUnreachable, DurableJobSubstrateCause.RedisUnreachable },
+        { true, true, DurableJobSubstrateCause.RedisPersistenceDisabled, DurableJobSubstrateCause.RuntimeIncomplete },
+        { true, true, null, DurableJobSubstrateCause.RuntimeIncomplete },
+    };
 
     [UnitTest]
-    public void AddGeoprocessing_RedisWithoutAttestedDurability_ExecutionJobConsumerActivates()
+    public void ServingHost_WithSystemDatabaseAndNoRedis_ResolvesTheJobSubstrateFromPostgres()
     {
-        var services = ComposeJobSubstrate(attested: false);
-        RegisterExecutionJobConsumer(services);
+        var services = ComposeServingHost(withSystemDatabase: true);
+        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IConnectionMultiplexer));
         using var provider = BuildProvider(services);
 
-        var resolve = () => provider.GetRequiredService<IExecutionJobReconciler>();
-
-        resolve.Should().NotThrow(
-            "the reconciler is registered unconditionally by the composition root, so the "
-            + "store it injects must resolve on a non-attested Redis too — this activation is "
-            + "the first of the 31 that threw 'Unable to resolve service for type "
-            + "IExecutionJobStore' and killed the process at startup (honua-server#4502)")
-            .Subject.Should().NotBeNull();
+        AssertStoreClockAndCandidateSourceAreTheJobStore(provider);
+        var queue = provider.GetRequiredService<IJobQueue>().Should().BeOfType<PostgresJobQueue>().Subject;
+        provider.GetRequiredService<IQueueClaimReconciler>().Should().BeSameAs(queue);
+        provider.GetRequiredService<IExecutionLogStore>().Should().BeOfType<PostgresExecutionLogStore>();
+        provider.GetRequiredService<IGeoprocessingResultPackageStore>()
+            .Should().BeOfType<PostgresGeoprocessingResultPackageStore>();
+        HostedImplementations(services).Should().Contain(typeof(JobExecutionService));
+        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(JobReconciliationService));
     }
 
     [UnitTest]
-    public void AddGeoprocessing_RedisWithAttestedDurability_RegistersDurableStore()
+    public void ServingHost_WithoutSystemDatabase_RegistersNoJobSubstrate()
     {
-        var services = ComposeJobSubstrate(attested: true);
-        RegisterExecutionJobConsumer(services);
+        var services = ComposeServingHost(withSystemDatabase: false);
+
+        foreach (var service in _jobSubstrateServices)
+        {
+            services.Should().NotContain(
+                descriptor => descriptor.ServiceType == service,
+                $"{service.Name} needs the system database");
+        }
+
+        HostedImplementations(services).Should().NotContain(typeof(JobExecutionService));
+        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(JobReconciliationService));
+    }
+
+    // AssignedExecutionJobQueue takes the store clock as an optional argument and reads the node
+    // clock without it, so a worker that lost the registration would still start.
+    [UnitTest]
+    public void ExecutionWorker_AfterTheWorkerProfile_KeepsTheStoreClockAndClaimsOnlyItsOperation()
+    {
+        var services = ComposeServingHost(withSystemDatabase: true);
+
+        services.ApplyExecutionWorkerProfile(new ExecutionWorkerLaunch { OperationId = "gp-assigned" });
+
         using var provider = BuildProvider(services);
-
-        provider.GetRequiredService<IExecutionJobStore>().Should().NotBeNull(
-            "the attested durable path from #4141 is unchanged");
-        provider.GetRequiredService<IJobQueue>().Should().NotBeNull();
-        provider.GetRequiredService<IExecutionJobReconciler>().Should().NotBeNull();
+        AssertStoreClockAndCandidateSourceAreTheJobStore(provider);
+        provider.GetRequiredService<IJobQueue>().Should().BeOfType<AssignedExecutionJobQueue>();
+        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(PostgresJobQueue));
+        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IQueueClaimReconciler));
     }
 
-    /// <summary>
-    /// The complementary half of the matrix: with no Redis at all there is no execution-job
-    /// substrate to compose and none of its consumers are registered either, so the stores-less
-    /// dev/test profile keeps its existing shape. This is what stops the #4502 fix from being
-    /// "register something unconditionally", which would switch on the Redis-gated tile-cache and
-    /// provisioner submission services against a queue that does not exist.
-    /// </summary>
     [UnitTest]
-    public void AddGeoprocessing_WithoutRedis_DoesNotRegisterExecutionJobStore()
+    public void ExecutionJobReconciliation_OnAHostWithTheJobStore_RegistersTheReconcilerAndBackstopSweep()
     {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddGeoprocessing(new ConfigurationBuilder().Build());
-        services.AddJobOrchestration();
+        var services = ComposeServingHost(withSystemDatabase: true);
 
-        services.Should().NotContain(
-            descriptor => descriptor.ServiceType == typeof(IExecutionJobStore));
-        services.Should().NotContain(
-            descriptor => descriptor.ServiceType == typeof(IJobQueue));
+        services.AddExecutionJobReconciliation();
+        services.AddExecutionJobReconciliationLoops(new ConfigurationBuilder().Build());
+
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IExecutionJobReconciler)
+            && descriptor.ImplementationType == typeof(ExecutionJobReconciler));
+        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(ExecutionJobBackstopSweepService));
+        HostedImplementations(services).Should().Contain(
+        [
+            typeof(ExecutionJobReconcilerBackgroundService),
+            typeof(ExecutionJobBackstopSweepService),
+            typeof(ExecutionQueueDepthCollectorBackgroundService),
+        ]);
+    }
+
+    [UnitTheory]
+    [MemberData(nameof(RedisStates))]
+    public void Classify_StoreAndQueuePresent_IsAvailableWhateverTheRedisState(
+        bool redisConfigured,
+        bool redisEntitled,
+        DurableJobSubstrateCause? redisFailure)
+        => RedisState(redisConfigured, redisEntitled, redisFailure)
+            .Classify(jobStorePresent: true, jobQueuePresent: true)
+            .Should().Be(DurableJobSubstrateCause.Available);
+
+    [UnitTheory]
+    [MemberData(nameof(RedisCauses))]
+    public void Classify_WithoutTheStoreOrTheQueue_ReportsTheRedisCause(
+        bool redisConfigured,
+        bool redisEntitled,
+        DurableJobSubstrateCause? redisFailure,
+        DurableJobSubstrateCause expected)
+    {
+        var options = RedisState(redisConfigured, redisEntitled, redisFailure);
+
+        options.Classify(jobStorePresent: false, jobQueuePresent: false).Should().Be(expected);
+        options.Classify(jobStorePresent: true, jobQueuePresent: false).Should().Be(
+            expected, "a store without a queue persists submissions that never drain");
+        options.Classify(jobStorePresent: false, jobQueuePresent: true).Should().Be(expected);
     }
 
     [UnitTest]
     public void EnsureSatisfied_RequireDurableStoreWithRejectedAttestation_ThrowsTypedStartupError()
     {
-        var options = new DurableJobSubstrateOptions
-        {
-            RedisConfigured = true,
-            RedisEntitled = true,
-            RedisDurabilityFailure = DurableJobSubstrateCause.RedisPersistenceDisabled,
-        };
+        var options = RedisState(
+            redisConfigured: true, redisEntitled: true, DurableJobSubstrateCause.RedisPersistenceDisabled);
 
         var act = () => DurableJobSubstrateStartupGate.EnsureSatisfied(
             options,
@@ -135,18 +170,14 @@ public sealed class DurableJobSubstrateRegistrationTests
     [UnitTest]
     public void EnsureSatisfied_RejectedAttestationWithoutRequireFlag_Degrades()
     {
-        var options = new DurableJobSubstrateOptions
-        {
-            RedisConfigured = true,
-            RedisEntitled = true,
-            RedisDurabilityFailure = DurableJobSubstrateCause.RedisPersistenceDisabled,
-        };
+        var options = RedisState(
+            redisConfigured: true, redisEntitled: true, DurableJobSubstrateCause.RedisPersistenceDisabled);
 
         var act = () => DurableJobSubstrateStartupGate.EnsureSatisfied(
             options,
             requireDurableStore: false);
 
-        act.Should().NotThrow("degrade-not-crash is the default startup policy (#4502)");
+        act.Should().NotThrow("a rejected attestation is information unless the operator required durability");
     }
 
     [UnitTest]
@@ -169,120 +200,55 @@ public sealed class DurableJobSubstrateRegistrationTests
         act.Should().NotThrow();
     }
 
-    [UnitTest]
-    public void AddGeoprocessing_ConnectedButUnentitledRedis_DoesNotRegisterExecutionJobStore()
+    // JobReconciliationService, ExecutionJobReconciler and ExecutionJobReconcilerBackgroundService
+    // take the store clock and the candidate source as optional arguments and fall back to the node
+    // clock and a scan of every active job, so nothing fails at startup when a registration is lost.
+    private static void AssertStoreClockAndCandidateSourceAreTheJobStore(IServiceProvider provider)
     {
-        // Infrastructure Redis is connected in every non-Development/Test deployment regardless of
-        // entitlement (requiresDurableDistributedEvents), so the multiplexer alone must never
-        // compose durable jobs — otherwise an unentitled deployment runs them.
-        var services = ComposeJobSubstrate(attested: true, entitled: false);
-
-        services.Should().NotContain(
-            descriptor => descriptor.ServiceType == typeof(IExecutionJobStore),
-            "entitlement is a separate gate from durability attestation (honua-server#4502)");
+        var store = provider.GetRequiredService<IExecutionJobStore>().Should().BeOfType<PostgresExecutionJobStore>().Subject;
+        provider.GetService<IJobStoreClock>().Should().BeSameAs(
+            store, "expiry is judged on the database clock, never on a node's");
+        provider.GetService<IReconcilableJobSource>().Should().BeSameAs(
+            store, "reconciliation reads its candidates from the store's index");
     }
 
-    [UnitTest]
-    public void Classify_UnentitledRedisThatAttests_ReportsNotEntitledRatherThanAvailable()
-    {
-        // The regression this pins: durability is inspected against whatever infrastructure Redis
-        // is connected, so an UNENTITLED deployment whose Redis does attest would otherwise be
-        // classified Available and advertise 'jobs.runner'.
-        var options = new DurableJobSubstrateOptions
-        {
-            RedisConfigured = true,
-            RedisEntitled = false,
-            RedisDurabilityAttestation = new RedisDurabilityAttestation(
-                "redis:6379",
-                "aof (appendonly=yes, aof_enabled=1)",
-                "appendfsync=everysec",
-                "noeviction",
-                DateTimeOffset.UtcNow),
-        };
-
-        options.Classify(jobStorePresent: true, jobQueuePresent: true)
-            .Should().Be(DurableJobSubstrateCause.RedisNotEntitled);
-    }
-
-    [UnitTest]
-    public void Classify_EntitledRedisThatAttests_StaysAvailable()
-    {
-        var options = new DurableJobSubstrateOptions
-        {
-            RedisConfigured = true,
-            RedisEntitled = true,
-            RedisDurabilityAttestation = new RedisDurabilityAttestation(
-                "redis:6379",
-                "aof (appendonly=yes, aof_enabled=1)",
-                "appendfsync=everysec",
-                "noeviction",
-                DateTimeOffset.UtcNow),
-        };
-
-        options.Classify(jobStorePresent: true, jobQueuePresent: true)
-            .Should().Be(DurableJobSubstrateCause.Available);
-    }
-
-    /// <summary>
-    /// Composes the durable job substrate the way the server's composition root does when Redis
-    /// is connected: <c>AddGeoprocessing</c> contributes the store, <c>AddJobOrchestration</c>
-    /// composes the queue and log store around it. <paramref name="attested"/> mirrors whether
-    /// <c>Program.cs</c> published the accepted attestation as a resolvable singleton;
-    /// <paramref name="entitled"/> mirrors the separate <see cref="DurableJobSubstrateEntitlement"/>
-    /// marker it publishes when the bootstrap license grants <c>caching.redis</c>. The two are
-    /// deliberately independent knobs — that is the honua-server#4502 contract.
-    /// </summary>
-    private static ServiceCollection ComposeJobSubstrate(bool attested, bool entitled = true)
+    // Composes the job substrate in the order the serving composition root does. Nothing connects
+    // to the database: no statement runs.
+    private static ServiceCollection ComposeServingHost(bool withSystemDatabase)
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton(Substitute.For<IConnectionMultiplexer>());
-
-        if (entitled)
+        if (withSystemDatabase)
         {
-            services.AddSingleton(new DurableJobSubstrateEntitlement());
+            services.AddSingleton(_ => NpgsqlDataSource.Create("Host=localhost;Database=unused"));
         }
 
-        if (attested)
-        {
-            services.AddSingleton(new RedisDurabilityAttestation(
-                "redis:6379",
-                "aof (appendonly=yes, aof_enabled=1)",
-                "appendfsync=everysec",
-                "noeviction",
-                DateTimeOffset.UtcNow));
-        }
-
-        services.AddGeoprocessing(new ConfigurationBuilder().Build());
+        var configuration = new ConfigurationBuilder().Build();
+        services.AddGeoprocessing(configuration);
         services.AddJobOrchestration();
+        services.AddJobWorker(configuration);
         return services;
     }
 
-    /// <summary>
-    /// Registers the real <c>ExecutionJobReconciler</c> — the first of the 31 consumers named in
-    /// the #4502 stack trace — with the collaborators the composition root gives it, so
-    /// <c>ValidateOnBuild</c> walks a constructor graph that genuinely requires
-    /// <see cref="IExecutionJobStore"/>.
-    /// </summary>
-    private static void RegisterExecutionJobConsumer(IServiceCollection services)
-    {
-        services.AddSingleton(Substitute.For<IUniversalProgressStore>());
-        services.AddSingleton<IExecutionJobReconciler, ExecutionJobReconciler>();
-    }
+    private static DurableJobSubstrateOptions RedisState(
+        bool redisConfigured,
+        bool redisEntitled,
+        DurableJobSubstrateCause? redisFailure)
+        => new()
+        {
+            RedisConfigured = redisConfigured,
+            RedisEntitled = redisEntitled,
+            RedisDurabilityFailure = redisFailure,
+        };
 
-    /// <summary>
-    /// Builds the container with scope validation on, then lets each test resolve the specific
-    /// consumer it cares about.
-    /// </summary>
-    /// <remarks>
-    /// Deliberately NOT <c>ValidateOnBuild</c>: that walks every descriptor
-    /// <c>AddGeoprocessing</c> contributes, most of which need the rest of the server composition
-    /// (authorization evaluators, metadata graph, file storage) that this focused fixture has no
-    /// business standing up. The #4502 failure is a resolution failure on one well-known
-    /// constructor graph, so resolving that graph reproduces it exactly — with the same
-    /// <c>Unable to resolve service for type 'IExecutionJobStore'</c> message the container
-    /// emitted 31 times at boot — without pulling in unrelated modules.
-    /// </remarks>
+    private static Type[] HostedImplementations(IServiceCollection services)
+        => services
+            .Where(static descriptor => descriptor.ServiceType == typeof(IHostedService) && descriptor.ImplementationType is not null)
+            .Select(static descriptor => descriptor.ImplementationType!)
+            .ToArray();
+
+    // Not ValidateOnBuild: AddGeoprocessing contributes descriptors that need the rest of the
+    // server composition, which these tests do not stand up.
     private static ServiceProvider BuildProvider(IServiceCollection services)
         => services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 }

@@ -95,8 +95,32 @@ internal static class PostgresDataSourceFactory
             }
         }
 
+        // A single-job execution worker runs one job and exits, so the serving host's defaults
+        // (min 20, max 200) would hold twenty connections per launched job.
+        if (!string.IsNullOrWhiteSpace(configuration[ExecutionWorkerOperationIdVariable]))
+        {
+            if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.MaxConnectionPoolSize)]))
+            {
+                limits.MaxConnectionPoolSize = ExecutionWorkerUnsetMaxConnectionPoolSize;
+            }
+
+            if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.MaxConcurrentQueries)]))
+            {
+                limits.MaxConcurrentQueries = Math.Min(limits.MaxConcurrentQueries, limits.MaxConnectionPoolSize);
+            }
+
+            if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.MinConnectionPoolSize)]))
+            {
+                limits.MinConnectionPoolSize = 0;
+            }
+        }
+
         return limits;
     }
+
+    internal const string ExecutionWorkerOperationIdVariable = "HONUA_OPERATION_ID";
+
+    internal const int ExecutionWorkerUnsetMaxConnectionPoolSize = 8;
 
     internal const int LambdaIdleConnectionLifetimeSeconds = 60;
 

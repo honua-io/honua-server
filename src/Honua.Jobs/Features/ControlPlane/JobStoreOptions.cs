@@ -14,4 +14,8 @@ internal sealed class JobStoreOptions
     public TimeSpan LogRetention { get; set; } = TimeSpan.FromDays(7);
 
     public int WorkerMaxPoolSize { get; set; } = 4;
+
+    public TimeSpan RetentionSweepInterval { get; set; } = TimeSpan.FromMinutes(10);
+
+    public int RetentionSweepBatchSize { get; set; } = 1000;
 }
