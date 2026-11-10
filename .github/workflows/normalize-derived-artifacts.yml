@@ -5,7 +5,7 @@ name: Derived Artifact Normalization
 # consumer validates that artifact without executing anything from this head.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, edited, converted_to_draft]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
     branches: [trunk]
     paths:
       - 'src/**'
@@ -183,9 +183,7 @@ jobs:
   produce:
     name: Produce data-only normalization envelope
     needs: generate
-    if: >-
-      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
-      && (needs.generate.result == 'success' && needs.generate.outputs.superseded != 'true' && needs.generate.outputs.generated_only != 'true')
+    if: needs.generate.result == 'success' && needs.generate.outputs.superseded != 'true' && needs.generate.outputs.generated_only != 'true'
     permissions:
       contents: read
     runs-on: ubuntu-latest

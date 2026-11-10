@@ -31,9 +31,7 @@ jobs:
       - name: Verify numerical mutations and scheduled receipt continuity
         run: python3 -m unittest discover -s scripts/qualification -p 'test_gp_canary.py' -v
   published-image-rehearsal:
-    if: >-
-      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
-      && (github.event_name == 'pull_request')
+    if: github.event_name == 'pull_request'
     needs: harness-checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -80,9 +78,7 @@ jobs:
   # count toward any streak. A manual dispatch still runs the canary and fails
   # closed on missing configuration.
   canary-not-configured:
-    if: >-
-      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
-      && (github.event_name == 'schedule' && vars.GP_CANARY_URL == '')
+    if: github.event_name == 'schedule' && vars.GP_CANARY_URL == ''
     needs: harness-checks
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -93,9 +89,7 @@ jobs:
           echo "::notice::${msg}"
           echo "${msg}" >> "$GITHUB_STEP_SUMMARY"
   geometry-buffer:
-    if: >-
-      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
-      && (github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && vars.GP_CANARY_URL != ''))
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && vars.GP_CANARY_URL != '')
     needs: harness-checks
     runs-on: ubuntu-latest
     timeout-minutes: 10

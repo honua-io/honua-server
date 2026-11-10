@@ -64,9 +64,7 @@ jobs:
           retention-days: 30
 
   publish-release-assets:
-    if: >-
-      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
-      && (github.event_name == 'release')
+    if: github.event_name == 'release'
     needs: generate-control-plane-sdks
     runs-on: ubuntu-latest
     timeout-minutes: 15

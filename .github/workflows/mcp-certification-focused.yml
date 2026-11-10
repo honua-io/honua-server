@@ -190,9 +190,7 @@ jobs:
           retention-days: 30
 
   certification:
-    if: >-
-      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
-      && (github.event_name == 'workflow_dispatch')
+    if: github.event_name == 'workflow_dispatch'
     name: Focused MCP (${{ matrix.transport }})
     runs-on: ubuntu-latest
     timeout-minutes: 15

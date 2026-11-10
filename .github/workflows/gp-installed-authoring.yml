@@ -39,7 +39,6 @@ jobs:
           if-no-files-found: error
 
   installed:
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     needs: pack
     strategy:
       fail-fast: false
@@ -81,7 +80,6 @@ jobs:
           if-no-files-found: warn
 
   handoff:
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     needs: installed
     runs-on: ubuntu-latest
     timeout-minutes: 10

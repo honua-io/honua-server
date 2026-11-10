@@ -45,9 +45,7 @@ jobs:
       - run: python3 scripts/cloud/test-standing-cert-plan-only.py
 
   plan:
-    if: >-
-      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
-      && (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk')
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk'
     needs: controls
     name: Seal unapproved plan for private retention
     runs-on: ubuntu-24.04

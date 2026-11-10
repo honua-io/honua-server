@@ -118,9 +118,7 @@ jobs:
     runs-on: ubuntu-24.04
     # The lane must not run against a validator whose own tests are red.
     needs: validator-selftest
-    if: >-
-      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
-      && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || inputs.server_image != '')
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || inputs.server_image != ''
     timeout-minutes: 45
     env:
       # honua-release nightly-certification correlation id; empty when not

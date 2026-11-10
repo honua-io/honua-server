@@ -1,10 +1,8 @@
 # CI Gate Model
 
-Draft pull requests run Format, Clean code, and Repository hygiene only; optional PR verification and PR Gate heavy jobs wait for `ready_for_review`. Converting a ready PR back to draft cancels its previous run. The stable `PR Gate` aggregate still runs with `always()` and fails on skipped heavy dependencies, so a draft run cannot supply mergeable verification. Manual and trunk verification retain their existing coverage.
-
 
 > Defines the five-tier quality gate model governing all CI workflows across the Honua project.
-> Last updated: 2026-11-09
+> Last updated: 2026-11-10
 
 ## Tier Definitions
 
@@ -17,6 +15,8 @@ Draft pull requests run Format, Clean code, and Repository hygiene only; optiona
 | **maintenance** | Repo automation and housekeeping | Version automation, metadata updates, scheduled hygiene | No |
 
 ## Governing Rules
+
+Draft pull requests run Format, Clean code, and Repository hygiene only; optional PR verification and PR Gate heavy jobs wait for `ready_for_review`. Converting a ready PR back to draft cancels its previous run. The stable `PR Gate` aggregate still runs with `always()` and fails on skipped heavy dependencies, so a draft run cannot supply mergeable verification. Manual and trunk verification retain their existing coverage.
 
 1. **PR gates must be deterministic and directly actionable by the author.** If a check fails, the author must be able to reproduce and fix it locally without external system access.
 

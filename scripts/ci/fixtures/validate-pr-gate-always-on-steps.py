@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
-"""Assert the always-on PR Gate steps stay unconditional.
+"""Keep PR Gate contract checks unconditional within every admitted job.
 
-Both steps read documents that the PR Gate impact classifier treats as safe or
-as governed: `Verify review-first admission contract` parses
-`docs/internal/ci/gate-model.md` and `docs/internal/ci/workflow-inventory.md`,
-and `Verify .NET base-image security inventory` parses the code-scanning
-inventory. Their soundness argument depends on running unconditionally, so this
-asserts it structurally -- no step `if`, no `continue-on-error`, only the draft admission job guard,
-and the step still invokes its script -- rather than by matching workflow text.
+These steps parse documents classified as safe or governed by the impact router.
+They must run on every ready PR head and manual dispatch, without step-level
+conditions or continue-on-error. Draft admission skips the heavy job; the required
+aggregate fails closed on its skipped dependencies.
 """
 
 from __future__ import annotations

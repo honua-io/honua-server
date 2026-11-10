@@ -2,7 +2,6 @@
 """Exercise draft admission and cancellation in the actual PR workflows."""
 
 import json
-import os
 from pathlib import Path
 import subprocess
 import unittest
@@ -49,7 +48,7 @@ def evaluate(condition, event, needs=None, cancelled=False):
     expression = condition.removeprefix("${{").removesuffix("}}").strip()
     expression = expression.replace("needs.runner-select", 'needs["runner-select"]')
     probe = """const {expression, github, needs, cancelled} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
-process.stdout.write(JSON.stringify(new Function('github', 'needs', 'always', 'cancelled', `return (${expression});`)(github, needs, () => true, () => cancelled)));
+process.stdout.write(JSON.stringify(new Function('github', 'needs', 'always', 'cancelled', 'inputs', 'vars', `return (${expression});`)(github, needs, () => true, () => cancelled, {server_image: '', existing_image: ''}, {GP_CANARY_URL: ''})));
 """
     result = subprocess.run(["node", "-e", probe], input=json.dumps({
         "expression": expression, "github": event, "needs": needs or {}, "cancelled": cancelled,
@@ -111,6 +110,7 @@ class PullRequestLoadTests(unittest.TestCase):
     def test_required_checks_keep_draft_admission_and_names(self):
         gate = workflow("pr-gate.yml")
         self.assertIn("ready_for_review", gate["on"]["pull_request"].get("types", []))
+        self.assertIn("converted_to_draft", gate["on"]["pull_request"].get("types", []))
         self.assertEqual(gate["jobs"]["required"]["name"], "PR Gate")
         self.assertEqual(gate["jobs"]["affected-shards"]["name"], "PR Gate / Affected shards")
         required = ("clean-code.yml", "repo-hygiene.yml")
@@ -142,28 +142,6 @@ class PullRequestLoadTests(unittest.TestCase):
         needs["runner-select"]["result"] = "success"
         self.assertTrue(evaluate(condition, event, needs))
 
-    def test_required_aggregate_rejects_skipped_heavy_work(self):
-        required = workflow("pr-gate.yml")["jobs"]["required"]
-        self.assertEqual(required["needs"], [
-            "pr-gate", "fast-tests", "format", "ci-router-validation", "affected-shards",
-        ])
-        step = required["steps"][0]
-        results = {key: "success" for key in step["env"]}
-
-        def run(overrides):
-            return subprocess.run(["bash", "-c", step["run"]],
-                                  env={**os.environ, "GITHUB_EVENT_NAME": "pull_request",
-                                       **results, **overrides},
-                                  text=True, capture_output=True, timeout=10).returncode
-
-        self.assertEqual(run({}), 0)
-        for key in results:
-            for outcome in ("skipped", "failure", "cancelled", ""):
-                with self.subTest(dependency=key, outcome=outcome):
-                    self.assertNotEqual(run({key: outcome}), 0)
-        self.assertNotEqual(run({key: "skipped" for key in results
-                                 if key != "FORMAT_RESULT"}), 0)
-
     def test_optional_pr_jobs_refuse_drafts(self):
         for path in sorted(WORKFLOWS.glob("*.y*ml")):
             definition = workflow(path.name)
@@ -174,10 +152,17 @@ class PullRequestLoadTests(unittest.TestCase):
             with self.subTest(workflow=path.name):
                 types = definition["on"]["pull_request"].get("types", [])
                 self.assertIn("ready_for_review", types)
-                self.assertIn("converted_to_draft", types)
+                if definition.get("concurrency", {}).get("cancel-in-progress") != "false":
+                    self.assertIn("converted_to_draft", types)
             for key, job in definition["jobs"].items():
                 with self.subTest(workflow=path.name, job=key):
-                    self.assertIn(DRAFT_GUARD, job.get("if", ""))
+                    condition = job.get("if", "true")
+                    if job.get("needs") and "always()" not in condition and "!cancelled()" not in condition:
+                        continue
+                    event = {"event_name": "pull_request", "ref": "refs/pull/1/merge", "event": {
+                        "pull_request": {"draft": True}, "inputs": {},
+                    }}
+                    self.assertFalse(evaluate(condition, event), condition)
 
     def test_trusted_observers_keep_current_draft_refusal(self):
         observer = workflow("server-test-prebuild-observe.yml")

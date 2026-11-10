@@ -46,9 +46,7 @@ jobs:
 
   postgres-webhook-e2e:
     name: ENABLED exact candidate / Postgres webhook E2E
-    if: >-
-      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
-      && (github.event_name == 'workflow_dispatch')
+    if: github.event_name == 'workflow_dispatch'
     needs: receipt-contract
     runs-on: ubuntu-24.04
     timeout-minutes: 25
