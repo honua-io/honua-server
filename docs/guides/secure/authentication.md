@@ -241,7 +241,7 @@ Oidc__Generic__ClientId=honua-admin
 Oidc__Generic__ClientSecret=$OIDC_CLIENT_SECRET
 ```
 
-For a separately hosted Console, pin the backend-assisted admin broker's callback:
+For a static Console sharing a public origin with the API, pin the server broker's callback:
 
 ```bash
 Oidc__AdminAuthCallbackUri=https://console.example.com/admin/auth/callback
@@ -250,12 +250,23 @@ Oidc__AdminAuthCallbackUri=https://console.example.com/admin/auth/callback
 Keep `Public__BaseUrl` at the public API origin. The optional callback must be an
 absolute HTTPS URI with the exact `/admin/auth/callback` path and no user information,
 query or fragment. Register that same URI on the OIDC app client and route it to
-Console's authenticated BFF. The broker uses this deployment setting for both
+the API origin. With CloudFront, route `/admin/auth/callback` to the API origin on
+the same distribution as `/console/`; no edge redirect is needed. The broker uses
+this deployment setting for both
 creation of the authorization URL and authorization-code exchange; request bodies
 cannot choose a redirect. Without the setting, the existing `Public:BaseUrl` plus
 `/admin/auth/callback` behavior is retained, including an existing public path prefix.
 This setting does not alter API links, ASP.NET OIDC middleware callback paths, or
 post-logout URLs. State, pending-session cookies and PKCE remain required.
+
+The authorization URL request accepts an optional `returnTo` field. The exact
+allowed paths are `/console/` (the default) and `/console/operate/connections`.
+The server stores this path with the authorization state and PKCE verifier. The
+root callback exchanges the code, sets the authenticated session cookie, and
+redirects to the stored path. Callback query parameters cannot select the return
+path. The pending login cookie uses `SameSite=Lax` for the provider redirect; the
+authenticated session cookie uses `SameSite=Strict`. On landing, Console refreshes
+its session identity and CSRF token before sending authenticated mutations.
 
 Cognito logout requires separate deployment integration: Console's current logout
 clears its local/operator sessions and upstream server cookie jar, but does not

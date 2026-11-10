@@ -72,6 +72,7 @@ public sealed class AdminAuthClaimInfo
 
 internal sealed class AdminAuthAuthorizeUrlRequest
 {
+    public string? ReturnTo { get; init; }
 }
 
 internal sealed class AdminAuthAuthorizeUrlResponse

@@ -264,6 +264,12 @@
     },
     {
       "family": "Admin API",
+      "routePrefix": "/admin/auth/callback",
+      "method": "GET",
+      "capability": "identity.oidc"
+    },
+    {
+      "family": "Admin API",
       "routePrefix": "/api/v1/admin/oidc",
       "capability": "identity.oidc"
     },

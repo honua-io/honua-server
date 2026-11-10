@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Infrastructure.Security;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -96,7 +97,7 @@ public sealed class CorsConfigurationTests
         Assert.Contains("Content-Type", policy.Headers);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("https://console.example.com", true)]
     [InlineData("https://other.example.com", false)]
     [InlineData("https://console.example.com:8443", false)]
@@ -114,7 +115,7 @@ public sealed class CorsConfigurationTests
         Assert.Equal(allowed, policy.IsOriginAllowed(origin));
     }
 
-    [Fact]
+    [UnitTest]
     public async Task DevelopmentPolicy_WithCredentials_RejectsWildcardOrigins()
     {
         var policy = await ResolvePolicyAsync(CorsConfiguration.DevelopmentPolicy, true,

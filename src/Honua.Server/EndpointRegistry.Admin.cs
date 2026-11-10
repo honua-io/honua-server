@@ -26,6 +26,7 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/admin/configuration/audit"),
         new("GET", "/api/v1/admin/configuration/summary"),
         new("GET", "/api/v1/admin/auth/config"),
+        new("GET", "/admin/auth/callback"),
         new("POST", "/api/v1/admin/auth/bearer"),
         new("POST", "/api/v1/admin/auth/password-token"),
         new("POST", "/api/v1/admin/auth/logout"),

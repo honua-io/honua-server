@@ -14,6 +14,7 @@ internal static class BrowserSessionSecurity
     {
         services.AddScoped<AdminPasswordAuthenticator>();
         services.AddScoped<AdminPasswordSessionEndpoint>();
+        services.AddScoped<AdminOidcCallbackEndpoint>();
         services.AddScoped<AdminPasswordTokenEndpoint>();
         services.AddAntiforgery(options =>
         {

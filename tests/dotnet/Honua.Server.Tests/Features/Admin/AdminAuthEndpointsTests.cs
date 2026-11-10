@@ -62,6 +62,7 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/auth/password-token")]
     [Endpoint("GET /api/v1/admin/config")]
+    [Endpoint("GET /api/v1/admin/auth/session")]
     public async Task PasswordToken_AllowedOrigin_IssuesUsableBearerWithoutCookies()
     {
         await using var fixture = CreatePasswordTokenFixture();
@@ -79,6 +80,14 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
         api.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token.AccessToken);
         using var authorized = await api.GetAsync("/api/v1/admin/config");
         authorized.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var identityResponse = await api.GetAsync("/api/v1/admin/auth/session");
+        identityResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var identity = await identityResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthSessionResponse);
+        identity!.IsAuthenticated.Should().BeTrue();
+        identityResponse.Headers.Contains("Set-Cookie").Should().BeFalse();
+        identity.ProviderKey.Should().Be("operator-bearer");
+        identity.Claims.Should().Contain(claim => claim.Type == ClaimTypes.NameIdentifier
+            && claim.Value == ApiKeyAuthenticationHandler.BootstrapAdminActorId.ToString());
     }
 
     [IntegrationTheory]
@@ -449,6 +458,106 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [IntegrationTheory]
+    [InlineData(null, "/console/")]
+    [InlineData("/console/", "/console/")]
+    [InlineData("/console/operate/connections", "/console/operate/connections")]
+    [Endpoint("GET /admin/auth/callback")]
+    [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
+    public async Task BrowserCallback_ExchangesCodeAndRedirectsToStoredConsolePath(string? returnTo, string expected)
+    {
+        using var stubFactory = CreateCallbackStub();
+        await using var fixture = CreateGenericOidcFixture(stubFactory);
+        await fixture.InitializeAsync();
+        using var browser = fixture.CreateClient(allowAutoRedirect: false);
+        browser.BaseAddress = new Uri("https://localhost");
+        using var authorize = await browser.PostAsJsonAsync(
+            "/api/v1/admin/auth/providers/oidc/authorize-url", new { returnTo });
+        authorize.StatusCode.Should().Be(HttpStatusCode.OK);
+        authorize.Headers.GetValues("Set-Cookie").Should().Contain(value =>
+            value.Contains("honua_admin_login=", StringComparison.Ordinal)
+            && value.Contains("SameSite=Lax", StringComparison.OrdinalIgnoreCase)
+            && value.Contains("Secure", StringComparison.OrdinalIgnoreCase));
+        var body = await authorize.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthAuthorizeUrlResponse);
+        var state = QueryHelpers.ParseQuery(new Uri(body!.AuthorizeUrl).Query)["state"].ToString();
+        using var callback = await browser.GetAsync(
+            "/admin/auth/callback?code=code-123&returnTo=https://unlisted.example.com&state=" + state);
+        callback.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        callback.Headers.Location!.OriginalString.Should().Be(expected);
+        callback.Headers.CacheControl!.NoStore.Should().BeTrue();
+        using var identity = await browser.GetAsync("/api/v1/admin/auth/session");
+        var session = await identity.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthSessionResponse);
+        session!.IsAuthenticated.Should().BeTrue();
+        using var replay = await browser.GetAsync("/admin/auth/callback?code=code-123&state=" + state);
+        replay.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTheory]
+    [InlineData("https://unlisted.example.com/console/")]
+    [InlineData("//unlisted.example.com/console/")]
+    [InlineData("/console/../admin")]
+    [InlineData("/console/%2e%2e/admin")]
+    [InlineData("/console/operate/connections?next=https://unlisted.example.com")]
+    [InlineData("/admin/")]
+    [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
+    public async Task BrowserCallback_UnlistedReturnPath_IsRejected(string returnTo)
+    {
+        using var stubFactory = CreateCallbackStub();
+        await using var fixture = CreateGenericOidcFixture(stubFactory);
+        await fixture.InitializeAsync();
+        using var browser = fixture.CreateClient();
+        browser.BaseAddress = new Uri("https://localhost");
+        using var response = await browser.PostAsJsonAsync(
+            "/api/v1/admin/auth/providers/oidc/authorize-url", new { returnTo });
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Headers.Contains("Set-Cookie").Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /admin/auth/callback")]
+    public async Task BrowserCallback_WithoutPendingSession_IsRejected()
+    {
+        using var browser = _fixture.CreateClient(allowAutoRedirect: false);
+        browser.BaseAddress = new Uri("https://localhost");
+        using var response = await browser.GetAsync("/admin/auth/callback?code=code-123&state=untrusted");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTheory]
+    [InlineData("wrong-state")]
+    [InlineData("provider-error")]
+    [InlineData("missing-code")]
+    [Endpoint("GET /admin/auth/callback")]
+    [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
+    public async Task BrowserCallback_InvalidProviderResponse_DoesNotAuthenticate(string failure)
+    {
+        using var stubFactory = CreateCallbackStub();
+        await using var fixture = CreateGenericOidcFixture(stubFactory);
+        await fixture.InitializeAsync();
+        using var browser = fixture.CreateClient(allowAutoRedirect: false);
+        browser.BaseAddress = new Uri("https://localhost");
+        using var authorize = await browser.PostAsJsonAsync(
+            "/api/v1/admin/auth/providers/oidc/authorize-url", new { });
+        authorize.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await authorize.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthAuthorizeUrlResponse);
+        var state = QueryHelpers.ParseQuery(new Uri(body!.AuthorizeUrl).Query)["state"].ToString();
+        var query = failure switch
+        {
+            "wrong-state" => "code=code-123&state=wrong",
+            "provider-error" => "error=access_denied&state=" + state,
+            _ => "state=" + state
+        };
+        using var callback = await browser.GetAsync("/admin/auth/callback?" + query);
+        callback.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var identity = await browser.GetAsync("/api/v1/admin/auth/session");
+        var session = await identity.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthSessionResponse);
+        session!.IsAuthenticated.Should().BeFalse();
+    }
+
+    private static StubHttpClientFactory CreateCallbackStub() => new(
+        "https://auth.example.com/.well-known/openid-configuration",
+        new StubOidcEndpoints("https://auth.example.com/authorize", "https://auth.example.com/token", "https://auth.example.com/logout"));
+
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
     public async Task CreateAuthorizeUrl_SetsHttpOnlyPendingSessionCookie()
@@ -480,7 +589,7 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
 
             loginCookies.Should().ContainSingle();
             loginCookies.Should().OnlyContain(v => v.Contains("HttpOnly", StringComparison.OrdinalIgnoreCase));
-            loginCookies.Should().OnlyContain(v => v.Contains("SameSite=Strict", StringComparison.OrdinalIgnoreCase));
+            loginCookies.Should().OnlyContain(v => v.Contains("SameSite=Lax", StringComparison.OrdinalIgnoreCase));
         }
         finally
         {

@@ -27,26 +27,26 @@ internal sealed partial class AdminAuthSessionStore(
     private readonly ILogger<AdminAuthSessionStore> _logger = logger;
     private readonly IDistributedCache? _distributedCache = distributedCache;
 
-    public async Task<string> CreatePendingSessionAsync(
+    public Task<string> CreatePendingSessionAsync(
         string providerKey,
         string state,
         string codeVerifier,
         DateTimeOffset expiresAt,
-        CancellationToken cancellationToken)
-    {
-        var sessionId = CreateSessionId();
-        var session = new AdminAuthPendingSession
+        CancellationToken cancellationToken) => CreatePendingSessionAsync(new AdminAuthPendingSession
         {
             ProviderKey = providerKey,
             State = state,
             CodeVerifier = codeVerifier,
             ExpiresAt = expiresAt
-        };
+        }, cancellationToken);
 
+    public async Task<string> CreatePendingSessionAsync(AdminAuthPendingSession session, CancellationToken cancellationToken)
+    {
+        var sessionId = CreateSessionId();
         await SetAsync(
             PendingSessionKeyPrefix + sessionId,
             session,
-            expiresAt,
+            session.ExpiresAt,
             AdminAuthSessionStoreJsonContext.Default.AdminAuthPendingSession,
             cancellationToken).ConfigureAwait(false);
 
@@ -332,6 +332,8 @@ internal sealed class AdminAuthPendingSession : AdminAuthSessionState
     public required string State { get; init; }
 
     public required string CodeVerifier { get; init; }
+
+    public string ReturnTo { get; init; } = "/console/";
 }
 
 internal sealed class AdminAuthAuthenticatedSession : AdminAuthSessionState
