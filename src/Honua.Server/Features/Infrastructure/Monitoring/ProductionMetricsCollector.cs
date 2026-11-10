@@ -46,7 +46,7 @@ internal sealed class ProductionMetricsCollector : IDisposable
 
         _cacheHitRatio = _meter.CreateObservableGauge<double>(
             "honua_cache_hit_ratio",
-            () => CalculateCacheHitRatio(),
+            () => CalculateCacheHitRatio(_cacheMetricsSnapshotProvider.GetCacheMetricsSnapshot()),
             description: "Cache hit ratio (0.0-1.0)");
 
         _uploadQueueDepth = _meter.CreateObservableGauge<int>(
@@ -59,7 +59,8 @@ internal sealed class ProductionMetricsCollector : IDisposable
     {
         var memoryUsage = GC.GetTotalMemory(false);
         var hasPoolUtilization = _connectionPoolMetrics.TryGetPoolUtilization(out var utilization);
-        var cacheHitRatio = CalculateCacheHitRatio();
+        var cacheSnapshot = _cacheMetricsSnapshotProvider.GetCacheMetricsSnapshot();
+        var cacheHitRatio = CalculateCacheHitRatio(cacheSnapshot);
         var requestMetrics = _httpRequestMetricsSnapshotProvider.GetHttpRequestMetricsSnapshot();
         var totalRequests = requestMetrics.TotalRequests;
         var totalServerErrors = requestMetrics.TotalServerErrors;
@@ -71,6 +72,7 @@ internal sealed class ProductionMetricsCollector : IDisposable
             DatabaseConnectionPoolUtilization = hasPoolUtilization ? utilization : 0.0,
             HasDatabaseConnectionPoolUtilization = hasPoolUtilization,
             CacheHitRatio = cacheHitRatio,
+            HasCacheSamples = cacheSnapshot.TotalHits > 0 || cacheSnapshot.TotalMisses > 0,
             TotalQueries = totalRequests,
             TotalErrors = totalServerErrors,
             // Error rate is a WINDOWED signal (#2809): a lifetime ratio (cumulative errors over cumulative
@@ -85,9 +87,8 @@ internal sealed class ProductionMetricsCollector : IDisposable
         };
     }
 
-    private double CalculateCacheHitRatio()
+    private static double CalculateCacheHitRatio(CacheMetricsSnapshot snapshot)
     {
-        var snapshot = _cacheMetricsSnapshotProvider.GetCacheMetricsSnapshot();
         var hits = snapshot.TotalHits;
         var misses = snapshot.TotalMisses;
         var total = hits + misses;
@@ -161,6 +162,8 @@ public sealed class ProductionHealthMetrics
 
     public required double CacheHitRatio { get; set; }
 
+    public required bool HasCacheSamples { get; set; }
+
     public required long TotalQueries { get; set; }
 
     public required long TotalErrors { get; set; }
@@ -179,7 +182,7 @@ public sealed class ProductionHealthMetrics
 
     public bool IsHealthy()
     {
-        return CacheHitRatio >= 0.8 &&
+        return (!HasCacheSamples || CacheHitRatio >= 0.8) &&
                (!HasDatabaseConnectionPoolUtilization || DatabaseConnectionPoolUtilization <= 0.8) &&
                ErrorRate <= 0.05 &&
                MemoryPressureLevel != "critical";
@@ -189,7 +192,7 @@ public sealed class ProductionHealthMetrics
     {
         var alerts = new List<string>();
 
-        if (CacheHitRatio < 0.8)
+        if (HasCacheSamples && CacheHitRatio < 0.8)
         {
             alerts.Add($"Low cache hit ratio: {CacheHitRatio:P2}");
         }

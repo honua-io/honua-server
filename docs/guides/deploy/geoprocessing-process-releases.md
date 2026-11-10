@@ -7,7 +7,7 @@ description: "Operate the per-process release binding: publish locks, activate a
 
 A custom geoprocessing process runs the release its **binding** names. The binding maps the
 logical process name to one published release lock (see the
-[descriptor and lock reference](../reference/gp-process-release.md)), carries the provider
+[descriptor and lock reference](../../reference/gp-process-release.md)), carries the provider
 identities jobs are pinned to, and has a version that every activation increments. Activation
 is a compare-and-set on that version, so two deployments cannot both believe they won.
 

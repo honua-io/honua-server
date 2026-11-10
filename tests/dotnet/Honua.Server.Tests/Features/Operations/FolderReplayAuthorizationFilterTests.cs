@@ -33,6 +33,7 @@ public sealed class FolderReplayAuthorizationFilterTests
 {
     [UnitTheory]
     [InlineData("valid", true)]
+    [InlineData("unapproved", false)]
     [InlineData("forged", false)]
     [InlineData("replayed", false)]
     [InlineData("expired", false)]
@@ -54,6 +55,7 @@ public sealed class FolderReplayAuthorizationFilterTests
     public async Task InvokeAsync_ReplayBoundary_DelegatesOnlySealedExecutingFolderOperation(string scenario, bool delegated)
     {
         var proposal = Proposal();
+        if (scenario == "unapproved") proposal = proposal with { ResolvedBy = null };
         if (scenario == "wrong-proposal-lineage") proposal = proposal with { ProposalId = "another" };
         if (scenario == "wrong-operation") proposal = proposal with { OperationId = "folder.delete" };
         if (scenario == "wrong-tenant") proposal = proposal with { TenantId = "another" };
@@ -109,8 +111,10 @@ public sealed class FolderReplayAuthorizationFilterTests
         };
         var context = Context("valid");
         context.RequestServices = services;
+        var invoked = false;
         await InvokeWithLineageAsync(context, "valid", async invocation =>
         {
+            invoked = true;
             invocation.HttpContext.User.IsInRole(OperationPolicyBuiltInRules.FullAdministratorRole).Should().BeTrue();
             (await AccessPolicyHelpers.RequireServiceAccessAsync(context, service, AuthorizationOperation.Admin)).Should().BeNull();
             var denied = await FolderEndpoints.RequireServiceAccessAsync(context, service);
@@ -119,6 +123,7 @@ public sealed class FolderReplayAuthorizationFilterTests
             context.User.IsInRole(OperationPolicyBuiltInRules.FullAdministratorRole).Should().BeTrue();
             return null;
         });
+        invoked.Should().BeTrue("the service-policy check must actually execute");
     }
 
     [UnitTheory]
@@ -166,6 +171,7 @@ public sealed class FolderReplayAuthorizationFilterTests
             TenantId = "public",
             Kind = OperationClass.AdminConfigChange,
             Status = OperationProposalStatus.Executing,
+            ResolvedBy = "approver",
             Plan = plan,
             SealedPlanHash = OperationApprovalPlanSeal.Compute(plan),
             Audit = new OperationAuditInfo { OperationInstanceId = "instance" },

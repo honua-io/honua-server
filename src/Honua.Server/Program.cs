@@ -236,6 +236,10 @@ if (clientCertificateMode != ClientCertificateAuthenticationMode.Disabled)
 // envelope was created on another node fails closed instead of being replayed with plaintext.
 builder.Services.AddDataProtection()
     .SetApplicationName("Honua.Server");
+builder.Services.AddSingleton<Honua.ControlPlane.OperationHumanApprovalAuthority>();
+builder.Services.AddSingleton<Honua.ControlPlane.OperationInitiationResolver>();
+builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationHumanApprovalVerifier>(
+    services => services.GetRequiredService<Honua.ControlPlane.OperationHumanApprovalAuthority>());
 
 // Enable Aspire integrations only when Aspire configuration is present.
 var useAspire = builder.Configuration.GetSection("Aspire").Exists();

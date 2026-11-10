@@ -28,7 +28,10 @@ public sealed partial class FeatureStreamEndpointsTests
         { "services", "{\"status\":{\"lifecycle\":-1}}" },
         { "publications", "{\"publicationType\":\"future-layer\"}" },
         { "publications", "{\"status\":{\"lifecycle\":\"future-lifecycle\"}}" },
-        { "publications", "{\"status\":{\"lifecycle\":-1}}" }
+        { "publications", "{\"status\":{\"lifecycle\":-1}}" },
+        { "resources", "{\"spatial\":{\"primaryGeometryField\":\"shape\"},\"schemaFields\":[{\"name\":\"shape\",\"type\":\"future-field\"}]}" },
+        { "resources", "{\"temporal\":{\"startTimeField\":\"start\"},\"schemaFields\":[{\"name\":\"start\",\"type\":18446744073709551616}]}" },
+        { "resources", "{\"temporal\":{\"endTimeField\":\"end\"},\"schemaFields\":[{\"name\":\"end\",\"type\":\"future-field\"}]}" }
     };
 
     [IntegrationTheory]

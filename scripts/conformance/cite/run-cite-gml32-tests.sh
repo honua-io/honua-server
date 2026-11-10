@@ -12,6 +12,8 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 CITE_COMPOSE_FILE="docker/cite/gml32/compose.yml"
+source "$(dirname "${BASH_SOURCE[0]}")/../../ci/lib/isolate-test-compose.sh"
+honua_isolate_test_compose "$CITE_COMPOSE_FILE"
 CITE_RESULTS_DIR="cite-gml32-results"
 CITE_RESULTS_CONTAINER_DIR="/root/te_base/users/cite/logs"
 CITE_TIMEOUT=1800
@@ -228,8 +230,8 @@ if [[ "$INTERACTIVE" == "true" ]]; then
     echo -e "${BLUE}Interactive mode enabled${NC}"
     echo "Services are running at:"
     echo "  Honua Server:     $HONUA_BASE_URL"
-    echo "  CITE Team Engine: http://localhost:8086/teamengine"
-    echo "  PostgreSQL:       localhost:5438"
+    echo "  CITE Team Engine: http://localhost:${HONUA_CITE_GML32_TEAMENGINE_PORT}/teamengine"
+    echo "  PostgreSQL:       localhost:${HONUA_CITE_GML32_POSTGRES_PORT}"
     echo ""
     echo "Press Ctrl+C to stop all services"
     tail -f /dev/null

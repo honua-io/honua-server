@@ -18,19 +18,16 @@ internal sealed class DurableRestoreQueue(IWorkflowOperationStore store, IOperat
     public async Task<string> EnqueueAsync(OperationGatewayRequest request, string payload, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.RequestedBy) || string.IsNullOrWhiteSpace(request.ApprovedBy)
-            || string.IsNullOrWhiteSpace(request.ApprovedProposalId)
-            || string.Equals(request.RequestedBy, request.ApprovedBy, StringComparison.OrdinalIgnoreCase))
+            || string.IsNullOrWhiteSpace(request.ApprovedProposalId))
         {
-            throw new InvalidOperationException("A separate principal must approve the restore.");
+            throw new InvalidOperationException("A durable human approval must authorize the restore.");
         }
 
         // The gateway persists a fresh nonce when it claims approval. Read it back rather
         // than deriving identity from a caller key shared by later operations or other cells.
         var proposal = await proposals.GetAsync(request.ApprovedProposalId!, cancellationToken).ConfigureAwait(false);
         if (proposal?.Kind != OperationClass.Deploy || string.IsNullOrWhiteSpace(proposal.ExecutionOperationId)
-            || proposal.RequestedBy != request.RequestedBy || proposal.ResolvedBy != request.ApprovedBy
-            || proposal.TenantId != request.TenantId || proposal.Audit.OperationInstanceId != request.OperationInstanceId
-            || proposal.Plan.ExecutionPayload != payload)
+            || !OperationHumanApprovalEvidenceValidation.MatchesExecutionRequest(proposal, request, payload))
         {
             throw new InvalidOperationException("The restore must match its durable approval claim.");
         }
@@ -53,6 +50,7 @@ internal sealed class DurableRestoreQueue(IWorkflowOperationStore store, IOperat
             {
                 OperationInstanceId = request.OperationInstanceId,
                 RequestedBy = request.RequestedBy,
+                ApprovedBy = request.ApprovedBy,
                 ProposalId = request.ApprovedProposalId,
                 IdempotencyKey = id,
                 CorrelationId = request.CorrelationId,
@@ -145,6 +143,16 @@ internal sealed partial class DurableRestoreWorker(
                 await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, lostLease.Token).ConfigureAwait(false);
                 return;
             }
+            var proposal = string.IsNullOrWhiteSpace(record.Audit.ProposalId)
+                ? null : await proposals.GetAsync(record.Audit.ProposalId, lostLease.Token).ConfigureAwait(false);
+            if (context.Phase is "awaiting-local-deploy" or "awaiting-rds" or "awaiting-compatible-deploy" or "awaiting-deploy")
+            {
+                if (proposal is null || !MatchesResumedApproval(proposal, record))
+                {
+                    await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, lostLease.Token).ConfigureAwait(false);
+                    return;
+                }
+            }
             if (context.Phase == "awaiting-local-deploy")
             {
                 await CompleteLocalAsync(record, lostLease.Token).ConfigureAwait(false);
@@ -170,24 +178,11 @@ internal sealed partial class DurableRestoreWorker(
                 await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, lostLease.Token).ConfigureAwait(false);
                 return;
             }
-            // Approval and the operation id must be durable before the side effects begin.
-            var proposal = string.IsNullOrWhiteSpace(record.Audit.ProposalId)
-                ? null : await proposals.GetAsync(record.Audit.ProposalId, lostLease.Token).ConfigureAwait(false);
             if (proposal is { Status: OperationProposalStatus.Executing } &&
                 DateTimeOffset.UtcNow - record.CreatedAt > TimeSpan.FromMinutes(5))
             {
-                // Recover only an already-claimed, sealed proposal whose durable enqueue exactly
-                // matches the original approval. The delay avoids racing the live gateway write.
-                var validClaim = proposal.Kind == OperationClass.Deploy &&
-                    !string.IsNullOrWhiteSpace(proposal.SealedPlanHash) &&
-                    string.Equals(proposal.SealedPlanHash, Honua.Server.Features.Operations.OperationApprovalPlanSeal.Compute(proposal.Plan), StringComparison.Ordinal) &&
-                    string.Equals(proposal.Plan.ExecutionPayload, context.Payload, StringComparison.Ordinal) &&
-                    string.Equals(proposal.ExecutionOperationId, record.OperationId, StringComparison.Ordinal) &&
-                    string.Equals(proposal.RequestedBy, record.Audit.RequestedBy, StringComparison.Ordinal) &&
-                    string.Equals(proposal.ResolvedBy, context.ApprovedBy, StringComparison.Ordinal) &&
-                    !string.Equals(proposal.RequestedBy, proposal.ResolvedBy, StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(proposal.TenantId, record.Audit.TenantId, StringComparison.Ordinal);
-                if (!validClaim)
+                // The delay avoids racing the live gateway's submission checkpoint.
+                if (!MatchesQueuedApproval(proposal, record))
                 {
                     await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, lostLease.Token).ConfigureAwait(false);
                     return;
@@ -201,8 +196,7 @@ internal sealed partial class DurableRestoreWorker(
                 proposal = await proposals.GetAsync(proposal.ProposalId, lostLease.Token).ConfigureAwait(false);
             }
             if (proposal is null || proposal.Status is not (OperationProposalStatus.Submitted or OperationProposalStatus.Reconciling)
-                || !string.Equals(proposal.ExecutionOperationId, record.OperationId, StringComparison.Ordinal)
-                || !string.Equals(proposal.ResolvedBy, context.ApprovedBy, StringComparison.Ordinal))
+                || !MatchesQueuedApproval(proposal, record))
             {
                 if (DateTimeOffset.UtcNow - record.CreatedAt > TimeSpan.FromMinutes(5))
                     await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, lostLease.Token).ConfigureAwait(false);
@@ -238,16 +232,7 @@ internal sealed partial class DurableRestoreWorker(
             };
             if (!await store.TrySetAsync(acting, cancellationToken: lostLease.Token).ConfigureAwait(false)) return;
             acting = await store.GetAsync(id, lostLease.Token).ConfigureAwait(false) ?? throw new InvalidOperationException("Restore checkpoint disappeared.");
-            var request = new OperationGatewayRequest
-            {
-                Kind = OperationClass.Deploy,
-                RequestedBy = acting.Audit.RequestedBy,
-                ApprovedBy = context.ApprovedBy,
-                IdempotencyKey = acting.OperationId,
-                CorrelationId = acting.Audit.CorrelationId,
-                Reason = acting.Audit.Reason,
-                TenantId = acting.Audit.TenantId
-            };
+            var request = ExecutionRequest(acting);
             var startedAudit = await audit.AppendAsync(new PreMigrationRestoreAuditLine
             {
                 Time = DateTimeOffset.UtcNow,
@@ -289,6 +274,39 @@ internal sealed partial class DurableRestoreWorker(
         }
     }
 
+    private static bool MatchesQueuedApproval(OperationProposal proposal, WorkflowOperationRecord record) =>
+        proposal.ExecutionOperationId == record.OperationId
+        && OperationHumanApprovalEvidenceValidation.MatchesExecutionRequest(
+            proposal, ExecutionRequest(record), record.PreMigrationRestore!.Payload);
+
+    private static bool MatchesResumedApproval(OperationProposal proposal, WorkflowOperationRecord record)
+    {
+        if (proposal.ExecutionOperationId != record.OperationId
+            || proposal.Plan.ExecutionPayload is not { } approvedPayload
+            || !OperationHumanApprovalEvidenceValidation.MatchesExecutionRequest(proposal, ExecutionRequest(record), approvedPayload))
+            return false;
+        if (record.PreMigrationRestore!.Payload == approvedPayload) return true;
+
+        var checkpoint = DeployExecutionPayload.Parse(record.PreMigrationRestore.Payload);
+        // Local forward convergence records the observed baseline after approval and before submission.
+        return record.PreMigrationRestore.Phase == "awaiting-local-deploy"
+            && checkpoint is not null
+            && OperationHumanApprovalEvidenceValidation.MatchesObservedForwardDeploy(approvedPayload, checkpoint);
+    }
+
+    private static OperationGatewayRequest ExecutionRequest(WorkflowOperationRecord record) => new()
+    {
+        Kind = OperationClass.Deploy,
+        RequestedBy = record.Audit.RequestedBy,
+        ApprovedBy = record.PreMigrationRestore!.ApprovedBy,
+        ApprovedProposalId = record.Audit.ProposalId,
+        OperationInstanceId = record.Audit.OperationInstanceId,
+        IdempotencyKey = record.OperationId,
+        CorrelationId = record.Audit.CorrelationId,
+        Reason = record.Audit.Reason,
+        TenantId = record.Audit.TenantId,
+    };
+
     private async Task StartLocalAsync(WorkflowOperationRecord record, DeployExecutionPayload payload, CancellationToken cancellationToken)
     {
         if (!payload.Rollback)
@@ -318,17 +336,7 @@ internal sealed partial class DurableRestoreWorker(
         var checkpoint = record.PreMigrationRestore!;
         if (!string.Equals(checkpoint.DeployOperationId, DeployWorkflowService.CreateOperationId(record.OperationId), StringComparison.Ordinal))
             throw new InvalidOperationException("Deploy checkpoint identity is inconsistent.");
-        var request = new OperationGatewayRequest
-        {
-            Kind = OperationClass.Deploy,
-            RequestedBy = record.Audit.RequestedBy,
-            ApprovedBy = record.PreMigrationRestore!.ApprovedBy,
-            ApprovedProposalId = record.Audit.ProposalId,
-            IdempotencyKey = record.OperationId,
-            CorrelationId = record.Audit.CorrelationId,
-            Reason = record.Audit.Reason,
-            TenantId = record.Audit.TenantId
-        };
+        var request = ExecutionRequest(record);
         var actual = await deploy.ExecuteRestoreAsync(request, checkpoint.Payload, record.OperationId, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(actual, checkpoint.DeployOperationId, StringComparison.Ordinal))
             throw new InvalidOperationException("Deploy operation did not match the saved checkpoint.");
@@ -381,16 +389,7 @@ internal sealed partial class DurableRestoreWorker(
             return;
         }
         if (!await ClaimCellAsync(record.OperationId, cancellationToken).ConfigureAwait(false)) return;
-        var request = new OperationGatewayRequest
-        {
-            Kind = OperationClass.Deploy,
-            RequestedBy = record.Audit.RequestedBy,
-            ApprovedBy = checkpoint.ApprovedBy,
-            IdempotencyKey = record.OperationId,
-            CorrelationId = record.Audit.CorrelationId,
-            Reason = record.Audit.Reason,
-            TenantId = record.Audit.TenantId
-        };
+        var request = ExecutionRequest(record);
         var starter = new CheckpointStarter(store, deploy, verifier, record);
         var completion = await coordinator.ResumeCloudAsync(payload, request, starter, checkpoint.RestoredInstanceId,
             checkpoint.RestoredResourceId, checkpoint.ExpectedSchema.Value, record.UpdatedAt, cancellationToken).ConfigureAwait(false);

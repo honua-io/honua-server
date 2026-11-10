@@ -69,10 +69,8 @@ permissions: {}
 # workflow-level concurrency is evaluated at run creation, so a
 # `cancel-in-progress` group keyed on the PR would let Codex's rate-limit notice
 # -- or the PR-template advisory comment that lands seconds after a push --
-# cancel a review already in flight. The review job adds the exact PR/head
-# single-flight boundary after its trusted resolver has bound issue comments.
-# A superseded head needs no cancellation: its resolver fails closed once the
-# pull request has moved.
+# cancel a review already in flight. Eligible resolver jobs cancel per PR;
+# exact-head reviews serialize so duplicate triggers cannot restart paid work.
 concurrency:
   group: >-
     claude-review-${{ github.event_name == 'schedule'
@@ -135,6 +133,9 @@ jobs:
             await core.summary.write();
 
   resolve:
+    concurrency:
+      group: claude-resolve-pr-${{ github.event.issue.number || inputs.pr || github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_branch || github.run_id }}
+      cancel-in-progress: true
     name: Resolve exact Claude review subject
     # Same-repo, non-fork, pull_request-originated PR Gate runs only; plus an
     # explicit `@claude review` re-request from a human with write access
@@ -325,12 +326,7 @@ jobs:
     needs: resolve
     if: needs.resolve.outputs.skip == 'false'
     name: Post exact-head Claude review evidence
-    # The subject is resolved before this job is admitted. This is the actual
-    # in-flight dedupe boundary: every trigger for one PR/head shares one
-    # group, including issue-comment re-requests whose head is unavailable at
-    # workflow creation time. The queued run re-checks durable completion after
-    # the active run exits, so a successfully completed exact head is never
-    # reviewed twice; a failed run remains retryable.
+    # Serialize duplicate exact-head reviews and recheck completion after admission.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:
@@ -481,7 +477,7 @@ jobs:
       - name: Review the diff and publish evidence
         id: claude
         if: steps.target.outputs.skip == 'false'
-        uses: anthropics/claude-code-action@4845bacbb38b3c4b15d948f035349786f678e068 # v1.0.267
+        uses: anthropics/claude-code-action@61a9c274fa7110a66dfafc1bbbced03833eb25fe # v1.0.269
         with:
           # Exactly one of these is set; the empty one is ignored. Do NOT add a
           # `github_token` input — the default path mints the Claude App token,
@@ -619,7 +615,7 @@ jobs:
 
       - name: Publish reviewer turn-budget fallback
         if: failure() && steps.claude.outcome == 'failure' && steps.exhausted.outputs.max_turns == 'true'
-        uses: anthropics/claude-code-action@4845bacbb38b3c4b15d948f035349786f678e068 # v1.0.267
+        uses: anthropics/claude-code-action@61a9c274fa7110a66dfafc1bbbced03833eb25fe # v1.0.269
         with:
           # Use the same App identity and append-only write surface as the main
           # review. GITHUB_TOKEN remains read-only, and no candidate text is

@@ -7,8 +7,10 @@ description: >
 
   PR verification passes `build-scope: affected` and disables the in-action
   format step because the workflow runs that same shared format action in a
-  parallel job. `Merge Queue Gate` keeps both scopes full and runs format
-  inline. Every test step and timeout remains identical for both callers.
+  parallel job. That job also owns the analyzer, code-style and documentation
+  diagnostics build, so this producer build skips analyzers when format is not
+  inline. `Merge Queue Gate` keeps both scopes full and runs format and
+  analyzers inline. Every test step and timeout remains identical for both callers.
 
   Callers must run actions/checkout and ./.github/actions/setup-dotnet-ci first
   (and may reclaim runner disk); this action owns only the gate itself.
@@ -68,8 +70,9 @@ inputs:
   run-format:
     description: >
       Whether to run the shared format check inline. Defaults to true so every
-      caller retains format coverage unless it explicitly supplies an
-      equivalent required job.
+      caller retains format and analyzer coverage unless it explicitly supplies
+      an equivalent required job. 'false' also skips analyzers in the build:
+      the caller's separate format-check job runs the analyzer build.
     required: false
     default: 'true'
   build-timeout-minutes:
@@ -217,7 +220,12 @@ runs:
       env:
         GATE_BUILD_MODE: ${{ steps.producer-scope.outputs.mode }}
         GATE_BUILD_FILTER: ${{ steps.producer-scope.outputs.filter }}
+        GATE_RUN_FORMAT: ${{ inputs.run-format }}
       run: |
+        # Analyzers cost about a third of the compile. Without inline format the
+        # caller's format-check job builds the same scope with them as errors.
+        run_analyzers=true
+        [[ "${GATE_RUN_FORMAT}" == "true" ]] || run_analyzers=false
         if [[ "${GATE_BUILD_MODE}" == "affected" ]]; then
           timeout "${{ inputs.build-timeout-minutes }}m" \
             dotnet build "${GATE_BUILD_FILTER}" \
@@ -225,7 +233,7 @@ runs:
               --configuration Release \
               -graphBuild \
               /p:TreatWarningsAsErrors=true \
-              /p:RunAnalyzers=true \
+              /p:RunAnalyzers="${run_analyzers}" \
               /p:UseSharedCompilation=false
         else
           timeout "${{ inputs.build-timeout-minutes }}m" \
@@ -234,7 +242,7 @@ runs:
               --configuration Release \
               -graphBuild \
               /p:TreatWarningsAsErrors=true \
-              /p:RunAnalyzers=true \
+              /p:RunAnalyzers="${run_analyzers}" \
               /p:UseSharedCompilation=false
         fi
 
@@ -270,6 +278,8 @@ runs:
       uses: ./.github/actions/format-check
       with:
         format-scope: ${{ inputs.format-scope }}
+        # The build step above already ran analyzers as errors.
+        analyzer-build: 'false'
 
     - name: Create Test Results Directory
       if: inputs.phase != 'build'

@@ -19,6 +19,7 @@ import pytest
 from shared.geometry import GeometryGenerator, TestGeometry
 from shared.postgis import PostGISFixture, TestDataBuilder
 from shared.server import HonuaServer
+from shared.process_ports import server_port
 
 
 # =============================================================================
@@ -98,8 +99,7 @@ def honua_server(
 
     Starts the server once per session connected to the test PostGIS instance.
     """
-    base_port = _get_env_int("HONUA_TEST_PORT", 5555)
-    port = base_port + _get_worker_index(_get_worker_id())
+    port = server_port("HONUA_TEST_PORT", HonuaServer.DEFAULT_PORT, _get_worker_index(_get_worker_id()))
     timeout = _get_env_int("HONUA_TEST_TIMEOUT", 120)
     connection_string = postgis.get_npgsql_connection_string(
         search_path=f"{worker_schema}, public"

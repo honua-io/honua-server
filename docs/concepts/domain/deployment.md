@@ -11,7 +11,7 @@ relations:
   - predicate: relates_to
     target: "/concepts/domain/publication.md"
   - predicate: relates_to
-    target: "/operator/geoprocessing-aws-batch.md"
+    target: "/guides/deploy/geoprocessing-aws-batch.md"
   - predicate: relates_to
     target: "/concepts/domain/native-worker.md"
   - predicate: relates_to
@@ -25,7 +25,7 @@ A deployment combines the serving artifact, configuration, network, secrets, per
 
 ECS/Fargate runs the serving container; EKS runs it in Kubernetes. Lambda uses its target-specific serving image and request lifecycle. AWS Batch is a job execution backend, not the HTTP map server. A serving host can submit work to a separate Batch runner.[^contract]
 
-The [AWS Batch guide](../../operator/geoprocessing-aws-batch.md) distinguishes managed execution workers from [native workers](native-worker.md). Having Batch configured does not prove native conversion is available.
+The [AWS Batch guide](../../guides/deploy/geoprocessing-aws-batch.md) distinguishes managed execution workers from [native workers](native-worker.md). Having Batch configured does not prove native conversion is available.
 
 Follow [install and configure](../../guides/workflows/install-configure.md). Choose an immutable compatible artifact and inspect effective [capabilities](capability.md). Lambda's durable operations depend on its configured remote runner and storage; do not equate “serverless” with durable background execution or with a blanket lack of that capability.
 

@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using Honua.ControlPlane;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -14,7 +15,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure;
 using Honua.Infrastructure.Authentication;
-using Honua.ControlPlane;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.Jobs;
 
@@ -204,11 +205,11 @@ internal sealed partial class ConsoleJobService(
 
         var itemCount = Math.Min(artifactRefs.Length, effectiveLimit);
         var items = new ConsoleJobArtifact[itemCount];
-        var artifactStore = serviceProvider.GetService<IArtifactStore>();
+        var projection = CreateArtifactProjection(job, timeProvider.GetUtcNow());
 
         for (var i = 0; i < itemCount; i++)
         {
-            items[i] = await MapArtifactAsync(artifactRefs[i], artifactStore, cancellationToken).ConfigureAwait(false);
+            items[i] = await MapArtifactAsync(artifactRefs[i], projection, cancellationToken).ConfigureAwait(false);
         }
 
         return new ConsoleJobArtifactPageResponse
@@ -611,9 +612,21 @@ internal sealed partial class ConsoleJobService(
             Metadata = entry.Metadata is null ? null : new Dictionary<string, string>(entry.Metadata)
         };
 
+    private bool ResultsExpired(ExecutionJobRecord job, DateTimeOffset now)
+    {
+        var retention = serviceProvider.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>().CurrentValue.ResultRetention;
+        return GeoprocessingResultRetention.HasExpired(job, now, retention);
+    }
+
+    private sealed record ArtifactProjection(IArtifactStore? Store, Func<string, ConsoleJobArtifact> MapDirect);
+
+    private ArtifactProjection CreateArtifactProjection(ExecutionJobRecord job, DateTimeOffset now) => new(
+        serviceProvider.GetService<IArtifactStore>(),
+        ResultsExpired(job, now) ? MapExpiredDirectArtifact : MapDirectArtifact);
+
     private async Task<ConsoleJobArtifact> MapArtifactAsync(
         string reference,
-        IArtifactStore? artifactStore,
+        ArtifactProjection projection,
         CancellationToken cancellationToken)
     {
         var customArtifact = await MapCustomCodeArtifactAsync(reference, cancellationToken).ConfigureAwait(false);
@@ -622,18 +635,18 @@ internal sealed partial class ConsoleJobService(
             return customArtifact;
         }
 
-        if (artifactStore != null)
+        if (projection.Store != null)
         {
             try
             {
-                var artifact = await artifactStore.GetAsync(reference, cancellationToken).ConfigureAwait(false);
+                var artifact = await projection.Store.GetAsync(reference, cancellationToken).ConfigureAwait(false);
                 if (artifact == null)
                 {
                     // Jobs also contain direct provider references. A metadata provider
                     // being registered does not turn those references into missing IDs.
                     if (IsDirectArtifactReference(reference))
                     {
-                        return MapDirectArtifact(reference);
+                        return projection.MapDirect(reference);
                     }
                     return new ConsoleJobArtifact
                     {
@@ -657,7 +670,7 @@ internal sealed partial class ConsoleJobService(
             }
         }
 
-        return MapDirectArtifact(reference);
+        return projection.MapDirect(reference);
     }
 
     private static string SafeArtifactIdentifier(string reference)
@@ -680,6 +693,14 @@ internal sealed partial class ConsoleJobService(
             Message = safe ? null : "Artifact reference is not safe to expose."
         };
     }
+
+    private static ConsoleJobArtifact MapExpiredDirectArtifact(string reference)
+        => new()
+        {
+            ArtifactId = SafeArtifactIdentifier(reference),
+            Availability = "Expired",
+            Message = "The job result retention period has elapsed."
+        };
 
     private static ConsoleJobArtifact MapStoredArtifact(Artifact artifact)
     {

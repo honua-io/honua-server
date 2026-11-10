@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -9,14 +10,23 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Coordination;
 
-// A Redis failure on one operation falls back to the in-memory store instead of failing the job surface.
 internal sealed partial class RedisVersionJobStore : IVersionJobStore
 {
     private static readonly TimeSpan Retention = TimeSpan.FromDays(7);
+    private const int MaximumRecoveryWrites = 3;
+    private const string CompareExchangeScript = """
+        local current = redis.call('GET', KEYS[1])
+        if (not current and ARGV[4] == '0') or (ARGV[4] == '1' and current == ARGV[1]) then
+            redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3])
+            return 1
+        end
+        return 0
+        """;
     private const string KeyPrefix = "honua:version:job:";
 
     private readonly IDatabase? _database;
-    private readonly InMemoryVersionJobStore _fallback = new();
+    private readonly InMemoryVersionJobStore _unconfiguredStore = new();
+    private readonly ConcurrentDictionary<Guid, VersionJob> _pending = new();
     private readonly ILogger<RedisVersionJobStore> _logger;
 
     public RedisVersionJobStore(IConnectionMultiplexer? redis, ILogger<RedisVersionJobStore> logger)
@@ -39,22 +49,25 @@ internal sealed partial class RedisVersionJobStore : IVersionJobStore
 
         if (_database is null)
         {
-            await _fallback.SaveAsync(job, cancellationToken).ConfigureAwait(false);
+            await _unconfiguredStore.SaveAsync(job, cancellationToken).ConfigureAwait(false);
             return;
         }
 
-        var payload = JsonSerializer.Serialize(job, VersionJobJsonContext.Default.VersionJob);
+        cancellationToken.ThrowIfCancellationRequested();
+        _pending.AddOrUpdate(job.JobId, job, (_, current) => CanAdvance(current, job) ? job : current);
         try
         {
-            await _database.StringSetAsync($"{KeyPrefix}{job.JobId:N}", payload, Retention).ConfigureAwait(false);
+            if (_pending.TryGetValue(job.JobId, out var pending) &&
+                await TryPersistPendingAsync(pending, RedisValue.Null, cancellationToken).ConfigureAwait(false))
+            {
+                _pending.TryRemove(new KeyValuePair<Guid, VersionJob>(job.JobId, pending));
+                return;
+            }
+            await ReconcilePendingAsync(job.JobId, cancellationToken).ConfigureAwait(false);
         }
         catch (RedisException ex)
         {
-            // Keep the job surface available during a Redis outage: the record stays pollable on
-            // this node (only) and the degradation is logged so operators can see durability is
-            // reduced until Redis recovers.
             Log.VersionJobStoreRedisError(_logger, job.JobId, ex);
-            await _fallback.SaveAsync(job, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -62,29 +75,104 @@ internal sealed partial class RedisVersionJobStore : IVersionJobStore
     {
         if (_database is null)
         {
-            return await _fallback.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+            return await _unconfiguredStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
         }
 
-        RedisValue value;
         try
         {
-            value = await _database.StringGetAsync($"{KeyPrefix}{jobId:N}").ConfigureAwait(false);
+            return await ReconcilePendingAsync(jobId, cancellationToken).ConfigureAwait(false);
         }
         catch (RedisException ex)
         {
             Log.VersionJobStoreRedisError(_logger, jobId, ex);
-            return await _fallback.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+            return _pending.GetValueOrDefault(jobId);
         }
-
-        if (value.IsNullOrEmpty)
-        {
-            // A record saved to the in-memory fallback during a Redis outage is not in Redis;
-            // consult the fallback before reporting the job as unknown.
-            return await _fallback.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-        }
-
-        return JsonSerializer.Deserialize((string)value!, VersionJobJsonContext.Default.VersionJob);
     }
+
+    private async Task<VersionJob?> ReconcilePendingAsync(Guid jobId, CancellationToken cancellationToken)
+    {
+        var key = $"{KeyPrefix}{jobId:N}";
+        for (var attempt = 0; ; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var snapshot = await _database!.StringGetAsync(key).ConfigureAwait(false);
+            var current = DeserializeDistributedJob(jobId, snapshot);
+            if (!_pending.TryGetValue(jobId, out var pending))
+            {
+                return current;
+            }
+            if (current is null)
+            {
+                if (snapshot.IsNull)
+                {
+                    return pending;
+                }
+                _pending.TryRemove(new KeyValuePair<Guid, VersionJob>(jobId, pending));
+                return null;
+            }
+            if (!CanAdvance(current, pending))
+            {
+                _pending.TryRemove(new KeyValuePair<Guid, VersionJob>(jobId, pending));
+                return current;
+            }
+            if (attempt >= MaximumRecoveryWrites)
+            {
+                return current;
+            }
+
+            if (await TryPersistPendingAsync(pending, snapshot, cancellationToken).ConfigureAwait(false))
+            {
+                _pending.TryRemove(new KeyValuePair<Guid, VersionJob>(jobId, pending));
+                return pending;
+            }
+        }
+    }
+
+    private VersionJob? DeserializeDistributedJob(Guid jobId, RedisValue snapshot)
+    {
+        if (snapshot.IsNull)
+        {
+            return null;
+        }
+        try
+        {
+            var job = JsonSerializer.Deserialize((string)snapshot!, VersionJobJsonContext.Default.VersionJob);
+            if (job is not null)
+            {
+                return job;
+            }
+        }
+        catch (JsonException)
+        {
+        }
+        Log.VersionJobStoreUnreadableRecord(_logger, jobId);
+        return null;
+    }
+
+    private async Task<bool> TryPersistPendingAsync(VersionJob pending, RedisValue expectedSnapshot, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var payload = JsonSerializer.Serialize(pending, VersionJobJsonContext.Default.VersionJob);
+        var acknowledged = await _database!.ScriptEvaluateAsync(CompareExchangeScript, [$"{KeyPrefix}{pending.JobId:N}"],
+            [expectedSnapshot.IsNull ? "" : expectedSnapshot, payload, (long)Retention.TotalMilliseconds,
+                expectedSnapshot.IsNull ? 0 : 1]).ConfigureAwait(false);
+        return (long)acknowledged == 1;
+    }
+
+    private static bool CanAdvance(VersionJob current, VersionJob next)
+        => HasSameIdentity(current, next) && (current.Status switch
+        {
+            VersionJobStatus.Pending => next.Status is VersionJobStatus.Running or VersionJobStatus.Succeeded
+                or VersionJobStatus.Failed or VersionJobStatus.LockContended,
+            VersionJobStatus.Running => next.Status is VersionJobStatus.Succeeded
+                or VersionJobStatus.Failed or VersionJobStatus.LockContended,
+            _ => false
+        });
+
+    private static bool HasSameIdentity(VersionJob current, VersionJob next)
+        => current.JobId == next.JobId && current.Service == next.Service && current.VersionId == next.VersionId
+            && current.Kind == next.Kind && current.Policy == next.Policy && current.CreatedAt == next.CreatedAt
+            && current.ConflictDetection == next.ConflictDetection;
 
     private static partial class Log
     {
@@ -97,7 +185,10 @@ internal sealed partial class RedisVersionJobStore : IVersionJobStore
         [LoggerMessage(
             EventId = 7113,
             Level = LogLevel.Warning,
-            Message = "Version job store Redis operation failed for job {JobId}; degrading to in-memory storage for this operation.")]
+            Message = "Version job store Redis operation failed for job {JobId}; retaining the unacknowledged transition locally.")]
         public static partial void VersionJobStoreRedisError(ILogger logger, Guid jobId, Exception exception);
+
+        [LoggerMessage(7114, LogLevel.Warning, "Version job store has unreadable distributed state for job {JobId}; treating it as unknown.")]
+        public static partial void VersionJobStoreUnreadableRecord(ILogger logger, Guid jobId);
     }
 }
