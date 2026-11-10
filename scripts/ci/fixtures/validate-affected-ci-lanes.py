@@ -19,7 +19,8 @@ class AffectedLaneTests(unittest.TestCase):
         for paths in [[], ['unknown-input'], ['Directory.Build.props'],
                       ['src/Honua.Core/Core/Types.cs'], ['src/Honua.Hosting/Startup.cs'],
                       ['src/Honua.Server/Startup/JsonContextRegistration.cs'],
-                      ['src/Honua.Server/EndpointRegistry.cs']]:
+                      ['src/Honua.Server/EndpointRegistry.cs'],
+                      ['tests/seed/base-schema.sql'], ['tests/seed/client-compat-v1.sql']]:
             with self.subTest(paths=paths):
                 self.assertTrue(all(MODULE.select(paths).values()))
 
