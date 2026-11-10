@@ -239,13 +239,13 @@ grep -Fq "steps.shard-cache-materialize.outputs.restored != 'true'" "${workflow}
 # the previous line-window greps silently stopped covering the `with:` block as
 # soon as comments were added above it, and a whole-file grep for an attempt
 # expression would fire on unrelated jobs.
-python3 - "${workflow}" "${REPO_ROOT}/.github/workflows/pr-gate.yml" <<'PYEOF'
+python3 - "${workflow}" "${REPO_ROOT}/.github/workflows/ci.yml" <<'PYEOF'
 import sys, yaml
 
 workflow = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
 steps = workflow["jobs"]["server-tests"]["steps"]
 runtime_workflow = yaml.safe_load(open(sys.argv[2], encoding="utf-8"))
-runtime_steps = runtime_workflow["jobs"]["pr-gate-tests"]["steps"]
+runtime_steps = runtime_workflow["jobs"]["runtime-proofs"]["steps"]
 start = next(s for s in runtime_steps if s.get("name") == "Start freeing runtime proof disk space")
 wait = next(s for s in runtime_steps if s.get("name") == "Wait for runtime proof disk cleanup")
 restore = next(s for s in runtime_steps if s.get("id") == "managed-consumer")

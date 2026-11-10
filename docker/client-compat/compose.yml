@@ -507,6 +507,7 @@ services:
     networks:
       - compat
     volumes:
+      - ../../docker/client-compat/r-sf:/workspace/docker/client-compat/r-sf:ro
       - ../../tests:/workspace/tests:ro
       - ../../artifacts/client-interop/r-sf:/output
 

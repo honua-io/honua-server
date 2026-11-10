@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Server.Tests.Admin;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -68,8 +69,8 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
         using var document = JsonDocument.Parse(payload);
         var data = document.RootElement.GetProperty("data");
         var items = data.GetProperty("items");
-
         items.GetArrayLength().Should().BeGreaterThan(0);
+        AdminListContractAssertions.MatchesPublishedSchema("/services", payload);
         data.GetProperty("total").GetInt32().Should().BeGreaterThan(0);
         data.GetProperty("layerTotal").GetInt32().Should().BeGreaterThanOrEqualTo(0);
         var first = items[0];

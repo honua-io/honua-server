@@ -7,7 +7,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[3]
 HEAVY_JOBS = {
-    "build", "format", "dotnet-foundation-family-tests", "server-tests",
+    "build", "format", "dotnet-foundation-family-tests", "server-tests", "runtime-proofs",
     "mcp-certification", "mcp-llm-smoke", "postgres-compat",
     "core-package-compatibility", "aot-build", "docker-build", "quickstart-console-smoke",
 }
