@@ -552,3 +552,27 @@ unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
+
+### GeoServices integration in PR Gate
+
+Dedicated GeoServices integration shards require a direct change under the
+GeoServices protocol source or test roots. PR Gate selects at most two, using
+the existing relevance order; transitive-only hits and remaining shards defer
+to the complete post-merge affected run. Unit and component coverage retains
+its existing selection. The required server-governance fast-test group runs
+service metadata and create/query/update/delete round-trip smoke tests.
+
+The latest 30-run selection snapshot contains eight runs with GeoServices
+selections (14 jobs, including four component jobs); all eight contain direct
+GeoServices changes. No observed run exceeds two dedicated integration jobs,
+so this sample demonstrates zero integration runner-minutes saved by the new
+cap. Completed selected jobs total 66.36 runner-minutes; queued and incomplete
+jobs are excluded from that total. The smoke passed 2/2 tests on the build host
+in 0.32 minutes, or 2.05 minutes including its build. These are baseline and
+local measurements; post-merge CI timings are still pending.
+
+The same 30-run sample selected no OGC shards, so measured OGC savings are
+0 runner-minutes per sampled PR. The previous completed full run spent
+101.08 runner-minutes on dedicated OGC child shards. Moving that complete set
+to the non-gating nightly avoids those minutes only on runs that would have
+selected the complete set; affected-run savings require a post-change sample.

@@ -34,6 +34,7 @@ def gate_projects(root):
     catalog = json.loads((root / '.github/test-projects.json').read_text())
     units = module.gate_fast_projects(catalog)
     return sorted(set(units + [SERVER, ARCHITECTURE, SOURCE,
+        'tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj',
         'tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj',
         'tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj']))
 

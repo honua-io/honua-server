@@ -539,6 +539,33 @@ def has_product_code(changed_files: Iterable[str], config: dict[str, Any]) -> bo
     return any(changed.startswith(prefixes) for changed in changed_files)
 
 
+GEOSERVICES_DIRECT_PATHS = (
+    "src/Honua.Protocols/GeoServices/",
+    "src/Honua.Protocols/GeoServicesRest/",
+    "src/Honua.Server/Features/Protocols/GeoServices/",
+    "tests/dotnet/Honua.Protocols.GeoServices.",
+)
+
+
+def geoservices_integration(shard: dict[str, Any]) -> bool:
+    """Dedicated integration assemblies; isolated unit/component groups stay fast."""
+    return shard_test_project(shard).endswith("/Honua.Protocols.GeoServices.Tests.csproj")
+
+
+def bound_geoservices(ranked: list[dict[str, Any]], changed: Sequence[str]) -> tuple[list, list]:
+    """Spend at most two PR slots on directly changed GeoServices integration."""
+    limit = 2 if any(path.startswith(GEOSERVICES_DIRECT_PATHS) for path in changed) else 0
+    kept, deferred = [], []
+    for entry in ranked:
+        if entry["geoservices_integration"]:
+            if limit == 0:
+                deferred.append(entry["name"])
+                continue
+            limit -= 1
+        kept.append(entry)
+    return kept, deferred
+
+
 def select(
     *,
     config: dict[str, Any],
@@ -634,6 +661,7 @@ def select(
         ranked.append(
             {
                 "name": name,
+                "geoservices_integration": geoservices_integration(shard),
                 "test_class_hits": (test_class_hits or {}).get(name, 0),
                 "path_hits": count_path_hits(shard, changed_files),
                 "project_affected": project_affected(shard),
@@ -652,10 +680,12 @@ def select(
             entry["name"],
         )
     )
+    candidate_count = len(ranked)
+    ranked, geoservices_deferred = bound_geoservices(ranked, changed_files)
     ranked = interleave_split_families(ranked)
 
     selected = ranked[:cap]
-    dropped = [entry["name"] for entry in ranked[cap:]]
+    dropped = geoservices_deferred + [entry["name"] for entry in ranked[cap:]]
 
     result: dict[str, Any] = {
         "contract": CONTRACT,
@@ -675,7 +705,8 @@ def select(
         ),
         "cap": cap,
         "changed_file_count": len(changed_files),
-        "candidate_count": len(ranked),
+        "candidate_count": candidate_count,
+        "geoservices_deferred_to_trunk": geoservices_deferred,
         "selected": selected,
         "shards": [entry["name"] for entry in selected],
         "dropped": dropped,
@@ -747,6 +778,10 @@ def matrix_include(result: dict[str, Any], config: dict[str, Any]) -> list[dict[
 
 def render_summary(result: dict[str, Any]) -> str:
     lines = ["### PR Gate / Affected shards — selection", ""]
+    if result.get("geoservices_deferred_to_trunk"):
+        lines += ["", "GeoServices integration deferred to the complete post-merge affected run: "
+                  + ", ".join(f"`{name}`" for name in result["geoservices_deferred_to_trunk"])]
+        lines.append("")
     if result["skip"] and result["reason"] == time_budget.DEFERRED_SKIP_REASON:
         return "\n".join(lines + time_budget.deferred_summary(result)) + "\n"
     if result["skip"]:
@@ -780,7 +815,7 @@ def render_summary(result: dict[str, Any]) -> str:
     if result["dropped"]:
         lines += [
             "",
-            f"Dropped by the cap ({len(result['dropped'])}): "
+            f"Deferred by selection policy or cap ({len(result['dropped'])}): "
             + ", ".join(f"`{name}`" for name in result["dropped"]),
             "",
             "The trailing matrix still runs these per trunk tip. The cap is what "

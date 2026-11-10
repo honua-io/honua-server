@@ -420,3 +420,19 @@ runs:
             --logger "trx;LogFileName=${{ inputs.trx-prefix }}-server-governance.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./artifacts/test-results
+
+    # Existing assertions cover the basic REST path on every product PR.
+    # The edit scenario includes layer queries after create/update/delete.
+    - name: Run .NET Tests (GeoServices REST Smoke)
+      if: inputs.phase != 'build' && contains(fromJSON('["all","server-governance"]'), inputs.test-group)
+      shell: bash
+      run: |
+        timeout "${{ inputs.governance-timeout-minutes }}m" \
+          dotnet test tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "FullyQualifiedName~FeatureServerEditCapabilityAdvertisementTests.GetServiceMetadata_EditableService_AdvertisesCreateUpdateDelete|FullyQualifiedName~FeatureServerMutationScenarioTests.MutationEndpoints_AcceptValidEdits_AndRoundTripEachState" \
+            --logger "trx;LogFileName=${{ inputs.trx-prefix }}-geoservices-smoke.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./artifacts/test-results
