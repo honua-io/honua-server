@@ -334,7 +334,7 @@ assert_contains "attribute cleanup: drop adds escalation" "${drop_log}" \
 assert_contains "attribute cleanup: drop clears landing" "${drop_log}" \
   "gh pr edit 3197 --remove-label train:landing"
 # Build a 2-PR batch where pr401 touches a FeatureServer path and pr402 an OGC
-# path; a failing "FeatureServer Query Services and Replication" shard must attribute to pr401 only.
+# path; a failing "FeatureServer Query Services and Replication 1" child shard must attribute to pr401 only.
 : >"${INC}"
 printf '401\t%s\n' "$(git rev-parse origin/trunk)" >>"${INC}"   # head placeholder (overridden below)
 printf '402\t%s\n' "$(git rev-parse origin/trunk)" >>"${INC}"
@@ -347,7 +347,7 @@ __diff_for_pr() {
   esac
 }
 export -f __diff_for_pr
-culprits="$(train_attribute "server-tests (FeatureServer Query Services and Replication)" "${INC}")"
+culprits="$(train_attribute "server-tests (FeatureServer Query Services and Replication 1)" "${INC}")"
 assert_eq "attribute: single suspect => #401" "$(tr '\n' ' ' <<<"${culprits}" | xargs)" "401"
 editing_culprits="$(train_attribute "server-tests (FeatureServer Editing and Relationships)" "${INC}")"
 assert_eq "attribute: editing child preserves source ownership => #401" \
@@ -355,12 +355,12 @@ assert_eq "attribute: editing child preserves source ownership => #401" \
 # 0-suspect: a failing shard whose paths no PR touches => ESCALATE_BATCH.
 __diff_for_pr_none() { printf 'docs/readme.md\n'; }
 export TRAIN_DIFF_FOR_PR=__diff_for_pr_none; export -f __diff_for_pr_none
-esc="$(train_attribute "server-tests (FeatureServer Query Services and Replication)" "${INC}")"
+esc="$(train_attribute "server-tests (FeatureServer Query Services and Replication 1)" "${INC}")"
 assert_eq "attribute: 0 suspects => ESCALATE_BATCH" "${esc}" "ESCALATE_BATCH"
 # >=2 suspects: both PRs touch FeatureServer paths => both dropped.
 __diff_for_pr_both() { printf 'src/Honua.Protocols/GeoServices/FeatureServer/x.cs\n'; }
 export TRAIN_DIFF_FOR_PR=__diff_for_pr_both; export -f __diff_for_pr_both
-both="$(train_attribute "server-tests (FeatureServer Query Services and Replication)" "${INC}" | sort | tr '\n' ' ' | xargs)"
+both="$(train_attribute "server-tests (FeatureServer Query Services and Replication 1)" "${INC}" | sort | tr '\n' ' ' | xargs)"
 assert_eq "attribute: >=2 suspects => drop all" "${both}" "401 402"
 unset TRAIN_DIFF_FOR_PR
 
@@ -1284,7 +1284,7 @@ __preexisting_job_log() {  # <run-id> <job-name> [job-id]
     all_pre:*:"Server Tests (STAC and API Governance)"|some_new:*:"Server Tests (STAC and API Governance)")
       printf '[xUnit.net 00:00:00.42]    Honua.Server.Tests.Stac.ItemTests.Returns200 [FAIL]\n'
       ;;
-    some_new:batch-run-9:"Server Tests (FeatureServer Query Services and Replication)")
+    some_new:batch-run-9:"Server Tests (FeatureServer Query Services and Replication 1)")
       printf 'Failed Honua.Server.Tests.GeoServices.FeatureServer.QueryEndpointTests.Query_Returns200 [12 ms]\n'
       ;;
     buildfmt_20260705:trunk-run-1:"Build & Format Check")
@@ -1310,7 +1310,7 @@ assert_eq "preexisting: all-pre-existing => rc11 (land)" "${rc_pe}" "11"
 # and only the introduced job is emitted (the pre-existing STAC one is stripped).
 set +e
 survivors="$(PE_CASE=some_new train_preexisting_filter batch-run-9 \
-  $'Server Tests (STAC and API Governance)\nServer Tests (FeatureServer Query Services and Replication)')"
+  $'Server Tests (STAC and API Governance)\nServer Tests (FeatureServer Query Services and Replication 1)')"
 rc_pe2=$?
 set -e
 assert_eq "preexisting: some-introduced => rc0 (act)" "${rc_pe2}" "0"
@@ -1319,7 +1319,7 @@ assert_not_contains "preexisting: pre-existing job stripped" "${survivors}" "STA
 
 # (c) trunk has NO failures => every batch failure is batch-introduced (rc0).
 set +e
-survivors2="$(PE_CASE=none_pre train_preexisting_filter batch-run-9 'Server Tests (FeatureServer Query Services and Replication)')"
+survivors2="$(PE_CASE=none_pre train_preexisting_filter batch-run-9 'Server Tests (FeatureServer Query Services and Replication 1)')"
 rc_pe3=$?
 set -e
 assert_eq "preexisting: clean-trunk => all introduced (rc0)" "${rc_pe3}" "0"
