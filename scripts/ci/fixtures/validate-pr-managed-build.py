@@ -35,7 +35,7 @@ class PrManagedBuildTests(unittest.TestCase):
         self.assertFalse(jobs['fast-tests']['strategy']['fail-fast'])
         producer = job('server-test-producer')
         for contract in ['Await exact-head review', 'Classify docs-only diff', 'phase: build',
-                         'test-group: server-producer', 'partition-managed-producer.py projects',
+                         'test-group: server-producer', 'partition-managed-producer.py server-projects',
                          'Publish selected server test outputs']:
             self.assertIn(contract, producer)
 
