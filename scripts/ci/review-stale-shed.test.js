@@ -190,14 +190,16 @@ test('the bridge sheds a moved head and a closed pull request', async () => {
   assert.match(closed.notices.join('\n'), /PR #42 is closed/);
 });
 
-test('the bridge still publishes a non-success conclusion when it sheds', () => {
-  // review-gate.yml's job-level `if` reads the bridge's CONCLUSION -- GitHub has
-  // no conclusion filter on the `workflow_run` trigger and workflow_run
-  // consumers cannot read step outputs. Turning this into a neutral exit would
-  // silently re-admit every superseded bridge event.
-  assert.match(BRIDGE_SHED, /core\.setFailed\('Superseded review event; trusted notification suppressed\.'\)/);
-  const gate = fs.readFileSync(path.join(WORKFLOWS, 'review-gate.yml'), 'utf8');
-  assert.match(gate, /github\.event\.workflow_run\.conclusion == 'success'/);
+test('the bridge completes neutrally when superseded', async () => {
+  for (const pull of [OPEN_PR, MERGED_PR]) {
+    const result = await runShed(BRIDGE_SHED, {
+      payload: { pull_request: { number: 42 }, review: { commit_id: 'b'.repeat(40) } },
+      pull,
+    });
+    assert.equal(result.superseded, true);
+    assert.equal(result.failure, null);
+    assert.match(result.summaryLines.join('\n'), /Shed superseded review event/);
+  }
 });
 
 test('the bridge admits a live review on the current head', async () => {
@@ -209,12 +211,12 @@ test('the bridge admits a live review on the current head', async () => {
   assert.equal(result.failure, null);
 });
 
-test('the unprivileged review jobs single-flight and the trusted attest does not', () => {
+test('review helpers and trusted attestation serialize without cancelling queued runs', () => {
   const gate = fs.readFileSync(path.join(WORKFLOWS, 'review-gate.yml'), 'utf8');
   const bridge = fs.readFileSync(path.join(WORKFLOWS, 'review-event-bridge.yml'), 'utf8');
-  // Unprivileged resolve/bridge shed superseded work by cancellation.
-  assert.match(gate, /group: review-resolve-pr-\$\{\{[\s\S]*?\n\s*cancel-in-progress: true/);
-  assert.match(bridge, /group: review-event-bridge-pr-\$\{\{[^\n]*\n\s*cancel-in-progress: true/);
+  // Superseded work reaches its neutral staleness check after queueing.
+  assert.match(gate, /group: review-resolve-pr-\$\{\{[\s\S]*?\n\s*cancel-in-progress: false\n\s*queue: max/);
+  assert.match(bridge, /group: review-event-bridge-pr-\$\{\{[^\n]*\n\s*cancel-in-progress: false\n\s*queue: max/);
   // The trusted attestation must stay serialized and uncancellable: it is
   // interrupted between accepting a rerun and recording the result otherwise.
   assert.match(gate, /group: review-gate-\$\{\{ needs\.resolve\.outputs\.pr \}\}[\s\S]*?\n\s*cancel-in-progress: false/);
@@ -237,14 +239,8 @@ test('attest sheds a pull request that merged while the attestation queued', asy
 });
 
 test('attest NEVER sheds a moved head: it is the live-head fallback', async () => {
-  // Regression guard for the one thing this shed must not do. `resolve` uses a
-  // single PR-wide `cancel-in-progress: true` group and GitHub guarantees no
-  // ordering inside it, so a late-delivered event for an OLD head can cancel
-  // the resolver for the NEWEST head and then shed itself. The attestation
-  // already queued behind it is then the only thing left that will stamp the
-  // live head -- and `Review Gate` is required at the exact current head.
-  // Shedding on a moved subject here would leave that head permanently
-  // unattested and the PR unmergeable until an unrelated event woke the gate.
+  // The trusted attestation re-reads the live head so queued events cannot
+  // leave the current commit without its required Review Gate status.
   const result = await runShed(ATTEST_SHED, { env: { PR: '42' }, pull: OPEN_PR });
   assert.equal(result.superseded, false);
   assert.equal(result.failure, null);
@@ -348,4 +344,92 @@ test('the Claude lane sheds before it checks out the trusted reviewer policy', (
   assert.match(resolveJob, /id: target\n\s+if: steps\.stale\.outputs\.superseded != 'true'/);
   // Shedding may only withhold a review, never grant one.
   assert.doesNotMatch(CLAUDE_SHED, /setOutput\('skip', 'false'\)/);
+});
+
+// Exercise status publication separately from the paid admission API queries.
+const runReviewStatus = async (review, statusError) => {
+  const script = extractStepScript('review-gate.yml', 'Attest current PR head');
+  const start = script.indexOf('const initialReview = await evaluateCurrentReview();');
+  const end = script.indexOf('// The trusted default-branch workflow', start);
+  assert.ok(start >= 0 && end > start);
+  const result = { statuses: [], summaries: [], failure: null };
+  const summary = {
+    addHeading() { return summary; },
+    addRaw(message) { result.summaries.push(message); return summary; },
+    async write() {},
+  };
+  const sandbox = {
+    evaluateCurrentReview: async () => review,
+    prNumber: 42,
+    context: { repo: { owner: 'honua-io', repo: 'honua-server' }, serverUrl: 'https://github.com' },
+    core: { notice() {}, summary, setFailed(message) { result.failure = message; } },
+    github: { rest: { repos: { async createCommitStatus(status) {
+      if (statusError) throw statusError;
+      result.statuses.push(status);
+    } } } },
+  };
+  await vm.runInNewContext(`(async () => {${script.slice(start, end)}})()`, sandbox);
+  return result;
+};
+
+for (const [name, isDraft, reasons, expected] of [
+  ['draft', true, ['pull request is a draft'], 'pending'],
+  ['blocking review', false, ['unresolved review threads'], 'failure'],
+  ['ready exact-head review', false, [], 'success'],
+]) {
+  test(`review helper completes neutrally for ${name} while preserving required status`, async () => {
+    const result = await runReviewStatus({
+      head: 'a'.repeat(40), isDraft, reasons, reviewDescription: 'Exact-head review accepted',
+    });
+    assert.equal(result.failure, null);
+    assert.equal(result.statuses.length, 1);
+    assert.equal(result.statuses[0].context, 'Review Gate');
+    assert.equal(result.statuses[0].sha, 'a'.repeat(40));
+    assert.equal(result.statuses[0].state, expected);
+    assert.equal(result.summaries.length, expected === 'success' ? 0 : 1);
+  });
+}
+
+test('review helper fails on a missing snapshot or a real status publication error', async () => {
+  assert.match((await runReviewStatus(null)).failure, /not found/);
+  await assert.rejects(runReviewStatus({
+    head: 'a'.repeat(40), isDraft: true, reasons: ['pull request is a draft'],
+  }, new Error('status publication failed')), /status publication failed/);
+});
+
+const NORMALIZATION_SHED = extractStepScript('normalize-derived-artifacts.yml', 'Shed superseded normalization subject');
+const NORMALIZATION_CONSUMER = extractStepScript('normalize-derived-artifacts-consumer.yml', 'Resolve exact PR and download artifact as bytes');
+test('normalization producer sheds moved, draft, or closed subjects without data', async () => {
+  for (const pull of [
+    { state: 'closed', draft: false, head: { sha: 'old' } },
+    { state: 'open', draft: true, head: { sha: 'old' } },
+    { state: 'open', draft: false, head: { sha: 'new' } },
+  ]) {
+    const result = await runShed(NORMALIZATION_SHED, {
+      payload: { pull_request: { number: 7, head: { sha: 'old' } } }, pull,
+    });
+    assert.equal(result.superseded, true);
+    assert.equal(result.failure, null);
+  }
+});
+test('normalization consumer sheds moved, draft, or closed subjects before artifact access', async () => {
+  for (const pr of [
+    { state: 'closed', draft: false, head: { sha: 'old' } },
+    { state: 'open', draft: true, head: { sha: 'old' } },
+    { state: 'open', draft: false, head: { sha: 'new' } },
+  ]) {
+    const outputs = {};
+    const summary = { addRaw() { return this; }, async write() {} };
+    await vm.runInNewContext(`(async () => {${NORMALIZATION_CONSUMER}})()`, {
+      require,
+      context: { repo: { owner: 'honua-io', repo: 'honua-server' }, payload: { workflow_run: {
+        name: 'Derived Artifact Normalization', path: '.github/workflows/normalize-derived-artifacts.yml',
+        event: 'pull_request', conclusion: 'success', repository: { full_name: 'honua-io/honua-server' },
+        head_sha: 'old', pull_requests: [{ number: 7 }],
+      } } },
+      github: { rest: { pulls: { async get() { return { data: pr }; } } } },
+      core: { notice() {}, summary, setOutput(key, value) { outputs[key] = value; } },
+    });
+    assert.equal(outputs.superseded, 'true');
+  }
 });

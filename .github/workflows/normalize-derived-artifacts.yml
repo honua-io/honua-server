@@ -33,10 +33,12 @@ permissions:
   actions: read
   contents: read
   packages: read
+  pull-requests: read
 
 concurrency:
   group: normalization-producer-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
+  queue: max
 
 env:
   DOTNET_VERSION: '10.0.x'
@@ -53,8 +55,24 @@ jobs:
     timeout-minutes: 30
     outputs:
       generated_only: ${{ steps.generated-only.outputs.generated_only }}
+      superseded: ${{ steps.live.outputs.superseded }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Shed superseded normalization subject
+        id: live
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              ...context.repo, pull_number: context.payload.pull_request.number,
+            });
+            if (pr.state !== 'open' || pr.draft || pr.head.sha !== context.payload.pull_request.head.sha) {
+              core.setOutput('superseded', 'true');
+              core.notice('Normalization subject closed, became draft, or moved; no projections produced.');
+              await core.summary.addRaw('Superseded normalization subject; no projections produced.\n').write();
+            }
+
+      - if: steps.live.outputs.superseded != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # pull_request defaults to refs/pull/<n>/merge. The envelope is
           # explicitly bound to the contributor's immutable head SHA, so the
@@ -68,6 +86,7 @@ jobs:
       # A missing or failed classifier leaves the ordinary checks enabled.
       - name: Classify validated generated-only diff
         id: generated-only
+        if: steps.live.outputs.superseded != 'true'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -85,13 +104,13 @@ jobs:
           fi
 
       - name: Setup .NET
-        if: steps.generated-only.outputs.generated_only != 'true'
+        if: steps.live.outputs.superseded != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Regenerate governed projections
-        if: steps.generated-only.outputs.generated_only != 'true'
+        if: steps.live.outputs.superseded != 'true' && steps.generated-only.outputs.generated_only != 'true'
         run: |
           bash scripts/ci/generate-feature-catalog.sh --configuration Release -m:1
           bash scripts/ci/generate-admin-operation-parity-exports.sh --configuration Release -m:1 --no-build --no-restore
@@ -100,7 +119,7 @@ jobs:
           python3 scripts/ci/generate-capability-matrix.py
 
       - name: Replay generators and stage only reproducible bounded projections
-        if: steps.generated-only.outputs.generated_only != 'true'
+        if: steps.live.outputs.superseded != 'true' && steps.generated-only.outputs.generated_only != 'true'
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
@@ -152,7 +171,7 @@ jobs:
           fi
 
       - name: Upload bounded projection data
-        if: steps.generated-only.outputs.generated_only != 'true'
+        if: steps.live.outputs.superseded != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: normalization-projections-${{ github.run_id }}-attempt-${{ github.run_attempt }}
@@ -166,7 +185,7 @@ jobs:
     needs: generate
     if: >-
       (github.event_name != 'pull_request' || !github.event.pull_request.draft)
-      && (needs.generate.result == 'success' && needs.generate.outputs.generated_only != 'true')
+      && (needs.generate.result == 'success' && needs.generate.outputs.superseded != 'true' && needs.generate.outputs.generated_only != 'true')
     permissions:
       contents: read
     runs-on: ubuntu-latest
