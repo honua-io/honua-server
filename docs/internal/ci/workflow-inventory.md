@@ -1,11 +1,11 @@
 # CI Workflow Inventory
 
 > Canonical inventory of **every** workflow in `.github/workflows/` in this
-> repository (122 files). Other Honua repositories keep their own inventories;
+> repository (123 files). Other Honua repositories keep their own inventories;
 > this page no longer mirrors the SDK repos, because a copy here could not be
 > verified against their trees and had already drifted.
 >
-> Last updated: 2026-11-09.
+> Last updated: 2026-11-10.
 >
 > To re-derive the file/name/trigger columns after adding or removing a
 > workflow:
@@ -364,7 +364,8 @@ which is why both the run count and exact observed span are recorded.
 | `gp-release-evidence.yml` | GP Release Evidence | `workflow_dispatch` | Verifies matching executed lifecycle/resilience run heads and receipt identities, then publishes a content-hashed immutable release asset containing both summaries and every scenario receipt. |
 | `mcp-certification-focused.yml` | Focused MCP Certification | path-filtered `pull_request` / `push`, `workflow_dispatch` | Automatic installed SDK and Inspector CLI addressability controls, plus public Inspector web UI cancellation controls with a real PostGIS observer and dropped-notification negative. Authored peers are non-qualifying controls. Manual diagnostic of both live SDK backend transports requires an exact SDK source SHA and strict receipts. This is not full-CI image admission. |
 | `mcp-inspector-pagination.yml` | Installed Inspector Pagination Controls | `pull_request`, `push` (matching paths) | Runs the public installed Inspector CLI against controlled peers to verify transparent pagination observation, compressed-response decoding and fail-closed controls. Source-bound controls are separate from candidate/version qualification. |
-| `flaky-detection.yml` | Flaky Test Detection | daily `schedule` (05:00 UTC), `workflow_dispatch` | Bounded, **incremental** flake hunt (ADR-0037). Each run takes a rotating window of `.github/ci-shards.json` shards (default 6), re-runs each shard's own filter under its own inner budget via `scripts/ci/run-server-test-shard.sh` (default 2 iterations), and reports per-shard flake candidates through `scripts/ci/summarize-flaky-detection.py`. The whole shard set is covered every `ceil(shards / shard_count)` days. Reports only; it never gates. |
+| `flaky-detection.yml` | Flaky Test Detection | daily `schedule` (05:00 UTC), `workflow_dispatch` | Bounded, **incremental** flake hunt (ADR-0037). Each run takes a rotating window of `.github/ci-shards.json` shards (default 6), re-runs each shard's own filter under its own inner budget via `scripts/ci/run-server-test-shard.sh` (default 2 iterations), and reports per-shard flake candidates through `scripts/ci/summarize-flaky-detection.py`. The whole shard set is covered every `ceil(shards / shard_count)` days. Tests retain the shard supervisor’s process group; cancellation cleans up descendants, including those that leave that group, with a bounded half-second escalation. Reports only; it never gates. Also runs the validated issue-backed quarantine in a separate non-gating matrix, without retries or exclusions. |
+| `flake-quarantine.yml` | Publish Flaky Test Quarantine | completed `workflow_run` [CI, PR Gate] | Trusted same-repository publisher: validates unambiguous raw first/retry TRX and candidate hashes, files one bot issue per project/method, and maintains at most 25 active issue-backed exclusions expiring within 14 days. Serial FIFO publication queues up to 100 pending runs; rerun canceled publishers if that service limit is reached. Never checks out triggering code or executes downloaded artifacts. |
 | `nightly-slow-tier.yml` | Nightly Slow Tier (Emulator) | daily `schedule` (04:00 UTC), `workflow_dispatch` | `--filter "Tier=Slow&Category=Emulator"` across `Honua.Server.Tests`, `Honua.Db.Postgres.Tests`, `Honua.Core.Tests` — `[EmulatorTest]` only. LocalStack + Azurite come from `EmulatorFixture` (Testcontainers); Postgres from a service container. Asserts `HONUA_TEST_DB_URL` before dispatch. |
 | `load-soak-nightly.yml` | Load/Soak Diagnostics (manual) | `workflow_dispatch` | Diagnostic load tests only. The unsourced nightly schedule was retired in favor of candidate capacity qualification (#5314). |
 | `capacity-soak-candidate.yml` | capacity-soak-candidate | `workflow_dispatch`, `workflow_call` | Runs at the manifest candidate source and image, collects complete raw observations, and attests a bounded evidence ZIP. The release checker independently recomputes all eight signals and binds the exact producer attestation. See docs/ops/capacity-soak-receipt.md. |
@@ -526,6 +527,28 @@ project build or dependency artifact transport is introduced. Fixture regression
 fail the producer; real-project metadata observation remains advisory and its
 reports are retained separately as `source-inventory-pilot-<attempt>`.
 
+
+### Grouped unit and component shards
+
+The server matrix combines 33 small unit/component assemblies into four jobs:
+Provider and AI Units, Runtime Units, Protocol Units, and Protocol and Host
+Components. Each `csprojs` list is an explicit assembly union. Routing, build
+selection, resource classification, and the source coverage guard inspect every
+member. Catalogued Docker, Postgres, and Redis dependencies remain supported;
+resourceful members retain service provisioning. Unknown resources fail closed.
+The existing required check names and tier policies remain unchanged.
+
+The shared runner executes each member with its own fresh TRX and timing record,
+within one shared 20-minute test budget. Every assembly must execute tests and
+pass; a passing sibling cannot conceal an empty, failed, or timed-out assembly.
+It also emits a combined TRX and timing receipt for the existing aggregates.
+The optional cache observer uses normal build fallback for grouped jobs.
+
+The scheduled baseline run 42685503356 spent 75.38 runner-minutes across these
+33 jobs. Reusing one setup per group estimates 22.80 runner-minutes; this is a
+planning estimate, not an observed result. Post-merge elapsed minutes must come
+from a full trunk run before claiming savings or refreshing child dispatch ranks.
+
 Full CI transfers the selected shard matrix as a run-and-attempt-scoped JSON
 artifact to the managed producer, cache planners and receipt verifier. Full
 filters stay out of environment variables and command arguments, whose per-string
@@ -562,6 +585,20 @@ fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
 
+### Governance capacity split
+
+The former `Server Features Admin Governance and Sharing` shard timed out at
+22.05 minutes in affected run 42846296623. Three numbered children partition
+its original filter exactly, including method-name matches outside governance
+classes. A fallback child retains future matches. The original paths, test and
+job budgets, reporting, and CPU limits remain unchanged. The partition fixture
+checks method-level union, disjointness, nonempty children, and inherited limits.
+
+Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
+spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
+minutes, including setup allowance. These initialize dispatch ranks; actual
+child minutes and measured ranks require the next completed full trunk run.
+
 Doctor budget admission counts both separately dispatched phases using the pinned gh-aw
 usage-artifact accountant over the preceding 24 hours. In-flight runs reserve their
 per-run cap; missing usage fails closed. Both native daily guardrails remain enabled.
@@ -569,6 +606,15 @@ The budget job records each run's phase and credits, total triage/fix credits,
 paid-run counts and the share of triage events reaching a paid Opus run. Deterministic
 skips use zero model credits. The combined envelopes are 2500 credits ($25) per day;
 triage and fix do not each receive a separate allowance.
+
+### Standalone tooling in affected producer builds
+
+The affected producer keeps solution members in its managed solution filter. The
+Lambda deployment driver and MCP manifest generator are explicit standalone
+projects: when selected, each restores and builds by its own project path before
+managed outputs are published. Restore and build failures remain gating, with
+the same warnings, analyzers and graph-build settings as the solution build.
+Unknown projects outside the solution still fail planning; test selection is unchanged.
 
 Optional PR workflow filters and retained post-merge coverage are documented in
 [optional PR input boundaries](gate-model.md#optional-pr-workflow-input-boundaries).

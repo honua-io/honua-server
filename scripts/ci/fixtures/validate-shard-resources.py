@@ -34,6 +34,14 @@ class ResourceTests(unittest.TestCase):
                          [row['needs_postgres'] for row in result])
         self.assertEqual(matrix, [{k: v for k, v in row.items() if k != 'needs_postgres'} for row in result])
 
+    def test_group_requires_every_member_to_be_resource_free(self):
+        catalog = {'projects': {'A.csproj': {'role': 'unit', 'resources': []},
+                                'B.csproj': {'role': 'component', 'resources': ['postgres']}}}
+        rows = [{'csprojs': ['A.csproj']}, {'csprojs': ['A.csproj', 'B.csproj']},
+                {'csprojs': ['A.csproj', 'Missing.csproj']}]
+        self.assertEqual([False, True, True],
+                         [row['needs_postgres'] for row in module.annotate(rows, catalog)])
+
     def test_unknown_catalog_retains_all_services(self):
         for catalog in ({}, None, {'projects': []}):
             self.assertTrue(module.annotate([{'csproj': 'unit'}], catalog)[0]['needs_postgres'])
@@ -45,8 +53,8 @@ class ResourceTests(unittest.TestCase):
         self.assertEqual(len(shards), len(result))
         self.assertEqual([s['name'] for s in shards], [s['name'] for s in result])
         for row in result:
-            entry = catalog['projects'][row.get('csproj') or module.MONOLITH]
-            if 'postgres' in entry['resources'] or entry['role'] not in {'unit', 'component'}:
+            entries = [catalog['projects'][p] for p in module.shard_projects(row)]
+            if any('postgres' in entry['resources'] or entry['role'] not in {'unit', 'component'} for entry in entries):
                 self.assertTrue(row['needs_postgres'], row['name'])
         self.assertTrue(any(not row['needs_postgres'] for row in result))
 
@@ -77,8 +85,8 @@ class ResourceTests(unittest.TestCase):
         spec.loader.exec_module(selection)
         registry = json.loads((ROOT / '.github/ci-shards.json').read_text())
         catalog = json.loads((ROOT / '.github/test-projects.json').read_text())['projects']
-        free = next(s for s in registry['shards'] if catalog[s.get('csproj') or module.MONOLITH]['role'] == 'unit'
-                    and catalog[s.get('csproj') or module.MONOLITH]['resources'] == [])
+        free = next(s for s in registry['shards'] if all(catalog[p]['role'] in {'unit', 'component'} and catalog[p]['resources'] == []
+                        for p in module.shard_projects(s)))
         database = next(s for s in registry['shards'] if 'postgres' in catalog[s.get('csproj') or module.MONOLITH]['resources'])
         result = {'skip': False, 'reason': 'targeted', 'shards': [free['name'], database['name']], 'cap': 6,
                   'deferred_to_trunk': []}
@@ -94,9 +102,9 @@ class ResourceTests(unittest.TestCase):
             self.assertEqual(result, {k: v for k, v in actual.items() if k != 'executionMatrix'})
             matrix = actual['executionMatrix']
             self.assertEqual(expected, [{k: v for k, v in row.items() if k != 'needs_postgres'} for row in matrix])
-            flags = {row['csproj']: row['needs_postgres'] for row in matrix}
-            self.assertFalse(flags[free['csproj']])
-            self.assertTrue(flags[database.get('csproj') or module.MONOLITH])
+            flags = {row['shard_name']: row['needs_postgres'] for row in matrix}
+            self.assertFalse(flags[free['shard_name']])
+            self.assertTrue(flags[database['shard_name']])
             emitted = next(line.split('=', 1)[1] for line in output.read_text().splitlines() if line.startswith('matrix_include='))
             self.assertEqual(matrix, json.loads(emitted))
 
