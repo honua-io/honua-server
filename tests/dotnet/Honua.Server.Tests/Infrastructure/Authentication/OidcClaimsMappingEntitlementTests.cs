@@ -15,16 +15,10 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Entitlement tests for OIDC custom claims mapping (#2997). The admin provider DTOs carry no
-/// claims-mapping fields, so the identity.claims-mapping (Enterprise) surface is the
-/// config-driven <c>Oidc:ClaimsMapping</c> options applied by
-/// <see cref="OidcClaimsTransformation"/>: without the entitlement, configured
-/// <c>CustomMappings</c> and <c>AdditionalRoleClaimTypes</c> are skipped (soft-degrade — default
-/// claims normalization still runs and authentication never fails on edition), and with it they
-/// apply as configured. This is why the key sits in the entitlement sweep's no-http-surface
-/// allowlist rather than carrying an HTTP 402 probe.
-/// </summary>
+// The admin provider DTOs carry no claims-mapping fields, so identity.claims-mapping is the
+// config-driven Oidc:ClaimsMapping options: without the entitlement CustomMappings are skipped
+// and default claims normalization still runs. Choosing which claims carry roles needs only
+// identity.oidc. That is why the key sits in the entitlement sweep's no-http-surface allowlist.
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.IdentityManagement)]
 public sealed class OidcClaimsMappingEntitlementTests
@@ -220,6 +214,8 @@ public sealed class OidcClaimsMappingEntitlementTests
     [InlineData("primary", HonuaEdition.Pro)]
     [InlineData("additional", HonuaEdition.Pro)]
     [InlineData("custom", HonuaEdition.Pro)]
+    [InlineData("primary", HonuaEdition.Community)]
+    [InlineData("additional", HonuaEdition.Community)]
     [Trait("Tier", "Fast")]
     public async Task TransformAsync_AuthorityClaimAsConfiguredMappingSource_PreservesOnlyEntitledRole(
         string mappingKind, HonuaEdition edition)
@@ -251,9 +247,11 @@ public sealed class OidcClaimsMappingEntitlementTests
 
         var result = await transformation.TransformAsync(principal);
 
+        var requiredEdition = mappingKind == "custom" ? HonuaEdition.Enterprise : HonuaEdition.Pro;
+        var entitled = edition >= requiredEdition;
         Assert.Null(result.FindFirst("permission"));
-        Assert.Equal(edition == HonuaEdition.Enterprise, result.IsInRole("mapped-editor"));
-        Assert.Equal(edition == HonuaEdition.Enterprise,
+        Assert.Equal(entitled, result.IsInRole("mapped-editor"));
+        Assert.Equal(entitled,
             result.HasClaim(claim => claim.Type == OidcClaimsTransformation.RolesFromClaimsMappingClaimType));
         Assert.DoesNotContain(result.FindAll(OidcClaimsTransformation.RolesWithoutClaimsMappingClaimType),
             claim => claim.Value == "mapped-editor");
@@ -290,14 +288,79 @@ public sealed class OidcClaimsMappingEntitlementTests
     }
 
     [UnitTest]
-    public async Task TransformAsync_WithoutClaimsMappingEntitlement_SkipsCustomMappings()
+    public async Task TransformAsync_ProWithoutClaimsMappingEntitlement_MapsRoleClaimsAndSkipsCustomMappings()
     {
-        // Pro covers single-provider OIDC (identity.oidc) but not identity.claims-mapping.
+        // Pro covers single-provider OIDC (identity.oidc), including the choice of role claim
+        // types, but not identity.claims-mapping.
         var transformation = CreateTransformation(HonuaEdition.Pro);
 
         var result = await transformation.TransformAsync(CreatePrincipal());
 
         Assert.Null(result.FindFirst("honua_department"));
+        Assert.True(result.IsInRole("editors"));
+        Assert.False(result.IsInRole("user"), "a mapped role replaces the default role");
+        Assert.Equal("user-123", result.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+    }
+
+    [UnitTest]
+    public async Task TransformAsync_ProWithNamespacedRoleClaim_MapsItsValuesToRoles()
+    {
+        const string Auth0RolesClaim = "https://honua.example.com/roles";
+        using var services = new ServiceCollection()
+            .AddSingleton<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .BuildServiceProvider();
+        var transformation = new OidcClaimsTransformation(
+            Options.Create(new OidcAuthenticationOptions
+            {
+                DefaultRole = "user",
+                ClaimsMapping = new ClaimsMappingOptions { AdditionalRoleClaimTypes = [Auth0RolesClaim] },
+            }),
+            NullLogger<OidcClaimsTransformation>.Instance,
+            services);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("sub", "user-123"), new Claim(Auth0RolesClaim, "data-editor")],
+            "Bearer"));
+
+        var result = await transformation.TransformAsync(principal);
+
+        Assert.True(result.IsInRole("data-editor"));
+        Assert.Equal(
+            OidcClaimsTransformation.RoleClaimSelectionProvenance,
+            result.FindFirst(OidcClaimsTransformation.RolesFromClaimsMappingClaimType)?.Value);
+    }
+
+    [UnitTest]
+    public async Task TransformAsync_RoleFromCustomMapping_IsMarkedAsCustomMappingDerived()
+    {
+        using var services = new ServiceCollection()
+            .AddSingleton<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Enterprise))
+            .BuildServiceProvider();
+        var transformation = new OidcClaimsTransformation(
+            Options.Create(new OidcAuthenticationOptions
+            {
+                DefaultRole = "user",
+                ClaimsMapping = new ClaimsMappingOptions
+                {
+                    CustomMappings = new Dictionary<string, string> { ["department"] = ClaimTypes.Role },
+                },
+            }),
+            NullLogger<OidcClaimsTransformation>.Instance,
+            services);
+
+        var result = await transformation.TransformAsync(CreatePrincipal());
+
+        Assert.Equal(
+            OidcClaimsTransformation.CustomMappingProvenance,
+            result.FindFirst(OidcClaimsTransformation.RolesFromClaimsMappingClaimType)?.Value);
+    }
+
+    [UnitTest]
+    public async Task TransformAsync_CommunityWithRoleClaimTypesConfigured_ReadsDefaultRoleClaimsOnly()
+    {
+        var transformation = CreateTransformation(HonuaEdition.Community);
+
+        var result = await transformation.TransformAsync(CreatePrincipal());
+
         Assert.False(result.IsInRole("editors"));
 
         // Default normalization still ran: authentication soft-degrades, it never fails.
@@ -346,10 +409,10 @@ public sealed class OidcClaimsMappingEntitlementTests
     [UnitTest]
     public async Task TransformAsync_WithoutEntitlement_CustomRoleClaimTypeGrantsNoRoles()
     {
-        // A non-default PRIMARY RoleClaimType is a custom mapping like any other. Without the
-        // gate an unentitled Pro deployment could point it at `groups` and have raw provider
-        // group values match AdminRoles (honua-server#2997 review).
-        var transformation = CreateRoleClaimTypeTransformation(HonuaEdition.Pro);
+        // A non-default PRIMARY RoleClaimType needs identity.oidc. Without the gate a
+        // Community deployment could point it at `groups` and have raw provider group values
+        // match AdminRoles.
+        var transformation = CreateRoleClaimTypeTransformation(HonuaEdition.Community);
 
         var result = await transformation.TransformAsync(CreateGroupsPrincipal());
 
@@ -368,7 +431,7 @@ public sealed class OidcClaimsMappingEntitlementTests
         // Gating the claim gathering is not enough on its own: the handlers install the custom
         // type as the identity's RoleClaimType, so IsInRole would read `groups` directly and
         // never pass through this transformation at all.
-        var transformation = CreateRoleClaimTypeTransformation(HonuaEdition.Pro);
+        var transformation = CreateRoleClaimTypeTransformation(HonuaEdition.Community);
 
         var result = await transformation.TransformAsync(CreateGroupsPrincipal());
 
@@ -380,11 +443,11 @@ public sealed class OidcClaimsMappingEntitlementTests
     [UnitTest]
     public async Task TransformAsync_WithEntitlement_CustomRoleClaimTypeApplies()
     {
-        // Enterprise gets what it configured: `groups` values are roles and reach AdminRoles.
+        // Pro gets what it configured: `groups` values are roles and reach AdminRoles.
         // The admin assertion also pins a latent defect this change settles — `admin` is
         // written as a ClaimTypes.Role claim, which an identity keyed on `groups` could never
         // resolve, so a custom-role-claim deployment used to get no admin at all.
-        var transformation = CreateRoleClaimTypeTransformation(HonuaEdition.Enterprise);
+        var transformation = CreateRoleClaimTypeTransformation(HonuaEdition.Pro);
 
         var result = await transformation.TransformAsync(CreateGroupsPrincipal());
 
@@ -418,7 +481,7 @@ public sealed class OidcClaimsMappingEntitlementTests
     {
         // Nothing was granted by claims mapping, so there is nothing for a persisted token to
         // revalidate — the marker must not be stamped where it would only cost a lookup.
-        var transformation = CreateRoleClaimTypeTransformation(HonuaEdition.Pro);
+        var transformation = CreateRoleClaimTypeTransformation(HonuaEdition.Community);
 
         var result = await transformation.TransformAsync(CreateGroupsPrincipal());
 

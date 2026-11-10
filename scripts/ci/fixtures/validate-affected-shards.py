@@ -264,6 +264,25 @@ def check_largest_impact_first(config: dict[str, Any]) -> None:
         )
 
 
+def runnable_class_owners(config: dict[str, Any], classes: dict[str, Any], coverage: Any) -> dict[str, list[str]]:
+    runnable = runnable_method_index(classes)
+    owners: dict[str, list[str]] = {}
+    for shard in config["shards"]:
+        if shard.get("nightly_only"):
+            continue
+        project = selector.shard_test_project(shard)
+        for fqn, entry in classes.items():
+            if entry["csproj"] != project or not entry["methods"]:
+                continue
+            if any(
+                coverage.shard_claims(shard["filter"], f"{entry.get('fqn', fqn)}.{method}")
+                for method in runnable[fqn]
+            ):
+                owners.setdefault(fqn, []).append(shard["name"])
+
+    return owners
+
+
 def check_changed_test_file_selects_its_running_shard(config: dict[str, Any]) -> int:
     """A changed test file must select the shard whose `--filter` runs it.
 
@@ -279,20 +298,7 @@ def check_changed_test_file_selects_its_running_shard(config: dict[str, Any]) ->
     # One pass over the whole inventory: which shards run each class. Scored on
     # the RUNNABLE methods, matching the selector -- a class every shard skips
     # on tier cannot demonstrate ownership of one.
-    runnable = runnable_method_index(classes)
-    owners: dict[str, list[str]] = {}
-    for shard in config["shards"]:
-        if shard.get("nightly_only"):
-            continue
-        project = selector.shard_test_project(shard)
-        for fqn, entry in classes.items():
-            if entry["csproj"] != project or not entry["methods"]:
-                continue
-            if any(
-                coverage.shard_claims(shard["filter"], f"{entry.get('fqn', fqn)}.{method}")
-                for method in runnable[fqn]
-            ):
-                owners.setdefault(fqn, []).append(shard["name"])
+    owners = runnable_class_owners(config, classes, coverage)
 
     # Only a class exactly one shard runs proves ownership; a class two shards
     # both execute cannot rank one above the other.
@@ -330,13 +336,18 @@ def check_changed_test_file_selects_its_running_shard(config: dict[str, Any]) ->
     return len(exclusive)
 
 
+def without_nightly_policy(config: dict[str, Any]) -> dict[str, Any]:
+    retained = copy.deepcopy(config)
+    for shard in retained["shards"]:
+        shard.pop("nightly_only", None)
+    return retained
+
+
 def check_wps_and_h3_tests_select_both_owners(config: dict[str, Any]) -> None:
     """A routed WPS file must not hide an unlisted H3 file in the same diff."""
     # Exercise the complete retained matrix's family interleaving, independently
     # of the policy that defers OGC execution to nightly.
-    config = copy.deepcopy(config)
-    for shard in config["shards"]:
-        shard.pop("nightly_only", None)
+    config = without_nightly_policy(config)
     wps = "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wps20/Wps20EndpointsTests.cs"
     h3_paths = [
         f"tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/{name}.cs"

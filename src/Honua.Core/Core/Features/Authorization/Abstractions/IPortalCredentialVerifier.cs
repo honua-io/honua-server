@@ -69,4 +69,8 @@ public sealed record PortalCredentialPrincipal(
     bool RolesRequireClaimsMappingEntitlement = false,
     bool TenantRequiresClaimsMappingEntitlement = false,
     IReadOnlyList<string>? RolesWithoutClaimsMapping = null,
-    PortalCredentialSource? Source = null);
+    PortalCredentialSource? Source = null)
+{
+    // Roles flagged by RolesRequireClaimsMappingEntitlement that differ from the fallback only through the configured role claim types are revalidated against identity.oidc instead of identity.claims-mapping.
+    public bool RolesDependOnlyOnRoleClaimSelection { get; init; }
+}

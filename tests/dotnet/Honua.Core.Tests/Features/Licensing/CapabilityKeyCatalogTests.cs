@@ -85,10 +85,73 @@ public sealed class CapabilityKeyCatalogTests
             CapabilityKeyCatalog.CommunityKeys.Count
             + CapabilityKeyCatalog.RoutedExperimentalKeys.Count
             + CapabilityKeyCatalog.RoutedPreviewKeys.Count
+            + CapabilityKeyCatalog.RoutedDependentKeys.Count
             + CapabilityKeyCatalog.DescriptiveKeys.Count
             + FeatureCatalog.All.Count
             - CapabilityKeyCatalog.RoutedPreviewKeys.Count);
     }
+
+    private const string ResolvedByPostgresJobState =
+        "resolved when durable job and approval state moves to PostgreSQL (honua-server#6809)";
+
+    private static readonly IReadOnlyDictionary<(string Capability, string Required), string> AllowedHigherEditionRequirements =
+        new Dictionary<(string, string), string>
+        {
+            [("jobs.durable-runtime", FeatureCatalog.RedisCacheKey)] = ResolvedByPostgresJobState,
+            [("operations.proposals", FeatureCatalog.RedisCacheKey)] = ResolvedByPostgresJobState,
+        };
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Requires_OnlyNamesKnownCapabilityKeys()
+    {
+        var knownKeys = CapabilityKeyCatalog.All.Select(c => c.Key).ToHashSet(StringComparer.Ordinal);
+
+        CapabilityKeyCatalog.All.SelectMany(c => c.Requires).Should().OnlyContain(required => knownKeys.Contains(required));
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Requires_NamesAHigherEditionKeyOnlyForTheAllowedExceptions()
+    {
+        var editionByKey = CapabilityKeyCatalog.All.ToDictionary(c => c.Key, c => c.Edition, StringComparer.Ordinal);
+
+        var higherEditionRequirements = CapabilityKeyCatalog.All
+            .SelectMany(capability => capability.Requires
+                .Where(required => editionByKey[required] > capability.Edition)
+                .Select(required => (capability.Key, required)))
+            .ToArray();
+
+        higherEditionRequirements.Should().BeEquivalentTo(
+            AllowedHigherEditionRequirements.Keys,
+            "a capability that requires a key from a higher edition cannot work on its own edition, "
+            + "and an allowed exception that is no longer a violation must be removed from the list");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Requires_DeclaresTheKnownEntitlementDependencies()
+    {
+        RequiredKeysOf("enrichment.datasets").Should().Equal("analytics.spatial-join");
+        RequiredKeysOf(FeatureCatalog.OidcClaimsMappingKey).Should().Equal(FeatureCatalog.OidcAuthenticationKey);
+        RequiredKeysOf(FeatureCatalog.OidcMultiProviderKey).Should().Equal(FeatureCatalog.OidcAuthenticationKey);
+        RequiredKeysOf("jobs.durable-runtime").Should().Equal(FeatureCatalog.RedisCacheKey);
+        RequiredKeysOf("operations.proposals").Should().Equal(FeatureCatalog.RedisCacheKey);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void RoutedDependentKeys_AreGatedByAtLeastOneRequiredEntitlement()
+    {
+        CapabilityKeyCatalog.RoutedDependentKeys.Should().OnlyContain(capability =>
+            capability.Requires.Count > 0
+            && capability.Requires.All(required => FeatureCatalog.All.Any(feature => feature.Key == required)));
+        CapabilityKeyCatalog.RoutedDependentKeys.Single(capability => capability.Key == "enrichment.datasets")
+            .Edition.Should().Be(HonuaEdition.Pro);
+    }
+
+    private static IReadOnlyList<string> RequiredKeysOf(string capabilityKey)
+        => CapabilityKeyCatalog.All.Single(capability => capability.Key == capabilityKey).Requires;
 
     [Trait("Tier", "Fast")]
     [Fact]
