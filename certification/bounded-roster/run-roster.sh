@@ -199,18 +199,18 @@ python3 "$ROSTER_HOME/lib/emit_receipts.py" --run-dir "$ROSTER_RUN_DIR" \
   --producer-source-sha "$PRODUCER_SHA" --out "$EVIDENCE/receipts"
 
 log "release-mode verdict"
-set +e
-python3 scripts/certification/verify-client-certification-receipts.py --mode release \
-  --receipts "$EVIDENCE/receipts" --source-sha "$SOURCE_SHA" --image-digest "$INDEX_DIGEST" \
-  --cut-at "$IMAGE_CREATED" --producer-source-sha "$PRODUCER_SHA" \
-  --output "$EVIDENCE/verdict.release.json" | tee "$EVIDENCE/verdict.release.txt"
-python3 scripts/certification/verify-client-certification-receipts.py \
-  --output "$EVIDENCE/verdict.contract.json" > "$EVIDENCE/verdict.contract.txt"
-set -e
+# shellcheck source=lib/record_verdicts.sh
+source "$ROSTER_HOME/lib/record_verdicts.sh"
+verdict_failed=0
+record_verdicts "$EVIDENCE" "$SOURCE_SHA" "$INDEX_DIGEST" "$IMAGE_CREATED" "$PRODUCER_SHA" || verdict_failed=1
 
 mkdir -p "$EVIDENCE/run"
 cp "$ROSTER_RUN_DIR"/{candidate.json,fixture.json,lanes.json,fixture-artifacts.json} "$EVIDENCE/run/"
 cp -r "$ROSTER_RUN_DIR/observations" "$EVIDENCE/run/"
 gzip -9 -c "$ROSTER_RUN_DIR/wire/wire.jsonl" > "$EVIDENCE/run/wire.jsonl.gz"
 sha256sum "$ROSTER_RUN_DIR/wire/wire.jsonl" | awk '{print $1 "  wire.jsonl"}' > "$EVIDENCE/run/wire.jsonl.sha256"
+if [[ "$verdict_failed" -ne 0 ]]; then
+  echo "roster verdict failed; evidence retained at $EVIDENCE" >&2
+  exit 1
+fi
 log "done: $EVIDENCE (raw run directory $ROSTER_RUN_DIR)"
