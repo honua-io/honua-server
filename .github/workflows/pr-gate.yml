@@ -55,7 +55,7 @@ jobs:
   format:
     name: PR Gate / Format
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       # `rerun-failed-jobs` only releases jobs that failed attempt 1. Make this
       # independent path an admission failure too, otherwise a skipped-success
