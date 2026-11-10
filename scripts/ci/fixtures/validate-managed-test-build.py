@@ -41,6 +41,12 @@ class ManagedBuildTests(unittest.TestCase):
         with patch.object(sys, 'argv', [str(SCRIPT), *args, '--root', str(self.root)]), contextlib.redirect_stdout(io.StringIO()):
             managed.main()
 
+    def test_multi_project_shard_selects_every_assembly(self):
+        output = self.root / 'projects.json'
+        self.invoke('projects', '--lane', 'shard', '--project', self.a, '--projects-json', json.dumps([self.a, self.b]),
+                    '--output', str(output))
+        self.assertEqual([self.a, self.b], json.loads(output.read_text()))
+
     def test_filter_unions_requested_and_base_projects_once(self):
         requested = self.root / 'requested.json'
         requested.write_text(json.dumps([self.a, self.a]))

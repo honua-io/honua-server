@@ -20,6 +20,9 @@ import statistics
 import sys
 import xml.etree.ElementTree as ET
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shard_projects import shard_projects
+
 ROOT = Path(__file__).resolve().parents[2]
 MONOLITH = 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
 
@@ -46,19 +49,19 @@ def canonical_filter(text, parser):
 
 
 def fingerprint(config):
-    entries = [{key: shard.get(key) for key in ('shard_name', 'csproj', 'filter')}
+    entries = [{key: shard.get(key) for key in ('shard_name', 'csproj', 'csprojs', 'filter')}
                for shard in config['shards']]
     return hashlib.sha256(json.dumps(entries, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
 def effective_filter(shard, catalog):
     """Mirror run-server-test-shard.sh's default tier policy by project role."""
-    project = shard.get('csproj') or MONOLITH
-    role = catalog.get('projects', {}).get(project, {}).get('role')
+    roles = [catalog.get('projects', {}).get(project, {}).get('role')
+             for project in shard_projects(shard)]
     result = '(' + shard['filter'] + ')&Tier!=Slow'
     # Unit/component projects own their Fast cases; unknown roles retain the
     # conservative legacy exclusion rather than accepting broader timing data.
-    if role not in ('unit', 'component'):
+    if any(role not in ('unit', 'component') for role in roles):
         result = '(' + result + ')&Tier!=Fast'
     return result
 
@@ -91,8 +94,11 @@ def observations(config, directory, *, now=None, max_age_days=30, catalog=None):
                 continue
             if canonical_filter(record['filter'], parser) != expected[name]:
                 continue
-            project = known[name].get('csproj') or MONOLITH
-            if record.get('project', project) != project:
+            projects = shard_projects(known[name])
+            if len(projects) > 1:
+                if record.get('projects') != projects:
+                    continue
+            elif record.get('project', projects[0]) != projects[0]:
                 continue
             identity = (name, record['started_at'])
             if identity in seen:
@@ -154,7 +160,9 @@ def recommend(config, samples, groups, *, minimum_runs=3):
               'routingFingerprint': fingerprint(config), 'proposals': [], 'gaps': []}
     projects = defaultdict(list)
     for shard in config['shards']:
-        projects[shard.get('csproj') or MONOLITH].append(shard['shard_name'])
+        members = shard_projects(shard)
+        if len(members) == 1:
+            projects[members[0]].append(shard['shard_name'])
     if groups is not None and (groups.get('schema') != 'honua.shard-balance-groups/v1'
                                or groups.get('routingFingerprint') != fingerprint(config)):
         raise ValueError('Grouping map must match the current routing fingerprint')

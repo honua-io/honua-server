@@ -11,6 +11,9 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shard_projects import shard_projects
+
 ROOT = Path(__file__).resolve().parents[2]
 CATALOG = '.github/test-projects.json'
 ROLES = {'unit', 'mixed', 'component', 'integration', 'architecture', 'support', 'host'}
@@ -147,8 +150,8 @@ def validate_solution_members(root, entries):
 def validate_modular_shard_owners(catalog, registry):
     # Only dedicated modular suites opt into this complete source-ownership contract.
     # Legacy shard partitions retain their existing route/filter policy.
-    for shard in registry['shards']:
-        entry = catalog['projects'].get(shard.get('csproj'))
+    for shard, project in ((s, p) for s in registry['shards'] for p in shard_projects(s)):
+        entry = catalog['projects'].get(project)
         if not shard.get('supplemental_source_paths') or not entry or entry['role'] not in {'unit', 'component'}:
             continue
         for owner in entry['runtimeOwners']:
@@ -168,8 +171,8 @@ def artifact_projects(root):
     helper = root / 'scripts/ci/managed-test-build.py'
     if not helper.is_file():
         # Synthetic catalog fixtures only contain their declared shard surface.
-        return {e.get('csproj') or 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
-                for e in json.loads((root / '.github/ci-shards.json').read_text())['shards']}
+        return {project for shard in json.loads((root / '.github/ci-shards.json').read_text())['shards']
+                for project in shard_projects(shard)}
     return set(json.loads(subprocess.check_output(
         ['python3', str(helper), 'inventory', '--root', str(root)], text=True)))
 

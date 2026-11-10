@@ -12,6 +12,9 @@ import xml.etree.ElementTree as ET
 import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shard_projects import shard_projects
+
 MONOLITH = 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
 
 
@@ -27,10 +30,10 @@ def order_shards(root, plan, timings):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     config = json.loads((root / '.github/ci-shards.json').read_text())
-    names = [s['name'] for s in plan['shards']]
+    names = list(dict.fromkeys(s['name'] for s in plan['shards']))
     ordered = module.order_names(names, config, module.observations(config, timings))
-    entries = {s['name']: s for s in plan['shards']}
-    plan['shards'] = [entries[name] for name in ordered]
+    positions = {name: index for index, name in enumerate(ordered)}
+    plan['shards'] = sorted(plan['shards'], key=lambda shard: positions[shard['name']])
     plan['ordering'] = {'changed': names != ordered, 'timingsDirectory': str(timings),
                         'policy': 'longest-first only with complete compatible timing hints; selection unchanged'}
 
@@ -70,7 +73,8 @@ def make_plan(catalog, unit_plan, routing, registry, changed):
     requested = {aliases.get(n, n) for n in requested}
     if not routing.get('run_all') and requested - names:
         raise ValueError('Unknown routed shards: ' + ', '.join(sorted(requested - names)))
-    for shard in registry['shards']:
+    expanded = [{**s, 'csproj': p} for s in registry['shards'] for p in shard_projects(s)]
+    for shard in expanded:
         name = shard['shard_name']
         if not routing.get('run_all') and name not in requested:
             skips.append({'shard': name, 'reason': 'not selected by canonical router'})

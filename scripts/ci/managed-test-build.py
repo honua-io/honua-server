@@ -6,9 +6,13 @@ import argparse
 import importlib.util
 import json
 import re
+import sys
 from pathlib import Path, PurePosixPath
 import subprocess
 import tempfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shard_projects import shard_projects
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVER = 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
@@ -40,7 +44,7 @@ def gate_projects(root):
 
 def inventory(root):
     shards = json.loads((root / '.github/ci-shards.json').read_text())['shards']
-    projects = {s.get('csproj') or SERVER for s in shards}
+    projects = {p for s in shards for p in shard_projects(s)}
     for family in ('core', 'server', 'protocols', 'providers'):
         projects.update(family_projects(root, family, advisory=True))
     projects.update(gate_projects(root))
@@ -150,6 +154,7 @@ def main():
     parser.add_argument('--lane', choices=['pr', 'pr-shards', 'ci', 'foundation', 'shard'], default='pr')
     parser.add_argument('--family', choices=['core', 'server', 'protocols', 'providers'])
     parser.add_argument('--project')
+    parser.add_argument('--projects-json')
     parser.add_argument('--matrix-file', type=Path)
     parser.add_argument('--projects-file', type=Path)
     parser.add_argument('--restored-file', type=Path)
@@ -166,9 +171,10 @@ def main():
                 parser.error('--family required')
             result = family_projects(root, args.family)
         elif args.lane == 'shard':
-            if not args.project:
-                parser.error('--project required')
-            result = validate_projects(root, [args.project])
+            projects = json.loads(args.projects_json or 'null')
+            if projects is None and not args.project:
+                parser.error('--project or --projects-json required')
+            result = validate_projects(root, [args.project] if projects is None else shard_projects({'csprojs': projects}))
         else:
             result = gate_projects(root) if args.lane == 'pr' else []
             if args.lane == 'ci':
@@ -188,7 +194,7 @@ def main():
                 if any(not isinstance(row.get('shard_name'), str) or not row['shard_name'] for row in matrix):
                     raise ValueError('Shard name is required')
                 # Advisory-only compilation stays in its original consumer.
-                result.extend(s.get('csproj') or SERVER for s in matrix if not s.get('advisory', False))
+                result.extend(p for s in matrix if not s.get('advisory', False) for p in shard_projects(s))
             result = validate_projects(root, result)
     else:
         if not args.projects_file:

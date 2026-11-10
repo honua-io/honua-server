@@ -163,6 +163,7 @@ jobs:
                 shard_name: .name,
                 suffix: .artifact_suffix,
                 csproj: (.csproj // ""),
+                csprojs: (.csprojs // null),
                 filter: .filter,
                 max_cpu_count: (.max_cpu_count // ""),
                 exclude_slow: "true",
@@ -252,23 +253,30 @@ jobs:
       - name: Restore
         env:
           SHARD_CSPROJ: ${{ matrix.csproj }}
+          HONUA_SERVER_TEST_CSPROJS: ${{ toJSON(matrix.csprojs) }}
         run: |
           csproj="${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}"
-          scripts/ci/dotnet-restore-retry.sh "${csproj}"
+          while IFS= read -r project; do
+            scripts/ci/dotnet-restore-retry.sh "${project}"
+          done < <(jq -r --arg fallback "${csproj}" '(. // [$fallback])[]' <<< "${HONUA_SERVER_TEST_CSPROJS}")
 
       - name: Build shard test project
         timeout-minutes: 25
         env:
           SHARD_CSPROJ: ${{ matrix.csproj }}
+          HONUA_SERVER_TEST_CSPROJS: ${{ toJSON(matrix.csprojs) }}
         run: |
           csproj="${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}"
-          dotnet build "${csproj}" --no-restore --configuration Release
+          while IFS= read -r project; do
+            dotnet build "${project}" --no-restore --configuration Release
+          done < <(jq -r --arg fallback "${csproj}" '(. // [$fallback])[]' <<< "${HONUA_SERVER_TEST_CSPROJS}")
 
       - name: Re-run selection ${{ needs.plan.outputs.iterations }}x
         env:
           ITERATIONS: ${{ needs.plan.outputs.iterations }}
           SHARD_SUFFIX: ${{ matrix.suffix }}
           SHARD_CSPROJ: ${{ matrix.csproj }}
+          HONUA_SERVER_TEST_CSPROJS: ${{ toJSON(matrix.csprojs) }}
           HONUA_SERVER_TEST_SHARD_NAME: ${{ matrix.shard_name }}
           HONUA_SERVER_TEST_FILTER: ${{ matrix.filter }}
           HONUA_SERVER_TEST_TIMEOUT_MINUTES: ${{ matrix.test_timeout_minutes }}
@@ -334,6 +342,7 @@ jobs:
             artifacts/test-results/flake-*.trx
             artifacts/test-results/flake-*.log
             artifacts/test-results/flake-*.timing.json
+            artifacts/test-results/flake-*/**
           if-no-files-found: warn
           retention-days: 30
 

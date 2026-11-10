@@ -812,9 +812,10 @@ jobs:
       - name: Plan affected shard binary consumer
         env:
           SHARD_CSPROJ: ${{ matrix.csproj }}
+          SHARD_CSPROJS: ${{ toJSON(matrix.csprojs) }}
         run: |
           mkdir -p artifacts/pr-gate
-          python3 scripts/ci/managed-test-build.py projects --lane shard --project "${SHARD_CSPROJ}" --output "artifacts/pr-gate/managed-projects.json"
+          python3 scripts/ci/managed-test-build.py projects --lane shard --project "${SHARD_CSPROJ}" --projects-json "${SHARD_CSPROJS}" --output "artifacts/pr-gate/managed-projects.json"
 
       - name: Restore verified managed test outputs
         id: managed-consumer
@@ -845,6 +846,7 @@ jobs:
           HONUA_SERVER_TEST_RESULTS_DIR: ./artifacts/test-results
           HONUA_SERVER_TEST_CONFIGURATION: Release
           HONUA_SERVER_TEST_CSPROJ: ${{ matrix.csproj }}
+          HONUA_SERVER_TEST_CSPROJS: ${{ toJSON(matrix.csprojs) }}
         run: scripts/ci/run-server-test-shard.sh
 
       # The timing artifact run-server-test-shard.sh writes is what the
