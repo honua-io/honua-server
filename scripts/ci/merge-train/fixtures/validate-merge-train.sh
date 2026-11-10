@@ -333,8 +333,8 @@ assert_contains "attribute cleanup: drop adds escalation" "${drop_log}" \
   "gh pr edit 3197 --add-label train:escalated"
 assert_contains "attribute cleanup: drop clears landing" "${drop_log}" \
   "gh pr edit 3197 --remove-label train:landing"
-# Build a 2-PR batch where pr401 touches a FeatureServer path and pr402 an OGC
-# path; a failing "FeatureServer Query Services and Replication 1" child shard must attribute to pr401 only.
+# The query child must attribute only to the FeatureServer member of a mixed
+# FeatureServer/OGC batch.
 : >"${INC}"
 printf '401\t%s\n' "$(git rev-parse origin/trunk)" >>"${INC}"   # head placeholder (overridden below)
 printf '402\t%s\n' "$(git rev-parse origin/trunk)" >>"${INC}"

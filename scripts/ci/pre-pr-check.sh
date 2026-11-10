@@ -54,7 +54,7 @@ set -euo pipefail
 # hits before you commit to a run.
 #
 # CLI flags (aliases for the escape-hatch env vars below): --full, --fast,
-# --dry-run, --base <ref>, --unit-only, --affected-tests (feedback only).
+# --dry-run, --base <ref>, --unit-only, --affected-tests (units by default; --integration opts in).
 #
 # Escape hatches:
 #   HONUA_PRE_PR_FULL=1     force the full suite (recommended before a release
@@ -98,12 +98,14 @@ FAST="${HONUA_PRE_PR_FAST:-0}"
 DRY_RUN="${HONUA_PRE_PR_DRY_RUN:-0}"
 UNIT_ONLY=0
 AFFECTED_TESTS=0
+INTEGRATION=0
 PLAN_JSON=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --unit-only) UNIT_ONLY=1; shift ;;
         --affected-tests) AFFECTED_TESTS=1; shift ;;
+        --integration) INTEGRATION=1; shift ;;
         --full) FULL=1; shift ;;
         --fast) FAST=1; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
@@ -165,7 +167,29 @@ if [[ -n "${PLAN_JSON}" && ( "${AFFECTED_TESTS}" == "1" || "${UNIT_ONLY}" == "1"
     exit 2
 fi
 
-# Shared-router affected unit/component feedback, without the full collector.
+if [[ "${INTEGRATION}" == "1" && "${AFFECTED_TESTS}" != "1" ]]; then
+    echo "--integration requires --affected-tests" >&2
+    exit 2
+fi
+
+# Keep Stage 0 bounded even when a changed validation contract forces FULL.
+# Hosted Format/Analyzers remain authoritative for analyzer diagnostics.
+BUILD_FLAGS=(-p:TreatWarningsAsErrors=true)
+if [[ "${AFFECTED_TESTS}" == "1" ]]; then
+    stage0_cpu="${HONUA_STAGE0_MAX_CPU_COUNT:-5}"
+    if [[ ! "${stage0_cpu}" =~ ^([1-9]|1[0-6])$ ]]; then
+        echo "HONUA_STAGE0_MAX_CPU_COUNT must be an integer from 1 to 16" >&2
+        exit 2
+    fi
+    export DOTNET_PROCESSOR_COUNT="${stage0_cpu}"
+    BUILD_FLAGS+=(-p:RunAnalyzers=false -p:RunAnalyzersDuringBuild=false
+        -p:UseSharedCompilation=false "-maxCpuCount:${stage0_cpu}" -nodeReuse:false)
+fi
+
+# Stage 0 defaults to affected units; component/integration shards are opt-in.
+# Positive CI-only evidence continues to the existing governance fast path.
+scope_output="$(scripts/ci/classify-pre-pr-changes.sh "${BASE_REF}" HEAD 2>/dev/null || echo UNKNOWN)"
+# Shared-router feedback, without the full collector.
 if [[ "${AFFECTED_TESTS}" == "1" ]]; then
     if [[ "${FULL}" == "1" || "${FAST}" == "1" || "${UNIT_ONLY}" == "1" ]]; then
         echo "--affected-tests cannot be combined with fast/full/unit-only modes" >&2
@@ -173,7 +197,11 @@ if [[ "${AFFECTED_TESTS}" == "1" ]]; then
     fi
     feedback_operation=run
     [[ "${DRY_RUN}" != "1" ]] || feedback_operation=plan
-    exec "${PYTHON_BIN}" scripts/ci/local-test-feedback.py "${feedback_operation}" --base "${BASE_REF}"
+    if [[ "${scope_output%%$'\n'*}" != "CI_ONLY" ]]; then
+        feedback_args=()
+        [[ "${INTEGRATION}" == "1" ]] || feedback_args+=(--unit-only)
+        exec "${PYTHON_BIN}" scripts/ci/local-test-feedback.py "${feedback_operation}" --base "${BASE_REF}" "${feedback_args[@]}"
+    fi
 fi
 
 # Explicit developer feedback lane; never substitutes for fast/full PR gates.
@@ -251,7 +279,7 @@ fi
 # both continue through the existing fail-safe path.
 PRE_PR_SCOPE="NORMAL"
 PRE_PR_CHANGED_FILES=""
-scope_output="$(scripts/ci/classify-pre-pr-changes.sh "${BASE_REF}" HEAD 2>/dev/null || echo UNKNOWN)"
+
 PRE_PR_SCOPE="$(head -1 <<< "${scope_output}")"
 PRE_PR_CHANGED_FILES="$(tail -n +2 <<< "${scope_output}")"
 
@@ -693,7 +721,7 @@ if [[ "${FULL}" == "1" ]]; then
         # "p:TreatWarningsAsErrors=true" argument and rejects it as a second
         # project (MSB1008). The two forms are equivalent to MSBuild; the AOT step
         # below already uses -p: for the same reason.
-        dotnet build Honua.sln --no-restore --configuration Release -p:TreatWarningsAsErrors=true
+        dotnet build Honua.sln --no-restore --configuration Release "${BUILD_FLAGS[@]}"
     fi
 else
     # Compose the build set via a throwaway solution filter so shared
@@ -789,7 +817,7 @@ else
 
         echo "3. Building with warnings as errors..."
         # -p: not /p: — see the FULL-mode build above (MSB1008 under Git Bash).
-        dotnet build "${SLNF}" --no-restore --configuration Release -p:TreatWarningsAsErrors=true
+        dotnet build "${SLNF}" --no-restore --configuration Release "${BUILD_FLAGS[@]}"
     fi
 fi
 
