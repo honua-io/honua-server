@@ -877,21 +877,7 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         seededDocument.RootElement
             .GetProperty("layers")[0].GetProperty("type").GetString().Should().Be("circle");
 
-        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
-        var styleResourceId = MetadataV2StyleResourceFactory.BuildStyleResourceId(styleId);
-        snapshot.Index.ResourcesByStorageLayerId[WebAppFixture.TestLayerId]
-            .StyleResourceIds.Should().Contain(styleResourceId);
-        var graphStyle = snapshot.Index.ResourcesById[styleResourceId].Style!;
-        var mapboxEncoding = graphStyle.Encodings.Single(encoding => encoding.Encoding == "mapbox-style");
-        mapboxEncoding.Body.Should().NotBeNull();
-        using var graphMapboxDocument = JsonDocument.Parse(mapboxEncoding.Body!);
-        graphMapboxDocument.RootElement.GetProperty("layers")[0].GetProperty("type")
-            .GetString().Should().Be("line");
-        var esriEncoding = graphStyle.Encodings.Single(encoding => encoding.Encoding == "esri-drawing-info");
-        esriEncoding.Body.Should().NotBeNull();
-        using var graphEsriDocument = JsonDocument.Parse(esriEncoding.Body!);
-        graphEsriDocument.RootElement.GetProperty("renderer").GetProperty("symbol").GetProperty("type")
-            .GetString().Should().Be("esriSLS");
+        AssertGraphStyleEncodesLine(styleId);
     }
 
     [IntegrationTest]
@@ -1074,6 +1060,25 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         using var entitled = await entitledClient.SendAsync(request);
         entitled.StatusCode.Should().Be(HttpStatusCode.OK, await entitled.Content.ReadAsStringAsync());
         entitled.Content.Headers.ContentType?.MediaType.Should().Be(MapboxStyleMediaType);
+    }
+
+    private void AssertGraphStyleEncodesLine(string styleId)
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var styleResourceId = MetadataV2StyleResourceFactory.BuildStyleResourceId(styleId);
+        snapshot.Index.ResourcesByStorageLayerId[WebAppFixture.TestLayerId]
+            .StyleResourceIds.Should().Contain(styleResourceId);
+        var graphStyle = snapshot.Index.ResourcesById[styleResourceId].Style!;
+        var mapboxEncoding = graphStyle.Encodings.Single(encoding => encoding.Encoding == "mapbox-style");
+        mapboxEncoding.Body.Should().NotBeNull();
+        using var graphMapboxDocument = JsonDocument.Parse(mapboxEncoding.Body!);
+        graphMapboxDocument.RootElement.GetProperty("layers")[0].GetProperty("type")
+            .GetString().Should().Be("line");
+        var esriEncoding = graphStyle.Encodings.Single(encoding => encoding.Encoding == "esri-drawing-info");
+        esriEncoding.Body.Should().NotBeNull();
+        using var graphEsriDocument = JsonDocument.Parse(esriEncoding.Body!);
+        graphEsriDocument.RootElement.GetProperty("renderer").GetProperty("symbol").GetProperty("type")
+            .GetString().Should().Be("esriSLS");
     }
 
     private async Task<string> SeedAndResolveStyleIdAsync(HttpClient adminClient)
