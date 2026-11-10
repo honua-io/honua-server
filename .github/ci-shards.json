@@ -5989,7 +5989,11 @@
         "tests/dotnet/Honua.Ai.ComponentTests/",
         "src/Honua.Protocols/OgcClassic/",
         "tests/dotnet/Honua.Protocols.OgcClassic.ComponentTests/",
-        "tests/dotnet/Honua.Hosting.ComponentTests/"
+        "tests/dotnet/Honua.Hosting.ComponentTests/",
+        "src/Honua.Cloud/Aws/",
+        "src/Honua.Cloud/Azure/",
+        "src/Honua.Geoprocessing/Testing/",
+        "src/Honua.Worker.Gdal/"
       ],
       "csprojs": [
         "tests/dotnet/Honua.Geoprocessing.Cli.Tests/Honua.Geoprocessing.Cli.Tests.csproj",
