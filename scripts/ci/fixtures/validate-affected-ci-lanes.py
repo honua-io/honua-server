@@ -33,6 +33,11 @@ class AffectedLaneTests(unittest.TestCase):
         self.assertTrue(MODULE.select(['src/Honua.Server/Features/Styling/StyleEndpoints.cs'])['browser'])
         self.assertTrue(MODULE.select(['tests/seed/mcp.yaml'])['mcp'])
 
+    def test_shared_seeds_keep_all_compatibility_consumers(self):
+        for path in ['tests/seed/client-compat-v1.sql', 'tests/seed/base-schema.sql']:
+            with self.subTest(path=path):
+                self.assertTrue(all(MODULE.select([path]).values()))
+
     def test_scoped_unit_change_does_not_start_compatibility_fanout(self):
         self.assertFalse(any(MODULE.select(['tests/dotnet/Honua.Server.Tests/Utilities/ParserTests.cs']).values()))
 

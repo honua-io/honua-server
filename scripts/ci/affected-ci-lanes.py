@@ -22,7 +22,7 @@ KNOWN = re.compile(r'^(src/|tests/|test/|docs/|scripts/|[.]github/|docker/|sampl
 
 
 def select(paths):
-    if not paths or any(SHARED.search(p) or not KNOWN.search(p) for p in paths):
+    if not paths or any(p.startswith('tests/seed/') or SHARED.search(p) or not KNOWN.search(p) for p in paths):
         return dict.fromkeys(LANES, True)
     result = {lane: any(re.search(pattern, p) for p in paths) for lane, pattern in LANES.items()}
     if result['aot'] or result['mcp']:

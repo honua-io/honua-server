@@ -513,7 +513,7 @@ producer's affected project graph. Consumers reuse the single producer's
 artifacts. Server shards retain descending measured `dispatch_rank` order and
 run at most six at once (full runs retain 24). Expensive AOT, Docker,
 Postgres compatibility, browser, Python, MCP and quickstart lanes use
-`scripts/ci/affected-ci-lanes.py` to select their own inputs. Shared inputs,
+`scripts/ci/affected-ci-lanes.py` to select their own inputs. Shared seed files select every compatibility lane. Shared inputs,
 unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
