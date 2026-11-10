@@ -23,7 +23,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Import;
 
-// End-to-end durable file import (honua-server#5916) over the PostgreSQL job store and queue
+// End-to-end durable file import over the PostgreSQL job store and queue
 // and real PostGIS: the accepting host stages the source in file storage and enqueues a
 // FileImport job; the worker downloads it, imports every feature
 // and the job document reports the runner. Covers the in-process worker loop (local backend) and

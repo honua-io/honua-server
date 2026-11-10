@@ -24,7 +24,7 @@ using TestProtocols = Honua.TestKit.Constants.ProtocolNames;
 
 namespace Honua.Worker.Gdal.Tests;
 
-// The three execution cases relocated from OgcProcessesEndpointsTests for #4400.
+// The three native execution cases of OGC API Processes.
 // Every case requires the production job substrate, job loop and executors.
 // RasterExecutionProof includes these public API proofs in the required PR Gate.
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]

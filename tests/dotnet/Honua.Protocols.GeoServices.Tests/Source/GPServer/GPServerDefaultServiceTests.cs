@@ -17,7 +17,7 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-// End-to-end proof for honua-server#2349: the default/seeded GPServer service
+// End-to-end proof that the default/seeded GPServer service
 // (ServiceName) can be driven to a terminal
 // job with results through the GPServer facade using the real geometry.buffer
 // executor and the durable job runtime — i.e. GPServer is demonstrably usable out

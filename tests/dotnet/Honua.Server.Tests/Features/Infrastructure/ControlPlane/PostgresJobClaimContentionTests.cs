@@ -65,7 +65,7 @@ public sealed class PostgresJobClaimContentionTests(DatabaseFixtureAdapter datab
         stored.ClaimedBy.Should().NotBeNullOrEmpty();
         stored.AttemptCount.Should().Be(1, "a losing claim must not bump the winner's attempt count");
 
-        // The claim is held, not pending: the job is still a queue member and no longer claimable.
+        // The claim is held, not pending: the job is still a queue member and is not claimable.
         (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
         (await harness.IsInQueueAsync(operationId)).Should().BeTrue();
         (await harness.Queue.TryClaimAsync("worker-late")).Should().BeNull();
@@ -128,8 +128,8 @@ public sealed class PostgresJobClaimContentionTests(DatabaseFixtureAdapter datab
         (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
     }
 
-    // End-to-end worker-loss recovery with a counted side effect (#4403 criteria 4 and 5).
-    // The heartbeat lapses <em>naturally</em> under a JobHeartbeatPolicy that
+    // End-to-end worker-loss recovery with a counted side effect.
+    // The heartbeat lapses naturally under a JobHeartbeatPolicy that
     // honours its own contract (Timeout greater than
     // Interval), so a merely slow worker would never be
     // declared abandoned here. Worker loss is simulated the way it actually presents to the

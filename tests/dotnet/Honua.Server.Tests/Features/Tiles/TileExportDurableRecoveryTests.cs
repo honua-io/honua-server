@@ -26,7 +26,7 @@ using Xunit;
 namespace Honua.Server.Tests.Features.Tiles;
 
 // Multi-node (cross-replica) certification for the durable tile-export job lifecycle over the
-// PostgreSQL execution substrate (issue #2689 / the remaining acceptance criterion of #2660). These
+// PostgreSQL execution substrate. These
 // tests submit, poll, cancel, and retry across independent TileExportJobService
 // instances that share one job store, one queue and one artifact store, and drive the real
 // JobExecutionService worker and JobReconciliationService reconciler.

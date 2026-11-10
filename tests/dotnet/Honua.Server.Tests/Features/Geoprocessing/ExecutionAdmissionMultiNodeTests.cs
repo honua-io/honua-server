@@ -28,7 +28,7 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-// Multi-node execution-admission proofs (#3853). Every test composes two or more independent
+// Multi-node execution-admission proofs. Every test composes two or more independent
 // "server nodes" — each with its own Redis connection, job store instance, admission evaluator,
 // admission coordinator, and job service, sharing nothing in-process — against the PostgreSQL
 // job tables that hold the durable job records and one real Redis that holds the admission lease.

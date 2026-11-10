@@ -110,7 +110,7 @@ public static class GdalWorkerServiceCollectionExtensions
     // dependencies — the GdalWorkerOptions, the IGdalCommandRunner
     // CLI runner, and each per-process executor — with NO database connection, queue,
     // job store, or hosted execution loop. This is the store-free seam the GP Devkit
-    // headless runner / honua gp dev CLI consume (issue #2123) so a developer
+    // headless runner / honua gp dev CLI consume so a developer
     // can run a single native op directly without the durable substrate
     // AddGdalWorker wires for the worker host.
     // services: Service collection.
