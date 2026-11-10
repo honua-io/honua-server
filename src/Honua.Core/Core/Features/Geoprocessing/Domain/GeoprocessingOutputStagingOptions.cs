@@ -30,14 +30,13 @@ public sealed class GeoprocessingOutputStagingOptions
     /// <summary>Provider value for the shared-filesystem store.</summary>
     public const string LocalProvider = "local";
 
+    // Outputs go to the host's configured file storage (FileStorage:Provider), which every instance shares.
+    public const string ObjectStorageProvider = "object-storage";
+
     /// <summary>Whether referenced output staging is enabled.</summary>
     public bool Enabled { get; set; }
 
-    /// <summary>
-    /// Staging store provider. This release implements <see cref="LocalProvider"/>
-    /// (a filesystem root shared between the worker and serving hosts); an
-    /// unimplemented provider fails registration closed with an actionable error.
-    /// </summary>
+    // Any value other than LocalProvider or ObjectStorageProvider fails registration closed.
     [Required(AllowEmptyStrings = false)]
     public string Provider { get; set; } = LocalProvider;
 

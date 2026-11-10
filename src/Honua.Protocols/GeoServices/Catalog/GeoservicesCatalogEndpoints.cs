@@ -26,6 +26,7 @@ using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
+using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Protocols.GeoServices.Catalog;
 
@@ -81,6 +82,7 @@ internal static class GeoservicesCatalogEndpoints
             .WithTags("GeoServices Catalog")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get, HttpMethods.Post }))
             .CacheOutput("ServiceDirectory")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces<ServicesDirectoryResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status400BadRequest);
 
