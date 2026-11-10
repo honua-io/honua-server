@@ -32,6 +32,7 @@ public sealed class PostgresJobStoreEvidenceTests(DatabaseFixtureAdapter databas
     private static readonly TimeSpan _loadDuration = TimeSpan.FromMinutes(3);
 
     [RequiredEnvironmentFact(EvidenceSwitch)]
+    [Trait("Tier", "Slow")]
     public async Task HeartbeatLoad_200RunningJobsFor3Minutes_ReportsRowVersionsAndGrowth()
     {
         await using var harness = await PostgresJobSubstrateHarness.CreateAsync(database, nameof(PostgresJobStoreEvidenceTests));
@@ -99,6 +100,7 @@ public sealed class PostgresJobStoreEvidenceTests(DatabaseFixtureAdapter databas
     }
 
     [RequiredEnvironmentFact(EvidenceSwitch)]
+    [Trait("Tier", "Slow")]
     public async Task QueryPlans_OnASeededTable_ArePrinted()
     {
         await using var harness = await PostgresJobSubstrateHarness.CreateAsync(database, nameof(PostgresJobStoreEvidenceTests));

@@ -43,6 +43,7 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
     [RequiredEnvironmentFact(
         ImageEnvironmentVariable,
         skipReason: "The production worker image must be built and named by the GDAL image lane.")]
+    [Trait("Tier", "Slow")]
     [SupportedOSPlatform("linux")]
     public async Task ProductionImage_ExecutesStagesAndReconcilesKilledWorker()
     {

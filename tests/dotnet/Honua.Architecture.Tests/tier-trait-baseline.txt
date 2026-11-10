@@ -2136,7 +2136,6 @@ Honua.Worker.Gdal.Tests:Honua.Worker.Gdal.Tests.OrdinaryKrigingTests.Predict_AtA
 Honua.Worker.Gdal.Tests:Honua.Worker.Gdal.Tests.OrdinaryKrigingTests.TryParseModel_AcceptsTheCatalogDomainCaseInsensitively`0(System.String,System.String)
 Honua.Worker.Gdal.Tests:Honua.Worker.Gdal.Tests.PdalExecutionProofTests.Translate_RealLas_PreservesPointsAttributesPrecisionAndCrs`0(System.String,System.String,System.Int32,System.Boolean)
 Honua.Worker.Gdal.Tests:Honua.Worker.Gdal.Tests.PdalExecutionProofTests.Translate_UnsupportedWaveformFormat_FailsBeforePublishingAnArtifact`0(System.Int32)
-Honua.Worker.Gdal.Tests:Honua.Worker.Gdal.Tests.ProductionWorkerContainerHandoffTests.ProductionImage_ExecutesStagesRejectsMalformedPayloadAndReconcilesKilledWorker`0()
 Honua.Worker.Gdal.Tests:Honua.Worker.Gdal.Tests.RasterExecutionProofTests.Aspect_PlanarAndFlatDem_MatchesDownslopeAzimuthAndNoData`0(System.String,System.Double,System.Double,System.Boolean)
 Honua.Worker.Gdal.Tests:Honua.Worker.Gdal.Tests.RasterExecutionProofTests.Clip_LShapedCutline_PreservesInsideBoundaryAndNoDataCells`0()
 Honua.Worker.Gdal.Tests:Honua.Worker.Gdal.Tests.RasterExecutionProofTests.Clip_SourceWithoutNoData_UsesInternalMaskAndPreservesValidZero`0()
