@@ -37,7 +37,7 @@ public static class MetadataV2ExtrusionValidator
         }
         else
         {
-            var heightField = FindField(fields, extrusion.HeightField);
+            var heightField = MetadataV2FieldSemantics.FindField(fields, extrusion.HeightField);
             if (heightField is null)
             {
                 errors.Add(MetadataV2ExtrusionErrorCodes.HeightFieldNotFound);
@@ -50,7 +50,7 @@ public static class MetadataV2ExtrusionValidator
 
         if (!string.IsNullOrWhiteSpace(extrusion.BaseHeightField))
         {
-            var baseField = FindField(fields, extrusion.BaseHeightField);
+            var baseField = MetadataV2FieldSemantics.FindField(fields, extrusion.BaseHeightField);
             if (baseField is null)
             {
                 errors.Add(MetadataV2ExtrusionErrorCodes.BaseFieldNotFound);
@@ -73,20 +73,6 @@ public static class MetadataV2ExtrusionValidator
         }
 
         return errors;
-    }
-
-    private static MetadataV2Field? FindField(IReadOnlyList<MetadataV2Field> fields, string name)
-    {
-        for (var i = 0; i < fields.Count; i++)
-        {
-            var field = fields[i];
-            if (string.Equals(field.Name, name, StringComparison.OrdinalIgnoreCase))
-            {
-                return field;
-            }
-        }
-
-        return null;
     }
 
     private static bool IsSupportedNumericType(MetadataV2FieldType type)
