@@ -479,11 +479,10 @@ jobs:
 YAML
   printf 'jobs:\n  enable:\n    steps:\n      - run: enablePullRequestAutoMerge(input: {})\n' >"${scratch}/.github/workflows/auto-merge-ready.yml"
   scan_authorities "${scratch}" || { echo "safe fixture rejected" >&2; return 1; }
-  printf '\n      - run: mergePullRequest(input: {})\n' >>"${scratch}/.github/workflows/auto-merge-ready.yml"
+  printf '      - run: mergePullRequest(input: {})\n' >>"${scratch}/.github/workflows/auto-merge-ready.yml"
   scan_authorities "${scratch}" >/dev/null 2>&1 \
     && { echo "direct merge escaped auto-merge exception" >&2; return 1; }
   sed -i '$d' "${scratch}/.github/workflows/auto-merge-ready.yml"
-
 
   printf '\ngit push origin HEAD:trunk\n' >>"${scratch}/scripts/ci/merge-train/smart-ci.sh"
   scan_authorities "${scratch}" >/dev/null 2>&1 \

@@ -20,8 +20,7 @@ async function run(pr, failMutation = false) {
     github: { async graphql(query, variables) {
       if (query.includes('query(')) return { repository: { pullRequest: pr } };
       if (failMutation) throw new Error('publication rejected');
-      assert.match(query, /(?:enable|disable)PullRequestAutoMerge/);
-      assert.doesNotMatch(query, /(?<!Auto)mergePullRequest/);
+      assert.match(query, /mutation\([^)]*\)\s*\{\s*(enable|disable)PullRequestAutoMerge\(/);
       mutations.push({ ...variables, action: query.includes('disablePullRequestAutoMerge') ? 'disable' : 'enable' });
       return {};
     } },
@@ -52,17 +51,21 @@ test('bot credentials are scoped and contributor code is never executed', () => 
   assert.match(workflow, /secrets.BOT_APP_ID/);
   assert.match(workflow, /secrets.BOT_APP_PRIVATE_KEY/);
   assert.match(workflow, /types: \[opened, ready_for_review, reopened, synchronize, labeled, unlabeled, converted_to_draft, edited\]/);
-  assert.match(workflow, /branches: \[trunk\]/);
+  assert.doesNotMatch(workflow, /branches:/);
+  assert.match(workflow, /github.event.pull_request.head.repo.full_name == github.repository/);
   assert.match(workflow, /repositories: \$\{\{ github.event.repository.name \}\}/);
   assert.match(workflow, /permission-contents: write/);
   assert.match(workflow, /permission-pull-requests: write/);
+  assert.match(workflow, /permission-workflows: write/);
   assert.match(workflow, /permissions: \{\}/);
   assert.doesNotMatch(workflow, /actions\/checkout|pull_request_target/);
   assert.match(workflow, /cancel-in-progress: false\n  queue: max/);
 });
 
-test('a late hold or conversion to draft disables existing auto-merge', async () => {
+test('live ineligibility disables existing auto-merge', async () => {
   for (const changes of [
+    { baseRefName: 'feature' },
+    { headRepository: { nameWithOwner: 'fork/repo' } },
     { isDraft: true },
     { labels: { nodes: [{ name: 'hold' }], pageInfo: { hasNextPage: false } } },
     { labels: { nodes: [{ name: 'train:hold' }], pageInfo: { hasNextPage: false } } },
@@ -80,4 +83,9 @@ test('live commit-count changes replace the previous merge method', async () => 
   assert.equal(actions[0].action, 'disable');
   assert.equal(actions[1].action, 'enable');
   assert.equal(actions[1].mergeMethod, 'MERGE');
+  const single = await run({ ...ready(), autoMergeRequest: { mergeMethod: 'MERGE' } });
+  assert.equal(single.length, 2);
+  assert.equal(single[0].action, 'disable');
+  assert.equal(single[1].action, 'enable');
+  assert.equal(single[1].mergeMethod, 'SQUASH');
 });
