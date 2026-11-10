@@ -64,6 +64,10 @@ Stage 3 details:
   summary. A red run triggers the CI doctor through its `workflow_run`
   listener on `CI`, which reads the title and the log to find the breaking
   merge.
+- Affected runs never certify a sha: `scripts/ci/select-certified-nightly-sha.py`
+  ignores runs titled `CI affected ...`, so a selective run that finishes after
+  a full run on the same sha cannot supersede that full run's certification.
+  The full-matrix fallback is titled `CI full matrix ...` and still certifies.
 - Stage 3 is not a required check and changes no ruleset.
 
 ## PR Lane (Required Checks)

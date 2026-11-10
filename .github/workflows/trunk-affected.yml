@@ -83,7 +83,7 @@ jobs:
             run_title="affected ${LAST_GREEN:0:12}..${HEAD_SHA:0:12}"
             scripts/ci/trunk-suspect-range.sh "${LAST_GREEN}" "${HEAD_SHA}" >> "$GITHUB_STEP_SUMMARY"
           else
-            run_title="affected full (no green trunk run found)"
+            run_title="full matrix (no green trunk ancestor)"
             echo "No green CI run on trunk is an ancestor of ${HEAD_SHA}; dispatching the full matrix." | tee -a "$GITHUB_STEP_SUMMARY"
           fi
 

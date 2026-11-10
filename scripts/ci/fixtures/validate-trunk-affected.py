@@ -6,12 +6,15 @@ import subprocess
 import tempfile
 import unittest
 
+import importlib.util
+
 import yaml
 
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = ROOT / ".github/workflows"
 SUSPECT_RANGE = ROOT / "scripts/ci/trunk-suspect-range.sh"
+CERTIFIED_SELECTOR = ROOT / "scripts/ci/select-certified-nightly-sha.py"
 
 
 def workflow(name):
@@ -50,6 +53,18 @@ class TrunkAffectedWorkflowTests(unittest.TestCase):
         self.assertIn("actions/workflows/ci.yml/dispatches", scripts)
         self.assertIn("inputs[selective_base]=${LAST_GREEN}", scripts)
         self.assertIn("scripts/ci/trunk-suspect-range.sh", scripts)
+
+    def test_only_selective_runs_carry_the_title_certification_ignores(self):
+        spec = importlib.util.spec_from_file_location("certified_selector", CERTIFIED_SELECTOR)
+        selector = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(selector)
+        self.assertEqual(workflow("ci.yml")["run-name"], "CI ${{ inputs.merge_train_nonce }}")
+        scripts = step_scripts(self.job)
+        selective_title = 'run_title="affected ${LAST_GREEN:0:12}..${HEAD_SHA:0:12}"'
+        self.assertIn(selective_title, scripts)
+        self.assertEqual(selector.AFFECTED_RUN_TITLE_PREFIX, "CI affected ")
+        titles = [line.strip() for line in scripts.splitlines() if line.strip().startswith("run_title=")]
+        self.assertEqual([t for t in titles if t.startswith('run_title="affected ')], [selective_title])
 
     def test_selective_ci_runs_never_replace_a_pending_full_run(self):
         ci = workflow("ci.yml")
