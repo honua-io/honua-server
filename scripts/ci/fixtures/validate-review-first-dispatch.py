@@ -78,6 +78,17 @@ def validate_synthetic_artifact_catalog(
     )
 
 
+def validate_aggregate_review_status(required_job: str, revalidation_condition: str) -> None:
+    aggregate_check = required_job.split("- name: Revalidate exact-head review before success", 1)[1]
+    require(aggregate_check, revalidation_condition, "aggregate must revalidate exact-head review")
+    require(aggregate_check, "revalidate-exact-head-review.cjs", "aggregate must call shared exact-head review status validation")
+    shared_review = (ROOT / ".github/scripts/revalidate-exact-head-review.cjs").read_text()
+    require(shared_review, "github.rest.repos.listCommitStatusesForRef", "shared validator must read exact-head review status")
+    require(shared_review, "head !== expectedHead", "shared validator must reject mismatched heads")
+    require(shared_review, "reviewGate?.state !== 'success'", "shared validator must fail closed")
+
+
+
 def main() -> None:
     pr_gate = read_text(PR_GATE)
     review_gate = read_text(REVIEW_GATE)
@@ -195,13 +206,7 @@ def main() -> None:
             step = source.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
             require(step, revalidation_condition, f"{label} {name} must be attempt-2-only")
             require(step, "revalidate-exact-head-review.cjs", f"{label} {name} must call shared exact-head review status validation")
-    aggregate_check = job("required").split("- name: Revalidate exact-head review before success", 1)[1]
-    require(aggregate_check, revalidation_condition, "aggregate must revalidate exact-head review")
-    require(aggregate_check, "revalidate-exact-head-review.cjs", "aggregate must call shared exact-head review status validation")
-    shared_review = (ROOT / ".github/scripts/revalidate-exact-head-review.cjs").read_text()
-    require(shared_review, "github.rest.repos.listCommitStatusesForRef", "shared validator must read exact-head review status")
-    require(shared_review, "head !== expectedHead", "shared validator must reject mismatched heads")
-    require(shared_review, "reviewGate?.state !== 'success'", "shared validator must fail closed")
+    validate_aggregate_review_status(job("required"), revalidation_condition)
 
     require(review_gate, "  actions: write", "trusted review transition needs actions: write")
     require(
