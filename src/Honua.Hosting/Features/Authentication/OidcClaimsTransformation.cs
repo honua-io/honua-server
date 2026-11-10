@@ -297,12 +297,12 @@ internal sealed class OidcClaimsTransformation(
             ClaimsMappingOptions.DefaultRoleClaimType,
             StringComparison.OrdinalIgnoreCase);
 
-    // Founder ruling (2026-11-09): choosing which claims carry roles (RoleClaimType,
-    // AdditionalRoleClaimTypes) belongs to single-provider OIDC (identity.oidc, Pro), so Okta
-    // `groups` and Auth0 namespaced role claims work without identity.claims-mapping. Below
-    // Pro the selection is skipped and only the default role claim types are read, so an
-    // unentitled deployment cannot point RoleClaimType at `groups` and have raw provider
-    // group values read as roles and match AdminRoles.
+    // Choosing which claims carry roles (RoleClaimType, AdditionalRoleClaimTypes) belongs to
+    // single-provider OIDC (identity.oidc, Pro), so Okta `groups` and Auth0 namespaced role
+    // claims work without identity.claims-mapping. Below Pro the selection is skipped and only
+    // the default role claim types are read, so an unentitled deployment cannot point
+    // RoleClaimType at `groups` and have raw provider group values read as roles and match
+    // AdminRoles.
     private bool IsRoleClaimSelectionEntitled()
     {
         var configured = HasCustomRoleClaimType() || _options.ClaimsMapping.AdditionalRoleClaimTypes.Length > 0;
