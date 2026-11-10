@@ -6107,7 +6107,7 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "FullyQualifiedName~OgcFeaturesEndpointTests&FullyQualifiedName!~AttachmentEndpointTests&FullyQualifiedName!~PostgresAttachmentStoreTests&FullyQualifiedName!~QueryRelatedRecordsEndpointTests&FullyQualifiedName!~LimitsEnforcementTests",
+      "filter": "FullyQualifiedName~OgcFeaturesEndpointTests&FullyQualifiedName!~AttachmentEndpointTests&FullyQualifiedName!~PostgresAttachmentStoreTests&FullyQualifiedName!~QueryRelatedRecordsEndpointTests&FullyQualifiedName!~LimitsEnforcementTests&FullyQualifiedName!~Honua.Server.Tests.CrsTransformationCorrectnessTests",
       "paths": [
         "tests/dotnet/Honua.Server.Tests/OgcFeaturesEndpointTests.cs"
       ],

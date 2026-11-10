@@ -549,7 +549,7 @@ def test_core_capacity_moves_have_exactly_one_server_assembly_owner() -> None:
     classes = MODULE.enumerate_test_classes()
     for name, owner in (
         ("CrsTransformationCorrectnessTests", "Core OGC Features and CRS"),
-        ("OgcFeaturesEndpointTests", "Core OGC Features and CRS"),
+        ("OgcFeaturesEndpointTests", "Core OGC Features Endpoints"),
         ("AttachmentEndpointTests", "Core Attachments"),
         ("PostgresAttachmentStoreTests", "Core Attachments"),
         ("QueryRelatedRecordsEndpointTests", "Core Related Records and Limits"),
@@ -693,9 +693,10 @@ test_gp_nas_partition_preserves_every_runnable_method_and_budget()
 def test_core_attachments_split_preserves_union_and_disjoint_substring_ownership() -> None:
     """All 64 combinations, including a name matching multiple former terms."""
     config = json.loads((REPOSITORY_ROOT / ".github" / "ci-shards.json").read_text(encoding="utf-8"))
-    names = {"Core Attachments", "Core Related Records and Limits", "Core OGC Features and CRS"}
+    names = {"Core Attachments", "Core Related Records and Limits",
+             "Core OGC Features and CRS", "Core OGC Features Endpoints"}
     children = [s for s in config["shards"] if s["name"] in names]
-    assert len(children) == 3
+    assert len(children) == len(names)
     terms = ["AttachmentEndpointTests", "PostgresAttachmentStoreTests", "QueryRelatedRecordsEndpointTests",
              "OgcFeaturesEndpointTests", "LimitsEnforcementTests", "Honua.Server.Tests.CrsTransformationCorrectnessTests"]
     parent = MODULE._FilterParser("|".join("FullyQualifiedName~" + term for term in terms)).parse()
