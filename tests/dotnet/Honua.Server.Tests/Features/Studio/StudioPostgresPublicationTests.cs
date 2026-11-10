@@ -6,12 +6,10 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.AuditLog.Abstractions;
-using Honua.Core.Features.ControlPlane.Abstractions;
-using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
@@ -51,8 +49,6 @@ public sealed class StudioPostgresPublicationTests : IAsyncLifetime
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
                 builder.UseSetting("Operations:Policy:Enabled", "true");
                 builder.UseSetting("Operations:Policy:DefaultDecision", "Allow");
-                builder.UseSetting("Operations:Policy:Rules:0:OperationId", StudioDraftOperations.CreatePublicationRequest);
-                builder.UseSetting("Operations:Policy:Rules:0:Decision", "RequireApproval");
             })
             .ConfigureServices(services =>
             {
@@ -83,7 +79,7 @@ public sealed class StudioPostgresPublicationTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests")]
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     [Endpoint("GET /api/v1/studio/published/{*route}")]
-    public async Task Publish_WithoutRedis_RequiresHumanApprovalAndSurvivesHostRestart()
+    public async Task Publish_WithoutRedis_PreservesPublicationAndOperationAcrossHostRestart()
     {
         _fixture.GetService<IAuditLog>().IsPersisted.Should().BeTrue();
         SetSourceGraph();
@@ -108,7 +104,13 @@ public sealed class StudioPostgresPublicationTests : IAsyncLifetime
             }
         };
         var createBody = JsonSerializer.Serialize(createRequest, StudioApiJsonContext.Default.CreateStudioPackageDraftRequest);
-        string proposalId;
+        using (var anonymous = _fixture.CreateClient())
+        {
+            using var unpublished = await anonymous.GetAsync(StudioPublishedRoutes.BuildActiveUrl(route));
+            unpublished.IsSuccessStatusCode.Should().BeFalse();
+        }
+
+        string operationInstanceId;
         using (var author = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider, "postgres-publisher", "public"))
         {
             using var create = await author.Client.PostAsync("/api/v1/studio/package-drafts", JsonContent(createBody));
@@ -119,20 +121,18 @@ public sealed class StudioPostgresPublicationTests : IAsyncLifetime
             using var publish = await author.Client.PostAsync(
                 $"/api/v1/studio/content-items/{version.GetProperty("itemId").GetGuid():D}/versions/{version.GetProperty("versionId").GetGuid():D}/publish-requests",
                 JsonContent($$"""{"intent":{"route":"{{route}}","visibility":"public"},"warningAcknowledgement":"reviewed"}"""));
-            var pending = await ReadDataAsync(publish, HttpStatusCode.Accepted);
-            pending.GetProperty("status").GetString().Should().Be("RequiresApproval");
-            proposalId = pending.GetProperty("proposalId").GetString()!;
+            var publication = await ReadDataAsync(publish, HttpStatusCode.Created);
+            publication.GetProperty("status").GetString().Should().Be("accepted");
+            operationInstanceId = publish.Headers.GetValues("X-Honua-Operation-Instance-Id").Should().ContainSingle().Subject;
         }
 
-        var proposals = _fixture.GetService<IOperationProposalStore>();
-        var pendingProposal = await proposals.GetAsync(proposalId);
-        pendingProposal.Should().NotBeNull();
-        pendingProposal!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+        var instance = await _fixture.GetService<IOperationInstanceStore>().GetAsync(operationInstanceId);
+        instance.Should().NotBeNull();
+        instance!.OperationId.Should().Be(StudioDraftOperations.CreatePublicationRequest);
+        instance.AuditId.Should().NotBeNullOrEmpty();
         using (var anonymous = _fixture.CreateClient())
         {
-            using var beforeApproval = await anonymous.GetAsync(StudioPublishedRoutes.BuildActiveUrl(route));
-            beforeApproval.IsSuccessStatusCode.Should().BeFalse();
-            using var approve = await anonymous.PostAsync($"/api/v1/admin/proposals/{proposalId}/approve", null);
+            using var approve = await anonymous.PostAsync("/api/v1/admin/proposals/anonymous/approve", null);
             approve.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
             using var mutate = await anonymous.PostAsync("/api/v1/studio/package-drafts", JsonContent(createBody));
             mutate.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
@@ -140,19 +140,7 @@ public sealed class StudioPostgresPublicationTests : IAsyncLifetime
 
         await _fixture.RestartHostAsync();
         SetSourceGraph();
-        var restored = await _fixture.GetService<IOperationProposalStore>().GetAsync(proposalId);
-        restored.Should().BeEquivalentTo(pendingProposal);
-        using (var human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider, "postgres-approver", "public"))
-        {
-            using var approve = await human.ApproveAsync(proposalId);
-            approve.StatusCode.Should().Be(HttpStatusCode.OK, await approve.Content.ReadAsStringAsync());
-        }
-        var approved = await _fixture.GetService<IOperationProposalStore>().GetAsync(proposalId);
-        approved!.Status.Should().Be(OperationProposalStatus.Succeeded);
-        approved.HumanApproval.Should().NotBeNull();
-
-        await _fixture.RestartHostAsync();
-        SetSourceGraph();
+        (await _fixture.GetService<IOperationInstanceStore>().GetAsync(operationInstanceId)).Should().BeEquivalentTo(instance);
         using var reader = _fixture.CreateClient();
         using var published = await reader.GetAsync(StudioPublishedRoutes.BuildActiveUrl(route) + "?includeSources=true");
         var data = await ReadDataAsync(published, HttpStatusCode.OK);
@@ -161,7 +149,6 @@ public sealed class StudioPostgresPublicationTests : IAsyncLifetime
         source.GetProperty("id").GetString().Should().Be(StudioCatalogSourceIdentity.Create(ServiceId, 7));
         using var metadata = await reader.GetAsync(source.GetProperty("locator").GetProperty("url").GetString());
         metadata.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await _fixture.GetService<IOperationProposalStore>().GetAsync(proposalId)).Should().BeEquivalentTo(approved);
     }
 
     private void SetSourceGraph()
