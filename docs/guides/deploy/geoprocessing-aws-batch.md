@@ -19,7 +19,8 @@ This is config-only: no code or redeploy of the GP execution logic is needed.
 When referenced output staging is enabled, every Batch worker and serving host
 must share the [attested persistent output store](../gp-output-store-attestation.md),
 including its configuration digest and backup inventory. Worker ephemeral storage
-is not a supported output store.
+is not a supported output store. The `object-storage` provider serves jobs the
+server itself runs; the standalone GDAL worker cannot write to it yet.
 
 1. A GP job is submitted (GPServer REST, OGC API Processes, or gRPC).
 2. `GeoprocessingJobService` resolves the GP execution workload from
