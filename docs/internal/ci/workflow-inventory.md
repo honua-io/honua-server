@@ -563,4 +563,4 @@ twice-daily full matrix are preserved.
 
 See [ImageServer endpoint database lifetime](gate-model.md#imageserver-endpoint-database-lifetime)
 for endpoint isolation and database reuse. The pure WMTS capability unit test runs
-without a database fixture in the same ImageServer namespace and shard selection.
+without a database fixture in the ImageServer Rendering and Support shard.
