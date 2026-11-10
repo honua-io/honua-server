@@ -67,7 +67,7 @@ Do not expose private resident contact fields through task queries or exports.
 | Asset profile | Profile ID, service/layer identity, stable unique asset-ID field, mapped condition/status/last-inspected/last-serviced fields, condition label domain 1–5, profile version, default inspection/service form package references and related-table identities. Point/line/polygon including their multipart forms. Validate types, uniqueness, null handling and edit capability before activation; never silently rewrite customer columns |
 | Asset | Existing feature plus profile mapping. Stable identity differs from an internal numeric row ID. Preserve geometry/SRID and original customer attributes. Unknown condition is null, never zero |
 | Inspection | ID, asset/profile reference, task ID, pinned form version, observed-at and server-recorded-at, inspector, condition, answers, notes and attachment references. A task completion creates at most one canonical inspection |
-| Service record | ID, asset/profile reference, task ID, service type/time, actor, notes and attachment references. Append corrections with provenance instead of erasing history |
+| Service record | ID, optional asset/profile reference, required task ID and location snapshot when assetless, service type/time, actor, notes and attachment references. Append corrections with provenance instead of erasing history |
 | Task | UUID, query-layer feature ID, type `inspection/maintenance/repair/request`, optional asset reference and programme/cycle key, geometry snapshot/SRID, title, assignee, priority (enum pending policy approval), due-at, status, monotonically increasing version, created/started/completed/cancelled timestamps, completion data, snapshotted form package ID/version, server receipt and provenance |
 | Task history | Immutable event ID, task ID, old/new version and state, actor, server time, device observed time, command ID, changed fields, reason and approved proposal reference where applicable. One event per accepted mutation |
 | Programme | UUID/version, name, target profile/layer plus validated filter, task type, positive interval and unit `days/weeks/months`, recurrence mode `due_date/completion`, anchor, timezone, default assignee, optional form binding override, optional end date and enabled state |
@@ -78,10 +78,11 @@ Resolve and pin a published form package ID/version at task creation. Inspection
 tasks use the inspection binding; maintenance, repair and request tasks use the
 service binding. An authorized explicit create/triage form override takes
 precedence over the programme override, then the matching profile default.
-Validate form compatibility with task type and mapped fields. Assetless tasks
-require an explicit service form binding. Missing bindings reject server creation
+Validate form compatibility with task type and mapped fields. Inspection tasks require an asset reference; assetless inspection creation is
+rejected with a field error. Other assetless tasks require an explicit service
+form binding. Missing bindings reject server creation
 with an actionable field error. Offline-created requests remain local pending
-reconciliation until a permitted binding resolves; no inspection work may start
+reconciliation until a permitted binding resolves; no work may start
 before acceptance. Later publication never changes a pinned task. Completion
 creates the corresponding inspection or service record; assetless service records
 retain task/location provenance without inventing an asset reference.
@@ -328,7 +329,7 @@ Metric policy needs approval below before freezing fixtures.
 | A4 | Move source asset after task creation: task geometry stays fixed; authorized versioned re-link/move records provenance; stale/unauthorized mutation leaves geometry and history unchanged |
 | N1 | Retry overdue dispatch: one notification per task/version/policy; completion/cancellation before dispatch suppresses the pending alert |
 | R1 | Anonymous report passes through deployed CDN, form validation and abuse controls into restricted triage; one approval produces one request task; staff can link asset |
-| F1 | Programme form override beats profile default; authorized explicit override wins; publication does not alter pinned tasks; missing/incorrect binding rejects create; assetless triage requires service binding; offline request resolves binding on reconciliation before start |
+| F1 | Programme form override beats profile default; authorized explicit override wins; publication does not alter pinned tasks; missing/incorrect binding rejects create; assetless triage requires service binding; assetless inspection create is rejected; offline request resolves binding on reconciliation before start |
 | R3 | Triage approval without If-Match returns 428; stale ETag returns 409 with no task; retry identical command creates one task; changed-body replay is rejected |
 | R2 | Rate and upload limits, spam rejection and accessible alternative work; two anonymous clients never receive another receipt/contact/photo; every reporter response/error is no-store and edge/service-worker caches stay empty |
 | X1 | REST/OpenAPI snapshots match runtime; FeatureServer desktop client and OGC API Features read same IDs/state/relationships; cross-scope queries and edits denied |
