@@ -24,7 +24,7 @@ public static class CloudFrontCdnServiceCollectionExtensions
 
         services.AddSingleton<IAmazonCloudFront>(static _ => new AmazonCloudFrontClient());
         services.AddSingleton<ICdnInvalidator>(provider => new CloudFrontCdnInvalidator(
-            provider.GetRequiredService<IAmazonCloudFront>(),
+            provider.GetRequiredService<IAmazonCloudFront>().CreateInvalidationAsync,
             distributionId.Trim(),
             provider.GetRequiredService<ILogger<CloudFrontCdnInvalidator>>()));
         return services;

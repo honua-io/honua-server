@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Amazon.CloudFront;
 using Amazon.CloudFront.Model;
 using Amazon.Runtime;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -10,7 +9,7 @@ using Microsoft.Extensions.Logging;
 namespace Honua.Cloud.Aws.Features.Cdn;
 
 internal sealed partial class CloudFrontCdnInvalidator(
-    IAmazonCloudFront cloudFront,
+    Func<CreateInvalidationRequest, CancellationToken, Task<CreateInvalidationResponse>> createInvalidation,
     string distributionId,
     ILogger<CloudFrontCdnInvalidator> logger) : ICdnInvalidator
 {
@@ -28,9 +27,7 @@ internal sealed partial class CloudFrontCdnInvalidator(
         {
             foreach (var batch in distinctPaths.Chunk(MaxPathsPerRequest))
             {
-                var response = await cloudFront
-                    .CreateInvalidationAsync(RequestFor(batch), cancellationToken)
-                    .ConfigureAwait(false);
+                var response = await createInvalidation(RequestFor(batch), cancellationToken).ConfigureAwait(false);
                 invalidationIds.Add(response.Invalidation.Id);
             }
         }

@@ -159,16 +159,13 @@ public sealed partial class SharedCacheRouteTableTests : IDisposable
         {
             foreach (var method in route.Methods)
             {
-                foreach (var withApiKey in new[] { false, true })
+                var mayBeShared = route.CacheClass is not null && (HttpMethods.IsGet(method) || HttpMethods.IsHead(method));
+                foreach (var request in RequestsFor(route, method))
                 {
-                    var cacheControl = await SendAsync(client, route, method, withApiKey);
-                    var storable = IsSharedCacheStorable(cacheControl);
-                    var mayBeShared = !withApiKey
-                        && route.CacheClass is not null
-                        && (HttpMethods.IsGet(method) || HttpMethods.IsHead(method));
-                    if (storable && !mayBeShared)
+                    var cacheControl = await SendAsync(client, request);
+                    if (IsSharedCacheStorable(cacheControl) && !(mayBeShared && request.MayBeShared))
                     {
-                        failures.Add($"{method} {route.Pattern} apiKey={withApiKey}: '{cacheControl}'");
+                        failures.Add($"{method} {request.Path} apiKey={request.WithApiKey}: '{cacheControl}'");
                     }
                 }
             }
@@ -183,10 +180,22 @@ public sealed partial class SharedCacheRouteTableTests : IDisposable
         _eventModeHost.Dispose();
     }
 
-    private static async Task<string?> SendAsync(HttpClient client, Route route, string method, bool withApiKey)
+    // The CDN's uncached admin behaviour is matched case-sensitively and the router is not, so a differently cased address reaches the cached behaviour and has only these headers to protect it.
+    private static PipelineRequest[] RequestsFor(Route route, string method)
     {
-        using var request = new HttpRequestMessage(new HttpMethod(method), Concrete(route.Pattern));
-        if (withApiKey)
+        var path = Concrete(route.Pattern);
+        return
+        [
+            new(method, path, WithApiKey: false, MayBeShared: true),
+            new(method, path, WithApiKey: true, MayBeShared: false),
+            new(method, path.ToUpperInvariant(), WithApiKey: false, MayBeShared: true),
+        ];
+    }
+
+    private static async Task<string?> SendAsync(HttpClient client, PipelineRequest pipelineRequest)
+    {
+        using var request = new HttpRequestMessage(new HttpMethod(pipelineRequest.Method), pipelineRequest.Path);
+        if (pipelineRequest.WithApiKey)
         {
             request.Headers.Add("X-API-Key", "not-a-real-key");
         }
@@ -233,10 +242,10 @@ public sealed partial class SharedCacheRouteTableTests : IDisposable
     private Route[] Routes()
         => [.. RoutesOf(_pollModeHost).Concat(RoutesOf(_eventModeHost)).DistinctBy(Describe)];
 
-    private static IEnumerable<Route> RoutesOf(WebApplicationFactory<Program> host)
+    private static Route[] RoutesOf(WebApplicationFactory<Program> host)
     {
         using var _ = host.CreateClient();
-        return host.Services.GetServices<EndpointDataSource>()
+        return [.. host.Services.GetServices<EndpointDataSource>()
             .SelectMany(source => source.Endpoints)
             .OfType<RouteEndpoint>()
             .Where(endpoint => !string.IsNullOrEmpty(endpoint.RoutePattern.RawText))
@@ -246,12 +255,13 @@ public sealed partial class SharedCacheRouteTableTests : IDisposable
                 endpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods is { Count: > 0 } methods
                     ? [.. methods]
                     : [HttpMethods.Get, .. WriteMethods],
-                endpoint.Metadata.GetMetadata<SharedCacheClassMetadata>()?.CacheClass))
-            .ToArray();
+                endpoint.Metadata.GetMetadata<SharedCacheClassMetadata>()?.CacheClass))];
     }
 
     [GeneratedRegex(@"\{\*{0,2}(?<name>[^{}:?=]+)(?<constraint>[^{}]*)\}")]
     private static partial Regex RouteParameter();
+
+    private sealed record PipelineRequest(string Method, string Path, bool WithApiKey, bool MayBeShared);
 
     private sealed record Route(RouteEndpoint Endpoint, string Pattern, string[] Methods, ResponseCacheClass? CacheClass);
 }

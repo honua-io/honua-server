@@ -838,7 +838,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
     }
 
     // S3 replays these on every read of the object, whoever serves it.
-    private static void ApplyResponseHeaders(HeadersCollection headers, FileUploadRequest request)
+    internal static void ApplyResponseHeaders(HeadersCollection headers, FileUploadRequest request)
     {
         headers.CacheControl = StoredObjectCacheControl.For(request.CachePolicy);
         if (!string.IsNullOrEmpty(request.ContentEncoding))

@@ -2,12 +2,15 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using FluentAssertions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Tiles;
 using Honua.Infrastructure.SharedCaching;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Hosting.UnitTests.Features.SharedCaching;
@@ -236,6 +239,67 @@ public sealed class SharedCachePolicyTests
         context.Response.Headers.CacheControl.ToString().Should().Be(SharedCacheGuard.NotShared);
     }
 
+    [UnitTest]
+    public void Apply_LayerLifetimeConfigured_ReplacesTheTilesetLifetimeAndTheProductDefault()
+    {
+        var options = new SharedCacheOptions();
+        options.Layers["parcels/3"] = new SharedCacheLifetime { MaxAgeSeconds = 0, SharedMaxAgeSeconds = 20 };
+        var context = GrantedTile(options);
+        SharedCacheResponse.UseSubject(context, new SharedCacheSubject("parcels", "3"));
+        SharedCacheResponse.UseLifetime(context, SharedCacheLifetime.ForBrowserAndCdn(7200));
+
+        SharedCacheResponse.Apply(context);
+
+        context.Response.Headers.CacheControl.ToString().Should().Be("public, max-age=0, s-maxage=20, stale-if-error=86400");
+    }
+
+    [UnitTest]
+    public void Apply_ForwardedClientCertificateUnderARenamedHeader_IsNotShared()
+    {
+        var context = GrantedTile();
+        context.RequestServices = new ServiceCollection()
+            .AddSingleton<IConfiguration>(new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Authentication:ClientCertificates:ForwardedCertificate:HeaderName"] = "X-Edge-Client-Cert",
+                })
+                .Build())
+            .BuildServiceProvider();
+        context.Request.Headers["X-Edge-Client-Cert"] = "credential";
+
+        SharedCacheResponse.Apply(context);
+        SharedCacheGuard.Apply(context);
+
+        context.Response.Headers.CacheControl.ToString().Should().Be(SharedCacheGuard.NotShared);
+    }
+
+    [UnitTest]
+    public void Apply_MutualTlsConnection_IsNotShared()
+    {
+        var context = GrantedTile();
+        using var key = RSA.Create(2048);
+        using var certificate = new CertificateRequest("CN=client", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+            .CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
+        context.Connection.ClientCertificate = certificate;
+
+        SharedCacheResponse.Apply(context);
+        SharedCacheGuard.Apply(context);
+
+        context.Response.Headers.CacheControl.ToString().Should().Be(SharedCacheGuard.NotShared);
+    }
+
+    [UnitTest]
+    public void Apply_EdgeMarkedTheRequestAsCacheBypass_IsNotShared()
+    {
+        var context = GrantedTile();
+        context.Request.Headers.Cookie = "honua_cache_bypass=1";
+
+        SharedCacheResponse.Apply(context);
+        SharedCacheGuard.Apply(context);
+
+        context.Response.Headers.CacheControl.ToString().Should().Be(SharedCacheGuard.NotShared);
+    }
+
     private static DefaultHttpContext GrantedTile(SharedCacheOptions? options = null)
     {
         var context = AnonymousGet(ResponseCacheClass.Tile, options);
@@ -247,7 +311,11 @@ public sealed class SharedCachePolicyTests
         ResponseCacheClass cacheClass, SharedCacheOptions? options = null)
     {
         var services = new ServiceCollection();
-        services.AddOptions<SharedCacheOptions>().Configure(configured => configured.Emergency = (options ?? new SharedCacheOptions()).Emergency);
+        services.AddOptions<SharedCacheOptions>().Configure(configured =>
+        {
+            configured.Emergency = (options ?? configured).Emergency;
+            configured.Layers = (options ?? configured).Layers;
+        });
         var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
         context.Request.Method = HttpMethods.Get;
         context.SetEndpoint(new Endpoint(null, new EndpointMetadataCollection(new SharedCacheClassMetadata(cacheClass)), "declared"));

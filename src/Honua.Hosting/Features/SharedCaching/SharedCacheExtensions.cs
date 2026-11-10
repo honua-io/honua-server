@@ -3,6 +3,7 @@
 
 using Microsoft.Extensions.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Infrastructure.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -13,6 +14,7 @@ internal static class SharedCacheExtensions
     internal static IServiceCollection AddSharedCachePolicy(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOptions<SharedCacheOptions>().Bind(configuration.GetSection(SharedCacheOptions.SectionName));
+        services.AddSingleton<IConfigurationDocumentationContributor, SharedCacheConfigurationDocumentationContributor>();
         services.TryAddSingleton<ICdnInvalidator, NoCdnInvalidator>();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<CdnInvalidationService>();

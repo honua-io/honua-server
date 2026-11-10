@@ -92,9 +92,15 @@ internal static class SharedCacheResponse
 
     private static SharedCacheLifetime ResolveLifetime(HttpContext context, ResponseCacheClass cacheClass, SharedCacheOptions options)
     {
-        if (options.Emergency.AppliesTo(Subject(context)))
+        var subject = Subject(context);
+        if (options.Emergency.AppliesTo(subject))
         {
             return SharedCacheEmergency.Lifetime;
+        }
+
+        if (subject?.LayerKey is { } layerKey && options.Layers.TryGetValue(layerKey, out var configuredForLayer))
+        {
+            return configuredForLayer;
         }
 
         return context.Items.TryGetValue(LifetimeKey, out var declared) && declared is SharedCacheLifetime layerLifetime

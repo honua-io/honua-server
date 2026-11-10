@@ -27,6 +27,9 @@ internal sealed class SharedCacheOptions
     // Lets the CDN keep serving the last good public tile or query while the origin is unreachable.
     public int StaleIfErrorSeconds { get; set; } = OneDaySeconds;
 
+    // Keyed "{serviceId}/{layerId}"; replaces the product default and the tileset lifetime for that layer.
+    public Dictionary<string, SharedCacheLifetime> Layers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
     public SharedCacheEmergency Emergency { get; set; } = new();
 
     internal SharedCacheLifetime DefaultFor(ResponseCacheClass cacheClass) => cacheClass switch
