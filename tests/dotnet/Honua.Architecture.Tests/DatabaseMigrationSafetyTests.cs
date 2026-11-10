@@ -33,7 +33,7 @@ public sealed class DatabaseMigrationSafetyTests
             path => Path.GetRelativePath(root, path).Replace('\\', '/'), File.ReadAllText);
         var hashes = JsonSerializer.Deserialize<Dictionary<string, string>>(
             File.ReadAllText(Path.Join(root, "eng", "schema", "schema-migration-hashes.v1.json")))!;
-        RollingUpgradeViolations(scripts, baseline, hashes, ReadReleaseBoundary(root)).Should().BeEmpty(
+        RollingUpgradeViolations(scripts, new MigrationPins(baseline, hashes, ReadReleaseBoundary(root))).Should().BeEmpty(
             "the supported rolling update retains the previous reader's schema; a review annotation does not permit a contraction");
     }
 
@@ -54,8 +54,8 @@ public sealed class DatabaseMigrationSafetyTests
     [InlineData("TRUNCATE honua.features;")]
     public void ExpandOnlyGate_SeededContractMigration_IsRejectedEvenWhenReviewed(string sql)
     {
-        RollingUpgradeViolations(new Dictionary<string, string> { ["new.sql"] = sql }, new Dictionary<string, string>(),
-            new Dictionary<string, string> { ["new.sql"] = MigrationHash(sql) })
+        RollingUpgradeViolations(new Dictionary<string, string> { ["new.sql"] = sql }, new MigrationPins(
+            new Dictionary<string, string>(), new Dictionary<string, string> { ["new.sql"] = MigrationHash(sql) }))
             .Should().ContainSingle().Which.Should().Contain("new.sql");
     }
 
@@ -63,8 +63,8 @@ public sealed class DatabaseMigrationSafetyTests
     public void ExpandOnlyGate_AdditiveMigration_IsAccepted()
     {
         const string sql = "ALTER TABLE honua.layers ADD COLUMN note text;";
-        RollingUpgradeViolations(new Dictionary<string, string> { ["new.sql"] = sql },
-            new Dictionary<string, string>(), new Dictionary<string, string> { ["new.sql"] = MigrationHash(sql) })
+        RollingUpgradeViolations(new Dictionary<string, string> { ["new.sql"] = sql }, new MigrationPins(
+            new Dictionary<string, string>(), new Dictionary<string, string> { ["new.sql"] = MigrationHash(sql) }))
             .Should().BeEmpty();
     }
 
@@ -84,7 +84,7 @@ public sealed class DatabaseMigrationSafetyTests
             proposed["001.sql"] = "CREATE TABLE fixture (id text);";
         }
 
-        RollingUpgradeViolations(proposed, baseline).Should().ContainSingle()
+        RollingUpgradeViolations(proposed, new MigrationPins(baseline)).Should().ContainSingle()
             .Which.Should().Contain("001.sql");
     }
 
@@ -92,7 +92,7 @@ public sealed class DatabaseMigrationSafetyTests
     public void ExpandOnlyGate_UnpinnedAdditiveMigration_IsRejected()
     {
         RollingUpgradeViolations(new Dictionary<string, string> { ["new.sql"] = "CREATE TABLE future (id integer);" },
-            new Dictionary<string, string>()).Should().ContainSingle().Which.Should().Contain("hash-pinned");
+            new MigrationPins(new Dictionary<string, string>())).Should().ContainSingle().Which.Should().Contain("hash-pinned");
     }
 
     [Theory]
@@ -107,7 +107,7 @@ public sealed class DatabaseMigrationSafetyTests
         {
             scripts["new.sql"] = "CREATE TABLE future (id text);";
         }
-        RollingUpgradeViolations(scripts, new Dictionary<string, string>(), hashes)
+        RollingUpgradeViolations(scripts, new MigrationPins(new Dictionary<string, string>(), hashes))
             .Should().ContainSingle().Which.Should().Contain("new.sql");
     }
 
@@ -171,12 +171,12 @@ public sealed class DatabaseMigrationSafetyTests
     {
         var scripts = new Dictionary<string, string> { ["new.sql"] = sql };
         var hashes = new Dictionary<string, string> { ["new.sql"] = MigrationHash(sql) };
-        RollingUpgradeViolations(scripts, new(), hashes).Should().ContainSingle().Which.Should().Contain("new.sql");
-        RollingUpgradeViolations(scripts, new(), hashes, new() { ["other.sql"] = MigrationHash(sql) })
+        RollingUpgradeViolations(scripts, new MigrationPins(new(), hashes)).Should().ContainSingle().Which.Should().Contain("new.sql");
+        RollingUpgradeViolations(scripts, new MigrationPins(new(), hashes, new() { ["other.sql"] = MigrationHash(sql) }))
             .Should().ContainSingle();
-        RollingUpgradeViolations(scripts, new(), hashes, new() { ["new.sql"] = MigrationHash(sql + "-- changed") })
+        RollingUpgradeViolations(scripts, new MigrationPins(new(), hashes, new() { ["new.sql"] = MigrationHash(sql + "-- changed") }))
             .Should().ContainSingle();
-        RollingUpgradeViolations(scripts, new(), hashes, hashes).Should().BeEmpty();
+        RollingUpgradeViolations(scripts, new MigrationPins(new(), hashes, hashes)).Should().BeEmpty();
     }
 
     private static string MigrationHash(string sql)
@@ -252,12 +252,16 @@ public sealed class DatabaseMigrationSafetyTests
         verdict.RefusalReason.Should().Be("declared reader-incompatible, not expand");
     }
 
-    private static IEnumerable<string> RollingUpgradeViolations(
-        Dictionary<string, string> scripts, Dictionary<string, string> baseline,
-        Dictionary<string, string>? hashes = null, Dictionary<string, string>? boundary = null)
+    private sealed record MigrationPins(
+        Dictionary<string, string> Baseline,
+        Dictionary<string, string>? Ledger = null,
+        Dictionary<string, string>? ReleaseBoundary = null);
+
+    private static IEnumerable<string> RollingUpgradeViolations(Dictionary<string, string> scripts, MigrationPins pins)
     {
-        hashes ??= baseline;
-        boundary ??= new Dictionary<string, string>();
+        var baseline = pins.Baseline;
+        var hashes = pins.Ledger ?? baseline;
+        var boundary = pins.ReleaseBoundary ?? new Dictionary<string, string>();
         foreach (var (name, hash) in baseline)
         {
             if (!scripts.TryGetValue(name, out var sql) || MigrationHash(sql) != hash)
