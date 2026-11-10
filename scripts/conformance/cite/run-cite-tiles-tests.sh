@@ -14,6 +14,8 @@ NC='\033[0m' # No Color
 
 # Configuration
 CITE_COMPOSE_FILE="docker/cite/ogc-api-tiles/compose.yml"
+source "$(dirname "${BASH_SOURCE[0]}")/../../ci/lib/isolate-test-compose.sh"
+honua_isolate_test_compose "$CITE_COMPOSE_FILE"
 CITE_RESULTS_DIR="cite-tiles-results"
 CITE_RESULTS_CONTAINER_DIR="/root/te_base/users/cite/logs"
 CITE_TIMEOUT=1800  # 30 minutes timeout
@@ -306,8 +308,8 @@ if [[ "$INTERACTIVE" == "true" ]]; then
     echo -e "${BLUE}Interactive mode enabled${NC}"
     echo "Services are running at:"
     echo "  Honua Server:     $HONUA_BASE_URL"
-    echo "  CITE Team Engine: http://localhost:8082/teamengine"
-    echo "  PostgreSQL:       localhost:5434"
+    echo "  CITE Team Engine: http://localhost:${HONUA_CITE_TILES_TEAMENGINE_PORT}/teamengine"
+    echo "  PostgreSQL:       localhost:${HONUA_CITE_TILES_POSTGRES_PORT}"
     echo ""
     echo "OGC API Tiles endpoints:"
     echo "  Landing page:     $HONUA_BASE_URL/ogc/tiles"

@@ -8,6 +8,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.Security;
 using Microsoft.Extensions.Options;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
@@ -45,11 +46,26 @@ internal static class CoordinatedReleaseControlEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound);
 
         group.MapPost("/operations/{operationId}/approve/{gate}", HandleApproveGate)
+            .RequireAdminApproveAuthorization()
+            .WithMetadata(AdminHumanApprovalEndpointMetadata.Approve)
             .WithDisplayName("Approve Coordinated Release Gate")
             .WithSummary("Approves the container-swap or data-affecting gate so the conductor can advance.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<CoordinatedReleaseOperationResponse>()
-            .ProducesProblem(StatusCodes.Status404NotFound);
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+
+        group.MapGet("/operations/{operationId}/approval-review/{gate}", HandleGateReview)
+            .RequireAdminApproveAuthorization()
+            .WithMetadata(AdminHumanApprovalEndpointMetadata.Review)
+            .WithDisplayName("Review Coordinated Release Gate")
+            .ExcludeFromDescription()
+            .Produces<CoordinatedReleaseHumanReviewResponse>()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapPost("/operations/{operationId}/rollback", HandleRollback)
             .WithDisplayName("Roll Back Coordinated Release")
@@ -233,10 +249,18 @@ internal static class CoordinatedReleaseControlEndpoints
             operation = await controlService.ApproveGateAsync(
                     operationId,
                     gateStep,
-                    ResolveRequestedBy(context),
+                    CanonicalSecurityActor.Resolve(context.User)?.ActorId,
                     request?.Reason,
                     context.RequestAborted)
                 .ConfigureAwait(false);
+        }
+        catch (HumanApprovalRequiredException exception)
+        {
+            return HumanApprovalDenied(exception);
+        }
+        catch (ServiceUnavailableException)
+        {
+            return Results.Problem(detail: ControlUnavailableMessage, statusCode: StatusCodes.Status503ServiceUnavailable);
         }
         catch (InvalidOperationException)
         {
@@ -256,6 +280,39 @@ internal static class CoordinatedReleaseControlEndpoints
 
         return Results.Json(MapResponse(operation), CoordinatedReleaseJsonContext.Default.CoordinatedReleaseOperationResponse);
     }
+
+    private static async Task<IResult> HandleGateReview(
+        string operationId, string gate, [FromServices] CoordinatedReleaseControlService controlService, HttpContext context)
+    {
+        context.Response.Headers.CacheControl = "no-store";
+        if (PlatformDeployAuthority.Deny(context) is { } denied) return denied;
+        if (!TryParseGate(gate, out var step)) return Results.BadRequest();
+        try
+        {
+            var operation = await controlService.GetAsync(operationId, context.RequestAborted).ConfigureAwait(false);
+            if (operation is null) return Results.NotFound();
+            var review = await context.RequestServices.GetRequiredService<OperationHumanApprovalAuthority>()
+                .OpenGateReviewAsync(operation, step, context).ConfigureAwait(false);
+            return Results.Json(new CoordinatedReleaseHumanReviewResponse
+            {
+                Operation = MapResponse(operation),
+                Plan = CoordinatedReleaseApprovalBinding.From(operation, step),
+                Review = review,
+            }, CoordinatedReleaseJsonContext.Default.CoordinatedReleaseHumanReviewResponse);
+        }
+        catch (HumanApprovalRequiredException exception)
+        {
+            return HumanApprovalDenied(exception);
+        }
+        catch (ServiceUnavailableException)
+        {
+            return Results.Problem(detail: ControlUnavailableMessage, statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+    }
+
+    private static IResult HumanApprovalDenied(HumanApprovalRequiredException exception) =>
+        ProblemDetailsHelpers.CreateAdminProblem(StatusCodes.Status403Forbidden,
+            "Human approval required", exception.Message);
 
     private static async Task<IResult> HandleRollback(
         string operationId,

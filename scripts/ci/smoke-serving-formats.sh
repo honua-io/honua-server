@@ -5,10 +5,13 @@ set -euo pipefail
 
 IMAGE="${1:?image reference required (tag or image@sha256:...)}"
 OUT="${2:-$(mktemp -d)}"
-PORT="${3:-18912}"
-PG_PORT="${4:-18913}"
+PORT="${3:-}"
+PG_PORT="${4:-}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+OWNED_SERVER="$REPO_ROOT/scripts/ci/owned-server.py"
+PORT="${PORT:-$(python3 "$OWNED_SERVER" port --variable HONUA_AOT_GEOPARQUET_PORT --ci-default 18912)}"
+PG_PORT="${PG_PORT:-$(python3 "$OWNED_SERVER" port --variable HONUA_AOT_GEOPARQUET_POSTGRES_PORT --ci-default 18913)}"
 COMPOSE_FILE="$REPO_ROOT/docker/cng/compose.yml"
 SEED_FILE="$REPO_ROOT/docker/cng/seed.sql"
 PROJECT="honua-serving-formats-smoke-$$"
@@ -29,7 +32,7 @@ compose() { docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$work/override.y
 cleanup() {
   compose logs --no-color honua-server > "$OUT/honua-server.log" 2>&1 || true
   compose down --remove-orphans --volumes >/dev/null 2>&1 || true
-  rm -rf "$work"
+  rm -rf "${work:?}"
 }
 trap cleanup EXIT
 
@@ -101,8 +104,11 @@ printf '%s\n' "$seeded_feature_count" > "$OUT/expected-feature-count.txt"
 compose up -d --no-build honua-server
 wait_healthy honua-server 300
 
+python3 "$OWNED_SERVER" wait --container "$(compose ps -q honua-server)" --container-port 8080 \
+  --url "http://127.0.0.1:${PORT}/healthz/ready" --body Ready --timeout 60
+
 path="/rest/services/cng/FeatureServer/1000/query?where=1=1&outFields=*&f=parquet"
-code="$(curl -sS --retry 3 --retry-all-errors -o "$OUT/cng.parquet" -w '%{http_code}' "http://localhost:${PORT}${path}")" \
+code="$(curl -sS --retry 3 --retry-all-errors -o "$OUT/cng.parquet" -w '%{http_code}' "http://127.0.0.1:${PORT}${path}")" \
   || fail "request failed (server crashed or refused the connection)"
 bytes="$(wc -c < "$OUT/cng.parquet")"
 head_magic="$(head -c 4 "$OUT/cng.parquet")"
@@ -115,7 +121,7 @@ if [[ "$head_magic" != PAR1 || "$tail_magic" != PAR1 ]]; then
   fail "f=parquet body is not a Parquet file (${bytes} bytes): $(head -c 300 "$OUT/cng.parquet" | tr -cd '[:print:]')"
 fi
 path="/rest/services/cng/MapServer/export?bbox=-180,-90,180,90&bboxSR=4326&size=256,256&format=png&f=image"
-code="$(curl -sS --retry 3 --retry-all-errors -o "$OUT/cng.png" -w '%{http_code}' "http://localhost:${PORT}${path}")" \
+code="$(curl -sS --retry 3 --retry-all-errors -o "$OUT/cng.png" -w '%{http_code}' "http://127.0.0.1:${PORT}${path}")" \
   || fail "render request failed"
 [[ "$code" == 200 ]] || fail "map export answered HTTP ${code}"
 python3 - "$OUT/cng.png" <<'PYPNG'
@@ -134,17 +140,17 @@ for format in gpkg shapefile; do
     -H "X-API-Key: $admin_key" \
     -F "File=@$REPO_ROOT/tests/fixtures/external-format-corpus/v1/$fixture" \
     -F "TableName=smoke_reader_$format" -F OverwriteExisting=true \
-    "http://localhost:${PORT}/api/v1/admin/import/upload")" || fail "$format import request failed"
+    "http://127.0.0.1:${PORT}/api/v1/admin/import/upload")" || fail "$format import request failed"
   [[ "$code" == 200 ]] || fail "$format import answered HTTP ${code}"
   "$format_python" "$format_assertions" import "$OUT/import-$format.json" --feature-count 3
 done
 path="/api/v1/admin/services/cng/layers/1000/export?format=gpkg"
-code="$(curl -sS --max-time 120 -H "X-API-Key: $admin_key" -o "$OUT/cng.gpkg" -w '%{http_code}' "http://localhost:${PORT}${path}")" \
+code="$(curl -sS --max-time 120 -H "X-API-Key: $admin_key" -o "$OUT/cng.gpkg" -w '%{http_code}' "http://127.0.0.1:${PORT}${path}")" \
   || fail "GeoPackage export failed"
 [[ "$code" == 200 ]] || fail "GeoPackage export answered HTTP ${code}"
 "$format_python" "$format_assertions" gpkg "$OUT/cng.gpkg" --feature-count "$seeded_feature_count"
 path="/rest/services/cng/MapServer/WMS?SERVICE=WMS&REQUEST=GetLegendGraphic&VERSION=1.3.0&LAYER=1000&FORMAT=image/png&WIDTH=24&HEIGHT=24&TRANSPARENT=TRUE"
-code="$(curl -sS --max-time 120 -o "$OUT/legend.png" -w '%{http_code}' "http://localhost:${PORT}${path}")" \
+code="$(curl -sS --max-time 120 -o "$OUT/legend.png" -w '%{http_code}' "http://127.0.0.1:${PORT}${path}")" \
   || fail "legend request failed"
 [[ "$code" == 200 ]] || fail "legend answered HTTP ${code}"
 "$format_python" "$format_assertions" legend "$OUT/legend.png"

@@ -20,18 +20,18 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertNotIn(verify_name, producer_names)
         self.assertIn('Publish pristine managed test outputs', producer_names)
         self.assertIn('Honua.Server boot + migrations smoke', producer_names)
-        consumer = jobs['pr-gate-tests']
-        self.assertEqual(consumer['needs'], 'pr-gate')
+        consumer = workflow('ci.yml')['jobs']['runtime-proofs']
+        self.assertEqual(consumer['needs'], 'build')
         steps = consumer['steps']
         names = [step.get('name', '') for step in steps]
         verify = steps[names.index(verify_name)]
-        self.assertGreater(names.index(verify_name), names.index('Test serving-image boundary detector'))
-        self.assertEqual(steps[names.index('Setup .NET')]['with']['enable-build-cache'], 'false')
+        self.assertGreater(names.index(verify_name), names.index('Execute import and independent vector export fidelity proofs'))
+        self.assertNotIn('Publish pristine managed test outputs', names)
         self.assertIn('-p:HonuaStoreProfile=postgis', verify['run'])
         self.assertIn('StoreProfileWritePolicyTests', verify['run'])
         self.assertIn('RunConfiguration.TreatNoTestsAsError=true', verify['run'])
         self.assertEqual(verify['env']['HONUA_EXPECTED_STORE_PROFILE'], 'postgis')
-        self.assertEqual(verify['if'], steps[names.index('Test serving-image boundary detector')]['if'])
+        self.assertNotIn('if', verify)
 
     def test_full_ci_can_measure_images_without_opening_a_pr(self):
         ci = workflow('ci.yml')

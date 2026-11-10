@@ -59,6 +59,13 @@ public sealed class OgcStylesGraphSyncFailureTests : IAsyncLifetime
         var client = _fixture.CreateAdminClient();
         await SeedTestLayerStyleAsync(client);
 
+        using var layerStyle = await client.GetAsync(
+            $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/style");
+        layerStyle.Be200Ok();
+        using var layerDocument = JsonDocument.Parse(await layerStyle.Content.ReadAsStringAsync());
+        layerDocument.RootElement.GetProperty("data").GetProperty("mapLibreStyle")
+            .GetProperty("layers")[0].GetProperty("type").GetString().Should().Be("circle");
+
         var styleId = await CreateStandaloneStyleAsync(client, MetadataV2GeometryType.Point);
 
         // Associating the style is what makes the update path reach the graph sync at all:

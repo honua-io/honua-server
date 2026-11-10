@@ -1,11 +1,17 @@
 ---
 type: runbook
 title: "Deploy with Docker Compose"
-description: "Take a single-node Compose install to production: a TLS edge, backups you have restored from, and a rollback path."
+description: "Harden a single-node Compose evaluation install with a TLS edge, restored backups, and a rollback path. Not a certified rc.2 production target."
 ---
 # Deploy with Docker Compose
 
-This is the **single-node** path: one host you administer, running Compose. It
+> Compose is for local evaluation, not certified rc.2 production; see [deployment scope](cloud-deployments.md#pick-a-pattern).
+
+Before choosing an image, review [default and full serving images](choose-serving-image.md).
+That guide distinguishes the planned rc.2 store variants from older published
+images and explains when the deployment health probe must change with the image.
+
+This is the **single-node local evaluation** path: one host you administer, running Compose. It
 covers what the quickstart leaves out — terminating TLS in front of it, taking
 backups you have actually restored from, and upgrading without losing the
 database.
@@ -39,9 +45,9 @@ The default serving image includes only the PostGIS data store and retains file-
 import and export support. Keep the install's default image for PostGIS. Additional
 stores require the [full JIT image variant](../../ops/nightly-images.md#data-store-image-variants).
 
-## Production install from the shipped Compose file
+## Hardened evaluation install from the shipped Compose file
 
-The release also ships a production Compose file,
+The release also ships a hardened Compose file (named `production`; not certified for rc.2),
 [`docker/compose/docker-compose.production.yml`](../../../docker/compose/docker-compose.production.yml), and its
 environment template, [`.env.production.example`](../../../.env.production.example).
 Use them instead of the quickstart project when you want the hardened
@@ -483,5 +489,7 @@ The private installation folder remains for deliberate retention or deletion.
 The [customer quickstart package](../../get-started/quickstart.md#install-the-customer-package)
 includes the stable manager and dedicated executor image by default.
 Only the executor has Docker access. It targets the configured local project and
-executes only proposals approved by a different principal. Preserve the image lock,
+executes only proposals approved by one authorized human through the
+[interactive review flow](../secure/authentication.md#human-operation-approval).
+The requester may approve. Preserve the image lock,
 private locally generated credentials, management volumes, and verified backups.
