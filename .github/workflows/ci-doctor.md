@@ -36,7 +36,8 @@ timeout-minutes: 30
 
 concurrency:
   group: ci-doctor-${{ github.event.workflow_run.head_sha }}
-  cancel-in-progress: true
+  cancel-in-progress: false
+  queue: max
 
 steps:
   - name: Preserve doctor commit messages through excluded-file filtering

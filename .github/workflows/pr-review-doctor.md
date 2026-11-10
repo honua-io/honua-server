@@ -67,7 +67,8 @@ timeout-minutes: 30
 
 concurrency:
   group: pr-review-doctor-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
+  queue: max
 
 safe-outputs:
   github-app:

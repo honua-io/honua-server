@@ -49,13 +49,32 @@ its affected-shard verdict, clean code and repository hygiene continue on drafts
 PR Gate also runs on `ready_for_review`, waking the trusted Claude observer after
 its exact-head verification completes.
 
-PR workflows cancel superseded admission per PR. Trusted observers resolve the
+Verification workflows cancel superseded admission per PR; automation helpers
+queue superseding events without cancellation. Trusted observers resolve the
 current PR before expensive jobs: prebuild producers/parity legs cancel by PR
 and matrix identity. Claude cancels resolver admission per PR and serializes
 duplicate exact-head reviews; unrelated comments cannot interrupt paid work. Review-attestation publication
 remains serialized so cancellation cannot interrupt its status/dispatch update.
 New validation concurrency uses a unique run ID outside PR events, keeping manual
 qualification independent of trunk pushes. Existing release cancellation policy is retained.
+
+## Neutral automation helpers
+
+Review Event Bridge (`Notify trusted review gate`), Review Gate Attestation
+(`Resolve pull request identity`, `Publish SHA-bound review attestation`), and
+Derived Artifact Normalization (`Generate bounded normalization projection`,
+`Produce data-only normalization envelope`) serialize their per-PR work with
+`cancel-in-progress: false` and `queue: max`. Superseded review subjects finish
+successfully with a summary. Missing admission prerequisites finish the
+attestation helper neutrally while the separate required `Review Gate` status
+remains pending for drafts or failing for blocking reviews. API and attestation
+errors still fail; these helpers cannot admit an unreviewed head.
+
+CI Doctor, PR Review Doctor and PR Sync Doctor retain their concurrency groups
+and use the same serial queue, including their generated `activation`, `agent`,
+`pre_activation` and `safe_outputs` jobs. A newer event waits instead of
+cancelling an earlier run; automation writes remain serialized. The generated
+lock workflows are compiled from their authored Markdown sources.
 
 ## Required PR lane
 

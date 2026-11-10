@@ -31,6 +31,24 @@
 
 Full CI runs twice daily at `09:00` and `21:00` UTC (01:00 and 13:00 Pacific standard time). It retains protocol-profile compilation, remote-source and server execution proofs, and import/export fidelity. The existing Worker GDAL job owns native GDAL/PDAL coverage and the raster execution receipt checks.
 
+## Neutral automation helpers
+
+Review Event Bridge (`Notify trusted review gate`), Review Gate Attestation
+(`Resolve pull request identity`, `Publish SHA-bound review attestation`), and
+Derived Artifact Normalization (`Generate bounded normalization projection`,
+`Produce data-only normalization envelope`) serialize their per-PR work with
+`cancel-in-progress: false` and `queue: max`. Superseded review subjects finish
+successfully with a summary. Missing admission prerequisites finish the
+attestation helper neutrally while the separate required `Review Gate` status
+remains pending for drafts or failing for blocking reviews. API and attestation
+errors still fail; these helpers cannot admit an unreviewed head.
+
+CI Doctor, PR Review Doctor and PR Sync Doctor retain their concurrency groups
+and use the same serial queue, including their generated `activation`, `agent`,
+`pre_activation` and `safe_outputs` jobs. A newer event waits instead of
+cancelling an earlier run; automation writes remain serialized. The generated
+lock workflows are compiled from their authored Markdown sources.
+
 ## Verification stages
 
 Every stage reacts to a repository event; no stage polls. A change is verified

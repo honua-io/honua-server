@@ -36,6 +36,7 @@ timeout-minutes: 40
 concurrency:
   group: pr-sync-doctor
   cancel-in-progress: false
+  queue: max
 
 safe-outputs:
   github-app:
