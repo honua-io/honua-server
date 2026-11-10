@@ -75,20 +75,16 @@ public static partial class OidcAuthenticationExtensions
         var oidcOptions = new OidcAuthenticationOptions();
         BindOptions(configuration.GetSection(OidcAuthenticationOptions.SectionName), oidcOptions);
 
-        // Operator bearers are independently signed and validated. Register their
-        // concrete scheme even when external OIDC is disabled; MCP can select it
-        // directly without enabling the OIDC composite/JWT surface.
+        // Operator bearers and browser sessions are available independently of external OIDC.
         services.AddAuthentication()
             .AddScheme<AuthenticationSchemeOptions, OperatorBearerAuthenticationHandler>(
                 OperatorBearerScheme,
                 static _ => { });
 
-        if (!oidcOptions.Enabled)
+        if (oidcOptions.Enabled)
         {
-            return services;
+            ResolveOidcSecrets(oidcOptions);
         }
-
-        ResolveOidcSecrets(oidcOptions);
 
         // Disable automatic claim type mapping to preserve original claim names
         JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
@@ -105,37 +101,37 @@ public static partial class OidcAuthenticationExtensions
             static _ => { });
 
         // Add JWT Bearer authentication for API access
-        if (HasAnyProviderEnabled(oidcOptions))
+        if (oidcOptions.Enabled && HasAnyProviderEnabled(oidcOptions))
         {
             ConfigureJwtBearerAuthentication(authBuilder, oidcOptions, configuration);
         }
 
         // Configure Azure AD if enabled
-        if (oidcOptions.AzureAd?.IsValid == true)
+        if (oidcOptions.Enabled && oidcOptions.AzureAd?.IsValid == true)
         {
             ConfigureAzureAdAuthentication(authBuilder, oidcOptions.AzureAd, oidcOptions);
         }
 
         // Configure Google if enabled
-        if (oidcOptions.Google?.IsValid == true)
+        if (oidcOptions.Enabled && oidcOptions.Google?.IsValid == true)
         {
             ConfigureGoogleAuthentication(authBuilder, oidcOptions.Google, oidcOptions);
         }
 
         // Configure generic OIDC if enabled
-        if (oidcOptions.Generic?.IsValid == true)
+        if (oidcOptions.Enabled && oidcOptions.Generic?.IsValid == true)
         {
             ConfigureGenericOidcAuthentication(authBuilder, oidcOptions.Generic, oidcOptions);
         }
 
         // Configure Okta if enabled
-        if (oidcOptions.Okta?.IsValid == true)
+        if (oidcOptions.Enabled && oidcOptions.Okta?.IsValid == true)
         {
             ConfigureOktaAuthentication(authBuilder, oidcOptions.Okta, oidcOptions);
         }
 
         // Configure Auth0 if enabled
-        if (oidcOptions.Auth0?.IsValid == true)
+        if (oidcOptions.Enabled && oidcOptions.Auth0?.IsValid == true)
         {
             ConfigureAuth0Authentication(authBuilder, oidcOptions.Auth0, oidcOptions);
         }
@@ -148,7 +144,13 @@ public static partial class OidcAuthenticationExtensions
         // IOptions<OidcAuthenticationOptions> (e.g. the portal OAuth broker's IdP code
         // exchange) would otherwise send the literal "env:VARNAME" as the client secret.
         // ResolveOidcSecrets is idempotent (resolved values no longer carry the prefix).
-        services.PostConfigure<OidcAuthenticationOptions>(ResolveOidcSecrets);
+        services.PostConfigure<OidcAuthenticationOptions>(options =>
+        {
+            if (options.Enabled)
+            {
+                ResolveOidcSecrets(options);
+            }
+        });
 
         // Add composite policy scheme that handles both API key and JWT Bearer
         authBuilder.AddPolicyScheme(CompositeScheme, "API Key or JWT Bearer", options =>
@@ -220,7 +222,10 @@ public static partial class OidcAuthenticationExtensions
         });
 
         // Register claims transformation service
-        services.AddScoped<IClaimsTransformation, OidcClaimsTransformation>();
+        if (oidcOptions.Enabled)
+        {
+            services.AddScoped<IClaimsTransformation, OidcClaimsTransformation>();
+        }
 
         return services;
     }
@@ -231,11 +236,6 @@ public static partial class OidcAuthenticationExtensions
     {
         var oidcOptions = new OidcAuthenticationOptions();
         BindOptions(configuration.GetSection(OidcAuthenticationOptions.SectionName), oidcOptions);
-
-        if (!oidcOptions.Enabled)
-        {
-            return services;
-        }
 
         // Update the admin policy to accept composite OIDC/JWT/session and
         // client-certificate principals with admin roles.

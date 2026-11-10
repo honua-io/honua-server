@@ -128,3 +128,13 @@ internal sealed class AdminAuthOidcDiscoveryDocument
     [System.Text.Json.Serialization.JsonPropertyName("end_session_endpoint")]
     public string? EndSessionEndpoint { get; init; }
 }
+
+internal sealed class AdminPasswordSignInRequest
+{
+    public string? Password { get; init; }
+}
+
+internal sealed class AdminCsrfResponse
+{
+    public required string RequestToken { get; init; }
+}

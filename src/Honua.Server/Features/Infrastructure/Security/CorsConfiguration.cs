@@ -27,7 +27,7 @@ public static class CorsConfiguration
     /// </summary>
     private static readonly string[] DefaultAllowedHeaders =
     [
-        "Content-Type", "Authorization", "X-Esri-Authorization", "X-API-Key", "X-Correlation-ID",
+        "X-Honua-CSRF", "Content-Type", "Authorization", "X-Esri-Authorization", "X-API-Key", "X-Correlation-ID",
         "X-Grpc-Web", "X-User-Agent", "Range", "If-Range",
         "If-Match", "If-None-Match", "If-Modified-Since", "If-Unmodified-Since",
         "Prefer", "X-Honua-Embed-Key", "MCP-Protocol-Version", "Mcp-Method", "Mcp-Name"
@@ -86,7 +86,7 @@ public static class CorsConfiguration
                         // headers must still be enumerated. Mirror the production
                         // policy so the PMTiles RangeProxy strategy (#845) works
                         // for cross-origin browser clients in development.
-                        policy.WithOrigins(devOrigins)
+                        policy.WithOrigins(FilterExplicitOrigins(devOrigins))
                               .AllowAnyMethod()
                               .AllowAnyHeader()
                               .WithExposedHeaders("Grpc-Status", "Grpc-Message", "Grpc-Encoding", "Grpc-Accept-Encoding",
@@ -149,7 +149,9 @@ public static class CorsConfiguration
                   .WithHeaders(ResolveAllowedHeaders(configuration))
                   .WithExposedHeaders("Grpc-Status", "Grpc-Message", "Grpc-Encoding", "Grpc-Accept-Encoding",
                       "Accept-Ranges", "Content-Range", "Content-Length", "ETag", "Last-Modified")
-                  .SetIsOriginAllowed(origin => IsOriginAllowed(origin, allowedOrigins))
+                  .SetIsOriginAllowed(origin => allowCredentials
+                      ? explicitOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase)
+                      : IsOriginAllowed(origin, allowedOrigins))
                   .SetPreflightMaxAge(TimeSpan.FromMinutes(preflightMaxAgeMinutes));
 
             if (allowCredentials)

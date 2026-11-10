@@ -42,7 +42,8 @@ internal sealed class AdminAuthSessionAuthenticationHandler(
 
         try
         {
-            var principal = AdminAuthClaimsProjector.CreatePrincipal(session.Claims, Scheme.Name);
+            var principal = AdminAuthClaimsProjector.CreatePrincipal(session.Claims, Scheme.Name,
+                session.Origin == AdminAuthSessionOrigin.Builtin ? "admin" : "oidc");
             return AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name));
         }
         catch (ArgumentException ex)

@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Antiforgery;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -52,6 +53,14 @@ internal static class AdminAuthEndpoints
             .WithDisplayName("Get Admin Auth Session")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
+        _ = group.MapGet("/csrf", HandleGetCsrf)
+            .WithDisplayName("Get Browser Session CSRF Token");
+
+        _ = group.MapPost("/session", HandlePasswordSignIn)
+            .WithDisplayName("Sign In Browser Administrator Session")
+            .WithMetadata(new RequireBrowserCsrfMetadata())
+            .WithMetadata(new RateLimitAttribute(5));
+
         _ = group.MapPost("/providers/{providerKey}/authorize-url", HandleCreateAuthorizeUrl)
             .WithDisplayName("Create Admin Auth Authorize Url")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
@@ -74,6 +83,71 @@ internal static class AdminAuthEndpoints
         _ = group.MapGet("/providers/{providerKey}/logout-url", HandleGetLogoutUrl)
             .WithDisplayName("Get Admin Auth Logout Url")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+    }
+
+    private static IResult HandleGetCsrf(HttpContext context, [FromServices] IAntiforgery antiforgery)
+    {
+        if (!context.Request.IsHttps)
+        {
+            return TypedResults.BadRequest();
+        }
+
+        context.Response.Headers.CacheControl = "no-store";
+        var tokens = antiforgery.GetAndStoreTokens(context);
+        return TypedResults.Ok(new AdminCsrfResponse { RequestToken = tokens.RequestToken! });
+    }
+
+    private static async Task<IResult> HandlePasswordSignIn(
+        HttpContext context,
+        [FromBody] AdminPasswordSignInRequest request,
+        [FromServices] ApiKeyAuthenticationDependencies dependencies,
+        [FromServices] AdminAuthSessionStore sessionStore,
+        [FromServices] ILogger<AdminAuthEndpointsLog> logger)
+    {
+        context.Response.Headers.CacheControl = "no-store";
+        if (!context.Request.IsHttps || string.IsNullOrEmpty(request.Password) || request.Password.Length > 1024)
+        {
+            return TypedResults.BadRequest();
+        }
+
+        var validation = await ApiKeyAuthenticationHandler.ValidateAdminPasswordAsync(request.Password,
+            OidcAuthenticationExtensions.AdminSessionScheme, dependencies, logger, context.RequestAborted)
+            .ConfigureAwait(false);
+        if (validation.Success?.Principal is not { } principal)
+        {
+            return validation.Rejection is ApiKeyRejection.AdminPasswordUnavailable or ApiKeyRejection.CredentialStoreUnavailable
+                ? StandardErrorHelpers.CreateServiceUnavailable(context, "Administrator sign-in is unavailable.")
+                : TypedResults.Unauthorized();
+        }
+
+        var lifetime = TimeSpan.FromMinutes(30);
+        try
+        {
+            await sessionStore.RemoveAuthenticatedSessionAsync(
+                context.Request.Cookies[AdminAuthSessionStore.AuthSessionCookieName], context.RequestAborted)
+                .ConfigureAwait(false);
+            var sessionId = await sessionStore.CreateAuthenticatedSessionAsync(new AdminAuthAuthenticatedSession
+            {
+                Origin = AdminAuthSessionOrigin.Builtin,
+                ProviderKey = "builtin",
+                AccessToken = string.Empty,
+                Claims = principal.Claims.Select(claim => new AdminAuthSessionClaim
+                {
+                    Type = claim.Type,
+                    Value = claim.Value
+                }).ToArray(),
+                ExpiresAt = DateTimeOffset.UtcNow.Add(lifetime)
+            }, context.RequestAborted).ConfigureAwait(false);
+            SetCookie(context.Response, AdminAuthSessionStore.AuthSessionCookieName, sessionId,
+                CreateAdminAuthCookieOptions(context, lifetime));
+            return TypedResults.NoContent();
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+        {
+            // Cache providers surface heterogeneous failures; never issue a local-only session.
+            AdminAuthLog.PasswordSessionCreationFailed(logger, ex);
+            return StandardErrorHelpers.CreateServiceUnavailable(context, "Administrator sign-in is unavailable.");
+        }
     }
 
     private static async Task<Microsoft.AspNetCore.Http.HttpResults.Ok<AdminAuthConfigResponse>> HandleGetAuthConfig(

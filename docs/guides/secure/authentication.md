@@ -197,6 +197,29 @@ Legacy records without a tenant owner are hidden from tenant-scoped callers;
 a platform operator can inspect those records and re-propose pending work in
 its intended tenant. Idempotency keys are scoped to the accepted tenant.
 
+### Browser administrator sessions
+
+Serve the static Console and the API over the same HTTPS origin. Browser sign-in
+uses the configured administrator password without saving an API key or password
+in browser storage:
+
+The browser obtains a CSRF token before signing in and retains it in memory.
+Successful sign-in sets an opaque HttpOnly, Secure, SameSite=Strict cookie lasting
+30 minutes. A fresh CSRF token is required after sign-in because tokens are bound
+to the current identity. Cookie-authenticated writes, bearer issuance, and logout
+require that token in the `X-Honua-CSRF` header. Logout removes the server-side
+session as well as the browser cookie.
+
+Password sign-in requires HTTPS and accepts the configured administrator password,
+not managed API keys. It works without enabling OIDC. Existing OIDC sign-in uses
+server-held state and an authorization code with PKCE; provider credentials and
+provider tokens stay on the server. Fetch a fresh CSRF token after OIDC sign-in too.
+
+For a separately hosted Console, use the short-lived operator bearer flow described
+below and configure exact `Cors:AllowedOrigins` entries. Credentialed CORS never
+expands wildcard origins. Cookies remain same-origin; CORS does not authorize
+cross-origin cookie writes.
+
 ### 3. Enable OIDC for browser and admin sign-in
 
 ```bash

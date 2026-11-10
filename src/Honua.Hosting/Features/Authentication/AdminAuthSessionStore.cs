@@ -316,7 +316,8 @@ internal sealed partial class AdminAuthSessionStore(
 internal enum AdminAuthSessionOrigin
 {
     Unknown,
-    InteractiveOidc
+    InteractiveOidc,
+    Builtin
 }
 
 internal abstract class AdminAuthSessionState
