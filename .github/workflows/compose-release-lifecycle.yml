@@ -25,7 +25,7 @@ on:
 
 permissions:
   contents: read
-  packages: write
+  packages: read
 
 concurrency:
   group: compose-release-lifecycle-${{ github.event.pull_request.number }}
@@ -63,8 +63,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      # This build passes no version or SHA arguments, so its own cache scope is reused in full
-      # whenever the PR leaves the image build context unchanged (docs, skills, tests, workflow).
+      # Reuses the restore and base layers of the nightly and serving-image AOT builds.
       - name: Build production candidate image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -76,10 +75,7 @@ jobs:
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
-          cache-from: |
-            type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-aot-lifecycle-amd64
-            type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-aot-amd64
-          cache-to: ${{ github.event.pull_request.head.repo.full_name == github.repository && 'type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-aot-lifecycle-amd64,mode=max,ignore-error=true' || '' }}
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-aot-amd64
           provenance: false
           sbom: false
       - name: Build the dedicated customer executor image
