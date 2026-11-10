@@ -859,10 +859,10 @@
       "key": "enrichment.datasets",
       "displayName": "Data Enrichment Datasets",
       "category": "Enrichment",
-      "edition": "Community",
+      "edition": "Pro",
       "status": null,
       "entryCount": 7,
-      "provingTestCount": 24,
+      "provingTestCount": 29,
       "maturity": {
         "implemented": 7
       },
@@ -2096,7 +2096,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 19,
-      "provingTestCount": 336,
+      "provingTestCount": 337,
       "maturity": {
         "implemented": 19
       },
@@ -2218,7 +2218,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 13,
-      "provingTestCount": 71,
+      "provingTestCount": 72,
       "maturity": {
         "implemented": 13
       },
@@ -2346,7 +2346,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 142,
+      "provingTestCount": 143,
       "maturity": {
         "implemented": 2
       },
@@ -2476,7 +2476,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 1,
-      "provingTestCount": 10,
+      "provingTestCount": 11,
       "maturity": {
         "preview": 1
       },
@@ -2624,7 +2624,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 5,
-      "provingTestCount": 122,
+      "provingTestCount": 127,
       "maturity": {
         "implemented": 3,
         "preview": 2
