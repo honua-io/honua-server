@@ -399,7 +399,7 @@ class AffectedShardVerdictTests(unittest.TestCase):
         for result in ("success", "failure", "cancelled", "skipped", ""):
             with self.subTest(result=result):
                 env = {**os.environ, "GITHUB_EVENT_NAME": "pull_request",
-                       "BUILD_AND_TEST_RESULT": "success", "TEST_RESULT": "success",
+                       "BUILD_AND_TEST_RESULT": "success", "FAST_RESULT": "success",
                        "FORMAT_RESULT": "success", "CI_ROUTER_RESULT": "success",
                        "AFFECTED_SHARDS_RESULT": result}
                 run = subprocess.run(["bash", "-c", command], env=env, capture_output=True)

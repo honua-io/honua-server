@@ -1603,6 +1603,7 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Install GDAL CLI
+        timeout-minutes: 30
         # The real-GDAL cases need gdal-bin plus the Python bindings, NumPy and
         # SciPy. The production worker image pins a richer GDAL base; this job
         # asserts the CLI contract, not the driver universe, which stays owned by
@@ -3146,7 +3147,7 @@ jobs:
       - name: Plan managed test consumer
         run: |
           mkdir -p artifacts/runtime-proofs
-          python3 scripts/ci/managed-test-build.py projects --lane pr --output "artifacts/runtime-proofs/managed-projects.json"
+          python3 scripts/ci/managed-test-build.py projects --lane shard --project tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --output "artifacts/runtime-proofs/managed-projects.json"
 
       - name: Restore verified managed test outputs
         id: managed-consumer
@@ -3324,6 +3325,17 @@ jobs:
         with:
           name: imagery-classify-execution-proof
           path: artifacts/test-results/imagery-classify-execution-proof.trx
+          if-no-files-found: warn
+
+      - name: Upload server execution proofs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: server-execution-proofs
+          path: |
+            artifacts/test-results/copy-features-execution-proof.trx
+            artifacts/test-results/layer-execution-proof.trx
+            artifacts/test-results/protocol-tier-execution-proof.trx
           if-no-files-found: warn
 
       - name: Execute import and independent vector export fidelity proofs

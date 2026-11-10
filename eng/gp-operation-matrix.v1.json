@@ -7,7 +7,7 @@
     "recordedAt": "2026-09-02T02:30:00Z",
     "catalogSourceRevision": "14d101ec17f4b7ccdc6106ee2cb5bd4d621d779f",
     "candidateBinding": "https://github.com/honua-io/honua-server/issues/3848",
-    "layerReceiptEnforcement": "PR Gate step 'Prove the layer execution cases ran, not skipped' reads back layer-execution-proof.trx and fails unless every evidence test these rows still call proven in the Category=LayerExecutionProof files reports its own Passed receipt: source.honua-layer, source.esri-featureserver and sink.honua-layer. dotnet test exits 0 on a filter that matches nothing and on a cleanly-skipping fixture, so the step count alone could not tell a real PostGIS run from no run at all.",
+    "layerReceiptEnforcement": "Full CI step 'Prove the layer execution cases ran, not skipped' reads back layer-execution-proof.trx and fails unless every evidence test these rows still call proven in the Category=LayerExecutionProof files reports its own Passed receipt: source.honua-layer, source.esri-featureserver and sink.honua-layer. dotnet test exits 0 on a filter that matches nothing and on a cleanly-skipping fixture, so the step count alone could not tell a real PostGIS run from no run at all.",
     "catalogSourceContentDigest": "sha256:1fb95b269a7df09fd8009333b32466979aa0c6ed49a8bfe458be2af4a30fb18c",
     "importEpochSourceAudit": "https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/certification/gp-import-epoch-source-audit-20261028.md",
     "gpCorrectnessAudit": "https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/certification/gp-correctness-audit-20261016.md",
@@ -79,14 +79,14 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/OgcProcessesExecutionProofTests.cs",
           "test": "Execute_FirstSliceVectorProcess_CompletesAndReturnsBufferGeometry",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/OgcProcessesExecutionProofTests.cs",
-          "assertion": "Required PR Gate submits and polls real buffer execution, checking inline result selection, input SRID, distance, non-origin center, every vertex radius, envelope, topology and analytical area bounds.",
+          "assertion": "Full CI submits and polls real buffer execution, checking inline result selection, input SRID, distance, non-origin center, every vertex radius, envelope, topology and analytical area bounds.",
           "bodyDigest": "sha256:0ca871805865a542bbdfc3dd6e0f0b05c75108d26f3e2b349aadbe1fb97e6a45"
         },
         {
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/OgcProcessesExecutionProofTests.cs",
           "test": "Execute_FirstSliceProcessWithValueOutputSelection_CompletesAndReturnsInlineBuffer",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/OgcProcessesExecutionProofTests.cs",
-          "assertion": "Required PR Gate submits and polls real buffer execution, checking inline result selection, input SRID, distance, non-origin center, every vertex radius, envelope, topology and analytical area bounds.",
+          "assertion": "Full CI submits and polls real buffer execution, checking inline result selection, input SRID, distance, non-origin center, every vertex radius, envelope, topology and analytical area bounds.",
           "bodyDigest": "sha256:7fa9e88734273939e349e5cca5929abc44c94f6480ac718d4cf150955269fb68"
         }
       ]
@@ -570,14 +570,14 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/SurfaceExecutionProofTests.cs",
           "test": "Slope_PlanarDem_MatchesRiseRunInBothUnitsAndNoData",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof",
-          "assertion": "Required PR Gate executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
+          "assertion": "Full CI executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
           "bodyDigest": "sha256:c9e141c6df112c90b5cad18d2f1eefe96aa84f290b26000b496c22487e573da3"
         },
         {
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/OgcProcessesExecutionProofTests.cs",
           "test": "Execute_RasterSurfaceProcess_CompletesAndReturnsAnalyticalSlope",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof/plane-hole.tif",
-          "assertion": "Required PR Gate submits through OGC API with real Redis and the production job loop, polls to successful, and reads the result. Independent analytical slope values, all nodata/mask cells, CRS and affine ordinates are checked after native GDAL execution.",
+          "assertion": "Full CI submits through OGC API with real Redis and the production job loop, polls to successful, and reads the result. Independent analytical slope values, all nodata/mask cells, CRS and affine ordinates are checked after native GDAL execution.",
           "bodyDigest": "sha256:8324d1a33c559c81699db90bb4036b8766dbba015218f7c34efe47b974bd3093"
         }
       ]
@@ -591,7 +591,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/SurfaceExecutionProofTests.cs",
           "test": "Aspect_PlanarAndFlatDem_MatchesDownslopeAzimuthAndNoData",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof",
-          "assertion": "Required PR Gate executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
+          "assertion": "Full CI executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
           "bodyDigest": "sha256:4f89e7ccb165881b8421ea90219ed23293323fc656524527496eebc0beb93f06"
         }
       ]
@@ -605,7 +605,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/SurfaceExecutionProofTests.cs",
           "test": "Hillshade_Ridge_MatchesIlluminatedShadowedAndNoDataIntensities",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof",
-          "assertion": "Required PR Gate executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
+          "assertion": "Full CI executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
           "bodyDigest": "sha256:f7760423868d61687752860c789073fd11a93dcb33eb2bccb3df6c8c7511fd3d"
         }
       ]
@@ -619,7 +619,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/SurfaceExecutionProofTests.cs",
           "test": "Rugosity_PeakAndDepression_MatchesIndependentNeighborhoodStatistics",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof",
-          "assertion": "Required PR Gate executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
+          "assertion": "Full CI executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
           "bodyDigest": "sha256:adabd1ddbe0f2bf7d449cf686eb75dfa2da53dcf79746698fd16b0b78bd15445"
         }
       ]
@@ -633,7 +633,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/SurfaceExecutionProofTests.cs",
           "test": "Rugosity_PeakAndDepression_MatchesIndependentNeighborhoodStatistics",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof",
-          "assertion": "Required PR Gate executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
+          "assertion": "Full CI executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
           "bodyDigest": "sha256:adabd1ddbe0f2bf7d449cf686eb75dfa2da53dcf79746698fd16b0b78bd15445"
         },
         {
@@ -654,7 +654,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/SurfaceExecutionProofTests.cs",
           "test": "Rugosity_PeakAndDepression_MatchesIndependentNeighborhoodStatistics",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof",
-          "assertion": "Required PR Gate executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
+          "assertion": "Full CI executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
           "bodyDigest": "sha256:adabd1ddbe0f2bf7d449cf686eb75dfa2da53dcf79746698fd16b0b78bd15445"
         }
       ]
@@ -668,7 +668,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/SurfaceExecutionProofTests.cs",
           "test": "Contour_Ramp_MatchesLevelsCoordinatesAndLineTopology",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof",
-          "assertion": "Required PR Gate executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
+          "assertion": "Full CI executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
           "bodyDigest": "sha256:46b55da04b027b9c9c0d4da8157145a52d80a84f07ddd4c9622b6543df22a9c6"
         }
       ]
@@ -682,7 +682,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/SurfaceExecutionProofTests.cs",
           "test": "Viewshed_Ridge_MatchesVisibleHiddenAndOutOfRangeNoData",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof",
-          "assertion": "Required PR Gate executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
+          "assertion": "Full CI executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
           "bodyDigest": "sha256:02c2c3d6cdf68a119553e1fc7f08a5b6f297294a3ff55c434f811078541897da"
         }
       ]
@@ -696,7 +696,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
           "test": "Clip_LShapedCutline_PreservesInsideBoundaryAndNoDataCells",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
-          "assertion": "Required PR Gate executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
+          "assertion": "Full CI executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
           "bodyDigest": "sha256:87d8e40fbecdfe14ae29bd24303988158a8d177571c28d1a0088be54e30b5c79"
         },
         {
@@ -717,7 +717,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
           "test": "Reproject_GeographicToMercator_MatchesAnalyticalGridAndInverseMappedSamples",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
-          "assertion": "Required PR Gate executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
+          "assertion": "Full CI executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
           "bodyDigest": "sha256:39c790c4f8178bcefa89e824e05443963b5e311a78d42d44642e0412233b5027"
         }
       ]
@@ -773,7 +773,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
           "test": "Histogram_UnevenDistribution_ExcludesNoDataAndPreservesEveryBucket",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
-          "assertion": "Required PR Gate executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
+          "assertion": "Full CI executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
           "bodyDigest": "sha256:ad2718f8e44420bc05625c2c3fe51a8ef53cbb7da6e242b345492c744c2acf9c"
         },
         {
@@ -794,7 +794,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
           "test": "ZonalStatistics_DisjointOverlappingAndEmptyZones_MatchHandDerivedAggregates",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
-          "assertion": "Required PR Gate executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
+          "assertion": "Full CI executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
           "bodyDigest": "sha256:fd715f7b65fc15c7cdb6f09e78a43605a6a618331a266fa8f3af1f362c617e13"
         },
         {
@@ -829,7 +829,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
           "test": "Resample_HalfSizeCells_MatchesNearestOrBilinearWeightsAndNoData",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
-          "assertion": "Required PR Gate executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
+          "assertion": "Full CI executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
           "bodyDigest": "sha256:23d32a4c467b6ea9b702f922268dc908c8ef4d1a012feae4f28193030d802ddd"
         }
       ]
@@ -843,7 +843,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
           "test": "InterpolateIdw_KnownPoints_MatchesInverseDistanceAndEmptySearchCells",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
-          "assertion": "Required PR Gate executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
+          "assertion": "Full CI executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
           "bodyDigest": "sha256:435c2fa4163378c8c173005d88dc605d3ff10441a829fa09bda069a30cb6e4ec"
         }
       ]
@@ -857,7 +857,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
           "test": "InterpolateKriging_SamplePoints_ReproducesSampleValuesExactly",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
-          "assertion": "Required PR Gate executes the production kriging executor with pinned real GDAL; the decoded cell centred on the interior sample reproduces its observed value, and the surface declares no nodata \u2014 the exactness property that distinguishes kriging from a smoother.",
+          "assertion": "Full CI executes the production kriging executor with pinned real GDAL; the decoded cell centred on the interior sample reproduces its observed value, and the surface declares no nodata \u2014 the exactness property that distinguishes kriging from a smoother.",
           "bodyDigest": "sha256:68719395e141c7532b0a0cdb96b5e9e1fa0e2345c93a529de6fd88f52477a06b"
         },
         {
@@ -878,7 +878,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
           "test": "Mosaic_OverlappingTwoBandTiles_ProvesPrecedenceAndNoDataFallback",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
-          "assertion": "Required PR Gate executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
+          "assertion": "Full CI executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
           "bodyDigest": "sha256:aa081829536ce8832326a4a37daf51644cf81db80a7043cc21e4b8ae8d766431"
         }
       ]
@@ -927,7 +927,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
           "test": "SpectralIndex_ReflectanceBands_MatchFormulaIncludingUndefinedAndNoData",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
-          "assertion": "Required PR Gate executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
+          "assertion": "Full CI executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
           "bodyDigest": "sha256:eb570c9b4b65cc9fdef5f173568631a4348c950c45cc0c3679aae5cfd518bde6"
         }
       ]
@@ -969,7 +969,7 @@
           "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ImageryClassifyExecutionProofTests.cs",
           "test": "Classify_RealSceneThroughARealModelServer_MatchesTheFrozenClassOracle",
           "fixturePath": "tests/dotnet/Honua.Server.Tests/TestData/ImageryClassify",
-          "assertion": "Required PR Gate runs the production executor and the real HTTP inference adapter over a loopback model server that executes a committed minimum-distance-to-mean classifier (NumPy) on the posted scene inside the pinned production GDAL image. The decoded classification GeoTIFF is asserted against a frozen class map (a committed 4x4 signature layout upsampled across the 16x16 scene) and per-class counts derived from the committed scene signatures, plus model identity, task, forwarded source CRS, band count, grid alignment and CRS.",
+          "assertion": "Full CI runs the production executor and the real HTTP inference adapter over a loopback model server that executes a committed minimum-distance-to-mean classifier (NumPy) on the posted scene inside the pinned production GDAL image. The decoded classification GeoTIFF is asserted against a frozen class map (a committed 4x4 signature layout upsampled across the 16x16 scene) and per-class counts derived from the committed scene signatures, plus model identity, task, forwarded source CRS, band count, grid alignment and CRS.",
           "bodyDigest": "sha256:90c2ac9509fcc986216341dd4554474e485d6975536a7e6dcd6ea446fc61008f"
         },
         {

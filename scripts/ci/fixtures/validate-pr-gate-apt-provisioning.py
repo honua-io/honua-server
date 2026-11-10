@@ -139,7 +139,7 @@ def _require_gate(sources: Sources, worst_case: int) -> None:
     document = yaml.safe_load(sources.workflow)
     job = ((document or {}).get("jobs") or {}).get(WORKER_JOB)
     if not isinstance(job, dict) or not isinstance(job.get("steps"), list):
-        raise ContractError(f"the required workflow no longer declares the {JOB!r} job's steps")
+        raise ContractError(f"the required workflow no longer declares the {WORKER_JOB!r} job's steps")
     steps = job["steps"]
     proof_index, proof = _step(steps, PROOF)
     _require_tripwire(proof, job)
@@ -150,7 +150,7 @@ def _require_gate(sources: Sources, worst_case: int) -> None:
         raise ContractError(f"{PROVISION!r} must stay blocking")
     if provision.get("uses") != ACTION or provision.get("run"):
         raise ContractError(f"{PROVISION!r} must delegate to the shared GDAL CLI provisioner")
-    step_timeout = provision.get("timeout-minutes", 30)
+    step_timeout = provision.get("timeout-minutes")
     if not isinstance(step_timeout, int) or step_timeout * 60 < worst_case:
         raise ContractError(
             f"{PROVISION!r} timeout-minutes {step_timeout!r} cannot hold its {worst_case}s worst case"
@@ -158,7 +158,7 @@ def _require_gate(sources: Sources, worst_case: int) -> None:
     job_timeout = job.get("timeout-minutes")
     if not isinstance(job_timeout, int) or job_timeout * 60 < JOB_BASELINE_SECONDS + step_timeout * 60:
         raise ContractError(
-            f"the {JOB!r} job timeout {job_timeout!r} minutes cannot hold its {JOB_BASELINE_SECONDS}s "
+            f"the {WORKER_JOB!r} job timeout {job_timeout!r} minutes cannot hold its {JOB_BASELINE_SECONDS}s "
             f"observed runtime plus {step_timeout} minutes of provisioning"
         )
     steps = document["jobs"][JOB]["steps"]
@@ -222,6 +222,7 @@ def read_sources(workflow: Path) -> Sources:
 def self_test(sources: Sources) -> None:
     subprocess.run(["bash", str(ROOT / "scripts/ci/provision-gdal-cli.sh"), "self-test"], check=True)
     mutations = (
+        (0, "        timeout-minutes: 30\n", "        timeout-minutes: 1\n"),
         (0, f"      - name: {PROOF}\n", f"      - name: {PROOF}\n        continue-on-error: true\n"),
         (0, f"      - name: {PROVISION}\n", f"      - name: {PROVISION}\n        continue-on-error: true\n"),
         (0, "        uses: ./.github/actions/provision-gdal-cli\n", "        run: sudo apt-get install -yqq gdal-bin\n"),

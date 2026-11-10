@@ -1,6 +1,6 @@
 # Layer catalog execution proofs
 
-These tests protect the 2026.1 whole-catalog GP GA promise recorded in the release decision and quality contract. They run in the required PR Gate under `Category=LayerExecutionProof`; the PostGIS integration cases create isolated schemas in a real Docker PostGIS instance. These source/sink catalog rows are proven through their workflow-only executor entry point, not the job submission API.
+These tests protect the 2026.1 whole-catalog GP GA promise recorded in the release decision and quality contract. They run in the full CI under `Category=LayerExecutionProof`; the PostGIS integration cases create isolated schemas in a real Docker PostGIS instance. These source/sink catalog rows are proven through their workflow-only executor entry point, not the job submission API.
 
 - `LayerSourceExecutionProofTests.FeatureProject_RealCatalogLayer_PublishesAnalyticalMercatorCoordinatesAndSrid`: insert a literal EPSG:4326 point (12,34) with named attributes through the production feature writer. Decode the actual executor artifact and compare EPSG:3857 ordinates to `x = 6378137 * longitude * pi/180` and `y = 6378137 * log(tan(pi/4 + latitude*pi/360))`, within one millimetre. Read the original point back unchanged.
 - `LayerSourceExecutionProofTests.HonuaLayerSource_RealCatalogFilterBboxAndFields_PublishesExactProjectedSelection`: the same point must survive both the category predicate and the projected bounding box; a different-category point inside the box and a same-category point outside it must not survive. Assert exact field selection, feature count, coordinates and output SRID. The initial execution exposed the missing storage CRS used to transform the filter.
@@ -15,7 +15,7 @@ The CRS regressions additionally distinguish advertised EPSG:3857 from physical 
 `dotnet test` exits 0 when a `--filter` matches nothing and when every matched case skips, so running
 `Category=LayerExecutionProof` on the required gate did not by itself prove these cases executed: a renamed
 trait, a deleted class or a cleanly-skipping Docker PostGIS fixture would have left the gate green with no
-layer receipts at all while the operation matrix still called the rows proven. The PR Gate step *Prove the
+layer receipts at all while the operation matrix still called the rows proven. The Full CI step *Prove the
 layer execution cases ran, not skipped* now reads `layer-execution-proof.trx` back and fails on any skipped
 case, on zero passes, and on a missing receipt for any test the matrix still cites as proven evidence for
 `source.honua-layer`, `source.esri-featureserver` or `sink.honua-layer`.

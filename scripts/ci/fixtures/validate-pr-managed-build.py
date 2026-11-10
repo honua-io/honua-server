@@ -46,6 +46,26 @@ class PrManagedBuildTests(unittest.TestCase):
         self.assertIn('fast-tests', job('required'))
         self.assertNotIn('Lean gate (fast unit and architecture verification)', job('runtime-proofs', CI))
 
+    def test_proof_handoff_and_diagnostics_remain_scoped(self):
+        import yaml
+        consumer = yaml.safe_load(CI)['jobs']['runtime-proofs']
+        plan = next(step['run'] for step in consumer['steps'] if step.get('name') == 'Plan managed test consumer')
+        self.assertIn('--lane shard --project tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj', plan)
+        self.assertIn('--lane pr-shards --matrix-file', job('pr-gate'))
+        uploads = [step for step in consumer['steps'] if 'actions/upload-artifact@' in step.get('uses', '')]
+        for proof in ('copy-features', 'layer', 'protocol-tier'):
+            matching = [step for step in uploads if f'{proof}-execution-proof.trx' in step['with']['path']]
+            self.assertEqual(len(matching), 1, proof)
+            self.assertEqual(matching[0]['if'], 'always()')
+        router = (ROOT / 'scripts/ci/validate-ci-router.sh').read_text()
+        for fixture in ('validate-serving-image-boundary.py', 'validate-promote-verified-image.py'):
+            self.assertIn(fixture, router)
+        fast = yaml.safe_load(TEXT)['jobs']['fast-tests']['steps']
+        cleanup = next(step for step in fast if step.get('name') == 'Free disk space')
+        self.assertIn("steps.docs-only.outputs.docs_only != 'true'", cleanup['if'])
+        self.assertIn("steps.generated-only.outputs.generated_only != 'true'", cleanup['if'])
+        self.assertLess(fast.index(cleanup), next(i for i, step in enumerate(fast) if step.get('name') == 'Setup .NET'))
+
     def test_full_ci_requires_runtime_proofs(self):
         import yaml
         full = yaml.safe_load(CI)

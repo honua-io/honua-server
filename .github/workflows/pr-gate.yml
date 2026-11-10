@@ -132,8 +132,6 @@ jobs:
         with:
           fetch-depth: 2
 
-      # Docs-only exit; see the `Classify docs-only diff` step of the
-      # build/test job below.
       # Only the immutable base supplies executable classification policy.
       # A missing or failed classifier leaves the ordinary checks enabled.
       - name: Classify validated generated-only diff
@@ -157,6 +155,15 @@ jobs:
       - name: Classify docs-only diff
         id: docs-only
         run: scripts/ci/docs-only-diff.sh --github-output
+
+      - name: Free disk space
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        run: |
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /usr/share/swift || true
+          sudo rm -rf /usr/local/.ghcup || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          df -h / || true
 
       - name: Setup .NET
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
@@ -490,7 +497,7 @@ jobs:
         run: |
           mkdir -p artifacts/pr-gate
           python3 scripts/ci/compute-affected-shards.py --cap "${CAP}" --annotate-resources --json "artifacts/pr-gate/producer-shards.json"
-          python3 scripts/ci/managed-test-build.py projects --lane pr --matrix-file "artifacts/pr-gate/producer-shards.json" --output "artifacts/pr-gate/managed-projects.json"
+          python3 scripts/ci/managed-test-build.py projects --lane pr-shards --matrix-file "artifacts/pr-gate/producer-shards.json" --output "artifacts/pr-gate/managed-projects.json"
 
       - name: Lean gate (managed build producer)
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
