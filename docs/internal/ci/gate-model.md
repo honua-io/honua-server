@@ -539,3 +539,15 @@ unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
+
+
+### WPS endpoint fixture lifetime
+
+`Wps20EndpointsTests` shares its default application and identically configured
+conformance-echo application for the lifetime of the sequential test class.
+Each application seeds its database once. Tests with service substitutes or
+custom host configuration retain isolated applications; echo results are
+accessed through their request-generated job IDs and reference tokens.
+All cases and assertions remain in the existing WPS shard on selected PR runs
+and twice-daily full trunk runs. This changes no runner count, required check
+name, required aggregate dependency, workflow, or shard definition.

@@ -20,13 +20,45 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Wps202)]
-public sealed class Wps20EndpointsTests : IAsyncLifetime
+public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
+    private readonly WebAppFixture _conformanceFixture;
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+    public Wps20EndpointsTests(Fixture fixture)
+    {
+        _fixture = fixture.Default;
+        _conformanceFixture = fixture.Conformance;
+    }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    /// <summary>
+    /// Seeds the default and echo-enabled applications once for this sequential class.
+    /// Tests with service overrides or different configuration retain their own applications.
+    /// </summary>
+    public sealed class Fixture : IAsyncLifetime
+    {
+        public WebAppFixture Default { get; } = new();
+
+        public WebAppFixture Conformance { get; } = CreateConformanceFixture();
+
+        public async Task InitializeAsync()
+        {
+            await Default.InitializeAsync();
+            await Conformance.InitializeAsync();
+        }
+
+        public async Task DisposeAsync()
+        {
+            try
+            {
+                await Conformance.DisposeAsync();
+            }
+            finally
+            {
+                await Default.DisposeAsync();
+            }
+        }
+    }
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
@@ -527,8 +559,7 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
     [Endpoint("GET /wps")]
     public async Task ConformanceEcho_DescribeAndAll_ExposeEtsDataCategories()
     {
-        await using var fixture = CreateConformanceFixture();
-        await fixture.InitializeAsync();
+        var fixture = _conformanceFixture;
 
         var response = await fixture.Client.GetAsync("/wps?service=WPS&request=DescribeProcess&version=2.0.0&identifier=honua.cite.echo");
         var xml = await response.Content.ReadAsStringAsync();
@@ -553,8 +584,7 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
     [Endpoint("POST /wps")]
     public async Task ConformanceEcho_SyncLiteral_ReturnsRequestedResponse(string responseForm)
     {
-        await using var fixture = CreateConformanceFixture();
-        await fixture.InitializeAsync();
+        var fixture = _conformanceFixture;
         var body = $"<wps:Execute service='WPS' version='2.0.0' mode='sync' response='{responseForm}' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0'><ows:Identifier>honua.cite.echo</ows:Identifier><wps:Input id='literalInput'><wps:Data><wps:LiteralValue>hello_literal</wps:LiteralValue></wps:Data></wps:Input><wps:Output id='literalOutput' transmission='value'/></wps:Execute>";
 
         using var requestContent = new StringContent(body, Encoding.UTF8, "application/xml");
@@ -574,8 +604,7 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
     [Endpoint("POST /wps")]
     public async Task ConformanceEcho_SyncComplex_PreservesXmlPayload()
     {
-        await using var fixture = CreateConformanceFixture();
-        await fixture.InitializeAsync();
+        var fixture = _conformanceFixture;
         const string body = "<wps:Execute service='WPS' version='2.0.0' mode='sync' response='document' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0'><ows:Identifier>honua.cite.echo</ows:Identifier><wps:Input id='complexInput'><wps:Data><testElement>hello_complex</testElement></wps:Data></wps:Input><wps:Output id='complexOutput' transmission='value'/></wps:Execute>";
 
         using var requestContent = new StringContent(body, Encoding.UTF8, "application/xml");
@@ -595,8 +624,7 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
     [Endpoint("POST /wps")]
     public async Task ConformanceEcho_Crs84BoundingBox_PreservesAsymmetricAxisOrder(string crsAttribute, string dimensions)
     {
-        await using var fixture = CreateConformanceFixture();
-        await fixture.InitializeAsync();
+        var fixture = _conformanceFixture;
         var box = $"<ows:BoundingBox {crsAttribute} dimensions='{dimensions}'><ows:LowerCorner>-123.5 37.25</ows:LowerCorner><ows:UpperCorner>-121.75 39.5</ows:UpperCorner></ows:BoundingBox>";
         using var body = new StringContent(BoundingBoxExecute(box), Encoding.UTF8, "application/xml");
         using var response = await fixture.Client.PostAsync("/wps", body);
@@ -626,8 +654,7 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
     [Endpoint("POST /wps")]
     public async Task ConformanceEcho_MalformedBoundingBox_ReturnsOwsException(string box)
     {
-        await using var fixture = CreateConformanceFixture();
-        await fixture.InitializeAsync();
+        var fixture = _conformanceFixture;
         using var body = new StringContent(BoundingBoxExecute(box), Encoding.UTF8, "application/xml");
         using var response = await fixture.Client.PostAsync("/wps", body);
         var xml = await response.Content.ReadAsStringAsync();
@@ -643,8 +670,7 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
     [Endpoint("POST /wps")]
     public async Task ConformanceEcho_ComplexBoundingBoxLookalike_RemainsComplex()
     {
-        await using var fixture = CreateConformanceFixture();
-        await fixture.InitializeAsync();
+        var fixture = _conformanceFixture;
         const string box = "<BoundingBox xmlns='urn:lookalike'><LowerCorner>uninterpreted text</LowerCorner></BoundingBox>";
         var request = BoundingBoxExecute(box).Replace("boundingBoxInput", "complexInput", StringComparison.Ordinal)
             .Replace("boundingBoxOutput", "complexOutput", StringComparison.Ordinal);
@@ -664,8 +690,7 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
     [Endpoint("POST /wps")]
     public async Task ConformanceEcho_Ets11Alias_UsesSameInertEchoBehavior()
     {
-        await using var fixture = CreateConformanceFixture();
-        await fixture.InitializeAsync();
+        var fixture = _conformanceFixture;
         var description = await fixture.Client.GetStringAsync("/wps?service=WPS&request=DescribeProcess&version=2.0.0&identifier=org.n52.javaps.test.EchoProcess");
         const string body = "<wps:Execute service='WPS' version='2.0.0' mode='sync' response='raw' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0'><ows:Identifier>org.n52.javaps.test.EchoProcess</ows:Identifier><wps:Input id='literalInput'><wps:Data><wps:LiteralValue>ets-alias</wps:LiteralValue></wps:Data></wps:Input><wps:Output id='literalOutput' transmission='value'/></wps:Execute>";
 
@@ -683,8 +708,7 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
     [Endpoint("POST /wps")]
     public async Task ConformanceEcho_AsyncResultAndReference_AreImmediateAndDereferenceable()
     {
-        await using var fixture = CreateConformanceFixture();
-        await fixture.InitializeAsync();
+        var fixture = _conformanceFixture;
         const string body = "<wps:Execute service='WPS' version='2.0.0' mode='async' response='document' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0'><ows:Identifier>honua.cite.echo</ows:Identifier><wps:Input id='literalInput'><wps:Data><wps:LiteralValue>async-aloha</wps:LiteralValue></wps:Data></wps:Input><wps:Output id='literalOutput' transmission='reference'/></wps:Execute>";
 
         using var requestContent = new StringContent(body, Encoding.UTF8, "application/xml");
@@ -728,8 +752,7 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
     [Endpoint("POST /wps")]
     public async Task ConformanceEcho_InvalidOutputContract_ReturnsOwsException(string outputs)
     {
-        await using var fixture = CreateConformanceFixture();
-        await fixture.InitializeAsync();
+        var fixture = _conformanceFixture;
         var body = $"<wps:Execute service='WPS' version='2.0.0' mode='sync' response='document' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0'><ows:Identifier>honua.cite.echo</ows:Identifier><wps:Input id='literalInput'><wps:Data><wps:LiteralValue>aloha</wps:LiteralValue></wps:Data></wps:Input>{outputs}</wps:Execute>";
 
         using var requestContent = new StringContent(body, Encoding.UTF8, "application/xml");
@@ -856,8 +879,7 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
     [Endpoint("GET /wps")]
     public async Task ConformanceEcho_NoPublicBaseUrl_EmitsRelativeLinksAndIgnoresHost()
     {
-        await using var fixture = CreateConformanceFixture();
-        await fixture.InitializeAsync();
+        var fixture = _conformanceFixture;
         using var request = new HttpRequestMessage(HttpMethod.Get, "/wps?service=WPS&request=GetCapabilities&version=2.0.0");
         request.Headers.Host = "hostile.example.test";
 
