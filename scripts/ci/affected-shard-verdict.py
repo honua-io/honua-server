@@ -15,8 +15,8 @@ CONTRACT = "honua.pr-gate-affected-shard-verdict/v1"
 UNAFFECTED_SKIP_REASONS = {
     "docs_only", "validated_generated_only", "no_product_code", "no_shards_selected",
 }
-DEFERRED_SKIP_REASON = "affected_shards_deferred_to_trunk"
 observe_execution = runpy.run_path(str(Path(__file__).with_name("shard-execution-evidence.py")))["observe"]
+DEFERRED_SKIP_REASON = runpy.run_path(str(Path(__file__).with_name("shard_time_budget.py")))["DEFERRED_SKIP_REASON"]
 RED_ANNOTATION = (
     "HONUA_AFFECTED_SHARD_RED shard='{shard}' status='{status}' — "
     "this shard family has failing execution evidence for this run."
@@ -157,24 +157,7 @@ def decide(
             f"selection concluded '{selection.result}'.",
         )
     if selection.skip == "true" and selection.reason == DEFERRED_SKIP_REASON:
-        if not selection.deferred or _count(selection.count) != 0 or selection.shards:
-            return unavailable(
-                "untrusted_skip", "a deferred selection must name its deferred shards and select none.",
-                f"selection skipped with reason '{selection.reason}'.",
-            )
-        annotations.append((
-            "notice",
-            f"HONUA_AFFECTED_SHARD_DEFERRED {len(selection.deferred)} shard families deferred to trunk.",
-        ))
-        return finish(
-            "deferred",
-            exit_code=0,
-            shards_passed=False,
-            extra=[
-                "- Verdict: `deferred` — every affected shard family is over the PR time budget; "
-                "the next trunk run covers them.",
-            ],
-        )
+        return _deferred(selection, finish, unavailable, annotations)
     if selection.skip == "true":
         if enforcing and (selection.reason not in UNAFFECTED_SKIP_REASONS
                           or _count(selection.count) != 0 or selection.shards):
@@ -266,6 +249,27 @@ def decide(
         "  trailing matrix and fix them before landing.",
     ])
     return finish("red", exit_code=0, shards_passed=False, extra=extra)
+
+
+def _deferred(selection: Selection, finish, unavailable, annotations: list) -> dict[str, Any]:
+    if not selection.deferred or _count(selection.count) != 0 or selection.shards:
+        return unavailable(
+            "untrusted_skip", "a deferred selection must name its deferred shards and select none.",
+            f"selection skipped with reason '{selection.reason}'.",
+        )
+    annotations.append((
+        "notice",
+        f"HONUA_AFFECTED_SHARD_DEFERRED {len(selection.deferred)} shard families deferred to trunk.",
+    ))
+    return finish(
+        "deferred",
+        exit_code=0,
+        shards_passed=False,
+        extra=[
+            "- Verdict: `deferred` — every affected shard family is over the PR time budget; "
+            "the next trunk run covers them.",
+        ],
+    )
 
 
 def deferred_lines(deferred: tuple[str, ...]) -> list[str]:
