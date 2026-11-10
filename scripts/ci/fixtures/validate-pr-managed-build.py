@@ -19,6 +19,26 @@ def job(name, source=TEXT):
 
 
 class PrManagedBuildTests(unittest.TestCase):
+    def test_parallel_producer_failure_rejects_empty_shard_success(self):
+        import yaml
+        jobs = yaml.safe_load(TEXT)['jobs']
+        aggregate = jobs['affected-shards']
+        self.assertIn('server-test-producer', aggregate['needs'])
+        guard = next(step for step in aggregate['steps']
+                     if step.get('name') == 'Require parallel producer success')
+        self.assertEqual('always()', guard['if'])
+        for result in ['success', 'failure', 'cancelled', 'skipped', '']:
+            actual = subprocess.run(['bash', '-e', '-c', guard['run']],
+                                    env=dict(os.environ, SERVER_PRODUCER_RESULT=result))
+            self.assertEqual(actual.returncode == 0, result == 'success')
+        self.assertTrue(jobs['affected-shard']['strategy']['fail-fast'])
+        self.assertFalse(jobs['fast-tests']['strategy']['fail-fast'])
+        producer = job('server-test-producer')
+        for contract in ['Await exact-head review', 'Classify docs-only diff', 'phase: build',
+                         'test-group: server-producer', 'partition-managed-producer.py projects',
+                         'Publish selected server test outputs']:
+            self.assertIn(contract, producer)
+
     def test_required_results_fail_closed(self):
         required = job('required')
         self.assertIn('needs: [pr-gate, fast-tests, format, ci-router-validation, affected-shards]', required)
@@ -179,7 +199,7 @@ class PrManagedBuildTests(unittest.TestCase):
             self.assertIn('--no-build',command)
             self.assertIn('--no-restore',command)
         shard=job('affected-shard')
-        self.assertIn('needs: [affected-shards-select, pr-gate]',shard)
+        self.assertIn('needs: [affected-shards-select, pr-gate, server-test-producer]',shard)
         self.assertIn('producer-attempt: ${{ needs.pr-gate.outputs.producer-attempt }}',shard)
 
 

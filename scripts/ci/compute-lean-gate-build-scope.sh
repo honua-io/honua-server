@@ -96,6 +96,7 @@ case "${test_group}" in
   architecture) ROOT_PROJECTS=("${ARCHITECTURE_TEST_PROJECTS[@]}" "${SERVER_TEST_PROJECTS[@]}") ;;
   unit-fast) ROOT_PROJECTS=("${UNIT_FAST_TEST_PROJECTS[@]}") ;;
   server-fast|server-governance) ROOT_PROJECTS=("${SERVER_TEST_PROJECTS[@]}") ;;
+  server-producer) ROOT_PROJECTS=("${SERVER_TEST_PROJECTS[@]}") ;;
   producer) ROOT_PROJECTS=("${SERVER_HOST_PROJECT}") ;;
   analyzers) ROOT_PROJECTS=() ;;
   *) echo "::error::Unknown lean gate test group '${test_group}'" >&2; exit 1 ;;

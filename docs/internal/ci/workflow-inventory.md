@@ -569,3 +569,5 @@ The budget job records each run's phase and credits, total triage/fix credits,
 paid-run counts and the share of triage events reaching a paid Opus run. Deterministic
 skips use zero model credits. The combined envelopes are 2500 credits ($25) per day;
 triage and fix do not each receive a separate allowance.
+
+The PR managed producer compiles `Honua.Server.Tests` in a parallel, review-admitted job. The main producer excludes that project while preserving every other selected compile root; a reverse project reference to Server.Tests rejects this partition. Each producer publishes only the assemblies consumed by selected shards. The affected-shards aggregate requires the parallel producer to succeed even for an empty shard matrix, retaining the required aggregate dependency contract. Only the affected-shard matrix cancels sibling shards after a failure; fast-test and analyzer matrices retain every result.

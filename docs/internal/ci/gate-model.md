@@ -559,3 +559,5 @@ unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
+
+The PR managed producer compiles `Honua.Server.Tests` in a parallel, review-admitted job. The main producer excludes that project while preserving every other selected compile root; a reverse project reference to Server.Tests rejects this partition. Each producer publishes only the assemblies consumed by selected shards. The affected-shards aggregate requires the parallel producer to succeed even for an empty shard matrix, retaining the required aggregate dependency contract. Only the affected-shard matrix cancels sibling shards after a failure; fast-test and analyzer matrices retain every result.

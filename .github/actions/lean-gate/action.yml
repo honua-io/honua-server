@@ -123,6 +123,9 @@ inputs:
       start of the action and is awaited immediately before this test.
     required: false
     default: '15'
+  exclude-server-tests:
+    description: Compile Server.Tests in the independent PR producer instead
+    default: 'false'
 runs:
   using: composite
   steps:
@@ -133,7 +136,7 @@ runs:
         GATE_TEST_GROUP: ${{ inputs.test-group }}
       run: |
         case "${GATE_PHASE}" in all|build|test) ;; *) echo "::error::Invalid gate phase"; exit 1 ;; esac
-        case "${GATE_TEST_GROUP}" in all|architecture|unit-fast|server-fast|server-governance|producer) ;; *) echo "::error::Invalid test group"; exit 1 ;; esac
+        case "${GATE_TEST_GROUP}" in all|architecture|unit-fast|server-fast|server-governance|producer|server-producer) ;; *) echo "::error::Invalid test group"; exit 1 ;; esac
 
     # Start before restore/build so a cold runner's PostGIS image download
     # overlaps useful gate work. The helper resolves the exact image from the
@@ -207,11 +210,19 @@ runs:
         GATE_BUILD_MODE: ${{ steps.build-scope.outputs.mode }}
         GATE_BUILD_FILTER: ${{ steps.build-scope.outputs.filter }}
         PRODUCER_PROJECTS_FILE: ${{ inputs.projects-file }}
+        EXCLUDE_SERVER_TESTS: ${{ inputs.exclude-server-tests }}
       run: |
         if [[ "${GATE_BUILD_MODE}" == affected && -n "${PRODUCER_PROJECTS_FILE}" ]]; then
           python3 scripts/ci/managed-test-build.py filter \
             --projects-file "${PRODUCER_PROJECTS_FILE}" \
             --base-filter "${GATE_BUILD_FILTER}" --output "${GATE_BUILD_FILTER}"
+        fi
+        if [[ "${EXCLUDE_SERVER_TESTS}" == true ]]; then
+          partition_filter="${RUNNER_TEMP}/lean-producer.slnf"
+          python3 scripts/ci/partition-managed-producer.py filter \
+            --mode "${GATE_BUILD_MODE}" --filter "${GATE_BUILD_FILTER}" --output "${partition_filter}"
+          GATE_BUILD_MODE=affected
+          GATE_BUILD_FILTER="${partition_filter}"
         fi
         echo "mode=${GATE_BUILD_MODE}" >> "${GITHUB_OUTPUT}"
         echo "filter=${GATE_BUILD_FILTER}" >> "${GITHUB_OUTPUT}"
