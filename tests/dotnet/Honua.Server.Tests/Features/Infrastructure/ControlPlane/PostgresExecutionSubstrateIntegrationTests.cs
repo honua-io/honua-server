@@ -72,7 +72,7 @@ public sealed class PostgresExecutionSubstrateIntegrationTests(DatabaseFixtureAd
         var callback = new RecordingTerminalCallback();
         using var service = new JobReconciliationService(store, harness.Queue, harness.Queue,
             new ExecutionJobCancellationTokens(), [callback], harness.LogStore,
-            NullLogger<JobReconciliationService>.Instance, harness.JobStore);
+            NullLogger<JobReconciliationService>.Instance, harness.JobStore, harness.JobStore);
 
         await service.SweepActiveJobsAsync(CancellationToken.None);
 
@@ -99,7 +99,7 @@ public sealed class PostgresExecutionSubstrateIntegrationTests(DatabaseFixtureAd
         // Simulate process loss after durable creation: no progress or pending membership.
         using var sweep = new JobReconciliationService(harness.JobStore, harness.Queue, harness.Queue,
             new ExecutionJobCancellationTokens(), [], harness.LogStore, NullLogger<JobReconciliationService>.Instance,
-            harness.JobStore);
+            harness.JobStore, harness.JobStore);
         await sweep.SweepActiveJobsAsync(CancellationToken.None);
         await sweep.SweepActiveJobsAsync(CancellationToken.None);
         (await harness.Queue.GetQueueDepthAsync()).Should().Be(1);
@@ -838,6 +838,7 @@ public sealed class PostgresExecutionSubstrateIntegrationTests(DatabaseFixtureAd
             [callback],
             harness.LogStore,
             NullLogger<JobReconciliationService>.Instance,
+            harness.JobStore,
             harness.JobStore);
 
         await reconciler.SweepActiveJobsAsync(CancellationToken.None);
@@ -947,6 +948,7 @@ public sealed class PostgresExecutionSubstrateIntegrationTests(DatabaseFixtureAd
             [callback],
             harness.LogStore,
             NullLogger<JobReconciliationService>.Instance,
+            harness.JobStore,
             harness.JobStore);
 
         await service.StartAsync(CancellationToken.None);
@@ -1024,6 +1026,7 @@ public sealed class PostgresExecutionSubstrateIntegrationTests(DatabaseFixtureAd
             [callback],
             harness.LogStore,
             NullLogger<JobReconciliationService>.Instance,
+            harness.JobStore,
             harness.JobStore);
 
         await service.StartAsync(CancellationToken.None);
@@ -1079,7 +1082,7 @@ public sealed class PostgresExecutionSubstrateIntegrationTests(DatabaseFixtureAd
             {
                 Kind = ExecutionJobKind.Geoprocessing,
                 TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "integration-test",
+                Backend = LocalBatchComputeBackend.BackendId,
                 WorkloadName = "postgres-substrate-integration"
             }
         };

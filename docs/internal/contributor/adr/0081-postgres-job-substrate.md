@@ -602,6 +602,46 @@ database role; a role limited to the job tables is not implemented.
 Deliberately not done: `LISTEN/NOTIFY`, session advisory locks, `SET`, any second queue structure,
 any cross-statement transaction.
 
+### 11. Fit for pipelines
+The 2026.2 pipelines work (#7151) moves the orchestration stores to PostgreSQL on this substrate.
+How a run uses jobs today: each step, and each fan-out item, becomes one geoprocessing job through
+the normal submit path (`WorkflowOrchestrationEngine.SubmitStepAsync`,
+`GeoprocessingJobService.SubmitJobCoreAsync`); the job id is derived from
+`{runId}:{stepId}:{attempt}` (`JobOwnershipSecurity`); the run learns a step finished by reading that
+job every 5 s (`WorkflowOrchestrationEngine.ObserveStepAsync`); there is no terminal callback and no
+parent job.
+
+- **Correlation.** A job carries its run in `Spec.Parameters["orchestration.runId"]` and its step in
+  `orchestration.stepId`. The run id is projected now as a `run:<id>` entry in `lookup_keys`, so all
+  jobs of a run are one GIN lookup. No query field uses it yet; adding `RunId` to
+  `ExecutionJobQuery` is one more required lookup key. A step is a filter within a run's jobs
+  (at most 1,000 today, `WorkflowForEachSpec.HardIterationLimit`).
+- **Fan-out.** 5,000 child jobs of one run cost the reconcilers nothing while they wait: they are
+  first-attempt local jobs in the queue, which neither candidate query (3.8) returns. They cost what
+  any job costs once claimed. The run's own polling is the load to change: one read per unfinished
+  step every 5 s is 1,000 statements per second for 5,000 steps, where one `run:<id>` listing would
+  do.
+- **Scheduling.** A firing that creates a job with an id derived from the schedule and fire time is
+  exactly-once across nodes: `TryCreateAsync` is `ON CONFLICT DO NOTHING` on the primary key and
+  returns `true` to one caller. A job can be created already delayed through the existing interface:
+  `TryCreateAsync`, then `RequeueAsync(id, priority, visibleAfter)`, which puts a local job into the
+  queue with a future visibility whether or not it was in the queue. If the second call is lost, the
+  dispatch repair (3.7) enqueues the job without the delay after 60 s; a caller that cannot accept
+  that would need the delay on the record at creation, which is one optional field.
+- **Leases.** `leases` is `(lease_key, owner_id, expires_at)` with acquire, renew and release
+  compared against the database clock. Run leases (`IOperationStore` on the run store) and schedule
+  and trigger claims (set-if-absent with an expiry) fit it unchanged, under their own key prefixes.
+- **Retention.** `expires_at` is per row and every write takes a retention (`ttl`), so retention can
+  differ by kind or follow the owning run without a schema change. Run history itself belongs to the
+  run store, not to job rows.
+- **Live status.** A job transition and an outbox row are both rows in this database, but the stores
+  run each statement on its own pooled connection, so today they are two transactions. Writing them
+  together later is additive: the compare-and-set becomes the first branch of a `WITH ... INSERT
+  INTO <outbox>` statement, or the store gains an overload that takes the caller's transaction.
+- **To undo.** Nothing in the schema. One assumption would have to change if a worker ever claims
+  several jobs at once under one worker id: recovery of a claim whose reply was lost (3.2) relies on
+  a worker holding at most one job in the `Claimed` phase.
+
 ## Alternatives considered
 - **A separate queue table.** Two rows per job have to change together in every transition, and the
   reconciler has to repair the cases where they did not; that is the Redis design's weakness

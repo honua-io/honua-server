@@ -19,7 +19,10 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
     private readonly JobStoreDatabase _database;
     private readonly ILogger<PostgresJobQueue> _logger;
     private readonly string _jobs;
-    private readonly string _claim;
+    private readonly string _claimForOneProfile;
+    private readonly string _claimForSeveralProfiles;
+    private readonly string _findClaimWithLostReply;
+    private readonly HashSet<string> _workersWithAnUnconfirmedClaim = new(StringComparer.Ordinal);
 
     public PostgresJobQueue(JobStoreDatabase database, ILogger<PostgresJobQueue> logger)
     {
@@ -28,15 +31,29 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
         _logger = logger;
         _jobs = database.Table(ExecutionJobRow.TableName);
 
-        // One statement selects, locks and advances the job, so two workers cannot both take it
-        // and a claim cannot be left half applied.
-        _claim = $"""
+        _claimForOneProfile = ClaimStatement("runtime_profile = @runtime_profile");
+        _claimForSeveralProfiles = ClaimStatement("runtime_profile = ANY (@runtime_profiles)");
+
+        _findClaimWithLostReply = $"""
+            SELECT {ExecutionJobRow.SelectColumns} FROM {_jobs}
+            WHERE claimed_by = @worker_id AND status = '{nameof(ExecutionJobStatus.Provisioning)}'
+              AND current_phase = '{ClaimedPhase}'
+            ORDER BY claimed_at
+            LIMIT 1
+            """;
+    }
+
+    // One statement selects, locks and advances the job, so two workers cannot both take it and
+    // a claim cannot be left half applied. Equality on one runtime profile reads the claimable
+    // index in claim order for that profile only.
+    private string ClaimStatement(string runtimeProfilePredicate)
+        => $"""
             WITH next_job AS (
                 SELECT operation_id FROM {_jobs}
                 WHERE status = '{nameof(ExecutionJobStatus.Queued)}' AND queue_visible_at <= now()
+                  AND {runtimeProfilePredicate}
                   AND (@kinds::text[] IS NULL OR kind = ANY (@kinds))
-                  AND runtime_profile = ANY (@runtime_profiles)
-                ORDER BY queue_priority, created_at, operation_id
+                ORDER BY queue_priority, queue_visible_at, operation_id
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED)
             UPDATE {_jobs} AS job
@@ -53,7 +70,6 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
             WHERE job.operation_id = next_job.operation_id
             RETURNING {ExecutionJobRow.SelectColumns}
             """;
-    }
 
     public async Task EnqueueAsync(
         string operationId,
@@ -64,7 +80,8 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
         await ExecuteQueueStatementAsync(
             $"""
             UPDATE {_jobs} SET queue_visible_at = now(), queue_priority = @queue_priority
-            WHERE operation_id = @operation_id AND status = '{nameof(ExecutionJobStatus.Queued)}' AND queue_visible_at IS NULL
+            WHERE operation_id = @operation_id AND status = '{nameof(ExecutionJobStatus.Queued)}'
+              AND backend = '{ExecutionJobRow.LocalBackend}' AND queue_visible_at IS NULL
             """,
             operationId,
             priority,
@@ -80,24 +97,46 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
         IReadOnlySet<string>? acceptedRuntimeProfiles = null,
         CancellationToken cancellationToken = default)
     {
-        var claimed = await _database.ExecuteAsync(
-            async (connection, _, token) =>
+        if (HasUnconfirmedClaim(workerId))
+        {
+            var recovered = await FindClaimWithLostReplyAsync(workerId, cancellationToken).ConfigureAwait(false);
+            ClearUnconfirmedClaim(workerId);
+            if (recovered is not null)
             {
-                await using var command = new NpgsqlCommand(_claim, connection);
-                command.Parameters.Add(new NpgsqlParameter("worker_id", NpgsqlDbType.Text) { Value = workerId });
-                command.Parameters.Add(new NpgsqlParameter("kinds", NpgsqlDbType.Array | NpgsqlDbType.Text)
+                Log.ClaimRecoveredAfterLostReply(_logger, recovered.OperationId, workerId);
+                return recovered.OperationId;
+            }
+        }
+
+        var runtimeProfiles = (acceptedRuntimeProfiles ?? RuntimeProfiles.DefaultAccepted).ToArray();
+        ExecutionJobRecord? claimed;
+        try
+        {
+            claimed = await _database.ExecuteAsync(
+                async (connection, _, token) =>
                 {
-                    Value = acceptedKinds is null ? DBNull.Value : acceptedKinds.Select(kind => kind.ToString()).ToArray()
-                });
-                command.Parameters.Add(new NpgsqlParameter("runtime_profiles", NpgsqlDbType.Array | NpgsqlDbType.Text)
-                {
-                    Value = (acceptedRuntimeProfiles ?? RuntimeProfiles.DefaultAccepted).ToArray()
-                });
-                await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
-                return await reader.ReadAsync(token).ConfigureAwait(false) ? ExecutionJobRow.Read(reader) : null;
-            },
-            StatementRepeat.NotAfterSend,
-            cancellationToken).ConfigureAwait(false);
+                    await using var command = new NpgsqlCommand(
+                        runtimeProfiles.Length == 1 ? _claimForOneProfile : _claimForSeveralProfiles, connection);
+                    command.Parameters.Add(new NpgsqlParameter("worker_id", NpgsqlDbType.Text) { Value = workerId });
+                    command.Parameters.Add(new NpgsqlParameter("kinds", NpgsqlDbType.Array | NpgsqlDbType.Text)
+                    {
+                        Value = acceptedKinds is null ? DBNull.Value : acceptedKinds.Select(kind => kind.ToString()).ToArray()
+                    });
+                    command.Parameters.Add(runtimeProfiles.Length == 1
+                        ? new NpgsqlParameter("runtime_profile", NpgsqlDbType.Text) { Value = runtimeProfiles[0] }
+                        : new NpgsqlParameter("runtime_profiles", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = runtimeProfiles });
+                    return await ReadJobOrNullAsync(command, token).ConfigureAwait(false);
+                },
+                StatementRepeat.NotAfterSend,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (JobStoreDatabase.IsTransient(exception))
+        {
+            // The claim may have committed before its reply was lost. A worker runs one job at a
+            // time, so a job left in the claimed phase under its id can only be that claim.
+            MarkUnconfirmedClaim(workerId);
+            throw;
+        }
 
         if (claimed is null)
         {
@@ -118,7 +157,8 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
         await ExecuteQueueStatementAsync(
             $"""
             UPDATE {_jobs} SET queue_visible_at = now() + @visible_after, queue_priority = @queue_priority
-            WHERE operation_id = @operation_id AND status NOT IN ({ExecutionJobRow.TerminalStatusList})
+            WHERE operation_id = @operation_id AND backend = '{ExecutionJobRow.LocalBackend}'
+              AND status NOT IN ({ExecutionJobRow.TerminalStatusList})
             """,
             operationId,
             priority,
@@ -135,7 +175,8 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
         await ExecuteQueueStatementAsync(
             $"""
             UPDATE {_jobs} SET queue_visible_at = NULL, queue_priority = NULL
-            WHERE operation_id = @operation_id AND queue_visible_at IS NOT NULL
+            WHERE operation_id = @operation_id AND status = '{nameof(ExecutionJobStatus.Queued)}'
+              AND queue_visible_at IS NOT NULL
             """,
             operationId,
             priority: null,
@@ -160,10 +201,70 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
             StatementRepeat.SafeToRepeat,
             cancellationToken).ConfigureAwait(false);
 
-    // Nothing to repair: the claim is one statement, and a claimed job written back to Queued
-    // re-enters the queue in the statement that changes its status.
+    // Every producer creates a job and enqueues it in a second call. A local job left Queued and
+    // out of the queue for longer than the threshold lost that second call, so it is enqueued here.
     public Task ReconcileStaleClaimsAsync(TimeSpan staleThreshold, CancellationToken cancellationToken)
-        => Task.CompletedTask;
+        => _database.ExecuteAsync(
+            async (connection, token) =>
+            {
+                await using var command = new NpgsqlCommand(
+                    $"""
+                    UPDATE {_jobs} SET queue_visible_at = now(), queue_priority = priority
+                    WHERE status = '{nameof(ExecutionJobStatus.Queued)}' AND queue_visible_at IS NULL
+                      AND backend = '{ExecutionJobRow.LocalBackend}' AND NOT cancellation_requested
+                      AND updated_at <= now() - @stale_threshold
+                    """,
+                    connection);
+                command.Parameters.Add(new NpgsqlParameter("stale_threshold", NpgsqlDbType.Interval) { Value = staleThreshold });
+                var enqueued = await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+                if (enqueued > 0)
+                {
+                    Log.UndispatchedJobsEnqueued(_logger, enqueued);
+                }
+            },
+            StatementRepeat.SafeToRepeat,
+            cancellationToken);
+
+    private async Task<ExecutionJobRecord?> FindClaimWithLostReplyAsync(string workerId, CancellationToken cancellationToken)
+        => await _database.ExecuteAsync(
+            async (connection, _, token) =>
+            {
+                await using var command = new NpgsqlCommand(_findClaimWithLostReply, connection);
+                command.Parameters.Add(new NpgsqlParameter("worker_id", NpgsqlDbType.Text) { Value = workerId });
+                return await ReadJobOrNullAsync(command, token).ConfigureAwait(false);
+            },
+            StatementRepeat.SafeToRepeat,
+            cancellationToken).ConfigureAwait(false);
+
+    private static async Task<ExecutionJobRecord?> ReadJobOrNullAsync(NpgsqlCommand command, CancellationToken cancellationToken)
+    {
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? ExecutionJobRow.Read(reader) : null;
+    }
+
+    private bool HasUnconfirmedClaim(string workerId)
+    {
+        lock (_workersWithAnUnconfirmedClaim)
+        {
+            return _workersWithAnUnconfirmedClaim.Contains(workerId);
+        }
+    }
+
+    internal void MarkUnconfirmedClaim(string workerId)
+    {
+        lock (_workersWithAnUnconfirmedClaim)
+        {
+            _workersWithAnUnconfirmedClaim.Add(workerId);
+        }
+    }
+
+    private void ClearUnconfirmedClaim(string workerId)
+    {
+        lock (_workersWithAnUnconfirmedClaim)
+        {
+            _workersWithAnUnconfirmedClaim.Remove(workerId);
+        }
+    }
 
     private Task ExecuteQueueStatementAsync(
         string statement,
@@ -178,7 +279,7 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
                 command.Parameters.Add(new NpgsqlParameter("operation_id", NpgsqlDbType.Text) { Value = operationId });
                 if (priority.HasValue)
                 {
-                    command.Parameters.Add(new NpgsqlParameter("queue_priority", NpgsqlDbType.Smallint) { Value = PriorityBand(priority.Value) });
+                    command.Parameters.Add(new NpgsqlParameter("queue_priority", NpgsqlDbType.Smallint) { Value = ExecutionJobRow.PriorityBand(priority.Value) });
                 }
 
                 if (visibleAfter.HasValue)
@@ -190,15 +291,6 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
             },
             StatementRepeat.SafeToRepeat,
             cancellationToken);
-
-    private static short PriorityBand(OperationPriority priority)
-        => priority switch
-        {
-            OperationPriority.Critical => 0,
-            OperationPriority.High => 1,
-            OperationPriority.Low => 3,
-            _ => 2
-        };
 
     private static partial class Log
     {
@@ -213,5 +305,11 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
 
         [LoggerMessage(9023, LogLevel.Debug, "Job removed from queue: {OperationId}")]
         public static partial void JobRemovedFromQueue(ILogger logger, string operationId);
+
+        [LoggerMessage(9024, LogLevel.Warning, "Enqueued {Count} local job(s) that were created but never enqueued")]
+        public static partial void UndispatchedJobsEnqueued(ILogger logger, int count);
+
+        [LoggerMessage(9025, LogLevel.Warning, "Recovered claim of {OperationId} by worker {WorkerId} after its reply was lost")]
+        public static partial void ClaimRecoveredAfterLostReply(ILogger logger, string operationId, string workerId);
     }
 }

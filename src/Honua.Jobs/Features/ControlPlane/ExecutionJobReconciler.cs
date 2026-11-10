@@ -779,8 +779,11 @@ internal sealed partial class ExecutionJobReconciler(
 internal sealed class ExecutionJobReconcilerBackgroundService(
     IExecutionJobStore jobStore,
     IExecutionJobReconciler reconciler,
-    ILogger<ExecutionJobReconcilerBackgroundService> logger) : BackgroundService
+    ILogger<ExecutionJobReconcilerBackgroundService> logger,
+    IReconcilableJobSource? reconcilableJobs = null) : BackgroundService
 {
+    private readonly IReconcilableJobSource _reconcilableJobs = reconcilableJobs ?? new ActiveJobsReconcilableJobSource(jobStore);
+
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -791,20 +794,22 @@ internal sealed class ExecutionJobReconcilerBackgroundService(
         {
             try
             {
-                var activeJobs = await jobStore.ListActiveAsync(kind: null, cancellationToken: stoppingToken).ConfigureAwait(false);
-                foreach (var job in activeJobs)
+                var operationIds = await _reconcilableJobs
+                    .ListBackendReconciliationCandidateIdsAsync(stoppingToken)
+                    .ConfigureAwait(false);
+                foreach (var operationId in operationIds)
                 {
                     stoppingToken.ThrowIfCancellationRequested();
 
                     try
                     {
-                        await reconciler.ReconcileExecutionJobAsync(job.OperationId, stoppingToken).ConfigureAwait(false);
+                        await reconciler.ReconcileExecutionJobAsync(operationId, stoppingToken).ConfigureAwait(false);
                     }
                     catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
                         // Deliberately broad: one job's reconciliation failure must not stop
                         // the sweep from reconciling the remaining active jobs in this batch.
-                        ExecutionJobReconciler.Log.ExecutionJobReconcileFailed(logger, job.OperationId, ex);
+                        ExecutionJobReconciler.Log.ExecutionJobReconcileFailed(logger, operationId, ex);
                     }
                 }
             }

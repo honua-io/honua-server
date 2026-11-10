@@ -13,7 +13,7 @@ namespace Honua.ControlPlane;
 /// Execution jobs in PostgreSQL (ADR-0081). Every statement is its own transaction and every
 /// expiry and stamp uses the database clock.
 /// </summary>
-internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJobStoreClock
+internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJobStoreClock, IReconcilableJobSource
 {
     private const int MinQueryLimit = 1;
     private const int MaxQueryLimit = 200;
@@ -23,7 +23,7 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
     // A compare-and-set write turns a timestamp the writer changed into the database time and
     // keeps one the writer left as it read it. A job written back to Queued after a local worker
     // claimed it re-enters the queue here, in the statement that changes its status.
-    private static readonly string _attemptStateAssignments = $"""
+    private static readonly string _compareAndSetAssignments = $"""
         version = version + 1,
         status = @status,
         attempt_count = @attempt_count,
@@ -31,12 +31,9 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
         percent_complete = @percent_complete,
         current_phase = @current_phase,
         updated_at = now(),
-        claimed_at = CASE WHEN @claimed_at IS NULL THEN NULL
-                          WHEN claimed_at IS NOT DISTINCT FROM @claimed_at THEN claimed_at
-                          ELSE now() END,
-        last_heartbeat_at = CASE WHEN @last_heartbeat_at IS NULL THEN NULL
-                                 WHEN last_heartbeat_at IS NOT DISTINCT FROM @last_heartbeat_at THEN last_heartbeat_at
-                                 ELSE now() END,
+        claimed_at = {DatabaseStamp("claimed_at")},
+        last_heartbeat_at = {DatabaseStamp("last_heartbeat_at")},
+        completed_at = {DatabaseStamp("completed_at")},
         next_retry_at = CASE WHEN @next_retry_at IS NULL THEN NULL
                              WHEN next_retry_at IS NOT DISTINCT FROM @next_retry_at THEN next_retry_at
                              ELSE now() + @retry_delay END,
@@ -45,7 +42,9 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
                                      AND status <> '{nameof(ExecutionJobStatus.Queued)}'
                                      AND queue_visible_at IS NOT NULL THEN now() + @retry_delay
                                 ELSE queue_visible_at END,
-        queue_priority = CASE WHEN @is_terminal THEN NULL ELSE queue_priority END
+        queue_priority = CASE WHEN @is_terminal THEN NULL ELSE queue_priority END,
+        expires_at = now() + @retention,
+        {ExecutionJobRow.RecordAssignments}
         """;
 
     private readonly JobStoreDatabase _database;
@@ -54,8 +53,7 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
     private readonly string _jobs;
     private readonly string _leases;
     private readonly string _insertJob;
-    private readonly string _narrowUpdate;
-    private readonly string _fullUpdate;
+    private readonly string _compareAndSet;
     private readonly string _ownedLeasePrefix;
 
     public PostgresExecutionJobStore(
@@ -73,25 +71,16 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
 
         _insertJob = $"""
             INSERT INTO {_jobs} AS job (operation_id, version, status, attempt_count, claimed_by, claimed_at,
-                last_heartbeat_at, next_retry_at, percent_complete, current_phase, updated_at, expires_at,
-                record, record_hash, kind, runtime_profile, created_at, tenant_id, lookup_keys)
+                last_heartbeat_at, next_retry_at, completed_at, percent_complete, current_phase, updated_at,
+                expires_at, {ExecutionJobRow.RecordColumns})
             VALUES (@operation_id, @version, @status, @attempt_count, @claimed_by, @claimed_at,
-                @last_heartbeat_at, @next_retry_at, @percent_complete, @current_phase, @updated_at, now() + @retention,
-                @record, @record_hash, @kind, @runtime_profile, @created_at, @tenant_id, @lookup_keys)
+                @last_heartbeat_at, @next_retry_at, @completed_at, @percent_complete, @current_phase, @updated_at,
+                now() + @retention, {ExecutionJobRow.RecordParameters})
             """;
 
-        _narrowUpdate = $"""
+        _compareAndSet = $"""
             UPDATE {_jobs} SET
-            {_attemptStateAssignments},
-            expires_at = CASE WHEN status IS DISTINCT FROM @status THEN now() + @retention ELSE expires_at END
-            WHERE operation_id = @operation_id AND version = @expected_version AND record_hash = @record_hash
-            """;
-
-        _fullUpdate = $"""
-            UPDATE {_jobs} SET
-            {_attemptStateAssignments},
-            {ExecutionJobRow.RecordAssignments},
-            expires_at = now() + @retention
+            {_compareAndSetAssignments}
             WHERE operation_id = @operation_id AND version = @expected_version
             """;
 
@@ -219,11 +208,10 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
                         version = EXCLUDED.version, status = EXCLUDED.status, attempt_count = EXCLUDED.attempt_count,
                         claimed_by = EXCLUDED.claimed_by, claimed_at = EXCLUDED.claimed_at,
                         last_heartbeat_at = EXCLUDED.last_heartbeat_at, next_retry_at = EXCLUDED.next_retry_at,
+                        completed_at = EXCLUDED.completed_at,
                         percent_complete = EXCLUDED.percent_complete, current_phase = EXCLUDED.current_phase,
                         updated_at = EXCLUDED.updated_at, expires_at = EXCLUDED.expires_at,
-                        record = EXCLUDED.record, record_hash = EXCLUDED.record_hash, kind = EXCLUDED.kind,
-                        runtime_profile = EXCLUDED.runtime_profile, created_at = EXCLUDED.created_at,
-                        tenant_id = EXCLUDED.tenant_id, lookup_keys = EXCLUDED.lookup_keys,
+                        {ExecutionJobRow.RecordAssignments},
                         queue_visible_at = CASE WHEN @is_terminal THEN NULL ELSE job.queue_visible_at END,
                         queue_priority = CASE WHEN @is_terminal THEN NULL ELSE job.queue_priority END
                     """,
@@ -329,6 +317,50 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
             StatementRepeat.SafeToRepeat,
             cancellationToken).ConfigureAwait(false);
 
+    public async Task<IReadOnlyList<ExecutionJobRecord>> ListExpiryAndDispatchCandidatesAsync(CancellationToken cancellationToken)
+        => await _database.ExecuteAsync(
+            async (connection, _, token) =>
+            {
+                await using var command = new NpgsqlCommand(
+                    $"""
+                    SELECT {ExecutionJobRow.SelectColumns} FROM {_jobs}
+                    WHERE (status IN ('{nameof(ExecutionJobStatus.Provisioning)}', '{nameof(ExecutionJobStatus.Running)}')
+                           AND (COALESCE(last_heartbeat_at, claimed_at) <= now() - heartbeat_timeout
+                                OR claimed_at <= now() - max_duration))
+                       OR (status = '{nameof(ExecutionJobStatus.Queued)}' AND queue_visible_at IS NULL
+                           AND backend = '{ExecutionJobRow.LocalBackend}')
+                    """,
+                    connection);
+                return await ReadJobsAsync(command, token).ConfigureAwait(false);
+            },
+            StatementRepeat.SafeToRepeat,
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task<IReadOnlyList<string>> ListBackendReconciliationCandidateIdsAsync(CancellationToken cancellationToken)
+        => await _database.ExecuteAsync(
+            async (connection, _, token) =>
+            {
+                // The predicate is the one idx_execution_jobs_reconcilable is built on.
+                await using var command = new NpgsqlCommand(
+                    $"""
+                    SELECT operation_id FROM {_jobs}
+                    WHERE status IN ({ExecutionJobRow.ActiveStatusList})
+                      AND NOT (status = '{nameof(ExecutionJobStatus.Queued)}' AND backend = '{ExecutionJobRow.LocalBackend}'
+                               AND attempt_count = 0 AND NOT cancellation_requested)
+                    """,
+                    connection);
+                var operationIds = new List<string>();
+                await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
+                while (await reader.ReadAsync(token).ConfigureAwait(false))
+                {
+                    operationIds.Add(reader.GetString(0));
+                }
+
+                return operationIds;
+            },
+            StatementRepeat.SafeToRepeat,
+            cancellationToken).ConfigureAwait(false);
+
     public async Task<DateTimeOffset> GetUtcNowAsync(CancellationToken cancellationToken = default)
         => await _database.ExecuteAsync(
             async (connection, _, token) =>
@@ -356,23 +388,21 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
         var updated = await _database.ExecuteAsync(
             async (connection, attempt, token) =>
             {
-                // The narrow statement carries no JSON. It matches whenever the record differs from
-                // the stored one only in attempt state, which is every heartbeat and progress write.
-                await using (var narrow = new NpgsqlCommand($"{leasePrefix}{_narrowUpdate}{leaseCondition}", connection))
+                await using (var command = new NpgsqlCommand($"{leasePrefix}{_compareAndSet}{leaseCondition}", connection))
                 {
-                    AddCompareAndSetParameters(narrow, job, ttl, ownedLease);
-                    narrow.Parameters.Add(new NpgsqlParameter("record_hash", NpgsqlDbType.Bytea) { Value = row.RecordHash });
-                    if (await narrow.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1)
+                    AddAttemptStateParameters(command, job);
+                    row.AddRecordParameters(command);
+                    command.Parameters.Add(new NpgsqlParameter("expected_version", NpgsqlDbType.Bigint) { Value = job.Version });
+                    command.Parameters.Add(new NpgsqlParameter("retry_delay", NpgsqlDbType.Interval) { Value = RetryDelay(job) });
+                    command.Parameters.Add(IsTerminalParameter(job));
+                    command.Parameters.Add(RetentionParameter(ttl));
+                    if (ownedLease is { } lease)
                     {
-                        return true;
+                        command.Parameters.Add(new NpgsqlParameter("lease_key", NpgsqlDbType.Text) { Value = lease.LeaseKey });
+                        command.Parameters.Add(new NpgsqlParameter("lease_owner_id", NpgsqlDbType.Text) { Value = lease.OwnerId });
                     }
-                }
 
-                await using (var full = new NpgsqlCommand($"{leasePrefix}{_fullUpdate}{leaseCondition}", connection))
-                {
-                    AddCompareAndSetParameters(full, job, ttl, ownedLease);
-                    row.AddRecordParameters(full);
-                    if (await full.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1)
+                    if (await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1)
                     {
                         return true;
                     }
@@ -396,6 +426,8 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
         return updated;
     }
 
+    // After a statement that may have committed before its reply was lost: the write landed if
+    // the row is at the version it would have produced and holds exactly the record that was sent.
     private async Task<bool> IsStoredAsync(
         NpgsqlConnection connection,
         ExecutionJobRecord expected,
@@ -403,18 +435,11 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
         CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand(
-            $"""
-            SELECT 1 FROM {_jobs}
-            WHERE operation_id = @operation_id AND version = @version AND record_hash = @record_hash
-              AND status = @status AND attempt_count = @attempt_count
-              AND claimed_by IS NOT DISTINCT FROM @claimed_by
-              AND percent_complete IS NOT DISTINCT FROM @percent_complete
-              AND current_phase IS NOT DISTINCT FROM @current_phase
-            """,
+            $"SELECT 1 FROM {_jobs} WHERE operation_id = @operation_id AND version = @version AND record::text = @record_text",
             connection);
-        AddAttemptStateParameters(command, expected);
+        command.Parameters.Add(new NpgsqlParameter("operation_id", NpgsqlDbType.Text) { Value = expected.OperationId });
         command.Parameters.Add(new NpgsqlParameter("version", NpgsqlDbType.Bigint) { Value = expected.Version });
-        command.Parameters.Add(new NpgsqlParameter("record_hash", NpgsqlDbType.Bytea) { Value = row.RecordHash });
+        command.Parameters.Add(new NpgsqlParameter("record_text", NpgsqlDbType.Text) { Value = row.RecordJson });
         return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
     }
 
@@ -555,32 +580,8 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
         AddAttemptStateParameters(command, job);
         row.AddRecordParameters(command);
         command.Parameters.Add(new NpgsqlParameter("version", NpgsqlDbType.Bigint) { Value = job.Version });
-        command.Parameters.Add(ExecutionJobRow.Timestamp("claimed_at", job.ClaimedAt));
-        command.Parameters.Add(ExecutionJobRow.Timestamp("last_heartbeat_at", job.LastHeartbeatAt));
-        command.Parameters.Add(ExecutionJobRow.Timestamp("next_retry_at", job.NextRetryAt));
         command.Parameters.Add(ExecutionJobRow.Timestamp("updated_at", job.UpdatedAt));
         command.Parameters.Add(RetentionParameter(ttl));
-    }
-
-    private void AddCompareAndSetParameters(
-        NpgsqlCommand command,
-        ExecutionJobRecord job,
-        TimeSpan? ttl,
-        OwnedLease? ownedLease)
-    {
-        AddAttemptStateParameters(command, job);
-        command.Parameters.Add(new NpgsqlParameter("expected_version", NpgsqlDbType.Bigint) { Value = job.Version });
-        command.Parameters.Add(ExecutionJobRow.Timestamp("claimed_at", job.ClaimedAt));
-        command.Parameters.Add(ExecutionJobRow.Timestamp("last_heartbeat_at", job.LastHeartbeatAt));
-        command.Parameters.Add(ExecutionJobRow.Timestamp("next_retry_at", job.NextRetryAt));
-        command.Parameters.Add(new NpgsqlParameter("retry_delay", NpgsqlDbType.Interval) { Value = RetryDelay(job) });
-        command.Parameters.Add(IsTerminalParameter(job));
-        command.Parameters.Add(RetentionParameter(ttl));
-        if (ownedLease is { } lease)
-        {
-            command.Parameters.Add(new NpgsqlParameter("lease_key", NpgsqlDbType.Text) { Value = lease.LeaseKey });
-            command.Parameters.Add(new NpgsqlParameter("lease_owner_id", NpgsqlDbType.Text) { Value = lease.OwnerId });
-        }
     }
 
     private static void AddAttemptStateParameters(NpgsqlCommand command, ExecutionJobRecord job)
@@ -591,7 +592,14 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
         command.Parameters.Add(new NpgsqlParameter("claimed_by", NpgsqlDbType.Text) { Value = (object?)job.ClaimedBy ?? DBNull.Value });
         command.Parameters.Add(new NpgsqlParameter("percent_complete", NpgsqlDbType.Double) { Value = (object?)job.PercentComplete ?? DBNull.Value });
         command.Parameters.Add(new NpgsqlParameter("current_phase", NpgsqlDbType.Text) { Value = (object?)job.CurrentPhase ?? DBNull.Value });
+        command.Parameters.Add(ExecutionJobRow.Timestamp("claimed_at", job.ClaimedAt));
+        command.Parameters.Add(ExecutionJobRow.Timestamp("last_heartbeat_at", job.LastHeartbeatAt));
+        command.Parameters.Add(ExecutionJobRow.Timestamp("next_retry_at", job.NextRetryAt));
+        command.Parameters.Add(ExecutionJobRow.Timestamp("completed_at", job.CompletedAt));
     }
+
+    private static string DatabaseStamp(string column)
+        => $"CASE WHEN @{column} IS NULL THEN NULL WHEN {column} IS NOT DISTINCT FROM @{column} THEN {column} ELSE now() END";
 
     // The writer states the delay on its own clock; the statement adds it to the database clock.
     private static TimeSpan RetryDelay(ExecutionJobRecord job)

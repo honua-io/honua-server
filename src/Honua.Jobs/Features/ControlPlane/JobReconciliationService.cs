@@ -24,9 +24,12 @@ internal sealed partial class JobReconciliationService(
     IEnumerable<IJobTerminalCallback> terminalCallbacks,
     IExecutionLogStore? logStore,
     ILogger<JobReconciliationService> logger,
-    IJobStoreClock? storeClock = null) : BackgroundService
+    IJobStoreClock? storeClock = null,
+    IReconcilableJobSource? reconcilableJobs = null) : BackgroundService
 {
     private readonly IJobStoreClock _storeClock = storeClock ?? NodeJobStoreClock.Instance;
+    private readonly IReconcilableJobSource _reconcilableJobs = reconcilableJobs ?? new ActiveJobsReconcilableJobSource(jobStore);
+    private long? _lastFailedSweepTimestamp;
 
     private static readonly TimeSpan SweepInterval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan StaleClaimThreshold = TimeSpan.FromSeconds(60);
@@ -68,7 +71,27 @@ internal sealed partial class JobReconciliationService(
 
     internal async Task SweepActiveJobsAsync(CancellationToken cancellationToken)
     {
-        var activeJobs = await jobStore.ListActiveAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await SweepCandidatesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException && !cancellationToken.IsCancellationRequested)
+        {
+            _lastFailedSweepTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
+            throw;
+        }
+    }
+
+    // After a store outage every stored heartbeat is older than the outage, whether or not its
+    // worker is alive. Workers get one heartbeat timeout of uninterrupted store access to beat
+    // again before a heartbeat is treated as expired.
+    private bool WorkersHadTimeToHeartbeatSinceLastFailedSweep(ExecutionJobRecord job)
+        => _lastFailedSweepTimestamp is not { } failedAt
+            || System.Diagnostics.Stopwatch.GetElapsedTime(failedAt) >= (job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default).Timeout;
+
+    private async Task SweepCandidatesAsync(CancellationToken cancellationToken)
+    {
+        var activeJobs = await _reconcilableJobs.ListExpiryAndDispatchCandidatesAsync(cancellationToken).ConfigureAwait(false);
         var now = await _storeClock.GetUtcNowAsync(cancellationToken).ConfigureAwait(false);
         var reconciled = 0;
 
@@ -115,7 +138,9 @@ internal sealed partial class JobReconciliationService(
                 continue;
             }
 
-            if (ShouldExpireHeartbeat(job, now) && await HandleHeartbeatExpiryAsync(job, now, cancellationToken).ConfigureAwait(false))
+            if (ShouldExpireHeartbeat(job, now)
+                && WorkersHadTimeToHeartbeatSinceLastFailedSweep(job)
+                && await HandleHeartbeatExpiryAsync(job, now, cancellationToken).ConfigureAwait(false))
             {
                 reconciled++;
             }
@@ -126,8 +151,7 @@ internal sealed partial class JobReconciliationService(
             Log.ReconciliationSweepCompleted(logger, reconciled, activeJobs.Count);
         }
 
-        // Reconcile orphaned claims where the queue move succeeded but the
-        // subsequent store update failed.
+        // Repair queued jobs the queue cannot deliver.
         await claimReconciler.ReconcileStaleClaimsAsync(StaleClaimThreshold, cancellationToken)
             .ConfigureAwait(false);
     }

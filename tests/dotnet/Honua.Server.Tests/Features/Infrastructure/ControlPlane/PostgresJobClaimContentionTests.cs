@@ -319,7 +319,7 @@ public sealed class PostgresJobClaimContentionTests(DatabaseFixtureAdapter datab
             {
                 Kind = ExecutionJobKind.Geoprocessing,
                 TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "integration-test",
+                Backend = LocalBatchComputeBackend.BackendId,
                 WorkloadName = "job-claim-contention"
             }
         };

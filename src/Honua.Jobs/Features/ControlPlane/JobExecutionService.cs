@@ -1504,6 +1504,8 @@ internal sealed partial class JobExecutionContext(
     int claimedAttempt = 0,
     CancellationToken licenseCancellation = default) : IJobExecutionContext, IDisposable
 {
+    private static readonly TimeSpan HeartbeatRetryDelay = TimeSpan.FromSeconds(2);
+
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private int _leaseLost;
 
@@ -1724,11 +1726,17 @@ internal sealed partial class JobExecutionContext(
 
     internal async Task RunHeartbeatPumpAsync(CancellationToken cancellationToken)
     {
+        var lastWriteFailed = false;
         while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
-                await Task.Delay(heartbeatPolicy.Interval, cancellationToken).ConfigureAwait(false);
+                // A beat lost to a store fault is retried soon, so the heartbeat resumes as the
+                // store returns instead of one interval later.
+                var delay = lastWriteFailed && HeartbeatRetryDelay < heartbeatPolicy.Interval
+                    ? HeartbeatRetryDelay
+                    : heartbeatPolicy.Interval;
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -1774,6 +1782,7 @@ internal sealed partial class JobExecutionContext(
                         UpdatedAt = DateTimeOffset.UtcNow
                     };
                     await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+                    lastWriteFailed = false;
                 }
                 finally
                 {
@@ -1787,7 +1796,8 @@ internal sealed partial class JobExecutionContext(
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Deliberately broad: a single failed heartbeat write must not stop the
-                // pump loop; log and retry on the next interval.
+                // pump loop; log and retry shortly.
+                lastWriteFailed = true;
                 Log.HeartbeatWriteFailed(logger, operationId, ex);
             }
         }

@@ -54,15 +54,14 @@ public sealed class PostgresJobQueueTests(DatabaseFixtureAdapter database) : ICl
     }
 
     [IntegrationTest]
-    public async Task TryClaimAsync_OrdersByPriorityThenCreationTime()
+    public async Task TryClaimAsync_OrdersByPriorityThenTimeEnqueued()
     {
         await using var harness = await CreateHarnessAsync();
-        var created = DateTimeOffset.UtcNow.AddMinutes(-10);
-        var normalOld = await CreateEnqueuedJobAsync(harness, "normal-old", OperationPriority.Normal, created);
-        var normalNew = await CreateEnqueuedJobAsync(harness, "normal-new", OperationPriority.Normal, created.AddMinutes(1));
-        var low = await CreateEnqueuedJobAsync(harness, "low", OperationPriority.Low, created.AddMinutes(-5));
-        var critical = await CreateEnqueuedJobAsync(harness, "critical", OperationPriority.Critical, created.AddMinutes(5));
-        var high = await CreateEnqueuedJobAsync(harness, "high", OperationPriority.High, created.AddMinutes(4));
+        var normalFirst = await CreateEnqueuedJobAsync(harness, "normal-first", OperationPriority.Normal);
+        var low = await CreateEnqueuedJobAsync(harness, "low", OperationPriority.Low);
+        var normalSecond = await CreateEnqueuedJobAsync(harness, "normal-second", OperationPriority.Normal);
+        var critical = await CreateEnqueuedJobAsync(harness, "critical", OperationPriority.Critical);
+        var high = await CreateEnqueuedJobAsync(harness, "high", OperationPriority.High);
 
         var order = new List<string?>();
         for (var claim = 0; claim < 5; claim++)
@@ -70,8 +69,48 @@ public sealed class PostgresJobQueueTests(DatabaseFixtureAdapter database) : ICl
             order.Add(await harness.Queue.TryClaimAsync("worker-a"));
         }
 
-        order.Should().Equal(critical.OperationId, high.OperationId, normalOld.OperationId, normalNew.OperationId, low.OperationId);
+        order.Should().Equal(critical.OperationId, high.OperationId, normalFirst.OperationId, normalSecond.OperationId, low.OperationId);
         (await harness.Queue.TryClaimAsync("worker-a")).Should().BeNull();
+    }
+
+    [IntegrationTest]
+    public async Task TryClaimAsync_RequeuedJob_GoesBehindJobsAlreadyWaitingInItsBand()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var handedBack = await CreateEnqueuedJobAsync(harness, "handed-back");
+        var waiting = await CreateEnqueuedJobAsync(harness, "waiting");
+        (await harness.Queue.TryClaimAsync("worker-a")).Should().Be(handedBack.OperationId);
+        var claimed = (await harness.JobStore.GetAsync(handedBack.OperationId))!;
+        (await harness.JobStore.TrySetAsync(claimed with
+        {
+            Status = ExecutionJobStatus.Queued,
+            ClaimedBy = null,
+            ClaimedAt = null,
+            LastHeartbeatAt = null,
+            AttemptCount = 0
+        })).Should().BeTrue();
+        await harness.Queue.RequeueAsync(handedBack.OperationId);
+
+        (await harness.Queue.TryClaimAsync("worker-a")).Should().Be(waiting.OperationId);
+        (await harness.Queue.TryClaimAsync("worker-a")).Should().Be(handedBack.OperationId);
+    }
+
+    [IntegrationTest]
+    public async Task TryClaimAsync_AfterAClaimWhoseReplyWasLost_ReturnsThatJobWithOneAttempt()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var job = await CreateEnqueuedJobAsync(harness, "lost-reply");
+        var other = await CreateEnqueuedJobAsync(harness, "other");
+        const string workerId = "worker-with-lost-reply";
+        var connectionThatLostTheReply = new PostgresJobQueue(harness.Database, Microsoft.Extensions.Logging.Abstractions.NullLogger<PostgresJobQueue>.Instance);
+        (await connectionThatLostTheReply.TryClaimAsync(workerId)).Should().Be(job.OperationId);
+        harness.Queue.MarkUnconfirmedClaim(workerId);
+
+        (await harness.Queue.TryClaimAsync(workerId)).Should().Be(job.OperationId);
+
+        (await harness.JobStore.GetAsync(job.OperationId))!.AttemptCount.Should().Be(1);
+        (await harness.JobStore.GetAsync(other.OperationId))!.Status.Should().Be(ExecutionJobStatus.Queued);
+        (await harness.Queue.TryClaimAsync(workerId)).Should().Be(other.OperationId, "the recovery check runs once");
     }
 
     [IntegrationTest]
@@ -92,14 +131,13 @@ public sealed class PostgresJobQueueTests(DatabaseFixtureAdapter database) : ICl
     public async Task TryClaimAsync_WhenManyDelayedJobsPrecedeAReadyJob_ClaimsTheReadyJob()
     {
         await using var harness = await CreateHarnessAsync();
-        var created = DateTimeOffset.UtcNow.AddHours(-1);
         for (var index = 0; index < 150; index++)
         {
-            var delayed = await CreateEnqueuedJobAsync(harness, $"delayed-{index:D3}", createdAt: created.AddSeconds(index));
+            var delayed = await CreateEnqueuedJobAsync(harness, $"delayed-{index:D3}");
             await harness.Queue.RequeueAsync(delayed.OperationId, visibleAfter: TimeSpan.FromMinutes(10));
         }
 
-        var ready = await CreateEnqueuedJobAsync(harness, "ready", createdAt: created.AddSeconds(1000));
+        var ready = await CreateEnqueuedJobAsync(harness, "ready");
 
         (await harness.Queue.TryClaimAsync("worker-a")).Should().Be(ready.OperationId);
     }
@@ -108,13 +146,12 @@ public sealed class PostgresJobQueueTests(DatabaseFixtureAdapter database) : ICl
     public async Task TryClaimAsync_WhenManyJobsOfAnotherKindPrecedeAReadyJob_ClaimsTheReadyJob()
     {
         await using var harness = await CreateHarnessAsync();
-        var created = DateTimeOffset.UtcNow.AddHours(-1);
         for (var index = 0; index < 150; index++)
         {
-            await CreateEnqueuedJobAsync(harness, $"import-{index:D3}", createdAt: created.AddSeconds(index), kind: ExecutionJobKind.FileImport);
+            await CreateEnqueuedJobAsync(harness, $"import-{index:D3}", kind: ExecutionJobKind.FileImport);
         }
 
-        var ready = await CreateEnqueuedJobAsync(harness, "geoprocessing", createdAt: created.AddSeconds(1000));
+        var ready = await CreateEnqueuedJobAsync(harness, "geoprocessing");
 
         (await harness.Queue.TryClaimAsync("worker-a", new HashSet<ExecutionJobKind> { ExecutionJobKind.Geoprocessing }))
             .Should().Be(ready.OperationId);
@@ -125,9 +162,8 @@ public sealed class PostgresJobQueueTests(DatabaseFixtureAdapter database) : ICl
     public async Task TryClaimAsync_WhenFirstCandidateIsLockedByAnotherClaim_ClaimsTheNextCandidate()
     {
         await using var harness = await CreateHarnessAsync();
-        var created = DateTimeOffset.UtcNow.AddMinutes(-10);
-        var contested = await CreateEnqueuedJobAsync(harness, "contested", createdAt: created);
-        var next = await CreateEnqueuedJobAsync(harness, "next", createdAt: created.AddMinutes(1));
+        var contested = await CreateEnqueuedJobAsync(harness, "contested");
+        var next = await CreateEnqueuedJobAsync(harness, "next");
 
         await using var competitor = await harness.DataSource.OpenConnectionAsync();
         await using var competingClaim = await competitor.BeginTransactionAsync();
@@ -221,9 +257,8 @@ public sealed class PostgresJobQueueTests(DatabaseFixtureAdapter database) : ICl
     public async Task EnqueueAsync_Repeated_KeepsTheOriginalPositionAndPriority()
     {
         await using var harness = await CreateHarnessAsync();
-        var created = DateTimeOffset.UtcNow.AddMinutes(-10);
-        var first = await CreateEnqueuedJobAsync(harness, "first", OperationPriority.Normal, created);
-        var second = await CreateEnqueuedJobAsync(harness, "second", OperationPriority.Normal, created.AddMinutes(1));
+        var first = await CreateEnqueuedJobAsync(harness, "first");
+        var second = await CreateEnqueuedJobAsync(harness, "second");
 
         await harness.Queue.EnqueueAsync(second.OperationId, OperationPriority.Critical);
 
@@ -312,26 +347,87 @@ public sealed class PostgresJobQueueTests(DatabaseFixtureAdapter database) : ICl
         (await harness.Queue.TryClaimAsync("worker-a")).Should().BeNull();
     }
 
-    [IntegrationTest]
-    public async Task ReconcileStaleClaimsAsync_LeavesAHeldClaimAndTheQueueUntouched()
+    [IntegrationTheory]
+    [MemberData(nameof(EveryJobKind))]
+    public async Task ReconcileStaleClaimsAsync_LocalJobCreatedButNeverEnqueued_IsEnqueued(ExecutionJobKind kind)
     {
         await using var harness = await CreateHarnessAsync();
-        var held = await CreateEnqueuedJobAsync(harness, "held");
-        var waiting = await CreateEnqueuedJobAsync(harness, "waiting");
-        (await harness.Queue.TryClaimAsync("worker-a")).Should().NotBeNull();
-        await harness.AgeClaimAsync(held.OperationId, TimeSpan.FromMinutes(5));
-        await harness.AgeClaimAsync(waiting.OperationId, TimeSpan.FromMinutes(5));
+        var created = CreateQueuedJob("never-enqueued", OperationPriority.High, kind: kind);
+        (await harness.JobStore.TryCreateAsync(created)).Should().BeTrue();
+        var recent = CreateQueuedJob("just-created", kind: kind);
+        (await harness.JobStore.TryCreateAsync(recent)).Should().BeTrue();
+        await AgeLastWriteAsync(harness, created.OperationId, TimeSpan.FromMinutes(2));
 
         await harness.Queue.ReconcileStaleClaimsAsync(TimeSpan.FromSeconds(60), CancellationToken.None);
 
-        (await harness.Queue.GetQueueDepthAsync()).Should().Be(1);
-        var statuses = new[]
-        {
-            (await harness.JobStore.GetAsync(held.OperationId))!.Status,
-            (await harness.JobStore.GetAsync(waiting.OperationId))!.Status
-        };
-        statuses.Should().BeEquivalentTo([ExecutionJobStatus.Provisioning, ExecutionJobStatus.Queued]);
+        (await harness.IsInQueueAsync(created.OperationId)).Should().BeTrue();
+        (await harness.IsInQueueAsync(recent.OperationId)).Should().BeFalse("its producer may still be about to enqueue it");
+        (await harness.Queue.TryClaimAsync("worker-a", new HashSet<ExecutionJobKind> { kind })).Should().Be(created.OperationId);
     }
+
+    public static TheoryData<ExecutionJobKind> EveryJobKind()
+        => new(Enum.GetValues<ExecutionJobKind>());
+
+    [IntegrationTest]
+    public async Task ReconcileStaleClaimsAsync_ManualRetryThatNeverRequeued_IsEnqueued()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var job = await CreateEnqueuedJobAsync(harness, "manual-retry");
+        (await harness.Queue.TryClaimAsync("worker-a")).Should().Be(job.OperationId);
+        var claimed = (await harness.JobStore.GetAsync(job.OperationId))!;
+        (await harness.JobStore.TrySetAsync(claimed with { Status = ExecutionJobStatus.Failed, CompletedAt = DateTimeOffset.UtcNow }))
+            .Should().BeTrue();
+        var failed = (await harness.JobStore.GetAsync(job.OperationId))!;
+        (await harness.JobStore.TrySetAsync(failed with
+        {
+            Status = ExecutionJobStatus.Queued,
+            CompletedAt = null,
+            ClaimedBy = null,
+            ClaimedAt = null,
+            LastHeartbeatAt = null
+        })).Should().BeTrue();
+        (await harness.IsInQueueAsync(job.OperationId)).Should().BeFalse("the retry never reached RequeueAsync");
+        await AgeLastWriteAsync(harness, job.OperationId, TimeSpan.FromMinutes(2));
+
+        await harness.Queue.ReconcileStaleClaimsAsync(TimeSpan.FromSeconds(60), CancellationToken.None);
+
+        (await harness.Queue.TryClaimAsync("worker-b")).Should().Be(job.OperationId);
+    }
+
+    [IntegrationTest]
+    public async Task ReconcileStaleClaimsAsync_RemoteBackendJob_IsLeftForItsBackend()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var remote = CreateQueuedJob("remote", backend: "aws-batch");
+        (await harness.JobStore.TryCreateAsync(remote)).Should().BeTrue();
+        await AgeLastWriteAsync(harness, remote.OperationId, TimeSpan.FromMinutes(2));
+
+        await harness.Queue.ReconcileStaleClaimsAsync(TimeSpan.FromSeconds(60), CancellationToken.None);
+        await harness.Queue.EnqueueAsync(remote.OperationId);
+        await harness.Queue.RequeueAsync(remote.OperationId);
+
+        (await harness.IsInQueueAsync(remote.OperationId)).Should().BeFalse();
+        (await harness.Queue.TryClaimAsync("worker-a")).Should().BeNull();
+    }
+
+    [IntegrationTest]
+    public async Task ReconcileStaleClaimsAsync_CancellationRequestedJob_IsNotEnqueued()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var cancelling = CreateQueuedJob("cancelling") with { CancellationRequestedAt = DateTimeOffset.UtcNow };
+        (await harness.JobStore.TryCreateAsync(cancelling)).Should().BeTrue();
+        await AgeLastWriteAsync(harness, cancelling.OperationId, TimeSpan.FromMinutes(2));
+
+        await harness.Queue.ReconcileStaleClaimsAsync(TimeSpan.FromSeconds(60), CancellationToken.None);
+
+        (await harness.IsInQueueAsync(cancelling.OperationId)).Should().BeFalse();
+    }
+
+    private static Task AgeLastWriteAsync(PostgresJobSubstrateHarness harness, string operationId, TimeSpan age)
+        => harness.ExecuteAsync(
+            $"UPDATE {harness.JobsTable} SET updated_at = now() - @age WHERE operation_id = @operation_id",
+            new NpgsqlParameter("age", age),
+            new NpgsqlParameter("operation_id", operationId));
 
     private Task<PostgresJobSubstrateHarness> CreateHarnessAsync()
         => PostgresJobSubstrateHarness.CreateAsync(database, nameof(PostgresJobQueueTests));
@@ -355,7 +451,8 @@ public sealed class PostgresJobQueueTests(DatabaseFixtureAdapter database) : ICl
         OperationPriority priority = OperationPriority.Normal,
         DateTimeOffset? createdAt = null,
         ExecutionJobKind kind = ExecutionJobKind.Geoprocessing,
-        string? runtimeProfile = null)
+        string? runtimeProfile = null,
+        string backend = LocalBatchComputeBackend.BackendId)
     {
         var created = createdAt ?? DateTimeOffset.UtcNow;
         return new ExecutionJobRecord
@@ -369,7 +466,7 @@ public sealed class PostgresJobQueueTests(DatabaseFixtureAdapter database) : ICl
             {
                 Kind = kind,
                 TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "integration-test",
+                Backend = backend,
                 WorkloadName = "postgres-job-queue",
                 RuntimeProfile = runtimeProfile
             }

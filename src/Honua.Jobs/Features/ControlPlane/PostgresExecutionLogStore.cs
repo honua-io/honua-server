@@ -25,7 +25,6 @@ internal sealed partial class PostgresExecutionLogStore : IExecutionLogStore
     private readonly JobStoreOptions _options;
     private readonly ILogger<PostgresExecutionLogStore> _logger;
     private readonly string _streams;
-    private readonly string _resetExpiredStream;
     private readonly string _lockStream;
     private readonly string _append;
     private readonly string _readWindow;
@@ -44,12 +43,11 @@ internal sealed partial class PostgresExecutionLogStore : IExecutionLogStore
         var entries = database.Table("execution_job_log_entries");
         var eventIdentities = database.Table("execution_job_log_event_identities");
 
-        _resetExpiredStream = $"DELETE FROM {_streams} WHERE operation_id = @operation_id AND expires_at <= now()";
-
-        // The no-op update takes the stream's row lock, so appends to one job are serialized.
+        // Taking the stream's row lock serializes appends to one job. Each append moves the expiry,
+        // so a log is kept for the retention period after its last entry until a caller sets one.
         _lockStream = $"""
             INSERT INTO {_streams} (operation_id, expires_at) VALUES (@operation_id, now() + @retention)
-            ON CONFLICT (operation_id) DO UPDATE SET operation_id = EXCLUDED.operation_id
+            ON CONFLICT (operation_id) DO UPDATE SET expires_at = EXCLUDED.expires_at
             """;
 
         _append = $"""
@@ -79,7 +77,7 @@ internal sealed partial class PostgresExecutionLogStore : IExecutionLogStore
                        CASE WHEN @start < 0 THEN GREATEST(dropped_count, appended_count - @limit)
                             ELSE GREATEST(dropped_count, @start) END AS window_start
                 FROM {_streams}
-                WHERE operation_id = @operation_id AND expires_at > now())
+                WHERE operation_id = @operation_id)
             SELECT stream.appended_count, stream.dropped_count, stream.window_start, entry.entry
             FROM stream
             LEFT JOIN LATERAL (
@@ -164,7 +162,6 @@ internal sealed partial class PostgresExecutionLogStore : IExecutionLogStore
                 {
                     // One batch is one round trip and one implicit transaction.
                     await using var batch = new NpgsqlBatch(connection);
-                    batch.BatchCommands.Add(StreamCommand(_resetExpiredStream, operationId));
                     var lockStream = StreamCommand(_lockStream, operationId);
                     lockStream.Parameters.Add(new NpgsqlParameter("retention", NpgsqlDbType.Interval) { Value = _options.LogRetention });
                     batch.BatchCommands.Add(lockStream);

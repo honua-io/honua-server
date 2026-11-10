@@ -117,24 +117,23 @@ public sealed class PostgresExecutionLogStoreTests(DatabaseFixtureAdapter databa
     }
 
     [IntegrationTest]
-    public async Task AppendAsync_AfterTheLogExpired_StartsAnEmptyLog()
+    public async Task AppendAsync_MovesTheLogExpiryToTheRetentionPeriodFromNow()
     {
         await using var harness = await CreateHarnessAsync();
-        var store = harness.LogStore;
-        var id = "log-expired-" + Guid.NewGuid().ToString("N");
-        await store.AppendOnceAsync(id, "attempt1:terminal", Entry("before expiry"));
+        var id = "log-rolling-expiry-" + Guid.NewGuid().ToString("N");
+        var streams = harness.Database.Table("execution_job_log_streams");
+        await harness.LogStore.AppendAsync(id, Entry("first"));
         await harness.ExecuteAsync(
-            $"UPDATE {harness.Database.Table("execution_job_log_streams")} SET expires_at = now() - interval '1 second' WHERE operation_id = @operation_id",
+            $"UPDATE {streams} SET expires_at = now() + interval '1 minute' WHERE operation_id = @operation_id",
             new NpgsqlParameter("operation_id", id));
 
-        (await store.TailAsync(id, 10)).TotalCount.Should().Be(0);
+        await harness.LogStore.AppendAsync(id, Entry("second"));
 
-        await store.AppendOnceAsync(id, "attempt1:terminal", Entry("after expiry"));
-
-        var tail = await store.TailAsync(id, 10);
-        tail.Items.Select(item => item.Message).Should().Equal("after expiry");
-        tail.TotalCount.Should().Be(1);
-        tail.DroppedCount.Should().Be(0);
+        var remaining = await harness.ScalarAsync<TimeSpan>(
+            $"SELECT expires_at - now() FROM {streams} WHERE operation_id = @operation_id",
+            new NpgsqlParameter("operation_id", id));
+        remaining.Should().BeGreaterThan(TimeSpan.FromDays(6));
+        (await harness.LogStore.TailAsync(id, 10)).Items.Select(item => item.Message).Should().Equal("first", "second");
     }
 
     private Task<PostgresJobSubstrateHarness> CreateHarnessAsync()

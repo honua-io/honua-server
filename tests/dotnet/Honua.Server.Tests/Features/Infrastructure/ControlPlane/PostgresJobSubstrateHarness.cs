@@ -121,6 +121,7 @@ internal sealed class PostgresJobSubstrateHarness : IAsyncDisposable
             Array.Empty<IJobTerminalCallback>(),
             LogStore,
             NullLogger<JobReconciliationService>.Instance,
+            JobStore,
             JobStore);
 
         await service.SweepActiveJobsAsync(cancellationToken);
