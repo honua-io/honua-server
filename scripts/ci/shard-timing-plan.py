@@ -66,6 +66,13 @@ def effective_filter(shard, catalog):
     return result
 
 
+def matches_projects(record, shard):
+    projects = shard_projects(shard)
+    if len(projects) > 1:
+        return record.get('projects') == projects
+    return record.get('project', projects[0]) == projects[0]
+
+
 def observations(config, directory, *, now=None, max_age_days=30, catalog=None):
     """Deduplicate copies and reject incomplete, old or differently filtered runs."""
     parser = filter_parser()
@@ -94,11 +101,7 @@ def observations(config, directory, *, now=None, max_age_days=30, catalog=None):
                 continue
             if canonical_filter(record['filter'], parser) != expected[name]:
                 continue
-            projects = shard_projects(known[name])
-            if len(projects) > 1:
-                if record.get('projects') != projects:
-                    continue
-            elif record.get('project', projects[0]) != projects[0]:
+            if not matches_projects(record, known[name]):
                 continue
             identity = (name, record['started_at'])
             if identity in seen:
@@ -155,6 +158,31 @@ def class_times(path):
     return dict(totals)
 
 
+def project_class_history(shards, samples):
+    source, history = {}, defaultdict(list)
+    for shard in shards:
+        previous = None
+        for sample in samples[shard]:
+            current = class_times(sample['trx'])
+            if previous is not None and set(previous) != set(current):
+                raise ValueError('Class inventory changed across retained runs')
+            previous = current
+            for name, seconds in current.items():
+                if name in source and source[name] != shard:
+                    raise ValueError('Class crosses existing shard boundaries')
+                source[name] = shard
+                history[name].append(seconds)
+    return source, history
+
+
+def validate_groups(grouped, history):
+    flat = [c for g in grouped for c in g['classes']]
+    if (not grouped or any(not g.get('name') or not g.get('classes') for g in grouped)
+            or len(flat) != len(set(flat)) or set(flat) != set(history)
+            or len({g['name'] for g in grouped}) != len(grouped)):
+        raise ValueError('Groups must cover every observed class exactly once')
+
+
 def recommend(config, samples, groups, *, minimum_runs=3):
     report = {'schema': 'honua.shard-balance/v1', 'advisory': True,
               'routingFingerprint': fingerprint(config), 'proposals': [], 'gaps': []}
@@ -175,25 +203,9 @@ def recommend(config, samples, groups, *, minimum_runs=3):
                 raise ValueError(f'Need {minimum_runs} distinct complete runs for every project shard')
             if groups is None or project not in groups.get('projects', {}):
                 raise ValueError('Reviewed collection/fixture grouping map required')
-            source, history = {}, defaultdict(list)
-            for shard in shards:
-                previous = None
-                for sample in samples[shard]:
-                    current = class_times(sample['trx'])
-                    if previous is not None and set(previous) != set(current):
-                        raise ValueError('Class inventory changed across retained runs')
-                    previous = current
-                    for name, seconds in current.items():
-                        if name in source and source[name] != shard:
-                            raise ValueError('Class crosses existing shard boundaries')
-                        source[name] = shard
-                        history[name].append(seconds)
+            source, history = project_class_history(shards, samples)
             grouped = groups['projects'][project]
-            flat = [c for g in grouped for c in g['classes']]
-            if (not grouped or any(not g.get('name') or not g.get('classes') for g in grouped)
-                    or len(flat) != len(set(flat)) or set(flat) != set(history)
-                    or len({g['name'] for g in grouped}) != len(grouped)):
-                raise ValueError('Groups must cover every observed class exactly once')
+            validate_groups(grouped, history)
             weighted = [(g, sum(statistics.median(history[c]) for c in g['classes'])) for g in grouped]
             current_load = {s: 0.0 for s in shards}
             for c in history:

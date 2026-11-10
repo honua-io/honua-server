@@ -65,7 +65,8 @@ grouped = {"shards": [{"name": "group-a", "csprojs": ["tests/OData.csproj", "tes
                        {"name": "group-b", "csprojs": ["tests/OData.csproj", "tests/Ogc.csproj"], "filter": "F=2"}]}
 value = MODULE.build_plan(CONFIG, grouped, REGISTRY, {"shards": ["group-a", "group-b"]})
 assert {item["project"] for item in value["producers"]} == {"tests/OData.csproj", "tests/Ogc.csproj"}
-assert len(value["consumers"]) == 4
-assert value["selected_shard_count"] == 4
+expected_grouped_consumers = 4
+assert len(value["consumers"]) == expected_grouped_consumers
+assert value["selected_shard_count"] == expected_grouped_consumers
 
 print("server-test-prebuild-plan=ok")

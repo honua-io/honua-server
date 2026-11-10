@@ -147,6 +147,22 @@ def fallback(root, projects, restored, *, execute=True):
     return missing
 
 
+def matrix_projects(path):
+    matrix = json.loads(path.read_text())
+    if isinstance(matrix, dict):
+        matrix = matrix.get('matrix_include', matrix.get('include', matrix.get('executionMatrix')))
+    if isinstance(matrix, str):
+        matrix = json.loads(matrix)
+    if not isinstance(matrix, list) or any(not isinstance(row, dict) for row in matrix):
+        raise ValueError('Invalid shard matrix')
+    if any(not isinstance(row.get('advisory', False), bool) for row in matrix):
+        raise ValueError('Shard advisory must be a boolean')
+    if any(not isinstance(row.get('shard_name'), str) or not row['shard_name'] for row in matrix):
+        raise ValueError('Shard name is required')
+    # Advisory-only compilation stays in its original consumer.
+    return [p for s in matrix if not s.get('advisory', False) for p in shard_projects(s)]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('operation', choices=['inventory', 'projects', 'filter', 'fallback'])
@@ -182,19 +198,7 @@ def main():
                     result.extend(family_projects(root, family))
                 result.append(SOURCE)
             if args.matrix_file:
-                matrix = json.loads(args.matrix_file.read_text())
-                if isinstance(matrix, dict):
-                    matrix = matrix.get('matrix_include', matrix.get('include', matrix.get('executionMatrix')))
-                if isinstance(matrix, str):
-                    matrix = json.loads(matrix)
-                if not isinstance(matrix, list) or any(not isinstance(row, dict) for row in matrix):
-                    raise ValueError('Invalid shard matrix')
-                if any(not isinstance(row.get('advisory', False), bool) for row in matrix):
-                    raise ValueError('Shard advisory must be a boolean')
-                if any(not isinstance(row.get('shard_name'), str) or not row['shard_name'] for row in matrix):
-                    raise ValueError('Shard name is required')
-                # Advisory-only compilation stays in its original consumer.
-                result.extend(p for s in matrix if not s.get('advisory', False) for p in shard_projects(s))
+                result.extend(matrix_projects(args.matrix_file))
             result = validate_projects(root, result)
     else:
         if not args.projects_file:

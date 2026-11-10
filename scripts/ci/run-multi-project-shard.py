@@ -12,6 +12,7 @@ import xml.etree.ElementTree as ET
 from shard_projects import shard_projects
 
 SCRIPT = Path(__file__).resolve().parent
+TIMEOUT_EXIT_CODE = 124
 NS = 'http://microsoft.com/schemas/VisualStudio/TeamTest/2010'
 
 
@@ -65,7 +66,7 @@ def execute(environment, remaining):
             idle = max(0, min(now, deadline) - last_progress)
             if now >= deadline:
                 terminate_tree(process)
-                return 124, idle
+                return TIMEOUT_EXIT_CODE, idle
             try:
                 return process.wait(timeout=min(1, deadline - now)), idle
             except subprocess.TimeoutExpired:
@@ -80,7 +81,7 @@ def run_projects(projects, environment, directory):
     for index, project in enumerate(projects):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            return attempts, 124
+            return attempts, TIMEOUT_EXIT_CODE
         for suffix in ('.trx', '.timing.json'):
             (directory / f'project-{index}{suffix}').unlink(missing_ok=True)
         child = {**environment, 'HONUA_SERVER_TEST_CSPROJS': '',
@@ -98,7 +99,7 @@ def run_projects(projects, environment, directory):
         if code != 0:
             record['status'] = 'failed'
         attempts.append(record)
-        if code == 124:
+        if code == TIMEOUT_EXIT_CODE:
             return attempts, code
     return attempts, 0
 
@@ -134,16 +135,16 @@ def timing_record(environment, started, outcome):
     passed, code, evidence, idle = outcome
     stall = float(environment.get('HONUA_SERVER_TEST_STALL_SECONDS', '300'))
     capacity = 'not_assessed'
-    if code == 124:
+    if code == TIMEOUT_EXIT_CODE:
         capacity = 'hang_suspected' if idle >= stall else 'capacity_exhausted'
     elif passed:
         capacity = 'low_headroom' if utilization >= threshold else 'ok'
     return {'shard': environment['HONUA_SERVER_TEST_SHARD_NAME'],
             'log_name': environment['HONUA_SERVER_TEST_LOG_NAME'],
-            'status': 'passed' if passed else ('timed_out' if code == 124 else 'failed'), 'exit_code': 0 if passed else (code or 1),
+            'status': 'passed' if passed else ('timed_out' if code == TIMEOUT_EXIT_CODE else 'failed'), 'exit_code': 0 if passed else (code or 1),
             'started_at': started[1], 'completed_at': utc_now(), 'duration_seconds': duration,
             'timeout_minutes': budget / 60, 'timeout_seconds': budget,
-            'timed_out': code == 124, 'headroom_ratio': utilization,
+            'timed_out': code == TIMEOUT_EXIT_CODE, 'headroom_ratio': utilization,
             'capacity_status': capacity, 'idle_seconds_at_exit': idle,
             'stall_seconds': stall, 'headroom_warn_ratio': threshold,
             'filter': effective_filter(environment),

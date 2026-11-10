@@ -63,6 +63,18 @@ def normalize_shard(raw: dict, registry: dict[str, dict], *, full: bool) -> dict
     }
 
 
+def expand_observed_shards(raw_shards, by_project):
+    expanded = []
+    for item in raw_shards:
+        for project in shard_projects(item):
+            member = {**item, "csproj": project}
+            if "csprojs" in item:
+                member["artifact_suffix"] += "-" + by_project[project]["artifact_suffix"]
+            expanded.append(member)
+    shards = [normalize_shard(item, by_project, full=True) for item in expanded]
+    return shards
+
+
 def build_plan(config: dict, shard_config: dict, registry: dict, mode: str) -> dict:
     if config.get("contract_version") != 1:
         raise ValueError("unsupported reuse benchmark contract")
@@ -78,14 +90,7 @@ def build_plan(config: dict, shard_config: dict, registry: dict, mode: str) -> d
         raw_shards = shard_config.get("shards")
         if not isinstance(raw_shards, list):
             raise ValueError("ci-shards.json has no shards")
-        expanded = []
-        for item in raw_shards:
-            for project in shard_projects(item):
-                member = {**item, "csproj": project}
-                if "csprojs" in item:
-                    member["artifact_suffix"] += "-" + by_project[project]["artifact_suffix"]
-                expanded.append(member)
-        shards = [normalize_shard(item, by_project, full=True) for item in expanded]
+        shards = expand_observed_shards(raw_shards, by_project)
         profiles = [{"name": "observed-full-matrix", "shards": [item["identity"] for item in shards]}]
     else:
         raise ValueError(f"unsupported mode: {mode}")
