@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+OWNED_SERVER="${ROOT_DIR}/scripts/ci/owned-server.py"
 SCENARIO="${1:-all}"
 CANDIDATE_IMAGE="${HONUA_EXAMPLES_CANDIDATE_IMAGE:-${HONUA_SERVER_IMAGE:-}}"
 
@@ -14,24 +15,38 @@ if [[ -n "${CANDIDATE_IMAGE}" ]]; then
 fi
 
 run_stac_ops() {
-  trap 'COMPOSE_PROJECT_NAME=honua-examples-stac HONUA_HTTP_PORT=18080 HONUA_GRPC_PORT=18083 POSTGRES_PORT=55432 REDIS_PORT=56381 HONUA_STORAGE_VOLUME_NAME=honua_examples_stac_storage docker compose -f "${ROOT_DIR}/docker-compose.yml" --project-directory "${ROOT_DIR}" down --remove-orphans --volumes >/dev/null 2>&1 || true' RETURN
-  HONUA_STAC_DEMO_PROJECT=honua-examples-stac \
-    REDIS_PORT=56381 \
-    HONUA_STORAGE_VOLUME_NAME=honua_examples_stac_storage \
+  local project="honua-examples-stac-$$" http grpc postgres redis
+  http="$(python3 "$OWNED_SERVER" port --variable HONUA_STAC_DEMO_HTTP_PORT --ci-default 18080)"
+  grpc="$(python3 "$OWNED_SERVER" port --variable HONUA_STAC_DEMO_GRPC_PORT --ci-default 18083)"
+  postgres="$(python3 "$OWNED_SERVER" port --variable HONUA_STAC_DEMO_POSTGRES_PORT --ci-default 55432)"
+  redis="$(python3 "$OWNED_SERVER" port --variable REDIS_PORT --ci-default 56381)"
+  trap 'COMPOSE_PROJECT_NAME="$project" HONUA_HTTP_PORT="$http" HONUA_GRPC_PORT="$grpc" POSTGRES_PORT="$postgres" REDIS_PORT="$redis" HONUA_STORAGE_VOLUME_NAME="${project}_storage" docker compose -f "${ROOT_DIR}/docker-compose.yml" --project-directory "${ROOT_DIR}" down --remove-orphans --volumes >/dev/null 2>&1 || true' RETURN
+  HONUA_STAC_DEMO_PROJECT="$project" HONUA_STAC_DEMO_HTTP_PORT="$http" \
+    HONUA_STAC_DEMO_GRPC_PORT="$grpc" HONUA_STAC_DEMO_POSTGRES_PORT="$postgres" REDIS_PORT="$redis" \
+    HONUA_STORAGE_VOLUME_NAME="${project}_storage" \
     bash "${ROOT_DIR}/scripts/demos/run-stac-ops-demo.sh" baseline
-  curl -fsS http://127.0.0.1:18080/stac | jq -e '.links | length > 0' >/dev/null
-  curl -fsS http://127.0.0.1:18080/stac/collections | jq -e '.collections | length == 2' >/dev/null
+  python3 "$OWNED_SERVER" wait --container "$(docker compose -p "$project" -f "$ROOT_DIR/docker-compose.yml" ps -q honua)" \
+    --container-port 8080 --url "http://127.0.0.1:$http/healthz/ready" --body Ready
+  curl -fsS "http://127.0.0.1:$http/stac" | jq -e '.links | length > 0' >/dev/null
+  curl -fsS "http://127.0.0.1:$http/stac/collections" | jq -e '.collections | length == 2' >/dev/null
 }
 
 run_mobile_offline() {
-  trap 'COMPOSE_PROJECT_NAME=honua-examples-mobile HONUA_HTTP_PORT=18081 HONUA_GRPC_PORT=18082 POSTGRES_PORT=55433 REDIS_PORT=56380 HONUA_STORAGE_VOLUME_NAME=honua_examples_mobile_storage docker compose -f "${ROOT_DIR}/docker-compose.yml" --project-directory "${ROOT_DIR}" down --remove-orphans --volumes >/dev/null 2>&1 || true' RETURN
-  HONUA_MOBILE_OFFLINE_DEMO_PROJECT=honua-examples-mobile \
-    REDIS_PORT=56380 \
-    HONUA_STORAGE_VOLUME_NAME=honua_examples_mobile_storage \
+  local project="honua-examples-mobile-$$" http grpc postgres redis
+  http="$(python3 "$OWNED_SERVER" port --variable HONUA_MOBILE_OFFLINE_DEMO_HTTP_PORT --ci-default 18081)"
+  grpc="$(python3 "$OWNED_SERVER" port --variable HONUA_MOBILE_OFFLINE_DEMO_GRPC_PORT --ci-default 18082)"
+  postgres="$(python3 "$OWNED_SERVER" port --variable HONUA_MOBILE_OFFLINE_DEMO_POSTGRES_PORT --ci-default 55433)"
+  redis="$(python3 "$OWNED_SERVER" port --variable REDIS_PORT --ci-default 56380)"
+  trap 'COMPOSE_PROJECT_NAME="$project" HONUA_HTTP_PORT="$http" HONUA_GRPC_PORT="$grpc" POSTGRES_PORT="$postgres" REDIS_PORT="$redis" HONUA_STORAGE_VOLUME_NAME="${project}_storage" docker compose -f "${ROOT_DIR}/docker-compose.yml" --project-directory "${ROOT_DIR}" down --remove-orphans --volumes >/dev/null 2>&1 || true' RETURN
+  HONUA_MOBILE_OFFLINE_DEMO_PROJECT="$project" HONUA_MOBILE_OFFLINE_DEMO_HTTP_PORT="$http" \
+    HONUA_MOBILE_OFFLINE_DEMO_GRPC_PORT="$grpc" HONUA_MOBILE_OFFLINE_DEMO_POSTGRES_PORT="$postgres" REDIS_PORT="$redis" \
+    HONUA_STORAGE_VOLUME_NAME="${project}_storage" \
     bash "${ROOT_DIR}/scripts/demos/run-mobile-offline-demo.sh" baseline
-  curl -fsS 'http://127.0.0.1:18081/rest/services/mobile_offline_demo/FeatureServer?f=json' \
+  python3 "$OWNED_SERVER" wait --container "$(docker compose -p "$project" -f "$ROOT_DIR/docker-compose.yml" ps -q honua)" \
+    --container-port 8080 --url "http://127.0.0.1:$http/healthz/ready" --body Ready
+  curl -fsS "http://127.0.0.1:$http/rest/services/mobile_offline_demo/FeatureServer?f=json" \
     | jq -e '.layers | length == 2' >/dev/null
-  curl -fsS 'http://127.0.0.1:18081/rest/services/mobile_offline_demo/FeatureServer/68910/query?where=1%3D1&outFields=*&returnGeometry=true&f=json' \
+  curl -fsS "http://127.0.0.1:$http/rest/services/mobile_offline_demo/FeatureServer/68910/query?where=1%3D1&outFields=*&returnGeometry=true&f=json" \
     | jq -e '.features | length > 0' >/dev/null
 }
 
@@ -42,9 +57,13 @@ run_gp_local_dev() {
     echo "Set HONUA_SAMPLES_ROOT to a honua-samples checkout." >&2
     return 2
   fi
-  local project=honua-examples-gp
+  local project="honua-examples-gp-$$" http grpc postgres redis
+  http="$(python3 "$OWNED_SERVER" port --variable HONUA_EXAMPLES_GP_HTTP_PORT --ci-default 18084)"
+  grpc="$(python3 "$OWNED_SERVER" port --variable HONUA_EXAMPLES_GP_GRPC_PORT --ci-default 18085)"
+  postgres="$(python3 "$OWNED_SERVER" port --variable HONUA_EXAMPLES_GP_POSTGRES_PORT --ci-default 55434)"
+  redis="$(python3 "$OWNED_SERVER" port --variable HONUA_EXAMPLES_GP_REDIS_PORT --ci-default 56379)"
   compose() {
-    COMPOSE_PROJECT_NAME="${project}" HONUA_HTTP_PORT=18084 HONUA_GRPC_PORT=18085 POSTGRES_PORT=55434 REDIS_PORT=56379 \
+    COMPOSE_PROJECT_NAME="${project}" HONUA_HTTP_PORT="$http" HONUA_GRPC_PORT="$grpc" POSTGRES_PORT="$postgres" REDIS_PORT="$redis" \
       docker compose -f "${ROOT_DIR}/docker/compose/docker-compose.gp-dev.yml" --project-directory "${ROOT_DIR}" "$@"
   }
   trap 'compose down --remove-orphans --volumes >/dev/null 2>&1 || true' RETURN
@@ -53,12 +72,10 @@ run_gp_local_dev() {
   else
     compose up -d --build postgres redis honua
   fi
-  for _ in $(seq 1 90); do
-    [[ "$(curl -fsS http://127.0.0.1:18084/healthz/ready 2>/dev/null || true)" == "Ready" ]] && break
-    sleep 2
-  done
+  python3 "$OWNED_SERVER" wait --container "$(compose ps -q honua)" --container-port 8080 \
+    --url "http://127.0.0.1:$http/healthz/ready" --body Ready --timeout 180
   mkdir -p "$(dirname "${output}")"
-  BASE=http://127.0.0.1:18084 bash "${sample_root}/samples/gp-local-dev/submit-buffer.sh" \
+  BASE="http://127.0.0.1:$http" bash "${sample_root}/samples/gp-local-dev/submit-buffer.sh" \
     | tee "${output}"
   grep -q 'successful' "${output}"
 }
