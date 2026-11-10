@@ -540,4 +540,6 @@ fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
 
-Catalog SOAP host reuse is limited to identical default raster configuration without mock interaction assertions. Raster overrides and call-history assertions remain isolated; all SOAP operations, responses and assertions still run.
+## Catalog SOAP test isolation
+
+Catalog SOAP metadata and export cases can share the default raster application when their responses depend only on canned raster data. Cases with custom raster configuration, mock call-history assertions or telemetry listeners require independent applications to keep their observations isolated.

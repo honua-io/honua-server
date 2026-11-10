@@ -570,4 +570,6 @@ paid-run counts and the share of triage events reaching a paid Opus run. Determi
 skips use zero model credits. The combined envelopes are 2500 credits ($25) per day;
 triage and fix do not each receive a separate allowance.
 
-Catalog SOAP tests share the default raster application for five cases that do not inspect mock call history, using fresh HTTP clients. Custom raster metadata, telemetry and mock interaction cases retain their own applications.
+## Catalog SOAP test execution
+
+The GeoServices catalog selections run SOAP coverage with fresh HTTP clients. See [catalog SOAP test isolation](gate-model.md#catalog-soap-test-isolation) for application reuse boundaries.

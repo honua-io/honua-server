@@ -417,7 +417,6 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
             .Value.Should().Be("10.8");
     }
 
-
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /services")]
@@ -564,7 +563,6 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
         payload.Descendants().Should().ContainSingle(
             element => element.Name == XNamespace.None + "Result" && element.Value == "10.8");
     }
-
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
@@ -1280,7 +1278,6 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
             .Value.Should().Contain("<XADef><ImageServer>");
     }
 
-
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /services/{serviceId}/ImageServer")]
@@ -1777,7 +1774,6 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
         badAscending.IsSuccessStatusCode.Should().BeFalse();
     }
 
-
     [IntegrationTest]
     [Operation(Operations.Export)]
     [InterfaceOperation(TestProtocols.ImageServer, "ExportImage")]
@@ -2002,7 +1998,6 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
         XDocument.Parse(await response.Content.ReadAsStringAsync()).Root?.Name.NamespaceName
             .Should().Be("http://www.w3.org/2003/05/soap-envelope");
     }
-
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
