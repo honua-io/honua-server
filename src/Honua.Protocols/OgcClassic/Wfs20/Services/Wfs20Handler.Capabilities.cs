@@ -100,7 +100,7 @@ internal sealed partial class Wfs20Handler
     {
         Title = metadata.Title ?? "Honua WFS 2.0",
         Abstract = metadata.Description ?? string.Empty,
-        Keywords = metadata.Keywords.ToArray(),
+        Keywords = metadata.Keywords.Count == 0 ? null : metadata.Keywords.ToArray(),
         Fees = metadata.Fees ?? string.Empty,
         AccessConstraints = metadata.AccessConstraints ?? string.Empty
     };

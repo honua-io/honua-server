@@ -62,7 +62,7 @@ public sealed class ServiceIdentification
 
     [XmlArray("Keywords", Namespace = Wfs20Utilities.OwsNamespace)]
     [XmlArrayItem("Keyword", Namespace = Wfs20Utilities.OwsNamespace)]
-    public string[] Keywords { get; set; } = { "WFS", "OGC", "features", "geospatial" };
+    public string[]? Keywords { get; set; } = { "WFS", "OGC", "features", "geospatial" };
 
     [XmlElement("ServiceType", Namespace = Wfs20Utilities.OwsNamespace)]
     public string ServiceType { get; set; } = Wfs20Utilities.ServiceType;

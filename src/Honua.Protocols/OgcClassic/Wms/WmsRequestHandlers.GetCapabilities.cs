@@ -467,6 +467,16 @@ internal static partial class WmsRequestHandlers
         sb.AppendLine("    <Layer>");
         sb.Append("      <Title>").Append(EscapeXml(serviceTitle)).AppendLine("</Title>");
         sb.Append("      <Abstract>").Append(EscapeXml(service.Metadata.Description ?? "Honua WMS root layer")).AppendLine("</Abstract>");
+        var layerCrs = accessibleLayers.Select(layer => GetWmsCapabilitiesCrs(layer.Resource.Spatial?.SupportedCrs, isWms111)).ToArray();
+        var commonCrs = layerCrs.Length == 0
+            ? GetWmsCapabilitiesCrs(null, isWms111)
+            : layerCrs.Skip(1).Aggregate(layerCrs[0], (common, next) => common.Intersect(next, StringComparer.Ordinal).ToArray());
+        foreach (var crs in commonCrs)
+            sb.Append("      <").Append(crsElementName).Append('>').Append(EscapeXml(crs))
+                .Append("</").Append(crsElementName).AppendLine(">");
+        // An empty SRS denotes no common inherited CRS in WMS 1.1.1.
+        if (isWms111 && commonCrs.Length == 0)
+            sb.AppendLine("      <SRS />");
         // Root-layer bbox: union of per-resource CRS84 bboxes when V2 carries any,
         // otherwise fall back to world bounds. WMS clients rely on the root layer carrying
         // *some* extent to
@@ -498,11 +508,7 @@ internal static partial class WmsRequestHandlers
             sb.Append("        <Title>").Append(EscapeXml(resourceTitle)).AppendLine("</Title>");
             sb.Append("        <Abstract>").Append(EscapeXml(layerAbstract)).AppendLine("</Abstract>");
             AppendWmsKeywords(sb, layerMetadata.Keywords.Prepend(layerName), "        ");
-            var supportedCrs = layer.Resource.Spatial?.SupportedCrs ?? [];
-            var crsNames = supportedCrs.Count == 0
-                ? new[] { "EPSG:4326", "EPSG:3857" }
-                : supportedCrs.Select(crs => crs.Crs ?? $"EPSG:{crs.ResolveSrid()}").ToArray();
-            crsNames = crsNames.Where(crs => !isWms111 || !string.Equals(crs, "CRS:84", StringComparison.OrdinalIgnoreCase)).ToArray();
+            var crsNames = GetWmsCapabilitiesCrs(layer.Resource.Spatial?.SupportedCrs, isWms111);
             foreach (var crs in crsNames.Distinct(StringComparer.OrdinalIgnoreCase))
                 sb.Append("        <").Append(crsElementName).Append('>').Append(EscapeXml(crs))
                     .Append("</").Append(crsElementName).AppendLine(">");
@@ -560,6 +566,24 @@ internal static partial class WmsRequestHandlers
         sb.AppendLine("  </Capability>");
         sb.Append(isWms111 ? "</WMT_MS_Capabilities>" : "</WMS_Capabilities>").AppendLine();
         return sb.ToString();
+    }
+
+    private static string[] GetWmsCapabilitiesCrs(IReadOnlyList<MetadataV2SpatialReference>? supportedCrs, bool isWms111)
+    {
+        if (supportedCrs is null || supportedCrs.Count == 0)
+            return isWms111 ? ["EPSG:4326", "EPSG:3857"] : ["EPSG:4326", "EPSG:3857", "CRS:84"];
+
+        return supportedCrs.Select(reference =>
+        {
+            var crs = reference.Crs;
+            if (string.Equals(crs, "http://www.opengis.net/def/crs/OGC/1.3/CRS84", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(crs, "urn:ogc:def:crs:OGC:1.3:CRS84", StringComparison.OrdinalIgnoreCase))
+                crs = "CRS:84";
+            if (string.IsNullOrWhiteSpace(crs) && reference.ResolveSrid() is { } srid)
+                crs = $"EPSG:{srid.ToString(CultureInfo.InvariantCulture)}";
+            return TryParseWmsCrs(crs, out _, out var normalized) ? normalized : null;
+        }).Where(crs => crs is not null && (!isWms111 || crs != "CRS:84"))
+            .Select(crs => crs!).Distinct(StringComparer.Ordinal).ToArray();
     }
 
     private static async Task<Wgs84Extent?> TryGetLayerWgs84ExtentAsync(

@@ -1,8 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Net;
 using System.Globalization;
+using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Xml.Linq;
@@ -61,10 +61,14 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
         text.Should().NotContain("1 Honua Way").And.NotContain("support@honua.local").And.NotContain("Honua Support");
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("EPSG:26910")]
+    [InlineData("epsg:26910")]
+    [InlineData("urn:ogc:def:crs:EPSG::26910")]
+    [InlineData("http://www.opengis.net/def/crs/EPSG/0/26910")]
     [Endpoint("GET /ogc/services/{serviceId}/wms")]
     [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
-    public async Task WmsCapabilities_MetadataLinkAndCrs_UseCatalogAndRequestedRoute()
+    public async Task WmsCapabilities_MetadataLinkAndCrs_UseCatalogAndRequestedRoute(string catalogCrs)
     {
         SeedMetadata();
         _fixture.MutateV2ResourceObjectMetadata(1, metadata => metadata with
@@ -77,7 +81,7 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
             SpatialReference = MetadataV2SpatialReference.Wgs84,
             GeometryType = MetadataV2GeometryType.Point,
             PrimaryGeometryField = "shape",
-            SupportedCrs = [new MetadataV2SpatialReference { Srid = 26910, Crs = "EPSG:26910" }]
+            SupportedCrs = [new MetadataV2SpatialReference { Srid = 26910, Crs = catalogCrs }]
         });
         using var response = await _fixture.Client.GetAsync("/ogc/services/test/wms?SERVICE=WMS&REQUEST=GetCapabilities");
         var text = await response.Content.ReadAsStringAsync();
@@ -225,10 +229,87 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
         var text = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, text);
         var document = XDocument.Parse(text);
+        document.Descendants().Where(element => element.Name.LocalName == "Keywords").Should().BeEmpty();
         document.Root!.Name.LocalName.Should().BeOneOf("Capabilities", "WMS_Capabilities", "WFS_Capabilities");
         document.Descendants().Where(element => element.Name.LocalName is "Fees" or "AccessConstraints")
             .Should().OnlyContain(element => element.Value == string.Empty);
         text.Should().NotContain("1 Honua Way").And.NotContain("Honua Support").And.NotContain("support@honua.local");
+    }
+
+    [IntegrationTheory]
+    [InlineData("1.3.0", "CRS")]
+    [InlineData("1.1.1", "SRS")]
+    [Endpoint("GET /ogc/services/{serviceId}/wms")]
+    [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
+    [InterfaceOperation(TestProtocols.Wms111, "GetCapabilities")]
+    public async Task WmsCapabilities_DefaultCrs_RootDeclaresCommonChildCrs(string version, string elementName)
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var graph = snapshot.Graph with
+        {
+            Resources = snapshot.Graph.Resources.Select(resource => resource with
+            {
+                Spatial = resource.Spatial is null ? null : resource.Spatial with { SupportedCrs = [] }
+            }).ToArray()
+        };
+        ((TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>())
+            .SetGraph(graph, schema: _fixture.CurrentSchema);
+        using var response = await _fixture.Client.GetAsync($"/ogc/services/test/wms?SERVICE=WMS&REQUEST=GetCapabilities&VERSION={version}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var document = XDocument.Parse(await response.Content.ReadAsStringAsync());
+        var rootLayer = document.Descendants().First(element => element.Name.LocalName == "Layer");
+        var declared = rootLayer.Elements().Where(element => element.Name.LocalName == elementName).Select(element => element.Value);
+        declared.Should().Contain("EPSG:4326").And.Contain("EPSG:3857");
+        if (version == "1.3.0")
+            declared.Should().Contain("CRS:84");
+    }
+
+    [IntegrationTheory]
+    [InlineData("1.3.0", "CRS", "CRS:84")]
+    [InlineData("1.1.1", "SRS", "EPSG:4326")]
+    [Endpoint("GET /ogc/services/{serviceId}/wms")]
+    [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
+    [InterfaceOperation(TestProtocols.Wms111, "GetCapabilities")]
+    public async Task WmsCapabilities_Crs84UriAndInvalidReference_AdvertisesOnlyValidVersionCrs(string version, string elementName, string expected)
+    {
+        _fixture.MutateV2ResourceObjectMetadata(1, metadata => metadata with { Title = "CRS normalization" });
+        var resource = _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[1];
+        _fixture.UpdateV2ResourceMetadata(1, spatial: resource.Spatial! with
+        {
+            SupportedCrs = [new() { Crs = "http://www.opengis.net/def/crs/OGC/1.3/CRS84" }, new() { Srid = 4326 }, new()]
+        });
+        using var response = await _fixture.Client.GetAsync($"/ogc/services/test/wms?SERVICE=WMS&REQUEST=GetCapabilities&VERSION={version}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var document = XDocument.Parse(await response.Content.ReadAsStringAsync());
+        var layer = document.Descendants().Single(element => element.Name.LocalName == "Layer" &&
+            element.Elements().Any(child => child.Name.LocalName == "Title" && child.Value == "CRS normalization"));
+        var declared = layer.Elements().Where(element => element.Name.LocalName == elementName).Select(element => element.Value).ToArray();
+        declared.Should().Contain(expected).And.NotContain("EPSG:");
+        declared.Should().HaveCount(version == "1.3.0" ? 2 : 1);
+    }
+
+    [IntegrationTheory]
+    [InlineData("1.3.0", "CRS")]
+    [InlineData("1.1.1", "SRS")]
+    [Endpoint("GET /ogc/services/{serviceId}/wms")]
+    [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
+    [InterfaceOperation(TestProtocols.Wms111, "GetCapabilities")]
+    public async Task WmsCapabilities_DisjointChildCrs_RootDeclaresNoCommonCrs(string version, string elementName)
+    {
+        var resource = _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[1];
+        _fixture.UpdateV2ResourceMetadata(1, spatial: resource.Spatial! with
+        {
+            SupportedCrs = [new() { Srid = 26910, Crs = "EPSG:26910" }]
+        });
+        using var response = await _fixture.Client.GetAsync($"/ogc/services/test/wms?SERVICE=WMS&REQUEST=GetCapabilities&VERSION={version}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var document = XDocument.Parse(await response.Content.ReadAsStringAsync());
+        var rootLayer = document.Descendants().First(element => element.Name.LocalName == "Layer");
+        var declared = rootLayer.Elements().Where(element => element.Name.LocalName == elementName).ToArray();
+        if (version == "1.1.1")
+            declared.Should().ContainSingle().Which.Value.Should().BeEmpty();
+        else
+            declared.Should().BeEmpty();
     }
 
     private void SeedMetadata()
