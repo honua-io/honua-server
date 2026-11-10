@@ -12,10 +12,10 @@ removed because they were not accompanied by retained candidate evidence.
 |---|---|
 | Primary one-terminal local journey | Documentation stages supplied; packaged execution remains incomplete. The full install → style/render → GP → saved map/dashboard → governed publish path cannot currently be claimed. |
 | Same journey after AWS ECS handoff | Released to exact-candidate replay with release #123/#129: requires pinned published artifacts, verified endpoint/auth/profile/proxy discovery and retained cloud receipt. No credentials or approved target were supplied to this docs lane. |
-| Separate principals, denial of self-approval | CLI command maps to `approveOperationProposal` in Admin OpenAPI; existing `ProposalEndpointsTests.ApproveProposal_BySameRequester_IsForbiddenForSeparationOfDuties` asserts denial. Candidate transcript still required. |
+| Verified human decision; requester may approve | `ProposalEndpointsTests.ApproveProposal_RequesterInteractiveSession_ExecutesOnce` and `ApproveProposal_ApiKeyWithDecisionGrant_RequiresHumanSession` cover the current boundary. Earlier key-based approval receipts do not qualify it. A terminal-only human-channel candidate transcript is still required. |
 | Tool/profile/catalog/package/CLI pins | Source names checked against MCP descriptors and Admin OpenAPI. Exact installed versions, counts and generated CLI reference remain released to the signed lock/candidate replay; release #231 is open and the manifest is explicitly not the release cut. |
 | Every command clean-machine replayed, all identities joined | Not met. Do not replace execution with this static source review. The final replay must retain the full identity chain specified below. |
-| Optional Studio/Console | Documented as independent readers of the same IDs; not terminal prerequisites. Witness-mode compatibility and the focused key receipt remain #3365. |
+| Studio/Console | Console supplies the verified interactive approval flow; other visual inspection remains optional. A terminal-only verified human channel and focused candidate receipt remain unqualified. |
 | Docs links/secret scan and generated CLI reference | Local documentation gates and focused example/secret checks are reported in the PR. Installed candidate CLI-reference verification is still required. No hosted GitBook build is claimed without its PR check. |
 
 ## Concrete implementation blockers
@@ -62,7 +62,7 @@ The final receipt must join release lock/hash, all installed package hashes,
 deployment/backend/endpoint, source connection, fixture revision, service and
 layer, style and rendered artifact, GP job/result, map and dashboard draft
 generations, saved version IDs/hashes, reopened bodies, proposal, operation,
-policy, distinct proposer/approver, audit/correlation and verified final URL.
+policy, requester and verified human approver, audit/correlation and verified final URL.
 Use independently computed fixture expectations for attribute values,
 geometry/ordinates/CRS and nodata/metadata where applicable. Retain negative
 authorization results and zero unauthorized actuation, not snapshots of
