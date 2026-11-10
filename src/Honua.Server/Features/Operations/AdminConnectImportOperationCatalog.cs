@@ -30,7 +30,7 @@ internal static class AdminConnectImportOperationCatalog
         new("admin.connections.test", "Test connection", HttpMethod.Post, "/connections/{id}/test", "testConnection", OperationSideEffectClass.ReadOnly, SupportsDryRun: true, DryRunPath: "/connections/{id}/test"),
         new("admin.connections.tables.validate", "Validate connection table", HttpMethod.Post, "/connections/{id}/tables/validate", "validateConnectionTableForPublish", OperationSideEffectClass.ReadOnly, SupportsDryRun: true, DryRunPath: "/connections/{id}/tables/validate"),
         Write("admin.connections.extents.refresh", "Refresh layer extents", HttpMethod.Post, "/connections/{id}/layers/extents/refresh", "refreshConnectionLayerExtents", OperationSideEffectClass.MutatesMetadata),
-        Write("admin.connections.features.refresh", "Refresh layer features", HttpMethod.Post, "/connections/{id}/layers/{layerId}/features/refresh", "refreshConnectionLayerFeatures", OperationSideEffectClass.MutatesMetadata),
+        Write("admin.connections.features.refresh", "Refresh layer features", HttpMethod.Post, "/connections/{id}/layers/{storageLayerId}/features/refresh", "refreshConnectionLayerFeatures", OperationSideEffectClass.MutatesMetadata),
         Read("admin.import.formats", "Get import formats", "/import/formats", "getImportFormats"),
         new("admin.import.preview", "Preview import file", HttpMethod.Post, "/import/preview", "previewImportFile", OperationSideEffectClass.ReadOnly, "multipart/form-data", true, "/import/preview"),
         new("admin.import.preview-url", "Preview import URL", HttpMethod.Post, "/import/preview-url", "previewImportFileFromUrl", OperationSideEffectClass.ReadOnly, SupportsDryRun: true, DryRunPath: "/import/preview-url"),
