@@ -1,6 +1,6 @@
 # Copyright (c) Honua Geo Inc. All rights reserved.
 # Licensed under the Fair Core License, Version 1.0, ALv2 Future License.
-"""Published rc.1 -> candidate -> verified restore -> candidate, using the product MCP path."""
+"""Test-only rc.2 prior -> candidate -> verified restore -> candidate through product MCP."""
 import hashlib
 import json
 import os
@@ -20,8 +20,6 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts/docker'))
 from package_quickstart import package
 from compose_quickstart import ALL_SECRET_KEYS, initialize, read_secret
-
-RC1 = "ghcr.io/honua-io/honua-server@sha256:2c3ce36be9b6a4c8b3911d150de329be002131609933bc3ca4a3932ea95dc574"
 
 
 def run(args, *, env=None, cwd=None, check=True):
@@ -92,13 +90,19 @@ def wait_for_approval(base, key, proposal, timeout=30):
     raise AssertionError("proposal did not enter awaiting approval")
 
 
-def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
+def test_rc2_prior_mcp_convergence_and_verified_rollback(tmp_path):
     candidate = os.environ["HONUA_LIFECYCLE_IMAGE"]
     candidate_schema = max(int(path.name.split("_", 1)[0]) for path in (ROOT / "src/Honua.Server/Migrations").glob("[0-9]*_*.sql"))
     assert candidate_schema >= 142
     assert re.fullmatch(r"sha256:[a-f0-9]{64}", candidate)
-    run(["docker", "pull", "--platform", "linux/amd64", RC1])
-    prior_id = run(["docker", "image", "inspect", "--format", "{{.Id}}", RC1])
+    # rc.1 predates the secret launcher; its real-image rollback is covered by
+    # test_compose_manual_rc1_rollback.py. This private rc.2 fixture stops at 140.
+    prior = os.environ["HONUA_LIFECYCLE_PRIOR_IMAGE"]
+    assert re.fullmatch(r"sha256:[a-f0-9]{64}", prior)
+    prior_id = run(["docker", "image", "inspect", "--format", "{{.Id}}", prior])
+    assert prior_id != candidate
+    assert run(["docker", "image", "inspect", "--format", '{{index .Config.Labels "org.honua.test-only"}}', prior]) == "true"
+    assert run(["docker", "image", "inspect", "--format", '{{index .Config.Labels "org.honua.max-schema"}}', prior]) == "140"
     project = "honua-lifecycle-" + secrets.token_hex(4)
     port, manager_port = free_port(), free_port()
     project_dir = Path(tempfile.mkdtemp(prefix="honua-lifecycle-"))
@@ -108,9 +112,9 @@ def test_published_rc1_mcp_convergence_and_verified_rollback(tmp_path):
     # Install the customer package, not a test-owned executor or Compose substitute.
     package(project_dir, dict(server=candidate, executor=executor, worker=candidate), "2026.1-rc.2")
     env = os.environ.copy()
-    settings = {"COMPOSE_PROJECT_NAME": project, "HONUA_IMAGE": RC1, "HONUA_HTTP_PORT": str(port),
+    settings = {"COMPOSE_PROJECT_NAME": project, "HONUA_IMAGE": prior, "HONUA_HTTP_PORT": str(port),
         "HONUA_GRPC_PORT": str(free_port()), "HONUA_MANAGER_PORT": str(manager_port),
-        "HONUA_PRIOR_IMAGE": RC1, "HONUA_PRIOR_MAX_SCHEMA": "140"}
+        "HONUA_PRIOR_IMAGE": prior, "HONUA_PRIOR_MAX_SCHEMA": "140"}
     (project_dir / ".env").write_text("".join(f"{name}={value}\n" for name, value in settings.items()))
     for name in ALL_SECRET_KEYS:
         env.pop(name, None)

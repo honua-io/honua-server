@@ -14,6 +14,10 @@ on:
       - 'docs/guides/connect/working-with-ai-agents.md'
       - 'docs/guides/connect/operating-skills.md'
       - 'tests/integration/test_compose_release_lifecycle.py'
+      - 'tests/integration/test_compose_manual_rc1_rollback.py'
+      - 'scripts/docker/build-lifecycle-prior.sh'
+      - 'scripts/docker/prepare_lifecycle_prior.py'
+      - 'scripts/docker/test_lifecycle_prior.py'
       - '.github/workflows/compose-release-lifecycle.yml'
       - '.github/workflows/nightly-container-build.yml'
       - 'docker/Dockerfile.aot'
@@ -32,7 +36,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  published-rc1-lifecycle:
+  compose-release-lifecycle:
     if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: ubuntu-latest
     timeout-minutes: 150
@@ -55,6 +59,12 @@ jobs:
         run: |
           docker build --file docker/Dockerfile.aot --tag honua-lifecycle:candidate \
             --secret id=github_actor,env=GITHUB_ACTOR --secret id=github_token,env=GITHUB_TOKEN .
+      - name: Build private schema-140 prior fixture (never published)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 -m unittest discover -s scripts/docker -p 'test_lifecycle_prior.py' -v
+          bash scripts/docker/build-lifecycle-prior.sh
       - name: Build the dedicated customer executor image
         run: |
           docker build --file docker/Dockerfile.compose-executor --tag honua-lifecycle:executor \
@@ -63,11 +73,22 @@ jobs:
         env:
           TMPDIR: ${{ runner.temp }}
         run: python3 -m unittest discover -s scripts/docker -p 'test_compose_quickstart.py' -v
-      - name: Run published-image MCP and restore journey
+      - name: Check out trusted rollback configuration catalog
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: honua-io/honua-release
+          ref: 2f9c3da901dc2e39f684b511e3243615e2631a22
+          path: artifacts/deployment-configurations
+          persist-credentials: false
+      - name: Run immutable-image manual and MCP restore journeys
+        env:
+          HONUA_DEPLOYMENT_CONFIGURATION_ROOT: ${{ github.workspace }}/artifacts/deployment-configurations
         run: |
           export TMPDIR="${RUNNER_TEMP}"
           python3 -m venv "${RUNNER_TEMP}/honua-lifecycle-venv"
-          "${RUNNER_TEMP}/honua-lifecycle-venv/bin/pip" install pytest
+          "${RUNNER_TEMP}/honua-lifecycle-venv/bin/pip" install pytest jsonschema
+          export HONUA_LIFECYCLE_PRIOR_IMAGE="$(docker image inspect --format '{{.Id}}' honua-lifecycle:prior)"
           export HONUA_LIFECYCLE_EXECUTOR_IMAGE="$(docker image inspect --format '{{.Id}}' honua-lifecycle:executor)"
           export HONUA_LIFECYCLE_IMAGE="$(docker image inspect --format '{{.Id}}' honua-lifecycle:candidate)"
+          "${RUNNER_TEMP}/honua-lifecycle-venv/bin/pytest" -q --tb=short --no-showlocals tests/integration/test_compose_manual_rc1_rollback.py
           "${RUNNER_TEMP}/honua-lifecycle-venv/bin/pytest" -q --tb=short --no-showlocals tests/integration/test_compose_release_lifecycle.py

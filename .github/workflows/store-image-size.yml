@@ -79,6 +79,19 @@ jobs:
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
           cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-${{ matrix.compilation }}-amd64
+      - name: Export compressed image size evidence
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          outputs: type=oci,dest=artifacts/image.oci.tar,compression=gzip,force-compression=true
+          build-args: |
+            HONUA_GIT_SHA=${{ github.sha }}
+            HONUA_STORE_PROFILE=${{ matrix.profile }}
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
       - name: Export compiler and restore evidence
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
@@ -102,7 +115,8 @@ jobs:
           test "$(docker image inspect honua-store-measure:current --format '{{ index .Config.Labels "honua.store.profile" }}')" = "$PROFILE"
           python3 scripts/ci/measure-serving-image.py honua-store-measure:current \
             --profile "$PROFILE" --baseline "$BASELINE" --output artifacts/image-size.json \
-            --compilation "${{ matrix.compilation }}" --evidence-directory artifacts/build-evidence
+            --compilation "${{ matrix.compilation }}" --evidence-directory artifacts/build-evidence \
+            --oci-archive artifacts/image.oci.tar
       - name: Verify native packages remain visible to scanners
         run: |
           container=$(docker create honua-store-measure:current)
@@ -136,5 +150,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: store-image-${{ matrix.profile }}-${{ matrix.compilation }}
-          path: artifacts/
+          path: |
+            artifacts/
+            !artifacts/image.oci.tar
           if-no-files-found: error

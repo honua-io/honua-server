@@ -2,7 +2,10 @@
 """Measure an exported serving image and enforce its store/format boundary."""
 
 import argparse
+import hashlib
+import re
 import json
+import os
 from itertools import chain
 from pathlib import Path
 import subprocess
@@ -25,6 +28,14 @@ STORE_FILES = (
 FORMAT_FILES = (
     'app/ParquetSharpNative.so', 'app/libe_sqlite3.so', 'app/libSkiaSharp.so',
 )
+
+
+DEFAULT_IMAGE_MAX_BYTES = 220_000_000
+
+
+def verify_size(size, profile):
+    if profile == 'postgis' and size > DEFAULT_IMAGE_MAX_BYTES:
+        raise ValueError(f'Default image exceeds {DEFAULT_IMAGE_MAX_BYTES} uncompressed bytes: {size}')
 
 
 def verify_files(files, profile):
@@ -78,6 +89,81 @@ def verify_build_inputs(evidence, profile):
             raise ValueError('Excluded store compiler/runtime inputs: ' + ', '.join(excluded))
 
 
+def oci_blob(archive, descriptor):
+    digest = descriptor['digest']
+    if not re.fullmatch(r'sha256:[a-f0-9]{64}', digest):
+        raise ValueError('Unsupported OCI blob digest')
+    member = archive.getmember('blobs/sha256/' + digest.split(':')[1])
+    if not member.isfile() or member.size != descriptor['size']:
+        raise ValueError('OCI blob size or type mismatch')
+    payload = archive.extractfile(member).read()
+    if hashlib.sha256(payload).hexdigest() != digest.split(':')[1]:
+        raise ValueError('OCI blob checksum mismatch')
+    return payload
+
+
+def measure_oci_archive(path, image_id):
+    with tarfile.open(path) as archive:
+        pending = json.load(archive.extractfile('index.json'))['manifests']
+        while pending:
+            manifest_payload = oci_blob(archive, pending.pop())
+            manifest = json.loads(manifest_payload)
+            if 'manifests' in manifest:
+                pending.extend(manifest['manifests'])
+                continue
+            if manifest.get('config', {}).get('digest') != image_id:
+                continue
+            oci_blob(archive, manifest['config'])
+            for layer in manifest['layers']:
+                if not layer.get('mediaType', '').endswith(('+gzip', '+zstd', '.gzip')):
+                    raise ValueError('OCI size evidence must contain compressed layers')
+                oci_blob(archive, layer)
+            return compressed_manifest_measurement(manifest_payload, image_id)
+    raise ValueError('OCI archive does not contain the loaded image')
+
+
+def compressed_manifest_measurement(payload, image_id):
+    manifest = json.loads(payload)
+    if manifest.get('config', {}).get('digest') != image_id:
+        raise ValueError('Manifest does not contain the loaded image')
+    layers = manifest['layers']
+    if not layers or any(not layer.get('mediaType', '').endswith(('+gzip', '+zstd', '.gzip'))
+                         for layer in layers):
+        raise ValueError('Size evidence must contain compressed layers')
+    return {'config_digest': image_id,
+            'compressed_layer_bytes': sum(layer['size'] for layer in layers),
+            'config_bytes': manifest['config']['size'],
+            'manifest_bytes': len(payload),
+            'layer_media_types': sorted({layer['mediaType'] for layer in layers})}
+
+
+def measure_registry_image(reference, image_id):
+    repository, separator, digest = reference.partition('@')
+    if not separator or not re.fullmatch(r'sha256:[a-f0-9]{64}', digest):
+        raise ValueError('Registry measurement requires an immutable image digest')
+    pending = [(digest, None)]
+    visited = set()
+    while pending:
+        digest, expected_size = pending.pop()
+        if digest in visited:
+            continue
+        visited.add(digest)
+        if not re.fullmatch(r'sha256:[a-f0-9]{64}', digest):
+            raise ValueError('Unsupported registry manifest digest')
+        payload = subprocess.check_output(['docker', 'buildx', 'imagetools', 'inspect',
+                                           '--raw', repository + '@' + digest])
+        if hashlib.sha256(payload).hexdigest() != digest.split(':')[1]:
+            raise ValueError('Registry manifest checksum mismatch')
+        if expected_size is not None and len(payload) != expected_size:
+            raise ValueError('Registry manifest size mismatch')
+        manifest = json.loads(payload)
+        if 'manifests' in manifest:
+            pending.extend((child['digest'], child['size']) for child in manifest['manifests'])
+        elif manifest.get('config', {}).get('digest') == image_id:
+            return compressed_manifest_measurement(payload, image_id)
+    raise ValueError('Registry manifest does not contain the loaded image')
+
+
 def inspect_image(reference):
     return json.loads(subprocess.check_output(['docker', 'image', 'inspect', reference]))[0]
 
@@ -105,12 +191,28 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('image')
     parser.add_argument('--profile', choices=['postgis', 'full'], required=True)
-    parser.add_argument('--baseline', required=True)
-    parser.add_argument('--compilation', choices=['jit', 'aot'], required=True)
-    parser.add_argument('--evidence-directory', type=Path, required=True)
+    parser.add_argument('--baseline')
+    parser.add_argument('--compilation', choices=['jit', 'aot'])
+    parser.add_argument('--evidence-directory', type=Path)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--oci-archive', type=Path)
+    parser.add_argument('--published', action='store_true')
+    parser.add_argument('--default-image', action='store_true')
     args = parser.parse_args()
+    if not args.published and not all((args.baseline, args.compilation, args.evidence_directory)):
+        parser.error('Export measurement requires baseline, compilation and evidence directory')
     inspection = inspect_image(args.image)
+    if args.published:
+        report = {'image': args.image, 'image_id': inspection['Id'], 'bytes': inspection['Size'],
+                  'profile': args.profile, 'tags': os.environ.get('IMAGE_TAGS', '').splitlines(),
+                  'oci': measure_registry_image(args.image, inspection['Id'])}
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(report, indent=2) + '\n')
+        if args.default_image:
+            verify_size(inspection['Size'], args.profile)
+        print(f"{args.profile}: {inspection['Size']} uncompressed bytes; "
+              f"{report['oci']['compressed_layer_bytes']} compressed layer bytes")
+        return
     baseline = inspect_image(args.baseline)
     files, deps = exported_files(args.image)
     evidence = {
@@ -131,8 +233,12 @@ def main():
         'saved_bytes': baseline['Size'] - inspection['Size'],
         'files': app_files,
     }
+    if args.oci_archive:
+        report['oci'] = measure_oci_archive(args.oci_archive, inspection['Id'])
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + '\n')
+    if args.compilation == 'aot' or args.default_image:
+        verify_size(inspection['Size'], args.profile)
     verify_files(files, args.profile)
     verify_build_inputs(evidence, args.profile)
     print(f"{args.profile}: {report['bytes']} bytes; saved {report['saved_bytes']} bytes")

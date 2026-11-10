@@ -52,6 +52,42 @@ class StoreProfileWorkflowTests(unittest.TestCase):
                 process = self.run_gate(required, result)
                 self.assertEqual(process.returncode, 0, process.stderr)
 
+    def test_publication_measures_every_variant_and_gates_default_before_promotion(self):
+        job = workflow('deploy.yml')['jobs']['build-and-push']
+        self.assertGreaterEqual(int(job['timeout-minutes']), 150,
+                                'Native compilation must fit within the publication job budget')
+        variants = {(row['image_key'], row['arch'], row['store_profile'])
+                    for row in job['strategy']['matrix']['include']}
+        self.assertEqual(variants, {(key, arch, profile)
+                                   for key, profile in (('aot', 'postgis'), ('jit', 'postgis'), ('jit-full', 'full'))
+                                   for arch in ('amd64', 'arm64')})
+        steps = job['steps']
+        names = [step.get('name', '') for step in steps]
+        verify = steps[names.index('Verify native-AOT candidate before registry publication')]
+        self.assertIn('--published --default-image', verify['run'])
+        self.assertLess(names.index(verify['name']), names.index('Publish verified native-AOT architecture tags'))
+        jit = steps[names.index('Record published JIT image sizes')]
+        self.assertEqual(jit['if'], "matrix.image_key != 'aot'")
+        self.assertIn('@${{ steps.build.outputs.digest }}', jit['env']['PUBLISHED_IMAGE'])
+        self.assertIn('--published', jit['run'])
+        self.assertNotIn('--default-image', jit['run'])
+        for step in (verify, jit):
+            self.assertEqual(step['env']['IMAGE_TAGS'], '${{ steps.arch_tags.outputs.tags }}')
+        upload = steps[names.index('Upload exact published image sizes')]
+        self.assertEqual(upload['if'], 'always()')
+        self.assertEqual(upload['with']['if-no-files-found'], 'error')
+
+    def test_lifecycle_proves_manual_legacy_and_automated_compatible_rollback(self):
+        steps = workflow('compose-release-lifecycle.yml')['jobs']['compose-release-lifecycle']['steps']
+        catalog = next(step for step in steps if step.get('with', {}).get('repository') == 'honua-io/honua-release')
+        self.assertRegex(catalog['with']['ref'], r'^[a-f0-9]{40}$')
+        self.assertEqual(catalog['with']['persist-credentials'], 'false')
+        journey = next(step for step in steps if 'tests/integration/test_compose_release_lifecycle.py' in step.get('run', ''))
+        self.assertIn('install pytest jsonschema', journey['run'])
+        self.assertIn('HONUA_DEPLOYMENT_CONFIGURATION_ROOT', journey['env'])
+        self.assertLess(journey['run'].index('tests/integration/test_compose_manual_rc1_rollback.py'),
+                        journey['run'].index('tests/integration/test_compose_release_lifecycle.py'))
+
     def run_gate(self, required, result):
         script = workflow('ci.yml')['jobs']['ci-gate']['steps'][0]['run']
         script = re.sub(r'\$\{\{.*?\}\}', 'false', script)

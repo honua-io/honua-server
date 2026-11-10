@@ -25,15 +25,16 @@ jobs:
   build-and-push:
     name: Build & Push ${{ matrix.image_name }} (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
         include:
           - image_key: jit
-            image_name: Development JIT Image
+            image_name: PostGIS JIT Image
             dockerfile: Dockerfile
             tag_suffix: -jit
+            store_profile: postgis
             cache_scope: honua-jit
             sarif_output: trivy-results
             sarif_category: trivy
@@ -41,12 +42,35 @@ jobs:
             platform: linux/amd64
             runner: ubuntu-24.04
           - image_key: jit
-            image_name: Development JIT Image
+            image_name: PostGIS JIT Image
             dockerfile: Dockerfile
             tag_suffix: -jit
+            store_profile: postgis
             cache_scope: honua-jit
             sarif_output: trivy-results
             sarif_category: trivy
+            arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+          - image_key: jit-full
+            image_name: Full-store JIT Image
+            dockerfile: Dockerfile
+            tag_suffix: -full
+            store_profile: full
+            cache_scope: honua-jit-full
+            sarif_output: trivy-results-full
+            sarif_category: trivy-full
+            arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - image_key: jit-full
+            image_name: Full-store JIT Image
+            dockerfile: Dockerfile
+            tag_suffix: -full
+            store_profile: full
+            cache_scope: honua-jit-full
+            sarif_output: trivy-results-full
+            sarif_category: trivy-full
             arch: arm64
             platform: linux/arm64
             runner: ubuntu-24.04-arm
@@ -54,6 +78,7 @@ jobs:
             image_name: Production Native-AOT Image
             dockerfile: docker/Dockerfile.aot
             tag_suffix: ""
+            store_profile: postgis
             cache_scope: honua-aot
             sarif_output: trivy-results-aot
             sarif_category: trivy-aot
@@ -64,6 +89,7 @@ jobs:
             image_name: Production Native-AOT Image
             dockerfile: docker/Dockerfile.aot
             tag_suffix: ""
+            store_profile: postgis
             cache_scope: honua-aot
             sarif_output: trivy-results-aot
             sarif_category: trivy-aot
@@ -251,6 +277,9 @@ jobs:
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ steps.targets.outputs.staging_image }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            HONUA_GIT_SHA=${{ github.sha }}
+            HONUA_STORE_PROFILE=${{ matrix.store_profile }}
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
@@ -264,10 +293,13 @@ jobs:
         shell: bash
         env:
           CANDIDATE: ${{ steps.targets.outputs.staging_image }}@${{ steps.aot_candidate.outputs.digest }}
+          IMAGE_TAGS: ${{ steps.arch_tags.outputs.tags }}
         run: |
           set -euo pipefail
           docker pull "$CANDIDATE"
           python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE"
+          python3 scripts/ci/measure-serving-image.py "$CANDIDATE" --profile postgis \
+            --published --default-image --output artifacts/published-image-size.json
 
       - name: Publish verified native-AOT architecture tags
         if: matrix.image_key == 'aot'
@@ -286,7 +318,7 @@ jobs:
 
       - name: Build and push JIT image
         id: build
-        if: matrix.image_key == 'jit'
+        if: matrix.image_key != 'aot'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
@@ -299,6 +331,7 @@ jobs:
           # advertise deploymentRevision on the capability manifest and streaming capabilities.
           build-args: |
             HONUA_GIT_SHA=${{ github.sha }}
+            HONUA_STORE_PROFILE=${{ matrix.store_profile }}
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
@@ -318,6 +351,23 @@ jobs:
           docker pull "$SCAN_SOURCE"
           docker tag "$SCAN_SOURCE" "$SCAN_LOCAL"
           echo "scan_local=$SCAN_LOCAL" >> "$GITHUB_OUTPUT"
+
+      - name: Record published JIT image sizes
+        if: matrix.image_key != 'aot'
+        env:
+          PUBLISHED_IMAGE: ${{ steps.targets.outputs.staging_image }}@${{ steps.build.outputs.digest }}
+          IMAGE_TAGS: ${{ steps.arch_tags.outputs.tags }}
+        run: |
+          python3 scripts/ci/measure-serving-image.py "$PUBLISHED_IMAGE" \
+            --profile "${{ matrix.store_profile }}" --published --output artifacts/published-image-size.json
+
+      - name: Upload exact published image sizes
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: published-image-size-${{ matrix.image_key }}-${{ matrix.arch }}
+          path: artifacts/published-image-size.json
+          if-no-files-found: error
 
       - name: Run Trivy vulnerability scanner
         shell: bash
@@ -356,8 +406,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - image_name: Development JIT Image
+          - image_name: PostGIS JIT Image
             tag_suffix: -jit
+            compatibility_alias: ""
+          - image_name: Full-store JIT Image
+            tag_suffix: -full
             compatibility_alias: ""
           - image_name: Production Native-AOT Image
             tag_suffix: ""
