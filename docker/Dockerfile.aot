@@ -190,7 +190,7 @@ COPY --from=chiseled-base / /runtime-root/
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends && \
     apt-get install -y --no-install-recommends gcc libc6-dev libatomic1 libgssapi-krb5-2 fonts-dejavu-core && \
-    sh docker/runtime/stage-runtime.sh /runtime-root /runtime-additions && \
+    sh docker/runtime/stage-runtime.sh /runtime-root /runtime-additions aot && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=build /app /runtime-root/app
 RUN sh docker/runtime/verify-native.sh /runtime-root /app

@@ -33,7 +33,7 @@ jobs:
           - image_key: jit
             image_name: PostGIS JIT Image
             dockerfile: Dockerfile
-            tag_suffix: -jit
+            tag_suffix: ""
             store_profile: postgis
             cache_scope: honua-jit
             sarif_output: trivy-results
@@ -44,7 +44,7 @@ jobs:
           - image_key: jit
             image_name: PostGIS JIT Image
             dockerfile: Dockerfile
-            tag_suffix: -jit
+            tag_suffix: ""
             store_profile: postgis
             cache_scope: honua-jit
             sarif_output: trivy-results
@@ -75,9 +75,9 @@ jobs:
             platform: linux/arm64
             runner: ubuntu-24.04-arm
           - image_key: aot
-            image_name: Production Native-AOT Image
+            image_name: Optional Native-AOT Image
             dockerfile: docker/Dockerfile.aot
-            tag_suffix: ""
+            tag_suffix: -aot
             store_profile: postgis
             cache_scope: honua-aot
             sarif_output: trivy-results-aot
@@ -86,9 +86,9 @@ jobs:
             platform: linux/amd64
             runner: ubuntu-24.04
           - image_key: aot
-            image_name: Production Native-AOT Image
+            image_name: Optional Native-AOT Image
             dockerfile: docker/Dockerfile.aot
-            tag_suffix: ""
+            tag_suffix: -aot
             store_profile: postgis
             cache_scope: honua-aot
             sarif_output: trivy-results-aot
@@ -267,9 +267,8 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Build native-AOT candidate by digest
-        id: aot_candidate
-        if: matrix.image_key == 'aot'
+      - name: Build serving candidate by digest
+        id: candidate
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
@@ -288,24 +287,24 @@ jobs:
           provenance: true
           sbom: true
 
-      - name: Verify native-AOT candidate before registry publication
-        if: matrix.image_key == 'aot'
+      - name: Verify serving candidate before registry publication
         shell: bash
         env:
-          CANDIDATE: ${{ steps.targets.outputs.staging_image }}@${{ steps.aot_candidate.outputs.digest }}
+          CANDIDATE: ${{ steps.targets.outputs.staging_image }}@${{ steps.candidate.outputs.digest }}
           IMAGE_TAGS: ${{ steps.arch_tags.outputs.tags }}
         run: |
           set -euo pipefail
           docker pull "$CANDIDATE"
-          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE"
-          python3 scripts/ci/measure-serving-image.py "$CANDIDATE" --profile postgis \
-            --published --default-image --output artifacts/published-image-size.json
+          if [ "${{ matrix.image_key }}" = aot ]; then
+            python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE"
+          fi
+          python3 scripts/ci/measure-serving-image.py "$CANDIDATE" --profile "${{ matrix.store_profile }}" \
+            --published --output artifacts/published-image-size.json
 
-      - name: Publish verified native-AOT architecture tags
-        if: matrix.image_key == 'aot'
+      - name: Publish verified serving architecture tags
         shell: bash
         env:
-          CANDIDATE: ${{ steps.targets.outputs.staging_image }}@${{ steps.aot_candidate.outputs.digest }}
+          CANDIDATE: ${{ steps.targets.outputs.staging_image }}@${{ steps.candidate.outputs.digest }}
           TAGS: ${{ steps.arch_tags.outputs.tags }}
         run: |
           set -euo pipefail
@@ -316,50 +315,17 @@ jobs:
             --staging-tag "boundary-candidate-${{ matrix.image_key }}-${{ matrix.arch }}-${{ github.sha }}" \
             --authfile "$HOME/.docker/config.json"
 
-      - name: Build and push JIT image
-        id: build
-        if: matrix.image_key != 'aot'
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          platforms: ${{ matrix.platform }}
-          push: true
-          tags: ${{ steps.arch_tags.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          # Immutable deployment identity (#3038): the running process reads HONUA_GIT_SHA to
-          # advertise deploymentRevision on the capability manifest and streaming capabilities.
-          build-args: |
-            HONUA_GIT_SHA=${{ github.sha }}
-            HONUA_STORE_PROFILE=${{ matrix.store_profile }}
-          secrets: |
-            github_actor=${{ github.actor }}
-            github_token=${{ github.token }}
-          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:${{ matrix.cache_scope }}-${{ matrix.arch }}
-          cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:${{ matrix.cache_scope }}-${{ matrix.arch }},mode=max
-          provenance: true
-          sbom: true
-
       - name: Pull image for Trivy scan
         id: scan_prep
         shell: bash
         env:
-          SCAN_SOURCE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ matrix.image_key == 'aot' && steps.aot_candidate.outputs.digest || steps.build.outputs.digest }}
+          SCAN_SOURCE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.candidate.outputs.digest }}
           SCAN_LOCAL: honua-scan:${{ matrix.image_key }}-${{ matrix.arch }}-${{ github.sha }}
         run: |
           set -euo pipefail
           docker pull "$SCAN_SOURCE"
           docker tag "$SCAN_SOURCE" "$SCAN_LOCAL"
           echo "scan_local=$SCAN_LOCAL" >> "$GITHUB_OUTPUT"
-
-      - name: Record published JIT image sizes
-        if: matrix.image_key != 'aot'
-        env:
-          PUBLISHED_IMAGE: ${{ steps.targets.outputs.staging_image }}@${{ steps.build.outputs.digest }}
-          IMAGE_TAGS: ${{ steps.arch_tags.outputs.tags }}
-        run: |
-          python3 scripts/ci/measure-serving-image.py "$PUBLISHED_IMAGE" \
-            --profile "${{ matrix.store_profile }}" --published --output artifacts/published-image-size.json
 
       - name: Upload exact published image sizes
         if: always()
@@ -407,14 +373,14 @@ jobs:
       matrix:
         include:
           - image_name: PostGIS JIT Image
-            tag_suffix: -jit
-            compatibility_alias: ""
+            tag_suffix: ""
+            compatibility_alias: -jit
           - image_name: Full-store JIT Image
             tag_suffix: -full
             compatibility_alias: ""
-          - image_name: Production Native-AOT Image
-            tag_suffix: ""
-            compatibility_alias: -aot
+          - image_name: Optional Native-AOT Image
+            tag_suffix: -aot
+            compatibility_alias: ""
     permissions:
       contents: read
       packages: write

@@ -37,6 +37,9 @@ jobs:
     name: Measure ${{ matrix.profile }} (${{ matrix.compilation }})
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    # AOT promotion needs separate full/live parity proof; its old size target must
+    # not hold the approved JIT fallback. Evidence is still uploaded on failure.
+    continue-on-error: ${{ matrix.compilation == 'aot' }}
     strategy:
       fail-fast: false
       matrix:
@@ -122,7 +125,9 @@ jobs:
           container=$(docker create honua-store-measure:current)
           trap 'docker rm "$container" >/dev/null' EXIT
           docker cp "$container:/var/lib/dpkg/status" artifacts/runtime-dpkg-status
-          grep -Fx 'Package: libatomic1' artifacts/runtime-dpkg-status
+          if [ '${{ matrix.compilation }}' = aot ]; then
+            grep -Fx 'Package: libatomic1' artifacts/runtime-dpkg-status
+          fi
           grep -Fx 'Package: libgssapi-krb5-2' artifacts/runtime-dpkg-status
           grep -Fx 'Package: fonts-dejavu-core' artifacts/runtime-dpkg-status
       - name: Refuse excluded providers at startup
@@ -139,12 +144,29 @@ jobs:
           done
       - name: Smoke import format support and rendering
         run: bash scripts/ci/smoke-serving-formats.sh honua-store-measure:current artifacts/formats
-      - name: Scan chiseled image
+      - name: Compare vulnerability findings
+        env:
+          BASELINE: ${{ matrix.baseline }}
         run: |
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "$PWD/.trivyignore:/config/ignore:ro" aquasec/trivy:0.68.1 \
-            image --severity HIGH,CRITICAL --ignore-unfixed --ignorefile /config/ignore \
-            --exit-code 1 honua-store-measure:current
+          for version in before after; do
+            image="$BASELINE"
+            if [ "$version" = after ]; then image=honua-store-measure:current; fi
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              -v "$PWD/.trivyignore:/config/ignore:ro" aquasec/trivy:0.68.1 \
+              image --severity HIGH,CRITICAL --ignore-unfixed --ignorefile /config/ignore \
+              --format json "$image" > "artifacts/trivy-$version.json"
+          done
+          python3 - <<'PYTHON'
+          import json
+          from pathlib import Path
+          for version in ('before', 'after'):
+              report = json.loads(Path(f'artifacts/trivy-{version}.json').read_text())
+              findings = [v for r in report.get('Results', []) for v in r.get('Vulnerabilities', [])]
+              counts = {s: sum(v['Severity'] == s for v in findings) for s in ('HIGH', 'CRITICAL')}
+              print(f'{version}: {counts}')
+              if version == 'after' and findings:
+                  raise SystemExit('Current serving image has fixable HIGH/CRITICAL findings')
+          PYTHON
       - name: Upload measurement evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

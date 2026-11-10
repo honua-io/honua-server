@@ -63,16 +63,18 @@ class StoreProfileWorkflowTests(unittest.TestCase):
                                    for arch in ('amd64', 'arm64')})
         steps = job['steps']
         names = [step.get('name', '') for step in steps]
-        verify = steps[names.index('Verify native-AOT candidate before registry publication')]
-        self.assertIn('--published --default-image', verify['run'])
-        self.assertLess(names.index(verify['name']), names.index('Publish verified native-AOT architecture tags'))
-        jit = steps[names.index('Record published JIT image sizes')]
-        self.assertEqual(jit['if'], "matrix.image_key != 'aot'")
-        self.assertIn('@${{ steps.build.outputs.digest }}', jit['env']['PUBLISHED_IMAGE'])
-        self.assertIn('--published', jit['run'])
-        self.assertNotIn('--default-image', jit['run'])
-        for step in (verify, jit):
-            self.assertEqual(step['env']['IMAGE_TAGS'], '${{ steps.arch_tags.outputs.tags }}')
+        rows = job['strategy']['matrix']['include']
+        for row in rows:
+            self.assertEqual(row['tag_suffix'], {'jit': '', 'jit-full': '-full', 'aot': '-aot'}[row['image_key']])
+        verify = steps[names.index('Verify serving candidate before registry publication')]
+        self.assertIn('--published', verify['run'])
+        self.assertNotIn('--default-image', verify['run'], 'The old AOT size target must not gate the JIT fallback')
+        self.assertLess(names.index(verify['name']), names.index('Publish verified serving architecture tags'))
+        self.assertNotIn('if', verify)
+        self.assertEqual(verify['env']['IMAGE_TAGS'], '${{ steps.arch_tags.outputs.tags }}')
+        manifests = workflow('deploy.yml')['jobs']['publish-manifests']['strategy']['matrix']['include']
+        self.assertEqual([(row['tag_suffix'], row['compatibility_alias']) for row in manifests],
+                         [('', '-jit'), ('-full', ''), ('-aot', '')])
         upload = steps[names.index('Upload exact published image sizes')]
         self.assertEqual(upload['if'], 'always()')
         self.assertEqual(upload['with']['if-no-files-found'], 'error')

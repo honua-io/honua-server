@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
-# Auxiliary JIT Dockerfile for development, conformance, and compatibility debugging.
-# Production serving images use docker/Dockerfile.aot; canonical release tags never use this file.
+# Default rc.2 serving image: chiseled JIT runtime and PostGIS-only database stores.
+# Native AOT remains available separately through docker/Dockerfile.aot.
 # Enhanced security: minimal attack surface, non-root user, read-only filesystem
 
 # Base images are digest-pinned for reproducible builds and supply-chain integrity.
@@ -122,7 +122,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       -p:DebugSymbols=false \
       $EXTRA_MSBUILD_ARGS && \
     rm -rf /app/wwwroot/admin && \
-    find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
+    find /app -type f \( -name '*.pdb' -o -name '*.dbg' -o -name '*.resources.dll' \) -delete
 
 RUN mkdir -p /store-evidence && \
     cp src/Honua.Server/obj/project.assets.json /store-evidence/ && \
@@ -131,6 +131,15 @@ RUN mkdir -p /store-evidence && \
 FROM scratch AS store-evidence
 COPY --from=build /store-evidence/ /
 
+# Export a managed probe for execution inside the final JIT runtime; never ship it.
+FROM ${DOTNET_SDK_IMAGE} AS runtime-probe-build
+WORKDIR /probe
+COPY docker/runtime/probe/ ./
+RUN dotnet publish RuntimeProbe.csproj -c Release -o /out -p:NuGetAudit=false
+
+FROM scratch AS runtime-probe
+COPY --from=runtime-probe-build /out/ /
+
 FROM ${DOTNET_SDK_IMAGE} AS runtime-assets
 WORKDIR /src
 COPY docker/runtime/ docker/runtime/
@@ -138,7 +147,7 @@ COPY --from=chiseled-base / /runtime-root/
 # hadolint ignore=DL3008
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends && \
-    apt-get install -y --no-install-recommends gcc libc6-dev libatomic1 libgssapi-krb5-2 fonts-dejavu-core && \
+    apt-get install -y --no-install-recommends gcc libc6-dev libgssapi-krb5-2 fonts-dejavu-core && \
     sh docker/runtime/stage-runtime.sh /runtime-root /runtime-additions && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=build /app /runtime-root/app
@@ -166,11 +175,11 @@ LABEL security.non-root="true" \
       version="1.0" \
       description="Honua Geospatial Feature Server" \
       org.opencontainers.image.source="https://github.com/honua/honua-server" \
-      org.opencontainers.image.description="Development and compatibility JIT image; use the native-AOT image for production" \
+      org.opencontainers.image.description="Chiseled JIT serving image; PostGIS by default, additional stores in the full variant" \
       org.opencontainers.image.licenses="LicenseRef-FCL-1.0-ALv2" \
-      honua.runtime.profile="web-debug" \
+      honua.runtime.profile="web" \
       honua.runtime.compilation="jit" \
-      honua.runtime.distribution="non-production"
+      honua.runtime.distribution="production"
 
 # Immutable deployment identity (#3038). `.dockerignore` excludes `.git/`, so SourceLink
 # cannot stamp a commit into the published assemblies from inside the build context; the
@@ -184,7 +193,9 @@ LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.revision="${HONUA_GIT_SHA}"
 ENV HONUA_GIT_SHA=${HONUA_GIT_SHA}
 
-ENV ASPNETCORE_ENVIRONMENT=Production \
+ENV HOME=/tmp \
+    XDG_CACHE_HOME=/tmp/honua-cache \
+    ASPNETCORE_ENVIRONMENT=Production \
     HONUA_DEFAULT_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
     ASPNETCORE_HTTP_PORTS= \
     Kestrel__Endpoints__Http__Url=http://+:8080 \

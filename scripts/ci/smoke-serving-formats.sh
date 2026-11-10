@@ -25,6 +25,15 @@ services:
   honua-server:
     image: $IMAGE
     restart: "no"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=512m,mode=1777
+    environment:
+      HOME: /tmp
+      XDG_CACHE_HOME: /tmp/honua-cache
+      TZ: Pacific/Honolulu
 EOF
 export HONUA_CNG_SERVER_PORT="$PORT" HONUA_CNG_POSTGRES_PORT="$PG_PORT"
 export HONUA_GITHUB_ACTOR_SECRET_FILE="$work/empty-secret" HONUA_GITHUB_TOKEN_SECRET_FILE="$work/empty-secret"
@@ -35,6 +44,16 @@ cleanup() {
   rm -rf "${work:?}"
 }
 trap cleanup EXIT
+
+# Exercise ICU/tzdata through the actual managed runtime, not the build host.
+if [[ "$(docker image inspect "$IMAGE" --format '{{ index .Config.Labels "honua.runtime.compilation" }}')" == jit ]]; then
+  docker buildx build --target runtime-probe --output "type=local,dest=$work/probe" -f "$REPO_ROOT/Dockerfile" "$REPO_ROOT"
+  chmod -R a+rX "$work/probe"
+  docker run --rm --read-only --user 1001:1001 --cap-drop ALL --security-opt no-new-privileges \
+    --tmpfs /tmp:rw,noexec,nosuid,size=16m,mode=1777 --env TZ=Pacific/Honolulu \
+    --mount "type=bind,src=$work/probe,dst=/probe,readonly" --entrypoint dotnet \
+    "$IMAGE" /probe/RuntimeProbe.dll > "$OUT/runtime-environment.txt"
+fi
 
 python3 -m venv "$work/python"
 format_python="$work/python/bin/python"
