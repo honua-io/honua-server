@@ -35,8 +35,9 @@ public sealed class LeaseVersionLockLossTests
 
         await using var handle = await versionLock.TryAcquireAsync("honua.versioning", Guid.NewGuid(), _shortLease);
 
+        handle.Should().NotBeNull();
         await WaitForLockLossAsync(handle!);
-        handle.LockLostToken.IsCancellationRequested.Should().BeTrue();
+        handle!.LockLostToken.IsCancellationRequested.Should().BeTrue();
     }
 
     [UnitTest]
