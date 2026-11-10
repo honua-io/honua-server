@@ -62,27 +62,35 @@ public sealed class CdnInvalidationTests
     }
 
     [UnitTest]
-    public async Task InvalidateServiceCatalogAsync_ServiceSecured_TellsTheCdnBeforeReturning()
+    public async Task InvalidateServiceCatalogAsync_ServiceSecured_InvalidatesEverythingBeforeReturning()
     {
-        var invalidation = new OutputCacheInvalidationService(
-            null, null, null, ScopeFactory(), null, NullLogger<OutputCacheInvalidationService>.Instance, Service());
+        await Invalidation().InvalidateServiceCatalogAsync("Parcels", null, CancellationToken.None);
 
-        await invalidation.InvalidateServiceCatalogAsync("Parcels", null, CancellationToken.None);
-
-        _invalidator.Calls.Should().ContainSingle().Which.Should().Contain("/rest/services/Parcels/*")
-            .And.Contain("/rest/services?*")
-            .And.Contain("/static/Parcels/*");
+        _invalidator.Calls.Should().ContainSingle().Which.Should().Equal("/*");
     }
 
     [UnitTest]
-    public async Task InvalidateServiceCatalogAsync_NothingNamed_InvalidatesEverything()
+    public async Task InvalidateLayerAsync_StyleOrPolicyChanged_InvalidatesEverythingBeforeReturning()
     {
-        var invalidation = new OutputCacheInvalidationService(
-            null, null, null, ScopeFactory(), null, NullLogger<OutputCacheInvalidationService>.Instance, Service());
-
-        await invalidation.InvalidateServiceCatalogAsync(null, null, CancellationToken.None);
+        await Invalidation().InvalidateLayerAsync("Parcels", 3, CancellationToken.None);
 
         _invalidator.Calls.Should().ContainSingle().Which.Should().Equal("/*");
+    }
+
+    [UnitTest]
+    public async Task InvalidateEditedLayerAsync_ManyEdits_EnqueueOnePurgeOfThatLayersTileAndQueryPrefixes()
+    {
+        var invalidation = Invalidation();
+
+        for (var edit = 0; edit < 50; edit++)
+        {
+            await invalidation.InvalidateEditedLayerAsync("Parcels", 3, CancellationToken.None);
+        }
+
+        _invalidator.Calls.Should().ContainSingle().Which.Should()
+            .Contain("/tiles/3/*")
+            .And.Contain("/rest/services/Parcels/*")
+            .And.NotContain("/*");
     }
 
     [UnitTest]
@@ -91,6 +99,9 @@ public sealed class CdnInvalidationTests
 
     private CdnInvalidationService Service(IHttpContextAccessor? accessor = null)
         => new(_invalidator, _time, NullLogger<CdnInvalidationService>.Instance, accessor);
+
+    private OutputCacheInvalidationService Invalidation()
+        => new(null, null, null, ScopeFactory(), null, NullLogger<OutputCacheInvalidationService>.Instance, Service());
 
     private static IServiceScopeFactory ScopeFactory()
         => new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();

@@ -45,7 +45,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
     public async Task InvalidateLayerAsync(string? serviceId, int? layerId, CancellationToken cancellationToken)
     {
         await EvictLayerAsync(serviceId, layerId, cancellationToken).ConfigureAwait(false);
-        await InvalidateCdnForLayerAsync(serviceId, layerId, cancellationToken).ConfigureAwait(false);
+        await InvalidateCdnForAdministrativeChangeAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task EvictLayerAsync(string? serviceId, int? layerId, CancellationToken cancellationToken)
@@ -146,7 +146,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
         {
             tags.Add($"scene:{sceneId.Trim().ToLowerInvariant()}");
         }
-        return Task.WhenAll(EvictTagsAsync(tags, cancellationToken), InvalidateCdnForSceneAsync(sceneId, cancellationToken));
+        return Task.WhenAll(EvictTagsAsync(tags, cancellationToken), InvalidateCdnForAdministrativeChangeAsync(cancellationToken));
     }
 
     public async Task InvalidateServiceCatalogAsync(
@@ -218,7 +218,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
             EvictTagsAsync(tags, cancellationToken),
             EvictResponseCacheAsync(responsePatterns, cancellationToken),
             EvictCatalogCacheAsync(normalizedServiceId, layerIdList, cancellationToken)).ConfigureAwait(false);
-        await InvalidateCdnForServiceCatalogAsync(serviceId, layerIdList, cancellationToken).ConfigureAwait(false);
+        await InvalidateCdnForAdministrativeChangeAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task EvictTagsAsync(IEnumerable<string> tags, CancellationToken cancellationToken)

@@ -36,10 +36,4 @@ internal static class CdnPaths
             $"/ogc/{family}/collections/{collection}*",
         }).Append("/ogc/tiles/tiles/*");
     }
-
-    internal static IEnumerable<string> ForScene(string sceneId)
-    {
-        var scene = Uri.EscapeDataString(sceneId);
-        return [$"/scenes/{scene}/*", $"/rest/services/{scene}/SceneServer*"];
-    }
 }

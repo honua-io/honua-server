@@ -7,6 +7,7 @@ using System.Security.Cryptography.X509Certificates;
 using FluentAssertions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Tiles;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.SharedCaching;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
@@ -197,6 +198,56 @@ public sealed class SharedCachePolicyTests
         SharedCacheGuard.Apply(context);
 
         context.Response.Headers.CacheControl.ToString().Should().Be(SharedCacheGuard.NotShared);
+    }
+
+    [UnitTest]
+    public void Guard_RefusalThatAlsoCarriesALifetime_LeavesAsExactlyOneRefusal()
+    {
+        var context = GrantedTile();
+        context.Response.Headers.CacheControl = "no-store, max-age=3600, private";
+
+        SharedCacheGuard.Apply(context);
+
+        context.Response.Headers.CacheControl.ToString().Should().Be(SharedCacheGuard.NotShared);
+    }
+
+    [UnitTest]
+    public void Guard_GeoServicesRefusalSentAs200WithNoCacheControl_IsNotShared()
+    {
+        var context = AnonymousGet(ResponseCacheClass.Tile);
+        ResponseAccessVerdict.Record(context, AccessDecision.RequiresAuth());
+        BypassOutputCacheOnErrorEnvelopePolicy.MarkErrorEnvelope(context, 499);
+        context.Response.StatusCode = StatusCodes.Status200OK;
+
+        SharedCacheResponse.Apply(context);
+        SharedCacheGuard.Apply(context);
+
+        context.Response.Headers.CacheControl.ToString().Should().Be(SharedCacheGuard.NotShared);
+    }
+
+    [UnitTest]
+    public void Guard_ErrorEnvelopeOnAnOtherwisePublicResponse_IsNotShared()
+    {
+        var context = GrantedTile();
+        SharedCacheResponse.Apply(context);
+        BypassOutputCacheOnErrorEnvelopePolicy.MarkErrorEnvelope(context, 500);
+
+        SharedCacheGuard.Apply(context);
+
+        context.Response.Headers.CacheControl.ToString().Should().Be(SharedCacheGuard.NotShared);
+    }
+
+    [UnitTest]
+    public void Guard_ReplayedResponseStatesAnAge_TheAgeIsRemoved()
+    {
+        var context = GrantedTile();
+        SharedCacheResponse.Apply(context);
+        context.Response.Headers.Age = "288";
+
+        SharedCacheGuard.Apply(context);
+
+        context.Response.Headers.ContainsKey("Age").Should().BeFalse();
+        context.Response.Headers.CacheControl.ToString().Should().StartWith("public, max-age=60, s-maxage=300");
     }
 
     [UnitTest]

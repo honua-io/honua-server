@@ -174,6 +174,20 @@ public sealed partial class SharedCacheRouteTableTests : IDisposable
         failures.Should().BeEmpty();
     }
 
+    [UnitTest]
+    public async Task MetadataDocument_ThroughTheRealPipeline_IsSharedForAnonymousCallersOnly()
+    {
+        using var client = _pollModeHost.CreateClient();
+        const string conformance = "/ogc/features/conformance";
+
+        using var anonymous = await client.GetAsync(conformance);
+        var withApiKey = await SendAsync(client, new PipelineRequest(HttpMethods.Get, conformance, WithApiKey: true, MayBeShared: false));
+
+        anonymous.Headers.CacheControl!.ToString().Should().Be("public, max-age=30, s-maxage=60");
+        anonymous.Headers.Vary.Should().Contain(["Origin", "Accept", "Accept-Encoding", "Accept-Language"]);
+        withApiKey.Should().Be("private, no-store");
+    }
+
     public void Dispose()
     {
         _pollModeHost.Dispose();

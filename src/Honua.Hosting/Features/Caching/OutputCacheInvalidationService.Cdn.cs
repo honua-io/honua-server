@@ -18,59 +18,20 @@ internal sealed partial class OutputCacheInvalidationService
         }
     }
 
-    private async Task InvalidateCdnForLayerAsync(string? serviceId, int? layerId, CancellationToken cancellationToken)
-    {
-        if (_cdnInvalidation is null)
-        {
-            return;
-        }
-
-        var paths = layerId is { } id
-            ? await CdnPathsForLayerAsync(serviceId, id, cancellationToken).ConfigureAwait(false)
-            : CdnPaths.Everything;
-        await _cdnInvalidation.InvalidateNowAsync(paths, cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task InvalidateCdnForServiceCatalogAsync(string? serviceId, int[] layerIds, CancellationToken cancellationToken)
-    {
-        if (_cdnInvalidation is null)
-        {
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(serviceId) && layerIds.Length == 0)
-        {
-            await _cdnInvalidation.InvalidateNowAsync(CdnPaths.Everything, cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        var paths = new List<string>();
-        foreach (var layerId in layerIds)
-        {
-            paths.AddRange(await CdnPathsForLayerAsync(serviceId, layerId, cancellationToken).ConfigureAwait(false));
-        }
-
-        if (!string.IsNullOrWhiteSpace(serviceId))
-        {
-            paths.AddRange(CdnPaths.ForService(serviceId.Trim()));
-        }
-
-        await _cdnInvalidation.InvalidateNowAsync(paths.Distinct(StringComparer.Ordinal), cancellationToken).ConfigureAwait(false);
-    }
-
-    private Task InvalidateCdnForSceneAsync(string? sceneId, CancellationToken cancellationToken)
-        => _cdnInvalidation is null || string.IsNullOrWhiteSpace(sceneId)
-            ? Task.CompletedTask
-            : _cdnInvalidation.InvalidateNowAsync(CdnPaths.ForScene(sceneId.Trim()), cancellationToken);
+    // Routes match without regard to case and the CDN keys with regard to it, so a path prefix cannot reach every cached
+    // spelling of an address. A change that may reduce access therefore invalidates everything; it is rare, and lifetimes are short.
+    private Task InvalidateCdnForAdministrativeChangeAsync(CancellationToken cancellationToken)
+        => _cdnInvalidation?.InvalidateNowAsync(CdnPaths.Everything, cancellationToken) ?? Task.CompletedTask;
 
     private async Task<IReadOnlyList<string>> CdnPathsForLayerAsync(string? serviceId, int layerId, CancellationToken cancellationToken)
     {
-        var serviceIds = await ResolveLayerServiceIdsAsync(serviceId, layerId, cancellationToken).ConfigureAwait(false);
+        var resolvedServiceIds = await ResolveLayerServiceIdsAsync(serviceId, layerId, cancellationToken).ConfigureAwait(false);
         var collectionIds = await ResolveLayerCollectionIdsAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var serviceIds = string.IsNullOrWhiteSpace(serviceId) ? resolvedServiceIds : [.. resolvedServiceIds, serviceId.Trim()];
         return
         [
             .. CdnPaths.ForLayer(layerId),
-            .. serviceIds.SelectMany(CdnPaths.ForService),
+            .. serviceIds.Distinct(StringComparer.Ordinal).SelectMany(CdnPaths.ForService),
             .. collectionIds.SelectMany(CdnPaths.ForCollection),
         ];
     }

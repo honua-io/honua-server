@@ -112,10 +112,14 @@ report it in the response.
 | --- | --- | --- |
 | Rollout completes | `/*` | After the operation is terminal; a failure cannot fail it |
 | Rollback completes | `/*` | After the operation is terminal; a failure cannot block it |
-| Layer or service published or enabled, service made public, style changed | That resource's path prefixes | After commit |
-| Layer or service unpublished, disabled or secured | That resource's path prefixes | After commit, before the response |
-| Data edited through Honua's APIs | That layer's path prefixes | At most once per layer every 30 seconds per node |
-| Operator purge, one layer or everything | That layer's path prefixes, or `/*` | On request |
+| Layer, service or scene published, unpublished, enabled, disabled, secured or made public; style or read policy changed; operator purge | `/*` | After commit, before the response |
+| Data edited through Honua's APIs | That layer's path prefixes | At once for the first edit, then at most once per layer every 30 seconds per node |
+
+An administrative change invalidates everything, not the resource's own prefixes. Routes match
+without regard to case and the CDN keys with regard to it, so a prefix cannot reach every cached
+spelling of an address, and a change that reduces access must not leave one behind. These changes
+are rare and lifetimes are short. An edit only needs freshness, so it uses prefixes and relies on
+the lifetime for any other spelling. Invalidation by cache tag removes the distinction.
 
 ### 5. Rollouts
 

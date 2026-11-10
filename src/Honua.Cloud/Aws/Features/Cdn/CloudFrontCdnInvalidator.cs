@@ -38,8 +38,9 @@ internal sealed partial class CloudFrontCdnInvalidator(
             return new CdnInvalidationResult(CdnInvalidationOutcome.Failed, errorCode);
         }
 
-        Log.InvalidationSubmitted(logger, distributionId, distinctPaths.Length);
-        return new CdnInvalidationResult(CdnInvalidationOutcome.Submitted, string.Join(',', invalidationIds));
+        var submittedIds = string.Join(',', invalidationIds);
+        Log.InvalidationSubmitted(logger, distributionId, submittedIds, string.Join(' ', distinctPaths));
+        return new CdnInvalidationResult(CdnInvalidationOutcome.Submitted, submittedIds);
     }
 
     private CreateInvalidationRequest RequestFor(string[] batch) => new()
@@ -57,8 +58,8 @@ internal sealed partial class CloudFrontCdnInvalidator(
         [LoggerMessage(
             EventId = 10300,
             Level = LogLevel.Information,
-            Message = "CloudFront invalidation submitted. distribution={DistributionId} paths={PathCount}")]
-        public static partial void InvalidationSubmitted(ILogger logger, string distributionId, int pathCount);
+            Message = "CloudFront invalidation submitted. distribution={DistributionId} invalidation={InvalidationIds} paths={Paths}")]
+        public static partial void InvalidationSubmitted(ILogger logger, string distributionId, string invalidationIds, string paths);
 
         [LoggerMessage(
             EventId = 10301,

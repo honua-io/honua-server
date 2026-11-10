@@ -32,10 +32,10 @@ A request counts as credentialed when it carries any of: the `Authorization`, `X
 | Change | What is invalidated | When |
 | --- | --- | --- |
 | A release is promoted or rolled back | Everything | When the operation completes |
-| A layer or service is published, unpublished, enabled, disabled, secured or made public | That service and its layers | Before the admin request returns |
-| A style changes | That layer | Before the admin request returns |
-| Data is edited through Honua | That layer | At once for the first edit, then at most once every 30 seconds per layer |
-| An operator invalidates the cache for a layer, a service or everything | The same scope | Before the admin request returns |
+| A layer, service or scene is published, unpublished, enabled, disabled, secured or made public | Everything | Before the admin request returns |
+| A style or a read policy changes | Everything | Before the admin request returns |
+| An operator invalidates the cache | Everything | Before the admin request returns |
+| Data is edited through Honua | That layer's tiles, queries and metadata | At once for the first edit, then at most once every 30 seconds per layer |
 
 If you edit a table outside Honua, with a desktop GIS or a load script, the server does not see the change. Tiles and queries refresh after the layer's cache lifetime, or immediately when you invalidate the layer's cache.
 

@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Infrastructure.Caching;
+using Microsoft.Net.Http.Headers;
 
 namespace Honua.Infrastructure.SharedCaching;
 
@@ -18,18 +19,31 @@ internal static class SharedCacheGuard
             return;
         }
 
+        // An origin never states an age; a replayed stored response would, and every cache downstream would trust it.
+        response.Headers.Remove(HeaderNames.Age);
+
         var cacheControl = response.Headers.CacheControl.ToString();
-        if (ExcludesSharedCaches(cacheControl))
+        if (cacheControl.Contains("no-store", StringComparison.OrdinalIgnoreCase))
         {
+            WriteOneRefusal(response, cacheControl);
             return;
         }
 
-        if (cacheControl.Length > 0 && ResponseMayBeShared(context))
+        if (ExcludesSharedCaches(cacheControl) || (cacheControl.Length > 0 && ResponseMayBeShared(context)))
         {
             return;
         }
 
         response.Headers.CacheControl = NotShared;
+    }
+
+    // A refusal that also carries a lifetime contradicts itself, and caches resolve the contradiction differently.
+    private static void WriteOneRefusal(HttpResponse response, string cacheControl)
+    {
+        if (!string.Equals(cacheControl, "no-store", StringComparison.OrdinalIgnoreCase))
+        {
+            response.Headers.CacheControl = NotShared;
+        }
     }
 
     internal static bool ExcludesSharedCaches(string cacheControl)
