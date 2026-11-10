@@ -118,7 +118,7 @@ public static class DurableJobSubstrateStartupGate
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        if (!requireDurableStore || options.RedisDurabilityAttestation is not null)
+        if (!requireDurableStore || options.SystemDatabaseConfigured || options.RedisDurabilityAttestation is not null)
         {
             return;
         }

@@ -75,6 +75,16 @@ public sealed class RedisDurabilityInformationalTests
     }
 
     [UnitTest]
+    public void RequireDurableStore_WithASystemDatabaseAndNoRedis_IsSatisfied()
+    {
+        var options = new DurableJobSubstrateOptions { SystemDatabaseConfigured = true };
+
+        var ensure = () => DurableJobSubstrateStartupGate.EnsureSatisfied(options, requireDurableStore: true);
+
+        ensure.Should().NotThrow("the job store is in the system database");
+    }
+
+    [UnitTest]
     public void RequireDurableStore_OnConfigBlockedRedis_RefusesWithTheUnverifiedCause()
     {
         var act = () => DurableJobSubstrateStartupGate.EnsureSatisfied(

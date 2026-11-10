@@ -482,12 +482,12 @@ if (connectedRedis is not null &&
     }
 }
 
-// The ONE sanctioned way the durability attestation may stop this process, and only when the
-// operator opted in with Jobs:RequireDurableStore=true (honua-server#4502). Otherwise the
-// attestation is information and a connected Redis composes the full control plane.
+// Jobs:RequireDurableStore=true is satisfied by the system database, which holds the job store.
+// Only a host with no system database can still be stopped here.
 DurableJobSubstrateStartupGate.EnsureSatisfied(
     new DurableJobSubstrateOptions
     {
+        SystemDatabaseConfigured = !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection")),
         RedisConfigured = !string.IsNullOrWhiteSpace(redisConnectionString),
         RedisEntitled = redisCacheEntitled,
         RedisDurabilityAttestation = redisDurabilityAttestation,
@@ -1174,18 +1174,19 @@ if (replicaProvider != DataProviderNames.DuckDb &&
             versionLock: sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IVersionLock>()));
 }
 
-// Branch-versioning durable lock + async job runtime (#1553). The Redis-backed version lock serializes
-// reconcile/post/resolve per (service, version) across replicas; the Redis-backed job store makes the
-// async reconcile/post job pollable and restart-durable. Both degrade to single-node in-process/in-memory
-// fallbacks when Redis is not configured. The job runner wraps the synchronous reconcile/post engine in a
-// durable, pollable job and is provider-agnostic (it adapts to the registered IVersionManager). These are
-// registered for every provider so the version-management endpoints can resolve them uniformly; for
-// non-Postgres providers the NoOp version manager rejects reconcile/post, so the lock/store/runner stay
-// inert.
+// The version lock serializes reconcile, post and resolve per (service, version) across nodes on a
+// lease row in the system database. A host with no system database has one node, so an in-process
+// lock is enough. The async job store below still uses Redis when it is configured.
+if (builder.Services.TryAddPostgresExecutionJobStore(builder.Configuration))
+{
+    builder.Services.TryAddSingleton<Honua.Core.Features.Infrastructure.Coordination.ILeaseStore,
+        Honua.Server.Features.Infrastructure.Coordination.PostgresLeaseStore>();
+}
+
 builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionLock>(sp =>
-    new Honua.Infrastructure.Coordination.RedisVersionLock(
-        sp.GetService<StackExchange.Redis.IConnectionMultiplexer>(),
-        sp.GetRequiredService<ILogger<Honua.Infrastructure.Coordination.RedisVersionLock>>()));
+    sp.GetService<Honua.Core.Features.Infrastructure.Coordination.ILeaseStore>() is { } leases
+        ? new Honua.Core.Features.Infrastructure.Coordination.LeaseVersionLock(leases)
+        : new Honua.Core.Features.FeatureStore.Services.InProcessVersionLock());
 builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionJobStore>(sp =>
     new Honua.Infrastructure.Coordination.RedisVersionJobStore(
         sp.GetService<StackExchange.Redis.IConnectionMultiplexer>(),
