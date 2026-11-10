@@ -195,7 +195,8 @@ class AffectedShardVerdictTests(unittest.TestCase):
         check = next(step for step in summary["steps"]
                      if "affected-shard-verdict.py" in step.get("run", ""))
         self.assertEqual(check["env"]["MODE"], "enforce")
-        self.assertIn("needs.targeted-shards.outputs.matrix_include", check["env"]["SELECT_MATRIX"])
+        self.assertNotIn("SELECT_MATRIX", check["env"])
+        self.assertIn('--matrix-file "${RUNNER_TEMP}/managed-matrix.json"', check["run"])
         self.assertIn("needs.server-tests.result", check["env"]["SHARDS_RESULT"])
         download = next(step for step in summary["steps"]
                         if step.get("with", {}).get("pattern") == "server-test-results-*")

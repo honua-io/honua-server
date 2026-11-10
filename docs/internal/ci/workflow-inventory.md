@@ -61,7 +61,7 @@ qualification independent of trunk pushes. Existing release cancellation policy 
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
-| `pr-gate.yml` | PR Gate | `pull_request` (base `trunk`), `workflow_dispatch` | Required verification context. Admission checks run first. `pr-gate` builds the affected graph plus planned managed test roots and publishes pristine per-project outputs and runs the required boot/migration smoke against its canonical host output; the independent `fast-tests` job builds its affected scope and runs Fast units, source architecture, full collector architecture and MCP/governance checks alongside the producer. Runtime execution proofs and fidelity run in full CI. The independent format and CI-router jobs remain required; `required.needs` is `[pr-gate, fast-tests, format, ci-router-validation, affected-shards]`. Selected shard jobs, bounded by the `pr_time_budget` in `.github/ci-shards.json` (over-budget shards are deferred to the next trunk run and named in a green `deferred` verdict), consume the same outputs; their aggregate enforces measured timing/TRX receipts and fails the required context on failed or missing execution. Review-first enforcement and docs-only exits remain inside the unfiltered workflow. See the [artifact contract](server-test-binary-artifacts.md) for identity, transport bounds, fallback and rollback. |
+| `pr-gate.yml` | PR Gate | `pull_request` (base `trunk`), `workflow_dispatch` | Required verification context. Admission checks run first. `pr-gate` builds the affected graph plus planned managed test roots and the server host, publishes pristine per-project outputs and runs the required boot/migration smoke against its canonical host output. The independent `fast-tests` matrix runs four jobs alongside it, each compiling only its own test roots: `architecture` (projection regeneration, source and collector architecture, MCP roster drift), `unit-fast` (isolated unit Fast tier), `server-fast` (Server Fast tier) and `server-governance` (Server governance/drift with PostGIS); both server jobs first refresh the admin parity exports Server.Tests compares. The `format` matrix runs `dotnet format` and the analyzer build (affected closure, analyzers, code style and documentation diagnostics as errors) as two jobs. Runtime execution proofs and fidelity run in full CI. The independent format and CI-router jobs remain required; `required.needs` is `[pr-gate, fast-tests, format, ci-router-validation, affected-shards]`. Selected shard jobs, bounded by the `pr_time_budget` in `.github/ci-shards.json` (over-budget shards are deferred to the next trunk run and named in a green `deferred` verdict), consume the same outputs; their aggregate enforces measured timing/TRX receipts and fails the required context on failed or missing execution. Review-first enforcement and docs-only exits remain inside the unfiltered workflow. See the [artifact contract](server-test-binary-artifacts.md) for identity, transport bounds, fallback and rollback. `runner-select` routes `pr-gate`, `fast-tests` and `format` to the build-host runner label in `HONUA_PR_GATE_RUNNER` when that host has idle runners, and to `ubuntu-latest` otherwise or when the variable is unset ([gate-model.md → PR Gate compute runner selection](gate-model.md#pr-gate-compute-runner-selection)). |
 | `review-gate.yml` | Review Gate Attestation | `pull_request_target`, `issue_comment`, trusted `repository_dispatch`, `workflow_run` [PR Gate, Review Event Bridge] | Required admission context. Publishes `Review Gate` on the exact current head only when Codex has exact-head evidence and no unresolved Codex threads. Serializes every event by resolved PR number, pins the exact trusted workflow-policy SHA, and is the only authority allowed to release expensive verification. In observe mode it retains an immutable decision receipt; merge-train selection and pre-land independently re-attest source evidence. |
 | `repo-hygiene.yml` | Repository hygiene | `pull_request` (`opened`, `synchronize`, `reopened`, `edited`) | Required additions-only context `repo-hygiene / Repository hygiene`. Calls the shared SHA-pinned workflow with read-only permissions; reads the repository-owned root allowlist and exact gate-input exceptions from the trusted base branch, rejecting new scratch, run output, dated history, samples and unexpected root entries. |
 | `claude-review.yml` | Claude Review | completed `PR Gate` `workflow_run`, `issue_comment` containing `@claude review` | Second attesting reviewer for the required `Review Gate` context (#3213, #3314; rebuilt on a trusted trigger by #3341), so a PR can still land while Codex is rate-limited. Trusted default-branch lane: **never** triggered by `pull_request`, read-only `GITHUB_TOKEN`, and it posts comments and inline threads only — never a review verdict. `scripts/ci/review-gate-evidence.js` accepts `claude` evidence alongside Codex. Inert until an auth secret exists. See [gate-model.md → Attesting reviewers](gate-model.md#attesting-reviewers). |
@@ -71,8 +71,8 @@ qualification independent of trunk pushes. Existing release cancellation policy 
 
 Operator ruling A (2026-09-11, #3213): a documentation-only pull request does
 not pay for the lean-gate build and unit smoke. The exit lives **inside** the
-required jobs. `PR Gate / Build and tests`, `PR Gate / Fast and architecture`,
-`PR Gate / Format` and
+required jobs. `PR Gate / Build and tests`, the four `PR Gate / Fast and
+architecture (<group>)` jobs, `PR Gate / Format`, `PR Gate / Analyzers` and
 `PR Gate / Affected shards (select)` still run and conclude success themselves,
 and so do the `PR Gate` and `PR Gate / Affected shards` aggregates. There is no
 `paths` filter, because a skipped required check blocks merge. The observe-only
@@ -112,8 +112,8 @@ the changed paths on stdin.
 | Job | Still runs | Skipped |
 |---|---|---|
 | `PR Gate / Build and tests` | The UTF-8 tracked-file guard (#3320); the terminal-error receipt, client-certification roster, review-first admission and base-image inventory checks; the admission receipt; the classifier's own fixtures; the Markdown command policy; installation-reference validation; and a public-image Docker proof only when artifact versions or executable installation procedures/harness change. | Disk cleanup, .NET setup, managed producer planning, compilation, managed artifact publication and source-built boot/migration smoke. |
-| `PR Gate / Fast and architecture` | Checkout and classification. | .NET setup, affected build, Fast tests, both architecture suites and MCP/governance checks. |
-| `PR Gate / Format` | Checkout and classification. | .NET setup, restore, `dotnet format` and the analyzer build. |
+| `PR Gate / Fast and architecture (<group>)` | Checkout and classification. | Disk cleanup, .NET setup, the group's test-root build and its tests. |
+| `PR Gate / Format`, `PR Gate / Analyzers` | Checkout and classification. | .NET setup, restore, and `dotnet format` or the analyzer build. |
 | `PR Gate / Affected shards (select)` | Classification. The job publishes `skip=true` with `reason=docs_only`, so the aggregate reports `skipped`. | Selector validation and shard selection. |
 
 Outside `PR Gate`, `docs-link-gate.yml` keeps firing on `docs/**` and
@@ -147,9 +147,9 @@ The scoped `GP Alias Contract` check runs the real GeoServices alias tests and O
 |---|---|---|---|
 | `compose-release-lifecycle.yml` | Compose Release Lifecycle | `pull_request` (base `trunk`, relevant executor, control-plane, and test paths) | Builds the Native AOT candidate (reads registry cache `buildcache:honua-aot-amd64` on same-repo PRs) and exercises the published rc.1 to approved MCP convergence and verified PostGIS restore journey, including negative controls. |
 | `close-external-prs.yml` | Close external pull requests | `pull_request_target` (`opened`, `reopened`) | Closes pull requests whose author association is not `OWNER`, `MEMBER` or `COLLABORATOR` (bots exempt) with a comment pointing to issues and `SECURITY.md`; this repository does not accept external contributions. Never checks out PR code; `pull-requests: write` only. Durable complement to the six-month repository interaction limits set 2026-10-23. |
-| `pr-review-doctor.lock.yml` | Review doctor | `pull_request_review` (submitted), `pull_request_review_comment` (created); review bots allowed | Compiled from `pr-review-doctor.md` by `gh aw compile`. An agentic workflow (Claude engine) fixes valid review findings on the pull request branch and comments per thread (fixed or reason); labels `review-stuck` for design or sensitive findings. Never resolves threads or edits `.github/`. Writes with the workflow token. |
-| `pr-sync-doctor.lock.yml` | Sync doctor | `push` (trunk), hourly `schedule`, `workflow_dispatch` | Compiled from `pr-sync-doctor.md`. Merges trunk into up to two open pull requests per run (conflicting first, then green but behind), resolving conflicts; labels `conflict-stuck` when a decision is needed. Never edits `.github/`. Writes with the workflow token. |
-| `ci-doctor.lock.yml` | CI doctor | `workflow_run` [CI, PR Gate, Clean code, Repository hygiene] on failure, same-repository branches | Compiled from `ci-doctor.md` by `gh aw compile`; edit the Markdown source and recompile. An agentic workflow (Claude engine) reads the failing log and, through gh-aw safe outputs, pushes one minimal fix to the pull request branch, or opens a draft fix or revert pull request for trunk; otherwise labels `ci-stuck`. One attempt per head SHA; never edits `.github/`. Needs `ANTHROPIC_API_KEY`. Writes with the workflow's own token, so its pushes do not start CI by themselves; the lane that owns the pull request re-triggers checks. |
+| `pr-review-doctor.lock.yml` | Review doctor | `pull_request_review` (submitted), `pull_request_review_comment` (created); review bots allowed | Compiled from `pr-review-doctor.md` by `gh aw compile`. An agentic workflow (Claude engine) checks out the pull request head with full history, reads unresolved threads from trusted reviewers (owners, members, collaborators, the listed review bots) collected by a pre-agent step, fixes valid findings on the pull request branch and comments per thread (fixed or reason); labels `review-stuck` for design or sensitive findings. Preserves `fix(review):` commit messages through the pinned runtime’s excluded-file filtering. Never resolves threads or edits `.github/`. Writes with the `honua-io-bot` GitHub App token (`BOT_APP_ID`, `BOT_APP_PRIVATE_KEY`), so its pushes start CI. |
+| `pr-sync-doctor.lock.yml` | Sync doctor | `push` (trunk), hourly `schedule`, `workflow_dispatch` | Compiled from `pr-sync-doctor.md`. Starts from a full clone with every branch fetched, so it merges offline. Persists the safe-output App token for checkout and direct git pushes. Pushes real merge commits (`signed-commits: false`, no `excluded-files`, App workflow permission enabled); `protected-files: allowed` lets merges carry trunk's protected-file changes unchanged. Never edits `.github/`, `certification/**` or `*.sealed` content itself; conflicts there are labelled `conflict-stuck`. Merges trunk into up to two open pull requests per run (conflicting first, then green but behind), resolving conflicts; labels `conflict-stuck` when a decision is needed. Writes with the `honua-io-bot` GitHub App token (`BOT_APP_ID`, `BOT_APP_PRIVATE_KEY`), so its pushes start CI. |
+| `ci-doctor.lock.yml` | CI doctor | `workflow_run` [CI, PR Gate, Clean code, Repository hygiene] on failure, same-repository branches | Compiled from `ci-doctor.md` by `gh aw compile`; edit the Markdown source and recompile. An agentic workflow (Claude engine) starts from a full clone with every branch fetched, reads the failing log and, through gh-aw safe outputs, pushes one minimal fix to the pull request branch, or opens a draft fix or revert pull request for trunk; otherwise labels `ci-stuck`. Preserves `fix(ci):` commit messages through the pinned runtime’s excluded-file filtering. One attempt per head SHA, excluding earlier checkout-access failures that never reached the code; never edits `.github/`. Needs `ANTHROPIC_API_KEY`. Writes with the `honua-io-bot` GitHub App token (`BOT_APP_ID`, `BOT_APP_PRIVATE_KEY`), so its pushes start CI. |
 | `clean-code.yml` | Clean code | `pull_request` (`opened`, `synchronize`, `reopened`, `edited`) | Calls the shared honua-io/.github clean-code check, pinned by SHA: the Clean Code rules judged only on what the PR makes worse (comment, size, function, parameter and duplication ratchets), each finding titled with its smell code. `edited` re-runs it when a `quality-exception:` line is added to the PR body. Read-only `contents` permission. |
 | `gp-installed-authoring.yml` | GP Installed Authoring | path-filtered `pull_request`, `workflow_dispatch` | Packs the candidate devkit, then exercises Python and .NET authoring on Linux, Windows and macOS using only the installed package (no source checkout). Requires positive and negative goldens, four direct tests per language, exact-version payload restoration and missing-image-evidence release refusal. Uploads a three-OS host-debug handoff for honua-release#615. Does not publish packages or qualify a worker image. |
 | `gp-alias-contract.yml` | GP Alias Contract | `pull_request` (base `trunk`, relevant contract/test/judgment paths) | Runs the GeoServices alias contract and the OGC API process-list HTTP regression in their actual protocol assemblies. Uses the existing .NET setup and pinned PostGIS service conventions; requires all selected cases to execute and pass. |
@@ -522,3 +522,39 @@ server consumer. The pilot adds only its small tool build; no additional inspect
 project build or dependency artifact transport is introduced. Fixture regressions
 fail the producer; real-project metadata observation remains advisory and its
 reports are retained separately as `source-inventory-pilot-<attempt>`.
+
+Full CI transfers the selected shard matrix as a run-and-attempt-scoped JSON
+artifact to the managed producer, cache planners and receipt verifier. Full
+filters stay out of environment variables and command arguments, whose per-string
+limits can prevent the shell from starting. Missing matrix artifacts fail the
+selected lane. PR receipt verification receives only selected shard names; its
+execution matrix and enforced test filters remain unchanged.
+
+### Pre-PR and trailing affected execution
+
+`pre-pr-check.sh --affected-tests` restores once, builds the affected unit-test
+closure without analyzers, then runs unit tests by default. Pass `--integration`
+with `--affected-tests` to include affected integration shards. The independent
+PR Format check retains analyzer coverage. Positively classified docs/CI-only
+changes use the existing governance checks without starting a .NET build;
+unknown or invalid routing still fails closed. A full-build fallback retains
+these Stage 0 CPU limits and disables build analyzers; its validation scope is
+unchanged. Stage 0 uses
+`HONUA_STAGE0_MAX_CPU_COUNT` (default 5, range 1–16) and reports restore, build,
+and test durations separately. Host queue/sync timings are reported by the
+local lane runner; they are separate from execution time.
+
+Trailing `selective_base` dispatches use their verified base for the managed
+producer's affected project graph. An effective full-CI decision (including a
+router promotion or manual override) builds the whole solution. Consumers reuse the single producer's
+artifacts. Server shards retain descending measured `dispatch_rank` order and
+run at most six at once (full runs retain 24). Expensive AOT, Docker,
+Postgres compatibility, browser, Python, MCP and quickstart lanes use
+`scripts/ci/affected-ci-lanes.py` to select their own inputs. Native, container
+and MCP checks conservatively include every runtime source or project change,
+including transitive publish inputs and REST/gRPC backends. Shared seed files
+select every compatibility lane. Shared inputs,
+unknown paths, missing diff evidence, and the canonical router's `run_all`
+fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
+as a prerequisite. PR routing, required check names, shard definitions, and the
+twice-daily full matrix are preserved.

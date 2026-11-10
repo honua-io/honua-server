@@ -57,15 +57,18 @@ Inspect the selection before starting a build:
 scripts/ci/pre-pr-check.sh --unit-only --dry-run
 scripts/ci/pre-pr-check.sh --unit-only
 
-# Affected units plus component/integration shards from the shared CI router
+# Affected units from the shared CI router
 scripts/ci/pre-pr-check.sh --affected-tests --dry-run
 scripts/ci/pre-pr-check.sh --affected-tests
+
+# Opt in to affected component/integration shards
+scripts/ci/pre-pr-check.sh --affected-tests --integration
 ```
 
 Pick the mode by what the change needs to prove:
 
 - Use unit feedback for an in-process change.
-- Use affected-test feedback when provider or HTTP behaviour needs testing.
+- Use affected-test feedback with `--integration` when provider or HTTP behaviour needs testing.
 
 Both modes build their selected project union once and reuse the outputs for tests, so:
 
