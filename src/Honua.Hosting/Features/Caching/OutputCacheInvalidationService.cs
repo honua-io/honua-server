@@ -102,6 +102,12 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
 
     public async Task InvalidateCollectionAsync(string collectionId, CancellationToken cancellationToken)
     {
+        await EvictCollectionAsync(collectionId, cancellationToken).ConfigureAwait(false);
+        await InvalidateCdnForAdministrativeChangeAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task EvictCollectionAsync(string collectionId, CancellationToken cancellationToken)
+    {
         var collectionIds = await ResolveCollectionIdsAsync(collectionId, cancellationToken).ConfigureAwait(false);
         var tags = new List<string>
         {
@@ -134,10 +140,14 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
             ],
             cancellationToken);
 
-    public Task InvalidateOgcMetadataAsync(CancellationToken cancellationToken)
+    public async Task InvalidateOgcMetadataAsync(CancellationToken cancellationToken)
     {
-        return EvictTagsAsync(["ogc-metadata", "ogc-tiles", "ogc-maps"], cancellationToken);
+        await EvictOgcMetadataAsync(cancellationToken).ConfigureAwait(false);
+        await InvalidateCdnForAdministrativeChangeAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    private Task EvictOgcMetadataAsync(CancellationToken cancellationToken)
+        => EvictTagsAsync(["ogc-metadata", "ogc-tiles", "ogc-maps"], cancellationToken);
 
     public Task InvalidateSceneAsync(string? sceneId, CancellationToken cancellationToken)
     {
