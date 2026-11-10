@@ -5,6 +5,32 @@ environmental failure in code, and nobody reruns a real failure as if it were en
 `AGENTS.md` links here. Add an entry when you diagnose a new recurring failure, and move an
 entry to the root-caused section once its fix lands.
 
+## Automatic bounded quarantine
+
+The shared server shard runner retries failed test methods once in the same job, inside
+its original deadline. Only exit code 1 with complete, consistent TRX case evidence is
+eligible; infrastructure failures, missing cases, failed/skipped retries and timeouts stay
+red. A successful retry retains both raw attempts and emits a candidate containing their
+hashes. The final TRX uses actual retry rows for the originally failed cases.
+
+`Publish Flaky Test Quarantine` validates this evidence after same-repository CI and PR
+Gate runs. It runs trusted default-branch code and treats downloaded artifacts only as
+data. Each project/method has one deterministic issue, labelled `ci-flake`; an active
+quarantine additionally carries `ci-flake-quarantine`. These bot-authored issue bodies
+are the quarantine list. Closing an issue removes its exclusion immediately on the next
+snapshot. Fix the underlying test and close its issue; do not renew an active expiry.
+
+`scripts/ci/validate-flake-quarantine.py` enforces at most 25 active methods, literal
+project-scoped identities, and a maximum 14-day lifetime. Expired entries automatically
+return to gating. Invalid snapshots fail closed. When full, additional flakes still get
+issues but remain gating. The runner and duplicate foundation/lean-gate coverage apply
+exact method exclusions from a validated snapshot. Existing execution tripwires remain:
+an exclusion that leaves a shard without executed cases does not make it pass.
+
+`Flaky Test Detection` runs the active list in a separate non-gating job with retry and
+exclusions disabled. Its rotating flake hunt also observes original failures without
+retry masking. Raw results remain available as workflow artifacts.
+
 ## Environmental: rerun the shard
 
 ### Postgres `40P01: deadlock detected` on integration shards
@@ -50,3 +76,5 @@ The Linux batch lane has analyzer rules that may not fire locally on Windows (fo
 `CA1873` on log-argument evaluation). A clean local warnings-as-errors build does not guarantee
 that the batch build passes. Read the batch log with `gh run view <id> --log-failed`, then fix the
 problem on the PR branch.
+
+Quarantine filtering also covers overlapping foundation, source-architecture, isolated unit-fast, Postgres compatibility, and general Worker suites. Dedicated execution-proof receipt requirements remain strict; a quarantined method cannot substitute for a required proof receipt.

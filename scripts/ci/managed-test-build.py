@@ -6,14 +6,22 @@ import argparse
 import importlib.util
 import json
 import re
+import sys
 from pathlib import Path, PurePosixPath
 import subprocess
 import tempfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shard_projects import shard_projects
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVER = 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
 ARCHITECTURE = 'tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj'
 SOURCE = 'tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj'
+STANDALONE_PROJECTS = {
+    'scripts/cloud/lambda-deploy-driver/LambdaDeployDriver.csproj',
+    'scripts/conformance/mcp/manifest-gen/Honua.Mcp.ManifestGen.csproj',
+}
 PROPERTIES = ['-p:TreatWarningsAsErrors=true', '-p:RunAnalyzers=true', '-p:UseSharedCompilation=false']
 
 
@@ -41,7 +49,7 @@ def gate_projects(root):
 
 def inventory(root):
     shards = json.loads((root / '.github/ci-shards.json').read_text())['shards']
-    projects = {s.get('csproj') or SERVER for s in shards}
+    projects = {p for s in shards for p in shard_projects(s)}
     for family in ('core', 'server', 'protocols', 'providers'):
         projects.update(family_projects(root, family, advisory=True))
     projects.update(gate_projects(root))
@@ -69,6 +77,31 @@ def write_filter(root, projects, target):
         raise ValueError(f'Projects missing from Honua.sln: {sorted(unknown)}')
     target.write_text(json.dumps({'solution': {'path': str(root / 'Honua.sln'),
                                              'projects': [members[p] for p in sorted(normalized)]}}, indent=2) + '\n')
+
+
+def standalone_projects(root, projects):
+    selected = sorted(set(projects) & STANDALONE_PROJECTS)
+    if any(not (root / project).is_file() for project in selected):
+        raise ValueError('Selected standalone project is missing')
+    return selected
+
+
+def write_build_plan(root, projects, outputs):
+    standalone = standalone_projects(root, projects)
+    write_filter(root, [p for p in projects if p not in standalone], outputs.output)
+    outputs.standalone_output.write_text(json.dumps(standalone) + '\n')
+
+
+def build_standalone(root, projects):
+    if not isinstance(projects, list) or any(not isinstance(p, str) for p in projects):
+        raise ValueError('Standalone selection must be a JSON array of project paths')
+    if set(projects) - STANDALONE_PROJECTS:
+        raise ValueError('Unknown standalone project')
+    for project in standalone_projects(root, projects):
+        subprocess.run(['bash', str(root / 'scripts/ci/dotnet-restore-retry.sh'), project,
+                        '-p:Configuration=Release', *PROPERTIES], cwd=root, check=True)
+        subprocess.run(['dotnet', 'build', project, '--no-restore', '-c', 'Release',
+                        '-graphBuild', *PROPERTIES], cwd=root, check=True)
 
 
 def package_dependencies_ready(root, project):
@@ -144,21 +177,44 @@ def fallback(root, projects, restored, *, execute=True):
     return missing
 
 
+def matrix_projects(path):
+    matrix = json.loads(path.read_text())
+    if isinstance(matrix, dict):
+        matrix = matrix.get('matrix_include', matrix.get('include', matrix.get('executionMatrix')))
+    if isinstance(matrix, str):
+        matrix = json.loads(matrix)
+    if not isinstance(matrix, list) or any(not isinstance(row, dict) for row in matrix):
+        raise ValueError('Invalid shard matrix')
+    if any(not isinstance(row.get('advisory', False), bool) for row in matrix):
+        raise ValueError('Shard advisory must be a boolean')
+    if any(not isinstance(row.get('shard_name'), str) or not row['shard_name'] for row in matrix):
+        raise ValueError('Shard name is required')
+    # Advisory-only compilation stays in its original consumer.
+    return [p for s in matrix if not s.get('advisory', False) for p in shard_projects(s)]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=['inventory', 'projects', 'filter', 'fallback'])
+    parser.add_argument('operation', choices=['inventory', 'projects', 'filter', 'fallback', 'standalone'])
     parser.add_argument('--root', type=Path, default=ROOT)
     parser.add_argument('--lane', choices=['pr', 'pr-shards', 'ci', 'foundation', 'shard'], default='pr')
     parser.add_argument('--family', choices=['core', 'server', 'protocols', 'providers'])
     parser.add_argument('--project')
+    parser.add_argument('--projects-json')
     parser.add_argument('--matrix-file', type=Path)
     parser.add_argument('--projects-file', type=Path)
     parser.add_argument('--restored-file', type=Path)
     parser.add_argument('--base-filter', type=Path)
+    parser.add_argument('--standalone-output', type=Path)
     parser.add_argument('--output', type=Path)
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()
     root = args.root.resolve()
+    if args.operation == 'standalone':
+        if not args.projects_file:
+            parser.error('--projects-file required')
+        build_standalone(root, json.loads(args.projects_file.read_text()))
+        return
     if args.operation == 'inventory':
         result = inventory(root)
     elif args.operation == 'projects':
@@ -167,9 +223,10 @@ def main():
                 parser.error('--family required')
             result = family_projects(root, args.family)
         elif args.lane == 'shard':
-            if not args.project:
-                parser.error('--project required')
-            result = validate_projects(root, [args.project])
+            projects = json.loads(args.projects_json or 'null')
+            if projects is None and not args.project:
+                parser.error('--project or --projects-json required')
+            result = validate_projects(root, [args.project] if projects is None else shard_projects({'csprojs': projects}))
         else:
             result = gate_projects(root) if args.lane == 'pr' else []
             if args.lane == 'ci':
@@ -177,19 +234,7 @@ def main():
                     result.extend(family_projects(root, family))
                 result.append(SOURCE)
             if args.matrix_file:
-                matrix = json.loads(args.matrix_file.read_text())
-                if isinstance(matrix, dict):
-                    matrix = matrix.get('matrix_include', matrix.get('include', matrix.get('executionMatrix')))
-                if isinstance(matrix, str):
-                    matrix = json.loads(matrix)
-                if not isinstance(matrix, list) or any(not isinstance(row, dict) for row in matrix):
-                    raise ValueError('Invalid shard matrix')
-                if any(not isinstance(row.get('advisory', False), bool) for row in matrix):
-                    raise ValueError('Shard advisory must be a boolean')
-                if any(not isinstance(row.get('shard_name'), str) or not row['shard_name'] for row in matrix):
-                    raise ValueError('Shard name is required')
-                # Advisory-only compilation stays in its original consumer.
-                result.extend(s.get('csproj') or SERVER for s in matrix if not s.get('advisory', False))
+                result.extend(matrix_projects(args.matrix_file))
             result = validate_projects(root, result)
     else:
         if not args.projects_file:
@@ -205,7 +250,10 @@ def main():
             if args.base_filter:
                 base = json.loads(args.base_filter.read_text())['solution']['projects']
                 projects.extend(p.replace('\\', '/') for p in base)
-            write_filter(root, projects, args.output)
+            if args.standalone_output:
+                write_build_plan(root, projects, args)
+            else:
+                write_filter(root, projects, args.output)
             return
     text = json.dumps(result, indent=2) + '\n'
     if args.output:

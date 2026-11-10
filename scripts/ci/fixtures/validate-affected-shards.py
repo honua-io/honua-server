@@ -270,9 +270,9 @@ def runnable_class_owners(config: dict[str, Any], classes: dict[str, Any], cover
     for shard in config["shards"]:
         if shard.get("nightly_only"):
             continue
-        project = selector.shard_test_project(shard)
+        projects = selector.shard_projects(shard)
         for fqn, entry in classes.items():
-            if entry["csproj"] != project or not entry["methods"]:
+            if entry["csproj"] not in projects or not entry["methods"]:
                 continue
             if any(
                 coverage.shard_claims(shard["filter"], f"{entry.get('fqn', fqn)}.{method}")
@@ -433,7 +433,7 @@ def check_non_runnable_tiers_are_not_credited(config: dict[str, Any]) -> int:
         claimed_by = [
             shard["name"]
             for shard in config["shards"]
-            if selector.shard_test_project(shard) == entry["csproj"]
+            if entry["csproj"] in selector.shard_projects(shard)
             and any(
                 coverage.shard_claims(shard["filter"], f"{entry.get('fqn', fqn)}.{method}")
                 for method in entry["methods"]
@@ -534,7 +534,7 @@ def check_matrix_include_shape(config: dict[str, Any]) -> None:
         for field in REQUIRED_MATRIX_FIELDS:
             if field not in entry:
                 raise FixtureError(f"matrix entry {entry.get('shard_name')!r} is missing {field!r}")
-        if not entry["filter"] or not entry["log_name"] or not entry["csproj"]:
+        if not entry["filter"] or not entry["log_name"] or not (entry["csproj"] or entry.get("csprojs")):
             raise FixtureError(f"matrix entry {entry.get('shard_name')!r} has an empty required field")
         if not isinstance(entry["timeout_minutes"], (int, float)):
             raise FixtureError(f"matrix entry {entry.get('shard_name')!r} has a non-numeric outer budget")
@@ -560,7 +560,7 @@ def check_skip_paths() -> None:
 
 def check_fixture_input_owners() -> None:
     owners = {
-        "tests/fixtures/gp/": "GP Devkit CLI",
+        "tests/fixtures/gp/": "Protocol and Host Components",
         "tests/fixtures/plugins/": "Server Features Miscellaneous",
     }
     for prefix, expected_owner in owners.items():
@@ -648,7 +648,7 @@ def check_unrouted_test_selects_its_owning_shard(config: dict[str, Any]) -> str:
         owners = [
             shard["name"]
             for shard in config["shards"]
-            if selector.shard_test_project(shard) == entry["csproj"]
+            if entry["csproj"] in selector.shard_projects(shard)
             and any(
                 coverage.shard_claims(shard["filter"], f"{entry.get('fqn', fqn)}.{method}")
                 for method in runnable[fqn]
@@ -844,6 +844,8 @@ def check_ogc_nightly_policy(config: dict[str, Any]) -> None:
         "src/Honua.Protocols/OgcClassic/Wfs20/Wfs20Endpoints.cs",
         "src/Honua.Protocols/OgcApi/Tiles/OgcTilesEndpoints.cs",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wps20/Wps20EndpointsTests.cs",
+        "tests/dotnet/Honua.Protocols.OgcApi.UnitTests/Source/Records/OgcRecordsItemsLinkTests.cs",
+        "tests/dotnet/Honua.Protocols.OgcClassic.ComponentTests/WfsLegacyEndpointsTests.cs",
     ]
     for probe in probes:
         result = select_offline(config, [probe], descriptor=router(config, [probe]), cap=6)
