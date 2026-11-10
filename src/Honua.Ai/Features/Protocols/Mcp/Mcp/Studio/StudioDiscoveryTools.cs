@@ -20,7 +20,8 @@ internal sealed class ListStudioItemsTool(IGeoprocessingJobService jobs, ILogger
 
     public McpToolDescriptor Describe() => new()
     {
-        Name = Name, Title = "List saved Studio items",
+        Name = Name,
+        Title = "List saved Studio items",
         Description = "Find saved maps and other Studio items in the caller's authorized owner and tenant scope. "
             + "Use items[].itemId and currentVersionId with honua_studio_get_version, or list its version history. Follow nextCursor for more items.",
         InputSchema = StudioMcpSchemas.ListItemsArgumentSchema,
@@ -44,8 +45,10 @@ internal sealed class ListStudioItemsTool(IGeoprocessingJobService jobs, ILogger
         var result = await RequireLifecycleService(context).ListContentItemsAsync(new StudioContentItemQuery
         {
             OwnerId = authorization.IsAdmin(principal) ? null : callerId,
-            Tenant = authorization.CreateTenantScopeFilter(principal), SearchTerm = argument.Query,
-            Cursor = argument.Cursor, Limit = limit
+            Tenant = authorization.CreateTenantScopeFilter(principal),
+            SearchTerm = argument.Query,
+            Cursor = argument.Cursor,
+            Limit = limit
         }, cancellationToken).ConfigureAwait(false);
         return McpToolHelpers.SuccessResult(result, StudioMcpJsonContext.Default.StudioContentItemListResult);
     }
@@ -60,7 +63,8 @@ internal sealed class ListStudioVersionsTool(IGeoprocessingJobService jobs, ILog
 
     public McpToolDescriptor Describe() => new()
     {
-        Name = Name, Title = "List saved Studio versions",
+        Name = Name,
+        Title = "List saved Studio versions",
         Description = "List authorized immutable versions of an item, newest first, including versionId and contentHash. "
             + "Use nextBeforeVersionNumber as beforeVersionNumber to continue. No draft or publication pointer changes.",
         InputSchema = StudioMcpSchemas.ListVersionsArgumentSchema,
