@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import os
+import signal
 from pathlib import Path
 import tempfile
 import time
@@ -107,6 +108,18 @@ class MultiProjectTests(unittest.TestCase):
         run.assert_called_once_with(['taskkill', '/PID', '4321', '/T', '/F'],
                                     check=False, capture_output=True)
         process.wait.assert_called_once_with()
+
+    def test_parent_cancellation_terminates_child_and_restores_handlers(self):
+        process = Mock()
+        process.poll.return_value = None
+        previous = signal.getsignal(signal.SIGTERM)
+        with patch.object(multi, 'terminate_tree') as terminate:
+            with self.assertRaises(SystemExit) as raised:
+                with multi.cleanup_on_signals(process):
+                    os.kill(os.getpid(), signal.SIGTERM)
+        self.assertEqual(143, raised.exception.code)
+        terminate.assert_called_once_with(process)
+        self.assertIs(previous, signal.getsignal(signal.SIGTERM))
 
     def test_shared_deadline_stops_the_test_process(self):
         self.assert_deadline_cleanup(detach=False)

@@ -11,5 +11,3 @@ def descendant_pids(parent):
         if expanded == descendants:
             return descendants
         descendants = expanded
-
-

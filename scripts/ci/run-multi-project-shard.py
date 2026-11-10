@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Execute grouped assemblies with independent, fail-closed TRX checks."""
-from contextlib import suppress
+from contextlib import contextmanager, suppress
 from datetime import datetime, timezone
 import json
 import os
@@ -56,13 +56,30 @@ def terminate_tree(process):
     process.wait()
 
 
+def interrupt_execution(signum, frame):
+    raise SystemExit(128 + signum)
+
+
+@contextmanager
+def cleanup_on_signals(process):
+    previous = {signum: signal.signal(signum, interrupt_execution)
+                for signum in (signal.SIGINT, signal.SIGTERM)}
+    try:
+        yield
+    finally:
+        if process.poll() is None:
+            terminate_tree(process)
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
+
+
 def execute(environment, remaining):
     log = Path(environment['HONUA_SERVER_TEST_RESULTS_DIR']) / f"{environment['HONUA_SERVER_TEST_LOG_NAME']}.log"
     deadline = time.monotonic() + remaining
     last_progress = time.monotonic()
     size = 0
     with subprocess.Popen(['bash', str(SCRIPT / 'run-server-test-shard.sh')],
-                          env=environment, start_new_session=True) as process:
+                          env=environment, start_new_session=True) as process, cleanup_on_signals(process):
         while True:
             now = time.monotonic()
             current_size = log.stat().st_size if log.is_file() else 0
