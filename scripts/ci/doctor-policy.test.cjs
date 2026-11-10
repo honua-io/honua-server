@@ -53,6 +53,20 @@ test('direct callback admits only an actual failed trunk CI Gate before workflow
   run.head_branch = 'trunk'; run.path = '.github/workflows/untrusted.yml';
   assert.equal((await ciEligibility(g, context)).reason, 'Source run has not failed');
 });
+test('direct callback exclusively owns failed trunk CI; other workflow events still reach triage', async () => {
+  const { g } = fake();
+  const context = ciContext();
+  const run = context.payload.workflow_run;
+  run.head_branch = 'trunk'; run.path = '.github/workflows/ci.yml';
+  g.rest.repos.getBranch = async () => ({ data: { commit: { sha: 'abc' } } });
+  assert.equal((await ciEligibility(g, context)).reason, 'Direct CI callback owns trunk CI');
+  g.rest.actions.getWorkflowRun = async () => ({ data: run });
+  assert.equal((await ciEligibility(g, { repo, payload: { inputs: { source_run_id: '8' } } })).decision, 'needs-triage');
+  run.path = '.github/workflows/repository-hygiene.yml';
+  assert.equal((await ciEligibility(g, context)).decision, 'needs-triage');
+  run.path = '.github/workflows/ci.yml'; run.head_branch = pr.head.ref;
+  assert.equal((await ciEligibility(g, context)).decision, 'needs-triage');
+});
 test('known runner outages skip a fix; unknown unit failures reach triage', async () => {
   const { g } = fake();
   g.rest.actions.downloadJobLogsForWorkflowRun = async () => ({ data: 'The hosted runner lost communication with the server.' });
@@ -122,6 +136,8 @@ test('review eligibility supplies the same current trusted comments consumed by 
 test('CI dispatch cannot bypass head serialization with a mismatched head input', async () => {
   const { g } = fake();
   const context = ciContext();
-  context.payload.inputs = { head_sha: 'different' };
-  assert.equal((await ciEligibility(g, context)).reason, 'Dispatch head does not match source run');
+  for (const head_sha of ['different', '']) {
+    context.payload.inputs = { head_sha };
+    assert.equal((await ciEligibility(g, context)).reason, 'Dispatch head does not match source run');
+  }
 });

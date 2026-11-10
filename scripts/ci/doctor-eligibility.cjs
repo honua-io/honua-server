@@ -19,6 +19,9 @@ async function failedSource(github, context) {
   if (!run || run.head_repository?.full_name !== `${repo.owner}/${repo.repo}`) {
     return { reason: 'No same-repository failed run' };
   }
+  if (!sourceId && run.path === '.github/workflows/ci.yml' && run.head_branch === 'trunk') {
+    return { reason: 'Direct CI callback owns trunk CI' };
+  }
   // The final CI callback runs before the containing workflow has a conclusion.
   // Accept that narrow case only after its actual aggregate gate has failed.
   let jobs;
@@ -38,7 +41,7 @@ async function ciEligibility(github, context) {
   const repo = context.repo;
   const { run, jobs: sourceJobs, reason } = await failedSource(github, context);
   if (reason) return { decision: 'not-actionable', reason };
-  if (context.payload.inputs?.head_sha && context.payload.inputs.head_sha !== run.head_sha) {
+  if (Object.hasOwn(context.payload.inputs || {}, 'head_sha') && context.payload.inputs.head_sha !== run.head_sha) {
     return { decision: 'not-actionable', reason: 'Dispatch head does not match source run' };
   }
   if (run.head_branch === 'trunk') {

@@ -11,7 +11,7 @@ python_bin="$(honua_resolve_python)"
 # Prove the decode diagnostic fails, not just that it passes (#3321).
 "${python_bin}" scripts/ci/fixtures/validate-review-first-utf8.py
 "${python_bin}" scripts/ci/fixtures/validate-review-first-dispatch.py
-python3 scripts/ci/fixtures/test-doctor-push-installer.py
+"${python_bin}" scripts/ci/fixtures/test-doctor-push-installer.py
 
 node --test \
   scripts/ci/review-first-dispatch.test.js \
