@@ -1654,6 +1654,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
 "${PYTHON_BIN}" scripts/ci/test-wms-capacity-partition.py
 "${PYTHON_BIN}" scripts/ci/test-featureserver-capacity-partition.py
 "${PYTHON_BIN}" scripts/ci/test-mcp-capacity-partition.py
+"${PYTHON_BIN}" scripts/ci/test-governance-capacity-partition.py
 "${PYTHON_BIN}" scripts/ci/test-console-capacity-partition.py
 "${PYTHON_BIN}" scripts/ci/test-streaming-capacity-partition.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
