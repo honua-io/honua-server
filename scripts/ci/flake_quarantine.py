@@ -131,14 +131,15 @@ def merge_retry(first, retry, output):
     tree = ET.parse(first)
     rows = tree.find('{*}Results')
     for index, row in enumerate(list(rows)):
-        if row.attrib.get('outcome') == 'Failed':
-            replacement = next(replacements)
-            # Preserve the original definition/entry identity while retaining actual retry evidence.
-            replacement.set('testId', row.attrib['testId'])
-            if 'executionId' in row.attrib:
-                replacement.set('executionId', row.attrib['executionId'])
-            rows.remove(row)
-            rows.insert(index, replacement)
+        if row.attrib.get('outcome') != 'Failed':
+            continue
+        replacement = next(replacements)
+        # Preserve the original definition/entry identity while retaining actual retry evidence.
+        replacement.set('testId', row.attrib['testId'])
+        if 'executionId' in row.attrib:
+            replacement.set('executionId', row.attrib['executionId'])
+        rows.remove(row)
+        rows.insert(index, replacement)
     outcomes = Counter(row.attrib['outcome'] for row in rows)
     counters = tree.find('.//{*}ResultSummary/{*}Counters')
     for key, value in dict(total=len(rows), executed=len(rows)-outcomes['NotExecuted'],
