@@ -43,7 +43,7 @@ The Honua Server supports multiple protocols (FeatureServer, MapServer, OGC API 
 
 ### Shared Models (Honua.Core)
 
-Located in `src/Honua.Core/Features/Shared/Models/`, these provide common base structures:
+Located in `src/Honua.Core/Core/Features/Shared/Models/`, these provide common base structures:
 
 #### 1. SpatialReference.cs
 ```csharp
@@ -126,8 +126,8 @@ Each protocol has extension methods to convert between shared models and protoco
 
 | File | Purpose |
 |---|---|
-| `src/Honua.Core/Features/Shared/Models/GeoJsonBase.cs` | `GeoJsonFeatureBase`, `PagedResponseBase` |
-| `src/Honua.Core/Features/Shared/Models/ModelConversions.cs` | Exception → ServiceError, Feature → GeoJsonFeatureBase |
+| `src/Honua.Core/Core/Features/Shared/Models/GeoJsonBase.cs` | `GeoJsonFeatureBase`, `PagedResponseBase` |
+| `src/Honua.Core/Core/Features/Shared/Models/ModelConversions.cs` | Exception → ServiceError, Feature → GeoJsonFeatureBase |
 | `src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/Models/FeatureServerExtensions.cs` | FeatureServer conversions |
 | `src/Honua.Server/Features/Protocols/Ogc/Api/Features/Models/OgcExtensions.cs` | OGC conversions |
 | `src/Honua.Server/Features/Protocols/OData/Models/ODataExtensions.cs` | OData conversions |

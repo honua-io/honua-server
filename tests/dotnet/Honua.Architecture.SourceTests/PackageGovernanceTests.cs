@@ -66,7 +66,7 @@ public sealed class PackageGovernanceTests
     private static bool IsEmbeddedProjectTemplate(string repositoryRoot, string path)
     {
         var relative = Path.GetRelativePath(repositoryRoot, path).Replace('\\', '/');
-        return relative.StartsWith("src/Honua.Geoprocessing.Cli/Templates/", StringComparison.Ordinal);
+        return relative.StartsWith("src/Honua.Geoprocessing/Cli/Templates/", StringComparison.Ordinal);
     }
 
     private static bool IsGeneratedBuildPath(string path)

@@ -34,14 +34,14 @@ tracks rather than reinvented:
   (Okta `groups`, Auth0 namespaced `roles`/`permissions`) are already handled,
   and claims→role mapping runs through `OidcClaimsTransformation`.
 - **ArcGIS-shaped tokens:** `IPortalTokenIssuer`
-  (`src/Honua.Core/Features/Authorization/Abstractions/IPortalTokenIssuer.cs`)
+  (`src/Honua.Core/Core/Features/Authorization/Abstractions/IPortalTokenIssuer.cs`)
   + `PortalTokenIssuer`
   (`src/Honua.Hosting/Features/Authentication/PortalTokenIssuer.cs`) mint
   distributed-cache-backed opaque bearer tokens that are URL-safe for the
   `?token=` query parameter ArcGIS clients send, with referer/IP/host binding.
   `PortalTokenAuthenticationHandler` validates them on the request path, and
   `generateToken` is live at
-  `src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs`.
+  `src/Honua.Protocols/GeoServices/Sharing/SharingRestEndpoints.cs`.
 - **Access decisions:** the RBAC resolver (#1375) over the persistent role
   store (#1374) is the per-operation `(service, layer, operation) → allow/deny`
   seam (see the scope section below), backed by `IRoleStore` and

@@ -34,7 +34,7 @@
       "kind": "Counter",
       "unit": "{evaluation}",
       "series": ["execution_admission_evaluated_total"],
-      "source": "src/Honua.Geoprocessing/Features/Geoprocessing/ExecutionAdmissionEvaluator.cs"
+      "source": "src/Honua.Geoprocessing/Core/Features/Geoprocessing/ExecutionAdmissionEvaluator.cs"
     },
     {
       "instrument": "honua.alerts.deliveries_circuit_deferred_total",
@@ -139,7 +139,7 @@
       "kind": "Counter",
       "unit": "{object}",
       "series": ["honua_attachments_orphans_total"],
-      "source": "src/Honua.Core/Features/Attachments/Services/LoggingAttachmentOrphanLedger.cs"
+      "source": "src/Honua.Core/Core/Features/Attachments/Services/LoggingAttachmentOrphanLedger.cs"
     },
     {
       "instrument": "honua.audit.chain_broken",
@@ -636,14 +636,14 @@
       "kind": "Counter",
       "unit": null,
       "series": ["honua_tile_cache_hits_total"],
-      "source": "src/Honua.Protocols.GeoServices/GeoServicesCloudTileCache.cs"
+      "source": "src/Honua.Protocols/GeoServices/GeoServicesCloudTileCache.cs"
     },
     {
       "instrument": "honua.tile.cache.misses",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_tile_cache_misses_total"],
-      "source": "src/Honua.Protocols.GeoServices/GeoServicesCloudTileCache.cs"
+      "source": "src/Honua.Protocols/GeoServices/GeoServicesCloudTileCache.cs"
     },
     {
       "instrument": "honua.tile.jobs.duration_ms",
@@ -678,28 +678,28 @@
       "kind": "Counter",
       "unit": null,
       "series": ["honua_application_errors_total"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_cache_errors_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_cache_errors_total"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_cache_evictions_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_cache_evictions_total"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/HonuaCacheMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/HonuaCacheMetrics.cs"
     },
     {
       "instrument": "honua_cache_hit_ratio",
       "kind": "Histogram",
       "unit": "ratio",
       "series": ["honua_cache_hit_ratio_bucket", "honua_cache_hit_ratio_count", "honua_cache_hit_ratio_sum"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_cache_hit_ratio",
@@ -713,182 +713,182 @@
       "kind": "Histogram",
       "unit": null,
       "series": ["honua_cache_hit_ratio_detailed_bucket", "honua_cache_hit_ratio_detailed_count", "honua_cache_hit_ratio_detailed_sum"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_cache_hits_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_cache_hits_total"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/HonuaCacheMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/HonuaCacheMetrics.cs"
     },
     {
       "instrument": "honua_cache_misses_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_cache_misses_total"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/HonuaCacheMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/HonuaCacheMetrics.cs"
     },
     {
       "instrument": "honua_cache_operation_duration_ms",
       "kind": "Histogram",
       "unit": null,
       "series": ["honua_cache_operation_duration_ms_bucket", "honua_cache_operation_duration_ms_count", "honua_cache_operation_duration_ms_sum"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_cache_operation_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_cache_operation_total"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_coordinate_transform_duration_ms",
       "kind": "Histogram",
       "unit": null,
       "series": ["honua_coordinate_transform_duration_ms_bucket", "honua_coordinate_transform_duration_ms_count", "honua_coordinate_transform_duration_ms_sum"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_coordinate_transform_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_coordinate_transform_total"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_database_query_duration_ms",
       "kind": "Histogram",
       "unit": null,
       "series": ["honua_database_query_duration_ms_bucket", "honua_database_query_duration_ms_count", "honua_database_query_duration_ms_sum"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_database_query_records",
       "kind": "Histogram",
       "unit": "records",
       "series": ["honua_database_query_records_bucket", "honua_database_query_records_count", "honua_database_query_records_sum"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_database_query_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_database_query_total"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_db_active_connections",
       "kind": "ObservableGauge",
       "unit": null,
       "series": ["honua_db_active_connections"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/ConnectionPoolMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/ConnectionPoolMetrics.cs"
     },
     {
       "instrument": "honua_db_connection_acquisition_duration_ms",
       "kind": "Histogram",
       "unit": null,
       "series": ["honua_db_connection_acquisition_duration_ms_bucket", "honua_db_connection_acquisition_duration_ms_count", "honua_db_connection_acquisition_duration_ms_sum"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/ConnectionPoolMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/ConnectionPoolMetrics.cs"
     },
     {
       "instrument": "honua_db_connection_acquisition_failures_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_db_connection_acquisition_failures_total"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/ConnectionPoolMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/ConnectionPoolMetrics.cs"
     },
     {
       "instrument": "honua_db_connection_timeouts_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_db_connection_timeouts_total"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/ConnectionPoolMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/ConnectionPoolMetrics.cs"
     },
     {
       "instrument": "honua_db_pool_size",
       "kind": "ObservableGauge",
       "unit": null,
       "series": ["honua_db_pool_size"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/ConnectionPoolMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/ConnectionPoolMetrics.cs"
     },
     {
       "instrument": "honua_db_pool_utilization_ratio",
       "kind": "ObservableGauge",
       "unit": null,
       "series": ["honua_db_pool_utilization_ratio"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/ConnectionPoolMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/ConnectionPoolMetrics.cs"
     },
     {
       "instrument": "honua_error_recovery_duration_ms",
       "kind": "Histogram",
       "unit": null,
       "series": ["honua_error_recovery_duration_ms_bucket", "honua_error_recovery_duration_ms_count", "honua_error_recovery_duration_ms_sum"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_federation_source_duration_ms",
       "kind": "Histogram",
       "unit": null,
       "series": ["honua_federation_source_duration_ms_bucket", "honua_federation_source_duration_ms_count", "honua_federation_source_duration_ms_sum"],
-      "source": "src/Honua.Core/Features/Federation/Services/FederationMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Federation/Services/FederationMetrics.cs"
     },
     {
       "instrument": "honua_federation_source_requests_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_federation_source_requests_total"],
-      "source": "src/Honua.Core/Features/Federation/Services/FederationMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Federation/Services/FederationMetrics.cs"
     },
     {
       "instrument": "honua_federation_source_rows_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_federation_source_rows_total"],
-      "source": "src/Honua.Core/Features/Federation/Services/FederationMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Federation/Services/FederationMetrics.cs"
     },
     {
       "instrument": "honua_gc_collection_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_gc_collection_total"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_geometry_complexity_coordinates",
       "kind": "Histogram",
       "unit": "coordinates",
       "series": ["honua_geometry_complexity_coordinates_bucket", "honua_geometry_complexity_coordinates_count", "honua_geometry_complexity_coordinates_sum"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_geometry_operation_duration_ms",
       "kind": "Histogram",
       "unit": null,
       "series": ["honua_geometry_operation_duration_ms_bucket", "honua_geometry_operation_duration_ms_count", "honua_geometry_operation_duration_ms_sum"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_geometry_operation_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_geometry_operation_total"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_geometry_transformation_duration_ms",
       "kind": "Histogram",
       "unit": null,
       "series": ["honua_geometry_transformation_duration_ms_bucket", "honua_geometry_transformation_duration_ms_count", "honua_geometry_transformation_duration_ms_sum"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_geometry_transformation_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_geometry_transformation_total"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_geoservices_error_total",
@@ -902,56 +902,56 @@
       "kind": "UpDownCounter",
       "unit": "requests",
       "series": ["honua_http_active_requests"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_http_request_duration_ms",
       "kind": "Histogram",
       "unit": null,
       "series": ["honua_http_request_duration_ms_bucket", "honua_http_request_duration_ms_count", "honua_http_request_duration_ms_sum"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_http_request_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_http_request_total"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_memory_allocated_bytes",
       "kind": "ObservableGauge",
       "unit": "bytes",
       "series": ["honua_memory_allocated_bytes"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_memory_allocated_mb",
       "kind": "Histogram",
       "unit": null,
       "series": ["honua_memory_allocated_mb_bucket", "honua_memory_allocated_mb_count", "honua_memory_allocated_mb_sum"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_memory_pressure_alerts_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_memory_pressure_alerts_total"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_memory_pressure_detailed",
       "kind": "Histogram",
       "unit": null,
       "series": ["honua_memory_pressure_detailed_bucket", "honua_memory_pressure_detailed_count", "honua_memory_pressure_detailed_sum"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/DefaultPerformanceMonitor.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/DefaultPerformanceMonitor.cs"
     },
     {
       "instrument": "honua_memory_pressure_percent",
       "kind": "ObservableGauge",
       "unit": "percent",
       "series": ["honua_memory_pressure_percent"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_memory_usage_bytes",
@@ -965,35 +965,35 @@
       "kind": "Histogram",
       "unit": null,
       "series": ["honua_operation_duration_ms_bucket", "honua_operation_duration_ms_count", "honua_operation_duration_ms_sum"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_operation_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_operation_total"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_plugin_duration_ms",
       "kind": "Histogram",
       "unit": null,
       "series": ["honua_plugin_duration_ms_bucket", "honua_plugin_duration_ms_count", "honua_plugin_duration_ms_sum"],
-      "source": "src/Honua.Plugins/PluginMetrics.cs"
+      "source": "src/Honua.Plugins/Core/PluginMetrics.cs"
     },
     {
       "instrument": "honua_plugin_failures_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_plugin_failures_total"],
-      "source": "src/Honua.Plugins/PluginMetrics.cs"
+      "source": "src/Honua.Plugins/Core/PluginMetrics.cs"
     },
     {
       "instrument": "honua_plugin_invocations_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_plugin_invocations_total"],
-      "source": "src/Honua.Plugins/PluginMetrics.cs"
+      "source": "src/Honua.Plugins/Core/PluginMetrics.cs"
     },
     {
       "instrument": "honua_request_error_total",
@@ -1007,14 +1007,14 @@
       "kind": "Counter",
       "unit": null,
       "series": ["honua_sensorthings_observation_stream_drops_total"],
-      "source": "src/Honua.Protocols.SensorThings/Streaming/ObservationStreamSessionManager.cs"
+      "source": "src/Honua.Protocols/SensorThings/Streaming/ObservationStreamSessionManager.cs"
     },
     {
       "instrument": "honua_sensorthings_observation_stream_rejections_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_sensorthings_observation_stream_rejections_total"],
-      "source": "src/Honua.Protocols.SensorThings/Streaming/ObservationStreamSessionManager.cs"
+      "source": "src/Honua.Protocols/SensorThings/Streaming/ObservationStreamSessionManager.cs"
     },
     {
       "instrument": "honua_serving_request_duration_ms",
@@ -1028,42 +1028,42 @@
       "kind": "Histogram",
       "unit": null,
       "series": ["honua_spatial_filter_duration_ms_bucket", "honua_spatial_filter_duration_ms_count", "honua_spatial_filter_duration_ms_sum"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_spatial_filter_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_spatial_filter_total"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_spatial_query_duration_ms",
       "kind": "Histogram",
       "unit": null,
       "series": ["honua_spatial_query_duration_ms_bucket", "honua_spatial_query_duration_ms_count", "honua_spatial_query_duration_ms_sum"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_spatial_query_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_spatial_query_total"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_transaction_duration_ms",
       "kind": "Histogram",
       "unit": null,
       "series": ["honua_transaction_duration_ms_bucket", "honua_transaction_duration_ms_count", "honua_transaction_duration_ms_sum"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_transaction_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_transaction_total"],
-      "source": "src/Honua.Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
+      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/PerformanceMetrics.cs"
     },
     {
       "instrument": "honua_upload_queue_depth",

@@ -18,7 +18,7 @@ public sealed partial class WhereClauseSplitterAllowlistTests
 {
     private static readonly string[] AllowedDeclarations =
     [
-        "src/Honua.Core/Queries/Filters/WhereClauseSplitter.cs",
+        "src/Honua.Core/Core/Queries/Filters/WhereClauseSplitter.cs",
         "src/Honua.Db/Postgres/Features/FeatureStore/Services/FeatureQueryBuilder.Where.cs",
         "src/Honua.Db/Postgres/Features/FeatureStore/Services/PostgresStorageMappedFeatureReader.cs",
     ];

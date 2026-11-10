@@ -62,7 +62,7 @@ unknown `kind`) as a text line, never as an event, so a tool that writes junk in
 channel degrades to text instead of breaking inspection.
 
 The server forwards a journal into the job's execution log through
-`HarnessEvents.ToExecutionLogEntries` (`src/Honua.Geoprocessing`): one log entry per
+`HarnessEvents.ToExecutionLogEntries` (`src/Honua.Geoprocessing/Core`): one log entry per
 record, messages passed through the same credential and path redaction as stderr,
 metadata `honua.event.v`, `honua.event.kind`, `honua.event.seq`, `honua.event.attempt`,
 `honua.event.elapsedMs`, and `honua.event.percent`, under the job-event cap (1000 entries,

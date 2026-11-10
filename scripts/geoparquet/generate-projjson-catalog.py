@@ -21,7 +21,7 @@ from pathlib import Path
 import sys
 from pyproj import CRS
 
-OUTPUT = "src/Honua.Core/Features/Infrastructure/Crs/Resources/geoparquet-crs-projjson.json"
+OUTPUT = "src/Honua.Core/Core/Features/Infrastructure/Crs/Resources/geoparquet-crs-projjson.json"
 
 def codes():
     yield 3857  # WGS 84 / Pseudo-Mercator (Web Mercator)

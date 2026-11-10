@@ -68,12 +68,12 @@ jobs:
         run: dotnet restore Honua.sln
 
       - name: Build Honua.Core
-        run: dotnet build src/Honua.Core/Honua.Core.csproj --configuration Release --no-restore /p:TreatWarningsAsErrors=true
+        run: dotnet build src/Honua.Core/Core/Honua.Core.csproj --configuration Release --no-restore /p:TreatWarningsAsErrors=true
 
       - name: Pack Honua.Core
         run: |
           mkdir -p nupkgs
-          dotnet pack src/Honua.Core/Honua.Core.csproj \
+          dotnet pack src/Honua.Core/Core/Honua.Core.csproj \
             --configuration Release \
             --no-build \
             --output nupkgs \

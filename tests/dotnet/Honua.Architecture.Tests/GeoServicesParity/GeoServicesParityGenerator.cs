@@ -179,7 +179,7 @@ internal static class GeoServicesParityGenerator
                     + "operation on an in-release route correctly reads status=stub, capabilityMaturity=[implemented]. "
                     + "Only status, name, notes, and the prose fields are authored, in "
                     + "docs/gis/data/geoservices-parity-judgment.json. Regenerate with "
-                    + "scripts/generate-geoservices-parity.sh.",
+                    + "scripts/ci/generate-geoservices-parity.sh.",
                 ExcludedServiceTypes = GeoServicesRouteRoster.ExcludedServiceTypes
                     .OrderBy(pair => pair.Key, StringComparer.Ordinal)
                     .Select(pair => new ParityExclusion { ServiceType = pair.Key, Reason = pair.Value })

@@ -26,8 +26,8 @@ permissions:
   packages: read
 
 concurrency:
-  group: focused-mcp-${{ github.ref }}
-  cancel-in-progress: false
+  group: focused-mcp-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   inspector-browser-controls:

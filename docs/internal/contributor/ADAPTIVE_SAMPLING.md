@@ -1,6 +1,6 @@
 # Adaptive Sampling for Distributed Tracing
 
-_Defaults verified against `src/Honua.Server/appsettings.json` and `src/Honua.Core/Configuration/AdaptiveSamplingOptions.cs` on 2026-05-18._
+_Defaults verified against `src/Honua.Server/appsettings.json` and `src/Honua.Core/Core/Configuration/AdaptiveSamplingOptions.cs` on 2026-05-18._
 
 Honua Server includes intelligent adaptive sampling that automatically adjusts OpenTelemetry tracing rates based on system load, error rates, and operation importance. This provides optimal debugging information while minimizing performance overhead.
 

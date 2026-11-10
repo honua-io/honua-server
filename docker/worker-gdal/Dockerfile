@@ -46,8 +46,8 @@ WORKDIR /src
 COPY Honua.sln Directory.Build.props Directory.Build.targets Directory.Packages.props NuGet.config .editorconfig ./
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
 COPY src/Honua.Analyzers/*.csproj src/Honua.Analyzers/
-COPY src/Honua.Core.Abstractions/*.csproj src/Honua.Core.Abstractions/
-COPY src/Honua.Core/*.csproj src/Honua.Core/
+COPY src/Honua.Core/Abstractions/*.csproj src/Honua.Core/Abstractions/
+COPY src/Honua.Core/Core/*.csproj src/Honua.Core/Core/
 COPY src/Honua.Geometry/*.csproj src/Honua.Geometry/
 COPY src/Honua.Hosting/*.csproj src/Honua.Hosting/
 COPY src/Honua.Jobs/*.csproj src/Honua.Jobs/

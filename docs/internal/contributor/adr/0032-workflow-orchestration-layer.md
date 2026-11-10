@@ -34,7 +34,7 @@ cross-step artifact flow from observability.
 ## Decision
 
 Honua defines a declarative workflow orchestration layer as a new vertical
-slice under `Honua.Core/Features/Orchestration` (domain + abstractions) and
+slice under `Honua.Core/Core/Features/Orchestration` (domain + abstractions) and
 `Honua.Server/Features/Orchestration` (stores, engine, background services).
 
 ### Domain Types

@@ -172,6 +172,8 @@ Start with the safe ones; everything in the planning family is read-only:
 Once a plan validates:
 
 - `honua_execute_plan` — submits the plan (supports an `idempotencyKey`); returns a `jobId` and a `honua://jobs/{jobId}` resource URI.
+- `honua_list_jobs` — poll the submitted `jobId` to `Succeeded`, `Failed`, or `Cancelled`; follow `nextCursor` when present. Submission alone does not establish completion.
+- `honua_get_job_results` — retrieve the terminal result package by `jobId`, including typed artifact references. Check the artifact content before reporting a successful analysis. Both tools are available in default discovery.
 - `honua_cancel_job` — requests cancellation by `jobId`.
 - `honua_diagnose_job` — read-only diagnosis of a job you can read: `observed` facts (status, timestamps, heartbeat, structured failure, release identity, artifacts) kept apart from `inferred` explanations (canonical phase, liveness verdict, failure classification, recovery, retry disposition), with `evidence.missing` and `evidence.truncated` listed. A returned diagnosis is never proof the job succeeded; read `observed.status`.
 - `honua_job_evidence` — the bounded evidence behind a diagnosis: sanitized steps, the most recent events (`events`, maximum 500) and artifact availability, with no inferred layer. Both tools read the same projection as `GET /api/v1/admin/jobs/{jobId}/diagnostics`; see [Diagnose a remote geoprocessing job](../query-analyze/gp-job-diagnostics.md).
@@ -333,7 +335,7 @@ The server publishes its `/mcp` tool roster as a generated file, [`docs/gis/data
 - `views`: the members of the `default`, `setup`, `configure`, `folders`, `operate`, `analyze` and `review` workflow views.
 - `retired`: tool names the server no longer advertises, such as `honua_propose_operation`.
 
-`serverSha` records the commit the roster was last regenerated from. To regenerate the file, run `bash scripts/generate-mcp-tool-roster.sh`. The nightly generated-files job also regenerates it. `McpToolRosterDriftTests` fails when the committed file no longer matches the composed server.
+`serverSha` records the commit the roster was last regenerated from. To regenerate the file, run `bash scripts/ci/generate-mcp-tool-roster.sh`. The nightly generated-files job also regenerates it. `McpToolRosterDriftTests` fails when the committed file no longer matches the composed server.
 
 The roster is for build-time parity gates, not for runtime discovery. A running agent still discovers tools with `tools/list` and `honua_list_capabilities`. Downstream catalogs gate on the roster at their pinned server commit instead of keeping their own lists. These include sdk-js MCP certification (`roster-parity`), honua-release `e2e/drivers/mcp/expected-tools.json`, and the geospatial-mcp `index.json` reference tool names. A consumer that names a `retired` tool, or a tool missing from the roster, is stale.
 

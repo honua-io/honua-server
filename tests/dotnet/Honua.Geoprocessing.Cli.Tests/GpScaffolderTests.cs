@@ -94,7 +94,7 @@ public sealed class GpScaffolderTests
         // Executor at the managed execution directory, named *JobExecutor.
         var executor = plan.Files.Single(f => f.RelativePath.EndsWith("GeometryRecenterJobExecutor.cs", StringComparison.Ordinal));
         executor.RelativePath.Should().Be(
-            "src/Honua.Geoprocessing/Features/Geoprocessing/Execution/GeometryRecenterJobExecutor.cs");
+            "src/Honua.Geoprocessing/Core/Features/Geoprocessing/Execution/GeometryRecenterJobExecutor.cs");
 
         // It declares the id + schema and returns a trivial valid result (a geo+json artifact).
         executor.Contents.Should().Contain("HandledProcessId = \"geometry.recenter\"");

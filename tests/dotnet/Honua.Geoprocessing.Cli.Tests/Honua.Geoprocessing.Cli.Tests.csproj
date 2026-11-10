@@ -16,8 +16,8 @@
       writes — pure string transforms and the in-memory fixture loader.
       GP Devkit P9 (#2176): offline unit tests for the `honua gp publish` command.
     -->
-    <ProjectReference Include="..\..\..\src\Honua.Geoprocessing.Cli\Honua.Geoprocessing.Cli.csproj" />
-    <ProjectReference Include="..\..\..\src\Honua.Geoprocessing.Testing\Honua.Geoprocessing.Testing.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Geoprocessing\Cli\Honua.Geoprocessing.Cli.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Geoprocessing\Testing\Honua.Geoprocessing.Testing.csproj" />
   </ItemGroup>
 
   <ItemGroup>

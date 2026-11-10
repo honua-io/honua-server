@@ -65,7 +65,7 @@ if sys.argv[1] == "gate-fast-actions":
 }
 '''
         self.write(self.test_path, self.test_source)
-        self.protocol_helper = "src/Honua.Protocols.GeoServices/InputRepair.cs"
+        self.protocol_helper = "src/Honua.Protocols/GeoServices/InputRepair.cs"
         self.write(self.protocol_helper, "internal class InputRepair\n{\n    public int Value()\n    {\n        return 1;\n    }\n}\n")
         self.constraint_test = "tests/dotnet/Honua.Core.Tests/ConstraintTests.cs"
         self.write(self.constraint_test, self.test_source.replace("GET /old", "GET /old/{id:[a-z]+}/suffix"))

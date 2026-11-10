@@ -1,0 +1,870 @@
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+
+using Honua.Core.Features.Studio.Domain;
+
+namespace Honua.Core.Features.Metadata.Domain.V2;
+
+public static class MetadataV2GraphValidator
+{
+    public static MetadataV2GraphValidationResult Validate(MetadataV2Graph graph)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+
+        var errors = new List<string>(MetadataV2FolderValidation.Validate(graph));
+        var entityIds = new HashSet<string>(StringComparer.Ordinal);
+
+        AddEntityIds(errors, entityIds, "folder", graph.Folders.Select(folder => folder.Metadata.Id));
+        AddEntityIds(errors, entityIds, "resource", graph.Resources.Select(resource => resource.Metadata.Id));
+        AddEntityIds(errors, entityIds, "connection", graph.Connections.Select(connection => connection.Metadata.Id));
+        AddEntityIds(
+            errors,
+            entityIds,
+            "storage binding",
+            graph.StorageBindings.Select(storageBinding => storageBinding.Metadata.Id));
+        AddEntityIds(errors, entityIds, "service", graph.Services.Select(service => service.Metadata.Id));
+        AddEntityIds(errors, entityIds, "publication", graph.Publications.Select(publication => publication.Metadata.Id));
+
+        var resourcesById = ToUniqueDictionary(
+            graph.Resources,
+            resource => resource.Metadata.Id);
+        var resourceIds = resourcesById.Keys.ToHashSet(StringComparer.Ordinal);
+        var connectionIds = graph.Connections.Select(connection => connection.Metadata.Id).ToHashSet(StringComparer.Ordinal);
+        var storageBindingsById = ToUniqueDictionary(
+            graph.StorageBindings,
+            storageBinding => storageBinding.Metadata.Id);
+        var serviceIds = graph.Services.Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
+        var publicationsById = ToUniqueDictionary(
+            graph.Publications,
+            publication => publication.Metadata.Id);
+
+        ValidateStorageBindings(errors, graph.StorageBindings, resourceIds, connectionIds);
+        ValidateResources(errors, graph.Resources, storageBindingsById);
+        ValidateCompositeRelationships(errors, resourcesById);
+        ValidatePublications(errors, graph.Publications, resourcesById, storageBindingsById, serviceIds);
+        ValidateUnboundPublicationLayerIndexes(errors, graph, resourcesById);
+        ValidateServices(errors, graph.Services, publicationsById);
+        ValidatePublicationPrimary(errors, graph.Publications);
+        ValidateObjectMetadataUniversals(errors, graph);
+        ValidateStyleResources(errors, graph);
+
+        return new MetadataV2GraphValidationResult(errors.Count == 0, errors);
+    }
+
+    private static void ValidateCompositeRelationships(
+        List<string> errors,
+        Dictionary<string, MetadataV2Resource> resourcesById)
+    {
+        foreach (var resource in resourcesById.Values)
+        {
+            if (!MetadataV2RelationshipEditPolicy.RequiresReadOnly(resource))
+            {
+                continue;
+            }
+
+            if (resource.Editing?.CanModify == true)
+            {
+                errors.Add($"resource '{resource.Metadata.Id}' has composite relationships and cannot enable editing until ownership edits are supported.");
+            }
+
+            foreach (var relationship in resource.Relationships.Where(static relationship => relationship.Composite))
+            {
+                if (!resourcesById.TryGetValue(relationship.RelatedResourceId, out var related))
+                {
+                    errors.Add($"resource '{resource.Metadata.Id}' composite relationship '{relationship.Id}' references a missing resource.");
+                    continue;
+                }
+
+                // Both ends must retain the constraint. Otherwise dropping the
+                // destination declaration could accidentally leave its writes enabled.
+                var reciprocal = related.Relationships.Any(candidate =>
+                    candidate.Composite &&
+                    string.Equals(candidate.RelatedResourceId, resource.Metadata.Id, StringComparison.Ordinal) &&
+                    string.Equals(candidate.OriginField, relationship.DestinationField, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(candidate.DestinationField, relationship.OriginField, StringComparison.OrdinalIgnoreCase));
+                if (!reciprocal)
+                {
+                    errors.Add($"resource '{resource.Metadata.Id}' composite relationship '{relationship.Id}' requires a reciprocal composite declaration on '{related.Metadata.Id}'.");
+                }
+            }
+        }
+    }
+
+    private static Dictionary<string, TEntity> ToUniqueDictionary<TEntity>(
+        IEnumerable<TEntity> entities,
+        Func<TEntity, string> getId)
+    {
+        var dictionary = new Dictionary<string, TEntity>(StringComparer.Ordinal);
+
+        foreach (var entity in entities)
+        {
+            var id = getId(entity);
+            if (string.IsNullOrWhiteSpace(id) || dictionary.ContainsKey(id))
+            {
+                continue;
+            }
+
+            dictionary.Add(id, entity);
+        }
+
+        return dictionary;
+    }
+
+    private static void AddEntityIds(
+        List<string> errors,
+        HashSet<string> entityIds,
+        string entityKind,
+        IEnumerable<string> ids)
+    {
+        foreach (var id in ids)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                errors.Add($"{entityKind} metadata id is required.");
+                continue;
+            }
+
+            if (entityKind == "service"
+                && !StudioCatalogSourceIdentity.TryCreate(id, int.MaxValue, out _))
+            {
+                errors.Add(
+                    $"service metadata id '{id}' exceeds the Studio catalog key limit of {StudioCatalogSourceIdentity.MaxLength} characters.");
+            }
+
+            if (!entityIds.Add(id))
+            {
+                errors.Add($"metadata id '{id}' is duplicated.");
+            }
+        }
+    }
+
+    private static void ValidateStorageBindings(
+        List<string> errors,
+        IEnumerable<MetadataV2StorageBinding> storageBindings,
+        HashSet<string> resourceIds,
+        HashSet<string> connectionIds)
+    {
+        foreach (var storageBinding in storageBindings)
+        {
+            if (!resourceIds.Contains(storageBinding.ResourceId))
+            {
+                errors.Add(
+                    $"storage binding '{storageBinding.Metadata.Id}' references missing resource '{storageBinding.ResourceId}'.");
+            }
+
+            if (storageBinding.ConnectionId is not null && !connectionIds.Contains(storageBinding.ConnectionId))
+            {
+                errors.Add(
+                    $"storage binding '{storageBinding.Metadata.Id}' references missing connection '{storageBinding.ConnectionId}'.");
+            }
+        }
+    }
+
+    private static void ValidateResources(
+        List<string> errors,
+        IEnumerable<MetadataV2Resource> resources,
+        Dictionary<string, MetadataV2StorageBinding> storageBindingsById)
+    {
+        foreach (var resource in resources)
+        {
+            var storageBindingIds = resource.StorageBindingIds ?? Array.Empty<string>();
+
+            foreach (var storageBindingId in storageBindingIds)
+            {
+                if (!storageBindingsById.TryGetValue(storageBindingId, out var storageBinding))
+                {
+                    errors.Add(
+                        $"resource '{resource.Metadata.Id}' references missing storage binding '{storageBindingId}'.");
+                    continue;
+                }
+
+                if (!string.Equals(storageBinding.ResourceId, resource.Metadata.Id, StringComparison.Ordinal))
+                {
+                    errors.Add(
+                        $"resource '{resource.Metadata.Id}' references storage binding '{storageBindingId}' owned by resource '{storageBinding.ResourceId}'.");
+                }
+            }
+
+            ValidateResourceStorageLayerId(errors, resource, storageBindingIds, storageBindingsById);
+            ValidateResourceSpatial(errors, resource);
+            ValidateResourceTemporal(errors, resource);
+            ValidateResourceSchemaFields(errors, resource);
+            ValidateResourceDisplayEditing(errors, resource);
+            ValidateResourceSubtypes(errors, resource);
+            ValidateResourceAttributeRules(errors, resource);
+            ValidateResourceExtrusion(errors, resource);
+            ValidateResourceSymbology3D(errors, resource);
+        }
+    }
+
+    private static void ValidateResourceSubtypes(List<string> errors, MetadataV2Resource resource)
+    {
+        var subtypes = resource.Subtypes;
+        if (subtypes is null)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(subtypes.SubtypeField))
+        {
+            errors.Add($"resource '{resource.Metadata.Id}' subtypes.subtypeField is required.");
+        }
+        else
+        {
+            EnsureFieldDeclared(errors, resource, subtypes.SubtypeField, "subtypes.subtypeField");
+        }
+
+        // Per-subtype field overrides must reference declared fields so an Esri client
+        // never receives an override for an attribute the layer does not expose.
+        foreach (var subtype in subtypes.Subtypes)
+        {
+            foreach (var fieldName in subtype.FieldOverrides.Keys)
+            {
+                EnsureFieldDeclared(errors, resource, fieldName, "subtypes.subtypes.fieldOverrides");
+            }
+        }
+    }
+
+    private static void ValidateResourceAttributeRules(List<string> errors, MetadataV2Resource resource)
+    {
+        var rules = resource.AttributeRules;
+        if (rules.Count == 0)
+        {
+            return;
+        }
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var rule in rules)
+        {
+            if (string.IsNullOrWhiteSpace(rule.Name))
+            {
+                errors.Add($"resource '{resource.Metadata.Id}' attributeRules.name is required.");
+            }
+            else if (!seen.Add(rule.Name))
+            {
+                errors.Add($"resource '{resource.Metadata.Id}' attributeRules.name '{rule.Name}' is duplicated.");
+            }
+
+            if (string.IsNullOrWhiteSpace(rule.ScriptExpression))
+            {
+                errors.Add($"resource '{resource.Metadata.Id}' attributeRule '{rule.Name}' scriptExpression is required.");
+            }
+
+            // A calculation rule writes its computed value into a declared field; a rule
+            // pointing at an undeclared field could never be applied, so reject it at the
+            // graph level rather than silently dropping the write at edit time.
+            if (rule.Type == MetadataV2AttributeRuleType.Calculation)
+            {
+                if (string.IsNullOrWhiteSpace(rule.FieldName))
+                {
+                    errors.Add($"resource '{resource.Metadata.Id}' calculation attributeRule '{rule.Name}' requires fieldName.");
+                }
+                else
+                {
+                    EnsureFieldDeclared(errors, resource, rule.FieldName, "attributeRules.fieldName");
+                }
+            }
+        }
+    }
+
+    private static void ValidateResourceExtrusion(List<string> errors, MetadataV2Resource resource)
+    {
+        if (resource.Extrusion is null)
+        {
+            return;
+        }
+
+        foreach (var errorCode in MetadataV2ExtrusionValidator.Validate(resource.Extrusion, resource.SchemaFields))
+        {
+            errors.Add($"resource '{resource.Metadata.Id}' extrusion is invalid: {errorCode}.");
+        }
+    }
+
+    private static void ValidateResourceSymbology3D(List<string> errors, MetadataV2Resource resource)
+    {
+        var symbology = resource.Symbology3D;
+        if (symbology is null)
+        {
+            return;
+        }
+
+        ValidateOpacity(errors, resource, symbology.DefaultOpacity, "symbology3D.defaultOpacity");
+
+        foreach (var rule in symbology.Rules)
+        {
+            if (string.IsNullOrWhiteSpace(rule.Attribute))
+            {
+                errors.Add($"resource '{resource.Metadata.Id}' symbology3D rule attribute is required.");
+                continue;
+            }
+
+            EnsureFieldDeclared(errors, resource, rule.Attribute, "symbology3D.rules.attribute");
+            ValidateOpacity(errors, resource, rule.Opacity, "symbology3D.rules.opacity");
+        }
+    }
+
+    private static void ValidateOpacity(
+        List<string> errors,
+        MetadataV2Resource resource,
+        double? opacity,
+        string slot)
+    {
+        if (opacity is null)
+        {
+            return;
+        }
+
+        if (double.IsNaN(opacity.Value) || opacity.Value < 0.0 || opacity.Value > 1.0)
+        {
+            errors.Add($"resource '{resource.Metadata.Id}' {slot} must be between 0 and 1.");
+        }
+    }
+
+    private static void ValidateResourceDisplayEditing(List<string> errors, MetadataV2Resource resource)
+    {
+        if (resource.Display is { } display && !string.IsNullOrWhiteSpace(display.DisplayField))
+        {
+            EnsureFieldDeclared(errors, resource, display.DisplayField, "display.displayField");
+        }
+
+        if (resource.Editing is { } editing)
+        {
+            if (!string.IsNullOrWhiteSpace(editing.GlobalIdField))
+            {
+                EnsureFieldDeclared(errors, resource, editing.GlobalIdField, "editing.globalIdField");
+            }
+            if (!string.IsNullOrWhiteSpace(editing.CreatorField))
+            {
+                EnsureFieldDeclared(errors, resource, editing.CreatorField, "editing.creatorField");
+            }
+            if (!string.IsNullOrWhiteSpace(editing.CreatedAtField))
+            {
+                EnsureFieldDeclared(errors, resource, editing.CreatedAtField, "editing.createdAtField");
+            }
+            if (!string.IsNullOrWhiteSpace(editing.EditorField))
+            {
+                EnsureFieldDeclared(errors, resource, editing.EditorField, "editing.editorField");
+            }
+            if (!string.IsNullOrWhiteSpace(editing.UpdatedAtField))
+            {
+                EnsureFieldDeclared(errors, resource, editing.UpdatedAtField, "editing.updatedAtField");
+            }
+        }
+    }
+
+    private static void EnsureFieldDeclared(
+        List<string> errors, MetadataV2Resource resource, string? fieldName, string slot)
+    {
+        if (string.IsNullOrWhiteSpace(fieldName))
+        {
+            return;
+        }
+
+        var declared = resource.SchemaFields.Any(f =>
+            string.Equals(f.Name, fieldName, StringComparison.OrdinalIgnoreCase));
+        if (!declared)
+        {
+            errors.Add(
+                $"resource '{resource.Metadata.Id}' {slot} '{fieldName}' is not declared in schemaFields.");
+        }
+    }
+
+    private static void ValidateResourceStorageLayerId(
+        List<string> errors,
+        MetadataV2Resource resource,
+        IReadOnlyList<string> storageBindingIds,
+        Dictionary<string, MetadataV2StorageBinding> storageBindingsById)
+    {
+        if (resource.Type is not (MetadataV2ResourceType.FeatureDataset
+            or MetadataV2ResourceType.RasterDataset
+            or MetadataV2ResourceType.TileDataset))
+        {
+            return;
+        }
+
+        if (storageBindingIds.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var id in storageBindingIds.Where(id =>
+            storageBindingsById.TryGetValue(id, out var binding) && binding.StorageLayerId is null))
+        {
+            errors.Add(
+                $"storage binding '{id}' on resource '{resource.Metadata.Id}' (type '{resource.Type}') must declare storageLayerId.");
+        }
+    }
+
+    private static void ValidateResourceSpatial(List<string> errors, MetadataV2Resource resource)
+    {
+        var spatial = resource.Spatial;
+        if (spatial is null)
+        {
+            return;
+        }
+
+        if (spatial.SpatialReference is { } sr && sr.ResolveSrid() is null && (sr.Srid is null && string.IsNullOrWhiteSpace(sr.Crs)))
+        {
+            errors.Add(
+                $"resource '{resource.Metadata.Id}' spatial reference has neither srid nor crs.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(spatial.PrimaryGeometryField))
+        {
+            var named = MetadataV2FieldSemantics.FindField(resource.SchemaFields, spatial.PrimaryGeometryField);
+            if (named is null)
+            {
+                errors.Add(
+                    $"resource '{resource.Metadata.Id}' primaryGeometryField '{spatial.PrimaryGeometryField}' is not declared in schemaFields.");
+            }
+            else if (named.Type != MetadataV2FieldType.Unknown && !MetadataV2FieldSemantics.SupportsGeometry(named.Type))
+            {
+                errors.Add(
+                    $"resource '{resource.Metadata.Id}' primaryGeometryField '{spatial.PrimaryGeometryField}' is type '{named.Type}' (must be Geometry or Geography).");
+            }
+        }
+    }
+
+    private static void ValidateResourceTemporal(List<string> errors, MetadataV2Resource resource)
+    {
+        var temporal = resource.Temporal;
+        if (temporal is null)
+        {
+            return;
+        }
+
+        ValidateTemporalField(errors, resource, temporal.StartTimeField, "startTimeField", required: false);
+        ValidateTemporalField(errors, resource, temporal.EndTimeField, "endTimeField", required: false);
+    }
+
+    private static void ValidateTemporalField(
+        List<string> errors, MetadataV2Resource resource, string? fieldName, string slot, bool required)
+    {
+        if (string.IsNullOrWhiteSpace(fieldName))
+        {
+            if (required)
+            {
+                errors.Add($"resource '{resource.Metadata.Id}' temporal.{slot} is required.");
+            }
+            return;
+        }
+
+        var field = MetadataV2FieldSemantics.FindField(resource.SchemaFields, fieldName);
+        if (field is null)
+        {
+            errors.Add($"resource '{resource.Metadata.Id}' temporal.{slot} '{fieldName}' is not declared in schemaFields.");
+            return;
+        }
+
+        if (field.Type != MetadataV2FieldType.Unknown && !MetadataV2FieldSemantics.SupportsTime(field.Type))
+        {
+            errors.Add(
+                $"resource '{resource.Metadata.Id}' temporal.{slot} '{fieldName}' is type '{field.Type}' (must be Date, DateTime, or Time).");
+        }
+    }
+
+    private static void ValidateResourceSchemaFields(List<string> errors, MetadataV2Resource resource)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var primaryGeometryCount = 0;
+        var primaryIdCount = 0;
+
+        foreach (var field in resource.SchemaFields)
+        {
+            if (string.IsNullOrWhiteSpace(field.Name))
+            {
+                errors.Add($"resource '{resource.Metadata.Id}' has a schema field with empty name.");
+                continue;
+            }
+            if (!seen.Add(field.Name))
+            {
+                errors.Add($"resource '{resource.Metadata.Id}' schema field name '{field.Name}' is duplicated.");
+            }
+
+            foreach (var role in field.SemanticRoles)
+            {
+                if (string.Equals(role, "geometry.primary", StringComparison.OrdinalIgnoreCase))
+                {
+                    primaryGeometryCount++;
+                }
+                else if (string.Equals(role, "id.primary", StringComparison.OrdinalIgnoreCase))
+                {
+                    primaryIdCount++;
+                }
+            }
+        }
+
+        if (primaryGeometryCount > 1)
+        {
+            errors.Add(
+                $"resource '{resource.Metadata.Id}' declares {primaryGeometryCount} schema fields with the 'geometry.primary' semantic role (at most one allowed).");
+        }
+        if (primaryIdCount > 1)
+        {
+            errors.Add(
+                $"resource '{resource.Metadata.Id}' declares {primaryIdCount} schema fields with the 'id.primary' semantic role (at most one allowed).");
+        }
+    }
+
+    private static void ValidatePublicationPrimary(
+        List<string> errors, IReadOnlyList<MetadataV2Publication> publications)
+    {
+        // At most one publication per (resourceId, serviceId) may set IsPrimary = true.
+        // Not rewritten as .Select(): the loop accumulates a frequency count into a shared
+        // dictionary rather than projecting a new sequence, so this is an aggregation, not a map.
+        var counts = new Dictionary<(string, string), int>();
+        foreach (var key in (publications.Where(pub => pub.IsPrimary)).Select(pub => (pub.ResourceId, pub.ServiceId)))
+        {
+            counts[key] = counts.TryGetValue(key, out var n) ? n + 1 : 1;
+        }
+        foreach (var ((resourceId, serviceId), n) in counts)
+        {
+            if (n > 1)
+            {
+                errors.Add(
+                    $"resource '{resourceId}' has {n} primary publications on service '{serviceId}' (at most one allowed).");
+            }
+        }
+    }
+
+    private static void ValidatePublications(
+        List<string> errors,
+        IEnumerable<MetadataV2Publication> publications,
+        Dictionary<string, MetadataV2Resource> resourcesById,
+        Dictionary<string, MetadataV2StorageBinding> storageBindingsById,
+        HashSet<string> serviceIds)
+    {
+        foreach (var publication in publications)
+        {
+            var hasResource = resourcesById.TryGetValue(publication.ResourceId, out var resource);
+            if (!hasResource)
+            {
+                errors.Add(
+                    $"publication '{publication.Metadata.Id}' references missing resource '{publication.ResourceId}'.");
+            }
+
+            if (!serviceIds.Contains(publication.ServiceId))
+            {
+                errors.Add(
+                    $"publication '{publication.Metadata.Id}' references missing service '{publication.ServiceId}'.");
+            }
+
+            if (publication.StorageBindingId is null)
+            {
+                continue;
+            }
+
+            if (hasResource)
+            {
+                var storageBindingIds = resource!.StorageBindingIds ?? Array.Empty<string>();
+                if (!storageBindingIds.Contains(publication.StorageBindingId, StringComparer.Ordinal))
+                {
+                    errors.Add(
+                        $"resource '{publication.ResourceId}' primary storage binding '{publication.StorageBindingId}' must be listed in storageBindingIds.");
+                }
+            }
+
+            if (!storageBindingsById.TryGetValue(publication.StorageBindingId, out var storageBinding))
+            {
+                errors.Add(
+                    $"publication '{publication.Metadata.Id}' references missing storage binding '{publication.StorageBindingId}'.");
+                continue;
+            }
+
+            if (!string.Equals(storageBinding.ResourceId, publication.ResourceId, StringComparison.Ordinal))
+            {
+                errors.Add(
+                    $"publication '{publication.Metadata.Id}' uses storage binding '{publication.StorageBindingId}' owned by resource '{storageBinding.ResourceId}'.");
+            }
+        }
+    }
+
+    // A service-local layer index must not equal another resource's storage-layer id, or this publication would read and write that resource's data under its own access policy.
+    private static void ValidateUnboundPublicationLayerIndexes(
+        List<string> errors,
+        MetadataV2Graph graph,
+        Dictionary<string, MetadataV2Resource> resourcesById)
+    {
+        var storageOwners = new Dictionary<int, string>();
+        var boundResourceIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var binding in graph.StorageBindings)
+        {
+            if (binding.StorageLayerId is not int storageLayerId)
+            {
+                continue;
+            }
+
+            storageOwners.TryAdd(storageLayerId, binding.ResourceId);
+            boundResourceIds.Add(binding.ResourceId);
+        }
+
+        foreach (var publication in graph.Publications)
+        {
+            if (publication.StorageBindingId is not null
+                || publication.LayerIndex is not int layerIndex
+                || !resourcesById.TryGetValue(publication.ResourceId, out var resource)
+                || resource.Type is not (MetadataV2ResourceType.FeatureDataset
+                    or MetadataV2ResourceType.RasterDataset
+                    or MetadataV2ResourceType.TileDataset)
+                || boundResourceIds.Contains(resource.Metadata.Id)
+                || !storageOwners.TryGetValue(layerIndex, out var ownerResourceId)
+                || string.Equals(ownerResourceId, resource.Metadata.Id, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            errors.Add(
+                $"publication '{publication.Metadata.Id}' has no storage binding and its layer index {layerIndex} is the storage layer id of resource '{ownerResourceId}'.");
+        }
+    }
+
+    private static readonly HashSet<string> CanonicalStyleEncodings = new(StringComparer.Ordinal)
+    {
+        "mapbox-style",
+        "sld-1.0.0",
+        "sld-1.1.0",
+        "esri-drawing-info",
+        "esri-image-renderer",
+        "3d-tiles-styling",
+    };
+
+    private static void ValidateStyleResources(List<string> errors, MetadataV2Graph graph)
+    {
+        var styleResources = graph.Resources
+            .Where(r => r.Type == MetadataV2ResourceType.Style)
+            .ToDictionary(r => r.Metadata.Id, StringComparer.Ordinal);
+
+        foreach (var resource in graph.Resources)
+        {
+            // StyleResourceIds entries must reference declared Resources of Type=Style.
+            for (var i = 0; i < resource.StyleResourceIds.Count; i++)
+            {
+                var styleId = resource.StyleResourceIds[i];
+                if (string.IsNullOrWhiteSpace(styleId))
+                {
+                    errors.Add(
+                        $"resource '{resource.Metadata.Id}' styleResourceIds[{i}] is empty.");
+                    continue;
+                }
+                if (!styleResources.ContainsKey(styleId))
+                {
+                    errors.Add(
+                        $"resource '{resource.Metadata.Id}' styleResourceIds[{i}] '{styleId}' is not a declared resource of type Style.");
+                }
+            }
+
+            // Resources with Type=Style MUST have Style.Encodings non-empty.
+            if (resource.Type == MetadataV2ResourceType.Style)
+            {
+                var style = resource.Style;
+                if (style is null || style.Encodings.Count == 0)
+                {
+                    errors.Add(
+                        $"resource '{resource.Metadata.Id}' is type Style but has no style.encodings.");
+                }
+                else
+                {
+                    for (var i = 0; i < style.Encodings.Count; i++)
+                    {
+                        var encoding = style.Encodings[i];
+                        var hasBody = !string.IsNullOrEmpty(encoding.Body);
+                        var hasBinding = !string.IsNullOrEmpty(encoding.StorageBindingId);
+                        if (hasBody == hasBinding)
+                        {
+                            errors.Add(
+                                $"resource '{resource.Metadata.Id}' style.encodings[{i}] must set exactly one of body or storageBindingId.");
+                        }
+
+                        if (string.IsNullOrWhiteSpace(encoding.Encoding))
+                        {
+                            errors.Add(
+                                $"resource '{resource.Metadata.Id}' style.encodings[{i}].encoding is required.");
+                        }
+                        else if (!CanonicalStyleEncodings.Contains(encoding.Encoding) && !encoding.Encoding.StartsWith("x-", StringComparison.Ordinal))
+                        {
+                            errors.Add(
+                                $"resource '{resource.Metadata.Id}' style.encodings[{i}].encoding '{encoding.Encoding}' is not a canonical value (mapbox-style, sld-1.0.0, sld-1.1.0, esri-drawing-info, esri-image-renderer, 3d-tiles-styling) and is not prefixed with 'x-'.");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static void ValidateObjectMetadataUniversals(List<string> errors, MetadataV2Graph graph)
+    {
+        ValidateOneMetadata(errors, "graph", graph.Metadata);
+        foreach (var r in graph.Resources)
+        {
+            ValidateOneMetadata(errors, $"resource '{r.Metadata.Id}'", r.Metadata);
+        }
+        foreach (var c in graph.Connections)
+        {
+            ValidateOneMetadata(errors, $"connection '{c.Metadata.Id}'", c.Metadata);
+        }
+        foreach (var sb in graph.StorageBindings)
+        {
+            ValidateOneMetadata(errors, $"storage binding '{sb.Metadata.Id}'", sb.Metadata);
+        }
+        foreach (var s in graph.Services)
+        {
+            ValidateOneMetadata(errors, $"service '{s.Metadata.Id}'", s.Metadata);
+        }
+        foreach (var p in graph.Publications)
+        {
+            ValidateOneMetadata(errors, $"publication '{p.Metadata.Id}'", p.Metadata);
+        }
+    }
+
+    private static void ValidateOneMetadata(List<string> errors, string ownerLabel, MetadataV2ObjectMetadata metadata)
+    {
+        if (!SpdxLicensePolicy.IsValidCanonicalValue(metadata.License))
+        {
+            errors.Add(
+                $"{ownerLabel} metadata.license must be a canonical SPDX expression or the literal 'proprietary' without padding or control characters and must not exceed {SpdxLicensePolicy.MaxExpressionLength} characters.");
+        }
+
+        if (!IsValidGovernanceText(metadata.Attribution, MetadataV2ObjectMetadata.MaxAttributionLength))
+        {
+            errors.Add(
+                $"{ownerLabel} metadata.attribution must not exceed {MetadataV2ObjectMetadata.MaxAttributionLength} characters or contain control characters.");
+        }
+        if (!IsValidGovernanceText(metadata.Publisher, MetadataV2ObjectMetadata.MaxPublisherLength))
+        {
+            errors.Add(
+                $"{ownerLabel} metadata.publisher must not exceed {MetadataV2ObjectMetadata.MaxPublisherLength} characters or contain control characters.");
+        }
+
+        if (metadata.ContactPoint is { Name: { } contactName } &&
+            !IsValidGovernanceText(contactName, MetadataV2ContactPoint.MaxNameLength))
+        {
+            errors.Add(
+                $"{ownerLabel} metadata.contactPoint.name must not exceed {MetadataV2ContactPoint.MaxNameLength} characters or contain control characters.");
+        }
+        if (metadata.ContactPoint is { Email: { } email } &&
+            !string.IsNullOrWhiteSpace(email) &&
+            !HasNonEmptyEmailParts(email))
+        {
+            errors.Add($"{ownerLabel} metadata.contactPoint.email must contain non-empty local and domain parts.");
+        }
+        if (metadata.ContactPoint is { Url: { } contactUrl } &&
+            !string.IsNullOrWhiteSpace(contactUrl))
+        {
+            if (contactUrl.Length > MetadataV2ContactPoint.MaxUrlLength)
+            {
+                errors.Add(
+                    $"{ownerLabel} metadata.contactPoint.url must not exceed {MetadataV2ContactPoint.MaxUrlLength} characters.");
+            }
+            else if (!IsSafePublicHttpUrl(contactUrl))
+            {
+                errors.Add(
+                    $"{ownerLabel} metadata.contactPoint.url must be an absolute HTTP(S) URL without credentials.");
+            }
+        }
+
+        for (var i = 0; i < metadata.Links.Count; i++)
+        {
+            var link = metadata.Links[i];
+            if (string.IsNullOrWhiteSpace(link.Href))
+            {
+                errors.Add($"{ownerLabel} metadata.links[{i}].href is required.");
+            }
+            if (string.IsNullOrWhiteSpace(link.Rel))
+            {
+                errors.Add($"{ownerLabel} metadata.links[{i}].rel is required.");
+            }
+            if (string.IsNullOrWhiteSpace(link.Href) ||
+                (!string.Equals(link.Rel, "license", StringComparison.OrdinalIgnoreCase) &&
+                 !string.Equals(link.Rel, "describedby", StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            if (link.Href.Length > MetadataV2Link.MaxGovernanceHrefLength)
+            {
+                errors.Add(
+                    $"{ownerLabel} metadata.links[{i}].href must not exceed {MetadataV2Link.MaxGovernanceHrefLength} characters for relation '{link.Rel}'.");
+            }
+            else if (!IsSafePublicHttpUrl(link.Href))
+            {
+                errors.Add(
+                    $"{ownerLabel} metadata.links[{i}].href must be an absolute HTTP(S) URL without credentials for relation '{link.Rel}'.");
+            }
+        }
+    }
+
+    private static bool IsSafePublicHttpUrl(string value)
+        => string.Equals(value, value.Trim(), StringComparison.Ordinal) &&
+           Uri.TryCreate(value, UriKind.Absolute, out var parsedUrl) &&
+           (string.Equals(parsedUrl.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(parsedUrl.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) &&
+           !string.IsNullOrWhiteSpace(parsedUrl.Host) &&
+           string.IsNullOrEmpty(parsedUrl.UserInfo);
+
+    private static bool IsValidGovernanceText(string? value, int maxLength)
+        => value is null || (value.Length <= maxLength && !value.Any(char.IsControl));
+
+    private static bool HasNonEmptyEmailParts(string value)
+    {
+        var separator = value.IndexOf('@');
+        return separator > 0 &&
+               separator == value.LastIndexOf('@') &&
+               separator < value.Length - 1 &&
+               !string.IsNullOrWhiteSpace(value[..separator]) &&
+               !string.IsNullOrWhiteSpace(value[(separator + 1)..]) &&
+               value.All(character => !char.IsWhiteSpace(character) && !char.IsControl(character));
+    }
+
+    private static void ValidateServices(
+        List<string> errors,
+        IEnumerable<MetadataV2Service> services,
+        Dictionary<string, MetadataV2Publication> publicationsById)
+    {
+        // Service→publications is now derived from publication.ServiceId only;
+        // the redundant Service.PublicationIds slot was removed in design slice 55/N.
+        _ = publicationsById;
+
+        foreach (var service in services)
+        {
+            if (!MetadataV2MapServerDrawing.TryResolveCachedDrawing(service, out _))
+            {
+                errors.Add($"service '{service.Metadata.Id}' options.{MetadataV2MapServerDrawing.OptionName} must be 'cached' or 'dynamic'.");
+            }
+        }
+
+        foreach (var configured in services
+                     .Select(service => (Service: service, Settings: service.Settings))
+                     .Where(configured => configured.Settings is not null))
+        {
+            var settings = configured.Settings!;
+            ValidatePositiveInt(errors, configured.Service, settings.MaxRecordCount, "settings.maxRecordCount");
+            ValidatePositiveInt(errors, configured.Service, settings.DefaultRecordCount, "settings.defaultRecordCount");
+            ValidatePositiveInt(errors, configured.Service, settings.MaxImageWidth, "settings.maxImageWidth");
+            ValidatePositiveInt(errors, configured.Service, settings.MaxImageHeight, "settings.maxImageHeight");
+            ValidatePositiveInt(errors, configured.Service, settings.DefaultDpi, "settings.defaultDpi");
+            ValidatePositiveInt(errors, configured.Service, settings.MaxFeaturesPerLayer, "settings.maxFeaturesPerLayer");
+            ValidatePositiveInt(errors, configured.Service, settings.QueryTimeoutMs, "settings.queryTimeoutMs");
+            ValidatePositiveInt(errors, configured.Service, settings.MaxEditsPerTransaction, "settings.maxEditsPerTransaction");
+            ValidatePositiveLong(errors, configured.Service, settings.MaxAttachmentSizeBytes, "settings.maxAttachmentSizeBytes");
+            ValidatePositiveLong(errors, configured.Service, settings.MaxPayloadBytes, "settings.maxPayloadBytes");
+        }
+    }
+
+    private static void ValidatePositiveInt(List<string> errors, MetadataV2Service service, int? value, string slot)
+    {
+        if (value is int v && v <= 0)
+        {
+            errors.Add($"service '{service.Metadata.Id}' {slot} must be positive (was {v}).");
+        }
+    }
+
+    private static void ValidatePositiveLong(List<string> errors, MetadataV2Service service, long? value, string slot)
+    {
+        if (value is long v && v <= 0)
+        {
+            errors.Add($"service '{service.Metadata.Id}' {slot} must be positive (was {v}).");
+        }
+    }
+}
+
+public sealed record MetadataV2GraphValidationResult(bool IsValid, IReadOnlyList<string> Errors);

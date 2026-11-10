@@ -4,9 +4,9 @@ How Honua loads configuration, resolves secret references, validates options at
 startup, and standardizes cache TTLs across features.
 
 Source roots:
-- `src/Honua.Core/Configuration/` — validation attributes
-- `src/Honua.Core/Features/Configuration/StandardTtlOptions.cs`
-- `src/Honua.Core/Features/Security/Abstractions/ISecretProvider.cs`
+- `src/Honua.Core/Core/Configuration/` — validation attributes
+- `src/Honua.Core/Core/Features/Configuration/StandardTtlOptions.cs`
+- `src/Honua.Core/Core/Features/Security/Abstractions/ISecretProvider.cs`
 - `src/Honua.Server/Features/Infrastructure/Configuration/ConfigurationServiceExtensions.cs`
 
 ## Components

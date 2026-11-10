@@ -15,7 +15,7 @@
     <PackageReference Include="NSubstitute" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../../../src/Honua.Geoprocessing/Honua.Geoprocessing.csproj" />
+    <ProjectReference Include="../../../src/Honua.Geoprocessing/Core/Honua.Geoprocessing.csproj" />
     <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
     <ProjectReference Include="../Honua.TestKit.Core/Honua.TestKit.Core.csproj" />
     <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />

@@ -5,24 +5,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests.FeatureCatalog;
 
-/// <summary>
-/// Regeneration entry point for the committed feature catalog
-/// (<c>docs/gis/data/feature-catalog.json</c>). This is the canonical way to
-/// re-emit the artifact after adding an endpoint or a proving test.
-/// </summary>
-/// <remarks>
-/// The emitter is a normal <see cref="FactAttribute"/> gated behind the
-/// <c>HONUA_EMIT_FEATURE_CATALOG</c> environment variable so it never writes
-/// during ordinary <c>dotnet test</c> runs (which must stay read-only and pass
-/// the drift guard). Regenerate with:
-/// <code>
-/// scripts/generate-feature-catalog.sh
-/// # or directly:
-/// HONUA_EMIT_FEATURE_CATALOG=1 dotnet test \
-///   tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
-///   --filter "FullyQualifiedName~FeatureCatalogEmitter"
-/// </code>
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class FeatureCatalogEmitter
 {

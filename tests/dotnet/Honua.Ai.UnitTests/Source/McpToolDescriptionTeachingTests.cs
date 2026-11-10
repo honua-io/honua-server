@@ -69,6 +69,9 @@ public sealed class McpToolDescriptionTeachingTests
         var description = ExecutePlanDescription;
 
         description.Should().Contain("jobId");
+        description.Should().Contain(ListJobsTool.ToolName);
+        description.Should().Contain(GetJobResultsTool.ToolName);
+        description.Should().Contain("Succeeded").And.Contain("Failed").And.Contain("Cancelled");
         description.Should().Contain("honua://jobs/{jobId}");
         description.Should().Contain("resources/read");
         description.Should().Contain("terminal");

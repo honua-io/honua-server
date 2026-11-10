@@ -69,7 +69,7 @@ public sealed class GeoServicesParityMatrixDriftTests
             + $"{GeoServicesParityGenerator.JudgmentRelativePath}. An unclassified served operation means we "
             + "shipped something the published matrix silently omits, while that matrix claims to be an "
             + "operation-level statement of coverage. Classify it honestly — implemented, partial, or stub — "
-            + "and regenerate with scripts/generate-geoservices-parity.sh. Do NOT relax this assertion, and do "
+            + "and regenerate with scripts/ci/generate-geoservices-parity.sh. Do NOT relax this assertion, and do "
             + "NOT pick a status because it is convenient.");
     }
 
@@ -183,7 +183,7 @@ public sealed class GeoServicesParityMatrixDriftTests
         committed.Should().Be(generated,
             $"{GeoServicesParityGenerator.MatrixRelativePath} is generated, never authored. Edit the judgement "
             + $"source ({GeoServicesParityGenerator.JudgmentRelativePath}) and run "
-            + "scripts/generate-geoservices-parity.sh, then commit the result.");
+            + "scripts/ci/generate-geoservices-parity.sh, then commit the result.");
     }
 
     /// <summary>

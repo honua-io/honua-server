@@ -38,7 +38,7 @@ interfaces are registered side-by-side in DI; consumers migrate
 progressively, file-by-file, over multiple PRs.
 
 A shared base implementation, `AdoNetDatabaseSession` (in
-`Honua.Core/Features/Infrastructure/Session/`), centralises the
+`Honua.Core/Core/Features/Infrastructure/Session/`), centralises the
 provider-neutral command/reader/transaction plumbing. Each relational
 provider (Postgres, MySql, DuckDB) declares a thin subclass plus a
 factory that wraps its existing `IDatabaseConnectionProvider`

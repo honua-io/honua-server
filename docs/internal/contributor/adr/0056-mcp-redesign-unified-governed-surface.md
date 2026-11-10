@@ -236,7 +236,7 @@ since today the generator correctly *refuses* those node types.
   resources, `McpServiceCollectionExtensions`),
   `src/Honua.Ai/Features/AiBuilder/Planning/` (`IPlanAnalysisService`,
   `LivePlanAnalysisService`),
-  `src/Honua.Core/Features/Operations/Abstractions/IOperationPolicyDecisionPoint.cs`,
+  `src/Honua.Core/Core/Features/Operations/Abstractions/IOperationPolicyDecisionPoint.cs`,
   `src/Honua.Server/Features/Infrastructure/Hosting/FeatureRegistrationExtensions.cs`
   (composition root + `AddMcpPromotionSurface` gate).
 - ADR-0026 (AI-first operator contract), ADR-0027 (deterministic intent/

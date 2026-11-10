@@ -1,4 +1,4 @@
 # Local outbound HTTP guards under src/. Do not add lines.
 # The canonical homes are OutboundHttpUrlValidator, PinnedDnsConnector and MigrationPinnedDns.
 # Delete a line only when that copy is gone. The architecture test rejects a new line against trunk.
-src/Honua.Protocols.OgcClassic/Wps20/Wps20ConformanceEcho.cs
+src/Honua.Protocols/OgcClassic/Wps20/Wps20ConformanceEcho.cs

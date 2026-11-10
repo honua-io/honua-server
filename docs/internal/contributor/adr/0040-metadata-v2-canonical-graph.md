@@ -269,7 +269,7 @@ Service grouping uses the explicit Folder model above, rather than dotted Servic
 
 ## Implementation references
 
-- **Code**: `src/Honua.Core/Features/Metadata/Domain/V2/`
+- **Code**: `src/Honua.Core/Core/Features/Metadata/Domain/V2/`
   - `MetadataV2Graph.cs` — top-level entity types
   - `MetadataV2Enums.cs` — typed enums (FieldType, GeometryType, ResourceType, …)
   - `MetadataV2Spatial.cs`, `MetadataV2Temporal.cs`, `MetadataV2PermanentFilter.cs` — typed sub-records

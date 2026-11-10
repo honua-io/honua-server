@@ -49,21 +49,21 @@
     {
       "url": "https://honua.io/docs/guides/deploy/docker-compose/#redis-is-optional-postgis-is-not",
       "sources": [
-        "src/Honua.Core/Features/Capabilities/CapabilityUnavailableCodes.cs"
+        "src/Honua.Core/Core/Features/Capabilities/CapabilityUnavailableCodes.cs"
       ],
       "why": "CapabilityUnavailableCodes.RedisRemediationRef \u2014 the remediationRef on the typed dependency-unavailable refusal (OGC API Processes problem+json, GeoServices error details, MCP error data). An agent is expected to follow this URL to learn how to make the request succeed, so a moved heading is a product defect, not a docs nit. Carried a pendingPr: 3583 marker while that branch was open; the marker was dropped when #3583 landed and the heading became real."
     },
     {
       "url": "https://honua.io/docs/guides/deploy/docker-compose/#redis-is-configured-but-not-entitled",
       "sources": [
-        "src/Honua.Core/Features/Capabilities/CapabilityUnavailableCodes.cs"
+        "src/Honua.Core/Core/Features/Capabilities/CapabilityUnavailableCodes.cs"
       ],
       "why": "CapabilityUnavailableCodes.EntitlementRemediationRef \u2014 the remediationRef for a host where Redis IS configured but the Pro 'caching.redis' entitlement is absent. Same wire contract as the entry above, different remediation, and it must not silently collapse onto the Redis-optional anchor: telling an operator to configure Redis that is already configured is worse than no link."
     },
     {
       "url": "https://honua.io/docs/guides/deploy/cloud-deployments/#background-file-imports-run-on-aws-batch",
       "sources": [
-        "src/Honua.Core/Features/Capabilities/CapabilityUnavailableCodes.cs"
+        "src/Honua.Core/Core/Features/Capabilities/CapabilityUnavailableCodes.cs"
       ],
       "why": "CapabilityUnavailableCodes.ServerlessManagedRemediationRef \u2014 the remediationRef when a managed geoprocessing job would be queued on a host that freezes between invocations. The heading records why that loop cannot drain the job. It must not collapse onto the Redis-optional anchor: Redis can be present and the refusal still stands."
     },

@@ -53,7 +53,11 @@ internal static class SourceTextRatchet
         return entries.Select(entry => string.Join('|', entry.Split('|').Select(part =>
         {
             var pathEnd = part.IndexOfAny([':', '\t']);
-            return pathEnd >= 0 && renamedPaths.TryGetValue(part[..pathEnd], out var renamedPath)
+            if (pathEnd < 0)
+            {
+                pathEnd = part.Length;
+            }
+            return renamedPaths.TryGetValue(part[..pathEnd], out var renamedPath)
                 ? renamedPath + part[pathEnd..]
                 : part;
         }))).ToArray();

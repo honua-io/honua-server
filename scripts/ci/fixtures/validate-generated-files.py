@@ -72,7 +72,7 @@ class GeneratedGraphFreshness(unittest.TestCase):
                     shutil.copy(ROOT / 'scripts/ci' / name, ci / name)
                 for name in ('generate-feature-catalog.sh', 'generate-admin-operation-parity-exports.sh',
                              'generate-mcp-tool-roster.sh', 'generate-geoservices-parity.sh'):
-                    (repo / 'scripts' / name).write_text('exit 0\n')
+                    (ci / name).write_text('exit 0\n')
                 for name in ('verify-admin-operation-parity.py', 'generate-capability-matrix.py'):
                     (ci / name).write_text('pass\n')
                 (ci / 'generate-capability-concepts.py').write_text(
@@ -199,12 +199,31 @@ class GeneratedFilesContracts(unittest.TestCase):
         self.assertIn('generate-admin-operation-parity-exports.sh "$@" --no-build --no-restore', generator)
         self.assertIn('generate-geoservices-parity.sh "$@" --no-build --no-restore', generator)
 
+    def test_managed_generators_resolve_repository_root_from_another_directory(self):
+        with tempfile.TemporaryDirectory() as temp:
+            tools = Path(temp)
+            dotnet = tools / 'dotnet'
+            dotnet.write_text(
+                '#!/usr/bin/env bash\nset -euo pipefail\n'
+                '[[ "$PWD" == "$EXPECTED_ROOT" && -f "$2" ]]\n'
+                '[[ "${@: -1}" == --forwarded-flag ]]\n')
+            dotnet.chmod(0o755)
+            environment = {**os.environ, 'EXPECTED_ROOT': str(ROOT),
+                           'PATH': str(tools) + os.pathsep + os.environ['PATH']}
+            for name in ('generate-feature-catalog.sh', 'generate-admin-operation-parity-exports.sh',
+                         'generate-mcp-tool-roster.sh', 'generate-geoservices-parity.sh'):
+                with self.subTest(generator=name):
+                    result = subprocess.run(
+                        ['bash', str(ROOT / 'scripts/ci' / name), '--forwarded-flag'],
+                        cwd=tools, env=environment, capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_generator_failure_stops_the_pipeline(self):
         with tempfile.TemporaryDirectory() as temp:
             repo = Path(temp)
-            scripts = repo / 'scripts'
-            (scripts / 'ci').mkdir(parents=True)
-            shutil.copy(ROOT / 'scripts/ci/regenerate-generated-files.sh', scripts / 'ci')
+            scripts = repo / 'scripts/ci'
+            scripts.mkdir(parents=True)
+            shutil.copy(ROOT / 'scripts/ci/regenerate-generated-files.sh', scripts)
             (scripts / 'generate-feature-catalog.sh').write_text('exit 23\n')
             (scripts / 'generate-admin-operation-parity-exports.sh').write_text('touch should-not-run\n')
             result = subprocess.run(['bash', 'scripts/ci/regenerate-generated-files.sh'], cwd=repo)

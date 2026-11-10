@@ -32,11 +32,11 @@ public sealed class GeoprocessingOperationEvidenceMatrixTests
     /// </summary>
     private static readonly string[] CatalogSourceRoots =
     [
-        "src/Honua.Geoprocessing/Features/Geoprocessing/BuiltInProcessCatalog.cs",
-        "src/Honua.Geoprocessing/Features/Geoprocessing/ProcessExecutionCapabilityCatalog.cs",
-        "src/Honua.Geoprocessing/Features/Geoprocessing/ProcessDestructiveClassifier.cs",
-        "src/Honua.Geoprocessing/Features/Geoprocessing/GeoprocessingServiceCollectionExtensions.cs",
-        "src/Honua.Geoprocessing/Features/Geoprocessing/Execution",
+        "src/Honua.Geoprocessing/Core/Features/Geoprocessing/BuiltInProcessCatalog.cs",
+        "src/Honua.Geoprocessing/Core/Features/Geoprocessing/ProcessExecutionCapabilityCatalog.cs",
+        "src/Honua.Geoprocessing/Core/Features/Geoprocessing/ProcessDestructiveClassifier.cs",
+        "src/Honua.Geoprocessing/Core/Features/Geoprocessing/GeoprocessingServiceCollectionExtensions.cs",
+        "src/Honua.Geoprocessing/Core/Features/Geoprocessing/Execution",
     ];
 
     [Fact]
