@@ -984,7 +984,7 @@ internal static class McpToolOutputSchemas
             "baseVersionId": { "type": ["string", "null"] },
             "generation": {
               "type": "integer",
-              "description": "Optimistic-concurrency generation. Pass this value as `generation` on the next mutating call for this draft."
+              "description": "Pass this generation on the next draft mutation for optimistic concurrency."
             },
             "createdBy": { "type": ["string", "null"] },
             "updatedBy": { "type": ["string", "null"] },

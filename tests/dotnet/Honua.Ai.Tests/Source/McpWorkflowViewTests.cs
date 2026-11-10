@@ -219,6 +219,8 @@ public sealed class McpWorkflowViewTests
             "honua_studio_preview_draft",
             "honua_studio_save_version",
             "honua_studio_get_version",
+            "honua_studio_list_items",
+            "honua_studio_list_versions",
             "honua_studio_reopen_version",
             "honua_studio_add_layer",
             "honua_studio_remove_layer",
@@ -237,7 +239,7 @@ public sealed class McpWorkflowViewTests
             "honua_supported_operation_kinds",
         ]);
         view.Names.Should().NotContain(["honua_validate_package", "honua_preview_package"]);
-        view.Names.Should().HaveCount(41);
+        view.Names.Should().HaveCount(43);
 
         var stages = view.Meta.GetProperty("stages").EnumerateArray().ToArray();
         stages.Select(s => s.GetProperty("id").GetString()).Should().Equal(
@@ -314,6 +316,8 @@ public sealed class McpWorkflowViewTests
                      "honua_studio_bind_interaction",
                      "honua_studio_add_control",
                      "honua_studio_get_version",
+            "honua_studio_list_items",
+            "honua_studio_list_versions",
                  })
         {
             var fullDescriptor = full.Tools.Single(t => t.GetProperty("name").GetString() == name);
@@ -853,7 +857,7 @@ public sealed class McpWorkflowViewTests
 
         after.Names.Should().NotContain("honua_op_import_geojson")
             .And.NotContain("honua_op_service_promote");
-        after.Names.Should().HaveCount(41);
+        after.Names.Should().HaveCount(43);
 
         // Removing the operation drops it again, still with no edit.
         var removed = await ListToolsAsync(BuildFullSurface(), McpWorkflowViewCatalog.SetupViewName);
@@ -886,7 +890,7 @@ public sealed class McpWorkflowViewTests
 
         var baseline = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Setup, BuildCatalogEntries());
         names.Should().Equal(baseline.Members.Select(m => m.ToolName));
-        names.Should().HaveCount(41);
+        names.Should().HaveCount(43);
     }
 
     [UnitTest]
@@ -1129,6 +1133,8 @@ public sealed class McpWorkflowViewTests
             "honua_admin_layer_publish",
             "honua_studio_add_layer",
             "honua_studio_get_version",
+            "honua_studio_list_items",
+            "honua_studio_list_versions",
             "honua_studio_propose_publication",
             "honua_publish_service",
             "honua_ingest_dataset",
