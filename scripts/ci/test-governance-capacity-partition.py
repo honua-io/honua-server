@@ -21,9 +21,6 @@ MODULE.TEST_PROJECT_DIRS = {root: project for root, project in MODULE.TEST_PROJE
 assert MODULE.TEST_PROJECT_DIRS
 SOURCE = PartitionSource(MODULE, MODULE.enumerate_test_classes())
 SELECTED = check_method_partition(SOURCE, ORIGINAL, CHILDREN)
-PARTITION = next(p for p in CONFIG["shard_partitions"] if p["name"] == ORIGINAL["name"])
-assert PARTITION == {"name": ORIGINAL["name"], "filter": ORIGINAL["filter"],
-                     "children": NAMES, "granularity": "method"}
 ANCESTOR = next(p for p in CONFIG["shard_partitions"] if p["name"] == "Server Features Admin Platform and Governance")
 assert all(name in ANCESTOR["children"] for name in NAMES)
 assert ORIGINAL["name"] not in ANCESTOR["children"]

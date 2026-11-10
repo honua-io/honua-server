@@ -510,16 +510,6 @@
         "Admin & Infrastructure 3",
         "Admin & Infrastructure 4"
       ]
-    },
-    {
-      "name": "Server Features Admin Governance and Sharing",
-      "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Admin.)&FullyQualifiedName!~RoleEndpointsTests&(FullyQualifiedName~MetadataRelease|FullyQualifiedName~CoordinatedRelease|FullyQualifiedName~DeployControl|FullyQualifiedName~Platform|FullyQualifiedName~SecureConnection|FullyQualifiedName~Compliance|FullyQualifiedName~Federation|FullyQualifiedName~Investigation|FullyQualifiedName~Proposal|FullyQualifiedName~Admin.Share.|FullyQualifiedName~License))&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.CoordinatedReleaseControlEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.MetadataReleaseControlEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.MetadataReleaseEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.MetadataReleaseOperationEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.LicenseEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.PlatformReleaseConvergeEndpointTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests",
-      "children": [
-        "Server Features Admin Governance and Sharing 1",
-        "Server Features Admin Governance and Sharing 2",
-        "Server Features Admin Governance and Sharing 3"
-      ],
-      "granularity": "method"
     }
   ],
   "shards": [
