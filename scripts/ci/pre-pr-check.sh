@@ -595,6 +595,12 @@ if [[ "${FULL}" != "1" && "${CAPABILITY_RUN_ALL}" == "false" && "${CAPABILITY_UN
         done
         [[ -z "${corroborated}" ]] && continue
 
+        # A shared filter must execute tests in every grouped assembly. A
+        # capability's proving tests may cover only one member, so retain the
+        # full group until capability selection becomes assembly-aware.
+        grouped="$(jq -r --arg n "${shard_name}" '.shards[] | select(.shard_name==$n) | has("csprojs")' .github/ci-shards.json)"
+        [[ "${grouped}" == "true" ]] && continue
+
         # Group by testsByShard (not the flat provingTests[] list) so a shard
         # only narrows on the proving tests it actually owns, instead of every
         # shard carrying the same combined clause for the whole diff.

@@ -507,6 +507,9 @@ The shared runner executes each member with its own fresh TRX and timing record,
 within one shared 20-minute test budget. Every assembly must execute tests and
 pass; a passing sibling cannot conceal an empty, failed, or timed-out assembly.
 It also emits a combined TRX and timing receipt for the existing aggregates.
+Capability selection retains a group's full filter so sibling assemblies cannot
+receive empty proving-test selections. Shared-budget timeouts retain the existing
+capacity-versus-hang classification, progress measurement, and diagnostic tokens.
 The optional cache observer uses normal build fallback for grouped jobs.
 
 The scheduled baseline run 42685503356 spent 75.38 runner-minutes across these

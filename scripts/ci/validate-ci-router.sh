@@ -399,7 +399,7 @@ assert_exact_shards \
 assert_exact_shards \
   "core-capacity-CrsTransformationCorrectnessTests" \
   "tests/dotnet/Honua.Server.Tests/CrsTransformationCorrectnessTests.cs" \
-  '["Core Attachments", "Core Related Records and Limits", "Core OGC Features and CRS"]'
+  '["Core Attachments","Core Related Records and Limits","Core OGC Features and CRS"]'
 # #3204 headroom rebalance: AdvancedSpatialQueryTests and
 # StreamingFeatureServerEndpointTests moved out of `Core Endpoints` into their own
 # shard (#4450 putting the former here is what took Core Endpoints to 82% of its
@@ -953,7 +953,7 @@ assert_exact_shards \
       'src/Honua.Routing/Features/Routing/Domain/RoutingModels.cs' \
       'src/Honua.Server/EndpointRegistry.ImageServer.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/NAServerPgRoutingEndToEndTests.cs')" \
-  '["Protocol and Host Components","Provider and AI Units","Provider and AI Units","Provider and AI Units","Core and Cloud Contracts","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","GeoServices ImageServer","GeoServices ImageServer Raster Rendering","GeoServices ImageServer Rendering and Support","Runtime Units","Protocol and Host Components","Runtime Units","Runtime Units","Protocol Units","Provider and AI Units","Protocol and Host Components","Protocol Units","Protocol and Host Components","Protocol and Host Components","Protocol Units","Protocol and Host Components","Protocol Units","Protocol and Host Components","Protocol Units","Protocol and Host Components","Protocol Units","Protocol and Host Components","Protocol Units","Raster Serving Scene Geometry and Terrain","Runtime Units","STAC and API Governance","Runtime Units"]'
+  '["Protocol and Host Components","Provider and AI Units","Core and Cloud Contracts","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","GeoServices ImageServer","GeoServices ImageServer Raster Rendering","GeoServices ImageServer Rendering and Support","Runtime Units","Protocol Units","Raster Serving Scene Geometry and Terrain","STAC and API Governance"]'
 
 # Follow-up proof from draft PR #2700: pure routing tests share the Core and Cloud Contracts owner
 # with the real pgRouting fixture and must not widen the canonical NAServer diff.
@@ -963,7 +963,7 @@ assert_exact_shards \
       'src/Honua.Routing/Features/Routing/Providers/LocationAllocationSolver.cs' \
       'src/Honua.Protocols/GeoServices/NAServer/NAServerParameterTranslation.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/LocationAllocationSolverTests.cs')" \
-  '["Protocol and Host Components","Provider and AI Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","Runtime Units","Protocol and Host Components","Protocol Units","Protocol and Host Components","Protocol Units","Protocol and Host Components","Protocol Units","Runtime Units"]'
+  '["Protocol and Host Components","Provider and AI Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","Runtime Units","Protocol Units"]'
 
 # #2712: migration 083 and the exact pgRouting TestKit fixture are bounded
 # companions to the canonical Routing/NAServer slice. Keep other migrations
@@ -998,7 +998,7 @@ assert_exact_shards \
       'src/Honua.Server/Migrations/083_AddNetworkDatasetTravelProfiles.sql' \
       'tests/dotnet/Honua.TestKit/PgRoutingFixture.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/NetworkDatasetValidationTests.cs')" \
-  '["Protocol and Host Components","Provider and AI Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","Runtime Units","Protocol and Host Components","Protocol Units","Protocol and Host Components","Protocol Units","Protocol and Host Components","Protocol Units","Runtime Units"]'
+  '["Protocol and Host Components","Provider and AI Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","Runtime Units","Protocol Units"]'
 assert_exact_shards \
   "routing-topology-lifecycle-cumulative-batch" \
   "$(printf '%s\n%s\n%s\n%s' \
@@ -1006,7 +1006,7 @@ assert_exact_shards \
       'src/Honua.Server/Migrations/084_CreateNetworkTopologyGenerations.sql' \
       'tests/dotnet/Honua.Server.Tests/Routing/NetworkTopologyLifecycleTests.cs' \
       'tests/dotnet/Honua.Server.Tests/Features/Admin/NetworkDatasetAdminEndpointsTests.cs')" \
-  '["Protocol and Host Components","Provider and AI Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","Runtime Units","Protocol and Host Components","Protocol Units","Protocol and Host Components","Protocol Units","Protocol and Host Components","Protocol Units","Runtime Units","Server Features Admin Network and Jobs"]'
+  '["Protocol and Host Components","Provider and AI Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","Runtime Units","Protocol Units","Server Features Admin Network and Jobs"]'
 assert_descriptor \
   "unknown-migration-still-run-all" \
   "src/Honua.Server/Migrations/999_FutureUnmappedMigration.sql" \
@@ -1075,7 +1075,7 @@ assert_exact_shards \
       'src/Honua.Protocols/GeoServices/ImageServer/ImageServerEndpoints.cs' \
       'src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs' \
       'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerZarrTestFixture.cs')" \
-  '["Protocol and Host Components","Provider and AI Units","Provider and AI Units","Provider and AI Units","Provider and AI Units","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","GeoServices ImageServer","GeoServices ImageServer Raster Rendering","GeoServices ImageServer Rendering and Support","Runtime Units","Protocol and Host Components","Runtime Units","Runtime Units","Provider and AI Units","Protocol Units","OGC API Tiles Coverages and Processes","OGC API Tiles Endpoints and CRS","Provider and AI Units","Provider and AI Units","Protocol and Host Components","Protocol Units","Protocol and Host Components","Protocol and Host Components","Protocol Units","Protocol and Host Components","Protocol Units","Protocol and Host Components","Protocol Units","Protocol and Host Components","Protocol Units","Protocol and Host Components","Protocol Units","Raster Serving Scene Geometry and Terrain","Provider and AI Units","Runtime Units","Runtime Units","Runtime Units","Provider and AI Units","Provider and AI Units","WFS"]'
+  '["Protocol and Host Components","Provider and AI Units","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","GeoServices ImageServer","GeoServices ImageServer Raster Rendering","GeoServices ImageServer Rendering and Support","Runtime Units","Protocol Units","OGC API Tiles Coverages and Processes","OGC API Tiles Endpoints and CRS","Raster Serving Scene Geometry and Terrain","WFS"]'
 
 # Narrowing Zarr must not remove the carved shards' actual feature-area paths.
 assert_descriptor \
@@ -1232,7 +1232,7 @@ assert_descriptor \
 assert_exact_shards \
   "shared-wmts-formatter-bounded-owners" \
   "src/Honua.Protocols/Ogc.Shared/Common/WmtsTileMatrixFormatting.cs" \
-  '["GeoServices ImageServer","OGC API Tiles Coverages and Processes","OGC Classic WMTS","Protocol and Host Components","Protocol Units","Protocol and Host Components","Protocol Units","Protocol and Host Components","Protocol Units"]'
+  '["GeoServices ImageServer","OGC API Tiles Coverages and Processes","OGC Classic WMTS","Protocol and Host Components","Protocol Units"]'
 
 # An endpoint-ADDING feature PR touches the registration plumbing AND a feature
 # dir under a shard's paths: it runs the smoke subset PLUS that feature's owning

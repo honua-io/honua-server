@@ -39,17 +39,29 @@ def combine_results(paths, output):
 
 
 def execute(environment, remaining):
+    log = Path(environment['HONUA_SERVER_TEST_RESULTS_DIR']) / f"{environment['HONUA_SERVER_TEST_LOG_NAME']}.log"
+    deadline = time.monotonic() + remaining
+    last_progress = time.monotonic()
+    size = 0
     with subprocess.Popen(['bash', str(SCRIPT / 'run-server-test-shard.sh')],
                           env=environment, start_new_session=True) as process:
-        try:
-            return process.wait(timeout=remaining)
-        except subprocess.TimeoutExpired:
+        while True:
+            now = time.monotonic()
+            current_size = log.stat().st_size if log.is_file() else 0
+            if current_size != size and now < deadline:
+                last_progress, size = now, current_size
+            idle = max(0, min(now, deadline) - last_progress)
+            if now >= deadline:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait()
+                return 124, idle
             try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            process.wait()
-            return 124
+                return process.wait(timeout=min(1, deadline - now)), idle
+            except subprocess.TimeoutExpired:
+                continue
 
 
 def run_projects(projects, environment, directory):
@@ -69,11 +81,12 @@ def run_projects(projects, environment, directory):
                  'HONUA_SERVER_TEST_LOG_NAME': f'project-{index}',
                  'HONUA_SERVER_TEST_TIMEOUT_FOREGROUND': 'true',
                  'HONUA_SERVER_TEST_TIMEOUT_MINUTES': str(remaining / 60)}
-        code = execute(child, remaining)
+        code, idle = execute(child, remaining)
         timing = directory / f'project-{index}.timing.json'
         record = json.loads(timing.read_text()) if timing.is_file() else {'status': 'missing'}
         if timing.is_file():
             timing.rename(directory / f'project-{index}.member.json')
+        record['idle_seconds_at_exit'] = idle
         if code != 0:
             record['status'] = 'failed'
         attempts.append(record)
@@ -110,14 +123,21 @@ def timing_record(environment, started, outcome):
     policy = Path(environment.get('HONUA_SERVER_TEST_SHARD_POLICY_FILE', '.github/ci-shards.json'))
     threshold = json.loads(policy.read_text())['shard_budget_policy']['warn_utilization']
     threshold = float(environment.get('HONUA_SERVER_TEST_HEADROOM_WARN_RATIO', threshold))
-    passed, code, evidence = outcome
+    passed, code, evidence, idle = outcome
+    stall = float(environment.get('HONUA_SERVER_TEST_STALL_SECONDS', '300'))
+    capacity = 'not_assessed'
+    if code == 124:
+        capacity = 'hang_suspected' if idle >= stall else 'capacity_exhausted'
+    elif passed:
+        capacity = 'low_headroom' if utilization >= threshold else 'ok'
     return {'shard': environment['HONUA_SERVER_TEST_SHARD_NAME'],
             'log_name': environment['HONUA_SERVER_TEST_LOG_NAME'],
-            'status': 'passed' if passed else 'failed', 'exit_code': 0 if passed else (code or 1),
+            'status': 'passed' if passed else ('timed_out' if code == 124 else 'failed'), 'exit_code': 0 if passed else (code or 1),
             'started_at': started[1], 'completed_at': utc_now(), 'duration_seconds': duration,
             'timeout_minutes': budget / 60, 'timeout_seconds': budget,
             'timed_out': code == 124, 'headroom_ratio': utilization,
-            'capacity_status': ('low_headroom' if utilization >= threshold else 'ok') if passed else 'not_assessed',
+            'capacity_status': capacity, 'idle_seconds_at_exit': idle,
+            'stall_seconds': stall, 'headroom_warn_ratio': threshold,
             'filter': effective_filter(environment),
             'projects': json.loads(environment['HONUA_SERVER_TEST_CSPROJS']), 'execution': evidence}
 
@@ -137,8 +157,14 @@ def main():
     attempts, code = run_projects(projects, environment, directory)
     passed = len(attempts) == len(projects) and all(a.get('status') == 'passed' for a in attempts)
     evidence_code, evidence = execution_evidence(projects, environment, results)
-    outcome = passed and evidence_code == 0 and code == 0, code, evidence
+    idle = attempts[-1].get('idle_seconds_at_exit', 0) if attempts else 0
+    outcome = passed and evidence_code == 0 and code == 0, code, evidence, idle
     timing = timing_record(environment, started, outcome)
+    capacity = timing['capacity_status']
+    if capacity in ('low_headroom', 'capacity_exhausted', 'hang_suspected'):
+        level = 'warning' if capacity == 'low_headroom' else 'error'
+        print(f"::{level}::HONUA_SHARD_{capacity.upper()} shard='{environment['HONUA_SERVER_TEST_SHARD_NAME']}' "
+              f"duration={timing['duration_seconds']:.1f}s idle={idle:.1f}s budget={timing['timeout_seconds']}s", flush=True)
     (results / f'{name}.timing.json').write_text(json.dumps(timing) + '\n')
     return timing['exit_code']
 

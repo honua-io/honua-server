@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Offline regression fixtures for FAST selection and real closure reporting."""
 import os
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -178,6 +179,28 @@ pathlib.Path(out).write_text(json.dumps({'projects': projects}))
         self.assertIn("Format dependency closure: 2 projects", output)
         self.assertIn("0 test projects; evaluated Debug graph", output)
         self.assertIn("Format workspace: 1 owning project", output)
+
+    def test_grouped_shard_keeps_full_filter_for_sibling_assemblies(self):
+        for grouped in (True, False):
+            with self.subTest(grouped=grouped):
+                shard = {'shard_name': 'fixture', 'filter': 'FullyQualifiedName~Honua',
+                         'test_timeout_minutes': 20}
+                shard.update({'csprojs': self.projects[3:5]} if grouped else {'csproj': self.projects[3]})
+                self.write('.github/ci-shards.json', json.dumps({'shards': [shard]}))
+                self.write('scripts/ci/honua-server-targeted-tests.sh',
+                           '#!/bin/bash\necho \'{"run_all":false,"shards":["fixture"],"reason":"fixture"}\'\n',
+                           executable=True)
+                selection = {'runAll': False, 'reason': 'fixture', 'capabilities': ['fixture'],
+                             'unmatchedSourceFiles': [], 'provingTestCount': 1,
+                             'shards': ['fixture'], 'testsByShard': {'fixture': ['Honua.RepairTests.Repair']}}
+                self.write('scripts/ci/capability-impact.py',
+                           'import json,sys\nif sys.argv[1] != "validate": print(json.dumps(' + repr(selection) + '))\n')
+                self.commit()
+                self.base = self.run_command('git', 'rev-parse', 'HEAD').strip()
+                self.write(self.test_path, self.test_source.replace('Assert.Equal(1, 1)', 'Assert.Equal(2, 2)'))
+                output = self.plan()
+                self.assertIn('Server-test shards: 1/1 selected', output)
+                self.assertEqual(not grouped, '1 of those capability-narrowed' in output, output)
 
     def test_default_preserves_transitive_test_closure(self):
         self.source_repair()
