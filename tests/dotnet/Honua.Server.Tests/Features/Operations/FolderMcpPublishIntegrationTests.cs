@@ -72,6 +72,31 @@ public sealed partial class FolderOperationIntegrationTests
         service.Metadata.Tenant.Should().Be("public");
     }
 
+    [IntegrationTest]
+    [Protocol(TestProtocols.Mcp)]
+    [Endpoint("POST /mcp tools/call")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task McpPublishService_Cleanup_RemovesConnectionAfterPublishedService()
+    {
+        var arguments = await PublishArgumentsAsync(null);
+        await ApprovePublishToolAsync(arguments);
+        var connectionId = Guid.Parse(arguments["connectionId"]!);
+
+        await DeletePublishConnectionAsync();
+        await DeletePublishConnectionAsync();
+
+        using var scope = _fixture.Services.CreateScope();
+        var registry = scope.ServiceProvider.GetRequiredService<ISecureConnectionRegistry>();
+        (await registry.GetConnectionAsync(connectionId)).Should().BeNull();
+
+        await using var connection = new NpgsqlConnection(_fixture.Postgres.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM honua.services WHERE connection_id = @connectionId";
+        command.Parameters.AddWithValue("connectionId", connectionId);
+        (await command.ExecuteScalarAsync()).Should().Be(0L);
+    }
+
     [IntegrationTheory]
     [Protocol(TestProtocols.Mcp)]
     [Endpoint("POST /mcp tools/call")]
@@ -143,8 +168,14 @@ public sealed partial class FolderOperationIntegrationTests
     private async Task DeletePublishConnectionAsync()
     {
         if (_publishingConnectionId is not { } connectionId) return;
+        // Publishing also writes the global compatibility catalog outside the fixture
+        // schema. Remove this connection's services before deleting their FK target.
+        await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
+            "DELETE FROM honua.services WHERE connection_id = @connectionId;",
+            command => command.Parameters.AddWithValue("connectionId", connectionId));
         using var scope = _fixture.Services.CreateScope();
         await scope.ServiceProvider.GetRequiredService<ISecureConnectionRegistry>().DeleteConnectionAsync(connectionId);
+        _publishingConnectionId = null;
     }
 
     private async Task ApprovePublishToolAsync(Dictionary<string, string?> arguments)
