@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics.CodeAnalysis;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -64,7 +65,8 @@ internal static class PostgresSharedStateRegistration
     }
 
     // The shared store on a host with a system database, a process-local one otherwise.
-    private static void AddSharedOrLocal<TService, TShared>(this IServiceCollection services, Func<TService> local)
+    private static void AddSharedOrLocal<TService, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TShared>(
+        this IServiceCollection services, Func<TService> local)
         where TService : class
         where TShared : class, TService
     {
@@ -75,7 +77,8 @@ internal static class PostgresSharedStateRegistration
     }
 
     // Registered once per store however often the shared state is added.
-    private static void AddRetentionSweep<TStore>(this IServiceCollection services)
+    private static void AddRetentionSweep<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TStore>(
+        this IServiceCollection services)
         where TStore : class, IExpiredRowSweep
         => services.TryAddEnumerable(ServiceDescriptor.Singleton<IExpiredRowSweep, TStore>(
             provider => provider.GetRequiredService<TStore>()));
