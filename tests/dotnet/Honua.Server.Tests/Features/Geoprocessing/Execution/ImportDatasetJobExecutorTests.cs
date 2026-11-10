@@ -190,6 +190,8 @@ public sealed class ImportDatasetJobExecutorTests : IAsyncLifetime
         };
 
     [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /ogc/processes/{processId}/execution")]
     public async Task ExecuteAsync_ProjectedSource_PublishesStoredCoordinateSystem()
     {
         await File.WriteAllTextAsync(_stagedFilePath,
