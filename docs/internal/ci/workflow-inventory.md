@@ -486,7 +486,6 @@ Additionally, `cite-conformance.yml` (already schedule-only) had dead PR comment
 
 **Rationale**: External OGC conformance runs for every RC and on demand via
 `workflow_dispatch`. OGC integration tests in scheduled full CI remain non-gating.
-The separate trunk-routing change limits their scheduled coverage to 01:00 PT.
 
 #### CodeQL moved off PR path
 
