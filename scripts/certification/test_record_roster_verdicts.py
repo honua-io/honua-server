@@ -1,7 +1,6 @@
 """The roster process status is the verifier status.
 
-Run: python3 -m unittest certification.bounded-roster.tests.test_record_verdicts
-from the repository root, or discover certification/bounded-roster/tests.
+Run: python3 -m unittest scripts/certification/test_record_roster_verdicts.py
 """
 from __future__ import annotations
 
@@ -12,9 +11,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-LIB = HERE.parent / "lib" / "record_verdicts.sh"
-ROSTER = HERE.parent / "run-roster.sh"
+REPO = Path(__file__).resolve().parents[2]
+LIB = REPO / "scripts" / "certification" / "record_roster_verdicts.sh"
+ROSTER = REPO / "certification" / "bounded-roster" / "run-roster.sh"
 SHA = "a" * 40
 DIGEST = "sha256:" + ("b" * 64)
 
@@ -27,28 +26,41 @@ class RecordVerdictsTest(unittest.TestCase):
             bindir = root / "bin"
             bindir.mkdir()
             stub = bindir / "python3"
-            stub.write_text(
-                "#!/bin/bash\n"
-                "if [[ \"$*\" == *\"--mode release\"* ]]; then\n"
-                "  echo release-body\n"
-                f"  exit {release_exit}\n"
-                "fi\n"
-                "echo contract-body\n"
-                f"exit {contract_exit}\n",
-                encoding="utf-8",
-            )
+            stub_lines = [
+                "#!/bin/bash",
+                'if [[ "$*" == *"--mode release"* ]]; then',
+                "  echo release-body",
+                f"  exit {release_exit}",
+                "fi",
+                "echo contract-body",
+                f"exit {contract_exit}",
+                "",
+            ]
+            stub.write_text("\n".join(stub_lines), encoding="utf-8")
             stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
             env = os.environ.copy()
             env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
             env["EVIDENCE"] = str(evidence)
+            env["LIB"] = str(LIB)
+            env["SHA"] = SHA
+            env["DIGEST"] = DIGEST
             completed = subprocess.run(
                 [
                     "bash", "-c",
-                    'set -euo pipefail; source "$LIB"; '
-                    'record_verdicts "$EVIDENCE" "$SHA" "$DIGEST" "2026-11-10T00:00:00Z" "$SHA"',
+                    "\n".join([
+                        "set -euo pipefail",
+                        'source "$LIB"',
+                        "declare -A candidate=(",
+                        '  [source_sha]="$SHA"',
+                        '  [image_digest]="$DIGEST"',
+                        '  [cut_at]="2026-11-10T00:00:00Z"',
+                        '  [producer_sha]="$SHA"',
+                        ")",
+                        'record_verdicts "$EVIDENCE" candidate',
+                    ]),
                 ],
                 cwd=root,
-                env={**env, "LIB": str(LIB), "SHA": SHA, "DIGEST": DIGEST},
+                env=env,
                 text=True,
                 capture_output=True,
                 check=False,
@@ -79,6 +91,7 @@ class RecordVerdictsTest(unittest.TestCase):
         verdict = text.split('log "release-mode verdict"', 1)[1]
         self.assertNotIn("set +e", verdict)
         self.assertIn("record_verdicts ", verdict)
+        self.assertIn("declare -A roster_candidate=", verdict)
 
 
 if __name__ == "__main__":

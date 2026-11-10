@@ -32,7 +32,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 ROSTER_HOME="$REPO_ROOT/certification/bounded-roster"
 cd "$REPO_ROOT"
 
-if ! git diff --quiet HEAD -- certification tests/python/shared tests/seed docker/client-compat docker/cng; then
+if ! git diff --quiet HEAD -- certification tests/python/shared tests/seed docker/client-compat docker/cng scripts/certification/record_roster_verdicts.sh; then
   echo "producer inputs have uncommitted changes; commit them so producer_source_sha names the harness that ran" >&2
   exit 2
 fi
@@ -199,10 +199,16 @@ python3 "$ROSTER_HOME/lib/emit_receipts.py" --run-dir "$ROSTER_RUN_DIR" \
   --producer-source-sha "$PRODUCER_SHA" --out "$EVIDENCE/receipts"
 
 log "release-mode verdict"
-# shellcheck source=lib/record_verdicts.sh
-source "$ROSTER_HOME/lib/record_verdicts.sh"
+# shellcheck source=../../scripts/certification/record_roster_verdicts.sh
+source "$REPO_ROOT/scripts/certification/record_roster_verdicts.sh"
+declare -A roster_candidate=(
+  [source_sha]="$SOURCE_SHA"
+  [image_digest]="$INDEX_DIGEST"
+  [cut_at]="$IMAGE_CREATED"
+  [producer_sha]="$PRODUCER_SHA"
+)
 verdict_failed=0
-record_verdicts "$EVIDENCE" "$SOURCE_SHA" "$INDEX_DIGEST" "$IMAGE_CREATED" "$PRODUCER_SHA" || verdict_failed=1
+record_verdicts "$EVIDENCE" roster_candidate || verdict_failed=1
 
 mkdir -p "$EVIDENCE/run"
 cp "$ROSTER_RUN_DIR"/{candidate.json,fixture.json,lanes.json,fixture-artifacts.json} "$EVIDENCE/run/"

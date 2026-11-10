@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 # Run both bounded-roster verifiers and return their combined status.
-# Arguments: evidence-dir source-sha image-digest cut-at producer-sha
+# Arguments: evidence-dir candidate
+# candidate names an associative array with source_sha, image_digest, cut_at
+# and producer_sha.
 record_verdicts() {
-  local evidence="$1" source_sha="$2" image_digest="$3" cut_at="$4" producer_sha="$5"
+  local evidence="$1"
+  local -n verdict_candidate="$2"
+  local source_sha="${verdict_candidate[source_sha]}"
+  local image_digest="${verdict_candidate[image_digest]}"
+  local cut_at="${verdict_candidate[cut_at]}"
+  local producer_sha="${verdict_candidate[producer_sha]}"
   local release_status contract_status
   mkdir -p "$evidence"
   set +e
