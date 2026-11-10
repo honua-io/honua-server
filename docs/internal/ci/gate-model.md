@@ -171,8 +171,8 @@ are selected, without making test consumers wait for formatting.
 Before setup or compilation, each uses `compute-fast-test-selection.py` to read
 `compute-affected-projects.sh` at the PR merge checkout (`HEAD^1..HEAD`) and
 intersect its reverse-dependency closure with the group's existing test roots.
-Docs and SDK changes reaching no managed project skip all four builds and tests;
-a nonempty managed closure retains architecture checks as well as every affected
+Empty closures skip all four builds and tests only after positive governed-docs proof;
+a nonempty managed closure retains architecture and Server governance checks as well as every affected
 group. Unknown projects, invalid roots, missing history, selector errors and
 non-PR events retain every group. Existing docs/generated-only classification
 and exact-head review admission still apply. A skipped test body completes its

@@ -26,11 +26,17 @@ class SelectionTests(unittest.TestCase):
             self.assertEqual(list(selection.GROUPS), selection.select(closure, self.roots))
 
     def test_reverse_closure_selects_consuming_groups(self):
-        self.assertEqual(['architecture', 'unit-fast'],
+        self.assertEqual(['architecture', 'unit-fast', 'server-governance'],
                          selection.select(['library.csproj', 'unit-fast.csproj'], self.roots))
         self.assertEqual(['architecture', 'server-fast', 'server-governance'],
                          selection.select(['server-fast.csproj', 'server-governance.csproj'], self.roots))
-        self.assertEqual(['architecture'], selection.select(['tool.csproj'], self.roots))
+        self.assertEqual(['architecture', 'server-governance'], selection.select(['tool.csproj'], self.roots))
+
+    def test_integration_closure_retains_repository_governance(self):
+        groups = selection.select(
+            ['tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj'], self.roots)
+        self.assertIn('server-governance', groups)
+        self.assertIn('architecture', groups)
 
     def test_plan_uses_shared_closure_and_existing_group_roots(self):
         members = '\n'.join(value[0] for value in self.roots.values())
@@ -39,7 +45,7 @@ class SelectionTests(unittest.TestCase):
                 patch.object(selection.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, 'unit-fast.csproj\n')) as affected, \
                 patch.object(selection.subprocess, 'check_output', side_effect=outputs) as roots, \
                 patch.object(selection, 'safe_selection', return_value=None):
-            self.assertEqual(['architecture', 'unit-fast'], selection.plan())
+            self.assertEqual(['architecture', 'unit-fast', 'server-governance'], selection.plan())
         self.assertEqual('HEAD^1', affected.call_args.kwargs['env']['BASE_REF'])
         self.assertIn('compute-affected-projects.sh', affected.call_args.args[0][1])
         self.assertEqual(list(selection.GROUPS), [call.kwargs['env']['GATE_TEST_GROUP'] for call in roots.call_args_list[1:]])
