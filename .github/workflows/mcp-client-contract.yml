@@ -5,7 +5,7 @@ on:
     branches: [trunk]
     paths:
       - 'src/Honua.Ai/Features/Protocols/Mcp/**'
-      - 'src/Honua.Core/Features/WorkflowPackages/Domain/WorkflowNodeRegistryModels.cs'
+      - 'src/Honua.Core/Core/Features/WorkflowPackages/Domain/WorkflowNodeRegistryModels.cs'
       - 'src/Honua.Server/Features/Operations/**'
       - 'tests/dotnet/Honua.Ai.Tests/Source/Mcp*'
       - 'scripts/qualification/mcp/**'
@@ -15,7 +15,7 @@ on:
     branches: [trunk]
     paths:
       - 'src/Honua.Ai/Features/Protocols/Mcp/**'
-      - 'src/Honua.Core/Features/WorkflowPackages/Domain/WorkflowNodeRegistryModels.cs'
+      - 'src/Honua.Core/Core/Features/WorkflowPackages/Domain/WorkflowNodeRegistryModels.cs'
       - 'src/Honua.Server/Features/Operations/**'
       - 'tests/dotnet/Honua.Ai.Tests/Source/Mcp*'
       - 'scripts/qualification/mcp/**'
