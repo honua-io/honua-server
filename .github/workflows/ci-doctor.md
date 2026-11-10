@@ -35,13 +35,11 @@ concurrency:
   cancel-in-progress: true
 
 safe-outputs:
-  github-app:
-    app-id: ${{ secrets.HONUA_RELEASE_APP_ID }}
-    private-key: ${{ secrets.HONUA_RELEASE_APP_PRIVATE_KEY }}
   push-to-pull-request-branch:
     target: "*"
     max: 1
     if-no-changes: "ignore"
+    check-branch-protection: false
     protected-files: fallback-to-issue
     excluded-files:
       - ".github/**"
