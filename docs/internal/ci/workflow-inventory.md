@@ -530,7 +530,9 @@ closure without analyzers, then runs unit tests by default. Pass `--integration`
 with `--affected-tests` to include affected integration shards. The independent
 PR Format check retains analyzer coverage. Positively classified docs/CI-only
 changes use the existing governance checks without starting a .NET build;
-unknown or invalid routing still fails closed. Stage 0 uses
+unknown or invalid routing still fails closed. A full-build fallback retains
+these Stage 0 CPU limits and disables build analyzers; its validation scope is
+unchanged. Stage 0 uses
 `HONUA_STAGE0_MAX_CPU_COUNT` (default 5, range 1–16) and reports restore, build,
 and test durations separately. Host queue/sync timings are reported by the
 local lane runner; they are separate from execution time.

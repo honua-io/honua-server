@@ -172,6 +172,20 @@ if [[ "${INTEGRATION}" == "1" && "${AFFECTED_TESTS}" != "1" ]]; then
     exit 2
 fi
 
+# Keep Stage 0 bounded even when a changed validation contract forces FULL.
+# Hosted Format/Analyzers remain authoritative for analyzer diagnostics.
+BUILD_FLAGS=(-p:TreatWarningsAsErrors=true)
+if [[ "${AFFECTED_TESTS}" == "1" ]]; then
+    stage0_cpu="${HONUA_STAGE0_MAX_CPU_COUNT:-5}"
+    if [[ ! "${stage0_cpu}" =~ ^([1-9]|1[0-6])$ ]]; then
+        echo "HONUA_STAGE0_MAX_CPU_COUNT must be an integer from 1 to 16" >&2
+        exit 2
+    fi
+    export DOTNET_PROCESSOR_COUNT="${stage0_cpu}"
+    BUILD_FLAGS+=(-p:RunAnalyzers=false -p:RunAnalyzersDuringBuild=false
+        -p:UseSharedCompilation=false "-maxCpuCount:${stage0_cpu}" -nodeReuse:false)
+fi
+
 # Stage 0 defaults to affected units; component/integration shards are opt-in.
 # Positive CI-only evidence continues to the existing governance fast path.
 scope_output="$(scripts/ci/classify-pre-pr-changes.sh "${BASE_REF}" HEAD 2>/dev/null || echo UNKNOWN)"
@@ -701,7 +715,7 @@ if [[ "${FULL}" == "1" ]]; then
         # "p:TreatWarningsAsErrors=true" argument and rejects it as a second
         # project (MSB1008). The two forms are equivalent to MSBuild; the AOT step
         # below already uses -p: for the same reason.
-        dotnet build Honua.sln --no-restore --configuration Release -p:TreatWarningsAsErrors=true
+        dotnet build Honua.sln --no-restore --configuration Release "${BUILD_FLAGS[@]}"
     fi
 else
     # Compose the build set via a throwaway solution filter so shared
@@ -797,7 +811,7 @@ else
 
         echo "3. Building with warnings as errors..."
         # -p: not /p: — see the FULL-mode build above (MSB1008 under Git Bash).
-        dotnet build "${SLNF}" --no-restore --configuration Release -p:TreatWarningsAsErrors=true
+        dotnet build "${SLNF}" --no-restore --configuration Release "${BUILD_FLAGS[@]}"
     fi
 fi
 

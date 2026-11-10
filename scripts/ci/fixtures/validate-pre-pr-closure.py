@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Offline regression fixtures for FAST selection and real closure reporting."""
+import json
 import os
 from pathlib import Path
 import shutil
@@ -175,6 +176,26 @@ pathlib.Path(out).write_text(json.dumps({'projects': projects}))
         self.assertIn("Mode: CI-SHELL-ONLY", result.stdout)
         self.assertIn("no restore/build/format/test", result.stdout)
         self.assertFalse((self.root / "artifacts/test-results/local-feedback").exists())
+
+    def test_stage_zero_full_fallback_bounds_build_without_analyzers(self):
+        path = self.root / "scripts/ci/pre-pr-check.sh"
+        path.write_text(path.read_text() + "\n# Changed validation contract.\n")
+        self.commit()
+        log = self.root / ".git/dotnet-log.jsonl"
+        result = self.execute("--affected-tests", env_extra={
+            "HONUA_DOTNET_LOG": str(log), "HONUA_STAGE0_MAX_CPU_COUNT": "4",
+        })
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("Mode: FULL", result.stdout)
+        builds = [json.loads(line) for line in log.read_text().splitlines()
+                  if json.loads(line)[0] == "build"]
+        self.assertTrue(builds)
+        for build in builds:
+            self.assertIn("-maxCpuCount:4", build)
+            self.assertIn("-p:RunAnalyzers=false", build)
+            self.assertIn("-p:RunAnalyzersDuringBuild=false", build)
+            self.assertIn("-p:TreatWarningsAsErrors=true", build)
+            self.assertIn("-nodeReuse:false", build)
 
     def test_fast_source_closure_and_format_owner(self):
         self.source_repair()
