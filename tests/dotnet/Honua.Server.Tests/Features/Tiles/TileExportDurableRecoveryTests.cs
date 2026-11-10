@@ -14,38 +14,33 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Infrastructure.Tiles;
 using Honua.Server.Features.Admin.Services;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 using Xunit;
 
 namespace Honua.Server.Tests.Features.Tiles;
 
-/// <summary>
-/// Multi-node (cross-replica) certification for the durable tile-export job lifecycle over a real
-/// Redis execution substrate (issue #2689 / the remaining acceptance criterion of #2660). These
-/// tests submit, poll, cancel, and retry across independent <see cref="TileExportJobService"/>
-/// instances that share one Redis-backed store/queue and one artifact store, and drive the real
-/// <see cref="JobExecutionService"/> worker and <see cref="JobReconciliationService"/> reconciler.
-///
-/// They certify that:
-/// <list type="bullet">
-///   <item>submission on one replica converges to status/result reads on another;</item>
-///   <item>cancellation issued from a different replica than the submitter is honoured;</item>
-///   <item>worker loss recovers through lease/heartbeat expiry without a duplicate terminal
-///     artifact, with a second worker completing the job exactly once; and</item>
-///   <item>a retry (fresh idempotency key, identical plan) reuses the completed package
-///     checkpoint instead of regenerating tiles.</item>
-/// </list>
-/// </summary>
-[Collection("Redis")]
+// Multi-node (cross-replica) certification for the durable tile-export job lifecycle over the
+// PostgreSQL execution substrate. These
+// tests submit, poll, cancel, and retry across independent TileExportJobService
+// instances that share one job store, one queue and one artifact store, and drive the real
+// JobExecutionService worker and JobReconciliationService reconciler.
+// They certify that:
+//   submission on one replica converges to status/result reads on another;
+//   cancellation issued from a different replica than the submitter is honoured;
+//   worker loss recovers through lease/heartbeat expiry without a duplicate terminal
+//     artifact, with a second worker completing the job exactly once; and
+//   a retry (fresh idempotency key, identical plan) reuses the completed package
+//     checkpoint instead of regenerating tiles.
+[Collection("Database")]
 [Protocol(TestProtocols.MapServer)]
 [Operation(Operations.Export)]
-public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
+public sealed class TileExportDurableRecoveryTests(DatabaseFixtureAdapter database)
 {
     private const string Submitter = "user-alice";
     // Matches Honua.ServiceDefaults.HonuaTelemetry.ServiceName, the meter the control plane records against.
@@ -62,7 +57,7 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
     [Endpoint("GET /rest/services/{serviceId}/MapServer/jobs/{jobId}/results/out_service_url")]
     public async Task Submit_OnOneReplica_StatusAndResult_ConvergeOnAnother()
     {
-        await using var harness = await TileExportRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await TileExportJobHarness.CreateAsync(database);
         var plan = CreatePlan("world-basemap-converge");
         var replicaA = harness.CreateService();
         var replicaB = harness.CreateService();
@@ -94,7 +89,7 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
     [Endpoint("GET /rest/services/{serviceId}/MapServer/jobs/{jobId}/results/out_service_url")]
     public async Task Submit_SameKeyOnDifferentReplica_ReturnsCompletedResult()
     {
-        await using var harness = await TileExportRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await TileExportJobHarness.CreateAsync(database);
         var plan = CreatePlan("world-basemap-idempotent-retry");
         var replicaA = harness.CreateService();
         var replicaB = harness.CreateService();
@@ -123,7 +118,7 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
     [Endpoint("GET /rest/services/{serviceId}/MapServer/jobs/{jobId}/results/out_service_url")]
     public async Task GetResult_ObsoletePublicationWatermarkOnDifferentReplica_RequiresResubmission(string dataWatermark)
     {
-        await using var harness = await TileExportRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await TileExportJobHarness.CreateAsync(database);
         var plan = CreatePlan("world-basemap-obsolete-policy");
         plan = plan with { Source = ((TileExportMapSourceDescriptor)plan.Source) with { DataWatermark = dataWatermark } };
         var replicaA = harness.CreateService();
@@ -146,7 +141,7 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
     [Endpoint("POST /rest/services/{serviceId}/MapServer/jobs/{jobId}/cancel")]
     public async Task Cancel_FromDifferentReplica_QueuedJob_IsCancelledAndDequeued()
     {
-        await using var harness = await TileExportRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await TileExportJobHarness.CreateAsync(database);
         var plan = CreatePlan("world-basemap-cancel");
         var replicaA = harness.CreateService();
         var replicaB = harness.CreateService();
@@ -169,7 +164,7 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
     [Endpoint("GET /rest/services/{serviceId}/MapServer/jobs/{jobId}")]
     public async Task WorkerLoss_LeaseExpiry_Recovers_WithoutDuplicateTerminalArtifact()
     {
-        await using var harness = await TileExportRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await TileExportJobHarness.CreateAsync(database);
         var plan = CreatePlan("world-basemap-recovery");
         var replica = harness.CreateService();
 
@@ -230,7 +225,7 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
     [Endpoint("GET /rest/services/{serviceId}/MapServer/jobs/{jobId}")]
     public async Task Retry_WithFreshKey_ReusesCompletedPackageCheckpoint()
     {
-        await using var harness = await TileExportRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await TileExportJobHarness.CreateAsync(database);
         var plan = CreatePlan("world-basemap-reuse");
         var replica = harness.CreateService();
 
@@ -259,7 +254,7 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
     [Endpoint("GET /rest/services/{serviceId}/MapServer/jobs/{jobId}/results/out_service_url")]
     public async Task ArtifactExpiry_AfterSuccess_ProducesStableNotFound()
     {
-        await using var harness = await TileExportRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await TileExportJobHarness.CreateAsync(database);
         var plan = CreatePlan("world-basemap-expiry");
         var replicaA = harness.CreateService();
         var replicaB = harness.CreateService();
@@ -292,7 +287,7 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
     [Endpoint("GET /rest/services/{serviceId}/MapServer/jobs/{jobId}")]
     public async Task Execution_EmitsJobTransitionMetricsCarryingJobIdentifiers()
     {
-        await using var harness = await TileExportRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await TileExportJobHarness.CreateAsync(database);
         var plan = CreatePlan("world-basemap-metrics");
         var replica = harness.CreateService();
         var transitions = new ConcurrentBag<(string Kind, string Status)>();
@@ -373,32 +368,23 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
     private static ClaimsPrincipal Principal()
         => new(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, Submitter)], authenticationType: "test"));
 
-    /// <summary>
-    /// Owns the shared Redis substrate, artifact store, and tile-export executor for a single test,
-    /// and exposes helpers to run the worker/reconciler background services for a scoped operation.
-    /// </summary>
-    private sealed class TileExportRedisHarness : IAsyncDisposable
+    // Owns the shared job substrate, artifact store, and tile-export executor for a single test,
+    // and exposes helpers to run the worker/reconciler background services for a scoped operation.
+    private sealed class TileExportJobHarness : IAsyncDisposable
     {
-        private readonly ConnectionMultiplexer _multiplexer;
-        private readonly IServer _server;
-        private readonly IDatabase _database;
+        private readonly PostgresJobSubstrateHarness _jobs;
         private readonly CountingTileExportProducer _producer;
         private readonly TileExportJobExecutor _executor;
         private readonly TimeProvider _timeProvider;
         private readonly ServiceProvider _policyServices;
 
-        private TileExportRedisHarness(ConnectionMultiplexer multiplexer)
+        private TileExportJobHarness(PostgresJobSubstrateHarness jobs)
         {
-            _multiplexer = multiplexer;
-            _database = multiplexer.GetDatabase();
-            _server = multiplexer.GetServer(multiplexer.GetEndPoints()[0]);
+            _jobs = jobs;
             // A fixed clock keeps the content-addressed reuse horizon deterministic: the stored
             // artifact's expiry and a later job's minimum-expiry requirement evaluate at the same
             // instant, so a valid checkpoint is reused rather than marginally re-expired.
             _timeProvider = new FixedTimeProvider(DateTimeOffset.UtcNow);
-            Store = new RedisExecutionJobStore(_multiplexer, NullLogger<RedisExecutionJobStore>.Instance);
-            LogStore = new RedisExecutionLogStore(_multiplexer, NullLogger<RedisExecutionLogStore>.Instance);
-            Queue = new RedisJobQueue(_multiplexer, Store, NullLogger<RedisJobQueue>.Instance);
             Storage = new RecordingCloudFileStorage(_timeProvider);
             _producer = new CountingTileExportProducer();
             // Mirrors the host composition (Program.cs registers the in-memory policy stores by
@@ -417,23 +403,18 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
                 _policyServices.GetRequiredService<IServiceScopeFactory>());
         }
 
-        public RedisExecutionJobStore Store { get; }
+        public PostgresExecutionJobStore Store => _jobs.JobStore;
 
-        public RedisJobQueue Queue { get; }
+        public PostgresJobQueue Queue => _jobs.Queue;
 
-        public RedisExecutionLogStore LogStore { get; }
+        public PostgresExecutionLogStore LogStore => _jobs.LogStore;
 
         public RecordingCloudFileStorage Storage { get; }
 
         public int ProducerInvocations => _producer.Invocations;
 
-        public static async Task<TileExportRedisHarness> CreateAsync(string connectionString)
-        {
-            var multiplexer = await ConnectionMultiplexer.ConnectAsync(connectionString);
-            var harness = new TileExportRedisHarness(multiplexer);
-            await harness.CleanupAsync();
-            return harness;
-        }
+        public static async Task<TileExportJobHarness> CreateAsync(DatabaseFixtureAdapter database)
+            => new(await PostgresJobSubstrateHarness.CreateAsync(database, nameof(TileExportDurableRecoveryTests)));
 
         public TileExportJobService CreateService()
             => new(
@@ -475,7 +456,9 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
                 new ExecutionJobCancellationTokens(),
                 [],
                 LogStore,
-                NullLogger<JobReconciliationService>.Instance);
+                NullLogger<JobReconciliationService>.Instance,
+                Store,
+                Store);
             await reconciler.StartAsync(CancellationToken.None);
             try
             {
@@ -514,18 +497,8 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
 
         public async ValueTask DisposeAsync()
         {
-            await CleanupAsync();
-            await _multiplexer.DisposeAsync();
+            await _jobs.DisposeAsync();
             await _policyServices.DisposeAsync();
-        }
-
-        private async Task CleanupAsync()
-        {
-            var keys = _server.Keys(pattern: "controlplane:*").ToArray();
-            if (keys.Length > 0)
-            {
-                await _database.KeyDeleteAsync(keys);
-            }
         }
     }
 
