@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [trunk]
     paths:
-      - 'src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerServiceRelationships.cs'
+      - 'src/Honua.Protocols/GeoServices/FeatureServer/FeatureServerServiceRelationships.cs'
       - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerRelationshipResourceTests.cs'
       - '.github/workflows/featureserver-relationship-contract.yml'
 permissions:

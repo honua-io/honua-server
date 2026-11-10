@@ -54,7 +54,7 @@ public sealed class ReportingOfflineGuaranteeTests
         var cssPath = ArchitectureTestHelpers.CombinePath(
             ArchitectureTestHelpers.ResolveRepositoryRoot(),
             "src",
-            "Honua.Core",
+            "Honua.Core", "Core",
             "Features",
             "Reporting",
             "Templates",
@@ -64,7 +64,7 @@ public sealed class ReportingOfflineGuaranteeTests
             $"Embedded report CSS must live at {cssPath}; the HTML renderer reads it via GetManifestResourceStream.");
 
         var csproj = File.ReadAllText(
-            ArchitectureTestHelpers.CombinePath(ArchitectureTestHelpers.ResolveRepositoryRoot(), "src", "Honua.Core", "Honua.Core.csproj"));
+            ArchitectureTestHelpers.CombinePath(ArchitectureTestHelpers.ResolveRepositoryRoot(), "src", "Honua.Core", "Core", "Honua.Core.csproj"));
         csproj.Should().Contain("Features/Reporting/Templates/Resources/report.css",
             "report.css must be registered as <EmbeddedResource /> so the HTML renderer can inline it.");
     }

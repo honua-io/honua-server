@@ -81,7 +81,7 @@ concurrency:
   # cancellation would destroy a full conformance result and produce nothing in its
   # place. Split the group by tier: self-tests serialise against self-tests, the lane
   # against the lane.
-  group: cng-conformance-${{ github.ref }}-${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || inputs.server_image != '') && 'lane' || 'selftest' }}
+  group: cng-conformance-${{ github.event.pull_request.number || github.ref }}-${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || inputs.server_image != '') && 'lane' || 'selftest' }}
   cancel-in-progress: true
 
 jobs:

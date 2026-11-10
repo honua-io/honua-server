@@ -39,8 +39,8 @@ public sealed class GeographicSridClassifierGuardTests
     private static readonly string[] AllowlistedRelativePaths =
     {
         // Canonical classifiers — the single sources of truth.
-        "src/Honua.Core.Abstractions/Features/Shared/Models/GeographicSridClassifier.cs",
-        "src/Honua.Core/Features/Shared/Models/SpatialReferenceExtensions.cs",
+        "src/Honua.Core/Abstractions/Features/Shared/Models/GeographicSridClassifier.cs",
+        "src/Honua.Core/Core/Features/Shared/Models/SpatialReferenceExtensions.cs",
 
         // Deliberately-narrow / protocol-specific heuristics (justified at the call site):
         // CityGML srsName detection must also accept the deprecated 3D code EPSG:4327, which the
@@ -48,7 +48,7 @@ public sealed class GeographicSridClassifierGuardTests
         "src/Honua.Scene/Publishing/CityGmlScenePublishExecutor.cs",
         // Import reprojection-suggestion heuristic intentionally keeps only the three highest-
         // confidence geographic codes as-is; widening would change import behaviour (out of scope).
-        "src/Honua.Core/Features/FileImport/Services/ImportSchemaSuggestionService.cs",
+        "src/Honua.Core/Core/Features/FileImport/Services/ImportSchemaSuggestionService.cs",
     };
 
     /// <summary>

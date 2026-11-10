@@ -2,11 +2,12 @@ name: Compose Release Lifecycle
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches: [trunk]
     paths:
       - 'src/Honua.Server/Features/ControlPlane/**'
       - 'src/Honua.Server/Features/Infrastructure/Monitoring/McpPlatformOpsReader.cs'
-      - 'src/Honua.Core/Features/ControlPlane/**'
+      - 'src/Honua.Core/Core/Features/ControlPlane/**'
       - 'docs/get-started/compose.executor.yaml'
       - 'docs/get-started/compose.console.yaml'
       - 'docs/get-started/quickstart.md'
@@ -32,6 +33,7 @@ concurrency:
 
 jobs:
   published-rc1-lifecycle:
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: ubuntu-latest
     timeout-minutes: 150
     steps:

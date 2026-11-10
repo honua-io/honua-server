@@ -14,8 +14,8 @@
     "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp|FullyQualifiedName~Honua.Server.Tests.Features.AiBuilder|FullyQualifiedName~Honua.Server.Tests.Features.Reporting|FullyQualifiedName~Honua.Ai.Tests.Capabilities|FullyQualifiedName~Honua.Ai.Tests.DatabaseCollectionContractTests|FullyQualifiedName~Honua.Server.Tests.Features.StudioAiProxy)&FullyQualifiedName!~McpBearerAuthenticationTests&FullyQualifiedName!~McpProtectedResourceMetadataTests&FullyQualifiedName!~McpScopeAuthorizationTests&FullyQualifiedName!~McpAuthorizationHelperTests&FullyQualifiedName!~McpStyle&FullyQualifiedName!~ServicePublish&FullyQualifiedName!~StudioMcpOwnership)",
     "paths": [
       "src/Honua.Ai/",
-      "src/Honua.Core/Features/Publishing/",
-      "src/Honua.Core/Features/Validation/",
+      "src/Honua.Core/Core/Features/Publishing/",
+      "src/Honua.Core/Core/Features/Validation/",
       "src/Honua.Db/Postgres/Features/Publishing/",
       "tests/dotnet/Honua.Ai.Tests/DatabaseCollectionContractTests.cs",
       "tests/dotnet/Honua.Ai.Tests/ConformanceSchemas/",

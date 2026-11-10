@@ -241,7 +241,7 @@ promote/rollback history table.
 creates a rebuild attempt — atomically transitioning the generation `dirty` → `building` via
 the same `NetworkTopologyLifecycle.TryTransition` compare-and-swap #2715 introduced — then
 submits a `NetworkTopologyRebuild` execution job through the *existing* shared durable job
-infrastructure (`IExecutionJobStore`/`IJobQueue`/`IJobExecutor`, `src/Honua.Core/Features/
+infrastructure (`IExecutionJobStore`/`IJobQueue`/`IJobExecutor`, `src/Honua.Core/Core/Features/
 ControlPlane`, `src/Honua.Jobs/Features/ControlPlane`): no parallel job system was built.
 The worker-side `NetworkTopologyRebuildJobExecutor` runs entirely in-process against
 Postgres — no remote batch-compute backend — and calls
