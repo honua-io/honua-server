@@ -13,6 +13,7 @@ internal static class BrowserSessionSecurity
     internal static IServiceCollection AddBrowserSessionSecurity(this IServiceCollection services)
     {
         services.AddScoped<AdminPasswordAuthenticator>();
+        services.AddScoped<AdminPasswordSessionEndpoint>();
         services.AddScoped<AdminPasswordTokenEndpoint>();
         services.AddAntiforgery(options =>
         {
