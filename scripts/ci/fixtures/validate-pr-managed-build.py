@@ -11,22 +11,23 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 TEXT = (ROOT / '.github/workflows/pr-gate.yml').read_text()
+CI = (ROOT / '.github/workflows/ci.yml').read_text()
 
 
-def job(name):
-    return re.search(r'^  '+re.escape(name)+r':\n(.*?)(?=^  [\w-]+:|\Z)', TEXT, re.M | re.S).group(1)
+def job(name, source=TEXT):
+    return re.search(r'^  '+re.escape(name)+r':\n(.*?)(?=^  [\w-]+:|\Z)', source, re.M | re.S).group(1)
 
 
 class PrManagedBuildTests(unittest.TestCase):
     def test_required_results_fail_closed(self):
         required = job('required')
-        self.assertIn('needs: [pr-gate, pr-gate-tests, format, ci-router-validation, affected-shards]', required)
+        self.assertIn('needs: [pr-gate, format, ci-router-validation, affected-shards]', required)
         self.assertIn('if: always()', required)
         script = re.search(r'        run: \|\n(.*?)(?=\n      #|\n      -|\Z)', required, re.S).group(1)
         script = textwrap.dedent(script)
-        keys = ['BUILD_AND_TEST_RESULT', 'TEST_RESULT', 'FORMAT_RESULT', 'CI_ROUTER_RESULT',
+        keys = ['BUILD_AND_TEST_RESULT', 'FORMAT_RESULT', 'CI_ROUTER_RESULT',
                 'AFFECTED_SHARDS_RESULT']
-        dependencies = ['pr-gate', 'pr-gate-tests', 'format', 'ci-router-validation', 'affected-shards']
+        dependencies = ['pr-gate', 'format', 'ci-router-validation', 'affected-shards']
         for key, dependency in zip(keys, dependencies):
             self.assertIn(key+': ${{ needs.'+dependency+'.result }}', required)
         success = {key: 'success' for key in keys}
@@ -36,41 +37,55 @@ class PrManagedBuildTests(unittest.TestCase):
             for result in ['failure','cancelled','skipped','']:
                 self.assertNotEqual(subprocess.run(['bash','-e','-c',script],env=dict(os.environ,**(success | {key:result})),capture_output=True).returncode,0,(key,result))
 
+    def test_full_ci_requires_runtime_proofs(self):
+        import yaml
+        full = yaml.safe_load(CI)
+        required = full['jobs']['ci-gate']
+        self.assertIn('pr-gate-tests', required['needs'])
+        step = required['steps'][0]
+        self.assertEqual(step['env']['RUNTIME_PROOFS_RESULT'], '${{ needs.pr-gate-tests.result }}')
+        script = step['run'].replace("${{ contains(needs.*.result, 'failure') }}", 'false').replace("${{ contains(needs.*.result, 'cancelled') }}", 'false')
+        for result in ('success', 'failure', 'cancelled', 'skipped', ''):
+            env = dict(os.environ, REQUIRE_MANAGED_BUILD='true', BUILD_RESULT='success',
+                       REQUIRE_FORMAT='true', FORMAT_RESULT='success', RUNTIME_PROOFS_RESULT=result)
+            run = subprocess.run(['bash', '-e', '-c', script], env=env, capture_output=True)
+            self.assertEqual(run.returncode == 0, result == 'success', result)
+        self.assertIn("cron: '0 9 * * *'", CI)
+        self.assertIn("cron: '0 21 * * *'", CI)
+        self.assertNotIn('Build selected protocol profiles', job('pr-gate'))
+        self.assertIn('Build selected protocol profiles', job('build', CI))
+
     def test_admission_and_consumer_ownership(self):
-        producer, consumer = job('pr-gate'), job('pr-gate-tests')
+        producer, consumer = job('pr-gate'), job('pr-gate-tests', CI)
         self.assertIn('name: PR Gate / Build and tests', producer)
         self.assertIn('- name: Await exact-head review', producer)
         self.assertIn("github.run_attempt == 1", producer)
-        self.assertIn('needs: pr-gate', consumer)
-        # Docs-only still runs this job to success; only expensive steps skip.
-        self.assertNotRegex(consumer.split('    steps:',1)[0],r'^    if:',)
+        self.assertIn('needs: build', consumer)
+        self.assertNotIn('  pr-gate-tests:', TEXT)
+        self.assertIn("if: ${{ github.event_name != 'merge_group' }}", consumer)
         self.assertIn('phase: build',producer)
         self.assertIn('phase: test',consumer)
-        self.assertIn('producer-attempt: ${{ needs.pr-gate.outputs.producer-attempt }}', consumer)
+        self.assertIn('producer-attempt: ${{ needs.build.outputs.producer_attempt }}', consumer)
         self.assertIn('producer-attempt: ${{ steps.managed-producer.outputs.producer-attempt }}', producer)
         self.assertLess(consumer.index('Build missing managed test outputs'),consumer.index('phase: test'))
-        self.assertIn('needs.pr-gate.outputs.skip !=',consumer)
+        self.assertNotIn('needs.pr-gate', consumer)
         self.assertNotIn('continue-on-error: true',consumer.split('- name: Lean gate',1)[0])
-        self.assertIn('Revalidate exact-head review before success', consumer)
+        self.assertNotIn('REVIEW_FIRST_MODE', consumer)
 
     def test_review_admission_mutations_rejected(self):
         path = ROOT / 'scripts/ci/fixtures/validate-review-first-dispatch.py'
         spec = importlib.util.spec_from_file_location('review_contract', path)
         contract = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(contract)
-        consumer = job('pr-gate-tests')
-        mutations = [
-            TEXT.replace('    needs: pr-gate\n', '    needs: format\n', 1),
-            TEXT.replace('name: PR Gate / Build and tests', 'name: Renamed admission', 1),
-        ]
-        for name in ('Start freeing runtime proof disk space', 'Wait for runtime proof disk cleanup', 'Setup .NET'):
-            prefix, rest = consumer.split('- name: ' + name, 1)
+        mutations = [TEXT.replace('name: PR Gate / Build and tests', 'name: Renamed admission', 1)]
+        producer = job('pr-gate')
+        for name in ('Setup .NET', 'Plan managed test producer', 'Lean gate (managed build producer)'):
+            prefix, rest = producer.split('- name: ' + name, 1)
             step, suffix = rest.split('- name:', 1)
             gate = next(line for line in step.splitlines() if line.strip().startswith('if:'))
-            altered_step = step.replace(gate, "        if: needs.pr-gate.outputs.skip != 'true'", 1)
-            altered_consumer = prefix + '- name: ' + name + altered_step + '- name:' + suffix
-            mutations.append(TEXT.replace(consumer, altered_consumer, 1))
-        mutations.append(TEXT.replace(consumer, consumer.replace('- name: Revalidate exact-head review before verification', '- name: Missing pre-execution review', 1)))
+            altered_step = step.replace(gate, "        if: steps.docs-only.outputs.docs_only != 'true'", 1)
+            altered = prefix + '- name: ' + name + altered_step + '- name:' + suffix
+            mutations.append(TEXT.replace(producer, altered, 1))
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / 'pr-gate.yml'
             contract.PR_GATE = candidate
@@ -80,7 +95,7 @@ class PrManagedBuildTests(unittest.TestCase):
                     contract.main()
 
     def test_boot_proof_uses_producer_host_after_pristine_publication(self):
-        producer, consumer = job('pr-gate'), job('pr-gate-tests')
+        producer, consumer = job('pr-gate'), job('pr-gate-tests', CI)
         self.assertLess(producer.index('Pre-pull Testcontainers PostGIS'), producer.index('phase: build'))
         self.assertLess(producer.index('Publish pristine managed test outputs'), producer.index('Await Testcontainers PostGIS pre-pull'))
         self.assertLess(producer.index('Await Testcontainers PostGIS pre-pull'), producer.index('timeout 175s scripts/ci/server-boot-smoke.sh'))
@@ -100,7 +115,7 @@ class PrManagedBuildTests(unittest.TestCase):
         self.assertIn('AFFECTED_SHARDS_CAP',selector)
         self.assertIn('--cap "${CAP}"', selector)
         self.assertIn('--annotate-resources', selector)
-        consumer=job('pr-gate-tests')
+        consumer=job('pr-gate-tests', CI)
         # These executable proofs must remain consumers of the producer build.
         for name in ['Prove remote source execution with real HTTP and PostGIS', 'PDAL']:
             self.assertIn(name,consumer)

@@ -226,19 +226,16 @@ class NativeToolsTests(unittest.TestCase):
         self.assertIn('target: native-tools', workflow)
         self.assertIn(native.CACHE, workflow)
         self.assertNotIn('cache-to: type=registry,ref=' + native.LEGACY_CACHE, workflow)
-        for name in ['pr-gate.yml', 'ci.yml']:
-            consumer = (ROOT / '.github/workflows' / name).read_text()
-            self.assertIn('native-tools-image.py resolve --output artifacts/test-results/native-tools-proof.json', consumer)
-            if name == 'pr-gate.yml':
-                self.assertIn('Category=PdalExecutionProof', consumer)
-                upload = consumer.split('- name: Upload point-cloud execution proof', 1)[1].split('- name:', 1)[0]
-                self.assertIn('artifacts/test-results/native-tools-proof.json', upload)
-                self.assertIn('artifacts/test-results/pdal-execution-proof.trx', upload)
-            else:
-                self.assertIn('name: Run Worker GDAL tests', consumer)
-                main = consumer.split('- name: Run Worker GDAL tests', 1)[1].split('- name:', 1)[0]
-                self.assertNotIn('--filter', main)
-                self.assertIn('Honua.Worker.Gdal.Tests.csproj', main)
+        consumer = (ROOT / '.github/workflows/ci.yml').read_text()
+        self.assertIn('native-tools-image.py resolve --output artifacts/test-results/native-tools-proof.json', consumer)
+        self.assertIn('Category=PdalExecutionProof', consumer)
+        upload = consumer.split('- name: Upload point-cloud execution proof', 1)[1].split('- name:', 1)[0]
+        self.assertIn('artifacts/test-results/native-tools-proof.json', upload)
+        self.assertIn('artifacts/test-results/pdal-execution-proof.trx', upload)
+        self.assertIn('name: Run Worker GDAL tests', consumer)
+        main = consumer.split('- name: Run Worker GDAL tests', 1)[1].split('- name:', 1)[0]
+        self.assertNotIn('--filter', main)
+        self.assertIn('Honua.Worker.Gdal.Tests.csproj', main)
         self.assertIn('aot-build:', (ROOT / '.github/workflows/ci.yml').read_text())
 
     def test_unquiescent_lookup_never_starts_fallback(self):

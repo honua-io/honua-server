@@ -271,7 +271,7 @@ def self_test(sources: Sources) -> None:
 
 
 def main() -> int:
-    workflow = ROOT / ".github/workflows/pr-gate.yml"
+    workflow = ROOT / ".github/workflows/ci.yml"
     if len(sys.argv) > 1 and sys.argv[1] != "--self-test":
         workflow = Path(sys.argv[1])
     try:

@@ -127,8 +127,8 @@ class ManagedSdkSelectionTests(unittest.TestCase):
 
     def test_all_managed_consumers_use_their_actual_producer_sdk(self):
         for workflow, producer, output, consumers in (
-            ('pr-gate.yml', 'pr-gate', 'managed-sdk-version', ('pr-gate-tests', 'affected-shard')),
-            ('ci.yml', 'build', 'managed_sdk_version', ('dotnet-foundation-family-tests', 'server-tests')),
+            ('pr-gate.yml', 'pr-gate', 'managed-sdk-version', ('affected-shard',)),
+            ('ci.yml', 'build', 'managed_sdk_version', ('dotnet-foundation-family-tests', 'server-tests', 'pr-gate-tests')),
         ):
             source = (ROOT / '.github/workflows' / workflow).read_text(encoding='utf-8')
             body = job(source, producer)

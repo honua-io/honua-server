@@ -125,8 +125,6 @@ def main() -> None:
 
     build_test_job = job("pr-gate")
     require(build_test_job, "name: PR Gate / Build and tests", "exact admission job name must remain stable")
-    consumer_job = job("pr-gate-tests")
-    require(consumer_job, "needs: pr-gate", "consumer must depend on producer admission")
     positions = [build_test_job.index(f"- name: {name}") for name in ordered_steps]
     if positions != sorted(positions):
         raise AssertionError("admission receipt/wait must precede every expensive step")
@@ -164,24 +162,11 @@ def main() -> None:
     # failure on enforced attempt 1 also blocks its dependent consumer job.
     for source, names in [
         (build_test_job, ["Setup .NET", "Plan managed test producer", "Lean gate (managed build producer)", "Publish pristine managed test outputs"]),
-        (consumer_job, ["Start freeing runtime proof disk space", "Setup .NET", "Wait for runtime proof disk cleanup", "Plan managed test consumer", "Restore verified managed test outputs", "Build missing managed test outputs"]),
     ]:
         for name in names:
             step = source.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
             if not review_gated(step):
                 raise AssertionError(f"{name} must remain behind exact-head review")
-    for name, message in [
-        ("Prepare secondary Testcontainers proof images", "secondary proof-image preparation must remain behind exact-head review"),
-        ("Prove raster catalog execution with production GDAL", "real raster execution must remain behind exact-head review"),
-        ("Prove remote source execution with real HTTP and PostGIS", "real remote-source execution must remain behind exact-head review"),
-        ("Prove the real-GDAL CLI cases run on the required gate", "real GDAL CLI execution must remain behind exact-head review"),
-        ("Build production PDAL native tools", "Build production PDAL native tools must remain behind exact-head review"),
-        ("Prove point-cloud execution with production PDAL", "Prove point-cloud execution with production PDAL must remain behind exact-head review"),
-    ]:
-        proof_step = consumer_job.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
-        if not review_gated(proof_step):
-            raise AssertionError(message)
-
     revalidation_condition = (
         "if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == "
         "'pull_request' && github.run_attempt > 1"
@@ -189,7 +174,6 @@ def main() -> None:
     require(pr_gate, "  statuses: read", "attempt 2 needs bounded read access to Review Gate status")
     for source, label, expensive_name in [
         (build_test_job, "producer", "Free disk space"),
-        (consumer_job, "consumer", "Start freeing runtime proof disk space"),
     ]:
         before_name = "Revalidate exact-head review before verification"
         after_name = "Revalidate exact-head review before success"
