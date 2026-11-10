@@ -27,8 +27,13 @@ internal static class MetadataV2FieldSemantics
 
     internal static bool HasSupportedReferences(MetadataV2Resource dataset)
         => SupportsField(dataset, dataset.Spatial?.PrimaryGeometryField, SupportsGeometry)
-           && SupportsField(dataset, dataset.Temporal?.StartTimeField, SupportsTime)
-           && SupportsField(dataset, dataset.Temporal?.EndTimeField, SupportsTime);
+           && SupportsField(dataset, dataset.Temporal?.StartTimeField, IsKnownFieldType)
+           && SupportsField(dataset, dataset.Temporal?.EndTimeField, IsKnownFieldType);
+
+    // Protocols can ignore invalid temporal declarations on known fields and still render.
+    // Unknown field semantics remain non-serving; write validation still requires time types.
+    private static bool IsKnownFieldType(MetadataV2FieldType type)
+        => type != MetadataV2FieldType.Unknown && Enum.IsDefined(type);
 
     private static bool SupportsField(
         MetadataV2Resource dataset, string? fieldName, Func<MetadataV2FieldType, bool> supportsType)
