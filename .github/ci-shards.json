@@ -1511,7 +1511,7 @@
       "paths": [
         "src/Honua.Core/Core/Features/Validation/",
         "src/Honua.Protocols/OgcClassic/Wmts/",
-        "src/Honua.Core/Core/Features/Metadata/Domain/V2/",
+        "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/",
         "src/Honua.Core/Core/Features/Metadata/Services/",
         "src/Honua.Protocols/OgcClassic/CatalogCapabilitiesXml.cs",
         "src/Honua.Protocols/OgcClassic/Wcs20/",
