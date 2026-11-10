@@ -46,11 +46,6 @@ mode="${HONUA_FIXTURE_MODE:-chatty}"
 seconds="${HONUA_FIXTURE_SECONDS:-2}"
 echo "stub dotnet test starting (mode=${mode})"
 python3 scripts/ci/fixtures/write-shard-trx.py "$@"
-# Stall the retry supervisor too: otherwise its bounded cancellation cleanup
-# finishes before GNU timeout's escalation/grace-window cases can occur.
-if [[ "${mode}" == "sigterm-proof" || "${mode}" == "ppidkill" ]]; then
-  kill -STOP "${PPID}"
-fi
 case "${mode}" in
   chatty|failing)
     end=$(( $(date +%s) + seconds ))
@@ -116,6 +111,25 @@ case "${mode}" in
 esac
 STUB
 chmod +x "${stub_dir}/dotnet"
+
+# These two instrumentation cases need an unresponsive direct child of timeout.
+# Bypass only the retry supervisor in the fixture; its bounded cleanup is tested
+# separately by test-flake-quarantine.py, including detached descendants.
+export HONUA_FIXTURE_PYTHON
+HONUA_FIXTURE_PYTHON="$(command -v python3)"
+cat > "${stub_dir}/python3" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+case "${HONUA_FIXTURE_MODE:-}:$(basename "${1:-}")" in
+  sigterm-proof:retry-failed-shard-tests.py|ppidkill:retry-failed-shard-tests.py)
+    while [[ "$1" != "--" ]]; do shift; done
+    shift
+    exec "$@"
+    ;;
+esac
+exec "${HONUA_FIXTURE_PYTHON}" "$@"
+STUB
+chmod +x "${stub_dir}/python3"
 
 # run_case <name> <mode> <seconds> <timeout-minutes> <warn-ratio> <stall-seconds>
 # Emits the runner's stdout to ${out_file} and its timing JSON to ${timing_file};
