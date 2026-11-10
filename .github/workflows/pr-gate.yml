@@ -56,7 +56,8 @@ jobs:
   # vars.HONUA_PR_GATE_RUNNER when the host has idle runners, else ubuntu-latest.
   # With the variable unset every step skips and the output stays ubuntu-latest.
   # This job must never fail: its dependents include the required producer,
-  # which may not carry a job condition. Enforce mode stays hosted because the
+  # which may not carry a job condition. Step timeouts therefore sum below the
+  # job timeout, so a slow step falls back to hosted instead of failing the job. Enforce mode stays hosted because the
   # review release reruns only failed jobs and would reuse a stale choice.
   runner-select:
     name: PR Gate / Runner select
@@ -71,6 +72,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: vars.HONUA_PR_GATE_RUNNER != '' && env.REVIEW_FIRST_MODE != 'enforce'
         continue-on-error: true
+        timeout-minutes: 1
         with:
           sparse-checkout: scripts/ci/select-gate-runner.sh
           sparse-checkout-cone-mode: false
@@ -78,6 +80,7 @@ jobs:
       - name: Assume the build-host wake role
         if: vars.HONUA_PR_GATE_RUNNER != '' && env.REVIEW_FIRST_MODE != 'enforce' && github.event_name == 'pull_request'
         continue-on-error: true
+        timeout-minutes: 2
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6
         with:
           role-to-assume: ${{ secrets.HONUA_PR_GATE_WAKE_ROLE_ARN }}
@@ -88,7 +91,6 @@ jobs:
         id: select
         if: vars.HONUA_PR_GATE_RUNNER != '' && env.REVIEW_FIRST_MODE != 'enforce'
         continue-on-error: true
-        # A step timeout falls back to hosted; a job timeout would skip the producer.
         timeout-minutes: 5
         env:
           HONUA_PR_GATE_RUNNER: ${{ vars.HONUA_PR_GATE_RUNNER }}

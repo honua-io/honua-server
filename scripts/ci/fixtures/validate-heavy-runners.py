@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Keep configurable compute routing separate from hosted control jobs and OS pins."""
+from dataclasses import dataclass
 import os
 from pathlib import Path
 import subprocess
@@ -93,12 +94,28 @@ class PrGateRunnerRoutingTests(unittest.TestCase):
             with self.subTest(step=step.get("name") or step.get("uses")):
                 self.assertTrue(step["if"].startswith("vars.HONUA_PR_GATE_RUNNER != '' && env.REVIEW_FIRST_MODE != 'enforce'"))
                 self.assertTrue(step["continue-on-error"])
-        self.assertLess(select["steps"][-1]["timeout-minutes"], select["timeout-minutes"])
+        self.assertLess(sum(step["timeout-minutes"] for step in select["steps"]), select["timeout-minutes"])
+
+
+WAKE_CREDENTIALS = {"AWS_ACCESS_KEY_ID": "stub"}
+FAILING_AWS = {**WAKE_CREDENTIALS, "AWS_STUB_FAIL": "1"}
+
+
+@dataclass(frozen=True)
+class HostScenario:
+    label: str = "honua-build"
+    desired: str = "1"
+    instance: str = "i-current"
+    heartbeat: str = "{}"
+
+
+def heartbeat(idle, instance="i-current", age=0):
+    return f'{{"instance": "{instance}", "at": {int(time.time()) - age}, "idle": {idle}}}'
 
 
 class GateRunnerSelectionTests(unittest.TestCase):
-    def select(self, label="honua-build", credentials=True, desired="1", instance="i-current",
-               heartbeat=None, fail=False):
+    def run_selection(self, scenario, environment):
+        """Runs the selector against a stubbed aws CLI; returns its output and the aws calls."""
         with tempfile.TemporaryDirectory() as scratch:
             scratch = Path(scratch)
             stub = scratch / "aws"
@@ -107,57 +124,52 @@ class GateRunnerSelectionTests(unittest.TestCase):
             output = scratch / "output"
             log = scratch / "aws.log"
             log.touch()
+            inherited = {key: value for key, value in os.environ.items()
+                         if key not in {"AWS_ACCESS_KEY_ID", "GITHUB_STEP_SUMMARY"}}
             env = {
-                **os.environ,
+                **inherited,
                 "PATH": f"{scratch}{os.pathsep}{os.environ['PATH']}",
                 "GITHUB_OUTPUT": str(output),
                 "GATE_RUNNER_WAIT_SECONDS": "0",
-                "HONUA_PR_GATE_RUNNER": label,
+                "HONUA_PR_GATE_RUNNER": scenario.label,
                 "AWS_STUB_LOG": str(log),
-                "AWS_STUB_DESIRED": desired,
-                "AWS_STUB_INSTANCE": instance,
-                "AWS_STUB_HEARTBEAT": heartbeat or "{}",
+                "AWS_STUB_DESIRED": scenario.desired,
+                "AWS_STUB_INSTANCE": scenario.instance,
+                "AWS_STUB_HEARTBEAT": scenario.heartbeat,
+                **environment,
             }
-            env.pop("GITHUB_STEP_SUMMARY", None)
-            env.pop("AWS_ACCESS_KEY_ID", None)
-            if credentials:
-                env["AWS_ACCESS_KEY_ID"] = "stub"
-            if fail:
-                env["AWS_STUB_FAIL"] = "1"
             subprocess.run(["bash", str(SELECT_SCRIPT)], env=env, check=True, capture_output=True, timeout=30)
             return output.read_text().strip(), log.read_text()
 
-    @staticmethod
-    def heartbeat(idle, instance="i-current", age=0):
-        return f'{{"instance": "{instance}", "at": {int(time.time()) - age}, "idle": {idle}}}'
+    def selected_runner(self, scenario, environment=WAKE_CREDENTIALS):
+        return self.run_selection(scenario, environment)[0]
 
     def test_unset_label_selects_hosted_without_touching_aws(self):
-        self.assertEqual(self.select(label=""), ("runner=ubuntu-latest", ""))
+        self.assertEqual(self.run_selection(HostScenario(label=""), WAKE_CREDENTIALS), ("runner=ubuntu-latest", ""))
 
     def test_missing_wake_credentials_select_hosted(self):
-        self.assertEqual(self.select(credentials=False)[0], "runner=ubuntu-latest")
+        self.assertEqual(self.selected_runner(HostScenario(), {}), "runner=ubuntu-latest")
 
     def test_fresh_heartbeat_with_two_idle_runners_selects_the_label(self):
-        output, calls = self.select(heartbeat=self.heartbeat(idle=2))
+        output, calls = self.run_selection(HostScenario(heartbeat=heartbeat(idle=2)), WAKE_CREDENTIALS)
         self.assertEqual(output, "runner=honua-build")
         self.assertNotIn("set-desired-capacity", calls)
 
     def test_busy_host_selects_hosted_without_waiting(self):
-        self.assertEqual(self.select(heartbeat=self.heartbeat(idle=1))[0], "runner=ubuntu-latest")
+        self.assertEqual(self.selected_runner(HostScenario(heartbeat=heartbeat(idle=1))), "runner=ubuntu-latest")
 
     def test_heartbeat_from_a_replaced_or_silent_host_is_not_ready(self):
-        for heartbeat in (self.heartbeat(idle=2, instance="i-previous"), self.heartbeat(idle=2, age=600)):
-            with self.subTest(heartbeat=heartbeat):
-                self.assertEqual(self.select(heartbeat=heartbeat)[0], "runner=ubuntu-latest")
+        for stale in (heartbeat(idle=2, instance="i-previous"), heartbeat(idle=2, age=600)):
+            with self.subTest(heartbeat=stale):
+                self.assertEqual(self.selected_runner(HostScenario(heartbeat=stale)), "runner=ubuntu-latest")
 
     def test_stopped_host_is_woken_and_the_gate_falls_back(self):
-        output, calls = self.select(desired="0", instance="None")
+        output, calls = self.run_selection(HostScenario(desired="0", instance="None"), WAKE_CREDENTIALS)
         self.assertEqual(output, "runner=ubuntu-latest")
         self.assertIn("set-desired-capacity --auto-scaling-group-name honua-lane-build-host --desired-capacity 1", calls)
 
     def test_aws_failure_selects_hosted(self):
-        self.assertEqual(self.select(fail=True)[0], "runner=ubuntu-latest")
-
+        self.assertEqual(self.selected_runner(HostScenario(), FAILING_AWS), "runner=ubuntu-latest")
 
 if __name__ == "__main__":
     unittest.main()
