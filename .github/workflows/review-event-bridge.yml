@@ -44,8 +44,8 @@ jobs:
             const { data: pull } = await github.rest.pulls.get({
               ...context.repo, pull_number: prNumber,
             });
-            // Shed the closed subject one hop earlier than review-gate.yml does, so
-            // a review comment on a merged pull request never creates a trusted run.
+            // Shed closed subjects before recording a bridge event. The successful
+            // completion can wake the trusted resolver, which rechecks live state.
             if (pull.state !== 'open') {
               return shed(`PR #${prNumber} is ${pull.state}; the trusted gate has nothing left to attest`);
             }

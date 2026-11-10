@@ -62,9 +62,10 @@ qualification independent of trunk pushes. Existing release cancellation policy 
 
 Review Event Bridge (`Notify trusted review gate`), Review Gate Attestation
 (`Resolve pull request identity`, `Publish SHA-bound review attestation`), and
-Derived Artifact Normalization (`Generate bounded normalization projection`,
+Derived Artifact Normalization (`Generate bounded normalization projections`,
 `Produce data-only normalization envelope`) serialize their per-PR work with
-`cancel-in-progress: false` and `queue: max`. Superseded review subjects finish
+`cancel-in-progress: false` and `queue: max`. Superseded normalization subjects skip production and consumer mutation.
+Superseded review subjects finish
 successfully with a summary. Missing admission prerequisites finish the
 attestation helper neutrally while the separate required `Review Gate` status
 remains pending for drafts or failing for blocking reviews. API and attestation

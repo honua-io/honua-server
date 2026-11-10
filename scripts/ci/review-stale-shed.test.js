@@ -396,3 +396,40 @@ test('review helper fails on a missing snapshot or a real status publication err
     head: 'a'.repeat(40), isDraft: true, reasons: ['pull request is a draft'],
   }, new Error('status publication failed')), /status publication failed/);
 });
+
+const NORMALIZATION_SHED = extractStepScript('normalize-derived-artifacts.yml', 'Shed superseded normalization subject');
+const NORMALIZATION_CONSUMER = extractStepScript('normalize-derived-artifacts-consumer.yml', 'Resolve exact PR and download artifact as bytes');
+test('normalization producer sheds moved, draft, or closed subjects without data', async () => {
+  for (const pull of [
+    { state: 'closed', draft: false, head: { sha: 'old' } },
+    { state: 'open', draft: true, head: { sha: 'old' } },
+    { state: 'open', draft: false, head: { sha: 'new' } },
+  ]) {
+    const result = await runShed(NORMALIZATION_SHED, {
+      payload: { pull_request: { number: 7, head: { sha: 'old' } } }, pull,
+    });
+    assert.equal(result.superseded, true);
+    assert.equal(result.failure, null);
+  }
+});
+test('normalization consumer sheds moved, draft, or closed subjects before artifact access', async () => {
+  for (const pr of [
+    { state: 'closed', draft: false, head: { sha: 'old' } },
+    { state: 'open', draft: true, head: { sha: 'old' } },
+    { state: 'open', draft: false, head: { sha: 'new' } },
+  ]) {
+    const outputs = {};
+    const summary = { addRaw() { return this; }, async write() {} };
+    await vm.runInNewContext(`(async () => {${NORMALIZATION_CONSUMER}})()`, {
+      require,
+      context: { repo: { owner: 'honua-io', repo: 'honua-server' }, payload: { workflow_run: {
+        name: 'Derived Artifact Normalization', path: '.github/workflows/normalize-derived-artifacts.yml',
+        event: 'pull_request', conclusion: 'success', repository: { full_name: 'honua-io/honua-server' },
+        head_sha: 'old', pull_requests: [{ number: 7 }],
+      } } },
+      github: { rest: { pulls: { async get() { return { data: pr }; } } } },
+      core: { notice() {}, summary, setOutput(key, value) { outputs[key] = value; } },
+    });
+    assert.equal(outputs.superseded, 'true');
+  }
+});

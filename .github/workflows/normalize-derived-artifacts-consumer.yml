@@ -20,6 +20,7 @@ permissions:
 concurrency:
   group: normalization-consumer-${{ github.event.workflow_run.head_sha }}
   cancel-in-progress: false
+  queue: max
 
 # Observe until the current recipe has 20 independently corroborated heads and
 # the scoped App token is configured. A separate reviewed mode
@@ -73,6 +74,12 @@ jobs:
               });
               associated = data.filter(pr => pr.state === 'open' && pr.head?.sha === run.head_sha);
             }
+            if (associated.length === 0) {
+              core.setOutput('superseded', 'true');
+              core.notice('Producer head has no current open PR; no mutation.');
+              await core.summary.addRaw('Superseded normalization producer; no current PR.\n').write();
+              return;
+            }
             if (associated.length !== 1) {
               throw new Error(`Expected one open PR for producer head; found ${associated.length}.`);
             }
@@ -81,7 +88,10 @@ jobs:
               ...context.repo, pull_number: prNumber,
             });
             if (pr.state !== 'open' || pr.draft || pr.head.sha !== run.head_sha) {
-              throw new Error('PR closed, draft, or moved after normalization production.');
+              core.setOutput('superseded', 'true');
+              core.notice('PR closed, draft, or moved after normalization production; no mutation.');
+              await core.summary.addRaw('Superseded normalization envelope; no validation or mutation.\n').write();
+              return;
             }
             const { inspectNormalizationTarget } = require('./scripts/ci/normalization-mutation');
             const branchPolicy = await inspectNormalizationTarget({
@@ -173,7 +183,7 @@ jobs:
             core.setOutput('tree_sha', commit.tree.sha);
 
       - name: Validate archive and data envelope with trusted policy
-        if: steps.artifact.outputs.generated_only != 'true'
+        if: steps.artifact.outputs.superseded != 'true' && steps.artifact.outputs.generated_only != 'true'
         env:
           ARCHIVE: ${{ steps.artifact.outputs.archive }}
           BASE_SHA: ${{ steps.artifact.outputs.base_sha }}
@@ -200,7 +210,7 @@ jobs:
 
       - name: Compare prospective blobs without checking out PR code
         id: compare
-        if: steps.artifact.outputs.generated_only != 'true'
+        if: steps.artifact.outputs.superseded != 'true' && steps.artifact.outputs.generated_only != 'true'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           HEAD_SHA: ${{ steps.artifact.outputs.head_sha }}
@@ -217,7 +227,10 @@ jobs:
               ...context.repo, pull_number: prNumber,
             });
             if (pr.state !== 'open' || pr.draft || pr.head.sha !== process.env.HEAD_SHA) {
-              throw new Error('PR changed between envelope validation and comparison.');
+              core.setOutput('superseded', 'true');
+              core.notice('PR changed before comparison; no mutation.');
+              await core.summary.addRaw('Superseded normalization comparison; no mutation.\n').write();
+              return;
             }
             const { data: commit } = await github.rest.git.getCommit({
               ...context.repo, commit_sha: process.env.HEAD_SHA,
@@ -311,6 +324,8 @@ jobs:
       - name: Mint scoped normalization credential
         id: app-token
         if: >
+          steps.artifact.outputs.superseded != 'true' &&
+          steps.compare.outputs.superseded != 'true' &&
           steps.artifact.outputs.generated_only != 'true' &&
           env.NORMALIZATION_MODE == 'enforce' &&
           env.NORMALIZATION_CREDENTIAL_PRESENT == 'true' &&
@@ -328,6 +343,8 @@ jobs:
 
       - name: Advance the same-repository head with validated blobs
         if: >
+          steps.artifact.outputs.superseded != 'true' &&
+          steps.compare.outputs.superseded != 'true' &&
           steps.artifact.outputs.generated_only != 'true' &&
           env.NORMALIZATION_MODE == 'enforce' &&
           env.NORMALIZATION_CREDENTIAL_PRESENT == 'true' &&
