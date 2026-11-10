@@ -71,7 +71,8 @@ CREATE TABLE honua.execution_jobs (
     CHECK ((queue_visible_at IS NULL) = (queue_priority IS NULL)),
     CHECK (queue_visible_at IS NULL OR backend = 'local')
 ) WITH (autovacuum_vacuum_scale_factor = 0.02, autovacuum_vacuum_threshold = 200,
-        autovacuum_analyze_scale_factor = 0.05, autovacuum_analyze_threshold = 200);
+        autovacuum_analyze_scale_factor = 0.05, autovacuum_analyze_threshold = 200,
+        toast.autovacuum_vacuum_scale_factor = 0.02, toast.autovacuum_vacuum_threshold = 200);
 
 CREATE INDEX idx_execution_jobs_created ON honua.execution_jobs (created_at DESC, operation_id DESC);
 CREATE INDEX idx_execution_jobs_status_created
@@ -142,7 +143,8 @@ id), `resource` (one per resource reference), `environment`, `server`, `release`
 case-insensitive match. These are the dimensions the Redis store indexed.
 
 Autovacuum starts at 2 % dead rows (plus 200) instead of the default 20 %: the claim index is a small
-partial index over a table that churns, and dead entries in it lengthen every claim.
+partial index over a table that churns, and dead entries in it lengthen every claim. The TOAST table
+gets the same thresholds because every write of a job replaces its out-of-line record.
 
 ### 2. Record of truth and projections
 
@@ -560,8 +562,9 @@ in memory that the database does not have, so an outage loses no job.
 After an outage every heartbeat in the table is older than the outage, and a sweep that compared
 them with the current database time would expire healthy workers' jobs, failing those with
 `MaxAttempts = 1`. `JobReconciliationService` therefore does not expire a heartbeat until it has
-completed sweeps without a store error for that job's heartbeat timeout: a failed sweep starts the
-period again. Execution-timeout expiry is not delayed.
+seen the store without interruption for that job's heartbeat timeout. A sweep that fails, or whose
+reads take longer than one second (the store retries through a short outage and then answers),
+starts the period again. Execution-timeout expiry is not delayed.
 
 - An outage shorter than the retry budget is invisible to jobs.
 - A longer outage, of any length, does not by itself expire a job whose worker is alive.
@@ -578,9 +581,37 @@ takes the node out of rotation. The Redis durability attestation leaves the job 
 `Jobs:RequireDurableStore` is accepted and always satisfied. `operations.proposals` keeps its Redis
 requirement and is gated on its own store instead of on the job-store classification.
 
-### 9. Upgrade
+### 9. Upgrade and rollouts
 Jobs in progress are not carried over from earlier pre-release builds; start from a clean
 deployment.
+
+A rollout runs two releases side by side behind the load balancer (canary and primary), and the
+workers of both claim from the same table. A job record written by release N must therefore be
+readable and executable by release N-1 for the length of a rollout:
+
+- fields are only added to `ExecutionJobRecord` and `ExecutionJobSpec`, never removed or renamed
+  within one release step;
+- a field is never reused with a changed meaning;
+- a release that rewrites a record keeps the fields it does not know. `ExecutionJobRecord` and
+  `ExecutionJobSpec` carry unknown JSON members through deserialization and back
+  (`ExtensibleJsonRecord`), so a heartbeat from an N-1 worker does not strip what release N wrote.
+  Test: `PostgresExecutionSubstrateIntegrationTests.TrySetAsync_RecordWithFieldsThisReleaseDoesNotKnow_KeepsThem`.
+  Unknown members of the other nested records (audit, policies) are not preserved;
+- a new column of `execution_jobs` is nullable or has a default, so an N-1 writer that does not set
+  it still inserts.
+
+The existing rollout step "drain in-flight jobs before the switch" still applies: the rule above
+covers the overlap, not a job that needs behaviour only release N has.
+
+What still uses Redis after this change, each owned by the follow-on branch
+`feat/postgres-control-plane-state`: proposals, operation instances, operation secrets and workflow
+operations; the data-protection key ring; sessions and the distributed cache (portal tokens, scoped
+job tokens, replay protection, idempotency); leader election; catalog change notification across
+nodes; the import, export, tile and version job managers; the orchestration run, definition and
+watermark stores; and, on the job path, the cross-node submission lease
+(`ExecutionAdmissionCoordinator`), the per-principal submission rate limit
+(`ExecutionAdmissionEvaluator`) and job progress (`UniversalProgressStore`), each of which falls
+back to per-node state when Redis is absent.
 
 ### 10. Limits
 Expected envelope: hundreds of concurrently running jobs, a backlog of the order of 100,000 queued or

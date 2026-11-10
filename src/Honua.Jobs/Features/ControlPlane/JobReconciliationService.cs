@@ -29,10 +29,11 @@ internal sealed partial class JobReconciliationService(
 {
     private readonly IJobStoreClock _storeClock = storeClock ?? NodeJobStoreClock.Instance;
     private readonly IReconcilableJobSource _reconcilableJobs = reconcilableJobs ?? new ActiveJobsReconcilableJobSource(jobStore);
-    private long? _lastFailedSweepTimestamp;
+    private long? _lastStoreInterruptionTimestamp;
 
     private static readonly TimeSpan SweepInterval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan StaleClaimThreshold = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan StoreStallThreshold = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan LogRetention = TimeSpan.FromDays(7);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -77,22 +78,29 @@ internal sealed partial class JobReconciliationService(
         }
         catch (Exception ex) when (ex is not OutOfMemoryException && !cancellationToken.IsCancellationRequested)
         {
-            _lastFailedSweepTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
+            _lastStoreInterruptionTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
             throw;
         }
     }
 
     // After a store outage every stored heartbeat is older than the outage, whether or not its
     // worker is alive. Workers get one heartbeat timeout of uninterrupted store access to beat
-    // again before a heartbeat is treated as expired.
-    private bool WorkersHadTimeToHeartbeatSinceLastFailedSweep(ExecutionJobRecord job)
-        => _lastFailedSweepTimestamp is not { } failedAt
-            || System.Diagnostics.Stopwatch.GetElapsedTime(failedAt) >= (job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default).Timeout;
+    // again before a heartbeat is treated as expired. A read that stalls counts as an outage: the
+    // store retries through a short one and then answers as if nothing happened.
+    private bool WorkersHadTimeToHeartbeatSinceLastStoreInterruption(ExecutionJobRecord job)
+        => _lastStoreInterruptionTimestamp is not { } interruptedAt
+            || System.Diagnostics.Stopwatch.GetElapsedTime(interruptedAt) >= (job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default).Timeout;
 
     private async Task SweepCandidatesAsync(CancellationToken cancellationToken)
     {
+        var readsStarted = System.Diagnostics.Stopwatch.GetTimestamp();
         var activeJobs = await _reconcilableJobs.ListExpiryAndDispatchCandidatesAsync(cancellationToken).ConfigureAwait(false);
         var now = await _storeClock.GetUtcNowAsync(cancellationToken).ConfigureAwait(false);
+        if (System.Diagnostics.Stopwatch.GetElapsedTime(readsStarted) > StoreStallThreshold)
+        {
+            _lastStoreInterruptionTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
+        }
+
         var reconciled = 0;
 
         foreach (var job in activeJobs)
@@ -139,7 +147,7 @@ internal sealed partial class JobReconciliationService(
             }
 
             if (ShouldExpireHeartbeat(job, now)
-                && WorkersHadTimeToHeartbeatSinceLastFailedSweep(job)
+                && WorkersHadTimeToHeartbeatSinceLastStoreInterruption(job)
                 && await HandleHeartbeatExpiryAsync(job, now, cancellationToken).ConfigureAwait(false))
             {
                 reconciled++;

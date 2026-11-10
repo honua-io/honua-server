@@ -240,6 +240,39 @@ public sealed class PostgresExecutionSubstrateIntegrationTests(DatabaseFixtureAd
     }
 
     [IntegrationTest]
+    public async Task TrySetAsync_RecordWithFieldsThisReleaseDoesNotKnow_KeepsThem()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var operationId = $"job-newer-release-{Guid.NewGuid():N}";
+        (await harness.JobStore.TryCreateAsync(CreateQueuedJob(operationId))).Should().BeTrue();
+        // A newer release wrote two fields this build has no property for.
+        await harness.ExecuteAsync(
+            $"""
+            UPDATE {harness.JobsTable}
+            SET record = (jsonb_set(record::jsonb || '{"addedByNewerRelease": {"mode": "streaming"}}'::jsonb,
+                                    '{spec,addedToSpec}', '"shard-7"'))::json
+            WHERE operation_id = @operation_id
+            """,
+            new Npgsql.NpgsqlParameter("operation_id", operationId));
+
+        var read = (await harness.JobStore.GetAsync(operationId))!;
+        (await harness.JobStore.TrySetAsync(read with
+        {
+            Status = ExecutionJobStatus.Running,
+            LastHeartbeatAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        })).Should().BeTrue();
+
+        var stored = await harness.ScalarAsync<string>(
+            $"SELECT record::text FROM {harness.JobsTable} WHERE operation_id = @operation_id",
+            new Npgsql.NpgsqlParameter("operation_id", operationId));
+        using var document = System.Text.Json.JsonDocument.Parse(stored!);
+        document.RootElement.GetProperty("addedByNewerRelease").GetProperty("mode").GetString().Should().Be("streaming");
+        document.RootElement.GetProperty("spec").GetProperty("addedToSpec").GetString().Should().Be("shard-7");
+        (await harness.JobStore.GetAsync(operationId))!.Status.Should().Be(ExecutionJobStatus.Running);
+    }
+
+    [IntegrationTest]
     public async Task ExecutionJobStore_FinalizesOnlyWhileLeaseIsOwned()
     {
         await using var harness = await CreateHarnessAsync();

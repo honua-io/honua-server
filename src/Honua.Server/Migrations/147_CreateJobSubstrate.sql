@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS $HonuaSchema$.execution_jobs (
     CHECK ((queue_visible_at IS NULL) = (queue_priority IS NULL)),
     CHECK (queue_visible_at IS NULL OR backend = 'local')
 ) WITH (autovacuum_vacuum_scale_factor = 0.02, autovacuum_vacuum_threshold = 200,
-        autovacuum_analyze_scale_factor = 0.05, autovacuum_analyze_threshold = 200);
+        autovacuum_analyze_scale_factor = 0.05, autovacuum_analyze_threshold = 200,
+        toast.autovacuum_vacuum_scale_factor = 0.02, toast.autovacuum_vacuum_threshold = 200);
 
 CREATE INDEX IF NOT EXISTS idx_execution_jobs_created
     ON $HonuaSchema$.execution_jobs (created_at DESC, operation_id DESC);
