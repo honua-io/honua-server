@@ -35,6 +35,7 @@ concurrency:
   cancel-in-progress: true
 
 safe-outputs:
+  staged: true
   github-app:
     app-id: ${{ secrets.HONUA_RELEASE_APP_ID }}
     private-key: ${{ secrets.HONUA_RELEASE_APP_PRIVATE_KEY }}
