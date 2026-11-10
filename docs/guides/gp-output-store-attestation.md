@@ -114,6 +114,9 @@ and backup are properties of the bucket and belong to the deployment.
   catalog. Read leases and retention holds are small sibling objects ending in
   `.readlease` and `.hold`; do not add a bucket lifecycle rule that deletes objects
   under `KeyPrefix` sooner than `OrphanRetention`.
+- **Writes.** An output is written in one conditional request, so the server first copies it to a
+  private temporary file (deleted when the write ends) and an output cannot exceed the provider's
+  single-request limit (5 GiB on S3). Size the task's ephemeral storage for the largest output.
 - **Readiness.** The `gp-output-store` health check reports the provider and store
   reference when the bucket can be reached.
 - **Not covered.** The standalone GDAL worker does not compose the file storage

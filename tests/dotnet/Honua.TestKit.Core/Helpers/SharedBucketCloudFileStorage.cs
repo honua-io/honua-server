@@ -110,6 +110,11 @@ public sealed class SharedBucketCloudFileStorage(
     {
         var key = request.ObjectKeyOverride
             ?? throw new InvalidOperationException("The shared bucket double stores only explicitly keyed objects.");
+        if (mustBeAbsent && !request.Content.CanSeek)
+        {
+            return UploadResult.CreateFailure("A conditional create is one request and needs a seekable body, as on S3.");
+        }
+
         using var buffer = new MemoryStream();
         await request.Content.CopyToAsync(buffer, cancellationToken);
         var stored = new SharedBucket.StoredObject(buffer.ToArray(), request.ContentType, DateTimeOffset.UtcNow);

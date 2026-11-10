@@ -10,6 +10,7 @@ using Honua.FileStorage;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
@@ -33,6 +34,37 @@ public sealed class ObjectStorageGeoprocessingOutputObjectStoreTests
         identity.Checksum!.Value.Should().Be(Convert.ToHexString(SHA256.HashData(_payload)).ToLowerInvariant());
         _bucket.Keys.Should().Equal(key);
         _bucket.ContentTypeOf(key).Should().Be("image/tiff");
+    }
+
+    [UnitTest]
+    public async Task WriteAsync_FromAForwardOnlySource_StoresTheWholeOutput()
+    {
+        var key = NewKey();
+        await using var forwardOnly = new System.IO.Compression.DeflateStream(Deflated(_payload), System.IO.Compression.CompressionMode.Decompress);
+
+        var identity = await CreateStore().WriteAsync(key, forwardOnly, "image/tiff");
+
+        identity.SizeBytes.Should().Be(_payload.Length);
+        (await ReadAllAsync(CreateStore(), key)).Should().Equal(_payload);
+    }
+
+    [UnitTest]
+    public async Task SetRetentionHoldAsync_WhenTheHoldCannotBeWritten_ThrowsInsteadOfReportingAHold()
+    {
+        var key = NewKey();
+        await CreateStore().WriteAsync(key, new MemoryStream(_payload), "image/tiff");
+        var storage = Substitute.For<Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage>();
+        storage.UploadIfMatchAsync(default!, default, default)
+            .ReturnsForAnyArgs(UploadResult.CreateFailure("access denied"));
+        storage.ExistsAsync(default!, default).ReturnsForAnyArgs(false);
+        var store = new ObjectStorageGeoprocessingOutputObjectStore(
+            storage,
+            Options.Create(new GeoprocessingOutputStagingOptions { Enabled = true }),
+            new GeoprocessingOutputStorageKeyPrefix(string.Empty));
+
+        var hold = () => store.SetRetentionHoldAsync(key);
+
+        await hold.Should().ThrowAsync<IOException>();
     }
 
     [UnitTest]
@@ -186,6 +218,18 @@ public sealed class ObjectStorageGeoprocessingOutputObjectStoreTests
         public override DateTimeOffset GetUtcNow() => _utcNow;
 
         public void Advance(TimeSpan elapsed) => _utcNow += elapsed;
+    }
+
+    private static MemoryStream Deflated(byte[] bytes)
+    {
+        var compressed = new MemoryStream();
+        using (var deflate = new System.IO.Compression.DeflateStream(compressed, System.IO.Compression.CompressionLevel.Fastest, leaveOpen: true))
+        {
+            deflate.Write(bytes);
+        }
+
+        compressed.Position = 0;
+        return compressed;
     }
 
     private static string NewKey()

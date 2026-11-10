@@ -22,6 +22,7 @@ internal sealed class ObjectStorageGeoprocessingOutputObjectStore : IGeoprocessi
     internal const string ReadLeaseSuffix = ".readlease";
     internal const string RetentionHoldSuffix = ".hold";
     private const string SidecarMediaType = "text/plain";
+    private const int SpoolBufferBytes = 81920;
 
     private readonly ICloudFileStorage _storage;
     private readonly string _storageKeyPrefix;
@@ -57,15 +58,19 @@ internal sealed class ObjectStorageGeoprocessingOutputObjectStore : IGeoprocessi
         ArgumentNullException.ThrowIfNull(content);
         ArgumentException.ThrowIfNullOrWhiteSpace(mediaType);
 
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        await using var measured = new HashingReadStream(content, hash);
+        // A conditional create is a single request that needs a seekable body of known length, so the
+        // output is spooled to a private temporary file while its checksum is computed.
+        await using var spool = CreateSpool();
+        var checksum = await SpoolAsync(content, spool, cancellationToken).ConfigureAwait(false);
         var upload = await _storage.UploadIfMatchAsync(
             new FileUploadRequest
             {
-                Content = measured,
+                Content = spool,
                 FileName = Path.GetFileName(objectKey),
                 ContentType = mediaType,
-                ObjectKeyOverride = objectKey
+                SizeBytes = spool.Length,
+                ObjectKeyOverride = objectKey,
+                EnableChunkedUpload = false
             },
             expectedETag: null,
             cancellationToken).ConfigureAwait(false);
@@ -79,9 +84,9 @@ internal sealed class ObjectStorageGeoprocessingOutputObjectStore : IGeoprocessi
 
         return new RasterContentIdentity
         {
-            SizeBytes = measured.BytesRead,
+            SizeBytes = spool.Length,
             MediaType = mediaType,
-            Checksum = new RasterChecksum("sha256", Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant()),
+            Checksum = new RasterChecksum("sha256", checksum),
         };
     }
 
@@ -114,12 +119,9 @@ internal sealed class ObjectStorageGeoprocessingOutputObjectStore : IGeoprocessi
             maxResults: int.MaxValue,
             includeMetadata: false,
             cancellationToken).ConfigureAwait(false);
-        foreach (var file in files)
+        foreach (var file in files.Where(file => !IsSidecar(file.FileId)))
         {
-            if (!IsSidecar(file.FileId))
-            {
-                yield return new GeoprocessingStagedObjectInfo(file.FileId, file.SizeBytes, file.UploadedAt);
-            }
+            yield return new GeoprocessingStagedObjectInfo(file.FileId, file.SizeBytes, file.UploadedAt);
         }
     }
 
@@ -163,6 +165,11 @@ internal sealed class ObjectStorageGeoprocessingOutputObjectStore : IGeoprocessi
     {
         var holdKey = objectKey + RetentionHoldSuffix;
         var added = await CreateSidecarAsync(holdKey, "held", cancellationToken).ConfigureAwait(false);
+        if (!added && !await _storage.ExistsAsync(holdKey, cancellationToken).ConfigureAwait(false))
+        {
+            throw new IOException($"A retention hold for staged output object '{objectKey}' could not be written.");
+        }
+
         if (await _storage.ExistsAsync(objectKey, cancellationToken).ConfigureAwait(false))
         {
             return added ? GeoprocessingRetentionHoldResult.Added : GeoprocessingRetentionHoldResult.AlreadyHeld;
@@ -208,6 +215,33 @@ internal sealed class ObjectStorageGeoprocessingOutputObjectStore : IGeoprocessi
             EnableChunkedUpload = false
         };
 
+    private static FileStream CreateSpool()
+        => new(
+            Path.Join(Path.GetTempPath(), $"honua-gp-output-{Guid.NewGuid():N}.spool"),
+            new FileStreamOptions
+            {
+                Mode = FileMode.CreateNew,
+                Access = FileAccess.ReadWrite,
+                Share = FileShare.None,
+                Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose
+            });
+
+    private static async Task<string> SpoolAsync(Stream content, FileStream spool, CancellationToken cancellationToken)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var buffer = new byte[SpoolBufferBytes];
+        int read;
+        while ((read = await content.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            hash.AppendData(buffer, 0, read);
+            await spool.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+        }
+
+        await spool.FlushAsync(cancellationToken).ConfigureAwait(false);
+        spool.Position = 0;
+        return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+    }
+
     // The storage lists by a folder under its own key prefix, while staged keys are whole bucket keys.
     private string FolderWithinStorage(string keyPrefix)
     {
@@ -225,58 +259,6 @@ internal sealed class ObjectStorageGeoprocessingOutputObjectStore : IGeoprocessi
 
     private static bool IsSidecar(string key)
         => key.EndsWith(ReadLeaseSuffix, StringComparison.Ordinal) || key.EndsWith(RetentionHoldSuffix, StringComparison.Ordinal);
-
-    private sealed class HashingReadStream(Stream source, IncrementalHash hash) : Stream
-    {
-        public long BytesRead { get; private set; }
-
-        public override bool CanRead => true;
-
-        public override bool CanSeek => false;
-
-        public override bool CanWrite => false;
-
-        public override long Length => throw new NotSupportedException();
-
-        public override long Position
-        {
-            get => BytesRead;
-            set => throw new NotSupportedException();
-        }
-
-        public override int Read(byte[] buffer, int offset, int count)
-        {
-            var read = source.Read(buffer, offset, count);
-            Record(buffer.AsSpan(offset, read));
-            return read;
-        }
-
-        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
-        {
-            var read = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-            Record(buffer.Span[..read]);
-            return read;
-        }
-
-        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-            => ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
-
-        public override void Flush()
-        {
-        }
-
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-
-        public override void SetLength(long value) => throw new NotSupportedException();
-
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-
-        private void Record(ReadOnlySpan<byte> bytes)
-        {
-            hash.AppendData(bytes);
-            BytesRead += bytes.Length;
-        }
-    }
 }
 
 // The key prefix the configured file storage puts in front of a listed folder (empty when none).
