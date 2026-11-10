@@ -672,14 +672,12 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<ICrsRegistry, PostgresCrsRegistry>();
         services.AddScoped<ICoordinateTransformService, PostGisCoordinateTransformService>();
 
-        // Register CRS warmup service with leader election for distributed deployments
+        // One node warms the CRS cache, elected on a lease row when the host has a system database.
         services.AddSingleton<IDistributedLeaderElection>(serviceProvider =>
-        {
-            // Use the no-op implementation here; distributed leader election is only enabled
-            // when the Server composition root supplies a real coordinator.
-            return new Honua.Db.Postgres.Features.Infrastructure.Coordination.NoOpDistributedLeaderElection(
-                "honua:leader:crs-warmup");
-        });
+            serviceProvider.GetService<Honua.Core.Features.Infrastructure.Coordination.ILeaseStore>() is { } leases
+                ? new Honua.Core.Features.Infrastructure.Coordination.LeaseLeaderElection(
+                    leases, "crs-warmup", Honua.Core.Features.Infrastructure.Coordination.LeaseLeaderElection.DefaultLeaseDuration)
+                : new Honua.Db.Postgres.Features.Infrastructure.Coordination.NoOpDistributedLeaderElection("crs-warmup"));
 
         services.AddSingleton<PostgresCrsWarmupService>(serviceProvider =>
             new PostgresCrsWarmupService(

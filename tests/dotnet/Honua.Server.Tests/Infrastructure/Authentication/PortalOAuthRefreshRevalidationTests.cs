@@ -4,6 +4,7 @@
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Identity.Domain;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
@@ -161,7 +162,7 @@ public sealed class PortalOAuthRefreshRevalidationTests
     private static Harness CreateHarness(IPrincipalMembershipSource? membership = null)
     {
         var memory = new MemoryCache(new MemoryCacheOptions());
-        var store = new PortalOAuthStore(new MemoryCache(new MemoryCacheOptions()), NullLogger<PortalOAuthStore>.Instance);
+        var store = new PortalOAuthStore(new InMemorySecurityTokenStore(), NullLogger<PortalOAuthStore>.Instance);
         var options = Options.Create(new PortalTokenAuthenticationOptions
         {
             OAuth2 = new PortalOAuth2Options { RotateRefreshTokens = true },

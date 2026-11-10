@@ -20,7 +20,7 @@ internal sealed class PostgresTokenReplayStore(NpgsqlDataSource dataSource, JobS
 
     private readonly string _replays = database.Table("token_replay");
 
-    public async Task<TokenReplayRegistrationResult> TryRegisterAsync(
+    public async Task<TokenReplayRegistrationOutcome> TryRegisterAsync(
         TokenReplayRegistrationRequest request,
         CancellationToken cancellationToken)
     {
@@ -35,7 +35,7 @@ internal sealed class PostgresTokenReplayStore(NpgsqlDataSource dataSource, JobS
             cancellationToken).ConfigureAwait(false);
         if (registered)
         {
-            return new TokenReplayRegistrationResult(Registered: true, ExistingMarker: null);
+            return new TokenReplayRegistrationOutcome(Registered: true, ExistingMarker: null);
         }
 
         var existingMarker = await database.ExecuteAsync(
@@ -49,7 +49,7 @@ internal sealed class PostgresTokenReplayStore(NpgsqlDataSource dataSource, JobS
             },
             StatementRepeat.SafeToRepeat,
             cancellationToken).ConfigureAwait(false);
-        return new TokenReplayRegistrationResult(Registered: false, existingMarker);
+        return new TokenReplayRegistrationOutcome(Registered: false, existingMarker);
     }
 
     public Task<bool> TryRebindAsync(TokenReplayRebinding rebinding, CancellationToken cancellationToken)

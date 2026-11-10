@@ -50,18 +50,35 @@ internal static class PostgresSharedStateRegistration
             provider.GetService<NpgsqlDataSource>() is not null
                 ? provider.GetRequiredService<PostgresSecurityTokenStore>()
                 : new InMemorySecurityTokenStore());
+        services.TryAddSingleton<PostgresIdempotencyReservationStore>();
+        services.RemoveAll<IIdempotencyReservationStore>();
+        services.AddSingleton<IIdempotencyReservationStore>(static provider =>
+            provider.GetService<NpgsqlDataSource>() is not null
+                ? provider.GetRequiredService<PostgresIdempotencyReservationStore>()
+                : new InMemoryIdempotencyReservationStore());
+        services.TryAddSingleton<PostgresTokenReplayStore>();
+        services.RemoveAll<ITokenReplayStore>();
+        services.AddSingleton<ITokenReplayStore>(static provider =>
+            provider.GetService<NpgsqlDataSource>() is not null
+                ? provider.GetRequiredService<PostgresTokenReplayStore>()
+                : new InMemoryTokenReplayStore());
 
-        if (services.Any(descriptor => descriptor.ServiceType == typeof(IExpiredRowSweep)))
-        {
-            return services;
-        }
-
-        services.AddSingleton<IExpiredRowSweep>(provider => provider.GetRequiredService<PostgresOperationProposalStore>());
-        services.AddSingleton<IExpiredRowSweep>(provider => provider.GetRequiredService<PostgresWorkflowOperationStore>());
-        services.AddSingleton<IExpiredRowSweep>(provider => provider.GetRequiredService<PostgresOperationInstanceStore>());
-        services.AddSingleton<IExpiredRowSweep>(provider => provider.GetRequiredService<PostgresOperationSecretStore>());
-        services.AddSingleton<IExpiredRowSweep>(provider => provider.GetRequiredService<PostgresUniversalProgressStore>());
-        services.AddSingleton<IExpiredRowSweep>(provider => provider.GetRequiredService<PostgresSecurityTokenStore>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IExpiredRowSweep, PostgresOperationProposalStore>(
+            provider => provider.GetRequiredService<PostgresOperationProposalStore>()));
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IExpiredRowSweep, PostgresWorkflowOperationStore>(
+            provider => provider.GetRequiredService<PostgresWorkflowOperationStore>()));
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IExpiredRowSweep, PostgresOperationInstanceStore>(
+            provider => provider.GetRequiredService<PostgresOperationInstanceStore>()));
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IExpiredRowSweep, PostgresOperationSecretStore>(
+            provider => provider.GetRequiredService<PostgresOperationSecretStore>()));
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IExpiredRowSweep, PostgresUniversalProgressStore>(
+            provider => provider.GetRequiredService<PostgresUniversalProgressStore>()));
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IExpiredRowSweep, PostgresSecurityTokenStore>(
+            provider => provider.GetRequiredService<PostgresSecurityTokenStore>()));
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IExpiredRowSweep, PostgresTokenReplayStore>(
+            provider => provider.GetRequiredService<PostgresTokenReplayStore>()));
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IExpiredRowSweep, PostgresIdempotencyReservationStore>(
+            provider => provider.GetRequiredService<PostgresIdempotencyReservationStore>()));
         return services;
     }
 }

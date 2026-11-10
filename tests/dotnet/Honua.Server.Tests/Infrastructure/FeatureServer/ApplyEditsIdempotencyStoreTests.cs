@@ -6,10 +6,7 @@ using FluentAssertions;
 using Honua.Infrastructure.Security;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.TestKit.Attributes;
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Infrastructure.FeatureServer;
 
@@ -42,7 +39,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
     public async Task TryReserveAsync_ConcurrentSameScope_ExactlyOneWins()
     {
         var store = new DistributedApplyEditsIdempotencyStore(
-            cache: null,
+            new InMemoryIdempotencyReservationStore(),
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
 
         var scope = Scope();
@@ -66,7 +63,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
         // Reservations for distinct scopes (different Idempotency-Keys) are independent;
         // both must succeed.
         var store = new DistributedApplyEditsIdempotencyStore(
-            cache: null,
+            new InMemoryIdempotencyReservationStore(),
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
 
         var reservedA = await store.TryReserveAsync(Scope(key: "key-a"));
@@ -81,11 +78,8 @@ public sealed class ApplyEditsIdempotencyStoreTests
     {
         // After the response has been fully written via SetAsync, TryReserveAsync for the
         // same key must return false — the entry is occupied with the final response.
-        // Uses the in-process fallback (cache: null) because IDistributedCache has no
-        // atomic SET NX; atomic reservation semantics are only guaranteed via Redis or
-        // the in-process ConcurrentDictionary fallback.
         var store = new DistributedApplyEditsIdempotencyStore(
-            cache: null,
+            new InMemoryIdempotencyReservationStore(),
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
 
         var scope = Scope();
@@ -117,7 +111,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
         // is in-flight. TryGetAsync must return null (treat as "not yet recorded") so the
         // 409 path in the handler is not confused with a completed replay.
         var store = new DistributedApplyEditsIdempotencyStore(
-            cache: null,
+            new InMemoryIdempotencyReservationStore(),
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
 
         var scope = Scope();

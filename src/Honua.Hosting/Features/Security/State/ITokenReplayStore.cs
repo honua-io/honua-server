@@ -4,7 +4,7 @@
 namespace Honua.Infrastructure.Security;
 
 // ExistingMarker is null when this call registered the key.
-internal readonly record struct TokenReplayRegistrationResult(bool Registered, string? ExistingMarker);
+internal readonly record struct TokenReplayRegistrationOutcome(bool Registered, string? ExistingMarker);
 
 internal readonly record struct TokenReplayRegistrationRequest(string ReplayKey, string Marker, TimeSpan Lifetime);
 
@@ -12,7 +12,7 @@ internal readonly record struct TokenReplayRebinding(string ReplayKey, string Fr
 
 internal interface ITokenReplayStore
 {
-    Task<TokenReplayRegistrationResult> TryRegisterAsync(TokenReplayRegistrationRequest request, CancellationToken cancellationToken);
+    Task<TokenReplayRegistrationOutcome> TryRegisterAsync(TokenReplayRegistrationRequest request, CancellationToken cancellationToken);
 
     // True when the key now carries ToMarker: it carried FromMarker, or already carried ToMarker.
     Task<bool> TryRebindAsync(TokenReplayRebinding rebinding, CancellationToken cancellationToken);
