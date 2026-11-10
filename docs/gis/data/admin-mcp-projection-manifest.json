@@ -491,7 +491,7 @@
       "toolName": "honua_admin_layer_drawing_info_get",
       "title": "Get layer drawing info",
       "inputFields": [
-        "layerId"
+        "storageLayerId"
       ],
       "outputFields": [
         "approvalLane",
@@ -532,7 +532,7 @@
       "title": "Set layer drawing info",
       "inputFields": [
         "body",
-        "layerId"
+        "storageLayerId"
       ],
       "outputFields": [
         "approvalLane",
@@ -572,7 +572,7 @@
       "toolName": "honua_admin_layer_fields_get",
       "title": "Get layer fields",
       "inputFields": [
-        "layerId"
+        "storageLayerId"
       ],
       "outputFields": [
         "approvalLane",
@@ -613,7 +613,7 @@
       "title": "Set layer fields",
       "inputFields": [
         "fields",
-        "layerId"
+        "storageLayerId"
       ],
       "outputFields": [
         "approvalLane",
@@ -653,7 +653,7 @@
       "toolName": "honua_admin_layer_filter_get",
       "title": "Get layer filter",
       "inputFields": [
-        "layerId"
+        "storageLayerId"
       ],
       "outputFields": [
         "approvalLane",
@@ -693,8 +693,8 @@
       "toolName": "honua_admin_layer_filter_set",
       "title": "Set layer filter",
       "inputFields": [
-        "layerId",
-        "permanentFilter"
+        "permanentFilter",
+        "storageLayerId"
       ],
       "outputFields": [
         "approvalLane",
@@ -734,7 +734,7 @@
       "toolName": "honua_admin_layer_popup_info_get",
       "title": "Get layer popup info",
       "inputFields": [
-        "layerId"
+        "storageLayerId"
       ],
       "outputFields": [
         "approvalLane",
@@ -775,7 +775,7 @@
       "title": "Set layer popup info",
       "inputFields": [
         "body",
-        "layerId"
+        "storageLayerId"
       ],
       "outputFields": [
         "approvalLane",
@@ -887,8 +887,8 @@
       "inputFields": [
         "connectionId",
         "enabled",
-        "layerId",
-        "serviceName"
+        "serviceName",
+        "storageLayerId"
       ],
       "outputFields": [
         "approvalLane",
@@ -928,7 +928,7 @@
       "toolName": "honua_admin_layer_style_export_sld",
       "title": "Export layer SLD",
       "inputFields": [
-        "layerId"
+        "storageLayerId"
       ],
       "outputFields": [
         "approvalLane",
@@ -968,7 +968,7 @@
       "toolName": "honua_admin_layer_style_get",
       "title": "Get layer style",
       "inputFields": [
-        "layerId"
+        "storageLayerId"
       ],
       "outputFields": [
         "approvalLane",
@@ -1009,7 +1009,7 @@
       "title": "Import layer SLD",
       "inputFields": [
         "body",
-        "layerId"
+        "storageLayerId"
       ],
       "outputFields": [
         "approvalLane",
@@ -1052,8 +1052,8 @@
         "changeSummary",
         "changedBy",
         "drawingInfo",
-        "layerId",
-        "mapLibreStyle"
+        "mapLibreStyle",
+        "storageLayerId"
       ],
       "outputFields": [
         "approvalLane",
@@ -2229,11 +2229,11 @@
         "accessPolicy",
         "attribution",
         "editing",
-        "layerId",
         "license",
         "licenseUrl",
         "publisher",
         "rasterMosaic",
+        "serviceLayerIndex",
         "serviceName",
         "sourceUrl",
         "timeInfo"

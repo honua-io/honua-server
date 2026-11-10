@@ -96,6 +96,7 @@ public sealed class AdminLayerLegacyFieldConfigurationTests
                     Service("svc-a", "parcels"),
                     Service("svc-b", "roads"),
                 ],
+                StorageBindings = [Binding("res-a", 0), Binding("res-b", 0)],
                 Publications =
                 [
                     Publication("res-a", "svc-a", 0, legacyIdentifier: true),
@@ -153,11 +154,20 @@ public sealed class AdminLayerLegacyFieldConfigurationTests
             {
                 Resources = [Feature("res-legacy")],
                 Services = [Service("svc-legacy", "parcels")],
+                StorageBindings = [Binding("res-legacy", layerIndex)],
                 Publications = [Publication("res-legacy", "svc-legacy", layerIndex, legacyIdentifier: true)],
             },
             "etag-1",
             DateTimeOffset.UnixEpoch);
     }
+
+    private static MetadataV2StorageBinding Binding(string resourceId, int storageLayerId) => new()
+    {
+        Metadata = new MetadataV2ObjectMetadata { Id = "binding-" + resourceId, Name = resourceId },
+        ResourceId = resourceId,
+        StorageLayerId = storageLayerId,
+        Status = Active,
+    };
 
     private static MetadataV2Resource Feature(string id) => new()
     {

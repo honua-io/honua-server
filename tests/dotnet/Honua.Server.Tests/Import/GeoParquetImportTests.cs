@@ -284,9 +284,10 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         var publishJson = await publishResponse.Content.ReadAsStringAsync();
         publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, publishJson);
         using var published = JsonDocument.Parse(publishJson);
-        var layerId = published.RootElement.GetProperty("data").GetProperty("layerId").GetInt32();
+        published.RootElement.GetProperty("data").GetProperty("storageLayerId").GetInt32().Should().BeGreaterThan(0);
+        var serviceLayerIndex = await ReadPublishedServiceLayerIndexAsync(_publishedServiceName!);
         using var exportResponse = await _client.GetAsync(
-            $"/rest/services/{_publishedServiceName}/FeatureServer/{layerId}/query?where=1%3D1&outFields=*&returnGeometry=true&returnZ=true&outSR={srid}&f=parquet");
+            $"/rest/services/{_publishedServiceName}/FeatureServer/{serviceLayerIndex}/query?where=1%3D1&outFields=*&returnGeometry=true&returnZ=true&outSR={srid}&f=parquet");
         var exportBytes = await exportResponse.Content.ReadAsByteArrayAsync();
         var exportMediaType = exportResponse.Content.Headers.ContentType?.MediaType;
         var exportDiagnostic = exportMediaType?.Contains("json", StringComparison.OrdinalIgnoreCase) == true
@@ -317,7 +318,7 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         roundtrip.Coordinate.Z.Should().Be(30);
 
         using var transformedResponse = await _client.GetAsync(
-            $"/rest/services/{_publishedServiceName}/FeatureServer/{layerId}/query?where=1%3D1&outFields=*&returnGeometry=true&returnZ=true&outSR=4326&f=parquet");
+            $"/rest/services/{_publishedServiceName}/FeatureServer/{serviceLayerIndex}/query?where=1%3D1&outFields=*&returnGeometry=true&returnZ=true&outSR=4326&f=parquet");
         var transformedError = await transformedResponse.Content.ReadAsStringAsync();
         using var transformedDocument = JsonDocument.Parse(transformedError);
         var error = transformedDocument.RootElement.GetProperty("error");
@@ -773,7 +774,6 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         using var published = JsonDocument.Parse(publishJson);
         var layer = published.RootElement.GetProperty("data");
         var serviceName = _publishedServiceName;
-        int layerId;
         if (expectAsyncPublish)
         {
             var jobId = layer.GetProperty("jobId").GetString();
@@ -784,15 +784,16 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
             publishResponse.Headers.Location!.OriginalString.Should().Be(statusUrl);
             layer.GetProperty("rowsTotal").GetInt64().Should().Be(expectedCount);
             layer.GetProperty("status").GetString().Should().Be("Queued");
-            layerId = await WaitForPublishedLayerAsync(statusUrl, jobId!, expectedCount);
+            await WaitForPublishedLayerAsync(statusUrl, jobId!, expectedCount);
         }
         else
         {
             layer.GetProperty("serviceName").GetString().Should().Be(serviceName);
-            layerId = layer.GetProperty("layerId").GetInt32();
+            layer.GetProperty("storageLayerId").GetInt32().Should().BeGreaterThan(0);
         }
 
-        var queryPath = $"/rest/services/{serviceName}/FeatureServer/{layerId}/query";
+        var serviceLayerIndex = await ReadPublishedServiceLayerIndexAsync(serviceName);
+        var queryPath = $"/rest/services/{serviceName}/FeatureServer/{serviceLayerIndex}/query";
         using var countResponse = await _client.GetAsync($"{queryPath}?where=1%3D1&returnCountOnly=true&f=json");
         countResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         using var countDocument = JsonDocument.Parse(await countResponse.Content.ReadAsStringAsync());
@@ -824,7 +825,20 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         return rows;
     }
 
-    private async Task<int> WaitForPublishedLayerAsync(string statusUrl, string jobId, int expectedCount)
+    private async Task<int> ReadPublishedServiceLayerIndexAsync(string serviceName)
+    {
+        using var response = await _client.GetAsync($"/rest/services/{serviceName}/FeatureServer?f=json");
+        var json = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, json);
+        using var document = JsonDocument.Parse(json);
+        var layers = document.RootElement.GetProperty("layers").EnumerateArray().ToArray();
+        layers.Should().ContainSingle("each readback publishes into its own service");
+        var serviceLayerIndex = layers[0].GetProperty("id").GetInt32();
+        serviceLayerIndex.Should().BeGreaterThanOrEqualTo(0);
+        return serviceLayerIndex;
+    }
+
+    private async Task WaitForPublishedLayerAsync(string statusUrl, string jobId, int expectedCount)
     {
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(90));
         while (true)
@@ -843,9 +857,8 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
             if (status == "Completed")
             {
                 materialized.Should().Be(expectedCount);
-                var layerId = progress.GetProperty("layerId").GetInt32();
-                layerId.Should().BeGreaterThan(0);
-                return layerId;
+                progress.GetProperty("storageLayerId").GetInt32().Should().BeGreaterThan(0);
+                return;
             }
 
             await Task.Delay(TimeSpan.FromMilliseconds(250), deadline.Token);
