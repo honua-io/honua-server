@@ -133,19 +133,11 @@ internal sealed partial class AdminAuthSessionStore(
         }
     }
 
-    // An approval needs proof of a human sign-in, so a session that cannot be read is an outage, not an absence.
     public async Task<AdminAuthAuthenticatedSession?> GetInteractiveSessionForApprovalAsync(
         string? sessionId, CancellationToken cancellationToken)
     {
-        try
-        {
-            var session = await GetAuthenticatedSessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
-            return session?.Origin == AdminAuthSessionOrigin.InteractiveOidc ? session : null;
-        }
-        catch (Exception storeFailure) when (storeFailure is not OutOfMemoryException and not OperationCanceledException)
-        {
-            throw new ServiceUnavailableException("The shared human session could not be verified.", storeFailure);
-        }
+        var session = await GetAuthenticatedSessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        return session?.Origin == AdminAuthSessionOrigin.InteractiveOidc ? session : null;
     }
 
     // A session another node will not see must not look created, so a store failure reaches the caller.
@@ -170,7 +162,17 @@ internal sealed partial class AdminAuthSessionStore(
             return null;
         }
 
-        var stored = await tokens.FindAsync(new SecurityTokenKey(kind, sessionId), cancellationToken).ConfigureAwait(false);
+        StoredSecurityToken? stored;
+        try
+        {
+            stored = await tokens.FindAsync(new SecurityTokenKey(kind, sessionId), cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception storeFailure) when (storeFailure is not OutOfMemoryException and not OperationCanceledException)
+        {
+            // A session that cannot be read is an outage, not a signed-out caller.
+            throw new ServiceUnavailableException("The shared admin session could not be read.", storeFailure);
+        }
+
         if (stored is null)
         {
             return null;
