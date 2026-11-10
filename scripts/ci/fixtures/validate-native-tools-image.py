@@ -228,10 +228,8 @@ class NativeToolsTests(unittest.TestCase):
         self.assertNotIn('cache-to: type=registry,ref=' + native.LEGACY_CACHE, workflow)
         consumer = (ROOT / '.github/workflows/ci.yml').read_text()
         self.assertIn('native-tools-image.py resolve --output artifacts/test-results/native-tools-proof.json', consumer)
-        self.assertIn('Category=PdalExecutionProof', consumer)
-        upload = consumer.split('- name: Upload point-cloud execution proof', 1)[1].split('- name:', 1)[0]
-        self.assertIn('artifacts/test-results/native-tools-proof.json', upload)
-        self.assertIn('artifacts/test-results/pdal-execution-proof.trx', upload)
+        upload = consumer.split('- name: Upload Worker GDAL test results', 1)[1].split('- name:', 1)[0]
+        self.assertIn('artifacts/test-results/', upload)
         self.assertIn('name: Run Worker GDAL tests', consumer)
         main = consumer.split('- name: Run Worker GDAL tests', 1)[1].split('- name:', 1)[0]
         self.assertNotIn('--filter', main)

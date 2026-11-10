@@ -245,7 +245,7 @@ import sys, yaml
 workflow = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
 steps = workflow["jobs"]["server-tests"]["steps"]
 runtime_workflow = yaml.safe_load(open(sys.argv[2], encoding="utf-8"))
-runtime_steps = runtime_workflow["jobs"]["pr-gate-tests"]["steps"]
+runtime_steps = runtime_workflow["jobs"]["runtime-proofs"]["steps"]
 start = next(s for s in runtime_steps if s.get("name") == "Start freeing runtime proof disk space")
 wait = next(s for s in runtime_steps if s.get("name") == "Wait for runtime proof disk cleanup")
 restore = next(s for s in runtime_steps if s.get("id") == "managed-consumer")

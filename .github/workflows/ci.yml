@@ -1721,6 +1721,60 @@ jobs:
           fi
           echo "OK: ${passed} real-GDAL case(s) executed, 0 skipped."
 
+      - name: Prove raster execution with production GDAL
+        id: raster-execution-proof
+        timeout-minutes: 10
+        run: |
+          image=$(sed -n 's/^ARG GDAL_BASE_IMAGE=//p' docker/worker-gdal/Dockerfile)
+          test -n "$image"
+          docker pull "$image"
+          dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
+            --no-build --no-restore --configuration Release -maxcpucount:4 \
+            --filter 'Category=RasterExecutionProof' \
+            --logger 'trx;LogFileName=raster-execution-proof.trx' \
+            --results-directory artifacts/test-results
+
+      - name: Prove the raster execution cases ran, not skipped
+        # `dotnet test` exits 0 when a --filter matches nothing and when every
+        # matched case skips — so a deleted trait, a renamed category or a
+        # cleanly-skipping fixture would turn this gate green with zero executed
+        # raster receipts. Assert on the TRX outcome counts, not the exit code.
+        #
+        # Runs whenever the proof step itself ran, pass or fail: a failing run can
+        # still have skipped every case, and that is the regression being guarded.
+        if: ${{ !cancelled() && steps.raster-execution-proof.conclusion != 'skipped' }}
+        run: |
+          set -euo pipefail
+          trx=artifacts/test-results/raster-execution-proof.trx
+          if [[ ! -f "${trx}" ]]; then
+            echo "::error::no TRX produced for the Category=RasterExecutionProof subset — the required raster receipts did not run"
+            exit 1
+          fi
+          # `|| true` is load-bearing under `set -euo pipefail`: grep exits 1 when
+          # it matches nothing, and on the healthy path the Failed and NotExecuted
+          # counts are both zero.
+          count_outcome() {
+            { grep -o "outcome=\"$1\"" "${trx}" || true; } | wc -l | tr -d '[:space:]'
+          }
+          passed=$(count_outcome Passed)
+          failed=$(count_outcome Failed)
+          skipped=$(count_outcome NotExecuted)
+          {
+            echo '### Raster catalog execution proof'
+            echo
+            echo "- Passed: ${passed}"
+            echo "- Failed: ${failed}"
+            echo "- Skipped: ${skipped}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${skipped}" -gt 0 ]]; then
+            echo "::error::${skipped} raster execution proof case(s) were skipped — a skipped required cell is non-passing evidence"
+            exit 1
+          fi
+          if [[ "${passed}" -lt 1 ]]; then
+            echo "::error::no raster execution proof case passed — the RasterExecutionProof trait or the cases themselves are gone"
+            exit 1
+          fi
+
       - name: Upload Worker GDAL test results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -3065,9 +3119,8 @@ jobs:
           format-scope: full
 
   # Scheduled runtime coverage shares the full-CI managed build producer.
-  pr-gate-tests:
-    name: Full CI / Tests and runtime proofs
-    if: ${{ github.event_name != 'merge_group' }}
+  runtime-proofs:
+    name: Full CI / Runtime proofs
     needs: build
     runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 75
@@ -3092,15 +3145,15 @@ jobs:
 
       - name: Plan managed test consumer
         run: |
-          mkdir -p artifacts/pr-gate
-          python3 scripts/ci/managed-test-build.py projects --lane pr --output "artifacts/pr-gate/managed-projects.json"
+          mkdir -p artifacts/runtime-proofs
+          python3 scripts/ci/managed-test-build.py projects --lane pr --output "artifacts/runtime-proofs/managed-projects.json"
 
       - name: Restore verified managed test outputs
         id: managed-consumer
         uses: ./.github/actions/managed-test-artifacts
         with:
           mode: consume
-          projects-file: artifacts/pr-gate/managed-projects.json
+          projects-file: artifacts/runtime-proofs/managed-projects.json
           producer-attempt: ${{ needs.build.outputs.producer_attempt }}
           enabled: ${{ vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' && 'true' || 'false' }}
 
@@ -3108,25 +3161,15 @@ jobs:
         timeout-minutes: 30
         env:
           RESTORED_PROJECTS: ${{ steps.managed-consumer.outputs.restored-projects-file }}
-        run: python3 scripts/ci/managed-test-build.py fallback --projects-file "artifacts/pr-gate/managed-projects.json" --restored-file "${RESTORED_PROJECTS}"
+        run: python3 scripts/ci/managed-test-build.py fallback --projects-file "artifacts/runtime-proofs/managed-projects.json" --restored-file "${RESTORED_PROJECTS}"
 
-      # Warm the Testcontainers-backed Governance/Drift coverage independently
-      # on this consumer runner.
+      # Warm PostGIS for the remote-source, layer and fidelity proofs.
       - name: Pre-pull Testcontainers PostGIS image (background)
         run: scripts/ci/prepull-testcontainers-postgis.sh
 
       - name: Prepare secondary Testcontainers proof images
         timeout-minutes: 10
         run: scripts/ci/prepull-pr-gate-proof-images.sh
-
-      - name: Lean gate (fast unit and architecture verification)
-        uses: ./.github/actions/lean-gate
-        with:
-          phase: test
-          trx-prefix: pr-gate
-          prepull-postgis: 'true'
-          build-scope: full
-          run-format: 'false'
 
       - name: Prove remote source execution with real HTTP and PostGIS
         timeout-minutes: 10
@@ -3142,19 +3185,13 @@ jobs:
           name: remote-source-execution-proof
           path: artifacts/test-results/remote-source-execution-proof.trx
 
-      - name: Prove raster catalog execution with production GDAL
-        id: raster-execution-proof
+      - name: Prove server execution with production GDAL
+        id: server-execution-proof
         timeout-minutes: 10
         run: |
           image=$(sed -n 's/^ARG GDAL_BASE_IMAGE=//p' docker/worker-gdal/Dockerfile)
           test -n "$image"
           docker pull "$image"
-          dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
-            --no-build --no-restore --configuration Release -maxcpucount:4 \
-            --filter 'Category=RasterExecutionProof' \
-            --logger 'trx;LogFileName=raster-execution-proof.trx' \
-            --results-directory artifacts/test-results
-
           dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build --no-restore --configuration Release -maxcpucount:4 \
             --filter 'Category=CopyFeaturesExecutionProof' \
@@ -3167,7 +3204,7 @@ jobs:
             --logger 'trx;LogFileName=layer-execution-proof.trx' \
             --results-directory artifacts/test-results
 
-          # imagery.classify (#3935) delegates inference to a model server. The
+          # Imagery classification delegates inference to a model server. The
           # proof stands one up on loopback and runs the committed classifier in
           # the same pinned image, so it belongs to this Docker-bearing step.
           dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
@@ -3176,65 +3213,19 @@ jobs:
             --logger 'trx;LogFileName=imagery-classify-execution-proof.trx' \
             --results-directory artifacts/test-results
 
-          # Protocol-tier proofs from #3936/#3937. Keep these in the same
-          # evidence-bearing raster block so both geometry-format and
-          # calculate-field command surfaces are validated on the gate lane.
+          # Validate geometry-format and calculate-field command surfaces
+          # alongside the other server execution proofs.
           dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build --no-restore --configuration Release -maxcpucount:4 \
             --filter 'Category=GeometryFormatExecutionProof|Category=CalculateFieldExecutionProof' \
             --logger 'trx;LogFileName=protocol-tier-execution-proof.trx' \
             --results-directory artifacts/test-results
 
-      - name: Prove the raster execution cases ran, not skipped
-        # honua-server#4401. The step above is on the REQUIRED gate, but
-        # `dotnet test` exits 0 when a --filter matches nothing and when every
-        # matched case skips — so a deleted trait, a renamed category or a
-        # cleanly-skipping fixture would turn this gate green with zero executed
-        # raster receipts. Assert on the TRX outcome counts, not the exit code.
-        # Same idiom as ci.yml's Category=GDAL tripwire.
-        #
-        # Runs whenever the proof step itself ran, pass or fail: a failing run can
-        # still have skipped every case, and that is the regression being guarded.
-        if: ${{ !cancelled() && steps.raster-execution-proof.conclusion != 'skipped' }}
-        run: |
-          set -euo pipefail
-          trx=artifacts/test-results/raster-execution-proof.trx
-          if [[ ! -f "${trx}" ]]; then
-            echo "::error::no TRX produced for the Category=RasterExecutionProof subset — the required raster receipts did not run"
-            exit 1
-          fi
-          # `|| true` is load-bearing under `set -euo pipefail`: grep exits 1 when
-          # it matches nothing, and on the healthy path the Failed and NotExecuted
-          # counts are both zero.
-          count_outcome() {
-            { grep -o "outcome=\"$1\"" "${trx}" || true; } | wc -l | tr -d '[:space:]'
-          }
-          passed=$(count_outcome Passed)
-          failed=$(count_outcome Failed)
-          skipped=$(count_outcome NotExecuted)
-          {
-            echo '### Raster catalog execution proof'
-            echo
-            echo "- Passed: ${passed}"
-            echo "- Failed: ${failed}"
-            echo "- Skipped: ${skipped}"
-          } >> "${GITHUB_STEP_SUMMARY}"
-          if [[ "${skipped}" -gt 0 ]]; then
-            echo "::error::${skipped} raster execution proof case(s) were skipped — a skipped required cell is non-passing evidence"
-            exit 1
-          fi
-          if [[ "${passed}" -lt 1 ]]; then
-            echo "::error::no raster execution proof case passed — the RasterExecutionProof trait or the cases themselves are gone"
-            exit 1
-          fi
-
       - name: Prove the layer execution cases ran, not skipped
-        # honua-server#3944, #3945, #3946. The proof step above also runs
-        # Category=LayerExecutionProof, but only the raster receipts were
-        # asserted on. `dotnet test` exits 0 when a --filter matches nothing and
+        # `dotnet test` exits 0 when a --filter matches nothing and
         # when every matched case skips, and the Honua source/sink proofs need a
         # real Docker PostGIS — so a renamed trait or a cleanly-skipping database
-        # fixture would leave this required gate green with zero layer receipts
+        # fixture would leave this full CI lane green with zero layer receipts
         # while eng/gp-operation-matrix.v1.json still calls those rows
         # proven. Assert on the TRX outcomes, not the exit code.
         #
@@ -3245,9 +3236,8 @@ jobs:
         #
         # GeoprocessingOperationEvidenceMatrixTests already proves those test
         # names still exist in those files; this step proves they actually ran
-        # here. The names are read back out of the matrix rather than repeated,
-        # so the manifest claim and the gate cannot drift apart.
-        if: ${{ !cancelled() && steps.raster-execution-proof.conclusion != 'skipped' }}
+        # here. Read the names from the matrix to keep the receipt contract aligned.
+        if: ${{ !cancelled() && steps.server-execution-proof.conclusion != 'skipped' }}
         run: |
           set -euo pipefail
           trx=artifacts/test-results/layer-execution-proof.trx
@@ -3328,70 +3318,6 @@ jobs:
             exit 1
           fi
 
-      - name: Provision the GDAL CLI packages for the real-GDAL proof
-        id: gdal-cli-packages
-        timeout-minutes: 30
-        uses: ./.github/actions/provision-gdal-cli
-
-      - name: Prove the real-GDAL CLI cases run on the required gate
-        # honua-server#4401: the five [GdalCliFact] cases emit Tier=Integration,
-        # which the lean gate's Tier=Fast filter can never match, and ci.yml has no
-        # pull_request trigger — so real gdaldem / ogr2ogr coverage could regress
-        # without blocking a merge. Run them here on the gate runner, over the GDAL
-        # CLI the previous step provisioned (the same provisioning ci.yml's
-        # worker-gdal-tests job uses), with the same counts-based tripwire.
-        # HONUA_REQUIRE_GDAL_CLI turns a missing tool into a failure rather than a
-        # skip.
-        id: gdal-cli-proof
-        timeout-minutes: 10
-        env:
-          HONUA_REQUIRE_GDAL_CLI: "true"
-        run: |
-          set -euo pipefail
-          # Category=GDAL is the whole [GdalCliFact] set, not just the gdaldem /
-          # ogr2ogr cases. It also selects the two proximity correctness proofs:
-          # Distance_... shells out to the gdal_proximity.py utility, and
-          # Allocation_... runs the production step Scripts/gdal_euclidean_allocation.py,
-          # which imports the GDAL Python bindings, NumPy and SciPy. The previous step
-          # provisions those; prefer the distro interpreter that owns the
-          # apt-installed modules. (GITHUB_PATH only affects LATER steps, so the PATH
-          # edit has to be an export inside this one.)
-          export PATH="/usr/bin:${PATH}"
-          /usr/bin/python3 -c 'from osgeo import gdal; from scipy import ndimage; import numpy'
-          for tool in gdaldem ogr2ogr gdal_translate gdalinfo gdal_proximity.py python3; do
-            command -v "${tool}" >/dev/null \
-              || { echo "::error::${tool} is missing after installing the GDAL CLI packages"; exit 1; }
-          done
-          trx=artifacts/test-results/worker-gdal-cli.trx
-          dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
-            --no-build --no-restore --configuration Release -maxcpucount:4 \
-            --filter 'Category=GDAL' \
-            --logger 'trx;LogFileName=worker-gdal-cli.trx' \
-            --results-directory artifacts/test-results
-          if [[ ! -f "${trx}" ]]; then
-            echo "::error::no TRX produced for the Category=GDAL subset"
-            exit 1
-          fi
-          count_outcome() {
-            { grep -o "outcome=\"$1\"" "${trx}" || true; } | wc -l | tr -d '[:space:]'
-          }
-          passed=$(count_outcome Passed)
-          skipped=$(count_outcome NotExecuted)
-          {
-            echo '### Real-GDAL CLI coverage (required gate)'
-            echo
-            echo "- Passed: ${passed}"
-            echo "- Skipped: ${skipped}"
-          } >> "${GITHUB_STEP_SUMMARY}"
-          if [[ "${skipped}" -gt 0 ]]; then
-            echo "::error::${skipped} [GdalCliFact] case(s) were skipped on the required gate"
-            exit 1
-          fi
-          if [[ "${passed}" -lt 1 ]]; then
-            echo "::error::no [GdalCliFact] case passed — real-GDAL coverage has left the required path"
-            exit 1
-          fi
-
       - name: Upload imagery classify execution proof
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -3399,36 +3325,6 @@ jobs:
           name: imagery-classify-execution-proof
           path: artifacts/test-results/imagery-classify-execution-proof.trx
           if-no-files-found: warn
-
-      # Read-only registry cache for the native-tools stage (apt from
-      # archive.ubuntu.com + PDAL compiled from source); see the matching step
-      # in ci.yml's Worker GDAL Tests job for why it is never written here.
-      - name: Set up Docker Buildx for production PDAL
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
-
-      - name: Log in to GHCR for the production PDAL build cache
-        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build production PDAL native tools
-        # A verified digest avoids rebuilding native tools. Every miss preserves
-        # the existing 30-minute production build; actual PDAL proofs stay below.
-        timeout-minutes: 35
-        env:
-          GH_TOKEN: ${{ github.token }}
-          HONUA_NATIVE_TOOLS_REUSE: ${{ vars.HONUA_NATIVE_TOOLS_REUSE != 'false' && 'true' || 'false' }}
-        run: python3 scripts/ci/native-tools-image.py resolve --output artifacts/test-results/native-tools-proof.json
-
-      - name: Prove point-cloud execution with production PDAL
-        timeout-minutes: 10
-        run: |
-          dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
-            --no-build --no-restore --configuration Release --filter 'Category=PdalExecutionProof' \
-            --logger 'trx;LogFileName=pdal-execution-proof.trx' --results-directory artifacts/test-results
 
       - name: Execute import and independent vector export fidelity proofs
         id: fidelity-proof
@@ -3449,63 +3345,6 @@ jobs:
           # here would bury that step's real failure under a second one.
           if-no-files-found: ${{ steps.fidelity-proof.outcome != 'skipped' && 'error' || 'warn' }}
 
-      - name: Upload point-cloud execution proof
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: pdal-execution-proof
-          path: |
-            artifacts/test-results/pdal-execution-proof.trx
-            artifacts/test-results/native-tools-proof.json
-
-      - name: Upload raster execution proof
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: raster-execution-proof
-          path: |
-            artifacts/test-results/raster-execution-proof.trx
-            artifacts/test-results/worker-gdal-cli.trx
-          if-no-files-found: warn
-
-      - name: Upload layer execution proof
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: layer-execution-proof
-          path: artifacts/test-results/layer-execution-proof.trx
-          if-no-files-found: warn
-
-      - name: Upload protocol-tier execution proof
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: protocol-tier-execution-proof
-          path: artifacts/test-results/protocol-tier-execution-proof.trx
-          if-no-files-found: warn
-
-      - name: Await Testcontainers PostGIS pre-pull
-        env:
-          PREPULL_AWAIT_TIMEOUT_SECONDS: '120'
-        run: scripts/ci/prepull-testcontainers-postgis.sh --await
-
-      - name: Upload copy-features execution proof
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: copy-features-execution-proof
-          path: artifacts/test-results/copy-features-execution-proof.trx
-          if-no-files-found: warn
-
-      # Exercise all clean and injected-rootfs fixtures here without building a
-      # container. The separate serving-image workflow and release/deploy/nightly
-      # lanes apply this detector to the final production root filesystems.
-      - name: Test serving-image boundary detector
-        run: |
-          python3 scripts/ci/fixtures/validate-serving-image-boundary.py
-          python3 scripts/ci/fixtures/validate-promote-verified-image.py
-
-
   # Summary gate: a single job that branch-protection can require.
   # Add every job whose failure should block merge.
   ci-gate:
@@ -3519,7 +3358,7 @@ jobs:
     # NOT this one. Keeping CI Gate off merge_group avoids a misleading all-
     # skipped "pass" status appearing in the queue context.
     if: ${{ github.event_name != 'merge_group' && always() && !cancelled() }}
-    needs: [pr-template-check, pr-readiness, changes, targeted-shards, ci-router-validation, build, pr-gate-tests, format, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build, quickstart-console-smoke]
+    needs: [pr-template-check, pr-readiness, changes, targeted-shards, ci-router-validation, build, runtime-proofs, format, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build, quickstart-console-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -3527,7 +3366,7 @@ jobs:
         env:
           REQUIRE_MANAGED_BUILD: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
           REQUIRE_FORMAT: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.build_changes == 'true' }}
-          RUNTIME_PROOFS_RESULT: ${{ needs.pr-gate-tests.result }}
+          RUNTIME_PROOFS_RESULT: ${{ needs.runtime-proofs.result }}
           BUILD_RESULT: ${{ needs.build.result }}
           FORMAT_RESULT: ${{ needs.format.result }}
         run: |

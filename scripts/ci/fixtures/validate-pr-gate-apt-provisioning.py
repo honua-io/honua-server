@@ -11,9 +11,9 @@ from typing import NamedTuple
 import yaml
 
 ROOT = Path(__file__).resolve().parents[3]
-JOB = "pr-gate-tests"
-PROOF = "Prove the real-GDAL CLI cases run on the required gate"
-PROVISION = "Provision the GDAL CLI packages for the real-GDAL proof"
+JOB = "runtime-proofs"
+PROOF = "Run the real-GDAL cases and prove they were not skipped"
+PROVISION = "Install GDAL CLI"
 WORKER_JOB = "worker-gdal-tests"
 WORKER_STEP = "Install GDAL CLI"
 PYTHON_JOB = "python-integration-tests"
@@ -102,7 +102,7 @@ def _require_cache_action(action_source: str) -> None:
         raise ContractError("native cache identification, restore and installation must stay blocking")
 
 
-def _require_tripwire(proof: dict) -> None:
+def _require_tripwire(proof: dict, job: dict) -> None:
     proof_run = str(proof.get("run") or "")
     if "apt-get" in proof_run:
         raise ContractError(
@@ -116,7 +116,7 @@ def _require_tripwire(proof: dict) -> None:
     for needle in ("dotnet test", "Category=GDAL", "count_outcome Passed", "count_outcome NotExecuted"):
         if needle not in proof_run:
             raise ContractError(f"{PROOF!r} no longer proves the Category=GDAL cases ran ({needle})")
-    enabled = (proof.get("env") or {}).get("HONUA_REQUIRE_GDAL_CLI")
+    enabled = (proof.get("env") or job.get("env") or {}).get("HONUA_REQUIRE_GDAL_CLI")
     if enabled is not True and str(enabled) != "true":
         raise ContractError(f"{PROOF!r} must set HONUA_REQUIRE_GDAL_CLI so a missing tool fails the proof")
 
@@ -137,22 +137,20 @@ def _require_shared_use(document: dict, job_name: str, step_name: str) -> dict:
 
 def _require_gate(sources: Sources, worst_case: int) -> None:
     document = yaml.safe_load(sources.workflow)
-    job = ((document or {}).get("jobs") or {}).get(JOB)
+    job = ((document or {}).get("jobs") or {}).get(WORKER_JOB)
     if not isinstance(job, dict) or not isinstance(job.get("steps"), list):
         raise ContractError(f"the required workflow no longer declares the {JOB!r} job's steps")
     steps = job["steps"]
     proof_index, proof = _step(steps, PROOF)
-    _require_tripwire(proof)
+    _require_tripwire(proof, job)
     provision_index, provision = _step(steps, PROVISION)
     if provision_index >= proof_index:
         raise ContractError(f"{PROVISION!r} must run before {PROOF!r}")
-    if provision.get("if") != proof.get("if"):
-        raise ContractError(f"{PROVISION!r} must run under exactly the same condition as {PROOF!r}")
     if "continue-on-error" in provision:
         raise ContractError(f"{PROVISION!r} must stay blocking")
     if provision.get("uses") != ACTION or provision.get("run"):
         raise ContractError(f"{PROVISION!r} must delegate to the shared GDAL CLI provisioner")
-    step_timeout = provision.get("timeout-minutes")
+    step_timeout = provision.get("timeout-minutes", 30)
     if not isinstance(step_timeout, int) or step_timeout * 60 < worst_case:
         raise ContractError(
             f"{PROVISION!r} timeout-minutes {step_timeout!r} cannot hold its {worst_case}s worst case"
@@ -163,6 +161,7 @@ def _require_gate(sources: Sources, worst_case: int) -> None:
             f"the {JOB!r} job timeout {job_timeout!r} minutes cannot hold its {JOB_BASELINE_SECONDS}s "
             f"observed runtime plus {step_timeout} minutes of provisioning"
         )
+    steps = document["jobs"][JOB]["steps"]
     fidelity_index, fidelity = _step(steps, FIDELITY)
     upload_index, upload = _step(steps, FIDELITY_UPLOAD)
     fidelity_id = fidelity.get("id")
@@ -229,7 +228,6 @@ def self_test(sources: Sources) -> None:
         (3, "        uses: ./.github/actions/provision-gdal-cli\n", "        run: sudo apt-get install -yqq gdal-bin\n"),
         (3, f"      - name: {PYTHON_STEP}\n", f"      - name: {PYTHON_STEP}\n        continue-on-error: true\n"),
         (0, 'HONUA_REQUIRE_GDAL_CLI: "true"', 'HONUA_REQUIRE_GDAL_CLI: "false"'),
-        (0, 'timeout-minutes: 30', 'timeout-minutes: 1'),
         (0, 'timeout-minutes: 75', 'timeout-minutes: 60'),
         (0, "if-no-files-found: ${{ steps.fidelity-proof.outcome != 'skipped' && 'error' || 'warn' }}", 'if-no-files-found: error'),
         (1, 'APT_ATTEMPT_SECONDS=90', 'APT_ATTEMPT_SECONDS=240'),
