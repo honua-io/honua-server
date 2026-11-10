@@ -13,6 +13,7 @@ using Honua.Ai.Protocols.Mcp.MapTools;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.Ai.Protocols.Mcp.Views;
 using Honua.Core.Features.Authorization.Abstractions;
 using CoreCatalogSourceIdentity = Honua.Core.Features.Studio.Domain.StudioCatalogSourceIdentity;
 using Honua.Core.Features.Authorization.Domain;
@@ -223,16 +224,21 @@ public sealed class McpMapToolTests
         await reader.Received(1).CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
     }
 
-    [UnitTest]
+    [UnitTheory]
+    [InlineData("default", "honua_describe_layer")]
+    [InlineData("configure", "honua_render_map")]
+    [InlineData("setup", "honua_render_map")]
     [Operation(Operations.Query)]
     [Endpoint("POST /mcp tools/list")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
-    public async Task ToolsList_IncludesCatalogQueryAndRenderTools()
+    public async Task ToolsList_SelectedViewIncludesCatalogQueryAndItsMapCapabilities(string view, string capability)
     {
         var surface = BuildSurface();
+        var context = AuthenticatedContext(BuildServices());
+        context.Request.Headers[McpWorkflowViewNegotiation.ViewHeaderName] = view;
 
         var response = await surface.DispatchAsync(
-            AuthenticatedContext(BuildServices()),
+            context,
             ListToolsRequest("list-1"),
             CancellationToken.None);
 
@@ -246,8 +252,10 @@ public sealed class McpMapToolTests
         names.Should().Contain([
             ListLayersTool.ToolName,
             QueryFeaturesTool.ToolName,
-            RenderMapTool.ToolName
+            capability
         ]);
+        if (view == McpWorkflowViewCatalog.DefaultViewName)
+            names.Should().NotContain(RenderMapTool.ToolName);
     }
 
     [UnitTest]
