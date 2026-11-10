@@ -147,7 +147,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('operation', choices=['inventory', 'projects', 'filter', 'fallback'])
     parser.add_argument('--root', type=Path, default=ROOT)
-    parser.add_argument('--lane', choices=['pr', 'ci', 'foundation', 'shard'], default='pr')
+    parser.add_argument('--lane', choices=['pr', 'pr-shards', 'ci', 'foundation', 'shard'], default='pr')
     parser.add_argument('--family', choices=['core', 'server', 'protocols', 'providers'])
     parser.add_argument('--project')
     parser.add_argument('--matrix-file', type=Path)
