@@ -394,26 +394,39 @@ which is why both the run count and exact observed span are recorded.
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
+| `ogc-rc-conformance.yml` | OGC release-candidate conformance | RC `workflow_call` | Runs all dispatchers after the RC image build; aggregate blocks on failure |
 | `cite-conformance-common.yml` | CITE Conformance (reusable) | `workflow_call` | Shared checkout/build/run/parse/upload/fail skeleton for single-suite CITE runs. |
-| `cite-conformance.yml` | OGC CITE Conformance Tests (Features) | weekly `schedule` (Mon 06:00 UTC), `workflow_dispatch` | |
-| `cite-tiles-conformance.yml` | OGC API Tiles CITE Conformance | weekly `schedule` (Tue 06:00 UTC), `workflow_dispatch` | |
-| `cite-ogcapi-processes-conformance.yml` | OGC API Processes 1.0 Release Gate | `workflow_dispatch` | Required exact-candidate release gate over the pinned upstream ETS denominator. Release cuts supply an immutable image digest and its full source SHA; provenance mismatches, incomplete or invalid results, skips/CantTell verdicts, and pass or denominator regressions fail closed. |
-| `cite-wfs20-conformance.yml` | WFS 2.0 CITE Conformance | weekly `schedule` (Mon 03:00 UTC), `workflow_dispatch` | Standalone (not the reusable wrapper) because of suite-specific setup. |
-| `cite-wms-conformance.yml` | OGC WMS CITE Conformance | weekly `schedule` (Wed 06:00 UTC), `workflow_dispatch` | WMS 1.3. |
-| `cite-wms11-conformance.yml` | OGC WMS 1.1.1 CITE Conformance | weekly `schedule` (Thu 06:00 UTC), `workflow_dispatch` | |
-| `cite-wmts-conformance.yml` | OGC WMTS CITE Conformance | weekly `schedule` (Thu 06:00 UTC), `workflow_dispatch` | |
-| `cite-wcs20-conformance.yml` | OGC WCS 2.0 CITE Conformance | weekly `schedule` (Wed 07:30 UTC), `workflow_dispatch` | |
-| `cite-wps20-conformance.yml` | WPS 2.0 CITE Conformance | weekly `schedule` (Wed 07:00 UTC), `workflow_dispatch` | |
-| `cite-kml22-conformance.yml` | OGC KML 2.2 CITE Conformance | weekly `schedule` (Fri 03:00 UTC), `workflow_dispatch` | |
-| `cite-gml32-conformance.yml` | OGC GML 3.2 CITE Conformance | weekly `schedule` (Sat 06:00 UTC), `workflow_dispatch` | |
-| `cite-gpkg12-conformance.yml` | OGC GeoPackage 1.2 CITE Conformance | weekly `schedule` (Sat 03:00 UTC), `workflow_dispatch` | |
-| `ogc-maps-conformance.yml` | OGC API Maps Conformance | weekly `schedule` (Fri 06:00 UTC), `workflow_dispatch` | |
-| `ogc-api-building-block-conformance.yml` | OGC API Building-Block Conformance | `pull_request` (base `trunk`; paths: the server image build context, `scripts/conformance/ogcapi/**`, `docker/cite/ogc-api-features/**`, the compose isolation helper and the workflow), weekly `schedule` (Mon 07:00 UTC), `workflow_dispatch` | Builds and verifies an exact source-SHA image (reads registry cache `buildcache:honua-jit-amd64` on trusted refs), then runs the vendored CQL2, MVT/TMS 2.0, Maps, and Schemathesis validators; uploads the complete evidence pack and fails on any validator failure. |
-| `cng-candidate.yml` | Candidate CNG qualification | `workflow_dispatch`, `workflow_call` | Resolves one frozen honua-release manifest into the exact server digest, source SHA and cut time; calls the existing conformance lane and retains the candidate identity. |
-| `cng-conformance.yml` | Cloud-Native-Geospatial Conformance | weekly `schedule` (Wed 06:00 UTC), `workflow_dispatch`, `workflow_call`, scoped `pull_request`/`push` self-tests | COG/GeoParquet/PMTiles-class CNG conformance; verifies the candidate image revision and builds offline helpers from the pinned candidate source. |
-| `cite-classic-conformance.yml` | Classic OGC CITE Conformance | `workflow_dispatch` | On-demand combined WMS 1.3 + WFS 2.0 classic lane. |
-| `cite-evidence-report.yml` | CITE Evidence Report | weekly `schedule` (Fri 08:00 UTC), `workflow_dispatch` | Runs the public CITE suite set and builds `artifacts/cite-evidence/` (summary JSON, badge SVG, static index, full TeamEngine HTML) with optional Pages deployment. Also asserts `docs/cite-status.md` freshness and opens/updates an issue when the reviewed snapshot is >14 days stale (#2944). |
+| `cite-conformance.yml` | OGC CITE Conformance Tests (Features) | `workflow_dispatch`, RC `workflow_call` | |
+| `cite-tiles-conformance.yml` | OGC API Tiles CITE Conformance | `workflow_dispatch`, RC `workflow_call` | |
+| `cite-ogcapi-processes-conformance.yml` | OGC API Processes 1.0 Release Gate | `workflow_dispatch`, RC `workflow_call` | Required exact-candidate release gate over the pinned upstream ETS denominator. Release cuts supply an immutable image digest and its full source SHA; provenance mismatches, incomplete or invalid results, skips/CantTell verdicts, and pass or denominator regressions fail closed. |
+| `cite-wfs20-conformance.yml` | WFS 2.0 CITE Conformance | `workflow_dispatch`, RC `workflow_call` | Standalone (not the reusable wrapper) because of suite-specific setup. |
+| `cite-wms-conformance.yml` | OGC WMS CITE Conformance | `workflow_dispatch`, RC `workflow_call` | WMS 1.3. |
+| `cite-wms11-conformance.yml` | OGC WMS 1.1.1 CITE Conformance | `workflow_dispatch`, RC `workflow_call` | |
+| `cite-wmts-conformance.yml` | OGC WMTS CITE Conformance | `workflow_dispatch`, RC `workflow_call` | |
+| `cite-wcs20-conformance.yml` | OGC WCS 2.0 CITE Conformance | `workflow_dispatch`, RC `workflow_call` | |
+| `cite-wps20-conformance.yml` | WPS 2.0 CITE Conformance | `workflow_dispatch`, RC `workflow_call` | |
+| `cite-kml22-conformance.yml` | OGC KML 2.2 CITE Conformance | `workflow_dispatch`, RC `workflow_call` | |
+| `cite-gml32-conformance.yml` | OGC GML 3.2 CITE Conformance | `workflow_dispatch`, RC `workflow_call` | |
+| `cite-gpkg12-conformance.yml` | OGC GeoPackage 1.2 CITE Conformance | `workflow_dispatch`, RC `workflow_call` | |
+| `ogc-maps-conformance.yml` | OGC API Maps Conformance | `workflow_dispatch`, RC `workflow_call` | |
+| `ogc-api-building-block-conformance.yml` | OGC API Building-Block Conformance | `workflow_dispatch`, RC `workflow_call` | Builds and verifies an exact source-SHA image (reads registry cache `buildcache:honua-jit-amd64` on trusted refs), then runs the vendored CQL2, MVT/TMS 2.0, Maps, and Schemathesis validators; uploads the complete evidence pack and fails on any validator failure. |
+| `cng-candidate.yml` | Candidate CNG qualification | `workflow_dispatch`, RC `workflow_call` | Resolves one frozen honua-release manifest into the exact server digest, source SHA and cut time; calls the existing conformance lane and retains the candidate identity. |
+| `cng-conformance.yml` | Cloud-Native-Geospatial Conformance | `workflow_dispatch`, RC `workflow_call` | COG/GeoParquet/PMTiles-class CNG conformance; verifies the candidate image revision and builds offline helpers from the pinned candidate source. |
+| `cite-classic-conformance.yml` | Classic OGC CITE Conformance | `workflow_dispatch`, RC `workflow_call` | On-demand combined WMS 1.3 + WFS 2.0 classic lane. |
+| `cite-evidence-report.yml` | CITE Evidence Report | `workflow_dispatch`, RC `workflow_call` | Runs the public CITE suite set and builds `artifacts/cite-evidence/` (summary JSON, badge SVG, static index, full TeamEngine HTML) with optional Pages deployment. Also asserts `docs/cite-status.md` freshness and opens/updates an issue when the reviewed snapshot is >14 days stale (#2944). |
 | `cite-certification.yml` | Exact-candidate CITE protocol certification | `workflow_dispatch` | Release-only producer that runs the full CITE inventory against a canonical immutable GHCR digest, verifies its OCI source revision, and emits post-cut normalized certification observations for the governed release denominator (#3382). |
+
+External OGC conformance runs after the immutable image is built for channel `rc`, through
+`ogc-rc-conformance.yml`. Weekly schedules and the Building-Block PR trigger are removed.
+These suites are absent from both the affected post-merge run and the existing full `ci.yml`
+run; GeoServices REST checks retain their PR admission. The RC aggregate requires every
+conformance caller to succeed, even when optional integration dispatch is disabled.
+Common CITE suites consume the candidate image and source SHA; standalone WFS, Maps and
+Building-Block suites retain their source-build checks at the release workflow commit.
+Exact-candidate certification remains a separate manual operation requiring its governed
+candidate context. Building-Block Conformance is currently disabled in repository settings;
+its trigger policy is safe to re-enable after this change lands.
+
 
 ## Release and deploy
 

@@ -12,8 +12,17 @@ on:
         required: true
         type: string
 
-# Tier: required release gate. Intentionally dispatch-only: release cuts supply
+# Tier: required release gate. Manual and RC builds supply
 # the immutable candidate digest after publication. This is never a per-PR job.
+  workflow_call:
+    inputs:
+      server_image:
+        required: true
+        type: string
+      source_sha:
+        required: true
+        type: string
+
 permissions:
   contents: read
   packages: write

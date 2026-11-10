@@ -46,6 +46,11 @@ on:
         required: false
         type: string
         default: 'default'
+      artifact-suffix:
+        description: Distinguish independent profiles in one release run
+        required: false
+        type: string
+        default: ''
       extra-artifact-paths:
         description: 'Additional newline-separated paths to include in the results artifact'
         required: false
@@ -243,7 +248,7 @@ jobs:
           image: honua-server:latest
           format: spdx-json
           output-file: sbom-honua-server-cite-${{ inputs.suite }}.spdx.json
-          artifact-name: sbom-honua-server-cite-${{ inputs.suite }}.spdx.json
+          artifact-name: sbom-honua-server-cite-${{ inputs.suite }}${{ inputs.artifact-suffix }}.spdx.json
           upload-artifact: true
           upload-release-assets: false
 
@@ -300,7 +305,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: cite-${{ inputs.suite }}-conformance-results-${{ github.run_number }}
+          name: cite-${{ inputs.suite }}${{ inputs.artifact-suffix }}-conformance-results-${{ github.run_number }}
           # Primary results dir plus any runner-specific extras (e.g. config dump).
           path: |
             ${{ inputs.results-dir }}/

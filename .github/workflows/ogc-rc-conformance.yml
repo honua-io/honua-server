@@ -1,0 +1,107 @@
+name: OGC release-candidate conformance
+on:
+  workflow_call:
+    inputs:
+      server_image:
+        required: true
+        type: string
+      source_sha:
+        required: true
+        type: string
+permissions:
+  contents: read
+  packages: write
+  actions: read
+  pages: write
+  id-token: write
+  issues: write
+jobs:
+  cite-classic-conformance:
+    uses: ./.github/workflows/cite-classic-conformance.yml
+    secrets: inherit
+    with:
+      server_image: ${{ inputs.server_image }}
+      source_sha: ${{ inputs.source_sha }}
+  cite-gml32-conformance:
+    uses: ./.github/workflows/cite-gml32-conformance.yml
+    secrets: inherit
+    with:
+      server_image: ${{ inputs.server_image }}
+      source_sha: ${{ inputs.source_sha }}
+  cite-gpkg12-conformance:
+    uses: ./.github/workflows/cite-gpkg12-conformance.yml
+    secrets: inherit
+    with:
+      server_image: ${{ inputs.server_image }}
+      source_sha: ${{ inputs.source_sha }}
+  cite-kml22-conformance:
+    uses: ./.github/workflows/cite-kml22-conformance.yml
+    secrets: inherit
+    with:
+      server_image: ${{ inputs.server_image }}
+      source_sha: ${{ inputs.source_sha }}
+  cite-ogcapi-processes-conformance:
+    uses: ./.github/workflows/cite-ogcapi-processes-conformance.yml
+    secrets: inherit
+    with:
+      server_image: ${{ inputs.server_image }}
+      source_sha: ${{ inputs.source_sha }}
+  cite-tiles-conformance:
+    uses: ./.github/workflows/cite-tiles-conformance.yml
+    secrets: inherit
+    with:
+      server_image: ${{ inputs.server_image }}
+      source_sha: ${{ inputs.source_sha }}
+  cite-wcs20-conformance:
+    uses: ./.github/workflows/cite-wcs20-conformance.yml
+    secrets: inherit
+    with:
+      server_image: ${{ inputs.server_image }}
+      source_sha: ${{ inputs.source_sha }}
+  cite-wfs20-conformance:
+    uses: ./.github/workflows/cite-wfs20-conformance.yml
+    secrets: inherit
+  cite-wms-conformance:
+    uses: ./.github/workflows/cite-wms-conformance.yml
+    secrets: inherit
+    with:
+      server_image: ${{ inputs.server_image }}
+      source_sha: ${{ inputs.source_sha }}
+  cite-wms11-conformance:
+    uses: ./.github/workflows/cite-wms11-conformance.yml
+    secrets: inherit
+    with:
+      server_image: ${{ inputs.server_image }}
+      source_sha: ${{ inputs.source_sha }}
+  cite-wmts-conformance:
+    uses: ./.github/workflows/cite-wmts-conformance.yml
+    secrets: inherit
+    with:
+      server_image: ${{ inputs.server_image }}
+      source_sha: ${{ inputs.source_sha }}
+  cite-wps20-conformance:
+    uses: ./.github/workflows/cite-wps20-conformance.yml
+    secrets: inherit
+    with:
+      server_image: ${{ inputs.server_image }}
+      source_sha: ${{ inputs.source_sha }}
+  cite-conformance:
+    uses: ./.github/workflows/cite-conformance.yml
+    secrets: inherit
+    with:
+      honua_image: ${{ inputs.server_image }}
+      source_sha: ${{ inputs.source_sha }}
+  ogc-maps-conformance:
+    uses: ./.github/workflows/ogc-maps-conformance.yml
+    secrets: inherit
+  ogc-api-building-block-conformance:
+    uses: ./.github/workflows/ogc-api-building-block-conformance.yml
+    secrets: inherit
+    with:
+      source_sha: ${{ inputs.source_sha }}
+  evidence:
+    uses: ./.github/workflows/cite-evidence-report.yml
+    secrets: inherit
+    with:
+      server_image: ${{ inputs.server_image }}
+      source_sha: ${{ inputs.source_sha }}

@@ -352,12 +352,29 @@ jobs:
     secrets:
       release_bundle_token: ${{ secrets.RELEASE_BUNDLE_TOKEN }}
 
+  ogc-conformance:
+    name: Qualify OGC release candidate
+    needs: rc-image
+    if: ${{ github.event.inputs.channel == 'rc' }}
+    uses: ./.github/workflows/ogc-rc-conformance.yml
+    permissions:
+      contents: read
+      packages: write
+      actions: read
+      pages: write
+      id-token: write
+      issues: write
+    secrets: inherit
+    with:
+      server_image: ${{ needs.rc-image.outputs.image_ref }}
+      source_sha: ${{ needs.rc-image.outputs.server_sha }}
+
   aggregate:
     name: Assemble manifest & validate train
-    needs: [release-context, rc-image, integration, sdk-cut, realtime-preview-qualification]
+    needs: [release-context, rc-image, integration, sdk-cut, realtime-preview-qualification, ogc-conformance]
     # Off-trunk runs deliberately stop at the unambiguous test image/evidence channel.
     # No candidate manifest is produced for the downstream release validator to accept.
-    if: ${{ always() && needs.release-context.outputs.candidate == 'true' && needs.rc-image.result == 'success' && needs.realtime-preview-qualification.result == 'success' }}
+    if: ${{ always() && needs.release-context.outputs.candidate == 'true' && needs.rc-image.result == 'success' && needs.realtime-preview-qualification.result == 'success' && (github.event.inputs.channel != 'rc' || needs.ogc-conformance.result == 'success') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:

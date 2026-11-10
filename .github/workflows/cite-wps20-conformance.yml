@@ -12,10 +12,22 @@ on:
           - basic-async
           - basic-sync
           - all
-  schedule:
-    - cron: '0 7 * * 3'
-
 # Tier: nightly. The external ETS is intentionally not a PR-blocking lane.
+  workflow_call:
+    inputs:
+      profile:
+        required: true
+        type: string
+        default: basic-async
+      server_image:
+        required: false
+        type: string
+        default: ''
+      source_sha:
+        required: false
+        type: string
+        default: ''
+
 permissions:
   contents: read
   packages: write
@@ -28,6 +40,8 @@ jobs:
   cite:
     uses: ./.github/workflows/cite-conformance-common.yml
     with:
+      honua-image: ${{ inputs.server_image || '' }}
+      tested-honua-git-sha: ${{ inputs.source_sha || github.sha }}
       suite: wps20
       display-name: WPS 2.0
       runner-script: ./scripts/conformance/cite/run-cite-wps20-tests.sh

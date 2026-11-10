@@ -5,35 +5,17 @@ name: OGC API Building-Block Conformance
 # CQL2, MVT/TMS 2.0, Maps, and Schemathesis validators that do not belong to an
 # ETS profile. Every run builds and checks the exact candidate source SHA.
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
-    branches: [trunk]
-    # The server image build context plus the validators and their fixtures.
-    paths:
-      - 'src/**'
-      - 'eng/**'
-      - 'Dockerfile'
-      - '.dockerignore'
-      - '.editorconfig'
-      - 'Directory.Build.props'
-      - 'Directory.Build.targets'
-      - 'Directory.Packages.props'
-      - 'NuGet.config'
-      - 'Honua.sln'
-      - 'docs/developer/api-specs/admin-api.json'
-      - 'docs/gis/data/**'
-      - 'tests/fixtures/ai-builder/**'
-      - 'scripts/docker/restore-dotnet-with-github-packages.sh'
-      - 'scripts/conformance/ogcapi/**'
-      - 'scripts/ci/lib/isolate-test-compose.sh'
-      - 'docker/cite/ogc-api-features/**'
-      - '.github/workflows/ogc-api-building-block-conformance.yml'
-  schedule:
-    - cron: '0 7 * * 1'
   workflow_dispatch:
     inputs:
       source_sha:
         description: 'Full source SHA to certify (defaults to the selected ref)'
+        required: false
+        type: string
+        default: ''
+
+  workflow_call:
+    inputs:
+      source_sha:
         required: false
         type: string
         default: ''
