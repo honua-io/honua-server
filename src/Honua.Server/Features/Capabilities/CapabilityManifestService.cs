@@ -595,7 +595,8 @@ internal sealed class CapabilityManifestService(
                 requiresAuthentication: spec.RequiresAuthentication,
                 requiresEnvironment: spec.RequiresEnvironment,
                 requiresWorkspace: spec.RequiresWorkspace,
-                requiresDurableJobStore: spec.RequiresDurableJobStore));
+                requiresDurableJobStore: spec.RequiresDurableJobStore,
+                requiresProposalStore: spec.RequiresProposalStore));
         }
 
         // codeql[cs/linq/missed-where]: adds a capability only when that id is not already present
@@ -623,7 +624,7 @@ internal sealed class CapabilityManifestService(
             // receipt (dependency-unavailable; license-required when Redis is unentitled).
             Capability(OperationsProposalsCapabilityId, "operate", context,
                 requiresAuthentication: true,
-                requiresDurableJobStore: true),
+                requiresProposalStore: true),
             Capability("ops.autonomy", "operate", context,
                 configured: operationCapabilities.HasAutonomyPolicyStore,
                 requiresAuthentication: true),
@@ -722,7 +723,7 @@ internal sealed class CapabilityManifestService(
             ["versioning.branch"] = new() { EntitlementKey = FeatureCatalog.BranchVersioningKey },
             ["operate.status"] = new() { RequiresAuthentication = true },
             ["ops.findings"] = new() { RequiresAuthentication = true },
-            [OperationsProposalsCapabilityId] = new() { RequiresAuthentication = true, RequiresDurableJobStore = true },
+            [OperationsProposalsCapabilityId] = new() { RequiresAuthentication = true, RequiresProposalStore = true },
             ["ops.autonomy"] = new()
             {
                 Configured = operationCapabilities.HasAutonomyPolicyStore,
@@ -795,6 +796,7 @@ internal sealed class CapabilityManifestService(
         bool requiresEnvironment = false,
         bool requiresWorkspace = false,
         bool requiresDurableJobStore = false,
+        bool requiresProposalStore = false,
         string? unavailableReasonOverride = null)
     {
         var available = true;
@@ -829,9 +831,12 @@ internal sealed class CapabilityManifestService(
         else if (requiresDurableJobStore && !options.DurableJobRuntimeAvailable)
         {
             available = false;
-            reasonCode = options.DurableJobSubstrateCause == DurableJobSubstrateCause.RedisNotEntitled
-                ? CapabilityReasonCodes.LicenseRequired
-                : CapabilityReasonCodes.DependencyUnavailable;
+            reasonCode = SubstrateUnavailableReason(options.DurableJobSubstrateCause);
+        }
+        else if (requiresProposalStore && !options.ProposalStoreAvailable)
+        {
+            available = false;
+            reasonCode = SubstrateUnavailableReason(options.ProposalStoreUnavailableCause);
         }
         else if (requiresEnvironment && !context.EnvironmentAvailable)
         {
@@ -1461,6 +1466,11 @@ internal sealed class CapabilityManifestService(
         return context.CallerCapabilities.Contains(capability);
     }
 
+    private static string SubstrateUnavailableReason(DurableJobSubstrateCause cause)
+        => cause == DurableJobSubstrateCause.RedisNotEntitled
+            ? CapabilityReasonCodes.LicenseRequired
+            : CapabilityReasonCodes.DependencyUnavailable;
+
     private static string[] ResolveRequiredEntitlementKeys(string? entitlementKey, string[]? entitlementKeys)
     {
         if (entitlementKeys is { Length: > 0 })
@@ -1583,6 +1593,8 @@ internal sealed class CapabilityManifestService(
         public bool RequiresWorkspace { get; init; }
 
         public bool RequiresDurableJobStore { get; init; }
+
+        public bool RequiresProposalStore { get; init; }
     }
 
     private sealed record CapabilityPolicyContext(

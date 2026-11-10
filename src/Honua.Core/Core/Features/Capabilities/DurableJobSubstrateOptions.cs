@@ -73,32 +73,14 @@ public sealed class DurableJobSubstrateOptions
     public string? RedisDurabilityStatus
         => RedisDurabilityStatuses.For(RedisDurabilityAttestation is not null, RedisDurabilityFailure);
 
+    // The job store and queue live in the system database, so a host that composed both runs jobs
+    // whatever its Redis state. Without them the Redis facts still classify the Redis-backed
+    // control plane (proposals, workflow operations), which callers ask about with neither present.
     public DurableJobSubstrateCause Classify(bool jobStorePresent, bool jobQueuePresent)
     {
-        // Entitlement is checked BEFORE durability, and fails closed (honua-server#4502). The
-        // durability inspection runs against whatever infrastructure Redis is connected, which in
-        // non-Development/Test deployments happens even when Redis is unentitled — so an
-        // unentitled deployment whose Redis DOES attest would otherwise report Available and
-        // advertise 'jobs.runner'. A present store never upgrades a missing entitlement.
-        if (!RedisEntitled && RedisConfigured)
-        {
-            return DurableJobSubstrateCause.RedisNotEntitled;
-        }
-
-        // Owner ruling (2026-10-10): a CONNECTED Redis enables the durable job runner and the
-        // governed proposal control plane whatever the durability attestation said. The
-        // attestation outcome is published (RedisDurabilityStatus) and logged, never classified
-        // here; only a Redis that is absent or did not connect withholds the capability.
         if (jobStorePresent && jobQueuePresent)
         {
-            if (!RedisConfigured)
-            {
-                return DurableJobSubstrateCause.RedisNotConfigured;
-            }
-
-            return RedisDurabilityFailure == DurableJobSubstrateCause.RedisUnreachable
-                ? DurableJobSubstrateCause.RedisUnreachable
-                : DurableJobSubstrateCause.Available;
+            return DurableJobSubstrateCause.Available;
         }
 
         if (!RedisConfigured)
@@ -106,10 +88,13 @@ public sealed class DurableJobSubstrateOptions
             return DurableJobSubstrateCause.RedisNotConfigured;
         }
 
-        return RedisEntitled
-            ? RedisDurabilityFailure == DurableJobSubstrateCause.RedisUnreachable
-                ? DurableJobSubstrateCause.RedisUnreachable
-                : DurableJobSubstrateCause.RuntimeIncomplete
-            : DurableJobSubstrateCause.RedisNotEntitled;
+        if (!RedisEntitled)
+        {
+            return DurableJobSubstrateCause.RedisNotEntitled;
+        }
+
+        return RedisDurabilityFailure == DurableJobSubstrateCause.RedisUnreachable
+            ? DurableJobSubstrateCause.RedisUnreachable
+            : DurableJobSubstrateCause.RuntimeIncomplete;
     }
 }
