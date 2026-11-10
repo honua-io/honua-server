@@ -615,7 +615,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.DisconnectSession_UnknownId_Returns404"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "preview",
+      "maturity": "experimental",
       "capability": "admin.control-plane"
     },
     {
@@ -745,7 +745,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamConformanceEndpointsTests.CleanupRun_DeletesEveryOwnedRecordAndRestoresTheBaselineDigest"
       ],
       "proof_ledger_surface": "feature-event-streaming",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "streaming.feature-subscriptions"
     },
     {
@@ -1255,6 +1255,10 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactContentTests.ArtifactContent_SucceededJob_StreamsOpaqueStagedPayloadWithDeclaredMediaType",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactContentTests.ArtifactContent_UnreconciledRegistrationIntent_FailsClosed",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactStoreUnavailableTests.ArtifactContent_NoMatchingStore_Returns503",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.StagedArtifactContentAcrossInstancesTests.ArtifactContent_AfterTheObjectIsDeleted_Returns404OnBothInstances",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.StagedArtifactContentAcrossInstancesTests.ArtifactContent_IfNoneMatchOnTheOtherInstance_Returns304",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.StagedArtifactContentAcrossInstancesTests.ArtifactContent_RangeRequestToTheOtherInstance_ReturnsThatRange",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.StagedArtifactContentAcrossInstancesTests.ArtifactContent_StagedByOneInstance_IsServedWholeByTheOther",
         "Honua.Worker.Gdal.Tests.GdalArtifactPublisherTests.PublishFileAsync_ForcedStagingOnAttestedVolume_ReplacementReadsOracleBytes"
       ],
       "proof_ledger_surface": "geoprocessing-output-artifacts",
@@ -4762,7 +4766,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.ListSessions_WithFilter_ReturnsSessionFilterInfo"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "preview",
+      "maturity": "experimental",
       "capability": "admin.control-plane"
     },
     {
@@ -6092,7 +6096,7 @@
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Replay_MultiReplicaWithProcessLocalLog_FailsClosedOnHttpAndStream"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "collaboration.map-sessions"
     },
     {
@@ -6115,7 +6119,7 @@
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationSessionStreamEndpointTests.Stream_WithoutAuthorization_RejectsUpgrade"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "collaboration.map-sessions"
     },
     {
@@ -6228,7 +6232,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.WebSocket_SnapshotThenDeltaMode_EmitsOneBatchedBaselineThenTheMutation"
       ],
       "proof_ledger_surface": "feature-event-streaming",
-      "maturity": "preview",
+      "maturity": "experimental",
       "capability": "streaming.feature-subscriptions"
     },
     {
@@ -6255,7 +6259,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Capabilities_AdvertisesSnapshotModeSequenceAndDeploymentRevision"
       ],
       "proof_ledger_surface": "feature-event-streaming",
-      "maturity": "preview",
+      "maturity": "experimental",
       "capability": "streaming.feature-subscriptions"
     },
     {
@@ -11353,6 +11357,11 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.GeometryValidationTests.Query_WithMalformedGeometryJson_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.GeometryValidationTests.Query_WithNoMatchingFeatures_ReturnsEmptyResultSet",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.GeometryValidationTests.Query_WithValidEnvelopeGeometry_Succeeds",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.PublicLayerSharedCacheTests.PublicLayer_AnonymousQueryByArbitraryExtent_IsNeverShared",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.PublicLayerSharedCacheTests.PublicLayer_AnonymousRequest_IsSharedWithACdnLifetime",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.PublicLayerSharedCacheTests.PublicLayer_LayerLifetimeNamedByServiceAndLayer_AppliesOnEverySurface",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.PublicLayerSharedCacheTests.PublicLayer_RequestWithAnyCredential_IsNeverShared",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.PublicLayerSharedCacheTests.SecuredLayer_AnonymousRequest_IsNeverShared",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.FeatureServerGdbVersionFlowTests.Query_WithoutGdbVersion_IsUnaffectedByVersioning",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerAuthorizationTests.FeatureQuery_PrivateVersionOfAnotherOwner_DoesNotExposeBranch",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.FeatureServerQuery_BearerWithoutTenant_IsRejectedBeforeDefaultSchema",
@@ -13505,6 +13514,9 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.DenseLowZoomMvtBudgetEndpointTests.GetTile_DenseZoom0_ReturnsDecodableTileWithinBudget",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.VectorTileServer_RootStyleAndTile_UseSameRoutedPrimaryPublication",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.PublicLayerSharedCacheTests.PublicLayer_AnonymousRequest_IsSharedWithACdnLifetime",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.PublicLayerSharedCacheTests.PublicLayer_RequestWithAnyCredential_IsNeverShared",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.PublicLayerSharedCacheTests.SecuredLayer_AnonymousRequest_IsNeverShared",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_Tile_BadCoordinates_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_Tile_EmptyTile_ReturnsNoContent",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_Tile_InRange_ReturnsMvtBytesNeverStoredForACredentialedCaller",
@@ -15363,6 +15375,10 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.MvtTileTemporalEndpointTests.GetTile_WithTimeRangeIso8601_ReturnsTile",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.MvtTileTemporalEndpointTests.GetTile_WithTimeRangeUnixMs_ReturnsTile",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.FeatureServerMvt_SourceBackedLayer_UsesBindingScopedTileProvider",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.PublicLayerSharedCacheTests.PublicLayer_AnonymousRequest_IsSharedWithACdnLifetime",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.PublicLayerSharedCacheTests.PublicLayer_LayerLifetimeNamedByServiceAndLayer_AppliesOnEverySurface",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.PublicLayerSharedCacheTests.PublicLayer_RequestWithAnyCredential_IsNeverShared",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.PublicLayerSharedCacheTests.SecuredLayer_AnonymousRequest_IsNeverShared",
         "Honua.Server.Tests.Features.Protocols.Tiles.TileJsonCredentialEndpointTests.ProtectedTileJson_AdvertisedStyleAndTilesKeepBoundToken",
         "Honua.Server.Tests.Features.Protocols.Tiles.TileJsonEndpointTests.MapLibre_CanLoadFromTileJson"
       ],
@@ -19943,7 +19959,7 @@
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.EditAndCheckpoint_SingleInstanceWithRedisConfigured_RemainAvailable"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "collaboration.map-sessions"
     },
     {
@@ -19959,7 +19975,7 @@
         "Honua.Server.Tests.Features.Collaboration.FeatureLocks.FeatureLockEndpointsTests.Claim_WithoutFeatureLockAuthorization_ReturnsForbidden"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "collaboration.map-sessions"
     },
     {
@@ -19973,7 +19989,7 @@
         "Honua.Server.Tests.Features.Collaboration.FeatureLocks.FeatureLockEndpointsTests.RenewAndRelease_WithSameHolder_ReturnSuccess"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "collaboration.map-sessions"
     },
     {
@@ -19987,7 +20003,7 @@
         "Honua.Server.Tests.Features.Collaboration.FeatureLocks.FeatureLockEndpointsTests.RenewAndRelease_WithSameHolder_ReturnSuccess"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "collaboration.map-sessions"
     },
     {
@@ -20024,7 +20040,7 @@
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Stream_WindowAdvancesAfterPreliminaryReplay_StillAnnouncesResync"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "collaboration.map-sessions"
     },
     {
@@ -20044,7 +20060,7 @@
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationSessionEndpointsTests.Join_WithoutSavedMapCapability_ReturnsUnauthorized"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "collaboration.map-sessions"
     },
     {
@@ -20058,7 +20074,7 @@
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationSessionEndpointsTests.Leave_JoinedSession_RemovesPresence"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "collaboration.map-sessions"
     },
     {
@@ -20078,7 +20094,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamConformanceEndpointsTests.LeaseRun_WithoutAConformanceCredential_Returns401"
       ],
       "proof_ledger_surface": "feature-event-streaming",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "streaming.feature-subscriptions"
     },
     {
@@ -20096,7 +20112,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamConformanceEndpointsTests.Mutate_WithoutTheRunToken_Returns404"
       ],
       "proof_ledger_surface": "feature-event-streaming",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "streaming.feature-subscriptions"
     },
     {

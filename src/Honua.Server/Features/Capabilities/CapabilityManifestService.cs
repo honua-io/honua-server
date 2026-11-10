@@ -475,7 +475,7 @@ internal sealed class CapabilityManifestService(
                 entitlementKey: FeatureCatalog.MultiTenancyKey,
                 requiresAuthentication: true),
             Capability("realtime.feature-streams", "realtime", context,
-                maturity: CapabilityMaturity.Preview,
+                maturity: CapabilityMaturity.Experimental,
                 configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("realtime.feature-streams"),
                 entitlementKey: "streaming.feature-subscriptions"),
             Capability("serve.sensorthings", "realtime", context,
