@@ -195,7 +195,7 @@ class RunnerTests(unittest.TestCase):
             with patch.dict(os.environ, {'PATH': f'{directory}:{os.environ["PATH"]}',
                                          'HONUA_TEST_QUARANTINE_OBSERVE': 'true'}):
                 result = subprocess.run(command, timeout=5, capture_output=True)
-            self.assertEqual(128 + signal.SIGKILL, result.returncode)
+            self.assertEqual(124, result.returncode)
             for suffix in ('.pid', '.descendant.pid'):
                 process = Path('/proc') / fake.with_suffix(suffix).read_text() / 'stat'
                 if process.exists():

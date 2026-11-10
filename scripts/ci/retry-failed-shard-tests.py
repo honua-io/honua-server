@@ -17,7 +17,11 @@ from flake_quarantine import exclude_filter, load_snapshot, merge_retry, read_ca
 def call_test(command):
     # Own the test process group: foreground supervisors only signal this wrapper.
     with subprocess.Popen(command, start_new_session=os.name == 'posix') as child:
+        cancellation_signal = None
+
         def forward(signum, _frame):
+            nonlocal cancellation_signal
+            cancellation_signal = signum
             if child.poll() is not None:
                 return
             if os.name != 'posix':
@@ -32,7 +36,8 @@ def call_test(command):
                 os.killpg(child.pid, signal.SIGKILL)
         previous = {sig: signal.signal(sig, forward) for sig in (signal.SIGTERM, signal.SIGINT)}
         try:
-            return child.wait()
+            code = child.wait()
+            return -cancellation_signal if cancellation_signal is not None else code
         finally:
             for sig, handler in previous.items():
                 signal.signal(sig, handler)
