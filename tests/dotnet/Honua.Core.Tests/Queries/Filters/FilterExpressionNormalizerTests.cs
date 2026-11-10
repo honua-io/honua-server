@@ -103,6 +103,39 @@ public sealed class FilterExpressionNormalizerTests
         literal.Value.Should().Be("001899");
     }
 
+    [UnitTheory]
+    [InlineData(0L, false)]
+    [InlineData(1L, true)]
+    [InlineData(0.0d, false)]
+    [InlineData(1.0d, true)]
+    public void Normalize_BooleanFieldNumericLiteral_UsesBooleanValue(object value, bool expected)
+    {
+        var expression = new BinaryExpression(new PropertyReference("enabled"), BinaryOperator.Equal,
+            new Literal(value, LiteralType.Number));
+
+        var normalized = (BinaryExpression)FilterExpressionNormalizer.Normalize(
+            expression, ResourceWithField("enabled", MetadataV2FieldType.Boolean));
+
+        var literal = normalized.Right.Should().BeOfType<Literal>().Subject;
+        literal.Type.Should().Be(LiteralType.Boolean);
+        literal.Value.Should().Be(expected);
+    }
+
+    [UnitTheory]
+    [InlineData(2L)]
+    [InlineData(-1L)]
+    [InlineData(0.5d)]
+    public void Normalize_BooleanFieldOtherNumericLiteral_RejectsValue(object value)
+    {
+        var expression = new BinaryExpression(new PropertyReference("enabled"), BinaryOperator.Equal,
+            new Literal(value, LiteralType.Number));
+
+        var act = () => FilterExpressionNormalizer.Normalize(
+            expression, ResourceWithField("enabled", MetadataV2FieldType.Boolean));
+
+        act.Should().Throw<ArgumentException>().WithMessage("*expects a boolean value*");
+    }
+
     private static MetadataV2Resource ResourceWithField(string name, MetadataV2FieldType type)
         => new()
         {
