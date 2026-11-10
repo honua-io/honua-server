@@ -9,6 +9,7 @@
 // can see the intent rather than treating it as an accidental gap.
 
 using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Protocols.GeoServices.MapServer;
 
@@ -23,7 +24,8 @@ internal static partial class MapServerEndpoints
             .WithSummary("Get MapServer service metadata")
             .WithDescription("Returns metadata for a MapServer service including all layers")
             .WithTags("MapServer")
-            .CacheOutput("ServiceMetadata");
+            .CacheOutput("ServiceMetadata")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument);
 
         // Esri clients hydrate metadata by POSTing {"f":"json"}; mirror the GET
         // form so discovery succeeds. Anonymous by design and without the
@@ -44,7 +46,8 @@ internal static partial class MapServerEndpoints
             .WithSummary("Get MapServer layer metadata")
             .WithDescription("Returns metadata for a specific MapServer layer")
             .WithTags("MapServer")
-            .CacheOutput("LayerMetadata");
+            .CacheOutput("LayerMetadata")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument);
 
         endpoints.MapPost("/rest/services/{serviceId}/MapServer/{layerId:int}",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleGetLayerMetadata(context))
@@ -174,7 +177,8 @@ internal static partial class MapServerEndpoints
             .WithSummary("Get map legend")
             .WithDescription("Returns legend information with swatch images for all visible layers")
             .WithTags("MapServer")
-            .CacheOutput("MapServerLegend");
+            .CacheOutput("MapServerLegend")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument);
 
         endpoints.MapPost("/rest/services/{serviceId}/MapServer/legend",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleLegend(context))
@@ -192,7 +196,8 @@ internal static partial class MapServerEndpoints
             .WithSummary("Query map legends")
             .WithDescription("Returns legend information using the GeoServices queryLegends operation")
             .WithTags("MapServer")
-            .CacheOutput("MapServerLegend");
+            .CacheOutput("MapServerLegend")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument);
 
         endpoints.MapPost("/rest/services/{serviceId}/MapServer/queryLegends",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleLegend(context))
@@ -261,7 +266,8 @@ internal static partial class MapServerEndpoints
             .WithSummary("Get metadata for all layers and tables")
             .WithDescription("Returns the full metadata for every layer and table in the service in a single document")
             .WithTags("MapServer")
-            .CacheOutput("LayerMetadata");
+            .CacheOutput("LayerMetadata")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument);
 
         endpoints.MapPost("/rest/services/{serviceId}/MapServer/allLayersAndTables",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleAllLayersAndTables(context))
@@ -282,7 +288,8 @@ internal static partial class MapServerEndpoints
             .WithSummary("Get metadata for all layers and tables")
             .WithDescription("Returns the full metadata for every layer and table in the service in a single document")
             .WithTags("MapServer")
-            .CacheOutput("LayerMetadata");
+            .CacheOutput("LayerMetadata")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument);
 
         endpoints.MapPost("/rest/services/{serviceId}/MapServer/layers",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleAllLayersAndTables(context))
@@ -300,7 +307,8 @@ internal static partial class MapServerEndpoints
             .WithSummary("Query coded-value and range domains")
             .WithDescription("Returns the domains referenced by the requested layers")
             .WithTags("MapServer")
-            .CacheOutput("LayerMetadata");
+            .CacheOutput("LayerMetadata")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument);
 
         // Esri services accept BOTH GET and POST for queryDomains; clients POST large
         // layers arrays that exceed URL limits (honua-server#1825). The POST companion
@@ -399,7 +407,8 @@ internal static partial class MapServerEndpoints
             .WithSummary("Get a cached raster map tile")
             .WithDescription("Returns a PNG tile rendered from MapServer layer features")
             .WithTags("MapServer")
-            .CacheOutput("MapServerTile");
+            .CacheOutput("MapServerTile")
+            .WithSharedCacheClass(ResponseCacheClass.Tile);
 
         return endpoints;
     }
