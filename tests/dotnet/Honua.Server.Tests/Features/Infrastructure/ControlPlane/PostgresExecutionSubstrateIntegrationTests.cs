@@ -247,8 +247,8 @@ public sealed class PostgresExecutionSubstrateIntegrationTests(DatabaseFixtureAd
         (await harness.JobStore.TryCreateAsync(CreateQueuedJob(operationId))).Should().BeTrue();
         // A newer release wrote two fields this build has no property for.
         await harness.ExecuteAsync(
-            $$"""
-            UPDATE {{harness.JobsTable}}
+            $$$"""
+            UPDATE {{{harness.JobsTable}}}
             SET record = (jsonb_set(record::jsonb || '{"addedByNewerRelease": {"mode": "streaming"}}'::jsonb,
                                     '{spec,addedToSpec}', '"shard-7"'))::json
             WHERE operation_id = @operation_id
