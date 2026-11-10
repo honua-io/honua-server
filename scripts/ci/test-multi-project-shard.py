@@ -109,12 +109,19 @@ class MultiProjectTests(unittest.TestCase):
         process.wait.assert_called_once_with()
 
     def test_shared_deadline_stops_the_test_process(self):
+        self.assert_deadline_cleanup(detach=False)
+
+    def test_shared_deadline_stops_detached_test_process(self):
+        self.assert_deadline_cleanup(detach=True)
+
+    def assert_deadline_cleanup(self, detach):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             pid_file = root / 'test.pid'
             fake = root / 'dotnet'
             fake.write_text('#!/usr/bin/env python3\nimport os, signal, time\n'
                             'from pathlib import Path\n'
+                            + ('os.setsid()\n' if detach else '') +
                             'signal.signal(signal.SIGTERM, signal.SIG_IGN)\n'
                             f'Path({str(pid_file)!r}).write_text(str(os.getpid()))\n'
                             'time.sleep(30)\n')

@@ -604,3 +604,12 @@ The budget job records each run's phase and credits, total triage/fix credits,
 paid-run counts and the share of triage events reaching a paid Opus run. Deterministic
 skips use zero model credits. The combined envelopes are 2500 credits ($25) per day;
 triage and fix do not each receive a separate allowance.
+
+### Standalone tooling in affected producer builds
+
+The affected producer keeps solution members in its managed solution filter. The
+Lambda deployment driver and MCP manifest generator are explicit standalone
+projects: when selected, each restores and builds by its own project path before
+managed outputs are published. Restore and build failures remain gating, with
+the same warnings, analyzers and graph-build settings as the solution build.
+Unknown projects outside the solution still fail planning; test selection is unchanged.

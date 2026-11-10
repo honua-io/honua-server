@@ -37,6 +37,46 @@ class ManagedBuildTests(unittest.TestCase):
             f'Project("{{TYPE}}") = "Test", "{literal}", "{{ID}}"\nEndProject'
             for literal in self.literal.values()))
 
+    def create_standalone(self):
+        projects = sorted(managed.STANDALONE_PROJECTS)
+        for project in projects:
+            path = self.root / project
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('<Project />')
+        return projects
+
+    def test_affected_tooling_is_built_separately_without_losing_solution_members(self):
+        tools = self.create_standalone()
+        projects = self.root / 'projects.json'
+        projects.write_text(json.dumps([self.a]))
+        base = self.root / 'affected.slnf'
+        base.write_text(json.dumps({'solution': {'projects': [self.b, *tools]}}))
+        output, standalone = self.root / 'build.slnf', self.root / 'standalone.json'
+        self.invoke('filter', '--projects-file', str(projects), '--base-filter', str(base),
+                    '--output', str(output), '--standalone-output', str(standalone))
+        self.assertEqual(sorted(self.literal.values()), json.loads(output.read_text())['solution']['projects'])
+        self.assertEqual(tools, json.loads(standalone.read_text()))
+        with patch.object(managed.subprocess, 'run') as run:
+            self.invoke('standalone', '--projects-file', str(standalone))
+        self.assertEqual(4, run.call_count)
+        for index, project in enumerate(tools):
+            restore, build = run.call_args_list[index * 2:index * 2 + 2]
+            self.assertIn(project, restore.args[0])
+            self.assertIn(project, build.args[0])
+            self.assertIn('--no-restore', build.args[0])
+            self.assertIn('-p:TreatWarningsAsErrors=true', build.args[0])
+            self.assertTrue(build.kwargs['check'])
+
+    def test_standalone_failure_propagates_and_unknown_projects_fail_closed(self):
+        tools = self.create_standalone()
+        with patch.object(managed.subprocess, 'run', side_effect=subprocess.CalledProcessError(1, 'build')):
+            with self.assertRaises(subprocess.CalledProcessError):
+                managed.build_standalone(self.root, tools)
+        with self.assertRaises(ValueError):
+            managed.build_standalone(self.root, [self.a])
+        with self.assertRaises(ValueError):
+            managed.write_filter(self.root, [*tools, self.a], self.root / 'invalid.slnf')
+
     def invoke(self, *args):
         with patch.object(sys, 'argv', [str(SCRIPT), *args, '--root', str(self.root)]), contextlib.redirect_stdout(io.StringIO()):
             managed.main()

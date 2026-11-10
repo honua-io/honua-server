@@ -18,6 +18,10 @@ ROOT = Path(__file__).resolve().parents[2]
 SERVER = 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
 ARCHITECTURE = 'tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj'
 SOURCE = 'tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj'
+STANDALONE_PROJECTS = {
+    'scripts/cloud/lambda-deploy-driver/LambdaDeployDriver.csproj',
+    'scripts/conformance/mcp/manifest-gen/Honua.Mcp.ManifestGen.csproj',
+}
 PROPERTIES = ['-p:TreatWarningsAsErrors=true', '-p:RunAnalyzers=true', '-p:UseSharedCompilation=false']
 
 
@@ -72,6 +76,31 @@ def write_filter(root, projects, target):
         raise ValueError(f'Projects missing from Honua.sln: {sorted(unknown)}')
     target.write_text(json.dumps({'solution': {'path': str(root / 'Honua.sln'),
                                              'projects': [members[p] for p in sorted(normalized)]}}, indent=2) + '\n')
+
+
+def standalone_projects(root, projects):
+    selected = sorted(set(projects) & STANDALONE_PROJECTS)
+    if any(not (root / project).is_file() for project in selected):
+        raise ValueError('Selected standalone project is missing')
+    return selected
+
+
+def write_build_plan(root, projects, outputs):
+    standalone = standalone_projects(root, projects)
+    write_filter(root, [p for p in projects if p not in standalone], outputs.output)
+    outputs.standalone_output.write_text(json.dumps(standalone) + '\n')
+
+
+def build_standalone(root, projects):
+    if not isinstance(projects, list) or any(not isinstance(p, str) for p in projects):
+        raise ValueError('Standalone selection must be a JSON array of project paths')
+    if set(projects) - STANDALONE_PROJECTS:
+        raise ValueError('Unknown standalone project')
+    for project in standalone_projects(root, projects):
+        subprocess.run(['bash', str(root / 'scripts/ci/dotnet-restore-retry.sh'), project,
+                        '-p:Configuration=Release', *PROPERTIES], cwd=root, check=True)
+        subprocess.run(['dotnet', 'build', project, '--no-restore', '-c', 'Release',
+                        '-graphBuild', *PROPERTIES], cwd=root, check=True)
 
 
 def package_dependencies_ready(root, project):
@@ -165,7 +194,7 @@ def matrix_projects(path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=['inventory', 'projects', 'filter', 'fallback'])
+    parser.add_argument('operation', choices=['inventory', 'projects', 'filter', 'fallback', 'standalone'])
     parser.add_argument('--root', type=Path, default=ROOT)
     parser.add_argument('--lane', choices=['pr', 'pr-shards', 'ci', 'foundation', 'shard'], default='pr')
     parser.add_argument('--family', choices=['core', 'server', 'protocols', 'providers'])
@@ -175,10 +204,16 @@ def main():
     parser.add_argument('--projects-file', type=Path)
     parser.add_argument('--restored-file', type=Path)
     parser.add_argument('--base-filter', type=Path)
+    parser.add_argument('--standalone-output', type=Path)
     parser.add_argument('--output', type=Path)
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()
     root = args.root.resolve()
+    if args.operation == 'standalone':
+        if not args.projects_file:
+            parser.error('--projects-file required')
+        build_standalone(root, json.loads(args.projects_file.read_text()))
+        return
     if args.operation == 'inventory':
         result = inventory(root)
     elif args.operation == 'projects':
@@ -214,7 +249,10 @@ def main():
             if args.base_filter:
                 base = json.loads(args.base_filter.read_text())['solution']['projects']
                 projects.extend(p.replace('\\', '/') for p in base)
-            write_filter(root, projects, args.output)
+            if args.standalone_output:
+                write_build_plan(root, projects, args)
+            else:
+                write_filter(root, projects, args.output)
             return
     text = json.dumps(result, indent=2) + '\n'
     if args.output:

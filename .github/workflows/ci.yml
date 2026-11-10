@@ -764,11 +764,13 @@ jobs:
           python3 scripts/ci/managed-test-build.py projects --lane ci \
             --matrix-file "${RUNNER_TEMP}/managed-matrix.json" --output "${RUNNER_TEMP}/managed-projects.json"
           target=Honua.sln
+          echo '[]' > "${RUNNER_TEMP}/standalone-projects.json"
           if [[ "${AFFECTED_MODE}" == affected ]]; then
             python3 -c 'import json,os; json.dump({"solution":{"path":"Honua.sln","projects":os.environ["AFFECTED_PROJECTS"].split()}},open(os.environ["RUNNER_TEMP"]+"/affected-base.slnf","w"))'
             target="${RUNNER_TEMP}/managed-build.slnf"
             python3 scripts/ci/managed-test-build.py filter --projects-file "${RUNNER_TEMP}/managed-projects.json" \
-              --base-filter "${RUNNER_TEMP}/affected-base.slnf" --output "${target}"
+              --base-filter "${RUNNER_TEMP}/affected-base.slnf" --output "${target}" \
+              --standalone-output "${RUNNER_TEMP}/standalone-projects.json"
           fi
           echo "target=${target}" >> "$GITHUB_OUTPUT"
 
@@ -781,6 +783,11 @@ jobs:
         env:
           BUILD_TARGET: ${{ steps.managed-plan.outputs.target }}
         run: dotnet build "${BUILD_TARGET}" --no-restore --configuration Release -graphBuild -p:TreatWarningsAsErrors=true -p:RunAnalyzers=true -p:UseSharedCompilation=false
+
+      - name: Build selected standalone tooling projects
+        run: >-
+          python3 scripts/ci/managed-test-build.py standalone
+          --projects-file "${RUNNER_TEMP}/standalone-projects.json"
 
       - name: Build selected protocol profiles
         run: python3 scripts/ci/build-selected-protocol-profiles.py --selection "${RUNNER_TEMP}/protocol-profiles.json"

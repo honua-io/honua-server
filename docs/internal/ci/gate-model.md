@@ -596,3 +596,12 @@ Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
 minutes, including setup allowance. These initialize dispatch ranks; actual
 child minutes and measured ranks require the next completed full trunk run.
+
+### Standalone tooling in affected producer builds
+
+The affected producer keeps solution members in its managed solution filter. The
+Lambda deployment driver and MCP manifest generator are explicit standalone
+projects: when selected, each restores and builds by its own project path before
+managed outputs are published. Restore and build failures remain gating, with
+the same warnings, analyzers and graph-build settings as the solution build.
+Unknown projects outside the solution still fail planning; test selection is unchanged.

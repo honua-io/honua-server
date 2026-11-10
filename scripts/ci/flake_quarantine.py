@@ -34,7 +34,6 @@ def active_entries(entries, now=None):
     now = now or datetime.now(timezone.utc)
     active, seen = [], set()
     for entry in entries:
-        validate_identity(entry)
         identity = entry['project'], entry['test']
         if identity in seen or type(entry.get('issue')) is not int or entry['issue'] < 1:
             raise ValueError('Duplicate quarantine or invalid issue reference')
@@ -43,6 +42,7 @@ def active_entries(entries, now=None):
         if start > now or end <= start or end - start > MAX_AGE:
             raise ValueError('Quarantine lifetime must be positive and at most fourteen days')
         if end > now:
+            validate_identity(entry)
             active.append(entry)
     if len(active) > MAX_QUARANTINED:
         raise ValueError('Quarantine exceeds the twenty-five test cap')

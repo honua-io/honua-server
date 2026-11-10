@@ -12,17 +12,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 from flake_quarantine import exclude_filter, load_snapshot, merge_retry, read_cases
-
-
-def descendant_pids(parent):
-    listing = subprocess.check_output(['ps', '-e', '-o', 'pid=,ppid='], text=True)
-    pairs = [tuple(map(int, line.split())) for line in listing.splitlines()]
-    descendants = {parent}
-    while True:
-        expanded = descendants | {pid for pid, ppid in pairs if ppid in descendants}
-        if expanded == descendants:
-            return descendants
-        descendants = expanded
+from shard_processes import descendant_pids
 
 
 def call_test(command):

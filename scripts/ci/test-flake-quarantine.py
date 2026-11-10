@@ -59,6 +59,12 @@ class PolicyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             q.active_entries([entry(i) for i in range(26)], NOW)
 
+    def test_expired_retired_project_does_not_block_current_snapshot(self):
+        retired = {**entry(), 'project': 'tests/Retired.Tests.csproj'}
+        self.assertEqual([], q.active_entries([retired], NOW + timedelta(days=14)))
+        with self.assertRaises(ValueError):
+            q.active_entries([retired], NOW)
+
     def test_invalid_duplicate_or_extended_entries_are_rejected(self):
         bad_values = [dict(test='A|FullyQualifiedName~B'), dict(project='../evil.csproj'),
                       dict(expires_at=(NOW + timedelta(days=15)).isoformat()), dict(issue=0),
