@@ -11,12 +11,20 @@ inputs:
       analysis to the pull-request diff and fails safely back to full.
     required: false
     default: 'full'
+  format:
+    description: >
+      Whether to run the format verification. Defaults to true; a caller that
+      runs format and the analyzer build as parallel jobs passes 'false' to the
+      analyzer job.
+    required: false
+    default: 'true'
   analyzer-build:
     description: >
       Whether to run the analyzer build. Defaults to true; only a caller whose
       own build already ran analyzers as errors passes 'false'. The build scope
       follows format-scope: 'affected' compiles the diff's reverse-dependency
-      closure and falls back to the full solution exactly like the lean gate.
+      closure, skips the build when the diff reaches no project, and falls back
+      to the full solution exactly like the lean gate.
     required: false
     default: 'true'
   analyzer-build-timeout-minutes:
@@ -29,6 +37,7 @@ runs:
   steps:
     - name: Compute gate format scope
       id: format-scope
+      if: inputs.format == 'true'
       shell: bash
       env:
         FORMAT_SCOPE: ${{ inputs.format-scope }}
@@ -36,6 +45,7 @@ runs:
       run: scripts/ci/compute-lean-gate-format-scope.sh
 
     - name: Format Check
+      if: inputs.format == 'true'
       shell: bash
       env:
         GATE_FORMAT_MODE: ${{ steps.format-scope.outputs.mode }}
@@ -61,12 +71,13 @@ runs:
       shell: bash
       env:
         BUILD_SCOPE: ${{ inputs.format-scope }}
+        GATE_TEST_GROUP: analyzers
         GITHUB_EVENT_NAME: ${{ github.event_name }}
         GATE_FILTER_PATH: ${{ runner.temp }}/analyzer-build.slnf
       run: scripts/ci/compute-lean-gate-build-scope.sh
 
     - name: Restore analyzer build scope
-      if: inputs.analyzer-build == 'true'
+      if: inputs.analyzer-build == 'true' && steps.analyzer-build-scope.outputs.mode != 'none'
       shell: bash
       env:
         GATE_BUILD_MODE: ${{ steps.analyzer-build-scope.outputs.mode }}
@@ -81,7 +92,7 @@ runs:
 
     # Composite-action steps do not support `timeout-minutes`.
     - name: Build with analyzers (warnings as errors)
-      if: inputs.analyzer-build == 'true'
+      if: inputs.analyzer-build == 'true' && steps.analyzer-build-scope.outputs.mode != 'none'
       shell: bash
       env:
         GATE_BUILD_MODE: ${{ steps.analyzer-build-scope.outputs.mode }}
