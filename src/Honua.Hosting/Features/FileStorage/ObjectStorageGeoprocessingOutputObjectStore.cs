@@ -62,13 +62,14 @@ internal sealed class ObjectStorageGeoprocessingOutputObjectStore : IGeoprocessi
         // output is spooled to a private temporary file while its checksum is computed.
         await using var spool = CreateSpool();
         var checksum = await SpoolAsync(content, spool, cancellationToken).ConfigureAwait(false);
+        var sizeBytes = spool.Length;
         var upload = await _storage.UploadIfMatchAsync(
             new FileUploadRequest
             {
                 Content = spool,
                 FileName = Path.GetFileName(objectKey),
                 ContentType = mediaType,
-                SizeBytes = spool.Length,
+                SizeBytes = sizeBytes,
                 ObjectKeyOverride = objectKey,
                 EnableChunkedUpload = false
             },
@@ -84,7 +85,7 @@ internal sealed class ObjectStorageGeoprocessingOutputObjectStore : IGeoprocessi
 
         return new RasterContentIdentity
         {
-            SizeBytes = spool.Length,
+            SizeBytes = sizeBytes,
             MediaType = mediaType,
             Checksum = new RasterChecksum("sha256", checksum),
         };
