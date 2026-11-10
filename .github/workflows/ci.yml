@@ -36,18 +36,12 @@ on:
         default: ''
 
 concurrency:
-  # PR runs key on the PR number (re-push cancels the prior run). Trunk runs
-  # serialize without cancellation so at least one trailing matrix always
-  # reaches a terminal result for the fleet lander's red/green brake. merge_group
-  # and other non-PR events key on github.ref. For merge_group, github.ref is
-  # the unique per-batch queue ref (refs/heads/gh-readonly-queue/trunk/pr-...),
-  # so each batch gets its OWN concurrency group: a reformed group runs under a
-  # NEW ref and is NOT cancelled-in-progress by the prior batch (and cannot be
-  # cancelled BY it). This is deliberate — the historical zombie-run spiral came
-  # from re-running the full matrix per batch, not from this key; with the lean
-  # gate the per-batch group is cheap, so leave cancel-in-progress on (it still
-  # collapses duplicate checks_requested events for the SAME batch ref).
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  # Trunk runs serialize without cancellation so at least one trailing matrix
+  # always reaches a terminal result for the fleet lander's red/green brake.
+  # Selective runs (selective_base set, from trunk-affected.yml or the lander)
+  # queue in their own group, so a burst of merges can only replace a pending
+  # selective run, never a pending scheduled full run.
+  group: ci-${{ github.event.pull_request.number || github.ref }}${{ inputs.selective_base && '-affected' || '' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/trunk' }}
 
 env:
@@ -355,6 +349,12 @@ jobs:
             echo "range=origin/trunk...${{ github.sha }}" >> "$GITHUB_OUTPUT"
             echo "trailing_selective=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Record suspect merge range
+        if: steps.diff.outputs.trailing_selective == 'true'
+        env:
+          SELECTIVE_BASE: ${{ inputs.selective_base }}
+        run: scripts/ci/trunk-suspect-range.sh "${SELECTIVE_BASE}" "${GITHUB_SHA}" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Check for non-test changes
         id: filter

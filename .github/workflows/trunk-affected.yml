@@ -1,0 +1,101 @@
+name: Trunk affected run
+
+# Stage 3 of the gate model: every trunk push starts a selective CI run that
+# verifies the merges since the last green CI run. Runs queue rather than
+# cancel; each run diffs from the last green head, so the newest queued run
+# covers any merge whose own run was superseded.
+
+on:
+  push:
+    branches: [trunk]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: trunk-affected
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Dispatch selective CI
+    if: github.repository == 'honua-io/honua-server'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: trunk
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: Resolve the last green trunk head
+        id: base
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUSHED_HEAD: ${{ github.event_name == 'push' && github.sha || '' }}
+        run: |
+          set -euo pipefail
+          trunk_tip="$(git rev-parse HEAD)"
+          if [ -n "${PUSHED_HEAD}" ] && [ "${trunk_tip}" != "${PUSHED_HEAD}" ]; then
+            echo "Trunk moved to ${trunk_tip}; the run for that push covers ${PUSHED_HEAD}."
+            echo "superseded=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "superseded=false" >> "$GITHUB_OUTPUT"
+
+          green_heads="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?branch=trunk&status=success&per_page=50" \
+            --jq '.workflow_runs[].head_sha' </dev/null)"
+
+          last_green=""
+          shortest_distance=""
+          while read -r candidate; do
+            [[ "${candidate}" =~ ^[0-9a-f]{40}$ ]] || continue
+            git merge-base --is-ancestor "${candidate}" "${trunk_tip}" 2>/dev/null || continue
+            distance="$(git rev-list --count "${candidate}..${trunk_tip}")"
+            if [ -z "${shortest_distance}" ] || [ "${distance}" -lt "${shortest_distance}" ]; then
+              shortest_distance="${distance}"
+              last_green="${candidate}"
+            fi
+          done <<<"${green_heads}"
+
+          echo "head=${trunk_tip}" >> "$GITHUB_OUTPUT"
+          echo "last_green=${last_green}" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch CI over the unverified merges
+        if: steps.base.outputs.superseded == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.base.outputs.head }}
+          LAST_GREEN: ${{ steps.base.outputs.last_green }}
+        run: |
+          set -euo pipefail
+          if [ "${LAST_GREEN}" = "${HEAD_SHA}" ]; then
+            echo "Trunk head ${HEAD_SHA} already has a green CI run; nothing to verify." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ -n "${LAST_GREEN}" ]; then
+            run_title="affected ${LAST_GREEN:0:12}..${HEAD_SHA:0:12}"
+            scripts/ci/trunk-suspect-range.sh "${LAST_GREEN}" "${HEAD_SHA}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            run_title="affected full (no green trunk run found)"
+            echo "No green CI run on trunk is an ancestor of ${HEAD_SHA}; dispatching the full matrix." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+          run_url="$(gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/dispatches" \
+            -f ref=trunk \
+            -F return_run_details=true \
+            -f "inputs[selective_base]=${LAST_GREEN}" \
+            -f "inputs[merge_train_nonce]=${run_title}" \
+            --jq '.html_url // empty' </dev/null)"
+
+          {
+            echo
+            echo "Dispatched \`CI ${run_title}\`: ${run_url:-see the CI workflow runs on trunk}"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
