@@ -9,7 +9,11 @@ public sealed record CapabilityKeyDefinition(
     string Category,
     HonuaEdition Edition,
     string Description,
-    string? Status = null);
+    string? Status = null)
+{
+    // A capability cannot work without the keys it requires, so none of them may sit in a higher edition.
+    public IReadOnlyList<string> Requires { get; init; } = [];
+}
 
 public static class CapabilityKeyCatalog
 {
@@ -123,7 +127,10 @@ public static class CapabilityKeyCatalog
 
         // Jobs
         new("jobs.durable-runtime", "Durable Job Runtime", Categories.Jobs,
-            HonuaEdition.Community, "The durable job substrate behind imports, tile operations, geoprocessing and workflow orchestration. Advertised as jobs.runner on the honua.capability_manifest.v1 wire and named by typed dependency-unavailable refusals, so a client receiving one can resolve the id. The runtime itself is Community; durable persistence across restarts and nodes requires Redis, which caching.redis gates."),
+            HonuaEdition.Community, "The durable job substrate behind imports, tile operations, geoprocessing and workflow orchestration. Advertised as jobs.runner on the honua.capability_manifest.v1 wire and named by typed dependency-unavailable refusals, so a client receiving one can resolve the id. The runtime itself is Community; durable persistence across restarts and nodes requires Redis, which caching.redis gates.")
+        {
+            Requires = [FeatureCatalog.RedisCacheKey],
+        },
 
         // Discovery
         new("discovery.capability-manifest", "Capability Manifest", Categories.Discovery,
@@ -133,7 +140,10 @@ public static class CapabilityKeyCatalog
         new("admin.control-plane", "Admin Control Plane", Categories.ControlPlane,
             HonuaEdition.Community, "General administrative CRUD surfaces (connections, metadata, services, users, roles, configuration) with no dedicated entitlement of their own. Isolation between administrative scopes remains mandatory."),
         new("operations.proposals", "Governed Operation Proposals", Categories.ControlPlane,
-            HonuaEdition.Community, "The governed operation proposal and approval control plane behind approval-gated honua_admin_* tools, /api/v1/admin/proposals and Studio drafts. Advertised as operations.proposals on the honua.capability_manifest.v1 wire. The control plane itself is Community; proposals persist in the Redis-backed durable store, so a host without Redis (or without the caching.redis entitlement) advertises the governed tools but refuses proposal-requiring calls with a typed capability-unavailable receipt."),
+            HonuaEdition.Community, "The governed operation proposal and approval control plane behind approval-gated honua_admin_* tools, /api/v1/admin/proposals and Studio drafts. Advertised as operations.proposals on the honua.capability_manifest.v1 wire. The control plane itself is Community; proposals persist in the Redis-backed durable store, so a host without Redis (or without the caching.redis entitlement) advertises the governed tools but refuses proposal-requiring calls with a typed capability-unavailable receipt.")
+        {
+            Requires = [FeatureCatalog.RedisCacheKey],
+        },
 
         // Ops
         new("ops.health", "Health Checks", Categories.Ops,
@@ -158,10 +168,6 @@ public static class CapabilityKeyCatalog
         // Demo
         new("demo.showcase", "Demo Showcase Surfaces", Categories.Demo,
             HonuaEdition.Community, "Non-sellable demo/showcase endpoints used for product demonstrations."),
-
-        // Enrichment
-        new("enrichment.datasets", "Data Enrichment Datasets", Categories.Enrichment,
-            HonuaEdition.Community, "Register and manage third-party data-enrichment dataset sources."),
 
         // Field ops
         new("fieldops.forms", "Field Collection Forms", FeatureCatalog.Categories.FieldOps,
@@ -205,6 +211,16 @@ public static class CapabilityKeyCatalog
             HonuaEdition.Community, "Read-only retrieval of executable spec artifacts by content hash. Applying a spec plan remains Pro-gated (ai.spec-apply)."),
     ];
 
+    // A key here has no entitlement of its own: every route it names is gated by the entitlements it requires.
+    public static IReadOnlyList<CapabilityKeyDefinition> RoutedDependentKeys { get; } =
+    [
+        new("enrichment.datasets", "Data Enrichment Datasets", Categories.Enrichment,
+            HonuaEdition.Pro, "Register, discover and run enrichment against third-party data-enrichment dataset sources. Every enrichment route is gated by the analytics.spatial-join entitlement.")
+        {
+            Requires = ["analytics.spatial-join"],
+        },
+    ];
+
     public static IReadOnlyList<CapabilityKeyDefinition> DescriptiveKeys { get; } =
     [
         new("provider.redshift", "Amazon Redshift Provider", Categories.DataProviders,
@@ -220,6 +236,7 @@ public static class CapabilityKeyCatalog
         .. CommunityKeys,
         .. RoutedExperimentalKeys,
         .. RoutedPreviewKeys,
+        .. RoutedDependentKeys,
         .. DescriptiveKeys,
         .. FeatureCatalog.All
             .Where(static feature => !RoutedPreviewKeys.Any(
@@ -230,7 +247,10 @@ public static class CapabilityKeyCatalog
             feature.Category,
             feature.MinimumEdition,
             feature.Description,
-            Status: IsCustomerAlerting(feature) ? PreviewStatus : null)),
+            Status: IsCustomerAlerting(feature) ? PreviewStatus : null)
+            {
+                Requires = feature.Requires,
+            }),
     ];
 
     private static bool IsCustomerAlerting(FeatureDefinition feature)
