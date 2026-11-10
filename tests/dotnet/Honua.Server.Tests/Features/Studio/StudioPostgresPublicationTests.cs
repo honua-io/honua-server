@@ -8,12 +8,15 @@ using FluentAssertions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
+using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
+using Honua.Db.Postgres.Features.Studio;
 using Honua.Server.Features.Operations;
 using Honua.Server.Features.Studio.Models;
 using Honua.Server.Tests.Features.Admin;
@@ -37,8 +40,8 @@ public sealed class StudioPostgresPublicationTests : IAsyncLifetime
 
     public StudioPostgresPublicationTests()
     {
-        _fixture = HumanApprovalHttpClient.Configure(new WebAppFixture(), _identityProvider)
-            .ConfigureWebHost(builder =>
+        var fixture = HumanApprovalHttpClient.Configure(new WebAppFixture(), _identityProvider);
+        _fixture = fixture.ConfigureWebHost(builder =>
             {
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
@@ -53,13 +56,21 @@ public sealed class StudioPostgresPublicationTests : IAsyncLifetime
             })
             .ConfigureServices(services =>
             {
+                var schema = fixture.CurrentSchema ?? throw new InvalidOperationException("Missing fixture schema.");
+                services.RemoveAll<IStudioPackageStore>();
+                services.AddScoped<IStudioPackageStore>(provider => new PostgresStudioPackageStore(
+                    provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), schema));
                 services.RemoveAll<IOperationEnvelopeFactory>();
                 services.AddSingleton<IOperationEnvelopeFactory>(provider =>
                     new ScopedOperationEnvelopeFactory(provider.GetRequiredService<IServiceScopeFactory>(), useVolatileAudit: false));
             });
     }
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        await StudioPostgresSchema.ApplyAsync(_fixture);
+    }
 
     public async Task DisposeAsync()
     {
