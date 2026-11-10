@@ -6,7 +6,7 @@ using Honua.Infrastructure.Security;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Server.Features.Security.State;
+namespace Honua.Server.Features.Infrastructure.SecurityState;
 
 internal sealed class PostgresTokenReplayStore(NpgsqlDataSource dataSource, JobStoreDatabase database)
     : ITokenReplayStore, IExpiredRowSweep

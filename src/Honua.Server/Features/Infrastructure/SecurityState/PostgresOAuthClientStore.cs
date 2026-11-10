@@ -9,7 +9,7 @@ using Honua.Infrastructure.Authentication;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Server.Features.Security.State;
+namespace Honua.Server.Features.Infrastructure.SecurityState;
 
 internal sealed class PostgresOAuthClientStore(JobStoreDatabase database, TimeProvider? timeProvider = null) : IOAuthClientStore
 {

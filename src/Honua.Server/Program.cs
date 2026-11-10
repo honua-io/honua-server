@@ -979,7 +979,7 @@ builder.Services.AddSingleton<Honua.ControlPlane.IExpiredRowSweep>(sp =>
 builder.Services.RemoveAll<Honua.Infrastructure.Authentication.IOAuthClientStore>();
 builder.Services.AddSingleton<Honua.Infrastructure.Authentication.IOAuthClientStore>(sp =>
     credentialRegistryIsShared && sp.GetService<Npgsql.NpgsqlDataSource>() is not null
-        ? new Honua.Server.Features.Security.State.PostgresOAuthClientStore(
+        ? new Honua.Server.Features.Infrastructure.SecurityState.PostgresOAuthClientStore(
             sp.GetRequiredService<Honua.ControlPlane.JobStoreDatabase>(), sp.GetService<TimeProvider>())
         : new Honua.Infrastructure.Authentication.InMemoryOAuthClientStore(sp.GetService<TimeProvider>()));
 // A Lambda sandbox freezes between invocations, so a host that starts stopping there stays a

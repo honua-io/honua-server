@@ -9,7 +9,7 @@ using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Infrastructure.Security;
 using Honua.Server.Features.Operations;
-using Honua.Server.Features.Security.State;
+using Honua.Server.Features.Infrastructure.SecurityState;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 

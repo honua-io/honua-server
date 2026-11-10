@@ -7,7 +7,7 @@ using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Server.Features.Operations;
-using Honua.Server.Features.Security.State;
+using Honua.Server.Features.Infrastructure.SecurityState;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Microsoft.AspNetCore.DataProtection;
