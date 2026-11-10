@@ -494,7 +494,8 @@ public sealed class WebAppFixture : IAsyncLifetime
             await Postgres.DropSchemaAsync(_currentSchema);
         }
 
-        Client.Dispose();
+        // Null when initialization failed: disposing must not hide that failure.
+        Client?.Dispose();
         if (_factory is not null)
         {
             await _factory.DisposeAsync();
