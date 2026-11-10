@@ -187,7 +187,9 @@ public sealed class FeatureCatalogDriftTests
         experimentalRoutes.Should().Contain(route => route.StartsWith("/api/v1/admin/security/client-certificates", StringComparison.OrdinalIgnoreCase));
         // /api/v1/admin/services/{serviceId}/replicas* is not part of the FeatureServer sync
         // route family; the gated FeatureServer routes are covered by the preview set below.
-        // /api/v1/streaming/features* remains Preview, so it is intentionally absent here.
+        // The feature-stream routes are opt-in Experimental under the 2026-11-09 founder ruling.
+        experimentalRoutes.Should().Contain(route => route.StartsWith("/api/v1/streaming/features", StringComparison.OrdinalIgnoreCase));
+        experimentalRoutes.Should().Contain(route => route.StartsWith("/api/v1/admin/streaming/features", StringComparison.OrdinalIgnoreCase));
         // Branch versioning (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
 
         var previewRoutes = catalog.Entries
@@ -195,8 +197,6 @@ public sealed class FeatureCatalogDriftTests
             .Select(entry => entry.Route)
             .ToArray();
         previewRoutes.Should().Contain(route => route.StartsWith("/api/v1/admin/alerts", StringComparison.OrdinalIgnoreCase));
-        previewRoutes.Should().Contain(route => route.StartsWith("/api/v1/streaming/features", StringComparison.OrdinalIgnoreCase));
-        previewRoutes.Should().Contain(route => route.StartsWith("/api/v1/admin/streaming/features", StringComparison.OrdinalIgnoreCase));
         previewRoutes.Should().Contain(route => route.StartsWith("/sta/v1.1", StringComparison.OrdinalIgnoreCase));
         experimentalRoutes.Should().Contain(route => route.Contains("/VersionManagementServer", StringComparison.OrdinalIgnoreCase));
     }

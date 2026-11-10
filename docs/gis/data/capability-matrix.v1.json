@@ -30,11 +30,10 @@
       "edition": "Community",
       "status": null,
       "entryCount": 401,
-      "provingTestCount": 1638,
+      "provingTestCount": 1642,
       "maturity": {
         "implemented": 398,
-        "preview": 2,
-        "experimental": 1
+        "experimental": 3
       },
       "noSurface": null,
       "cite": [],
@@ -672,11 +671,11 @@
       "displayName": "Map Collaboration Sessions",
       "category": "Collaboration",
       "edition": "Community",
-      "status": null,
+      "status": "experimental",
       "entryCount": 9,
       "provingTestCount": 67,
       "maturity": {
-        "implemented": 9
+        "experimental": 9
       },
       "noSurface": null,
       "cite": [],
@@ -2622,12 +2621,11 @@
       "displayName": "Real-Time Feature Streams",
       "category": "Streaming",
       "edition": "Pro",
-      "status": null,
+      "status": "experimental",
       "entryCount": 5,
       "provingTestCount": 127,
       "maturity": {
-        "implemented": 3,
-        "preview": 2
+        "experimental": 5
       },
       "noSurface": null,
       "cite": [],

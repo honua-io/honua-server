@@ -257,7 +257,7 @@ public sealed partial class CapabilityManifestEndpointTests : IAsyncLifetime
             foreach (var (id, lifecycle) in new[]
                      {
                          ("admin.multi-tenancy", "internal"),
-                         ("realtime.feature-streams", "preview"),
+                         ("realtime.feature-streams", "experimental"),
                          ("serve.sensorthings", "preview"),
                      })
             {

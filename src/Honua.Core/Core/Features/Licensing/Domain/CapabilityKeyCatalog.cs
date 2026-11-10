@@ -163,7 +163,7 @@ public static class CapabilityKeyCatalog
 
         // Collaboration
         new("collaboration.map-sessions", "Map Collaboration Sessions", Categories.Collaboration,
-            HonuaEdition.Community, "Collaborative saved-map session operations (comments, activity, shared editing coordination)."),
+            HonuaEdition.Community, "Collaborative saved-map session operations (comments, activity, shared editing coordination).", Status: ExperimentalStatus),
 
         // Demo
         new("demo.showcase", "Demo Showcase Surfaces", Categories.Demo,
@@ -247,15 +247,20 @@ public static class CapabilityKeyCatalog
             feature.Category,
             feature.MinimumEdition,
             feature.Description,
-            Status: IsCustomerAlerting(feature) ? PreviewStatus : null)
+            Status: StatusOf(feature))
             {
                 Requires = feature.Requires,
             }),
     ];
 
-    private static bool IsCustomerAlerting(FeatureDefinition feature)
-        => string.Equals(feature.Category, FeatureCatalog.Categories.Alerts, StringComparison.Ordinal)
-            || string.Equals(feature.Category, FeatureCatalog.Categories.Channels, StringComparison.Ordinal);
+    // Founder ruling (2026-11-09): realtime streams work on a single node, and delivery across several nodes needs an optional Redis add-on.
+    private static string? StatusOf(FeatureDefinition feature)
+        => feature.Category switch
+        {
+            FeatureCatalog.Categories.Streaming => ExperimentalStatus,
+            FeatureCatalog.Categories.Alerts or FeatureCatalog.Categories.Channels => PreviewStatus,
+            _ => null,
+        };
 
     // Descriptive keys are excluded from deployment profiles because enabling one would make every request miss while still deriving a paid edition.
     public static IReadOnlyList<CapabilityKeyDefinition> DeployableKeys { get; } =

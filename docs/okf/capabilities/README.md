@@ -56,7 +56,7 @@ each page. Some entitlement keys are deliberately not published here at all.
 | [Slack Delivery](channels.slack.md) | Channels | Enterprise | **preview** |
 | [Microsoft Teams Delivery](channels.teams.md) | Channels | Enterprise | **preview** |
 | [Webhook Delivery](channels.webhook.md) | Channels | Pro | **preview** |
-| [Map Collaboration Sessions](collaboration.map-sessions.md) | Collaboration | Community | ga |
+| [Map Collaboration Sessions](collaboration.map-sessions.md) | Collaboration | Community | **experimental** |
 | [Demo Showcase Surfaces](demo.showcase.md) | Demo | Community | ga |
 | [Capability Manifest](discovery.capability-manifest.md) | Discovery | Community | ga |
 | [Backup Automation](dr.backup-automation.md) | DisasterRecovery | Enterprise | ga |
@@ -134,7 +134,7 @@ each page. Some entitlement keys are deliberately not published here at all.
 | [High-DPI Static Maps](staticmap.high-dpi.md) | StaticMap | Pro | ga |
 | [Large Static Maps](staticmap.large-dimensions.md) | StaticMap | Pro | ga |
 | [Rich Static Map Overlays](staticmap.rich-overlays.md) | StaticMap | Pro | ga |
-| [Real-Time Feature Streams](streaming.feature-subscriptions.md) | Streaming | Pro | ga |
+| [Real-Time Feature Streams](streaming.feature-subscriptions.md) | Streaming | Pro | **experimental** |
 | [Auto-Cartographic Styling](styling.auto-suggest.md) | Styling | Pro | ga |
 | [Smart Style Defaults](styling.defaults.md) | Styling | Community | ga |
 | [OGC API Styles](styling.ogc-api-styles.md) | Styling | Community | ga |

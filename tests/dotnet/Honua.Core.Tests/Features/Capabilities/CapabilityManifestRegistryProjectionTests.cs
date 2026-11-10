@@ -124,7 +124,8 @@ public sealed class CapabilityManifestRegistryProjectionTests
         // temporal.* promoted to Implemented (GA) in #2429 — no longer omitted.
         // sync.offline is Preview in 2026.1 and remains in the manifest projection when the
         // deployment-wide Preview gate is enabled.
-        // realtime.feature-streams promoted to Implemented (GA) in #2428 — no longer omitted.
+        // Founder ruling (2026-11-09): realtime feature streams are Experimental.
+        "realtime.feature-streams",
         // alerts.geofence is Preview in 2026.1 and is projected through PreviewCapabilityIds.
         // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
         "versioning.branch",
@@ -140,7 +141,6 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "admin.multi-tenancy",
         "sync.offline",
         "alerts.geofence",
-        "realtime.feature-streams",
         "serve.sensorthings",
         // serve.geoservices-imageserver is GA in 2026.1 (2026-10-24 operator ruling), so it is
         // absent here and Registry_InReleaseManifestDescriptors_StayImplemented asserts it.

@@ -615,7 +615,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.DisconnectSession_UnknownId_Returns404"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "preview",
+      "maturity": "experimental",
       "capability": "admin.control-plane"
     },
     {
@@ -745,7 +745,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamConformanceEndpointsTests.CleanupRun_DeletesEveryOwnedRecordAndRestoresTheBaselineDigest"
       ],
       "proof_ledger_surface": "feature-event-streaming",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "streaming.feature-subscriptions"
     },
     {
@@ -4761,7 +4761,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.ListSessions_WithFilter_ReturnsSessionFilterInfo"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "preview",
+      "maturity": "experimental",
       "capability": "admin.control-plane"
     },
     {
@@ -6090,7 +6090,7 @@
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Replay_MultiReplicaWithProcessLocalLog_FailsClosedOnHttpAndStream"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "collaboration.map-sessions"
     },
     {
@@ -6113,7 +6113,7 @@
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationSessionStreamEndpointTests.Stream_WithoutAuthorization_RejectsUpgrade"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "collaboration.map-sessions"
     },
     {
@@ -6226,7 +6226,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.WebSocket_SnapshotThenDeltaMode_EmitsOneBatchedBaselineThenTheMutation"
       ],
       "proof_ledger_surface": "feature-event-streaming",
-      "maturity": "preview",
+      "maturity": "experimental",
       "capability": "streaming.feature-subscriptions"
     },
     {
@@ -6253,7 +6253,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Capabilities_AdvertisesSnapshotModeSequenceAndDeploymentRevision"
       ],
       "proof_ledger_surface": "feature-event-streaming",
-      "maturity": "preview",
+      "maturity": "experimental",
       "capability": "streaming.feature-subscriptions"
     },
     {
@@ -19937,7 +19937,7 @@
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.EditAndCheckpoint_SingleInstanceWithRedisConfigured_RemainAvailable"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "collaboration.map-sessions"
     },
     {
@@ -19953,7 +19953,7 @@
         "Honua.Server.Tests.Features.Collaboration.FeatureLocks.FeatureLockEndpointsTests.Claim_WithoutFeatureLockAuthorization_ReturnsForbidden"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "collaboration.map-sessions"
     },
     {
@@ -19967,7 +19967,7 @@
         "Honua.Server.Tests.Features.Collaboration.FeatureLocks.FeatureLockEndpointsTests.RenewAndRelease_WithSameHolder_ReturnSuccess"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "collaboration.map-sessions"
     },
     {
@@ -19981,7 +19981,7 @@
         "Honua.Server.Tests.Features.Collaboration.FeatureLocks.FeatureLockEndpointsTests.RenewAndRelease_WithSameHolder_ReturnSuccess"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "collaboration.map-sessions"
     },
     {
@@ -20018,7 +20018,7 @@
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Stream_WindowAdvancesAfterPreliminaryReplay_StillAnnouncesResync"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "collaboration.map-sessions"
     },
     {
@@ -20038,7 +20038,7 @@
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationSessionEndpointsTests.Join_WithoutSavedMapCapability_ReturnsUnauthorized"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "collaboration.map-sessions"
     },
     {
@@ -20052,7 +20052,7 @@
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationSessionEndpointsTests.Leave_JoinedSession_RemovesPresence"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "collaboration.map-sessions"
     },
     {
@@ -20072,7 +20072,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamConformanceEndpointsTests.LeaseRun_WithoutAConformanceCredential_Returns401"
       ],
       "proof_ledger_surface": "feature-event-streaming",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "streaming.feature-subscriptions"
     },
     {
@@ -20090,7 +20090,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamConformanceEndpointsTests.Mutate_WithoutTheRunToken_Returns404"
       ],
       "proof_ledger_surface": "feature-event-streaming",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "streaming.feature-subscriptions"
     },
     {
