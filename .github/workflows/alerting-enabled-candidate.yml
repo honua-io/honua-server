@@ -29,8 +29,8 @@ permissions:
   packages: read
 
 concurrency:
-  group: alerting-enabled-candidate-${{ github.event.pull_request.head.sha || inputs.candidate_source_sha }}
-  cancel-in-progress: false
+  group: alerting-enabled-candidate-${{ github.event.pull_request.number || inputs.candidate_source_sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   receipt-contract:

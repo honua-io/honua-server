@@ -39,6 +39,24 @@ repository, and every entry in `/code-scanning/analyses` carries
 GitHub **Code Quality**, a different product that publishes no security
 analysis.
 
+## Draft PR admission and superseded work
+
+CodeQL, Compose Release Lifecycle, GeoArrow/GeoParquet interop, OGC API
+building-block conformance, and serving/GDAL image verification defer heavy jobs
+until the PR is ready. They subscribe to `ready_for_review` and ready-head
+`synchronize` events; conversion back to draft cancels the active run. PR Gate,
+its affected-shard verdict, clean code and repository hygiene continue on drafts.
+PR Gate also runs on `ready_for_review`, waking the trusted Claude observer after
+its exact-head verification completes.
+
+PR workflows cancel superseded admission per PR. Trusted observers resolve the
+current PR before expensive jobs: prebuild producers/parity legs cancel by PR
+and matrix identity. Claude cancels resolver admission per PR and serializes
+duplicate exact-head reviews; unrelated comments cannot interrupt paid work. Review-attestation publication
+remains serialized so cancellation cannot interrupt its status/dispatch update.
+New validation concurrency uses a unique run ID outside PR events, keeping manual
+qualification independent of trunk pushes. Existing release cancellation policy is retained.
+
 ## Required PR lane
 
 | Workflow file | Name | Triggers | Notes |
@@ -128,6 +146,7 @@ The scoped `GP Alias Contract` check runs the real GeoServices alias tests and O
 |---|---|---|---|
 | `compose-release-lifecycle.yml` | Compose Release Lifecycle | `pull_request` (base `trunk`, relevant executor, control-plane, and test paths) | Builds the Native AOT candidate and exercises the published rc.1 to approved MCP convergence and verified PostGIS restore journey, including negative controls. |
 | `close-external-prs.yml` | Close external pull requests | `pull_request_target` (`opened`, `reopened`) | Closes pull requests whose author association is not `OWNER`, `MEMBER` or `COLLABORATOR` (bots exempt) with a comment pointing to issues and `SECURITY.md`; this repository does not accept external contributions. Never checks out PR code; `pull-requests: write` only. Durable complement to the six-month repository interaction limits set 2026-10-23. |
+| `ci-doctor.lock.yml` | CI doctor | `workflow_run` [CI, PR Gate, Clean code, Repository hygiene] on failure, same-repository branches | Compiled from `ci-doctor.md` by `gh aw compile`; edit the Markdown source and recompile. An agentic workflow (Claude engine) reads the failing log and, through gh-aw safe outputs, pushes one minimal fix to the pull request branch, or opens a draft fix or revert pull request for trunk; otherwise labels `ci-stuck`. One attempt per head SHA; never edits `.github/`. Needs `ANTHROPIC_API_KEY`; pushes with the release GitHub App so fixes re-run CI. |
 | `clean-code.yml` | Clean code | `pull_request` (`opened`, `synchronize`, `reopened`, `edited`) | Calls the shared honua-io/.github clean-code check, pinned by SHA: the Clean Code rules judged only on what the PR makes worse (comment, size, function, parameter and duplication ratchets), each finding titled with its smell code. `edited` re-runs it when a `quality-exception:` line is added to the PR body. Read-only `contents` permission. |
 | `gp-installed-authoring.yml` | GP Installed Authoring | path-filtered `pull_request`, `workflow_dispatch` | Packs the candidate devkit, then exercises Python and .NET authoring on Linux, Windows and macOS using only the installed package (no source checkout). Requires positive and negative goldens, four direct tests per language, exact-version payload restoration and missing-image-evidence release refusal. Uploads a three-OS host-debug handoff for honua-release#615. Does not publish packages or qualify a worker image. |
 | `gp-alias-contract.yml` | GP Alias Contract | `pull_request` (base `trunk`, relevant contract/test/judgment paths) | Runs the GeoServices alias contract and the OGC API process-list HTTP regression in their actual protocol assemblies. Uses the existing .NET setup and pinned PostGIS service conventions; requires all selected cases to execute and pass. |

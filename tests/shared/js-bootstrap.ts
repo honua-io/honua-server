@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
@@ -20,6 +20,7 @@ export interface BootstrapContext {
 
 /** Options that vary between the Vitest and Playwright lanes. */
 export interface BootstrapOptions {
+  readinessTimeoutMs?: number;
   /** Default port to use when `HONUA_TEST_PORT` is not set. */
   defaultPort: string;
   /** Label included in error messages, e.g. "JS tests" or "browser tests". */
@@ -54,15 +55,24 @@ async function isHealthy(baseUrl: string): Promise<boolean> {
   }
 }
 
-async function waitForHealthy(baseUrl: string, timeoutMs = 60000): Promise<void> {
+async function waitForHealthy(baseUrl: string, ownsListener: () => boolean, timeoutMs: number): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    if (await isHealthy(baseUrl)) {
+    if (ownsListener() && await isHealthy(baseUrl) && ownsListener()) {
       return;
     }
     await new Promise(resolve => setTimeout(resolve, 500));
   }
   throw new Error(`Honua server did not become healthy within ${timeoutMs}ms (${baseUrl}).`);
+}
+
+async function stopBootstrap(child: ReturnType<typeof spawn>): Promise<void> {
+  if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
+  await new Promise<void>(resolve => {
+    const timer = setTimeout(() => child.kill('SIGKILL'), 30000);
+    child.once('exit', () => { clearTimeout(timer); resolve(); });
+    child.kill('SIGTERM');
+  });
 }
 
 async function readBootstrapLine(
@@ -143,15 +153,18 @@ export async function bootstrapHonuaServer(
 
   process.env.HONUA_SERVICE_ID ??= 'test_service_gw0';
   process.env.HONUA_LAYER_ID ??= '1000';
-  process.env.HONUA_TEST_PORT ??= defaultPort;
-
-  const baseUrl = process.env.HONUA_BASE_URL ?? `http://localhost:${process.env.HONUA_TEST_PORT}`;
-  if (await isHealthy(baseUrl)) {
-    process.env.HONUA_BASE_URL = baseUrl;
+  const baseUrl = process.env.HONUA_BASE_URL;
+  if (baseUrl) {
+    if (!(await isHealthy(baseUrl))) throw new Error(`Explicit Honua server is not healthy for ${label}.`);
     return { teardown: async () => {} };
   }
 
   const python = (await fileExists(venvPython)) ? venvPython : 'python3';
+  const ownershipScript = resolve(projectRoot, 'scripts', 'ci', 'owned-server.py');
+  const selected = spawnSync(python, [ownershipScript, 'port', '--variable', 'HONUA_TEST_PORT',
+    '--ci-default', defaultPort], { encoding: 'utf8', timeout: 5000 });
+  if (selected.status !== 0) throw new Error('Cannot select the bootstrap listener port.');
+  process.env.HONUA_TEST_PORT = selected.stdout.trim();
   const stderrBuffer: string[] = [];
 
   const child = spawn(python, [pythonScript], {
@@ -163,29 +176,24 @@ export async function bootstrapHonuaServer(
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
-  let info: { base_url: string; service_id: string; layer_id: number };
   try {
     const line = await readBootstrapLine(child, stderrBuffer);
-    info = JSON.parse(line);
+    const info: { base_url: string; service_id: string; layer_id: number } = JSON.parse(line);
+    const ownsListener = () => {
+      if (child.exitCode !== null || child.signalCode !== null) throw new Error('Bootstrap process exited.');
+      const proof = spawnSync(python, [ownershipScript, 'check', '--pid', String(child.pid),
+        '--url', info.base_url], { encoding: 'utf8', timeout: 5000 });
+      if (proof.status !== 0 && proof.status !== 1) throw new Error('Cannot verify bootstrap listener ownership.');
+      return proof.status === 0;
+    };
+    await waitForHealthy(info.base_url, ownsListener, options.readinessTimeoutMs ?? 60000);
+    process.env.HONUA_BASE_URL = info.base_url;
+    process.env.HONUA_SERVICE_ID = info.service_id;
+    process.env.HONUA_LAYER_ID = String(info.layer_id);
+    return { teardown: () => stopBootstrap(child) };
   } catch (error) {
     const stderr = stderrBuffer.join('');
-    child.kill('SIGTERM');
+    await stopBootstrap(child);
     throw new Error(`Failed to bootstrap Honua server for ${label}: ${error}${stderr ? `\n${stderr}` : ''}`);
   }
-
-  process.env.HONUA_BASE_URL = info.base_url;
-  process.env.HONUA_SERVICE_ID = info.service_id;
-  process.env.HONUA_LAYER_ID = String(info.layer_id);
-
-  await waitForHealthy(info.base_url);
-
-  return {
-    teardown: async () => {
-      child.kill('SIGTERM');
-      await new Promise(resolve => {
-        child.once('exit', () => resolve(null));
-        setTimeout(resolve, 5000);
-      });
-    },
-  };
 }

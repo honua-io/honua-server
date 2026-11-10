@@ -2,6 +2,54 @@
   "version": 1,
   "entries": [
     {
+      "path": "src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/MetadataV2FieldSemantics.cs",
+      "rule": "graph-resource",
+      "line": "    internal static bool HasSupportedReferences(MetadataV2Resource dataset)",
+      "reason": "Uses the existing canonical graph contract before the scheduled vocabulary migration; the shared-graph rename must land after this robustness batch."
+    },
+    {
+      "path": "src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/MetadataV2FieldSemantics.cs",
+      "rule": "graph-resource",
+      "line": "        MetadataV2Resource dataset, string? fieldName, Func<MetadataV2FieldType, bool> supportsType)",
+      "reason": "Uses the existing canonical graph contract before the scheduled vocabulary migration; the shared-graph rename must land after this robustness batch."
+    },
+    {
+      "path": "src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/MetadataV2GraphSnapshotExtensions.cs",
+      "rule": "graph-resource",
+      "line": "           IsKnownEnumValue(resource.Type, MetadataV2ResourceType.Unknown) && IsServingStatus(resource.Status) &&",
+      "reason": "Uses the existing canonical graph contract before the scheduled vocabulary migration; the shared-graph rename must land after this robustness batch."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Domain/V2/MetadataV2RoutingRobustnessTests.cs",
+      "rule": "dataset-reference",
+      "line": "            ResourceId = \"future-dataset\",",
+      "reason": "Uses the existing canonical graph contract before the scheduled vocabulary migration; the shared-graph rename must land after this robustness batch."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Services/FileMetadataV2GraphProviderTests.cs",
+      "rule": "graph-resource",
+      "line": "            Spatial = new MetadataV2ResourceSpatial { PrimaryGeometryField = \"shape\" },",
+      "reason": "Uses the existing canonical graph contract before the scheduled vocabulary migration; the shared-graph rename must land after this robustness batch."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Services/FileMetadataV2GraphProviderTests.cs",
+      "rule": "graph-resource",
+      "line": "            Temporal = new MetadataV2ResourceTemporal { StartTimeField = \"start\", EndTimeField = \"end\" },",
+      "reason": "Uses the existing canonical graph contract before the scheduled vocabulary migration; the shared-graph rename must land after this robustness batch."
+    },
+    {
+      "path": "tests/python/unit/test_postgis_metadata_snapshot.py",
+      "rule": "layer-type",
+      "line": "                           if publication[\"publicationType\"] == \"stac-collection\")",
+      "reason": "Seed regression reads the current Metadata v2 wire key literally to verify the storage mapping and STAC declaration. Preserve that contract until the deferred vocabulary migration replaces it; no alternate key is introduced."
+    },
+    {
+      "path": "tests/python/unit/test_postgis_metadata_snapshot.py",
+      "rule": "dataset-reference",
+      "line": "        assert publication[\"resourceId\"] == resource[\"metadata\"][\"id\"]",
+      "reason": "Seed regression reads the current Metadata v2 wire key literally to verify the storage mapping and STAC declaration. Preserve that contract until the deferred vocabulary migration replaces it; no alternate key is introduced."
+    },
+    {
       "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/CatalogCapabilitiesMetadataTests.cs",
       "rule": "graph-resource",
       "line": "        _fixture.UpdateV2ResourceMetadata(1, spatial: new MetadataV2ResourceSpatial",

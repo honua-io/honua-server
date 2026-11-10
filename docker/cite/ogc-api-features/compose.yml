@@ -73,7 +73,7 @@ services:
   cite-engine:
     image: ogccite/ets-ogcapi-features10:1.9-teamengine-6.0.0-RC2
     ports:
-      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:8081:8080"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_CITE_FEATURES_TEAMENGINE_PORT:-8081}:8080"
     environment:
       - JAVA_OPTS=-Xmx2g -DTE_BASE=/root/te_base
       - TEAMENGINE_BASE_URL=http://cite-engine:8080/teamengine
