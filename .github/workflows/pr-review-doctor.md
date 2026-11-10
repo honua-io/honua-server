@@ -15,6 +15,8 @@ checkout:
   fetch-depth: 0
 
 steps:
+  - name: Preserve doctor commit messages through excluded-file filtering
+    run: python3 scripts/ci/preserve-doctor-commit-message.py "${RUNNER_TEMP}/gh-aw/actions/generate_git_patch.cjs" "${RUNNER_TEMP}/gh-aw/safeoutputs/generate_git_patch.cjs"
   - name: Collect review threads from trusted reviewers
     env:
       GH_TOKEN: ${{ github.token }}
