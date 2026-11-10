@@ -2,7 +2,7 @@
   "version": 1,
   "entries": [
     {
-      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/CatalogCapabilitiesMetadataTests.cs",
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/CatalogCapabilitiesMetadataTests.cs",
       "rule": "graph-resource",
       "line": "        _fixture.UpdateV2ResourceMetadata(1, spatial: new MetadataV2ResourceSpatial",
       "reason": "Existing canonical spatial metadata contract; vocabulary migration is deferred to rc.3."
