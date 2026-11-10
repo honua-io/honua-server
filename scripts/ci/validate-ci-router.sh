@@ -260,6 +260,21 @@ else
   echo "⚠️  Skipping Python helper/timeout/YAML checks (no working Python 3: tried python3/python/py)"
 fi
 
+# A shard split for capacity is replaced by numbered children ("<name> 1".."<name> N") that
+# keep every routing path, so route assertions may name the split parent: it expands to
+# all of its children.
+expand_split_shards() {
+  jq -ec '
+    [.shards[].name] as $names
+    | [$requested[] as $requested_name
+       | if ($names | index($requested_name)) then [$requested_name]
+         else [$names[] | select(startswith($requested_name + " ")
+                                 and (ltrimstr($requested_name + " ") | test("^[0-9]+$")))]
+         end
+       | if length == 0 then error("unknown shard: \($requested_name)") else .[] end]
+  ' --argjson requested "$1" .github/ci-shards.json
+}
+
 assert_descriptor() {
   local name="$1"
   local changed_files="$2"
@@ -278,8 +293,8 @@ assert_descriptor() {
     <<< "${descriptor}" >/dev/null
 
   if [[ -n "${expected_shard}" ]]; then
-    jq -e --arg expected_shard "${expected_shard}" \
-      '.shards | index($expected_shard)' \
+    jq -e --argjson expected "$(expand_split_shards "$(jq -cn --arg s "${expected_shard}" '[$s]')")" \
+      '. as $descriptor | all($expected[]; . as $shard | $descriptor.shards | index($shard))' \
       <<< "${descriptor}" >/dev/null
   fi
 }
@@ -300,8 +315,12 @@ assert_excludes_shard() {
   # Must be a targeted (non-run_all) descriptor.
   jq -e '.run_all == false and .reason == "targeted"' <<< "${descriptor}" >/dev/null
 
-  # The excluded shard must NOT be present.
-  if jq -e --arg s "${excluded_shard}" '.shards | index($s)' <<< "${descriptor}" >/dev/null; then
+  # The excluded shard (every child, when it was split) must NOT be present.
+  local excluded
+  excluded="$(expand_split_shards "$(jq -cn --arg s "${excluded_shard}" '[$s]')")"
+  if jq -e --argjson excluded "${excluded}" \
+      '. as $descriptor | any($excluded[]; . as $shard | $descriptor.shards | index($shard))' \
+      <<< "${descriptor}" >/dev/null; then
     echo "::error::${name}: expected shard '${excluded_shard}' to be EXCLUDED but it was selected" >&2
     exit 1
   fi
@@ -319,7 +338,7 @@ assert_exact_shards() {
   descriptor="$(printf '%s\n' "${changed_files}" | scripts/ci/honua-server-targeted-tests.sh --stdin)"
   echo "${name}: ${descriptor}"
 
-  jq -e --argjson expected "${expected_shards_json}" '
+  jq -e --argjson expected "$(expand_split_shards "${expected_shards_json}")" '
     .run_all == false
     and .reason == "targeted"
     and ((.shards | sort) == ($expected | sort))
@@ -1672,11 +1691,11 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests" \
     "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" \
-    "WFS" \
+    "WFS 9" \
   --assert-owner \
     "Honua.Protocols.Ogc.Classic.Wps20.Wps20ConformanceEchoTests" \
     "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" \
-    "WFS" \
+    "WFS 8" \
   `# #3204: the ImageServer shard now holds ONLY ImageServerEndpointsTests (a single` \
   `# 24.1m class); Catalog, Tiles and the smaller ImageServer classes moved to` \
   `# GeoServices Catalog and ImageServer Support.` \
@@ -1790,7 +1809,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Features.Streaming.FeatureStreamAdmissionTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Streaming Endpoints" \
+    "Server Features Streaming Endpoints 3" \
   --assert-owner \
     "Honua.Server.Tests.StreamingFeatureServerEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1910,15 +1929,15 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Features.Admin.TileCacheEvictionServiceTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Admin Integrations and Automation" \
+    "Server Features Admin Integrations and Automation 4" \
   --assert-owner \
     "Honua.Server.Tests.Features.Admin.ConfigurationSecretRedactorTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Admin Integrations and Automation" \
+    "Server Features Admin Integrations and Automation 4" \
   --assert-owner \
     "Honua.Server.Tests.Features.Admin.ExternalServiceDiscoveryServiceTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Admin Integrations and Automation" \
+    "Server Features Admin Integrations and Automation 4" \
   --assert-owner \
     "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1926,7 +1945,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Features.Admin.AgenticOpsLoopDeadLetterE2eTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Admin Integrations and Automation" \
+    "Server Features Admin Integrations and Automation 2" \
   --assert-owner \
     "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
