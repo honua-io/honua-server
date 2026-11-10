@@ -61,10 +61,10 @@ public sealed class DurableJobSubstrateNotAttestedException : Exception
 public static class DurableJobSubstrateRemediation
 {
     public const string NonDurableConsequence =
-        "The governed control plane and the durable job runner stay enabled (operations.proposals "
-        + "and jobs.runner are advertised); durability is an operator property of the Redis "
-        + "deployment, and the capability manifest publishes this outcome as "
-        + "limits.job.redisDurability.";
+        "Governed proposals stay enabled (operations.proposals is advertised); "
+        + "durability is an operator property of the Redis deployment, and the capability "
+        + "manifest publishes this outcome as limits.job.redisDurability. Jobs are stored in "
+        + "the system database and do not depend on it.";
 
     public static string For(DurableJobSubstrateCause cause)
         => cause switch

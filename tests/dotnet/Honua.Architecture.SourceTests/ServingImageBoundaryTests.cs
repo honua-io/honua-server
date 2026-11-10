@@ -541,7 +541,7 @@ public sealed class ServingImageBoundaryTests
 
         workflow.Should().Contain("file: docker/worker-gdal/Dockerfile");
         workflow.Should().Contain("--worker-image honua-worker-gdal:boundary");
-        workflow.Should().Contain("--worker-redis 127.0.0.1:6379");
+        workflow.Should().Contain("--worker-database \"Host=127.0.0.1;Database=postgres;Username=postgres;Password=worker-smoke\"");
         workflow.Should().Contain("uses: ./.github/actions/setup-dotnet-ci");
         workflow.Should().Contain("--filter FullyQualifiedName~ProductionWorkerContainerHandoffTests");
         workflow.Should().Contain("--filter 'Category=NativePublicApi'");

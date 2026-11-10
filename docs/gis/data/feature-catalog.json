@@ -11693,7 +11693,7 @@
         "Honua.Server.Tests.Features.Geoprocessing.GpJobWorkerCompositionRootTests.SubmitJob_WithProductionWiredWorker_DrainsQueueToTerminalSuccess",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerClientCompatibilityTests.TypedClient_SubmitsPollsAndReadsNamedResult",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDefaultServiceTests.DefaultGpService_DrivesRealExecutorToEsriFeatureSetResult",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SubmitJob_WithRedisBackedRuntime_CompletesAndReturnsDurableResult",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SubmitJob_WithPostgresJobSubstrateAndNoRedis_CompletesAndReturnsDurableResult",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SubmitJob_WorkspaceProviderUnavailable_FailsDurablyAfterOneAttempt",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.JobStatus_SucceededJobWithResultPackage_ReturnsNamedResultReferences",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.JobStatus_WithInvalidJobId_Returns404",
@@ -11734,7 +11734,7 @@
         "Honua.Server.Tests.Features.Geoprocessing.GpJobWorkerCompositionRootTests.SubmitJob_WithProductionWiredWorker_DrainsQueueToTerminalSuccess",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerClientCompatibilityTests.TypedClient_SubmitsPollsAndReadsNamedResult",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDefaultServiceTests.DefaultGpService_DrivesRealExecutorToEsriFeatureSetResult",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SubmitJob_WithRedisBackedRuntime_CompletesAndReturnsDurableResult",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SubmitJob_WithPostgresJobSubstrateAndNoRedis_CompletesAndReturnsDurableResult",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.Workspace_ProductionStorePreservesOutputAcrossRestartAndHonorsOverwrite",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.JobResult_WithEnvOutSR_ReprojectsAsyncGeometryOutput",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.JobResult_WithEnvOutSR_TableRetainsWorkingSpatialReference",
@@ -12777,13 +12777,13 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests.MapServer_ExportTiles_WithCompactStorageFormat_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests.MapServer_ExportTiles_WithStorageFormatTpk_WritesExplodedTilePackage",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests.MapServer_ExportTiles_WritesZipArchiveToCloudStorage",
-        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.ArtifactExpiry_AfterSuccess_ProducesStableNotFound",
-        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.Cancel_FromDifferentReplica_QueuedJob_IsCancelledAndDequeued",
-        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.Execution_EmitsJobTransitionMetricsCarryingJobIdentifiers",
-        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.Retry_WithFreshKey_ReusesCompletedPackageCheckpoint",
-        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.Submit_OnOneReplica_StatusAndResult_ConvergeOnAnother",
-        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.Submit_SameKeyOnDifferentReplica_ReturnsCompletedResult",
-        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.WorkerLoss_LeaseExpiry_Recovers_WithoutDuplicateTerminalArtifact"
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryTests.ArtifactExpiry_AfterSuccess_ProducesStableNotFound",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryTests.Cancel_FromDifferentReplica_QueuedJob_IsCancelledAndDequeued",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryTests.Execution_EmitsJobTransitionMetricsCarryingJobIdentifiers",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryTests.Retry_WithFreshKey_ReusesCompletedPackageCheckpoint",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryTests.Submit_OnOneReplica_StatusAndResult_ConvergeOnAnother",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryTests.Submit_SameKeyOnDifferentReplica_ReturnsCompletedResult",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryTests.WorkerLoss_LeaseExpiry_Recovers_WithoutDuplicateTerminalArtifact"
       ],
       "proof_ledger_surface": "map-server",
       "maturity": "implemented",
@@ -12898,11 +12898,11 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SubmitStatusCancelResult",
-        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.ArtifactExpiry_AfterSuccess_ProducesStableNotFound",
-        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.Execution_EmitsJobTransitionMetricsCarryingJobIdentifiers",
-        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.Retry_WithFreshKey_ReusesCompletedPackageCheckpoint",
-        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.Submit_OnOneReplica_StatusAndResult_ConvergeOnAnother",
-        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.WorkerLoss_LeaseExpiry_Recovers_WithoutDuplicateTerminalArtifact"
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryTests.ArtifactExpiry_AfterSuccess_ProducesStableNotFound",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryTests.Execution_EmitsJobTransitionMetricsCarryingJobIdentifiers",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryTests.Retry_WithFreshKey_ReusesCompletedPackageCheckpoint",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryTests.Submit_OnOneReplica_StatusAndResult_ConvergeOnAnother",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryTests.WorkerLoss_LeaseExpiry_Recovers_WithoutDuplicateTerminalArtifact"
       ],
       "proof_ledger_surface": "map-server",
       "maturity": "implemented",
@@ -12917,10 +12917,10 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SubmitStatusCancelResult",
-        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.ArtifactExpiry_AfterSuccess_ProducesStableNotFound",
-        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.GetResult_ObsoletePublicationWatermarkOnDifferentReplica_RequiresResubmission",
-        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.Submit_OnOneReplica_StatusAndResult_ConvergeOnAnother",
-        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.Submit_SameKeyOnDifferentReplica_ReturnsCompletedResult"
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryTests.ArtifactExpiry_AfterSuccess_ProducesStableNotFound",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryTests.GetResult_ObsoletePublicationWatermarkOnDifferentReplica_RequiresResubmission",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryTests.Submit_OnOneReplica_StatusAndResult_ConvergeOnAnother",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryTests.Submit_SameKeyOnDifferentReplica_ReturnsCompletedResult"
       ],
       "proof_ledger_surface": "map-server",
       "maturity": "implemented",
@@ -23075,7 +23075,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerClientCompatibilityTests.TypedClient_UnsupportedEnvironmentControlsReturnEsriError",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDefaultServiceTests.DefaultGpService_DrivesRealExecutorToEsriFeatureSetResult",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDegradedJobStoreTests.SubmitJob_WithoutDurableJobStore_ReturnsCapabilityUnavailableReceiptInDetails",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SubmitJob_WithRedisBackedRuntime_CompletesAndReturnsDurableResult",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SubmitJob_WithPostgresJobSubstrateAndNoRedis_CompletesAndReturnsDurableResult",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SubmitJob_WorkspaceProviderUnavailable_FailsDurablyAfterOneAttempt",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.Workspace_ProductionStorePreservesOutputAcrossRestartAndHonorsOverwrite",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ProcessingSpatialReference_IsRejectedBeforeExecutionOrSubmission",
@@ -23669,7 +23669,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SubmitStatusCancelResult",
-        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.Cancel_FromDifferentReplica_QueuedJob_IsCancelledAndDequeued"
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryTests.Cancel_FromDifferentReplica_QueuedJob_IsCancelledAndDequeued"
       ],
       "proof_ledger_surface": "map-server",
       "maturity": "implemented",

@@ -16,7 +16,7 @@ namespace Honua.TestKit;
 /// Uses Testcontainers to manage container lifecycle.
 /// Supports schema-based test isolation for parallel execution.
 /// </summary>
-public sealed class PostgresFixture : IAsyncLifetime
+public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
 {
     // The state object is process-wide and every mutation is serialized by _sharedLock.
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
@@ -428,6 +428,9 @@ public sealed class PostgresFixture : IAsyncLifetime
     /// <param name="sql">The DDL to apply.</param>
     /// <param name="schemaName">Optional schema to set on <c>search_path</c> before applying the DDL.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    Task IIsolatedSchemaFixture.ExecuteDdlUnderLockAsync(string sql, string? schemaName)
+        => ExecuteDdlUnderLockAsync(sql, schemaName, CancellationToken.None);
+
     public Task ExecuteDdlUnderLockAsync(string sql, string? schemaName = null, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sql);

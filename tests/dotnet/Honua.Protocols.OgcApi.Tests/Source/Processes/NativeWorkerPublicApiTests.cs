@@ -8,28 +8,23 @@ using System.Text;
 using System.Text.Json;
 using DotNet.Testcontainers.Builders;
 using FluentAssertions;
-using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
-using Honua.Geoprocessing;
-using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using NativeWorker::Honua.Worker.Gdal;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using StackExchange.Redis;
-using Testcontainers.Redis;
+using Npgsql;
 using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 
 /// <summary>Public HTTP execution over the durable runtime and production native executor (#4401).</summary>
 [Protocol(TestProtocols.OgcApiProcesses)]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 public sealed class NativeWorkerPublicApiTests(ITestOutputHelper output)
 {
+    private const string DockerHostAlias = "host.docker.internal";
+
     [RequiredEnvironmentFact("HONUA_WORKER_IMAGE")]
     [Trait("Category", "NativePublicApi")]
     [Trait("Tier", "Integration")]
@@ -39,19 +34,7 @@ public sealed class NativeWorkerPublicApiTests(ITestOutputHelper output)
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task VectorConvert_SubmitPollDecode_PreservesPropertiesAndThreeDimensionalCoordinates()
     {
-        await using var network = new NetworkBuilder().Build();
-        await network.CreateAsync();
-        await using var redis = new RedisBuilder("redis:7.2-alpine")
-            .WithNetwork(network)
-            .WithNetworkAliases("native-api-redis")
-            .WithCommand("redis-server", "--appendonly", "yes", "--appendfsync", "always", "--save", "", "--maxmemory-policy", "noeviction")
-            .Build();
-        await redis.StartAsync();
-        var redisConnection = redis.GetConnectionString();
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["ConnectionStrings:redis"] = redisConnection
-        }).Build();
+        var configuration = new ConfigurationBuilder().Build();
         // The assembly alias makes both native families accessible to this web test project.
         // Execution below goes through the image's entrypoint and native dispatcher, not these leaves.
         var workerServices = new ServiceCollection();
@@ -62,20 +45,20 @@ public sealed class NativeWorkerPublicApiTests(ITestOutputHelper output)
         registration.GetServices<IProcessExecutor>().Should().Contain(e => e.ProcessIds.Contains("pcloud.translate"));
 
         var image = Environment.GetEnvironmentVariable("HONUA_WORKER_IMAGE")!;
+        var fixture = NoRedisJobHost.Create();
+        await NoRedisJobHost.StartAsync(fixture);
         await using var nativeWorker = new ContainerBuilder()
             .WithImage(image)
-            .WithNetwork(network)
-            .WithEnvironment("ConnectionStrings__redis", "native-api-redis:6379")
+            .WithExtraHost(DockerHostAlias, "host-gateway")
+            .WithEnvironment(
+                "ConnectionStrings__DefaultConnection",
+                ConnectionStringReachableFromContainer(fixture.Postgres.ConnectionString))
             .Build();
-        await nativeWorker.StartAsync();
-        output.WriteLine($"Production worker image: {image}");
-
-        var fixture = new WebAppFixture()
-            .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, config) => config.AddConfiguration(configuration)))
-            .ConfigureServices(services => WireDurableRuntime(services, redisConnection));
-        await fixture.InitializeAsync();
         try
         {
+            await nativeWorker.StartAsync();
+            output.WriteLine($"Production worker image: {image}");
+
             using var client = fixture.CreateAdminClient();
             // Independent CSV input and explicitly specified GeoJSON oracle: a passthrough,
             // dropped Z, swapped axes, missing row, or changed attribute cannot satisfy this.
@@ -106,10 +89,16 @@ public sealed class NativeWorkerPublicApiTests(ITestOutputHelper output)
         }
         finally
         {
-            var logs = await nativeWorker.GetLogsAsync();
-            output.WriteLine(logs.Stdout);
-            output.WriteLine(logs.Stderr);
-            await fixture.DisposeAsync();
+            try
+            {
+                var logs = await nativeWorker.GetLogsAsync();
+                output.WriteLine(logs.Stdout);
+                output.WriteLine(logs.Stderr);
+            }
+            finally
+            {
+                await fixture.DisposeAsync();
+            }
         }
     }
 
@@ -122,42 +111,16 @@ public sealed class NativeWorkerPublicApiTests(ITestOutputHelper output)
         geometry.GetProperty("coordinates").EnumerateArray().Select(c => c.GetDouble()).Should().Equal(coordinates);
     }
 
-    private static void WireDurableRuntime(IServiceCollection services, string redisConnection)
+    // The test database is published on the Docker host, which a container reaches through the host gateway.
+    private static string ConnectionStringReachableFromContainer(string hostConnectionString)
     {
-        services.RemoveAll<IConnectionMultiplexer>();
-        services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnection));
+        var builder = new NpgsqlConnectionStringBuilder(hostConnectionString);
+        if (builder.Host is "localhost" or "127.0.0.1" or "::1")
+        {
+            builder.Host = DockerHostAlias;
+        }
 
-        services.RemoveAll<IExecutionJobStore>();
-        services.AddSingleton<IExecutionJobStore>(sp =>
-            new RedisExecutionJobStore(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<ILogger<RedisExecutionJobStore>>()));
-
-        services.RemoveAll<IGeoprocessingResultPackageStore>();
-        services.AddSingleton<IGeoprocessingResultPackageStore>(sp =>
-            new RedisGeoprocessingResultPackageStore(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>(),
-                sp.GetRequiredService<ILogger<RedisGeoprocessingResultPackageStore>>()));
-
-        services.RemoveAll<RedisJobQueue>();
-        services.RemoveAll<IJobQueue>();
-        services.RemoveAll<IQueueClaimReconciler>();
-        services.AddSingleton<RedisJobQueue>(sp =>
-            new RedisJobQueue(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<IExecutionJobStore>(),
-                sp.GetRequiredService<ILogger<RedisJobQueue>>()));
-        services.AddSingleton<IJobQueue>(sp => sp.GetRequiredService<RedisJobQueue>());
-        services.AddSingleton<IQueueClaimReconciler>(sp => sp.GetRequiredService<RedisJobQueue>());
-
-        services.RemoveAll<IExecutionLogStore>();
-        services.AddSingleton<IExecutionLogStore>(sp =>
-            new RedisExecutionLogStore(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<ILogger<RedisExecutionLogStore>>()));
-
-        services.AddJobWorker();
+        return builder.ConnectionString;
     }
 
     private static async Task<JsonDocument> PollUntilTerminalAsync(HttpClient client, string jobId)

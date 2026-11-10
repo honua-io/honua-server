@@ -8,21 +8,16 @@ using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
-using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Geoprocessing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.Worker.Gdal.Execution;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
-using StackExchange.Redis;
 using Xunit;
 using Xunit.Sdk;
 using TestProtocols = Honua.TestKit.Constants.ProtocolNames;
@@ -31,12 +26,13 @@ namespace Honua.Worker.Gdal.Tests;
 
 /// <summary>
 /// The three execution cases relocated from OgcProcessesEndpointsTests for #4400.
-/// Every case requires Redis, the production job loop and production executors.
+/// Every case requires the production job substrate, job loop and executors.
 /// RasterExecutionProof includes these public API proofs in the required PR Gate.
 /// </summary>
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Trait("Category", "RasterExecutionProof")]
 [Protocol(TestProtocols.OgcApiProcesses)]
-public sealed class OgcProcessesExecutionProofTests(RedisFixture redis) : IClassFixture<RedisFixture>
+public sealed class OgcProcessesExecutionProofTests
 {
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
@@ -48,7 +44,7 @@ public sealed class OgcProcessesExecutionProofTests(RedisFixture redis) : IClass
         var scratch = Path.Join(AppContext.BaseDirectory, "api-proof", Guid.NewGuid().ToString("N"));
         var runner = GdalProofRuntime.CreateRunner();
         await using var fixture = BuildFixture(runner, scratch);
-        await fixture.InitializeAsync();
+        await StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();
@@ -104,7 +100,7 @@ public sealed class OgcProcessesExecutionProofTests(RedisFixture redis) : IClass
     private async Task ProveBuffer(bool selectValue)
     {
         await using var fixture = BuildFixture();
-        await fixture.InitializeAsync();
+        await StartAsync(fixture);
         using var client = fixture.CreateAdminClient();
         // A non-origin center detects dropped or swapped coordinates. The planar
         // buffer radius is 25.5 input-CRS units; the oracle uses circle geometry,
@@ -174,32 +170,14 @@ public sealed class OgcProcessesExecutionProofTests(RedisFixture redis) : IClass
         }
     }
 
-    private WebAppFixture BuildFixture(IGdalCommandRunner? runner = null, string? scratch = null)
+    // The empty Redis address outranks one in the process environment, so the host composes the
+    // production job store, queue and worker with no Redis.
+    private static WebAppFixture BuildFixture(IGdalCommandRunner? runner = null, string? scratch = null)
         => new WebAppFixture()
-            .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, config) =>
-                config.AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:redis"] = redis.ConnectionString })))
+            .WithProductionJobSubstrate()
+            .ConfigureWebHost(builder => builder.UseSetting("ConnectionStrings:redis", string.Empty))
             .ConfigureServices(services =>
             {
-                services.RemoveAll<IConnectionMultiplexer>();
-                services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redis.ConnectionString));
-                services.RemoveAll<IExecutionJobStore>();
-                services.AddSingleton<IExecutionJobStore>(sp => new RedisExecutionJobStore(
-                    sp.GetRequiredService<IConnectionMultiplexer>(), sp.GetRequiredService<ILogger<RedisExecutionJobStore>>()));
-                services.RemoveAll<IGeoprocessingResultPackageStore>();
-                services.AddSingleton<IGeoprocessingResultPackageStore>(sp => new RedisGeoprocessingResultPackageStore(
-                    sp.GetRequiredService<IConnectionMultiplexer>(), sp.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>(),
-                    sp.GetRequiredService<ILogger<RedisGeoprocessingResultPackageStore>>()));
-                services.RemoveAll<RedisJobQueue>();
-                services.RemoveAll<IJobQueue>();
-                services.RemoveAll<IQueueClaimReconciler>();
-                services.AddSingleton<RedisJobQueue>(sp => new RedisJobQueue(
-                    sp.GetRequiredService<IConnectionMultiplexer>(), sp.GetRequiredService<IExecutionJobStore>(),
-                    sp.GetRequiredService<ILogger<RedisJobQueue>>()));
-                services.AddSingleton<IJobQueue>(sp => sp.GetRequiredService<RedisJobQueue>());
-                services.AddSingleton<IQueueClaimReconciler>(sp => sp.GetRequiredService<RedisJobQueue>());
-                services.RemoveAll<IExecutionLogStore>();
-                services.AddSingleton<IExecutionLogStore>(sp => new RedisExecutionLogStore(
-                    sp.GetRequiredService<IConnectionMultiplexer>(), sp.GetRequiredService<ILogger<RedisExecutionLogStore>>()));
                 if (runner is not null)
                 {
                     // Compose the real native dispatcher and executor in the test host.
@@ -212,14 +190,14 @@ public sealed class OgcProcessesExecutionProofTests(RedisFixture redis) : IClass
                     services.AddSingleton(runner);
                     services.AddSingleton<IJobExecutor, GdalDispatchJobExecutor>();
                 }
-                // The test host can register Redis after the serving composition's
-                // Redis gate. Ensure the production queue drainer and terminal
-                // callback are present, using the same services as AddJobWorker.
-                services.TryAddSingleton<ExecutionJobCancellationTokens>();
-                services.TryAddSingleton<IJobCancellationNotifier>(sp => sp.GetRequiredService<ExecutionJobCancellationTokens>());
-                services.TryAddEnumerable(ServiceDescriptor.Singleton<IJobTerminalCallback, GeoprocessingJobTerminalCallback>());
-                services.AddHostedService<JobExecutionService>();
             });
+
+    private static async Task StartAsync(WebAppFixture fixture)
+    {
+        await fixture.InitializeAsync();
+        await fixture.Postgres.DataSource.ClearJobSubstrateAsync();
+        fixture.GetService<IExecutionJobStore>().Should().BeOfType<PostgresExecutionJobStore>();
+    }
 
     private static async Task<JsonDocument> SubmitAndGetResults(HttpClient client, string processId, string body)
     {

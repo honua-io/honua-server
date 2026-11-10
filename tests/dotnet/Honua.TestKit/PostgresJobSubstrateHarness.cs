@@ -18,9 +18,9 @@ internal sealed class PostgresJobSubstrateHarness : IAsyncDisposable
 {
     private const string MigrationResourceName = "Honua.Server.Migrations.147_CreateJobSubstrate.sql";
 
-    private readonly IDatabaseFixture _fixture;
+    private readonly IIsolatedSchemaFixture _fixture;
 
-    private PostgresJobSubstrateHarness(IDatabaseFixture fixture, NpgsqlDataSource dataSource, string schema, JobStoreOptions options)
+    private PostgresJobSubstrateHarness(IIsolatedSchemaFixture fixture, NpgsqlDataSource dataSource, string schema, JobStoreOptions options)
     {
         _fixture = fixture;
         DataSource = dataSource;
@@ -45,7 +45,7 @@ internal sealed class PostgresJobSubstrateHarness : IAsyncDisposable
 
     public string JobsTable => Database.Table(ExecutionJobRow.TableName);
 
-    public static Task<PostgresJobSubstrateHarness> CreateAsync(IDatabaseFixture fixture, string testClassName)
+    public static Task<PostgresJobSubstrateHarness> CreateAsync(IIsolatedSchemaFixture fixture, string testClassName)
         => CreateAsync(fixture, fixture.DataSource, testClassName);
 
     /// <summary>
@@ -53,7 +53,7 @@ internal sealed class PostgresJobSubstrateHarness : IAsyncDisposable
     /// tests that count or break their own connections.
     /// </summary>
     public static async Task<PostgresJobSubstrateHarness> CreateAsync(
-        IDatabaseFixture fixture,
+        IIsolatedSchemaFixture fixture,
         NpgsqlDataSource dataSource,
         string testClassName)
     {

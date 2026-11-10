@@ -10,7 +10,6 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.TestKit;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
@@ -75,7 +74,7 @@ public sealed partial class GPServerDurableRuntimeTests
             client.Timeout = GPServerJobWait.RequestTimeout;
 
             var admittedJobIds = new List<string>();
-            for (var submission = 0; submission < SubmissionsAllowedPerWindow; submission++)
+            while (admittedJobIds.Count < SubmissionsAllowedPerWindow)
             {
                 admittedJobIds.Add((await SubmitBufferJobAsync(client)).AdmittedJobId());
             }
@@ -101,7 +100,9 @@ public sealed partial class GPServerDurableRuntimeTests
                     client, $"{BufferJobsUrl}/jobs/{jobId}?f=json", jobId, jobStore);
             }
 
-            (await jobStore.QueryAsync(new ExecutionJobQuery())).Items.Select(job => job.OperationId)
+            (await jobStore.QueryAsync(new ExecutionJobQuery())).Items
+                .Where(job => job.Spec.Kind == ExecutionJobKind.Geoprocessing)
+                .Select(job => job.OperationId)
                 .Should().BeEquivalentTo(admittedJobIds);
         }
         finally

@@ -7,28 +7,22 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Geoprocessing;
-using Honua.ControlPlane;
 using Honua.Protocols.Ogc.Api.Processes;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 
 /// <summary>
 /// Exercises the suite-owned OGC API Processes echo fixture through the real durable
-/// job submission, Redis store, worker, status, and result projection path.
+/// job submission, job store, worker, status, and result projection path.
 /// </summary>
-[Collection("Redis")]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.OgcApiProcesses)]
-public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
+public sealed class OgcProcessesCiteEchoFixtureTests
 {
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
@@ -37,9 +31,8 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task CiteStyleClient_TransformGeoJsonInputs_ReachTheCanonicalExecutor()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
-        var fixture = CreateFixture(redis.ConnectionString);
-        await fixture.InitializeAsync();
+        var fixture = CreateFixture();
+        await NoRedisJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();
@@ -72,7 +65,6 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
         }
     }
 
@@ -87,9 +79,8 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task CiteStyleClient_CatalogBuffer_ExecutesQualifiedInputsAndReadsNegotiatedResults()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
-        var fixture = CreateFixture(redis.ConnectionString);
-        await fixture.InitializeAsync();
+        var fixture = CreateFixture();
+        await NoRedisJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();
@@ -138,7 +129,6 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
         }
     }
 
@@ -153,10 +143,8 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task CiteProfile_EchoFixture_UsesCanonicalDurableRuntimeAndReturnsDeterministicValues()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
-
-        var fixture = CreateFixture(redis.ConnectionString);
-        await fixture.InitializeAsync();
+        var fixture = CreateFixture();
+        await NoRedisJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();
@@ -418,7 +406,6 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
         }
     }
 
@@ -466,8 +453,8 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
             .Should().BeTrue(error);
     }
 
-    private static WebAppFixture CreateFixture(string redisConnectionString)
-        => new WebAppFixture()
+    private static WebAppFixture CreateFixture()
+        => NoRedisJobHost.Create()
             .ConfigureServices(services =>
             {
                 var certificationConfiguration = new ConfigurationBuilder()
@@ -478,42 +465,6 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
                     })
                     .Build();
                 services.AddOgcProcesses(certificationConfiguration, "Test");
-
-                services.RemoveAll<IConnectionMultiplexer>();
-                services.AddSingleton<IConnectionMultiplexer>(
-                    _ => ConnectionMultiplexer.Connect(redisConnectionString));
-
-                services.RemoveAll<IExecutionJobStore>();
-                services.AddSingleton<IExecutionJobStore>(sp =>
-                    new RedisExecutionJobStore(
-                        sp.GetRequiredService<IConnectionMultiplexer>(),
-                        sp.GetRequiredService<ILogger<RedisExecutionJobStore>>()));
-
-                services.RemoveAll<IGeoprocessingResultPackageStore>();
-                services.AddSingleton<IGeoprocessingResultPackageStore>(sp =>
-                    new RedisGeoprocessingResultPackageStore(
-                        sp.GetRequiredService<IConnectionMultiplexer>(),
-                        sp.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>(),
-                        sp.GetRequiredService<ILogger<RedisGeoprocessingResultPackageStore>>()));
-
-                services.RemoveAll<RedisJobQueue>();
-                services.RemoveAll<IJobQueue>();
-                services.RemoveAll<IQueueClaimReconciler>();
-                services.AddSingleton<RedisJobQueue>(sp =>
-                    new RedisJobQueue(
-                        sp.GetRequiredService<IConnectionMultiplexer>(),
-                        sp.GetRequiredService<IExecutionJobStore>(),
-                        sp.GetRequiredService<ILogger<RedisJobQueue>>()));
-                services.AddSingleton<IJobQueue>(sp => sp.GetRequiredService<RedisJobQueue>());
-                services.AddSingleton<IQueueClaimReconciler>(
-                    sp => sp.GetRequiredService<RedisJobQueue>());
-
-                services.RemoveAll<IExecutionLogStore>();
-                services.AddSingleton<IExecutionLogStore>(sp =>
-                    new RedisExecutionLogStore(
-                        sp.GetRequiredService<IConnectionMultiplexer>(),
-                        sp.GetRequiredService<ILogger<RedisExecutionLogStore>>()));
-                services.AddJobWorker();
             });
 
     private static async Task<HttpResponseMessage> PostExecutionAsync(HttpClient client, string json)
@@ -554,22 +505,5 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
         }
 
         throw new TimeoutException($"Timed out waiting for OGC process job '{jobId}'.");
-    }
-
-    private static async Task DeleteControlPlaneKeysAsync(string redisConnectionString)
-    {
-        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redisConnectionString);
-        var database = multiplexer.GetDatabase();
-        var endpoints = multiplexer.GetEndPoints();
-        if (endpoints.Length == 0)
-        {
-            throw new InvalidOperationException("Redis connection string did not provide endpoints.");
-        }
-
-        var keys = multiplexer.GetServer(endpoints[0]).Keys(pattern: "controlplane:*").ToArray();
-        if (keys.Length > 0)
-        {
-            await database.KeyDeleteAsync(keys);
-        }
     }
 }

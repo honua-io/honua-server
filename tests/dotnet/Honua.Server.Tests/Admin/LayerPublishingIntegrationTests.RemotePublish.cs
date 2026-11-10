@@ -17,7 +17,6 @@ using Honua.Infrastructure.MultiTenancy;
 using Honua.Migration;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin;
-using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -36,10 +35,6 @@ namespace Honua.Server.Tests.Admin;
 
 public sealed partial class LayerPublishingIntegrationTests
 {
-    private readonly DatabaseFixtureAdapter _database;
-
-    public LayerPublishingIntegrationTests(DatabaseFixtureAdapter database) => _database = database;
-
     [IntegrationTest]
     [Operation(Operations.ContractTesting)]
     public async Task CommittedSinkFingerprintWithoutVerifiedSource_CannotOpenExternalSchemaScope()
@@ -101,7 +96,7 @@ public sealed partial class LayerPublishingIntegrationTests
         await using var redis = new RedisBuilder("redis:7.2-alpine").Build();
         await redis.StartAsync();
         await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.GetConnectionString());
-        await using var jobSubstrate = await PostgresJobSubstrateHarness.CreateAsync(_database, nameof(LayerPublishingIntegrationTests));
+        await using var jobSubstrate = await PostgresJobSubstrateHarness.CreateAsync(_fixture.Postgres, nameof(LayerPublishingIntegrationTests));
         var jobs = jobSubstrate.JobStore;
         using var acceptingCache = new RedisCache(Options.Create(new RedisCacheOptions { Configuration = redis.GetConnectionString() }));
         using var workerCache = new RedisCache(Options.Create(new RedisCacheOptions { Configuration = redis.GetConnectionString() }));
