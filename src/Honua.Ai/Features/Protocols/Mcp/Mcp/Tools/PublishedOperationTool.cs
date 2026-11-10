@@ -139,7 +139,7 @@ internal sealed class PublishedOperationTool : IMcpTool
         var determinismNote = IsRuntimeDynamic
             ? " Reports live runtime status; not cacheable."
             : IsDeterministic
-            ? " Deterministic (AI-free): identical inputs yield identical, param-keyed-cached results."
+            ? " AI-free, deterministic: identical inputs yield identical, param-keyed-cached results."
             : " AI-assisted.";
 
         return new McpToolDescriptor
@@ -148,7 +148,7 @@ internal sealed class PublishedOperationTool : IMcpTool
             Title = title,
             Description = _descriptor.Description
                 + " Published operation '" + _descriptor.OperationId
-                + "'; policy checked every invocation"
+                + "'; policy decision point checked every invocation"
                 + " (allow / require-approval / dry-run-first / deny)."
                 + (RequiresProposalSubmission
                     ? " Submits a proposal only; never mutates. Execution requires sealed-proposal approval by a separately authenticated authorized approver."
