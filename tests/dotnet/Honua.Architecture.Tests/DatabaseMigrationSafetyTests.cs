@@ -14,6 +14,13 @@ namespace Honua.Architecture.Tests;
 [Trait("Category", "Architecture")]
 public sealed class DatabaseMigrationSafetyTests
 {
+    private static readonly string[] PreRc2BoundaryMigrations =
+    [
+        "142_CreateAiFinancialAccounting.sql",
+        "144_RenameGeoServicesRestSourceKind.sql",
+        "145_ProtectImportDependencies.sql"
+    ];
+
     [ArchitectureTest]
     public void MigrationScripts_AfterReaderBaseline_MustRemainExpandOnly()
     {
@@ -122,12 +129,7 @@ public sealed class DatabaseMigrationSafetyTests
         var rasterFloor = boundary.RootElement.GetProperty("lastRasterMigration").GetInt32();
         rasterFloor.Should().Be(8);
         var boundaryHashes = ReadReleaseBoundary(root);
-        boundaryHashes.Keys.Should().BeEquivalentTo(new[]
-        {
-            "142_CreateAiFinancialAccounting.sql",
-            "144_RenameGeoServicesRestSourceKind.sql",
-            "145_ProtectImportDependencies.sql"
-        });
+        boundaryHashes.Keys.Should().BeEquivalentTo(PreRc2BoundaryMigrations);
         foreach (var (name, hash) in boundaryHashes)
         {
             var file = EnumerateMigrationFiles().Single(path => Path.GetFileName(path) == name);
