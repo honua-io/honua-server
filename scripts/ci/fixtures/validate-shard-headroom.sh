@@ -46,6 +46,11 @@ mode="${HONUA_FIXTURE_MODE:-chatty}"
 seconds="${HONUA_FIXTURE_SECONDS:-2}"
 echo "stub dotnet test starting (mode=${mode})"
 python3 scripts/ci/fixtures/write-shard-trx.py "$@"
+# Stall the retry supervisor too: otherwise its bounded cancellation cleanup
+# finishes before GNU timeout's escalation/grace-window cases can occur.
+if [[ "${mode}" == "sigterm-proof" || "${mode}" == "ppidkill" ]]; then
+  kill -STOP "${PPID}"
+fi
 case "${mode}" in
   chatty|failing)
     end=$(( $(date +%s) + seconds ))
