@@ -105,19 +105,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - check: Format
-            format: 'true'
-            analyzer-build: 'false'
-            analyzer-partition: all
-          - check: Analyzers
-            format: 'false'
-            analyzer-build: 'true'
-            analyzer-partition: source
-          - check: Analyzers (tests)
-            format: 'false'
-            analyzer-build: 'true'
-            analyzer-partition: tests
+        include: ${{ fromJSON(github.event.pull_request.draft && '[{"check":"Format","format":"true","analyzer-build":"false","analyzer-partition":"all"}]' || '[{"check":"Format","format":"true","analyzer-build":"false","analyzer-partition":"all"},{"check":"Analyzers","format":"false","analyzer-build":"true","analyzer-partition":"source"},{"check":"Analyzers (tests)","format":"false","analyzer-build":"true","analyzer-partition":"tests"}]') }}
     steps:
       # `rerun-failed-jobs` only releases jobs that failed attempt 1. Make this
       # independent path an admission failure too, otherwise a skipped-success
@@ -228,22 +216,26 @@ jobs:
         id: docs-only
         run: scripts/ci/docs-only-diff.sh --github-output
 
+      - name: Select affected fast-test groups
+        id: fast-selection
+        run: python3 scripts/ci/compute-fast-test-selection.py --github-output
+
       # One test group builds a fraction of the solution, so the deletion runs in
       # the background while setup and the build proceed.
       - name: Free disk space
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true' && steps.fast-selection.outputs[matrix.test-group] != 'false'
         run: |
           nohup sudo rm -rf /usr/local/lib/android /usr/share/swift /usr/local/.ghcup /opt/hostedtoolcache/CodeQL >/dev/null 2>&1 &
 
       - name: Setup .NET
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true' && steps.fast-selection.outputs[matrix.test-group] != 'false'
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       # This independent build avoids serializing Fast coverage behind the producer.
       - name: Lean gate (build and fast unit/architecture verification)
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true' && steps.fast-selection.outputs[matrix.test-group] != 'false'
         uses: ./.github/actions/lean-gate
         with:
           phase: all
