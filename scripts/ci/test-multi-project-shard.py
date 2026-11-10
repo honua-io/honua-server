@@ -7,7 +7,7 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
 
 SCRIPT = Path(__file__).resolve().parent
@@ -99,6 +99,14 @@ class MultiProjectTests(unittest.TestCase):
                 self.assertEqual(capacity, record['capacity_status'])
                 self.assertEqual('timed_out', record['status'])
                 self.assertTrue(record['timed_out'])
+
+    def test_windows_deadline_terminates_the_entire_tree(self):
+        process = Mock(pid=4321)
+        with patch.object(multi.os, 'name', 'nt'), patch.object(multi.subprocess, 'run') as run:
+            multi.terminate_tree(process)
+        run.assert_called_once_with(['taskkill', '/PID', '4321', '/T', '/F'],
+                                    check=False, capture_output=True)
+        process.wait.assert_called_once_with()
 
     def test_shared_deadline_stops_the_test_process(self):
         with tempfile.TemporaryDirectory() as directory:

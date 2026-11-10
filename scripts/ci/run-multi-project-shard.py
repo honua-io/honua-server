@@ -38,6 +38,18 @@ def combine_results(paths, output):
     ET.ElementTree(root).write(output, encoding='utf-8', xml_declaration=True)
 
 
+def terminate_tree(process):
+    if os.name == 'nt':
+        subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'],
+                       check=False, capture_output=True)
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    process.wait()
+
+
 def execute(environment, remaining):
     log = Path(environment['HONUA_SERVER_TEST_RESULTS_DIR']) / f"{environment['HONUA_SERVER_TEST_LOG_NAME']}.log"
     deadline = time.monotonic() + remaining
@@ -52,11 +64,7 @@ def execute(environment, remaining):
                 last_progress, size = now, current_size
             idle = max(0, min(now, deadline) - last_progress)
             if now >= deadline:
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                process.wait()
+                terminate_tree(process)
                 return 124, idle
             try:
                 return process.wait(timeout=min(1, deadline - now)), idle
