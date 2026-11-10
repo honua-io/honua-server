@@ -73,7 +73,10 @@ class PolicyTests(unittest.TestCase):
         catalog = module('catalog', 'test-projects.py')
         with tempfile.TemporaryDirectory() as directory:
             snapshot = Path(directory) / 'quarantine.json'
-            snapshot.write_text(json.dumps({'schema': q.SCHEMA, 'entries': [entry()]}))
+            current = datetime.now(timezone.utc)
+            active = {**entry(), 'quarantined_at': current.isoformat(),
+                      'expires_at': (current + timedelta(days=14)).isoformat()}
+            snapshot.write_text(json.dumps({'schema': q.SCHEMA, 'entries': [active]}))
             with patch.dict(os.environ, {'HONUA_TEST_QUARANTINE_FILE': str(snapshot)}), \
                     patch.object(catalog.subprocess, 'run') as execute:
                 catalog.execute_gate_fast(q.ROOT, [PROJECT])

@@ -77,4 +77,4 @@ The Linux batch lane has analyzer rules that may not fire locally on Windows (fo
 that the batch build passes. Read the batch log with `gh run view <id> --log-failed`, then fix the
 problem on the PR branch.
 
-Quarantine filtering also covers overlapping foundation, source-architecture, isolated unit-fast, and general Worker suites. Dedicated execution-proof receipt requirements remain strict; a quarantined method cannot substitute for a required proof receipt.
+Quarantine filtering also covers overlapping foundation, source-architecture, isolated unit-fast, Postgres compatibility, and general Worker suites. Dedicated execution-proof receipt requirements remain strict; a quarantined method cannot substitute for a required proof receipt.
