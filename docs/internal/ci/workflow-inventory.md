@@ -559,7 +559,6 @@ fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
 
-
 ### WPS endpoint fixture lifetime
 
 `Wps20EndpointsTests` shares its default application and identically configured
