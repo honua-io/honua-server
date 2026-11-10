@@ -14,6 +14,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
 MONOLITH = 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
+MAX_STAGE0_CPU_COUNT = 16
 
 
 def planner(root):
@@ -133,6 +134,33 @@ def require_tests(directory):
         raise ValueError('No tests recorded in fresh TRX results: ' + str(directory))
 
 
+def bounded_build():
+    cpu_count = int(os.environ.get('HONUA_STAGE0_MAX_CPU_COUNT', '5'))
+    if not 1 <= cpu_count <= MAX_STAGE0_CPU_COUNT:
+        raise ValueError(f'HONUA_STAGE0_MAX_CPU_COUNT must be between 1 and {MAX_STAGE0_CPU_COUNT}')
+    execution_env = os.environ.copy()
+    execution_env['DOTNET_PROCESSOR_COUNT'] = str(cpu_count)
+    build_properties = ['-p:TreatWarningsAsErrors=true', '-p:UseSharedCompilation=false',
+                        '-p:RunAnalyzers=false', '-p:RunAnalyzersDuringBuild=false',
+                        f'-maxCpuCount:{cpu_count}', '-nodeReuse:false']
+    return execution_env, build_properties
+
+
+def shard_env(execution_env, shard, directory):
+    env = execution_env.copy()
+    env.update({'HONUA_SERVER_TEST_SHARD_NAME': shard['name'], 'HONUA_SERVER_TEST_CSPROJ': shard['project'],
+                'HONUA_SERVER_TEST_FILTER': shard['filter'], 'HONUA_SERVER_TEST_LOG_NAME': 'feedback',
+                'HONUA_SERVER_TEST_CONFIGURATION': 'Release', 'HONUA_SERVER_TEST_RESULTS_DIR': str(directory),
+                'HONUA_SERVER_TEST_EXCLUDE_SLOW': 'true', 'HONUA_SERVER_TEST_EXCLUDE_FAST': 'true'})
+    for key, value in [('HONUA_SERVER_TEST_TIMEOUT_MINUTES', shard['timeoutMinutes']),
+                       ('HONUA_SERVER_TEST_MAX_CPU_COUNT', shard['maxCpuCount'])]:
+        if value is not None:
+            env[key] = str(value)
+        else:
+            env.pop(key, None)
+    return env
+
+
 def execute(root, plan, run=subprocess.run, results_directory=None):
     if not plan['projects']:
         print('No affected tests selected; no validation verdict was produced.', file=sys.stderr)
@@ -164,14 +192,7 @@ def execute(root, plan, run=subprocess.run, results_directory=None):
             temporary = Path(temporary)
             selection = temporary / 'feedback.slnf'
             selection.write_text(json.dumps({'solution': {'path': str(root / 'Honua.sln'), 'projects': plan['projects']}}))
-            cpu_count = int(os.environ.get('HONUA_STAGE0_MAX_CPU_COUNT', '5'))
-            if not 1 <= cpu_count <= 16:
-                raise ValueError('HONUA_STAGE0_MAX_CPU_COUNT must be between 1 and 16')
-            execution_env = os.environ.copy()
-            execution_env['DOTNET_PROCESSOR_COUNT'] = str(cpu_count)
-            build_properties = ['-p:TreatWarningsAsErrors=true', '-p:UseSharedCompilation=false',
-                                '-p:RunAnalyzers=false', '-p:RunAnalyzersDuringBuild=false',
-                                f'-maxCpuCount:{cpu_count}', '-nodeReuse:false']
+            execution_env, build_properties = bounded_build()
             invoke(['dotnet', 'restore', str(selection), *build_properties], cwd=root, check=True, env=execution_env)
             invoke(['dotnet', 'build', str(selection), '--no-restore', '--configuration', 'Release',
                     *build_properties], cwd=root, check=True, env=execution_env)
@@ -184,18 +205,8 @@ def execute(root, plan, run=subprocess.run, results_directory=None):
             for index, shard in enumerate(plan['shards']):
                 directory = results / ('shard-' + str(index))
                 directory.mkdir()
-                env = execution_env.copy()
-                env.update({'HONUA_SERVER_TEST_SHARD_NAME': shard['name'], 'HONUA_SERVER_TEST_CSPROJ': shard['project'],
-                            'HONUA_SERVER_TEST_FILTER': shard['filter'], 'HONUA_SERVER_TEST_LOG_NAME': 'feedback',
-                            'HONUA_SERVER_TEST_CONFIGURATION': 'Release', 'HONUA_SERVER_TEST_RESULTS_DIR': str(directory),
-                            'HONUA_SERVER_TEST_EXCLUDE_SLOW': 'true', 'HONUA_SERVER_TEST_EXCLUDE_FAST': 'true'})
-                for key, value in [('HONUA_SERVER_TEST_TIMEOUT_MINUTES', shard['timeoutMinutes']),
-                                   ('HONUA_SERVER_TEST_MAX_CPU_COUNT', shard['maxCpuCount'])]:
-                    if value is not None:
-                        env[key] = str(value)
-                    else:
-                        env.pop(key, None)
-                invoke(['bash', 'scripts/ci/run-server-test-shard.sh'], cwd=root, check=True, env=env)
+                invoke(['bash', 'scripts/ci/run-server-test-shard.sh'], cwd=root, check=True,
+                       env=shard_env(execution_env, shard, directory))
                 require_tests(directory)
         status['status'] = 'passed'
     except (Exception, KeyboardInterrupt) as error:
