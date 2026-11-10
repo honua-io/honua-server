@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
+using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
@@ -17,6 +18,7 @@ using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Features;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.Ogc.Api.Tiles;
 
@@ -158,7 +160,7 @@ internal static class CollectionsEndpoints
                         item.entry.Resource,
                         item.entry.Publication,
                         snapshot,
-                        baseUrl,
+                        context,
                         featureReader,
                         coordinateTransformService,
                         crsRegistry,
@@ -251,7 +253,7 @@ internal static class CollectionsEndpoints
                 resource,
                 publication,
                 snapshot,
-                baseUrl,
+                context,
                 featureReader,
                 coordinateTransformService,
                 crsRegistry,
@@ -295,12 +297,13 @@ internal static class CollectionsEndpoints
         MetadataV2Resource resource,
         MetadataV2Publication publication,
         MetadataV2GraphSnapshot snapshot,
-        string baseUrl,
+        HttpContext context,
         IFeatureReader featureReader,
         ICoordinateTransformService coordinateTransformService,
         ICrsRegistry crsRegistry,
         CancellationToken cancellationToken)
     {
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var collectionId = publication.ServiceLocalId
             ?? publication.Path
             ?? resource.Metadata.Name;
@@ -358,13 +361,15 @@ internal static class CollectionsEndpoints
 
             if (transformedExtent.HasValue)
             {
+                var maxZoom = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Tiles.MaxTileZoom;
+                var extent = OgcTileExtent.ExpandDegenerateAxes(transformedExtent.Value, maxZoom);
                 spatialExtent = new SpatialExtent
                 {
                     BoundingBox = ImmutableArray.Create(ImmutableArray.Create(
-                        transformedExtent.Value.MinLon,
-                        transformedExtent.Value.MinLat,
-                        transformedExtent.Value.MaxLon,
-                        transformedExtent.Value.MaxLat)),
+                        extent.MinLon,
+                        extent.MinLat,
+                        extent.MaxLon,
+                        extent.MaxLat)),
                     Crs = OgcFeaturesUtilities.Crs84Uri
                 };
             }
