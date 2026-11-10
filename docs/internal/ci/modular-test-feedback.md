@@ -183,16 +183,20 @@ For an earlier feedback loop, use the explicit shared-router mode:
 ```bash
 scripts/ci/pre-pr-check.sh --affected-tests --dry-run --base origin/trunk
 scripts/ci/pre-pr-check.sh --affected-tests --base origin/trunk
+# Include affected component/integration shards when needed:
+scripts/ci/pre-pr-check.sh --affected-tests --integration --base origin/trunk
 ```
 
-This selects affected isolated units plus the canonical uncapped shard selection,
+By default this selects affected isolated units. With `--integration`, it also selects
+the canonical uncapped component/integration shard selection. It
 builds their combined project set once without the Architecture collector, runs
 selected unit projects fully, and runs remaining shards serially. A unit project
 already run fully suppresses its duplicate shard. Fresh test result files must
 report a positive executed test count. Components retain their declared resources
 and owned cleanup; the mode does not bypass build admission or resource limits.
-`--unit-only` restricts feedback to pure units; `--affected-tests` also includes
-selected component/integration shards; normal SMART/`--fast`/`--full` remain
+`--unit-only` and default `--affected-tests` restrict feedback to pure units;
+`--affected-tests --integration` includes selected component/integration shards.
+Normal SMART/`--fast`/`--full` remain
 separate gate modes. The feedback modes cannot be combined.
 
 Its JSON is explicitly feedback-only and cannot serve as a PR validation receipt.

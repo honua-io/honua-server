@@ -240,6 +240,68 @@ public sealed class GeoservicesCatalogGeocodeServerTests
         entries.Should().OnlyContain(entry => entry.Url.StartsWith("https://localhost/arcgis/rest/services/", StringComparison.Ordinal));
     }
 
+    [IntegrationTheory]
+    [InlineData("", false)]
+    [InlineData("/arcgis", false)]
+    [InlineData("", true)]
+    [InlineData("/arcgis", true)]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{folderName}")]
+    public async Task ParentDirectory_PublicLocatorCollidesWithGraphService_PreservesStandalonePrecedence(string mount, bool restrictedFeatures)
+    {
+        using var factory = CreateFactory("World", restrictedFeatures: restrictedFeatures);
+        using var client = factory.CreateClient();
+        await ConfigurePublicServiceCollisionAsync(factory);
+
+        using var response = await client.GetAsync($"{mount}/rest/services/World?f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var entry = payload.RootElement.GetProperty("services").EnumerateArray().Should().ContainSingle().Which;
+        entry.GetProperty("name").GetString().Should().Be("World");
+        entry.GetProperty("type").GetString().Should().Be("GeocodeServer");
+        entry.GetProperty("url").GetString().Should().EndWith("/rest/services/World/GeocodeServer");
+        payload.RootElement.GetRawText().Should().NotContain(ServiceRbacTestFixture.AlphaService);
+    }
+
+    [IntegrationTheory]
+    [InlineData("", false)]
+    [InlineData("/arcgis", false)]
+    [InlineData("", true)]
+    [InlineData("/arcgis", true)]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{folderName}")]
+    public async Task ParentDirectory_UnavailableLocatorCollidesWithGraphService_UsesGraphVisibility(string mount, bool restrictedFeatures)
+    {
+        using var factory = CreateFactory("World", configured: false, restrictedFeatures: restrictedFeatures);
+        using var client = factory.CreateClient();
+        await ConfigurePublicServiceCollisionAsync(factory);
+
+        using var response = await client.GetAsync($"{mount}/rest/services/World?f=json");
+        if (restrictedFeatures)
+        {
+            await response.AssertGeoServicesErrorAsync(499);
+        }
+        else
+        {
+            using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var entries = payload.RootElement.GetProperty("services").EnumerateArray().ToArray();
+            entries.Should().NotBeEmpty();
+            entries.Should().OnlyContain(entry => entry.GetProperty("type").GetString() != "GeocodeServer");
+            entries.Should().OnlyContain(entry => entry.GetProperty("name").GetString() == "World");
+        }
+    }
+
+    private static async Task ConfigurePublicServiceCollisionAsync(WebApplicationFactory<Program> factory)
+    {
+        var provider = (TestMetadataV2GraphProvider)factory.Services.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await provider.GetCurrentAsync();
+        provider.SetGraph(snapshot.Graph with
+        {
+            Services = snapshot.Graph.Services.Select(service => service.Metadata.Name == ServiceRbacTestFixture.AlphaService
+                ? service with { PublicName = "World" } : service).ToArray()
+        });
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(
         string locatorName = "World", bool enabled = true, bool configured = true,
         bool restrictedFeatures = false, string? baseUrl = null, bool providerFails = false,
