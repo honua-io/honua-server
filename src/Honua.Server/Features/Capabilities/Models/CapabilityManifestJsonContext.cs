@@ -10,6 +10,7 @@ namespace Honua.Server.Features.Capabilities.Models;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     WriteIndented = false)]
 [JsonSerializable(typeof(CapabilityManifestDocument))]
+[JsonSerializable(typeof(CapabilityManifestDataStores))]
 [JsonSerializable(typeof(CapabilityManifestScope))]
 [JsonSerializable(typeof(CapabilityManifestServerInfo))]
 [JsonSerializable(typeof(CapabilityManifestEnvironment))]

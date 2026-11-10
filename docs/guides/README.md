@@ -14,6 +14,8 @@ Examples use `http://localhost:8080`, the repository Compose default. A quicksta
 | I want to… | Guide |
 |---|---|
 | Import GeoJSON, Shapefile, GeoPackage, FileGDB, and other files | [Import files](publish/import-files.md) |
+| Keep an import's source CRS or explicitly reproject it | [Choose the import coordinate system](publish/choose-import-coordinate-system.md) |
+| Group services into folders and move them safely | [Organize services in folders](publish/organize-services-in-folders.md) |
 | Import a private `s3://` object with the host identity | [Import from object storage](publish/import-from-object-storage.md) |
 | Pull layers from a live GeoServices REST service | [Import from GeoServices REST services](publish/import-from-geoservices-rest.md) |
 | Serve tables already in my PostGIS / SQL Server / Oracle database | [Serve existing databases](publish/serve-existing-databases.md) |
@@ -72,6 +74,7 @@ Examples use `http://localhost:8080`, the repository Compose default. A quicksta
 |---|---|
 | Set up the admin key, OIDC, and tokens | [Authentication](secure/authentication.md) |
 | Control who can read or write each layer | [Access control](secure/access-control.md) |
+| Review and approve an agent's proposed change as a person | [Approve agent changes](secure/approve-agent-changes.md) |
 | Enable TLS and mutual TLS | [TLS and mTLS](secure/tls-and-mtls.md) |
 | Harden a deployment before go-live | [Production checklist](secure/production-checklist.md) |
 | Track SOC 2 / FedRAMP readiness | [Compliance](secure/compliance.md) |
@@ -81,6 +84,7 @@ Examples use `http://localhost:8080`, the repository Compose default. A quicksta
 | I want to… | Guide |
 |---|---|
 | Run locally with Docker Compose | [Docker Compose](deploy/docker-compose.md) |
+| Select PostGIS-only or additional database stores | [Choose the serving image](deploy/choose-serving-image.md) |
 | Validate pilot prerequisites and first-hour failure modes | [Pilot onboarding runbook](deploy/pilot-onboarding-runbook.md) |
 | Run without containers for development | [Local development](deploy/local-development.md) |
 | Deploy on Kubernetes | [Kubernetes](deploy/kubernetes.md) |

@@ -12,6 +12,17 @@ namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 public sealed class MetadataV2StatusJsonConverterTests
 {
     [UnitTest]
+    public void Write_NullStatus_PreservesActiveDefault()
+    {
+        var json = JsonSerializer.Serialize<MetadataV2Status>(null!, MetadataV2JsonContext.Default.MetadataV2Status);
+        var reloaded = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Status)!;
+
+        reloaded.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+        reloaded.State.Should().Be(MetadataV2OperationalState.Unknown);
+        reloaded.Conditions.Should().BeEmpty();
+    }
+
+    [UnitTest]
     public void Read_MixedCaseNames_PreservesExplicitDraft()
     {
         var status = JsonSerializer.Deserialize<MetadataV2Status>("""{"lifecycle":"Draft","state":"READY"}""");

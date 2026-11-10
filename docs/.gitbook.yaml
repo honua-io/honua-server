@@ -181,3 +181,7 @@ redirects:
   gis/ARCGIS_PATH_PREFIX: gis/service-path-prefix.md
   operator/arcgis-inventory-discovery: guides/migrate/from-geoservices-rest.md
   guides/migrate/arcgis-inventory-discovery: guides/migrate/from-geoservices-rest.md
+  customcode/raster-gp-pattern: guides/raster-gp-pattern.md
+  operator/geoprocessing-aws-batch: guides/deploy/geoprocessing-aws-batch.md
+  operator/geoprocessing-process-releases: guides/deploy/geoprocessing-process-releases.md
+  user/gp-output-store-attestation: guides/gp-output-store-attestation.md

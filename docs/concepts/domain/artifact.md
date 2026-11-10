@@ -25,4 +25,4 @@ Referenced geoprocessing artifacts require the documented persistent output stor
 
 Check content, format, provenance, ownership, and retrieval before handing over a result. Use [run a native job](../../guides/workflows/run-native-job.md) and [cleanup](../../guides/workflows/cleanup-resources.md).
 
-[^persistence]: [Referenced output persistence](../../user/gp-output-store-attestation.md).
+[^persistence]: [Referenced output persistence](../../guides/gp-output-store-attestation.md).

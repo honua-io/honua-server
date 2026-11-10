@@ -336,6 +336,9 @@ internal sealed record FeatureStreamLayerCapability
 
     public required bool CanSubscribe { get; init; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public bool? CanCompleteBaseline { get; init; }
+
     public required bool SupportsSpatialFilters { get; init; }
 
     public required bool SupportsTemporalFilters { get; init; }

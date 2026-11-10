@@ -22072,6 +22072,7 @@
     },
     "/metadata/layers/{layerId}/discovery": {
       "get": {
+        "operationId": "getAdminLayerDiscovery",
         "tags": [
           "Metadata"
         ],
@@ -22110,6 +22111,7 @@
         }
       },
       "put": {
+        "operationId": "updateAdminLayerDiscovery",
         "tags": [
           "Metadata"
         ],
@@ -22166,6 +22168,7 @@
     },
     "/services/{serviceName}/discovery": {
       "get": {
+        "operationId": "getAdminServiceDiscovery",
         "tags": [
           "Metadata"
         ],
@@ -22204,6 +22207,7 @@
         }
       },
       "put": {
+        "operationId": "updateAdminServiceDiscovery",
         "tags": [
           "Metadata"
         ],
@@ -24603,26 +24607,32 @@
           },
           "description": {
             "type": "string",
+            "nullable": true,
             "description": "Layer description"
           },
           "license": {
             "type": "string",
+            "nullable": true,
             "description": "SPDX license expression or proprietary, when authored"
           },
           "attribution": {
             "type": "string",
+            "nullable": true,
             "description": "Public attribution, when authored"
           },
           "publisher": {
             "type": "string",
+            "nullable": true,
             "description": "Data producer or source organization, when authored"
           },
           "licenseUrl": {
             "type": "string",
+            "nullable": true,
             "description": "Absolute license documentation URL, when authored"
           },
           "sourceUrl": {
             "type": "string",
+            "nullable": true,
             "description": "Absolute source documentation URL, when authored"
           },
           "geometryType": {
@@ -24636,6 +24646,7 @@
           },
           "primaryKey": {
             "type": "string",
+            "nullable": true,
             "description": "Primary key field"
           },
           "fieldCount": {
@@ -26388,7 +26399,8 @@
             "$ref": "#/components/schemas/PublishedLayerPage"
           },
           "message": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "timestamp": {
             "type": "string",
@@ -26888,7 +26900,8 @@
             "$ref": "#/components/schemas/ServiceListPage"
           },
           "message": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "timestamp": {
             "type": "string",
@@ -26953,6 +26966,7 @@
           },
           "enabledProtocols": {
             "type": "array",
+            "nullable": true,
             "items": {
               "type": "string"
             }

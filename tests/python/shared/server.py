@@ -13,6 +13,7 @@ Provides:
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -21,6 +22,8 @@ from collections.abc import Mapping
 from threading import Thread
 from pathlib import Path
 from urllib.parse import urlparse
+
+from .process_ports import process_owns_listener, resolve_port, server_port
 
 
 class HonuaServer:
@@ -37,7 +40,7 @@ class HonuaServer:
     def __init__(
         self,
         connection_string: str,
-        port: int = DEFAULT_PORT,
+        port: int | None = None,
         project_root: Path | None = None,
         environment: Mapping[str, str] | None = None,
     ):
@@ -51,7 +54,7 @@ class HonuaServer:
             environment: Per-server environment overrides
         """
         self.connection_string = connection_string
-        self.port = port
+        self.port = server_port("HONUA_TEST_PORT", self.DEFAULT_PORT) if port is None else resolve_port(port)
         self.project_root = project_root or self._find_project_root()
         self.environment = dict(environment or {})
         self._process: subprocess.Popen | None = None
@@ -156,11 +159,16 @@ class HonuaServer:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=str(self.project_root),
+            start_new_session=True,
         )
         self._start_log_readers()
 
         # Wait for server to be healthy
-        self._wait_for_health(timeout)
+        try:
+            self._wait_for_health(timeout)
+        except BaseException:
+            self.stop()
+            raise
 
         return self
 
@@ -169,29 +177,30 @@ class HonuaServer:
         import httpx
 
         health_url = f"{self.base_url}/healthz/live"
-        start_time = time.time()
+        deadline = time.monotonic() + timeout
 
-        while time.time() - start_time < timeout:
+        while time.monotonic() < deadline:
+            self._require_live_process()
             try:
-                response = httpx.get(health_url, timeout=2.0)
-                if response.status_code == 200:
-                    return
+                if process_owns_listener(self._process.pid, self.port):
+                    response = httpx.get(health_url, timeout=2.0, trust_env=False)
+                    self._require_live_process()
+                    if response.status_code == 200 and process_owns_listener(self._process.pid, self.port):
+                        return
             except httpx.RequestError:
-                pass  # server not accepting connections yet; keep polling until timeout
+                pass
 
-            # Check if process died
-            if self._process and self._process.poll() is not None:
-                stdout = "".join(self._stdout_lines)
-                stderr = "".join(self._stderr_lines)
-                raise RuntimeError(
-                    f"Server process died unexpectedly.\n"
-                    f"stdout: {stdout}\n"
-                    f"stderr: {stderr}"
-                )
+            time.sleep(min(0.05, max(0, deadline - time.monotonic())))
 
-            time.sleep(0.5)
+        raise RuntimeError(f"Server did not become healthy within {timeout}s with an owned listener")
 
-        raise RuntimeError(f"Server did not become healthy within {timeout}s")
+    def _require_live_process(self):
+        if self._process is None:
+            raise RuntimeError("Server process has not been started")
+        if self._process.poll() is not None:
+            stdout = "".join(self._stdout_lines)
+            stderr = "".join(self._stderr_lines)
+            raise RuntimeError(f"Server process died unexpectedly.\nstdout: {stdout}\nstderr: {stderr}")
 
     def _normalize_connection_string(self, value: str) -> str:
         """Normalize PostgreSQL connection strings for Npgsql."""
@@ -225,15 +234,22 @@ class HonuaServer:
         """Stop the server process."""
         if self._process:
             # Try graceful shutdown first
-            self._process.terminate()
+            self._signal_process_group(signal.SIGTERM)
             try:
                 self._process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 # Force kill if graceful shutdown fails
-                self._process.kill()
+                self._signal_process_group(signal.SIGKILL)
                 self._process.wait()
+            self._signal_process_group(signal.SIGKILL)
             self._process = None
             self._log_threads.clear()
+
+    def _signal_process_group(self, signal_number):
+        try:
+            os.killpg(self._process.pid, signal_number)
+        except ProcessLookupError:
+            pass
 
     def _start_log_readers(self):
         """Drain server stdout/stderr to avoid pipe backpressure."""
@@ -272,7 +288,7 @@ class HonuaServerFixture:
     Manages both PostGIS and Honua server lifecycle together.
     """
 
-    def __init__(self, postgis_fixture: "PostGISFixture", port: int = 5555):
+    def __init__(self, postgis_fixture: "PostGISFixture", port: int | None = None):
         from .postgis import PostGISFixture
 
         self.postgis = postgis_fixture
@@ -298,6 +314,7 @@ class HonuaServerFixture:
             port=self.port,
         )
         self._server.start()
+        self.port = self._server.port
         return self
 
     def stop(self):
