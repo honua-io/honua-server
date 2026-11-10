@@ -480,5 +480,12 @@ require(r'unit-fast\) ROOT_PROJECTS=\("\$\{UNIT_FAST_TEST_PROJECTS\[@\]\}"\)',
         'build the dynamic Fast smoke inputs in the job that runs them', text=SCOPE_TEXT)
 require(r'architecture\) ROOT_PROJECTS=\("\$\{ARCHITECTURE_TEST_PROJECTS\[@\]\}" "\$\{SERVER_TEST_PROJECTS\[@\]\}"\)',
         'build Server.Tests for the admin parity export that projection regeneration runs', text=SCOPE_TEXT)
+require(
+    r"- name: Regenerate admin parity exports\n"
+    r"\s+if: inputs\.phase != 'build' && contains\(fromJSON\('\[\"server-fast\",\"server-governance\"\]'\), inputs\.test-group\)\n"
+    r"[\s\S]*?generate-admin-operation-parity-exports\.sh --configuration Release --no-build --no-restore",
+    "refresh the admin parity exports Server.Tests compares before the server groups test",
+)
+assert TEXT.index("- name: Regenerate admin parity exports") < TEXT.index("- name: Run .NET Tests (Server Fast Tier)")
 require(r'python3 scripts/ci/test-projects\.py gate-fast\s',
         'execute the catalogued isolated Fast smoke without another build')

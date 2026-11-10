@@ -314,6 +314,15 @@ runs:
           bash scripts/ci/regenerate-generated-files.sh --configuration Release --no-build --no-restore
         bash scripts/ci/report-generated-file-drift.sh
 
+    # Server.Tests compares the admin parity exports with the current contract,
+    # so the server groups refresh them as the full regeneration above does.
+    - name: Regenerate admin parity exports
+      if: inputs.phase != 'build' && contains(fromJSON('["server-fast","server-governance"]'), inputs.test-group)
+      shell: bash
+      run: |
+        timeout "${{ inputs.architecture-timeout-minutes }}m" \
+          bash scripts/ci/generate-admin-operation-parity-exports.sh --configuration Release --no-build --no-restore
+
     - name: Run .NET Tests (Architecture Source)
       if: inputs.phase != 'build' && contains(fromJSON('["all","architecture"]'), inputs.test-group)
       shell: bash
