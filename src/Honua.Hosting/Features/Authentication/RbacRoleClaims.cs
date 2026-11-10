@@ -17,12 +17,12 @@ internal static class RbacRoleClaims
             principal,
             options,
             serviceProvider is not null &&
-            LicenseGate.HasLiveEntitlement(serviceProvider, FeatureCatalog.OidcClaimsMappingKey));
+            LicenseGate.HasLiveEntitlement(serviceProvider, FeatureCatalog.OidcAuthenticationKey));
 
     public static List<string> Enumerate(
         ClaimsPrincipal principal,
         RbacOptions options,
-        bool claimsMappingEntitled)
+        bool roleClaimSelectionEntitled)
     {
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentNullException.ThrowIfNull(options);
@@ -43,12 +43,12 @@ internal static class RbacRoleClaims
                 RbacOptions.DefaultRoleClaimType,
                 StringComparison.OrdinalIgnoreCase);
 
-        // A non-default Rbac:RoleClaimType is claims mapping, just like OIDC's
-        // provider-specific role claim configuration. Consult the live snapshot on
+        // A non-default Rbac:RoleClaimType is role claim selection, just like OIDC's
+        // provider-specific role claim configuration, and needs identity.oidc. Consult the live snapshot on
         // every authorization decision so applying or expiring a license takes
         // effect without a restart. Normalized and default role claims remain
         // available in every edition.
-        if (isCustomClaimType && claimsMappingEntitled)
+        if (isCustomClaimType && roleClaimSelectionEntitled)
         {
             acceptedClaimTypes.Add(configuredClaimType);
         }
@@ -72,7 +72,7 @@ internal static class RbacRoleClaims
     public static bool IsAdmin(
         ClaimsPrincipal principal,
         RbacOptions options,
-        bool claimsMappingEntitled)
-        => Enumerate(principal, options, claimsMappingEntitled)
+        bool roleClaimSelectionEntitled)
+        => Enumerate(principal, options, roleClaimSelectionEntitled)
             .Any(role => string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase));
 }
