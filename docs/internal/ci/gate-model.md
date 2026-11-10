@@ -41,7 +41,7 @@ Derived Artifact Normalization (`Generate bounded normalization projection`,
 successfully with a summary. Missing admission prerequisites finish the
 attestation helper neutrally while the separate required `Review Gate` status
 remains pending for drafts or failing for blocking reviews. API and attestation
-errors still fail; these helpers cannot admit an unreviewed head.
+errors still fail; these helpers cannot override the required admission status.
 
 CI Doctor, PR Review Doctor and PR Sync Doctor retain their concurrency groups
 and use the same serial queue, including their generated `activation`, `agent`,
