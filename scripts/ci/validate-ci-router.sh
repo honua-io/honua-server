@@ -1629,6 +1629,10 @@ echo "Checking shard filter/test-class coverage in both directions..."
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
   --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Ogc.Classic.CatalogCapabilitiesMetadataTests" \
+    "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" \
+    "OGC Classic WMTS" \
+  --assert-owner \
     "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Styling Styles Endpoints" \

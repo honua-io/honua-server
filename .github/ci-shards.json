@@ -1506,11 +1506,18 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
-      "_comment": "ADR-0037 finer-sharding: carved from OGC Classic Maps. Selects the Wmts namespace (OgcClassicWmtsTests is the heaviest class in the original Maps shard).",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts",
+      "_comment": "ADR-0037 finer-sharding: carved from OGC Classic Maps. Selects the Wmts namespace (OgcClassicWmtsTests is the heaviest class in the original Maps shard) and cross-protocol catalog capabilities metadata coverage.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.CatalogCapabilitiesMetadataTests",
       "paths": [
         "src/Honua.Core/Core/Features/Validation/",
         "src/Honua.Protocols/OgcClassic/Wmts/",
+        "src/Honua.Core/Core/Features/Metadata/Domain/V2/",
+        "src/Honua.Core/Core/Features/Metadata/Services/",
+        "src/Honua.Protocols/OgcClassic/CatalogCapabilitiesXml.cs",
+        "src/Honua.Protocols/OgcClassic/Wcs20/",
+        "src/Honua.Protocols/OgcClassic/Wfs20/",
+        "src/Honua.Protocols/OgcClassic/Wms/",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/CatalogCapabilitiesMetadataTests.cs",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wmts/"
       ]
     },
