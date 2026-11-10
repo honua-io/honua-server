@@ -85,8 +85,7 @@ class FeedbackTests(unittest.TestCase):
         self.assertFalse(result['emptySelection'])
 
     def test_unit_feedback_omits_integration_but_preserves_routing_validation(self):
-        result = feedback.make_plan(self.catalog, {'selectedProjects': [self.unit]},
-                                    {'run_all': True, 'shards': []}, self.registry, [], unit_only=True)
+        result = feedback.unit_feedback(self.plan([self.unit], all_shards=True), self.catalog)
         self.assertEqual(result['projects'], [self.unit])
         self.assertEqual(result['shards'], [])
         self.assertEqual(len(result['skips']), 3)

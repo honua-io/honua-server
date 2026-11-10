@@ -55,7 +55,7 @@ def route(root, changed):
         input='\n'.join(changed), text=True, cwd=root))
 
 
-def make_plan(catalog, unit_plan, routing, registry, changed, unit_only=False):
+def make_plan(catalog, unit_plan, routing, registry, changed):
     if not isinstance(routing, dict) or type(routing.get('run_all')) is not bool:
         raise ValueError('Canonical router must report a boolean run_all')
     if not isinstance(routing.get('shards'), list) or any(not isinstance(n, str) or not n for n in routing['shards']):
@@ -83,9 +83,6 @@ def make_plan(catalog, unit_plan, routing, registry, changed, unit_only=False):
         if project in units:
             skips.append({'shard': name, 'reason': 'selected isolated unit full suite covers this shard'})
             continue
-        if unit_only and entry['role'] != 'unit':
-            skips.append({'shard': name, 'reason': 'integration feedback is opt-in'})
-            continue
         expression = shard.get('filter')
         if not expression:
             raise ValueError('Selected shard has no filter: ' + name)
@@ -109,6 +106,18 @@ def make_plan(catalog, unit_plan, routing, registry, changed, unit_only=False):
             'resources': sorted({r for p in projects for r in known[p]['resources']}),
             'selectionReasons': unit_plan.get('selectionReasons', []) + [routing.get('reason', 'canonical router')],
             'skips': skips, 'emptySelection': not projects}
+
+
+def unit_feedback(plan, catalog):
+    known = catalog['projects']
+    excluded = [shard for shard in plan['shards'] if known[shard['project']]['role'] != 'unit']
+    plan['shards'] = [shard for shard in plan['shards'] if known[shard['project']]['role'] == 'unit']
+    plan['skips'].extend({'shard': shard['name'], 'reason': 'integration feedback is opt-in'}
+                         for shard in excluded)
+    plan['projects'] = sorted(set(plan['units']) | {shard['project'] for shard in plan['shards']})
+    plan['resources'] = sorted({resource for project in plan['projects'] for resource in known[project]['resources']})
+    plan['emptySelection'] = not plan['projects']
+    return plan
 
 
 def require_tests(directory):
@@ -217,7 +226,9 @@ def main():
     changed = changed_files(root, args.base)
     unit_plan = module.plan(root, catalog, changed)
     routing = route(root, changed)
-    result = make_plan(catalog, unit_plan, routing, json.loads((root / '.github/ci-shards.json').read_text()), changed, unit_only=args.unit_only)
+    result = make_plan(catalog, unit_plan, routing, json.loads((root / '.github/ci-shards.json').read_text()), changed)
+    if args.unit_only:
+        result = unit_feedback(result, catalog)
     try:
         order_shards(root, result, args.timings_dir or Path(os.environ.get('HONUA_LOCAL_CI_TIMINGS', str(root / 'artifacts/test-results'))))
     except (ValueError, OSError, KeyError):
