@@ -496,7 +496,7 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.sha || 'HEAD' }}
         run: |
           mkdir -p artifacts/pr-gate
-          python3 scripts/ci/compute-affected-shards.py --cap "${CAP}" --annotate-resources --json "artifacts/pr-gate/producer-shards.json"
+          python3 scripts/ci/compute-affected-shards.py --cap "${CAP}" --time-budget --annotate-resources --json "artifacts/pr-gate/producer-shards.json"
           python3 scripts/ci/managed-test-build.py projects --lane pr-shards --matrix-file "artifacts/pr-gate/producer-shards.json" --output "artifacts/pr-gate/managed-projects.json"
 
       - name: Lean gate (managed build producer)
@@ -576,6 +576,7 @@ jobs:
       reason: ${{ steps.generated-only.outputs.generated_only == 'true' && 'validated_generated_only' || steps.docs-only.outputs.docs_only == 'true' && 'docs_only' || steps.select.outputs.reason }}
       selected_count: ${{ steps.select.outputs.selected_count }}
       matrix_include: ${{ steps.select.outputs.matrix_include }}
+      deferred_to_trunk: ${{ steps.select.outputs.deferred_to_trunk }}
     steps:
       # Same shape as the `format` job's admission failure. `rerun-failed-jobs`
       # releases only jobs that FAILED attempt 1, so a job that quietly
@@ -649,6 +650,7 @@ jobs:
           mkdir -p artifacts/pr-gate
           python3 scripts/ci/compute-affected-shards.py \
             --cap "${CAP}" \
+            --time-budget \
             --annotate-resources \
             --github-output \
             --json "artifacts/pr-gate/affected-shards.json" \
@@ -803,6 +805,7 @@ jobs:
           SELECT_REASON: ${{ needs.affected-shards-select.outputs.reason }}
           SELECT_COUNT: ${{ needs.affected-shards-select.outputs.selected_count }}
           SELECT_MATRIX: ${{ needs.affected-shards-select.outputs.matrix_include }}
+          SELECT_DEFERRED: ${{ needs.affected-shards-select.outputs.deferred_to_trunk }}
           SHARDS_RESULT: ${{ needs.affected-shard.result }}
         run: |
           mkdir -p artifacts/pr-gate
