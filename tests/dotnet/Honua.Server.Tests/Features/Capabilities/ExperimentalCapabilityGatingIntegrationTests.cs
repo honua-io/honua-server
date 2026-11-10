@@ -63,7 +63,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
         // temporal.* promoted to GA (Implemented) in #2429 — no longer experimental-gated.
         // sync.offline promoted to GA (Implemented) in #2430 — no longer experimental-gated.
         // alerts.geofence is Preview in 2026.1 and is asserted separately below.
-        // Founder ruling (2026-11-09): realtime feature streams are Experimental.
+        // Realtime feature streams are Experimental: delivery across nodes needs an optional Redis add-on.
         "realtime.feature-streams",
         // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
         "versioning.branch",

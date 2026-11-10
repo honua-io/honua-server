@@ -253,7 +253,7 @@ public static class CapabilityKeyCatalog
             }),
     ];
 
-    // Founder ruling (2026-11-09): realtime streams work on a single node, and delivery across several nodes needs an optional Redis add-on.
+    // Realtime streams work on a single node, and delivery across several nodes needs an optional Redis add-on.
     private static string? StatusOf(FeatureDefinition feature)
         => feature.Category switch
         {

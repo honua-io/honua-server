@@ -124,7 +124,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         // temporal.* promoted to Implemented (GA) in #2429 — no longer omitted.
         // sync.offline is Preview in 2026.1 and remains in the manifest projection when the
         // deployment-wide Preview gate is enabled.
-        // Founder ruling (2026-11-09): realtime feature streams are Experimental.
+        // Realtime feature streams are Experimental: delivery across nodes needs an optional Redis add-on.
         "realtime.feature-streams",
         // alerts.geofence is Preview in 2026.1 and is projected through PreviewCapabilityIds.
         // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
