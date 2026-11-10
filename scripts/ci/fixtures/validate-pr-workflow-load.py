@@ -14,7 +14,7 @@ WORKFLOWS = ROOT / ".github/workflows"
 HEAVY = (
     "codeql.yml", "compose-release-lifecycle.yml", "geoarrow-interop-fixture.yml",
     "geoparquet-interop.yml", "ogc-api-building-block-conformance.yml",
-    "serving-image-boundary.yml", "worker-gdal-image.yml",
+    "serving-image-boundary.yml", "worker-gdal-image.yml", "gp-scoped-key-contract.yml",
 )
 DRAFT_GUARD = "github.event_name != 'pull_request' || !github.event.pull_request.draft"
 

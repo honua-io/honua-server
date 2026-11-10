@@ -2,6 +2,7 @@ name: GP Scoped Key Contract
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches: [trunk]
     paths:
       - 'src/Honua.Geoprocessing/Core/Features/Geoprocessing/**'
@@ -30,6 +31,7 @@ on:
       - 'tests/dotnet/Honua.Server.Tests/Features/Eval/EvalHarnessTests.cs'
       - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/**'
       - '.github/workflows/gp-scoped-key-contract.yml'
+      - '!**/*.md'
 
 permissions:
   contents: read
@@ -41,6 +43,7 @@ concurrency:
 
 jobs:
   contract:
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     name: GP Scoped Key / ${{ matrix.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
