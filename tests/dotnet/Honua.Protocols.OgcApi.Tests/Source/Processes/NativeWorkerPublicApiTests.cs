@@ -78,9 +78,9 @@ public sealed class NativeWorkerPublicApiTests(ITestOutputHelper output)
             using var response = await client.GetAsync($"/ogc/processes/jobs/{jobId}/results");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var results = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var output = results.RootElement.EnumerateObject().Should().ContainSingle().Which.Value;
-            output.GetProperty("mediaType").GetString().Should().Be("application/geo+json");
-            var collection = output.GetProperty("value");
+            var processOutput = results.RootElement.EnumerateObject().Should().ContainSingle().Which.Value;
+            processOutput.GetProperty("mediaType").GetString().Should().Be("application/geo+json");
+            var collection = processOutput.GetProperty("value");
             collection.GetProperty("type").GetString().Should().Be("FeatureCollection");
             var features = collection.GetProperty("features").EnumerateArray().ToArray();
             features.Should().HaveCount(2);

@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Caching.Distributed;

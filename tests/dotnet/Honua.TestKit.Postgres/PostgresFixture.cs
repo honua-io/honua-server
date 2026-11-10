@@ -418,6 +418,9 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
             cancellationToken);
     }
 
+    Task IIsolatedSchemaFixture.ExecuteDdlUnderLockAsync(string sql, string? schemaName)
+        => ExecuteDdlUnderLockAsync(sql, schemaName, CancellationToken.None);
+
     /// <summary>
     /// Executes a schema/catalog-mutating raw DDL statement (e.g. <c>DROP TABLE public.*</c>) under the
     /// shared <see cref="Seeding.SeedRunner.SeedApplicationLockKey"/> advisory lock with
@@ -428,9 +431,6 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
     /// <param name="sql">The DDL to apply.</param>
     /// <param name="schemaName">Optional schema to set on <c>search_path</c> before applying the DDL.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task IIsolatedSchemaFixture.ExecuteDdlUnderLockAsync(string sql, string? schemaName)
-        => ExecuteDdlUnderLockAsync(sql, schemaName, CancellationToken.None);
-
     public Task ExecuteDdlUnderLockAsync(string sql, string? schemaName = null, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sql);
