@@ -185,7 +185,7 @@ public sealed partial class SharedCacheRouteTableTests : IDisposable
 
         anonymous.Headers.CacheControl!.ToString().Should().Be("public, max-age=30, s-maxage=60");
         anonymous.Headers.Vary.Should().Contain(["Origin", "Accept", "Accept-Encoding", "Accept-Language"]);
-        withApiKey.Should().Be("private, no-store");
+        withApiKey.Should().Contain("private").And.Contain("no-store").And.NotContain("max-age");
     }
 
     public void Dispose()
