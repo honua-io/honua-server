@@ -9,7 +9,6 @@ internal enum ResponseCacheClass
     Tile,
     FeatureQuery,
     MetadataDocument,
-    StaticMapImage,
     StaticObject,
 }
 
