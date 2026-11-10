@@ -611,16 +611,19 @@ The latest 30-run selection snapshot contains eight runs with GeoServices
 selections (14 jobs, including four component jobs); all eight contain direct
 GeoServices changes. No observed run exceeds two dedicated integration jobs,
 so this sample demonstrates zero integration runner-minutes saved by the new
-cap. Completed selected jobs total 66.36 runner-minutes; queued and incomplete
-jobs are excluded from that total. The smoke passed 2/2 tests on the build host
+cap. Dedicated integration shards appear in seven of the 30 runs and account
+for 56.45 completed runner-minutes. Including component jobs, completed selected
+jobs total 66.36 runner-minutes; queued and incomplete jobs are excluded. The smoke passed 2/2 tests on the build host
 in 0.32 minutes, or 2.05 minutes including its build. These are baseline and
 local measurements; post-merge CI timings are still pending.
 
 The same 30-run sample selected no OGC shards, so measured OGC savings are
-0 runner-minutes per sampled PR. The previous completed full run spent
-101.08 runner-minutes on dedicated OGC child shards. Moving that complete set
-to the non-gating nightly avoids those minutes only on runs that would have
-selected the complete set; affected-run savings require a post-change sample.
+0 runner-minutes per sampled PR. Completed full run 42859341850 spent
+154.88 runner-minutes across 18 currently nightly-only OGC shards. The newly
+extracted Core OGC Features Endpoints and OGC Units and Components jobs have no
+separate baseline timing. Deferring the 18 measured shards avoids those minutes
+only on runs that would have selected all 18; affected-run savings require a
+post-change sample.
 
 ### Governance capacity split
 
