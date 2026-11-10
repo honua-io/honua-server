@@ -27,8 +27,26 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
 
 [Protocol(TestProtocols.GeoservicesCatalog)]
-public sealed class GeoservicesCatalogGeocodeServerTests
+public sealed class GeoservicesCatalogGeocodeServerTests : IClassFixture<GeoservicesCatalogGeocodeServerTests.RestrictedFeatureFixture>
 {
+    private readonly RestrictedFeatureFixture _fixture;
+
+    public GeoservicesCatalogGeocodeServerTests(RestrictedFeatureFixture fixture)
+    {
+        _fixture = fixture;
+    }
+
+    /// <summary>
+    /// Shares the immutable restricted catalog across read-only discovery and authorization cases.
+    /// Collision cases mutate the graph and keep their own applications.
+    /// </summary>
+    public sealed class RestrictedFeatureFixture : IDisposable
+    {
+        public WebApplicationFactory<Program> Application { get; } = CreateFactory(restrictedFeatures: true);
+
+        public void Dispose() => Application.Dispose();
+    }
+
     [IntegrationTheory]
     [InlineData("World", "GetServiceDescriptions")]
     [InlineData("City Locator", "GetServiceDescriptionsEx")]
@@ -141,8 +159,7 @@ public sealed class GeoservicesCatalogGeocodeServerTests
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
     public async Task Catalogs_PublicLocatorAndRestrictedFeatures_ExposeOnlyLocatorToAnonymousCaller()
     {
-        using var factory = CreateFactory(restrictedFeatures: true);
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
         using var rest = await ReadRestAsync(client);
         var services = rest.RootElement.GetProperty("services").EnumerateArray().ToArray();
         services.Should().HaveCount(2);
@@ -173,8 +190,7 @@ public sealed class GeoservicesCatalogGeocodeServerTests
     [Endpoint("GET /rest/services/{folderName}")]
     public async Task ServiceFolder_PublicLocator_PreservesProtectedFolderAuthorization(string? role, int expectedError)
     {
-        using var factory = CreateFactory(restrictedFeatures: true);
-        using var client = role is null ? factory.CreateClient() : ServiceRbacTestFixture.CreateClient(factory, role);
+        using var client = role is null ? _fixture.Application.CreateClient() : ServiceRbacTestFixture.CreateClient(_fixture.Application, role);
         using var folder = await client.GetAsync($"/rest/services/{ServiceRbacTestFixture.AlphaService}?f=json");
         if (expectedError != 0)
         {

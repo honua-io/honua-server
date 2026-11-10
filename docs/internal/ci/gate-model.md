@@ -539,3 +539,10 @@ unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
+
+## Catalog geocode discovery state isolation
+
+`GeoservicesCatalogGeocodeServerTests` shares one restricted-feature application
+for read-only discovery and folder authorization cases, with a fresh client per
+case. Locator configurations, startup failures and graph collision mutations keep
+separate applications. All assertions and theory rows remain in their existing shard.

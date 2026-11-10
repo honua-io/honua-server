@@ -569,3 +569,6 @@ The budget job records each run's phase and credits, total triage/fix credits,
 paid-run counts and the share of triage events reaching a paid Opus run. Deterministic
 skips use zero model credits. The combined envelopes are 2500 credits ($25) per day;
 triage and fix do not each receive a separate allowance.
+
+Catalog geocode discovery tests reuse the immutable restricted-feature host under
+the [catalog geocode isolation contract](gate-model.md#catalog-geocode-discovery-state-isolation).
