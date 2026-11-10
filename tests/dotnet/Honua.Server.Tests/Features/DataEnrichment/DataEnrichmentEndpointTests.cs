@@ -363,10 +363,6 @@ public sealed class DataEnrichmentSyncLimitTests : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// Verifies every data-enrichment route is gated by the Pro entitlement. Runs as
-/// Community edition so all seven routes return HTTP 402.
-/// </summary>
 [Collection("Database")]
 [Protocol(ProtocolNames.DataEnrichment)]
 public sealed class DataEnrichmentEditionGateTests : IAsyncLifetime

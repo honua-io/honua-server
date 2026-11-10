@@ -244,10 +244,6 @@ public sealed class EnrichmentDatasetCatalogEndpointTests : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// Verifies discovery edition filtering (#2280): a Pro caller does not see
-/// Enterprise-tier managed datasets.
-/// </summary>
 [Collection("Database")]
 [Protocol(ProtocolNames.DataEnrichment)]
 public sealed class EnrichmentDatasetCatalogEditionFilterTests : IAsyncLifetime

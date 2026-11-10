@@ -37,9 +37,8 @@ public interface IPortalCredentialVerifier
 /// <param name="TenantId">Tenant scope to attach to the issued token, or <see langword="null"/>.</param>
 /// <param name="Roles">Roles granted for the lifetime of the issued token.</param>
 /// <param name="RolesRequireClaimsMappingEntitlement">
-/// True when <paramref name="Roles"/> were produced by entitlement-gated mapping (role claim
-/// selection under <c>identity.oidc</c>, or a custom mapping under
-/// <c>identity.claims-mapping</c>) and would differ without it. The issued
+/// True when <paramref name="Roles"/> were produced with the Enterprise
+/// <c>identity.claims-mapping</c> entitlement active and would differ without it. The issued
 /// token persists these roles, and the restore path never re-runs the claims transformation, so
 /// this flag is what lets the restore revalidate them against the LIVE entitlement instead of
 /// honouring a snapshot taken while the license was valid (honua-server#2997 review).
@@ -53,14 +52,9 @@ public interface IPortalCredentialVerifier
 /// (honua-server#2997 review).
 /// </param>
 /// <param name="RolesWithoutClaimsMapping">
-/// Exact fallback roles that remain valid without any entitlement-gated mapping, or
+/// Exact fallback roles that remain valid without <c>identity.claims-mapping</c>, or
 /// <see langword="null"/> when the full role set is entitlement-independent. An empty list is
 /// a known empty fallback; null provenance on a persisted legacy record remains fail-closed.
-/// </param>
-/// <param name="RolesDependOnlyOnRoleClaimSelection">
-/// True when the roles differ from the fallback only because of the configured role claim types,
-/// so the restore revalidates them against <c>identity.oidc</c> instead of
-/// <c>identity.claims-mapping</c>.
 /// </param>
 /// <param name="Source">
 /// The credential this verification consumed, so the issued token can be clamped to that
@@ -75,5 +69,8 @@ public sealed record PortalCredentialPrincipal(
     bool RolesRequireClaimsMappingEntitlement = false,
     bool TenantRequiresClaimsMappingEntitlement = false,
     IReadOnlyList<string>? RolesWithoutClaimsMapping = null,
-    PortalCredentialSource? Source = null,
-    bool RolesDependOnlyOnRoleClaimSelection = false);
+    PortalCredentialSource? Source = null)
+{
+    // Roles flagged by RolesRequireClaimsMappingEntitlement that differ from the fallback only through the configured role claim types are revalidated against identity.oidc instead of identity.claims-mapping.
+    public bool RolesDependOnlyOnRoleClaimSelection { get; init; }
+}

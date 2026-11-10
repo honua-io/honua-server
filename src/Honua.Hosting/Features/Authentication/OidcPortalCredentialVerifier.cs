@@ -189,8 +189,10 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
                 PortalCredentialSourceKind.FederatedToken,
                 Reference: $"{bridged?.Issuer}|{principalId}",
                 Version: null,
-                ExpiresAt: bridgedExpiry),
-            RolesDependOnlyOnRoleClaimSelection: rolesDependOnlyOnRoleClaimSelection);
+                ExpiresAt: bridgedExpiry))
+        {
+            RolesDependOnlyOnRoleClaimSelection = rolesDependOnlyOnRoleClaimSelection,
+        };
     }
 
     private async Task<TokenValidationParameters?> ResolveParametersAsync(

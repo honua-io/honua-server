@@ -129,8 +129,8 @@ public sealed record PortalTokenIntrospection(
 /// <param name="BindingValue">Bound referer URL or client IP address; empty for a native OAuth bearer.</param>
 /// <param name="ExpiresAt">Absolute expiry instant for the token.</param>
 /// <param name="RolesRequireClaimsMappingEntitlement">
-/// Whether <paramref name="Roles"/> depend on entitlement-gated mapping (<c>identity.oidc</c>
-/// role claim selection or an <c>identity.claims-mapping</c> custom mapping). The issuer persists it and revalidates the roles against the live entitlement
+/// Whether <paramref name="Roles"/> depend on the Enterprise <c>identity.claims-mapping</c>
+/// entitlement. The issuer persists it and revalidates the roles against the live entitlement
 /// on every restore, so an expired license cannot keep honouring roles it would no longer
 /// grant.
 /// <para>
@@ -150,7 +150,7 @@ public sealed record PortalTokenIntrospection(
 /// (honua-server#2997 review). Nullable on the same terms as the roles flag.
 /// </param>
 /// <param name="RolesWithoutClaimsMapping">
-/// Exact fallback roles to restore when the entitlement the roles depend on is inactive. Null means
+/// Exact fallback roles to restore when <c>identity.claims-mapping</c> is inactive. Null means
 /// the fallback is unknown (legacy persisted provenance) and therefore fails closed; an empty
 /// list is a known role-free fallback.
 /// </param>
@@ -168,11 +168,6 @@ public sealed record PortalTokenIntrospection(
 /// A different Referer still mismatches. Browser OAuth tokens leave this
 /// <see langword="false"/> (honua-server#5558).
 /// </param>
-/// <param name="RolesDependOnlyOnRoleClaimSelection">
-/// True when the roles differ from the fallback only because of the configured role claim types,
-/// so the restore revalidates them against <c>identity.oidc</c> instead of
-/// <c>identity.claims-mapping</c>.
-/// </param>
 public sealed record PortalTokenIssueRequest(
     string PrincipalId,
     string? DisplayName,
@@ -186,8 +181,11 @@ public sealed record PortalTokenIssueRequest(
     IReadOnlyList<string>? RolesWithoutClaimsMapping = null,
     bool IsClientCredentials = false,
     PortalCredentialSource? Source = null,
-    bool AcceptMissingReferer = false,
-    bool RolesDependOnlyOnRoleClaimSelection = false);
+    bool AcceptMissingReferer = false)
+{
+    // Roles flagged by RolesRequireClaimsMappingEntitlement that differ from the fallback only through the configured role claim types are revalidated against identity.oidc instead of identity.claims-mapping.
+    public bool RolesDependOnlyOnRoleClaimSelection { get; init; }
+}
 
 /// <summary>
 /// Inputs for exchanging a presented portal token for a token bound to a new client binding.

@@ -84,35 +84,9 @@ internal sealed class OidcClaimsTransformation(
             return principal;
         }
 
-        // Founder ruling (2026-11-09): choosing which claims carry roles (RoleClaimType,
-        // AdditionalRoleClaimTypes) belongs to single-provider OIDC (identity.oidc, Pro), so Okta
-        // `groups` and Auth0 namespaced role claims work without identity.claims-mapping. Below
-        // Pro the selection is skipped and only the default role claim types are read, so an
-        // unentitled deployment cannot point RoleClaimType at `groups` and have raw provider
-        // group values read as roles and match AdminRoles.
-        var customRoleClaimType = !string.Equals(
-            _options.ClaimsMapping.RoleClaimType,
-            ClaimsMappingOptions.DefaultRoleClaimType,
-            StringComparison.OrdinalIgnoreCase);
-        var roleClaimSelectionConfigured = customRoleClaimType
-            || _options.ClaimsMapping.AdditionalRoleClaimTypes.Length > 0;
-        var roleClaimSelectionEntitled = !roleClaimSelectionConfigured
-            || LicenseGate.IsEntitlementActive(serviceProvider, FeatureCatalog.OidcAuthenticationKey);
-        if (!roleClaimSelectionEntitled)
-        {
-            OidcAuthenticationLog.RoleClaimSelectionNotEntitled(logger);
-        }
-
-        // #2997: arbitrary CustomMappings, including a mapped tenant, are Enterprise
-        // (identity.claims-mapping). When configured but unentitled they are skipped while
-        // default claims normalization continues to run.
-        var customMappingConfigured = _options.ClaimsMapping.CustomMappings.Count > 0;
-        var claimsMappingEntitled = !customMappingConfigured
-            || LicenseGate.IsEntitlementActive(serviceProvider, FeatureCatalog.OidcClaimsMappingKey);
-        if (!claimsMappingEntitled)
-        {
-            OidcAuthenticationLog.CustomClaimsMappingNotEntitled(logger);
-        }
+        var customRoleClaimType = HasCustomRoleClaimType();
+        var roleClaimSelectionEntitled = IsRoleClaimSelectionEntitled();
+        var claimsMappingEntitled = IsCustomMappingEntitled();
 
         var transformedClaims = new List<Claim>();
 
@@ -315,6 +289,46 @@ internal sealed class OidcClaimsTransformation(
         return await ManagedMembershipRevalidation
             .ApplyAsync(result, membershipSource)
             .ConfigureAwait(false);
+    }
+
+    private bool HasCustomRoleClaimType()
+        => !string.Equals(
+            _options.ClaimsMapping.RoleClaimType,
+            ClaimsMappingOptions.DefaultRoleClaimType,
+            StringComparison.OrdinalIgnoreCase);
+
+    // Founder ruling (2026-11-09): choosing which claims carry roles (RoleClaimType,
+    // AdditionalRoleClaimTypes) belongs to single-provider OIDC (identity.oidc, Pro), so Okta
+    // `groups` and Auth0 namespaced role claims work without identity.claims-mapping. Below
+    // Pro the selection is skipped and only the default role claim types are read, so an
+    // unentitled deployment cannot point RoleClaimType at `groups` and have raw provider
+    // group values read as roles and match AdminRoles.
+    private bool IsRoleClaimSelectionEntitled()
+    {
+        var configured = HasCustomRoleClaimType() || _options.ClaimsMapping.AdditionalRoleClaimTypes.Length > 0;
+        var entitled = !configured
+            || LicenseGate.IsEntitlementActive(serviceProvider, FeatureCatalog.OidcAuthenticationKey);
+        if (!entitled)
+        {
+            OidcAuthenticationLog.RoleClaimSelectionNotEntitled(logger);
+        }
+
+        return entitled;
+    }
+
+    // Arbitrary CustomMappings, including a mapped tenant, are Enterprise
+    // (identity.claims-mapping). When configured but unentitled they are skipped while
+    // default claims normalization continues to run.
+    private bool IsCustomMappingEntitled()
+    {
+        var entitled = _options.ClaimsMapping.CustomMappings.Count == 0
+            || LicenseGate.IsEntitlementActive(serviceProvider, FeatureCatalog.OidcClaimsMappingKey);
+        if (!entitled)
+        {
+            OidcAuthenticationLog.CustomClaimsMappingNotEntitled(logger);
+        }
+
+        return entitled;
     }
 
     private static string? FindClaimValue(ClaimsIdentity identity, params string[] claimTypes)
