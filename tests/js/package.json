@@ -14,6 +14,7 @@
     "test:edits": "vitest run feature-server/apply-edits",
     "test:metadata": "vitest run feature-server/metadata",
     "test:openlayers": "vitest run --dir openlayers",
+    "test:bootstrap-ownership": "node node_modules/tsx/dist/cli.mjs --test ../../scripts/ci/fixtures/test-js-bootstrap.mjs ../../scripts/ci/fixtures/test-openlayers-server.mjs",
     "test:openlayers:render": "npx playwright test --config openlayers/rendering/playwright.config.ts",
     "lint": "npm run typecheck",
     "typecheck": "tsc --noEmit"

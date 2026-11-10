@@ -659,7 +659,17 @@ public class ImageServerMetadataHandlerTests
     private ImageServerMetadataHandler CreateHandler(MetadataV2ResourceTemporal temporal)
         => new(
             new TestMetadataV2GraphBuilder()
-                .AddResource("resource-1", "test-layer", MetadataV2ResourceType.RasterDataset, temporal: temporal)
+                .AddResource(
+                    "resource-1",
+                    "test-layer",
+                    MetadataV2ResourceType.RasterDataset,
+                    fields:
+                    [
+                        new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime },
+                        new MetadataV2Field { Name = "event_date", Type = MetadataV2FieldType.DateTime },
+                        new MetadataV2Field { Name = "acquisitiondate", Type = MetadataV2FieldType.DateTime }
+                    ],
+                    temporal: temporal)
                 .AddService("service-1", "image-svc-1", protocols: [ServiceProtocols.ImageServer])
                 .AddPublication(
                     "publication-1",

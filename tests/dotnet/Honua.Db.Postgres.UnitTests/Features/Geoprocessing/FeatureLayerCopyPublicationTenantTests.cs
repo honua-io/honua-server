@@ -99,7 +99,11 @@ public sealed class FeatureLayerCopyPublicationTenantTests
         Type = MetadataV2ResourceType.FeatureDataset,
         PrimaryStorageBindingId = "binding-allowed",
         StorageBindingIds = ["binding-allowed", "binding-hidden"],
-        SchemaFields = [new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"] }],
+        SchemaFields =
+        [
+            new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"] },
+            new MetadataV2Field { Name = "geometry", Type = MetadataV2FieldType.Geometry }
+        ],
         Spatial = new MetadataV2ResourceSpatial { SpatialReference = MetadataV2SpatialReference.Wgs84, PrimaryGeometryField = "geometry" }
     };
 

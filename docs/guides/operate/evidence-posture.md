@@ -69,8 +69,8 @@ Both health and findings publish the `honua_ops.managed_compose` section source.
 A successfully observed outage is complete evidence. The deterministic
 `managed-compose-service-unhealthy` finding recommends `compose.restart_service`
 for the registered target and configured service only. Use `honua_propose_finding`
-with that finding and target; a different principal approves it in the normal
-approval inbox. Restart is never auto-safe. The executor checks readiness after
+with that finding and target; one authorized human approves it in the interactive
+approval inbox. The requester may approve their own proposal. Restart is never auto-safe. The executor checks readiness after
 restarting the selected service, and a fresh health/findings read confirms recovery.
 
 `honua_platform_release_status.serving` keeps `effectiveArtifactReference` as the
