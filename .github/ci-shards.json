@@ -341,6 +341,7 @@
         "Core Attachments",
         "Core Related Records and Limits",
         "Core OGC Features and CRS",
+        "Core OGC Features Endpoints",
         "STAC and API Governance",
         "Core Mutation Concurrency",
         "Core Spatial Query and Streaming"
@@ -6019,7 +6020,8 @@
         "src/Honua.Protocols/SensorThings/",
         "tests/dotnet/Honua.Protocols.SensorThings.UnitTests/",
         "src/Honua.Protocols/Stac/",
-        "tests/dotnet/Honua.Protocols.Stac.UnitTests/"
+        "tests/dotnet/Honua.Protocols.Stac.UnitTests/",
+        "src/Honua.Protocols/Ogc.Shared/"
       ],
       "supplemental_source_paths": true,
       "csprojs": [
@@ -6078,7 +6080,8 @@
         "src/Honua.Cloud/Aws/",
         "src/Honua.Cloud/Azure/",
         "src/Honua.Geoprocessing/Testing/",
-        "src/Honua.Worker.Gdal/"
+        "src/Honua.Worker.Gdal/",
+        "src/Honua.Protocols/Ogc.Shared/"
       ],
       "csprojs": [
         "tests/dotnet/Honua.Geoprocessing.Cli.Tests/Honua.Geoprocessing.Cli.Tests.csproj",

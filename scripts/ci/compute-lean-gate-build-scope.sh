@@ -68,6 +68,7 @@ SOLUTION="Honua.sln"
 # is a red gate, not a mystery "assembly not found" at run time.
 SERVER_TEST_PROJECTS=(
   "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
+  "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
 )
 ARCHITECTURE_TEST_PROJECTS=(
   "tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj"

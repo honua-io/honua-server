@@ -37,7 +37,7 @@ in the 09:00 UTC (01:00 Pacific standard time) full run or an explicit manual
 runs, including direct OGC changes, and from the 21:00 UTC product full run.
 This covers OGC API and classic protocol integration, unit and component
 shards, plus the isolated Core OGC endpoint child. Shared CRS correctness and
-STAC product catalog checks retain their existing gating policy. An OGC-only
+STAC product catalog checks retain their existing gating policy. Shared OGC utilities still select non-OGC suites that depend on them. An OGC-only
 diff can select an empty integration matrix; foundation and build checks still
 apply. The nightly OGC jobs continue on error and the verdict reports their
 failed, missing or invalid execution receipts under **OGC nightly** without
