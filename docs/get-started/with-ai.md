@@ -364,7 +364,7 @@ For Lambda, a large file import requires a compatible durable Batch runner and
 shared file storage. Large managed-layer publication also needs a compatible
 remote runner, but reads its source database directly. Configure and verify the
 API and worker together; adding Redis alone does not create a Batch executor.
-See [Batch execution](../operator/geoprocessing-aws-batch.md) and
+See [Batch execution](../guides/deploy/geoprocessing-aws-batch.md) and
 [import runners](../guides/publish/import-files.md#where-background-imports-run).
 
 Cloud deployment options and agent provisioning support are different facts.

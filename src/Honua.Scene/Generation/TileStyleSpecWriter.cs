@@ -189,10 +189,10 @@ public static class TileStyleSpecWriter
             Symbology3DComparison.GreaterThanOrEqual => ">=",
             Symbology3DComparison.LessThan => "<",
             Symbology3DComparison.LessThanOrEqual => "<=",
-            _ => "==="
+            _ => null
         };
 
-        return string.Concat(lhs, " ", op, " ", BuildOperand(rule));
+        return op is null ? "false" : string.Concat(lhs, " ", op, " ", BuildOperand(rule));
     }
 
     private static string BuildOperand(Symbology3DRule rule)

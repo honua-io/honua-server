@@ -6,7 +6,7 @@ tags: [gis, domain-language]
 aliases: ["save","disk","volume","database","Redis","bucket","output store"]
 sources:
   - id: contract
-    resource: "/user/gp-output-store-attestation.md"
+    resource: "/guides/gp-output-store-attestation.md"
 relations:
   - predicate: relates_to
     target: "/concepts/domain/dataset.md"
@@ -29,4 +29,4 @@ Referenced geoprocessing outputs require a persistent output store with the docu
 
 Use [save and resume a map](../../guides/workflows/save-resume-map.md) for content, [install and configure](../../guides/workflows/install-configure.md) for operator persistence, and [cleanup](../../guides/workflows/cleanup-resources.md) for resource ownership. Retention, backup, and deletion are separate decisions.
 
-[^contract]: [Source contract](../../user/gp-output-store-attestation.md).
+[^contract]: [Source contract](../../guides/gp-output-store-attestation.md).
