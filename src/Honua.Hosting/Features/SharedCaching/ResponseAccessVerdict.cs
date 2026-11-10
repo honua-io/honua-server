@@ -27,6 +27,18 @@ internal static class ResponseAccessVerdict
         context.Items.TryAdd(VerdictKey, Verdict.AnonymousGranted);
     }
 
+    // Handlers that filter by access evaluate without refusing. A grant seen there still proves an anonymous caller may read
+    // what is served; a denial there only removes content from the answer, so it is not a refusal of the request.
+    internal static AccessDecision ObserveGrant(HttpContext context, AccessDecision decision)
+    {
+        if (decision.IsAllowed)
+        {
+            Record(context, decision);
+        }
+
+        return decision;
+    }
+
     internal static bool GrantedToAnonymous(HttpContext context)
         => context.Items.TryGetValue(VerdictKey, out var verdict) && verdict is Verdict.AnonymousGranted;
 

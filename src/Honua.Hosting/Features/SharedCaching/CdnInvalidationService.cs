@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
 using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.Infrastructure.SharedCaching;
@@ -14,44 +13,95 @@ internal sealed partial class CdnInvalidationService(
 {
     internal const string ResultHeader = "Honua-Cdn-Invalidation";
 
-    // A layer that is edited every few seconds costs one invalidation per window, not one per edit; the lifetime is the backstop.
+    // Edits cost at most one invalidation per window on a node, whatever the number of edits or layers; the lifetime is the backstop.
     internal static readonly TimeSpan CoalescingWindow = TimeSpan.FromSeconds(30);
 
-    private readonly ConcurrentDictionary<string, CoalescedSubject> _subjects = new(StringComparer.OrdinalIgnoreCase);
+    // Above this many wildcard paths one invalidation of everything is cheaper for the CDN than naming them.
+    internal const int MaxWildcardPathsPerInvalidation = 6;
 
-    // Awaited by operations that reduce access: the caller does not report complete until the CDN was told.
+    internal static readonly TimeSpan[] BusyRetryDelays =
+        [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10)];
+
+    private readonly Lock _gate = new();
+    private readonly HashSet<string> _pendingEditPaths = new(StringComparer.Ordinal);
+    private DateTimeOffset _lastEditInvalidation = DateTimeOffset.MinValue;
+    private bool _windowCloseScheduled;
+
+    // Awaited by operations that may reduce access: the caller does not report complete until the CDN was told.
     internal async Task<CdnInvalidationResult> InvalidateNowAsync(IEnumerable<string> paths, CancellationToken cancellationToken)
     {
-        var result = await invalidator.InvalidateAsync([.. paths], cancellationToken).ConfigureAwait(false);
+        var result = await SendWithinLimitsAsync([.. paths], cancellationToken).ConfigureAwait(false);
         ReportOnCurrentResponse(result);
         return result;
     }
 
-    internal Task InvalidateCoalescedAsync(string subjectKey, IEnumerable<string> paths, CancellationToken cancellationToken)
+    internal Task InvalidateAfterEditAsync(IReadOnlyCollection<string> paths, CancellationToken cancellationToken)
     {
-        var subject = _subjects.GetOrAdd(subjectKey, static _ => new CoalescedSubject());
-        var pathList = paths.ToArray();
-        switch (subject.Admit(timeProvider.GetUtcNow(), out var delay))
+        TimeSpan untilWindowCloses;
+        lock (_gate)
         {
-            case Admission.SendNow:
-                return InvalidateNowAsync(pathList, cancellationToken);
-            case Admission.SendWhenWindowCloses:
-                _ = SendWhenWindowClosesAsync(subject, pathList, delay);
-                return Task.CompletedTask;
-            default:
-                return Task.CompletedTask;
+            untilWindowCloses = _lastEditInvalidation + CoalescingWindow - timeProvider.GetUtcNow();
+            if (_windowCloseScheduled || untilWindowCloses > TimeSpan.Zero)
+            {
+                _pendingEditPaths.UnionWith(paths);
+                if (_windowCloseScheduled)
+                {
+                    return Task.CompletedTask;
+                }
+
+                _windowCloseScheduled = true;
+            }
+            else
+            {
+                _lastEditInvalidation = timeProvider.GetUtcNow();
+            }
+        }
+
+        if (untilWindowCloses > TimeSpan.Zero)
+        {
+            _ = InvalidatePendingWhenWindowClosesAsync(untilWindowCloses);
+            return Task.CompletedTask;
+        }
+
+        return InvalidateNowAsync(paths, cancellationToken);
+    }
+
+    private async Task InvalidatePendingWhenWindowClosesAsync(TimeSpan untilWindowCloses)
+    {
+        await Task.Delay(untilWindowCloses, timeProvider).ConfigureAwait(false);
+        string[] paths;
+        lock (_gate)
+        {
+            paths = [.. _pendingEditPaths];
+            _pendingEditPaths.Clear();
+            _windowCloseScheduled = false;
+            _lastEditInvalidation = timeProvider.GetUtcNow();
+        }
+
+        var result = await SendWithinLimitsAsync(paths, CancellationToken.None).ConfigureAwait(false);
+        if (result.Failed)
+        {
+            Log.EditInvalidationFailed(logger, result.Detail ?? "unknown");
         }
     }
 
-    private async Task SendWhenWindowClosesAsync(CoalescedSubject subject, string[] paths, TimeSpan delay)
+    private async Task<CdnInvalidationResult> SendWithinLimitsAsync(string[] paths, CancellationToken cancellationToken)
     {
-        await Task.Delay(delay, timeProvider).ConfigureAwait(false);
-        subject.MarkSent(timeProvider.GetUtcNow());
-        var result = await invalidator.InvalidateAsync(paths, CancellationToken.None).ConfigureAwait(false);
-        if (result.Failed)
+        var distinctPaths = paths.Distinct(StringComparer.Ordinal).ToArray();
+        var withinBudget = distinctPaths.Length > MaxWildcardPathsPerInvalidation ? CdnPaths.Everything : distinctPaths;
+        var result = await invalidator.InvalidateAsync(withinBudget, cancellationToken).ConfigureAwait(false);
+        foreach (var delay in BusyRetryDelays)
         {
-            Log.CoalescedInvalidationFailed(logger, result.Detail ?? "unknown");
+            if (result.Outcome is not CdnInvalidationOutcome.Busy)
+            {
+                break;
+            }
+
+            await Task.Delay(delay, timeProvider, cancellationToken).ConfigureAwait(false);
+            result = await invalidator.InvalidateAsync(withinBudget, cancellationToken).ConfigureAwait(false);
         }
+
+        return result;
     }
 
     private void ReportOnCurrentResponse(CdnInvalidationResult result)
@@ -65,57 +115,13 @@ internal sealed partial class CdnInvalidationService(
         response.Headers[ResultHeader] = result.Failed ? "failed" : "submitted";
     }
 
-    private enum Admission
-    {
-        SendNow,
-        SendWhenWindowCloses,
-        AlreadyScheduled,
-    }
-
-    private sealed class CoalescedSubject
-    {
-        private readonly Lock _gate = new();
-        private DateTimeOffset _lastSent = DateTimeOffset.MinValue;
-        private bool _scheduled;
-
-        internal Admission Admit(DateTimeOffset now, out TimeSpan delay)
-        {
-            lock (_gate)
-            {
-                delay = _lastSent + CoalescingWindow - now;
-                if (_scheduled)
-                {
-                    return Admission.AlreadyScheduled;
-                }
-
-                if (delay <= TimeSpan.Zero)
-                {
-                    _lastSent = now;
-                    return Admission.SendNow;
-                }
-
-                _scheduled = true;
-                return Admission.SendWhenWindowCloses;
-            }
-        }
-
-        internal void MarkSent(DateTimeOffset now)
-        {
-            lock (_gate)
-            {
-                _lastSent = now;
-                _scheduled = false;
-            }
-        }
-    }
-
     private static partial class Log
     {
         [LoggerMessage(
             EventId = 10310,
             Level = LogLevel.Error,
-            Message = "A coalesced CDN invalidation failed; cached entries expire with their lifetime. error={Error}")]
-        public static partial void CoalescedInvalidationFailed(ILogger logger, string error);
+            Message = "A CDN invalidation after edits failed; cached entries expire with their lifetime. error={Error}")]
+        public static partial void EditInvalidationFailed(ILogger logger, string error);
     }
 }
 

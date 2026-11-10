@@ -15,6 +15,9 @@ public enum CdnInvalidationOutcome
 {
     NotConfigured,
     Submitted,
+
+    // The CDN has too many invalidations in progress; the same request can succeed shortly.
+    Busy,
     Failed,
 }
 
@@ -22,5 +25,5 @@ public sealed record CdnInvalidationResult(CdnInvalidationOutcome Outcome, strin
 {
     public static CdnInvalidationResult NotConfigured { get; } = new(CdnInvalidationOutcome.NotConfigured);
 
-    public bool Failed => Outcome is CdnInvalidationOutcome.Failed;
+    public bool Failed => Outcome is CdnInvalidationOutcome.Failed or CdnInvalidationOutcome.Busy;
 }

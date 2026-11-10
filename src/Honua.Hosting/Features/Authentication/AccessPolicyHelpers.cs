@@ -197,7 +197,7 @@ internal static class AccessPolicyHelpers
             context.RequestServices, context.User, null, service, ScopeForOperation(operation), operation));
     }
 
-    public static Task<AccessDecision> EvaluateResourceAccessAsync(
+    public static async Task<AccessDecision> EvaluateResourceAccessAsync(
         HttpContext context,
         MetadataV2Resource resource,
         MetadataV2Service? service,
@@ -206,7 +206,7 @@ internal static class AccessPolicyHelpers
     {
         ArgumentNullException.ThrowIfNull(resource);
 
-        return EvaluateResourceAccessCoreAsync(
+        var decision = await EvaluateResourceAccessCoreAsync(
             context.RequestServices,
             context.User,
             TenantScopeHelpers.ResolveRequestTenantId(context),
@@ -215,7 +215,8 @@ internal static class AccessPolicyHelpers
             service,
             operation,
             cancellationToken,
-            requestCache: context.Items);
+            requestCache: context.Items).ConfigureAwait(false);
+        return ResponseAccessVerdict.ObserveGrant(context, decision);
     }
 
     // HTTP and geoprocessing submit share this decision. applyTenantScope false is the tenantless exception; leaving it true with no tenant denies every tenant-scoped resource.
@@ -464,8 +465,9 @@ internal static class AccessPolicyHelpers
             return AccessDecision.Forbidden(MetadataV2RelationshipEditPolicy.ReadOnlyReason);
         }
 
-        return EvaluateScopedKeyAccess(context.User, service?.Metadata.Name, resource.Metadata.Name, DefaultOperationForScope(scope))
+        var decision = EvaluateScopedKeyAccess(context.User, service?.Metadata.Name, resource.Metadata.Name, DefaultOperationForScope(scope))
             ?? EvaluateServicePolicy(context.RequestServices, context.User, resource.AccessPolicy, service, scope);
+        return ResponseAccessVerdict.ObserveGrant(context, decision);
     }
 
     // An explicit group audience is an alternative service READ grant only.
@@ -703,7 +705,6 @@ internal static class AccessPolicyHelpers
             var decision = evaluate(resource);
             if (decision.IsAllowed)
             {
-                ResponseAccessVerdict.Record(context, decision);
                 return null;
             }
 

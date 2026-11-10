@@ -847,6 +847,7 @@ builder.Services.Configure<Honua.Core.Features.Import.ObjectStore.ImportObjectSt
 builder.Services.AddAwsImportObjectStore();
 Honua.Cloud.Aws.Features.Cdn.CloudFrontCdnServiceCollectionExtensions.AddCloudFrontCdnInvalidation(
     builder.Services, builder.Configuration);
+builder.Services.AddHostedService<Honua.ControlPlane.ReleaseChangeCdnInvalidation>();
 #endif
 
 // Configure file upload security limits

@@ -6,8 +6,10 @@ using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Infrastructure.SharedCaching;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
@@ -64,7 +66,9 @@ public sealed class CdnInvalidationTransitionListenerTests
         => _invalidator.InvalidateAsync(default!, default).ReturnsForAnyArgs(result);
 
     private CdnInvalidationTransitionListener Listener()
-        => new(_invalidator, new ServiceCollection().AddSingleton(_store).BuildServiceProvider());
+        => new(
+            new CdnInvalidationService(_invalidator, TimeProvider.System, NullLogger<CdnInvalidationService>.Instance),
+            new ServiceCollection().AddSingleton(_store).BuildServiceProvider());
 
     private static WorkflowOperationTransition Transition(WorkflowOperationStatus status, WorkflowOperationTransitionKind kind)
     {

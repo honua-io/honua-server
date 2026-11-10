@@ -16,6 +16,9 @@ internal sealed partial class CloudFrontCdnInvalidator(
     // CloudFront accepts at most this many paths in one invalidation request.
     internal const int MaxPathsPerRequest = 3000;
 
+    private static readonly HashSet<string> BusyErrorCodes =
+        new(StringComparer.Ordinal) { "TooManyInvalidationsInProgress", "Throttling", "ThrottlingException" };
+
     public async Task<CdnInvalidationResult> InvalidateAsync(
         IReadOnlyCollection<string> paths,
         CancellationToken cancellationToken = default)
@@ -35,7 +38,9 @@ internal sealed partial class CloudFrontCdnInvalidator(
         {
             var errorCode = (exception as AmazonServiceException)?.ErrorCode ?? exception.GetType().Name;
             Log.InvalidationFailed(logger, exception, distributionId, distinctPaths.Length, errorCode);
-            return new CdnInvalidationResult(CdnInvalidationOutcome.Failed, errorCode);
+            return new CdnInvalidationResult(
+                BusyErrorCodes.Contains(errorCode) ? CdnInvalidationOutcome.Busy : CdnInvalidationOutcome.Failed,
+                errorCode);
         }
 
         var submittedIds = string.Join(',', invalidationIds);

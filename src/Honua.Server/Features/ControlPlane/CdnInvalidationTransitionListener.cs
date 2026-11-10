@@ -11,7 +11,7 @@ namespace Honua.ControlPlane;
 
 // After a release is promoted or rolled back the CDN may hold the other release's responses. The operation is already terminal when this runs, so a failed invalidation is recorded on it and cannot block it.
 internal sealed class CdnInvalidationTransitionListener(
-    ICdnInvalidator invalidator,
+    CdnInvalidationService invalidation,
     IServiceProvider services) : IWorkflowOperationTransitionListener
 {
     internal const string WarningPrefix = "CDN invalidation failed";
@@ -26,7 +26,7 @@ internal sealed class CdnInvalidationTransitionListener(
             return;
         }
 
-        var result = await invalidator.InvalidateAsync(CdnPaths.Everything, cancellationToken).ConfigureAwait(false);
+        var result = await invalidation.InvalidateNowAsync(CdnPaths.Everything, cancellationToken).ConfigureAwait(false);
         if (result.Failed)
         {
             await RecordWarningAsync(transition.Operation, result, cancellationToken).ConfigureAwait(false);

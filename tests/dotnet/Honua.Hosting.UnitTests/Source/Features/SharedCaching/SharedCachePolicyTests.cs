@@ -77,6 +77,18 @@ public sealed class SharedCachePolicyTests
     }
 
     [UnitTest]
+    public void ObserveGrant_HandlerFiltersByAccessWithoutRefusing_GrantCountsAndDenialDoesNotRefuseTheRequest()
+    {
+        var context = AnonymousGet(ResponseCacheClass.Tile);
+
+        ResponseAccessVerdict.ObserveGrant(context, AccessDecision.RequiresAuth());
+        ResponseAccessVerdict.ObserveGrant(context, AccessDecision.Allowed());
+
+        ResponseAccessVerdict.GrantedToAnonymous(context).Should().BeTrue();
+        ResponseAccessVerdict.Restricted(context).Should().BeFalse();
+    }
+
+    [UnitTest]
     public void Record_AuthenticatedCallerGranted_IsRestricted()
     {
         var context = AnonymousGet(ResponseCacheClass.Tile);
