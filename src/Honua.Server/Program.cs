@@ -762,6 +762,8 @@ if (connectedRedis != null && redisCacheEntitled)
     }
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
         Honua.ControlPlane.Executors.RestoreGuardedDeployOperationExecutor>();
+    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
+        Honua.ControlPlane.Executors.MetadataReleaseOperationExecutor>();
 }
 
 builder.Services.TryAddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore,
@@ -775,8 +777,6 @@ if (builder.Services.HasDurableProposalStore())
         Honua.ControlPlane.OperationProposalEvidenceValidator>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
         Honua.ControlPlane.Executors.AdminConfigOperationExecutor>();
-    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
-        Honua.ControlPlane.Executors.MetadataReleaseOperationExecutor>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
         Honua.Geoprocessing.GeoprocessOperationExecutor>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutorCatalog,
