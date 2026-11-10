@@ -44,45 +44,41 @@ internal static class PostgresSharedStateRegistration
             provider.GetRequiredService<JobStoreDatabase>(),
             provider.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>()));
         services.TryAddSingleton<PostgresUniversalProgressStore>();
-        services.TryAddSingleton<PostgresSecurityTokenStore>();
-        services.RemoveAll<ISecurityTokenStore>();
-        services.AddSingleton<ISecurityTokenStore>(static provider =>
-            provider.GetService<NpgsqlDataSource>() is not null
-                ? provider.GetRequiredService<PostgresSecurityTokenStore>()
-                : new InMemorySecurityTokenStore());
-        services.TryAddSingleton<PostgresIdempotencyReservationStore>();
-        services.RemoveAll<IIdempotencyReservationStore>();
-        services.AddSingleton<IIdempotencyReservationStore>(static provider =>
-            provider.GetService<NpgsqlDataSource>() is not null
-                ? provider.GetRequiredService<PostgresIdempotencyReservationStore>()
-                : new InMemoryIdempotencyReservationStore());
         services.TryAddSingleton(provider => new PostgresTokenReplayStore(
             provider.GetRequiredService<NpgsqlDataSource>(),
             provider.GetRequiredService<JobStoreDatabase>()));
-        services.RemoveAll<ITokenReplayStore>();
-        services.AddSingleton<ITokenReplayStore>(static provider =>
-            provider.GetService<NpgsqlDataSource>() is not null
-                ? provider.GetRequiredService<PostgresTokenReplayStore>()
-                : new InMemoryTokenReplayStore());
+        services.AddSharedOrLocal<ISecurityTokenStore, PostgresSecurityTokenStore>(static () => new InMemorySecurityTokenStore());
+        services.AddSharedOrLocal<IIdempotencyReservationStore, PostgresIdempotencyReservationStore>(
+            static () => new InMemoryIdempotencyReservationStore());
+        services.AddSharedOrLocal<ITokenReplayStore, PostgresTokenReplayStore>(static () => new InMemoryTokenReplayStore());
 
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IExpiredRowSweep, PostgresOperationProposalStore>(
-            provider => provider.GetRequiredService<PostgresOperationProposalStore>()));
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IExpiredRowSweep, PostgresWorkflowOperationStore>(
-            provider => provider.GetRequiredService<PostgresWorkflowOperationStore>()));
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IExpiredRowSweep, PostgresOperationInstanceStore>(
-            provider => provider.GetRequiredService<PostgresOperationInstanceStore>()));
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IExpiredRowSweep, PostgresOperationSecretStore>(
-            provider => provider.GetRequiredService<PostgresOperationSecretStore>()));
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IExpiredRowSweep, PostgresUniversalProgressStore>(
-            provider => provider.GetRequiredService<PostgresUniversalProgressStore>()));
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IExpiredRowSweep, PostgresSecurityTokenStore>(
-            provider => provider.GetRequiredService<PostgresSecurityTokenStore>()));
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IExpiredRowSweep, PostgresTokenReplayStore>(
-            provider => provider.GetRequiredService<PostgresTokenReplayStore>()));
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IExpiredRowSweep, PostgresIdempotencyReservationStore>(
-            provider => provider.GetRequiredService<PostgresIdempotencyReservationStore>()));
+        services.AddRetentionSweep<PostgresOperationProposalStore>();
+        services.AddRetentionSweep<PostgresWorkflowOperationStore>();
+        services.AddRetentionSweep<PostgresOperationInstanceStore>();
+        services.AddRetentionSweep<PostgresOperationSecretStore>();
+        services.AddRetentionSweep<PostgresUniversalProgressStore>();
+        services.AddRetentionSweep<PostgresSecurityTokenStore>();
+        services.AddRetentionSweep<PostgresTokenReplayStore>();
+        services.AddRetentionSweep<PostgresIdempotencyReservationStore>();
         return services;
     }
+
+    // The shared store on a host with a system database, a process-local one otherwise.
+    private static void AddSharedOrLocal<TService, TShared>(this IServiceCollection services, Func<TService> local)
+        where TService : class
+        where TShared : class, TService
+    {
+        services.TryAddSingleton<TShared>();
+        services.RemoveAll<TService>();
+        services.AddSingleton<TService>(provider =>
+            provider.GetService<NpgsqlDataSource>() is not null ? provider.GetRequiredService<TShared>() : local());
+    }
+
+    // Registered once per store however often the shared state is added.
+    private static void AddRetentionSweep<TStore>(this IServiceCollection services)
+        where TStore : class, IExpiredRowSweep
+        => services.TryAddEnumerable(ServiceDescriptor.Singleton<IExpiredRowSweep, TStore>(
+            provider => provider.GetRequiredService<TStore>()));
 }
 
 // A registry that keeps nothing in the database has nothing for the retention sweep to delete.
