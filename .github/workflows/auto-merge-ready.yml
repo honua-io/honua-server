@@ -81,7 +81,7 @@ jobs:
                   }) { pullRequest { number } }
                 }`, { pullRequestId: pr.id, mergeMethod });
             } catch (error) {
-              const messages = error.errors?.map(item => item.message) || [error.message];
+              const messages = error.errors?.map(item => item.message) ?? [];
               if (!messages.length || !messages.every(message => message === 'Pull request is in clean status')) {
                 throw error;
               }

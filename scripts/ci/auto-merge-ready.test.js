@@ -19,7 +19,13 @@ async function run(pr, mutationError = null) {
     core: { notice() {}, summary },
     github: { async graphql(query, variables) {
       if (query.includes('query(')) return { repository: { pullRequest: pr } };
-      if (mutationError) throw new Error(mutationError);
+      if (mutationError) {
+        if (mutationError instanceof Error) throw mutationError;
+        const messages = Array.isArray(mutationError) ? mutationError : [mutationError];
+        throw Object.assign(new Error(`Request failed: ${messages.join('; ')}`), {
+          errors: messages.map(message => ({ type: 'UNPROCESSABLE', message })),
+        });
+      }
       assert.match(query, /mutation\([^)]*\)\s*\{\s*(enable|disable)PullRequestAutoMerge\(/);
       mutations.push({ ...variables, action: query.includes('disablePullRequestAutoMerge') ? 'disable' : 'enable' });
       return {};
@@ -112,4 +118,6 @@ test('mergeability computation race stays neutral only for the clean-status API 
   const pr = { ...ready(), mergeStateStatus: 'UNKNOWN' };
   await run(pr, 'Pull request is in clean status');
   await assert.rejects(run(pr, 'publication rejected'), /publication rejected/);
+  await assert.rejects(run(pr, ['Pull request is in clean status', 'publication rejected']), /publication rejected/);
+  await assert.rejects(run(pr, new Error('network failure')), /network failure/);
 });
