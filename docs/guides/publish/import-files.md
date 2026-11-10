@@ -94,6 +94,10 @@ A synchronous import returns the result inline; a completed background job retur
 
 ## Source fields
 
+GeoJSON source attributes named `created_at` (case insensitive) are rejected
+before loading because that name is reserved for the ingestion audit timestamp.
+Rename the source field to `source_created_at` to preserve its business meaning.
+
 Source `objectid` attributes remain source attributes; the storage primary key
 and the published layer's primary identifier can be different fields.
 

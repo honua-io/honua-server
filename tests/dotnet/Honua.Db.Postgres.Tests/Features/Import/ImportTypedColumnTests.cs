@@ -28,6 +28,50 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class ImportTypedColumnTests(PostgresFixture fixture)
 {
+    [IntegrationTheory]
+    [InlineData(ImportLoadMode.Replace)]
+    [InlineData(ImportLoadMode.Append)]
+    [InlineData(ImportLoadMode.Upsert)]
+    [Operation(Operations.Import)]
+    public async Task ImportFileAsync_SourceCreatedAt_RejectsBeforeChangingExistingData(ImportLoadMode mode)
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(ImportTypedColumnTests));
+        try
+        {
+            await InstallImportFunctionsAsync();
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var service = new StreamingFileImportService(
+                provider,
+                new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+                new FileFormatDetectionService(NullLogger<FileFormatDetectionService>.Instance),
+                new NoopPerformanceMonitor(), NullLogger<StreamingFileImportService>.Instance,
+                schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(schema));
+            const string original = """
+                {"type":"FeatureCollection","features":[
+                  {"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"name":"original"}}]}
+                """;
+            var created = await ImportIntoAsync(service, schema, "timeline", original, ImportLoadMode.Replace, []);
+            const string collision = """
+                {"type":"FeatureCollection","features":[
+                  {"type":"Feature","geometry":{"type":"Point","coordinates":[3,4]},
+                   "properties":{"name":"replacement","created_at":"2026-10-30T00:00:00.000Z"}}]}
+                """;
+
+            var result = await ImportIntoAsync(service, schema, "timeline", collision, mode,
+                mode == ImportLoadMode.Upsert ? ["name"] : [], expectedSuccess: false);
+
+            result.ValidationErrors.Should().Contain(issue => issue.Field == "properties.created_at");
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT string_agg(name, ',') FROM \"{schema}\".\"{created.PhysicalTableName}\"";
+            (await command.ExecuteScalarAsync()).Should().Be("original");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     [IntegrationTest]
     [Operation(Operations.Import)]
     public async Task ImportTypedBigint_ScaledIntegralNumeric_PreservesValueAndRejectsInvalidValues()
