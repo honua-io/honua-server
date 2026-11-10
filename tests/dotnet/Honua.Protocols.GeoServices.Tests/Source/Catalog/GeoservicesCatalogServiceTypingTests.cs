@@ -144,6 +144,7 @@ public sealed class GeoservicesCatalogServiceTypingTests
         {
             builder
                 .AddResource($"res-typing-duplicate-{suffix}", "Duplicate Layer", MetadataV2ResourceType.FeatureDataset,
+                    fields: [new() { Name = "shape", Type = MetadataV2FieldType.Geometry }],
                     spatial: PointSpatial(), accessPolicy: anonymous)
                 .AddService($"svc-typing-duplicate-{suffix}", DuplicateServiceName,
                     protocols: [ServiceProtocols.FeatureServer], accessPolicy: anonymous)
@@ -228,6 +229,7 @@ public sealed class GeoservicesCatalogServiceTypingTests
         // Vector feature service -> FeatureServer.
         builder
             .AddResource("res-typing-vector", "Vector Layer", MetadataV2ResourceType.FeatureDataset,
+                fields: [new() { Name = "shape", Type = MetadataV2FieldType.Geometry }],
                 spatial: PointSpatial(), accessPolicy: anonymous)
             .AddService("svc-typing-vector", VectorServiceName,
                 protocols: [ServiceProtocols.FeatureServer], accessPolicy: anonymous)
@@ -254,6 +256,7 @@ public sealed class GeoservicesCatalogServiceTypingTests
         // Service reachable under multiple Esri types -> one entry per type.
         builder
             .AddResource("res-typing-multi", "Multi Layer", MetadataV2ResourceType.FeatureDataset,
+                fields: [new() { Name = "shape", Type = MetadataV2FieldType.Geometry }],
                 spatial: PointSpatial(), accessPolicy: anonymous)
             .AddService("svc-typing-multi", MultiTypeServiceName,
                 protocols: [ServiceProtocols.FeatureServer, ServiceProtocols.MapServer],
