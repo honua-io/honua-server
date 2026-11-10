@@ -492,3 +492,23 @@ partial passing results); consumers must require the overall successful outcome
 as well. Missing counts stay missing. Synthetic supervisor fixtures are labelled
 as such and do not qualify a candidate. These files are diagnostic provenance;
 local files alone do not constitute a trusted release attestation.
+
+
+### Grouped resource-free shards
+
+The server matrix combines 33 small unit/component assemblies into four jobs:
+Provider and AI Units, Runtime Units, Protocol Units, and Protocol and Host
+Components. Each `csprojs` list is an explicit assembly union. Routing, build
+selection, resource classification, and the source coverage guard inspect every
+member. The existing required check names and tier policies remain unchanged.
+
+The shared runner executes each member with its own fresh TRX and timing record,
+within one shared 20-minute test budget. Every assembly must execute tests and
+pass; a passing sibling cannot conceal an empty, failed, or timed-out assembly.
+It also emits a combined TRX and timing receipt for the existing aggregates.
+The optional cache observer uses normal build fallback for grouped jobs.
+
+The scheduled baseline run 42685503356 spent 75.38 runner-minutes across these
+33 jobs. Reusing one setup per group estimates 22.80 runner-minutes; this is a
+planning estimate, not an observed result. Post-merge elapsed minutes must come
+from a full trunk run before claiming savings or refreshing child dispatch ranks.

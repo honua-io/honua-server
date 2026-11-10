@@ -622,6 +622,7 @@ jobs:
                 upload_odata_evidence,
                 filter,
                 csproj: (.csproj // ""),
+                csprojs: (.csprojs // null),
                 advisory: (.advisory // false)
               })
             | sort_by(-.dispatch_rank)
@@ -1200,9 +1201,10 @@ jobs:
       - name: Select shard managed outputs
         env:
           SHARD_CSPROJ: ${{ matrix.csproj }}
+          SHARD_CSPROJS: ${{ toJSON(matrix.csprojs) }}
         run: |
           python3 scripts/ci/managed-test-build.py projects --lane shard \
-            --project "${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}" \
+            --project "${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}" --projects-json "${SHARD_CSPROJS}" \
             --output "${RUNNER_TEMP}/shard-projects.json"
 
       - name: Restore package prerequisites before shard materialization
@@ -1229,11 +1231,12 @@ jobs:
 
       - name: Plan shard-local exact-head cache
         id: shard-cache-plan
-        if: steps.managed-status.outputs.restored != 'true'
+        if: steps.managed-status.outputs.restored != 'true' && matrix.csprojs == null
         shell: bash
         env:
           SHARD_NAME: ${{ matrix.shard_name }}
           SHARD_CSPROJ: ${{ matrix.csproj }}
+          SHARD_CSPROJS: ${{ toJSON(matrix.csprojs) }}
           SELECTED_SHARDS_JSON: ${{ needs.targeted-shards.outputs.matrix_include }}
           # Attempt-1 opportunistic reuse (#3213). Contract, fail-open behaviour
           # and rollback: docs/internal/ci/server-test-binary-artifacts.md.
@@ -1480,6 +1483,7 @@ jobs:
           # assembly; the shard script defaults to Honua.Server.Tests.csproj
           # when this env var is empty so legacy shards keep working unchanged.
           HONUA_SERVER_TEST_CSPROJ: ${{ matrix.csproj }}
+          HONUA_SERVER_TEST_CSPROJS: ${{ toJSON(matrix.csprojs) }}
         run: |
           scripts/ci/run-server-test-shard.sh
 

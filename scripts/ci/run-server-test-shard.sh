@@ -16,6 +16,10 @@ if [[ -z "${shard_name}" || -z "${filter_expression}" || -z "${log_name}" ]]; th
   exit 2
 fi
 
+if [[ -n "${HONUA_SERVER_TEST_CSPROJS:-}" && "${HONUA_SERVER_TEST_CSPROJS}" != null ]]; then
+  exec python3 "${SCRIPT_DIR}/run-multi-project-shard.py"
+fi
+
 configuration="${HONUA_SERVER_TEST_CONFIGURATION:-Release}"
 results_dir="${HONUA_SERVER_TEST_RESULTS_DIR:-./artifacts/test-results}"
 # Phase 2 / ADR-0042: shards may target a per-protocol test project; default

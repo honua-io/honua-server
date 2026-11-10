@@ -43,7 +43,7 @@ class FeedbackTests(unittest.TestCase):
         catalog = json.loads((root / '.github/test-projects.json').read_text())['projects']
         monolith = 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
         selected = [next(shard for shard in config['shards']
-                         if catalog[shard.get('csproj') or monolith]['role'] == role)
+                         if catalog[(shard.get('csprojs') or [shard.get('csproj') or monolith])[0]]['role'] == role)
                     for role in ('unit', 'component', 'mixed')]
         original = [{'name': s['shard_name'], 'effectiveFilter': s['filter'], 'marker': i}
                     for i, s in enumerate(selected)]
@@ -56,7 +56,7 @@ class FeedbackTests(unittest.TestCase):
                 (timings / f'{i}.timing.json').write_text(json.dumps({
                     'shard': shard['shard_name'], 'status': 'passed', 'duration_seconds': (i + 1) * 10,
                     'started_at': datetime.now(timezone.utc).isoformat(),
-                    'filter': expected_filter}))
+                    'filter': expected_filter, 'projects': shard.get('csprojs')}))
             plan = {'shards': original.copy(), 'projects': ['keep'], 'resources': ['postgres']}
             feedback.order_shards(root, plan, timings)
             self.assertEqual(plan['shards'], original[::-1])
@@ -68,6 +68,15 @@ class FeedbackTests(unittest.TestCase):
             feedback.order_shards(root, plan, timings)
             self.assertEqual(plan['shards'], original)
             self.assertFalse(plan['ordering']['changed'])
+
+    def test_ordering_preserves_all_group_members(self):
+        root = SCRIPT.parents[2]
+        name = json.loads((root / '.github/ci-shards.json').read_text())['shards'][0]['shard_name']
+        original = [{'name': name, 'project': project} for project in ('A.csproj', 'B.csproj')]
+        plan = {'shards': original.copy()}
+        with tempfile.TemporaryDirectory() as directory:
+            feedback.order_shards(root, plan, Path(directory))
+        self.assertEqual(original, plan['shards'])
 
     def test_full_unit_owns_overlap_but_retains_component_and_mixed_filters(self):
         result = self.plan([self.unit], ['unit-id', 'Component', 'Mixed'])
