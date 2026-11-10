@@ -8,6 +8,26 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches: [trunk]
+    # The server image build context plus the validators and their fixtures.
+    paths:
+      - 'src/**'
+      - 'eng/**'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - '.editorconfig'
+      - 'Directory.Build.props'
+      - 'Directory.Build.targets'
+      - 'Directory.Packages.props'
+      - 'NuGet.config'
+      - 'Honua.sln'
+      - 'docs/developer/api-specs/admin-api.json'
+      - 'docs/gis/data/**'
+      - 'tests/fixtures/ai-builder/**'
+      - 'scripts/docker/restore-dotnet-with-github-packages.sh'
+      - 'scripts/conformance/ogcapi/**'
+      - 'scripts/ci/lib/isolate-test-compose.sh'
+      - 'docker/cite/ogc-api-features/**'
+      - '.github/workflows/ogc-api-building-block-conformance.yml'
   schedule:
     - cron: '0 7 * * 1'
   workflow_dispatch:
@@ -87,6 +107,15 @@ jobs:
         if: steps.generated-only.outputs.generated_only != 'true'
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
+      # Reads the JIT layer cache that ci.yml, cite and the nightly build write.
+      - name: Log in to GHCR for build cache
+        if: steps.generated-only.outputs.generated_only != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       # A pull-request head is candidate-controlled code. Package credentials
       # are only available to trusted repository refs; fork PRs use the same
       # exact-candidate build path with empty BuildKit secrets.
@@ -104,6 +133,7 @@ jobs:
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ secrets.GITHUB_TOKEN }}
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-jit-amd64
           provenance: false
           sbom: false
 
