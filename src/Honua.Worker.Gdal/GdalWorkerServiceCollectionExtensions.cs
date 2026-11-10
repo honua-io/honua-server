@@ -28,7 +28,7 @@ namespace Honua.Worker.Gdal;
 // loop dispatch to it. GDAL is reached through the gdalwarp / ogr2ogr
 // CLI tools shipped in the worker image base layer; no managed GDAL bindings or
 // native package references are introduced.
-public static class GdalWorkerServiceCollectionExtensions
+internal static class GdalWorkerServiceCollectionExtensions
 {
     internal static void AddLicenseSecretResolvers(IServiceCollection services, IConfiguration configuration)
     {

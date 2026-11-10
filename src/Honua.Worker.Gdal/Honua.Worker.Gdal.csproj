@@ -18,6 +18,8 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Worker.Gdal.Tests" />
+    <InternalsVisibleTo Include="honua-gp" />
+    <InternalsVisibleTo Include="Honua.Protocols.OgcApi.Tests" />
   </ItemGroup>
 
   <ItemGroup>
