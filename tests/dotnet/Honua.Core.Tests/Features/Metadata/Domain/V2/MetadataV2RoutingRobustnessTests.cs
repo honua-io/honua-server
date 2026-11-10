@@ -62,10 +62,13 @@ public sealed class MetadataV2RoutingRobustnessTests
     }
 
     [UnitTheory]
-    [InlineData("shape", MetadataV2FieldType.String)]
-    [InlineData("start", MetadataV2FieldType.Integer)]
-    [InlineData("end", MetadataV2FieldType.Geometry)]
-    public void Validate_KnownIncorrectSemanticField_RejectsGraphAndDoesNotServe(string fieldName, MetadataV2FieldType fieldType)
+    [InlineData("shape", MetadataV2FieldType.String, false)]
+    [InlineData("start", MetadataV2FieldType.Integer, true)]
+    [InlineData("start", MetadataV2FieldType.String, true)]
+    [InlineData("end", MetadataV2FieldType.Geometry, true)]
+    [InlineData("end", MetadataV2FieldType.String, true)]
+    public void Validate_KnownIncorrectSemanticField_RejectsGraphButAllowsTemporalFallback(
+        string fieldName, MetadataV2FieldType fieldType, bool remainsRoutable)
     {
         var graph = SemanticFieldGraph();
         var dataset = graph.Resources[0];
@@ -81,8 +84,10 @@ public sealed class MetadataV2RoutingRobustnessTests
         };
 
         MetadataV2GraphValidator.Validate(graph).IsValid.Should().BeFalse();
-        new MetadataV2GraphSnapshot(graph, "\"test\"", DateTimeOffset.UnixEpoch)
-            .IsRoutable(graph.Publications[0]).Should().BeFalse();
+        var snapshot = new MetadataV2GraphSnapshot(graph, "\"test\"", DateTimeOffset.UnixEpoch);
+        snapshot.IsRoutable(graph.Publications[0]).Should().Be(remainsRoutable);
+        graph.Publications[0].IsRoutable(graph.Resources[0]).Should().Be(remainsRoutable);
+        snapshot.IsRoutable(graph.StorageBindings[0], graph.Resources[0]).Should().Be(remainsRoutable);
     }
 
     [UnitTheory]
