@@ -22,7 +22,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: openapi-contract-governance-${{ github.ref }}
+  group: openapi-contract-governance-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:

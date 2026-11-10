@@ -18,6 +18,7 @@ name: PR Gate
 # immutable base policy decides, and a miss keeps these steps enabled.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [trunk]
   workflow_dispatch:
 

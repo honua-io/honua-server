@@ -120,10 +120,10 @@ test('the resolved PR/head is the in-flight Claude dedupe key', () => {
   assert.match(source, /cancel-in-progress: false/);
 });
 
-test('completion is checked only after the exact-head concurrency boundary', () => {
+test('exact-head completion is checked after the resolved-PR concurrency boundary', () => {
   const boundary = source.indexOf('group: claude-review-${{ needs.resolve.outputs.pr }}-${{ needs.resolve.outputs.head }}');
   const completionCheck = source.indexOf('findCompletedClaudeReview');
-  assert.ok(boundary >= 0, 'review job must have an exact PR/head concurrency group');
+  assert.ok(boundary >= 0, 'review job must have a trusted resolved-PR concurrency group');
   assert.ok(completionCheck > boundary, 'completion must be re-checked after queue admission');
 });
 
@@ -168,13 +168,17 @@ test('an exhausted review posts the explicit fallback without widening token per
   );
 });
 
-test('no comment event can cancel a review already in flight', () => {
-  // A run is created for EVERY comment and concurrency is evaluated at run
-  // creation, so cancelling would let Codex's rate-limit notice kill a live
-  // review. Superseded heads need no cancellation: the trusted resolve step
-  // fails closed once the pull request has moved.
-  assert.match(source, /cancel-in-progress: false/);
-  assert.doesNotMatch(source, /cancel-in-progress: true/);
+test('unresolved comment events cannot cancel an admitted review', () => {
+  const admission = source.slice(source.indexOf('\nconcurrency:'), source.indexOf('\njobs:'));
+  assert.match(admission, /cancel-in-progress: false/);
+  assert.doesNotMatch(admission, /cancel-in-progress: true/);
+  const review = source.slice(source.indexOf('\n  review:'));
+  assert.match(review, /if: needs\.resolve\.outputs\.skip == 'false'/);
+  assert.match(review, /group: claude-review-\$\{\{ needs\.resolve\.outputs\.pr \}\}-\$\{\{ needs\.resolve\.outputs\.head \}\}/);
+  assert.match(review, /cancel-in-progress: false/);
+  const resolver = source.slice(source.indexOf("\n  resolve:"), source.indexOf("\n  review:"));
+  assert.match(resolver, /group: claude-resolve-pr-/);
+  assert.match(resolver, /cancel-in-progress: true/);
 });
 
 test('an `@claude review` re-request requires a human with write access', () => {

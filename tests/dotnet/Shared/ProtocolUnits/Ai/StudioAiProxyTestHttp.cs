@@ -62,12 +62,18 @@ internal sealed class StudioAiProxyMockHttpClientFactory : IHttpClientFactory, I
 internal sealed class StudioAiProxySequenceHttpMessageHandler : HttpMessageHandler
 {
     private readonly Queue<Func<HttpResponseMessage>> _responses;
+    internal string? CapturedRequestBody { get; private set; }
+    internal int SendCount { get; private set; }
 
     public StudioAiProxySequenceHttpMessageHandler(params Func<HttpResponseMessage>[] responses)
         => _responses = new Queue<Func<HttpResponseMessage>>(responses);
 
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        => Task.FromResult(_responses.Dequeue()());
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        SendCount++;
+        CapturedRequestBody = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        return _responses.Dequeue()();
+    }
 }
 
 internal sealed class StudioAiProxyStallingStream : Stream

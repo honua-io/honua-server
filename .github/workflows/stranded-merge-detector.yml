@@ -88,7 +88,7 @@ permissions:
 # Keyed by ref as well as repository so a pull_request validation run and the
 # scheduled sweep cannot cancel each other.
 concurrency:
-  group: stranded-merge-detector-${{ github.repository }}-${{ github.ref }}
+  group: stranded-merge-detector-${{ github.repository }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
