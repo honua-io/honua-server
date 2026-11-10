@@ -23,6 +23,22 @@ public sealed class AotNativeLibraryRuntimeTests
         "docker/Dockerfile.lambda.aot"
     ];
 
+    private static void AssertNativeLinkGate(string runtimeStage, string relativePath)
+    {
+        if (relativePath == "docker/Dockerfile.lambda.aot")
+        {
+            runtimeStage.Should().Contain("ldd -r /var/task/libSkiaSharp.so", relativePath);
+            runtimeStage.Should().Contain("for native in ParquetSharpNative.so libduckdb.so", relativePath);
+            runtimeStage.Should().Contain("ldd -r \"/var/task/${native}\"", relativePath);
+            runtimeStage.Should().Contain("not found|undefined symbol|not a dynamic executable", relativePath);
+            runtimeStage.Should().Contain("exit 1", relativePath);
+        }
+        else
+        {
+            runtimeStage.Should().Contain("sh docker/runtime/verify-native.sh", relativePath);
+        }
+    }
+
     [ArchitectureTest]
     public void PublishedServerAotDockerfiles_ShouldTargetGlibcAndInstallParquetNativeDependencies()
     {
@@ -58,7 +74,7 @@ public sealed class AotNativeLibraryRuntimeTests
             var contents = File.ReadAllText(Path.Join(repositoryRoot, relativePath));
             var runtimeStage = contents[contents.IndexOf("AS runtime", StringComparison.Ordinal)..];
 
-            runtimeStage.Should().Contain("sh docker/runtime/verify-native.sh", relativePath);
+            AssertNativeLinkGate(runtimeStage, relativePath);
             var verification = File.ReadAllText(Path.Join(repositoryRoot, "docker/runtime/verify-native.sh"));
             verification.Should().Contain("ParquetSharpNative.so");
             verification.Should().Contain("libSkiaSharp.so");
@@ -100,8 +116,7 @@ public sealed class AotNativeLibraryRuntimeTests
             var runtimeStage = contents[contents.IndexOf("AS runtime", StringComparison.Ordinal)..];
 
             contents.Should().Contain("-p:HonuaUseSkiaNoDependencies=true", relativePath);
-            runtimeStage.Should().Contain("sh docker/runtime/verify-native.sh",
-                $"{relativePath}: the Skia native must stay under the ldd -r gate, not be excluded to go green");
+            AssertNativeLinkGate(runtimeStage, relativePath);
             runtimeStage.Should().Contain("fonts-dejavu-core", relativePath);
             File.ReadAllText(Path.Join(repositoryRoot, "docker/runtime/verify-native.sh"))
                 .Should().Contain("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");

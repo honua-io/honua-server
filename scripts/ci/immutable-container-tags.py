@@ -77,10 +77,10 @@ def supports_full_variant(sha):
 
 
 def uses_jit_default(sha):
-    result = subprocess.run(['git', 'show', f'{sha}:Dockerfile'], text=True, capture_output=True)
+    result = subprocess.run(['git', 'show', f'{sha}:.github/workflows/nightly-container-build.yml'], text=True, capture_output=True)
     if result.returncode:
-        raise RuntimeError(f'Cannot read candidate Dockerfile at {sha}')
-    return 'ENTRYPOINT ["dotnet", "Honua.Server.dll"]' in result.stdout
+        raise RuntimeError(f'Cannot read candidate publication workflow at {sha}')
+    return 'type=raw,value=nightly-aot-${{ needs.select-candidate.outputs.sha7 }}' in result.stdout
 
 
 def publication_state(repository, sha, release_version):

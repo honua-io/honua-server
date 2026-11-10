@@ -39,7 +39,6 @@ public sealed class ServingImageBoundaryTests
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var workflows = new[]
         {
-            ".github/workflows/release-bundle.yml",
             ".github/workflows/deploy.yml",
             ".github/workflows/deploy-platform-images.yml",
             ".github/workflows/nightly-container-build.yml"
@@ -138,7 +137,7 @@ public sealed class ServingImageBoundaryTests
     }
 
     [ArchitectureTest]
-    public void Publishers_ShouldPromoteTheExactVerifiedAotDigest()
+    public void Publishers_ShouldPromoteTheExactVerifiedServingDigest()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var expectations = new[]
@@ -173,9 +172,9 @@ public sealed class ServingImageBoundaryTests
                 CrossRegistry: true),
             (
                 Path: ".github/workflows/release-bundle.yml",
-                Candidate: "- name: Build RC AOT candidate by digest",
-                Verification: "- name: Verify RC AOT candidate before registry publication",
-                Publication: "- name: Publish verified RC AOT tag",
+                Candidate: "- name: Build RC JIT candidate by digest",
+                Verification: "- name: Verify RC JIT candidate before registry publication",
+                Publication: "- name: Publish verified RC JIT tag",
                 Digest: "steps.build.outputs.digest",
                 CrossRegistry: false)
         };
@@ -196,7 +195,7 @@ public sealed class ServingImageBoundaryTests
                 verificationIndex,
                 StringComparison.Ordinal);
             publicationIndex.Should().BeGreaterThan(verificationIndex,
-                $"{expectation.Path} must enforce the AOT boundary before publishing registry tags");
+                $"{expectation.Path} must verify the serving candidate before publishing registry tags");
 
             var nextStepIndex = workflow.IndexOf(
                 "\n      - name:",
@@ -217,7 +216,11 @@ public sealed class ServingImageBoundaryTests
                 "docker/build-push-action",
                 Exactly.Once(),
                 $"{expectation.Path} must not rebuild between candidate creation and verification");
-            verification.Should().Contain(VerifierCommand, expectation.Path);
+            verification.Should().Contain(
+                expectation.Path == ".github/workflows/release-bundle.yml"
+                    ? "scripts/ci/measure-serving-image.py \"$CANDIDATE\" --published --profile postgis"
+                    : VerifierCommand,
+                expectation.Path);
             verification.Should().Contain(expectation.Digest, expectation.Path);
             publication.Should().Contain(expectation.Digest,
                 $"{expectation.Path} must promote the digest that passed verification");
@@ -267,11 +270,11 @@ public sealed class ServingImageBoundaryTests
         latestTagIndex.Should().BeGreaterThan(gaGuardIndex,
             "mutable latest tags must only be collected inside the GA guard");
         publicationIndex.Should().BeGreaterThan(latestTagIndex);
-        workflow[gaGuardIndex..publicationIndex].Should().Contain(":latest-aot\"");
+        workflow[gaGuardIndex..publicationIndex].Should().Contain(":latest-jit\"");
 
         var documentation = File.ReadAllText(
             Path.Join(repositoryRoot, "docs/internal/contributor/release-bundle.md"));
-        documentation.Should().Contain("It advances `latest` and `latest-aot` only");
+        documentation.Should().Contain("It advances `latest` and `latest-jit` only");
         documentation.Should().Contain("preview and RC promotions do not move the stable tags");
     }
 

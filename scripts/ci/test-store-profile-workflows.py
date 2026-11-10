@@ -13,6 +13,20 @@ def workflow(name):
 
 
 class StoreProfileWorkflowTests(unittest.TestCase):
+    def test_release_bundle_promotes_verified_jit_postgis_digest(self):
+        job = workflow('release-bundle.yml')['jobs']['rc-image']
+        steps = job['steps']
+        build = next(step for step in steps if step.get('id') == 'build')
+        self.assertEqual(build['with']['file'], 'Dockerfile')
+        self.assertIn('HONUA_STORE_PROFILE=postgis', build['with']['build-args'])
+        verify = next(step for step in steps if step.get('name') == 'Verify RC JIT candidate before registry publication')
+        self.assertIn('measure-serving-image.py "$CANDIDATE" --published --profile postgis', verify['run'])
+        self.assertIn('steps.build.outputs.digest', verify['env']['CANDIDATE'])
+        text = (ROOT / '.github/workflows/release-bundle.yml').read_text()
+        self.assertIn('${channel}-jit', text)
+        self.assertIn(':latest-jit', text)
+        self.assertNotIn('${channel}-aot', text)
+
     def test_shell_free_consumers_use_native_probe_and_external_http(self):
         jobs = workflow('security-nightly.yml')['jobs']
         steps = next(job['steps'] for job in jobs.values()
