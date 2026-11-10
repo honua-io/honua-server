@@ -6128,11 +6128,16 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.StreamingEndpoint_WhenPreviewDisabled_Returns404ExperimentalDisabled",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamConformanceEndpointsTests.Capabilities_AdvertiseTheConformanceContractAndTheImmutableRevision",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_BaselineProbeExceedsLookupBudget_ReportsUnknown",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_BaselineReaderUnavailable_ReportsUnknown",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_BaselineSize_ReportsOnlyProvenOverLimit",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_CommunityEdition_DisablesStreamingMetadata",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_ConnectionKindOrLifecycleUnrecognized_OmitsUnsupportedBinding",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_LargeFeatureCap_KeepsProbeBoundedAndUnknown",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_OmitsLayersTheCallerCannotAccess",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_OmitsLayersWhoseServicePolicyDenies",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_ProEdition_AdvertisesTransportsFiltersAndLayers",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_StreamingDisabled_DoesNotProbeBaseline",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_UnsupportedOwner_OmitsLayer",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Capabilities_AdvertisesSnapshotModeSequenceAndDeploymentRevision"
       ],
@@ -7438,6 +7443,7 @@
         "Honua.Server.Tests.Features.API.EndpointCoverageTests.OgcApi_GetLandingPage_ShouldReturnApiInfo",
         "Honua.Server.Tests.Features.Infrastructure.EmptyServerCatalogEndpointTests.GetOgcFeaturesLandingPage_FreshServer_Returns200WithValidLinks",
         "Honua.Server.Tests.Features.Ogc.OpenApiSpecNegotiationTests.GetLandingPage_WithOnlyZeroQualityAcceptHeader_ReturnsNotAcceptable",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.FolderProtocolEndpointTests.PublicEndpoint_FolderPublication_ResolvesAtBothMounts",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetLandingPage_IncludesDatasetMapLink",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetLandingPage_WithContentNegotiation_ReturnsCorrectFormat",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesHostHeaderTests.LandingPage_WithForgedHostHeader_DoesNotReflectAttackerHostInLinks",
@@ -8434,6 +8440,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_OgcRoute_GetTile_UnknownTileMatrixSet_ReturnsOwsExceptionReport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_OgcRoute_GetTile_WithWmtsEnabledAndMapServerDisabled_RendersStyledFeature",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsUnknownParameterTests.Wmts_GetTile_UnknownParameters_PreservesImageAndKnownParameterValidation",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.WmtsAdvertisedResourceTests.GetCapabilities_FolderDeletedAfterServiceValidation_UsesOneGraphRevision",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.WmtsAdvertisedResourceTests.GetCapabilities_NativeAlias_AdvertisesReachablePublicResources",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.WmtsJsonFeatureInfoTests.GetFeatureInfo_Json_ReturnsNativeClientGeoJson",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.WmtsRuntimeAttributeFeatureInfoTests.GetFeatureInfo_ProviderRuntimeTypes_ReturnsTypedGeoJson"
@@ -9486,7 +9493,10 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.FolderServiceRoutingTests.FolderAccess_HiddenService_DoesNotExposeFolderOrBypassPolicy",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.FolderServiceRoutingTests.ServicesDirectory_PublicFolder_ReturnsOnlyCanonicalQualifiedEntries",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.ServiceFolder_ReturnsOnlyTheRequestedServicesCatalogEntries",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogGeocodeServerTests.ServiceFolder_PublicLocator_PreservesProtectedFolderAuthorization"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogGeocodeServerTests.ParentDirectory_PublicLocatorCollidesWithGraphService_PreservesStandalonePrecedence",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogGeocodeServerTests.ParentDirectory_UnavailableLocatorCollidesWithGraphService_UsesGraphVisibility",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogGeocodeServerTests.ServiceFolder_PublicLocator_PreservesProtectedFolderAuthorization",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogSceneServerTests.ParentDirectory_SceneIdentityCollidesWithGraphService_PreservesCallerVisibility"
       ],
       "proof_ledger_surface": "geoservices-catalog",
       "maturity": "implemented",
@@ -15262,6 +15272,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.ConfiguredProfile_ReportsAndEnforcesExactHttpSurface",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.FolderProtocolEndpointTests.PublicEndpoint_FolderPublication_ResolvesAtBothMounts",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_DescribeFeatureType_LayerWithGeometryTypeButNoGeometryField_IncludesGeometryElement",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_DescribeFeatureType_MapsEveryDeclaredAttributeTypeToConcreteXsdType",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_DescribeFeatureType_UnsupportedOutputFormat_ReturnsExceptionReport",
