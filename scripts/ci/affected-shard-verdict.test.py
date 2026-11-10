@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -174,6 +175,41 @@ class AffectedShardVerdictTests(unittest.TestCase):
             self.assertIn("| Passed | Failed | Skipped | Executed |", outcome["summary"])
             self.assertIn("| 1 | 0 | 0 | 1 |", outcome["summary"])
 
+    def test_ogc_nightly_red_missing_or_invalid_receipts_do_not_mask_product_failures(self) -> None:
+        for nightly_status in ("failed", "missing", "invalid-json"):
+            for product_status in ("passed", "failed", "missing"):
+                with self.subTest(nightly=nightly_status, product=product_status), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    _, receipt = write_passing_receipt(root)
+                    if product_status == "missing":
+                        (root / "control.timing.json").unlink()
+                    else:
+                        receipt["status"] = product_status
+                        (root / "control.timing.json").write_text(json.dumps(receipt))
+                    if nightly_status == "invalid-json":
+                        (root / "ogc.timing.json").write_text("{")
+                    elif nightly_status != "missing":
+                        (root / "ogc.timing.json").write_text(json.dumps({
+                            "shard": "OGC", "log_name": "ogc", "status": nightly_status,
+                        }))
+                    matrix = root / "matrix.json"
+                    matrix.write_text(json.dumps([
+                        {"shard_name": "Reporting", "log_name": "control"},
+                        {"shard_name": "OGC", "log_name": "ogc", "nightly_only": True},
+                    ]))
+                    output = root / "nested/verdict.json"
+                    with patch.dict(os.environ, {
+                        "MODE": "enforce", "SELECT_RESULT": "success", "SELECT_SKIP": "false",
+                        "SELECT_REASON": "selected_server_shards", "SELECT_COUNT": "2",
+                        "SELECT_DEFERRED": "[]", "SHARDS_RESULT": "success", "GITHUB_STEP_SUMMARY": "",
+                    }):
+                        code = verdict.main(["--timings", str(root), "--matrix-file", str(matrix), "--receipt", str(output)])
+                    self.assertEqual(code, 0 if product_status == "passed" else 1)
+                    result = json.loads(output.read_text())
+                    self.assertEqual(result["expected"], 1)
+                    self.assertEqual(result["ogc_nightly"][0]["shard"], "OGC")
+                    self.assertNotEqual(result["ogc_nightly"][0]["status"], "passed")
+
     def test_every_shard_job_preserves_test_failure(self) -> None:
         import yaml
 
@@ -181,7 +217,10 @@ class AffectedShardVerdictTests(unittest.TestCase):
             with self.subTest(workflow=filename):
                 workflow = yaml.safe_load((ROOT / ".github/workflows" / filename).read_text())
                 job = workflow["jobs"][job_id]
-                self.assertFalse(job.get("continue-on-error", False))
+                if filename == "ci.yml":
+                    self.assertEqual(job.get("continue-on-error"), "${{ matrix.nightly_only == true }}")
+                else:
+                    self.assertFalse(job.get("continue-on-error", False))
                 test_step = next(step for step in job["steps"]
                                  if "scripts/ci/run-server-test-shard.sh" in step.get("run", ""))
                 self.assertFalse(test_step.get("continue-on-error", False))

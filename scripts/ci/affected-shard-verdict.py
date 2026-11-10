@@ -297,17 +297,41 @@ def _verify_execution(timing: dict[str, Any], directory: Path) -> None:
     timing["execution"] = measured
 
 
-def _load_timings(directory: Path) -> list[dict[str, Any]]:
+def _load_timings(directory: Path, nightly_logs: dict[str, str] | None = None) -> list[dict[str, Any]]:
     if not directory.is_dir():
         return []
     timings: list[dict[str, Any]] = []
     for path in sorted(directory.glob("*.timing.json")):
-        value = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(value, dict):
-            raise ValueError(f"{path.name} is not a timing object")
-        _verify_execution(value, directory)
+        nightly_name = (nightly_logs or {}).get(path.name)
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(value, dict):
+                raise ValueError(f"{path.name} is not a timing object")
+            if nightly_name and value.get("shard") != nightly_name:
+                raise ValueError(f"{path.name} has the wrong shard identity")
+            _verify_execution(value, directory)
+        except (ValueError, OSError):
+            if not nightly_name:
+                raise
+            value = {"shard": nightly_name, "status": "invalid_execution"}
         timings.append(value)
     return timings
+
+
+def _report_nightly(names: set[str], timings: list[dict[str, Any]]) -> None:
+    if names:
+        report = ["### OGC nightly (non-gating)", ""]
+        received = {timing.get("shard"): timing for timing in timings}
+        for name in sorted(names):
+            status = received.get(name, {}).get("status", "missing execution receipt")
+            report.append(f"- {name}: `{status}`")
+        summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+        if summary_path:
+            with open(summary_path, "a", encoding="utf-8") as handle:
+                handle.write("\n".join(report) + "\n\n")
+        for name in sorted(names):
+            if received.get(name, {}).get("status") != "passed":
+                print(f"::warning::OGC nightly: {name}: {received.get(name, {}).get('status', 'no receipt')}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -318,25 +342,38 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     matrix_json = args.matrix_file.read_text() if args.matrix_file else os.environ.get("SELECT_MATRIX")
     matrix = json.loads(matrix_json or "[]")
+    nightly_logs = {f"{entry['log_name']}.timing.json": entry["shard_name"]
+                    for entry in matrix if entry.get("nightly_only") is True}
+    timings = _load_timings(args.timings, nightly_logs)
+    nightly_names = {entry["shard_name"] for entry in matrix if entry.get("nightly_only") is True}
+    nightly_timings = [timing for timing in timings if timing.get("shard") in nightly_names]
+    _report_nightly(nightly_names, nightly_timings)
+    matrix = [entry for entry in matrix if entry["shard_name"] not in nightly_names]
     outcome = decide(
         mode=os.environ.get("MODE", ""),
         selection=Selection(
             result=os.environ.get("SELECT_RESULT", ""),
             skip=os.environ.get("SELECT_SKIP", ""),
             reason=os.environ.get("SELECT_REASON", ""),
-            count=os.environ.get("SELECT_COUNT", ""),
+            count=str(len(matrix)) if nightly_names else os.environ.get("SELECT_COUNT", ""),
             shards=[entry["shard_name"] for entry in matrix],
             deferred=_names(os.environ.get("SELECT_DEFERRED") or "[]"),
         ),
         shards_result=os.environ.get("SHARDS_RESULT", ""),
-        timings=_load_timings(args.timings),
+        timings=[timing for timing in timings if timing.get("shard") not in nightly_names],
     )
+    outcome["receipt"]["ogc_nightly"] = [
+        {"shard": name, "status": next((t.get("status") for t in nightly_timings
+                                       if t.get("shard") == name), "missing_execution")}
+        for name in sorted(nightly_names)
+    ]
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary_path:
         with open(summary_path, "a", encoding="utf-8") as handle:
             handle.write(outcome["summary"])
     for level, message in outcome["annotations"]:
         print(f"::{level}::{message}")
+    args.receipt.parent.mkdir(parents=True, exist_ok=True)
     args.receipt.write_text(
         json.dumps(outcome["receipt"], indent=2, sort_keys=True) + "\n",
         encoding="utf-8",

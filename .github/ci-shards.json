@@ -341,7 +341,8 @@
         "Core OGC Features and CRS",
         "STAC and API Governance",
         "Core Mutation Concurrency",
-        "Core Spatial Query and Streaming"
+        "Core Spatial Query and Streaming",
+        "Core OGC Features Endpoints"
       ],
       "granularity": "method"
     },
@@ -624,7 +625,6 @@
         "tests/dotnet/Honua.Server.Tests/CrsTransformationCorrectnessTests.cs",
         "tests/dotnet/Honua.Server.Tests/Helpers/",
         "tests/dotnet/Honua.Server.Tests/LimitsEnforcementTests.cs",
-        "tests/dotnet/Honua.Server.Tests/OgcFeaturesEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/PostgresAttachmentStoreTests.cs",
         "tests/dotnet/Honua.Server.Tests/QueryRelatedRecordsEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/TestData/",
@@ -659,7 +659,6 @@
         "tests/dotnet/Honua.Server.Tests/CrsTransformationCorrectnessTests.cs",
         "tests/dotnet/Honua.Server.Tests/Helpers/",
         "tests/dotnet/Honua.Server.Tests/LimitsEnforcementTests.cs",
-        "tests/dotnet/Honua.Server.Tests/OgcFeaturesEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/PostgresAttachmentStoreTests.cs",
         "tests/dotnet/Honua.Server.Tests/QueryRelatedRecordsEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/TestData/",
@@ -686,7 +685,7 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "(FullyQualifiedName~OgcFeaturesEndpointTests|FullyQualifiedName~Honua.Server.Tests.CrsTransformationCorrectnessTests)&FullyQualifiedName!~AttachmentEndpointTests&FullyQualifiedName!~PostgresAttachmentStoreTests&FullyQualifiedName!~QueryRelatedRecordsEndpointTests&FullyQualifiedName!~LimitsEnforcementTests",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.CrsTransformationCorrectnessTests&FullyQualifiedName!~AttachmentEndpointTests&FullyQualifiedName!~PostgresAttachmentStoreTests&FullyQualifiedName!~QueryRelatedRecordsEndpointTests&FullyQualifiedName!~LimitsEnforcementTests",
       "paths": [
         "src/Honua.Core/Core/Features/Metadata/",
         "src/Honua.Db/Postgres/Features/Metadata/",
@@ -694,7 +693,6 @@
         "tests/dotnet/Honua.Server.Tests/CrsTransformationCorrectnessTests.cs",
         "tests/dotnet/Honua.Server.Tests/Helpers/",
         "tests/dotnet/Honua.Server.Tests/LimitsEnforcementTests.cs",
-        "tests/dotnet/Honua.Server.Tests/OgcFeaturesEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/PostgresAttachmentStoreTests.cs",
         "tests/dotnet/Honua.Server.Tests/QueryRelatedRecordsEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/TestData/",
@@ -708,6 +706,24 @@
         "tests/dotnet/Shared/SceneUnitSupport/PointCloudSceneFixtures.cs",
         "tests/dotnet/Shared/SceneUnitSupport/SceneExecutorTestStubs.cs"
       ]
+    },
+    {
+      "name": "Core OGC Features Endpoints",
+      "shard_name": "Core OGC Features Endpoints",
+      "dispatch_rank": 5.3,
+      "artifact_suffix": "core-ogc-features-endpoints",
+      "log_name": "server-tests-core-ogc-features-endpoints",
+      "_comment": "OGC endpoint conformance runs in the non-gating 01:00 PT nightly. CRS correctness remains in its existing gating child.",
+      "timeout_minutes": 36,
+      "test_timeout_minutes": 26,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName~OgcFeaturesEndpointTests&FullyQualifiedName!~AttachmentEndpointTests&FullyQualifiedName!~PostgresAttachmentStoreTests&FullyQualifiedName!~QueryRelatedRecordsEndpointTests&FullyQualifiedName!~LimitsEnforcementTests",
+      "paths": [
+        "tests/dotnet/Honua.Server.Tests/OgcFeaturesEndpointTests.cs"
+      ],
+      "nightly_only": true
     },
     {
       "name": "Core and Cloud Contracts",
@@ -1467,7 +1483,8 @@
         "src/Honua.Protocols/OgcApi/Features/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Features/",
         "tests/dotnet/RedisCollection.cs"
-      ]
+      ],
+      "nightly_only": true
     },
     {
       "name": "WFS 1",
@@ -1493,7 +1510,8 @@
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wps20/"
-      ]
+      ],
+      "nightly_only": true
     },
     {
       "name": "WFS 2",
@@ -1519,7 +1537,8 @@
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wps20/"
-      ]
+      ],
+      "nightly_only": true
     },
     {
       "name": "WFS 3",
@@ -1545,7 +1564,8 @@
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wps20/"
-      ]
+      ],
+      "nightly_only": true
     },
     {
       "name": "WFS 4",
@@ -1571,7 +1591,8 @@
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wps20/"
-      ]
+      ],
+      "nightly_only": true
     },
     {
       "name": "WFS 5",
@@ -1597,7 +1618,8 @@
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wps20/"
-      ]
+      ],
+      "nightly_only": true
     },
     {
       "name": "WFS 6",
@@ -1623,7 +1645,8 @@
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wps20/"
-      ]
+      ],
+      "nightly_only": true
     },
     {
       "name": "WFS 7",
@@ -1649,7 +1672,8 @@
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wps20/"
-      ]
+      ],
+      "nightly_only": true
     },
     {
       "name": "WFS 8",
@@ -1675,7 +1699,8 @@
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wps20/"
-      ]
+      ],
+      "nightly_only": true
     },
     {
       "name": "WFS 9",
@@ -1701,7 +1726,8 @@
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wps20/"
-      ]
+      ],
+      "nightly_only": true
     },
     {
       "name": "WFS Endpoints",
@@ -1721,7 +1747,8 @@
         "src/Honua.Core/Core/Features/Validation/",
         "src/Honua.Protocols/OgcClassic/Wfs20/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20EndpointsTests.cs"
-      ]
+      ],
+      "nightly_only": true
     },
     {
       "name": "STAC and API Governance",
@@ -1964,7 +1991,8 @@
         "src/Honua.Protocols/OgcApi/Maps/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Maps/",
         "tests/dotnet/RedisCollection.cs"
-      ]
+      ],
+      "nightly_only": true
     },
     {
       "name": "OGC API Maps Rendering and Records",
@@ -1987,7 +2015,8 @@
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Maps/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Records/",
         "tests/dotnet/RedisCollection.cs"
-      ]
+      ],
+      "nightly_only": true
     },
     {
       "name": "OGC API Tiles Coverages and Processes",
@@ -2017,7 +2046,8 @@
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Styles/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Tiles/",
         "tests/dotnet/RedisCollection.cs"
-      ]
+      ],
+      "nightly_only": true
     },
     {
       "name": "OGC Classic Maps Core",
@@ -2041,7 +2071,8 @@
         "src/Honua.Server/Features/StaticMap/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/MetadataV2LifecycleRoutingTests.cs",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/"
-      ]
+      ],
+      "nightly_only": true
     },
     {
       "name": "OGC Classic Maps Supporting",
@@ -2065,7 +2096,8 @@
         "src/Honua.Server/Features/StaticMap/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/MetadataV2LifecycleRoutingTests.cs",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/"
-      ]
+      ],
+      "nightly_only": true
     },
     {
       "name": "OGC Classic WMTS",
@@ -2085,7 +2117,8 @@
         "src/Honua.Core/Core/Features/Validation/",
         "src/Honua.Protocols/OgcClassic/Wmts/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wmts/"
-      ]
+      ],
+      "nightly_only": true
     },
     {
       "name": "GeoServices MapServer",
@@ -5512,7 +5545,8 @@
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Tiles/",
         "tests/dotnet/RedisCollection.cs"
       ],
-      "csproj": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj"
+      "csproj": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj",
+      "nightly_only": true
     },
     {
       "name": "Elevation and Terrain Analysis",
@@ -6181,7 +6215,8 @@
         "tests/dotnet/Honua.TestKit/Infrastructure/TestMetadataV2GraphProvider.cs"
       ],
       "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
-      "supplemental_source_paths": true
+      "supplemental_source_paths": true,
+      "nightly_only": true
     },
     {
       "name": "Protocols OgcClassic Units",
@@ -6211,7 +6246,8 @@
         "tests/dotnet/Honua.TestKit/Infrastructure/TestMetadataV2GraphProvider.cs"
       ],
       "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
-      "supplemental_source_paths": true
+      "supplemental_source_paths": true,
+      "nightly_only": true
     },
     {
       "name": "Protocols Scene Units",
@@ -6475,7 +6511,8 @@
         "tests/dotnet/Honua.Protocols.OgcApi.ComponentTests/"
       ],
       "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases.",
-      "supplemental_source_paths": true
+      "supplemental_source_paths": true,
+      "nightly_only": true
     },
     {
       "name": "Protocols Scene Components",
@@ -6618,7 +6655,8 @@
         "tests/dotnet/Honua.Protocols.OgcClassic.ComponentTests/"
       ],
       "_comment": "Minimal-host component contracts; preserves full integration gates and runs all cases.",
-      "supplemental_source_paths": true
+      "supplemental_source_paths": true,
+      "nightly_only": true
     },
     {
       "name": "Hosting Components",

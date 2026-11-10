@@ -116,6 +116,34 @@ class ManagedWorkflowTests(unittest.TestCase):
         mutant = shell.replace('"${REQUIRE_MANAGED_BUILD}" == true', '"${REQUIRE_MANAGED_BUILD}" == false')
         self.assertEqual(0, self.execute_guard(mutant, **(base | {'BUILD_RESULT':'skipped'})))
 
+    def test_ogc_nightly_matrix_policy_and_empty_selection(self):
+        selector = job('targeted-shards')
+        self.assertIn("github.event_name == 'schedule' && github.event.schedule == '0 9 * * *'", selector)
+        self.assertIn("github.event_name == 'workflow_dispatch' && inputs.full_ci == true", selector)
+        self.assertIn("map(select((.nightly_only // false) == false or $nightly))", selector)
+        self.assertIn("nightly_only: (.nightly_only // false)", selector)
+        self.assertIn("needs.targeted-shards.outputs.matrix_include != '[]'", job('server-tests'))
+        self.assertIn("continue-on-error: ${{ matrix.nightly_only == true }}", job('server-tests'))
+        shell = self.gate_shell('test-all')
+        base = dict(REQUIRE_TEST_LANES='true', FOUNDATION_MATRIX_RESULT='success',
+                    FOUNDATION_RESULT='success', SERVER_TEST_RESULT='skipped', SERVER_MATRIX_EMPTY='true')
+        self.assertEqual(0, self.execute_guard(shell, **base))
+        self.assertNotEqual(0, self.execute_guard(shell, **(base | {'SERVER_MATRIX_EMPTY':'false'})))
+        for lane in ['FOUNDATION_MATRIX_RESULT', 'FOUNDATION_RESULT', 'SERVER_TEST_RESULT']:
+            for result in ['failure', 'cancelled']:
+                self.assertNotEqual(0, self.execute_guard(shell, **(base | {lane: result})))
+        # Evaluate the actual jq policy against the catalog, with mutation control.
+        import json
+        catalog = json.loads((ROOT / '.github/ci-shards.json').read_text())
+        expression = re.search(r"matrix_include=\$\(jq .*? '\n(.*?)\n          ' \.github/ci-shards.json\)", selector, re.S)[1]
+        selected = json.dumps([s['name'] for s in catalog['shards']])
+        for overnight in [False, True]:
+            args = ['jq', '-c', '--argjson', 'sel', selected, '--argjson', 'nightly', json.dumps(overnight), expression]
+            matrix = json.loads(subprocess.check_output(args, input=json.dumps(catalog), text=True))
+            expected = {s['name'] for s in catalog['shards'] if overnight or not s.get('nightly_only')}
+            self.assertEqual(expected, {s['shard_name'] for s in matrix})
+            self.assertEqual(overnight, any(s['nightly_only'] for s in matrix))
+
     def test_test_all_requires_each_selected_integration_lane(self):
         shell = self.gate_shell('test-all')
         base = dict(REQUIRE_TEST_LANES='true', FOUNDATION_MATRIX_RESULT='success',

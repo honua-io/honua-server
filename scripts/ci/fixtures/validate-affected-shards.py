@@ -158,6 +158,8 @@ def check_feature_namespace_selects_its_shard(
     """
     covered = 0
     for shard in config["shards"]:
+        if shard.get("nightly_only"):
+            continue
         prefix = unique_owned_prefix(config, shard)
         if prefix is None:
             continue
@@ -232,17 +234,17 @@ def check_cap_is_enforced(config: dict[str, Any]) -> None:
         result = select_offline(config, probe, descriptor=descriptor, cap=cap)
         if len(result["shards"]) != cap:
             raise FixtureError(f"cap={cap} selected {len(result['shards'])} shards")
-        if result["candidate_count"] != len(config["shards"]):
+        if result["candidate_count"] != sum(not s.get("nightly_only") and not s.get("advisory") for s in config["shards"]):
             raise FixtureError(
                 f"run_all should consider every shard; got {result['candidate_count']}"
             )
-        if len(result["dropped"]) != len(config["shards"]) - cap:
+        if len(result["dropped"]) != sum(not s.get("nightly_only") and not s.get("advisory") for s in config["shards"]) - cap:
             raise FixtureError("dropped families were not reported")
 
 
 def check_largest_impact_first(config: dict[str, Any]) -> None:
     """Path hits outrank dispatch_rank: the shard owning more of the diff wins."""
-    ranked = sorted(config["shards"], key=lambda shard: -float(shard.get("dispatch_rank") or 0))
+    ranked = sorted((s for s in config["shards"] if not s.get("nightly_only")), key=lambda shard: -float(shard.get("dispatch_rank") or 0))
     slow = next(s for s in ranked if unique_owned_prefix(config, s))
     fast = next(
         s
@@ -280,6 +282,8 @@ def check_changed_test_file_selects_its_running_shard(config: dict[str, Any]) ->
     runnable = runnable_method_index(classes)
     owners: dict[str, list[str]] = {}
     for shard in config["shards"]:
+        if shard.get("nightly_only"):
+            continue
         project = selector.shard_test_project(shard)
         for fqn, entry in classes.items():
             if entry["csproj"] != project or not entry["methods"]:
@@ -328,6 +332,11 @@ def check_changed_test_file_selects_its_running_shard(config: dict[str, Any]) ->
 
 def check_wps_and_h3_tests_select_both_owners(config: dict[str, Any]) -> None:
     """A routed WPS file must not hide an unlisted H3 file in the same diff."""
+    # Exercise the complete retained matrix's family interleaving, independently
+    # of the policy that defers OGC execution to nightly.
+    config = copy.deepcopy(config)
+    for shard in config["shards"]:
+        shard.pop("nightly_only", None)
     wps = "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wps20/Wps20EndpointsTests.cs"
     h3_paths = [
         f"tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/{name}.cs"
@@ -813,9 +822,38 @@ def check_failure_injections(config: dict[str, Any]) -> None:
             )
 
 
+
+def check_ogc_nightly_policy(config: dict[str, Any]) -> None:
+    """OGC-only protocol changes execute no PR shards; mixed product edits still gate."""
+    nightly = {s["name"] for s in config["shards"] if s.get("nightly_only")}
+    if not nightly:
+        raise FixtureError("OGC nightly policy has no shards")
+    probes = [
+        "tests/dotnet/Honua.Server.Tests/OgcFeaturesEndpointTests.cs",
+        "src/Honua.Protocols/OgcClassic/Wfs20/Wfs20Endpoints.cs",
+        "src/Honua.Protocols/OgcApi/Tiles/OgcTilesEndpoints.cs",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wps20/Wps20EndpointsTests.cs",
+    ]
+    for probe in probes:
+        result = select_offline(config, [probe], descriptor=router(config, [probe]), cap=6)
+        if result["shards"]:
+            raise FixtureError(f"OGC-only change selected PR shards: {result['shards']}")
+    probe = [probes[0], "src/Honua.Protocols/GeoServicesRest/FeatureServer/Probe.cs"]
+    descriptor = {"run_all": True, "shards": [s["name"] for s in config["shards"]]}
+    mixed = select_offline(config, probe, descriptor=descriptor, cap=len(config["shards"]))
+    if nightly & set(mixed["shards"]) or not mixed["shards"]:
+        raise FixtureError("mixed OGC/product changes must retain product checks and exclude nightly")
+    mutation = copy.deepcopy(config)
+    for shard in mutation["shards"]:
+        shard.pop("nightly_only", None)
+    control = select_offline(mutation, [probes[0]], descriptor=router(config, [probes[0]]), cap=6)
+    if not control["shards"]:
+        raise FixtureError("nightly exclusion control selected nothing even without policy")
+
 def main() -> int:
     subprocess.run([sys.executable, str(REPO_ROOT / "scripts/ci/fixtures/validate-odata-unit-routing.py")], check=True, cwd=REPO_ROOT)
     config = selector.load_config(CONFIG_PATH)
+    check_ogc_nightly_policy(config)
     covered = check_feature_namespace_selects_its_shard(config)
     check_cap_is_enforced(config)
     check_temporal_source_survives_the_cap(config)

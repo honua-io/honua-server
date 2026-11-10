@@ -102,6 +102,7 @@ jq -e '
           (.name | type == "string" and length > 0)
           and (.shard_name | type == "string" and length > 0)
           and (.dispatch_rank | type == "number" and . >= 0)
+          and ((has("nightly_only") | not) or (.nightly_only | type == "boolean"))
           and (.artifact_suffix | type == "string" and length > 0)
           and (.log_name | type == "string" and length > 0)
           and (.timeout_minutes | type == "number" and . > 0)

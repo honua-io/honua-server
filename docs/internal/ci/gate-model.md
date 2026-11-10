@@ -1,7 +1,7 @@
 # CI Gate Model
 
 > Defines the five-tier quality gate model governing all CI workflows across the Honua project.
-> Last updated: 2026-11-09
+> Last updated: 2026-11-10
 
 ## Tier Definitions
 
@@ -31,6 +31,19 @@
 
 Full CI runs twice daily at `09:00` and `21:00` UTC (01:00 and 13:00 Pacific standard time). It retains protocol-profile compilation, remote-source and server execution proofs, and import/export fidelity. The existing Worker GDAL job owns native GDAL/PDAL coverage and the raster execution receipt checks.
 
+OGC protocol shards marked `nightly_only` in `.github/ci-shards.json` run only
+in the 09:00 UTC (01:00 Pacific standard time) full run or an explicit manual
+`full_ci` run. They are excluded from PR selection and post-merge affected
+runs, including direct OGC changes, and from the 21:00 UTC product full run.
+This covers OGC API and classic protocol integration, unit and component
+shards, plus the isolated Core OGC endpoint child. Shared CRS correctness and
+STAC product catalog checks retain their existing gating policy. An OGC-only
+diff can select an empty integration matrix; foundation and build checks still
+apply. The nightly OGC jobs continue on error and the verdict reports their
+failed, missing or invalid execution receipts under **OGC nightly** without
+changing product shard enforcement. Record their failures separately as
+`OGC nightly` in trunk status; they do not set the product trunk-red brake.
+
 ## Verification stages
 
 Every stage reacts to a repository event; no stage polls. A change is verified
@@ -43,7 +56,7 @@ earlier one could not.
 | **1 PR gate** | `pull_request` | `pr-gate.yml`, `review-gate.yml`, `repo-hygiene.yml` | Affected-scope build, selected shards, Fast/architecture, format, router validation, exact-head review | Yes: `PR Gate`, `Review Gate`, Repository hygiene |
 | **2 Pre-merge** | Trunk moves under an open PR | `pr-sync-doctor.md` and the fleet lander | A behind PR is refreshed only when trunk touched its affected projects; the refreshed head reruns stage 1. The lander merges only an exact-head green, thread-free PR | Yes, through stage 1 on the refreshed head |
 | **3 Post-merge affected** | `push` to `trunk` | `trunk-affected.yml` dispatching `ci.yml` | Selective CI over the merges since the last green CI run (`selective_base`): the shards and lanes those merges touch | No; a red run starts the CI doctor |
-| **4 Full** | `schedule` 09:00 and 21:00 UTC | `ci.yml` | The full matrix, compatibility and certification lanes | No; full proof clears the lander's trunk-red brake |
+| **4 Full** | `schedule` 09:00 and 21:00 UTC | `ci.yml` | Product full matrix; 09:00 UTC also includes non-gating OGC nightly shards; compatibility and certification lanes | No; full proof clears the lander's trunk-red brake |
 
 Stage 3 details:
 

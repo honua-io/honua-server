@@ -623,7 +623,10 @@ def select(
     # Advisory shards (ci.yml matrix.advisory) are the #1965 rotted buckets:
     # non-gating and currently always red. Including one would manufacture a
     # false red in the very measurement that decides whether to promote.
-    candidates = [name for name in candidates if not shards_by_name[name].get("advisory", False)]
+    # OGC protocol conformance is reserved for the overnight full CI run, even
+    # when its protocol source or tests change directly.
+    candidates = [name for name in candidates if not shards_by_name[name].get("advisory", False)
+                  and not shards_by_name[name].get("nightly_only", False)]
 
     ranked = []
     for name in candidates:

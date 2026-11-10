@@ -50,7 +50,7 @@ def check_budget_bounds_the_selection(config: dict[str, Any]) -> None:
 def check_total_budget_defers_the_overflow(config: dict[str, Any]) -> None:
     budget = budget_module.load_time_budget(config)
     near_limit = sorted(
-        (s for s in config["shards"] if s["dispatch_rank"] <= budget["max_shard_minutes"]),
+        (s for s in config["shards"] if not s.get("nightly_only") and s["dispatch_rank"] <= budget["max_shard_minutes"]),
         key=lambda shard: -shard["dispatch_rank"],
     )[: selector.DEFAULT_CAP]
     if sum(s["dispatch_rank"] for s in near_limit) <= budget["max_total_minutes"]:
@@ -68,7 +68,7 @@ def slowest_uniquely_owned_shard(config: dict[str, Any]) -> dict[str, Any]:
     return next(
         shard
         for shard in sorted(config["shards"], key=lambda s: -s["dispatch_rank"])
-        if shard["dispatch_rank"] > limit and shard_fixtures.unique_owned_prefix(config, shard)
+        if not shard.get("nightly_only") and shard["dispatch_rank"] > limit and shard_fixtures.unique_owned_prefix(config, shard)
     )
 
 
