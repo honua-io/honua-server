@@ -17,6 +17,10 @@ on:
         description: Triage first error and affected files.
         type: string
         required: true
+      head_sha:
+        description: Original failed head; serializes all failures on this commit.
+        type: string
+        required: true
       source_run_id:
         description: Original failed run (CI doctor).
         type: string
@@ -54,7 +58,7 @@ timeout-minutes: 30
 
 concurrency:
   job-discriminator: ${{ github.run_id }}
-  group: ci-doctor-${{ inputs.source_run_id }}
+  group: ci-doctor-${{ inputs.head_sha }}
   cancel-in-progress: false
 
 steps:
@@ -128,7 +132,7 @@ jobs:
         env:
           DOCTOR_GATE_READ_TOKEN: ${{ github.token }}
         run: |
-          python3 doctor-policy/scripts/ci/install-doctor-push-guard.py "${RUNNER_TEMP}/gh-aw/safeoutputs/push_to_pull_request_branch.cjs"
+          python3 doctor-policy/scripts/ci/install-doctor-push-guard.py "${RUNNER_TEMP}/gh-aw/actions/push_to_pull_request_branch.cjs"
           echo "DOCTOR_GATE_READ_TOKEN=${DOCTOR_GATE_READ_TOKEN}" >> "$GITHUB_ENV"
 
 safe-outputs:

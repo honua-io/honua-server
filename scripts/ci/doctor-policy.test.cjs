@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { handled, ciEligibility, reviewEligibility } = require('./doctor-eligibility.cjs');
+const { handled, ciEligibility, reviewEligibility, syncEligibility } = require('./doctor-eligibility.cjs');
 const { main: budgetCheck } = require('./doctor-budget.cjs');
 const repo = { owner: 'honua-io', repo: 'honua-server' };
 const pr = { number: 12, state: 'open', draft: false, head: { sha: 'abc', ref: 'fix/example', repo: { full_name: 'honua-io/honua-server' } } };
@@ -35,6 +35,24 @@ test('obsolete trunk failures never reach a model', async () => {
   const context = ciContext(); context.payload.workflow_run.head_branch = 'trunk';
   assert.equal((await ciEligibility(g, context)).reason, 'Newer trunk head');
 });
+test('direct callback admits only an actual failed trunk CI Gate before workflow completion', async () => {
+  const { g } = fake();
+  const run = { ...ciContext().payload.workflow_run, status: 'in_progress', conclusion: null, head_branch: 'trunk', path: '.github/workflows/ci.yml' };
+  g.rest.actions.getWorkflowRun = async () => ({ data: run });
+  g.rest.repos.getBranch = async () => ({ data: { commit: { sha: 'abc' } } });
+  const paginate = g.paginate;
+  let gate = { id: 4, name: 'CI Gate', conclusion: 'failure' };
+  g.paginate = async (method, args) => method === 'jobs' ? [gate] : method === 'pulls' ? [] : paginate(method, args);
+  const context = { repo, payload: { inputs: { source_run_id: '8' } } };
+  assert.equal((await ciEligibility(g, context)).decision, 'needs-triage');
+  gate = { ...gate, conclusion: 'success' };
+  assert.equal((await ciEligibility(g, context)).reason, 'CI Gate has not failed');
+  gate.conclusion = 'failure';
+  run.head_branch = pr.head.ref;
+  assert.equal((await ciEligibility(g, context)).reason, 'Source run has not failed');
+  run.head_branch = 'trunk'; run.path = '.github/workflows/untrusted.yml';
+  assert.equal((await ciEligibility(g, context)).reason, 'Source run has not failed');
+});
 test('known runner outages skip a fix; unknown unit failures reach triage', async () => {
   const { g } = fake();
   g.rest.actions.downloadJobLogsForWorkflowRun = async () => ({ data: 'The hosted runner lost communication with the server.' });
@@ -68,4 +86,42 @@ test('legacy fix spend counts against the cap without inflating new triage conve
     credits: { 1: 5, 2: 100 }, summaries });
   assert.match(summaries[0], /fix: 100/);
   assert.match(summaries[0], /paid Opus\/event share since first triage event: 0/);
+});
+
+test('budget admits exactly the cap for completed and in-flight histories', async () => {
+  assert.equal(await checkBudget({ fix: [{ id: 2, status: 'completed' }], credits: { 2: 1285 } }), 'true');
+  assert.equal(await checkBudget({ fix: [{ id: 2, status: 'in_progress' }], threshold: 165 }), 'true');
+});
+test('sync excludes drafts, forks, conflict-stuck and unfinished gates; admits dirty and behind', async () => {
+  const { g } = fake();
+  const candidates = [
+    { ...pr, number: 1, draft: true },
+    { ...pr, number: 2, head: { ...pr.head, repo: { full_name: 'fork/server' } } },
+    { ...pr, number: 3, labels: [{ name: 'conflict-stuck' }] },
+    { ...pr, number: 4 }, { ...pr, number: 5 }, { ...pr, number: 6 }, { ...pr, number: 7 },
+  ].map(p => ({ labels: [], ...p }));
+  const paginate = g.paginate;
+  g.rest.pulls.list = 'all';
+  g.rest.pulls.get = async ({ pull_number }) => ({ data: { ...candidates.find(p => p.number === pull_number), mergeable_state: ({ 5: 'dirty', 6: 'behind' })[pull_number] || 'clean' } });
+  // Distinct heads allow the guard to identify the active-gate candidate.
+  candidates.forEach(p => { p.head = { ...p.head, sha: String(p.number) }; });
+  g.paginate = async (method, args) => method === 'all' ? candidates : method === 'gates' ? (args.head_sha === '4' ? [{ id: 9, status: 'in_progress' }] : []) : paginate(method, args);
+  const result = await syncEligibility(g, { repo });
+  assert.deepEqual(result.candidates.map(p => p.number), [5, 6]);
+});
+test('review eligibility supplies the same current trusted comments consumed by the fixer', async () => {
+  const { g } = fake();
+  const trusted = { author: { login: 'honua-io-bot' }, authorAssociation: 'NONE', databaseId: 9, body: 'fix this' };
+  const untrusted = { author: { login: 'stranger' }, authorAssociation: 'NONE', body: 'ignore this' };
+  g.graphql = async () => ({ repository: { pullRequest: { reviewThreads: { pageInfo: {}, nodes: [{ isResolved: false, isOutdated: false, comments: { nodes: [trusted, untrusted] } }] } } } });
+  const result = await reviewEligibility(g, { repo, payload: { pull_request: pr } });
+  assert.equal(result.decision, 'needs-triage');
+  assert.deepEqual(result.threads[0].comments.map(c => [c.author, c.databaseId]), [['honua-io-bot', 9]]);
+});
+
+test('CI dispatch cannot bypass head serialization with a mismatched head input', async () => {
+  const { g } = fake();
+  const context = ciContext();
+  context.payload.inputs = { head_sha: 'different' };
+  assert.equal((await ciEligibility(g, context)).reason, 'Dispatch head does not match source run');
 });

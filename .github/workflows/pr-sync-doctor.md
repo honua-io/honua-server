@@ -124,7 +124,7 @@ jobs:
         env:
           DOCTOR_GATE_READ_TOKEN: ${{ github.token }}
         run: |
-          python3 doctor-policy/scripts/ci/install-doctor-push-guard.py "${RUNNER_TEMP}/gh-aw/safeoutputs/push_to_pull_request_branch.cjs"
+          python3 doctor-policy/scripts/ci/install-doctor-push-guard.py "${RUNNER_TEMP}/gh-aw/actions/push_to_pull_request_branch.cjs"
           echo "DOCTOR_GATE_READ_TOKEN=${DOCTOR_GATE_READ_TOKEN}" >> "$GITHUB_ENV"
 
 safe-outputs:

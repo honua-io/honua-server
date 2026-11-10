@@ -104,5 +104,5 @@ For CI, an existing real attempt marker handles the head, but checkout access fa
 For review, only an unresolved current finding with a concrete safe correction is actionable.
 For `needs-fix` only, dispatch `ci-doctor` once on the default branch, with decision
 `needs-fix`, summary naming the first error and affected files, source_run_id from
-`run_id` (CI only), and pull_number from `pull` (review only). Never dispatch any
+`run_id` and head_sha from `sha` (CI only), and pull_number from `pull` (review only). Never dispatch any
 other classification. End with the classification and concise evidence.

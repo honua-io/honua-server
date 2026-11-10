@@ -39,7 +39,7 @@ async function main({ github, context, core, accounting, name, phase, threshold,
         if (stage === 'fix') paidFixStarts.push(run.created_at);
       }
       core.info(`doctor-credit run=${run.id} phase=${stage} credits=${credits}`);
-      if (totals.triage + totals.fix + reserved >= threshold) {
+      if (totals.triage + totals.fix + reserved > threshold) {
         await report(false, 'Daily envelope reached; remaining usage not scanned');
         return;
       }
