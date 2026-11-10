@@ -31,6 +31,14 @@
 
 Full CI runs twice daily at `09:00` and `21:00` UTC (01:00 and 13:00 Pacific standard time). It retains protocol-profile compilation, remote-source and server execution proofs, and import/export fidelity. The existing Worker GDAL job owns native GDAL/PDAL coverage and the raster execution receipt checks.
 
+## Neutral automation helpers
+
+See [the workflow inventory](workflow-inventory.md#neutral-automation-helpers)
+for helper check names and queue policy. Helper completion does not grant
+admission: drafts retain pending `Review Gate` status, blocking reviews retain
+failure, and real attestation/API errors fail. Superseded normalization producers
+and consumers exit neutrally before producing data or mutating a branch.
+
 ## Verification stages
 
 Every stage reacts to a repository event; no stage polls. A change is verified
@@ -584,6 +592,8 @@ unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
+
+Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. Missing envelopes from ordinary producers remain errors.
 
 ### Governance capacity split
 
