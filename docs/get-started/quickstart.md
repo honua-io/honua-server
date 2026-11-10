@@ -6,10 +6,7 @@ resource: "https://github.com/honua-io/honua-server/pkgs/container/honua-server"
 ---
 # Quickstart: install, publish, and query
 
-> **2026.1 rc.2 deployment scope:** Lambda and Kubernetes/Helm are not certified
-> in this release candidate. The supported production deployment is AWS ECS
-> Fargate with RDS PostGIS, ElastiCache, and Console in S3/CloudFront.
-> Docker Compose remains the local evaluation path, not a certified production target.
+> Docker Compose is the local evaluation path; see [rc.2 deployment scope](../guides/deploy/cloud-deployments.md#pick-a-pattern) for the certified production target.
 
 See the [Honua vocabulary](../concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
 

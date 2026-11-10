@@ -1,20 +1,17 @@
 ---
 type: runbook
 title: "Deploy with Docker Compose"
-description: "Take a single-node Compose install to production: a TLS edge, backups you have restored from, and a rollback path."
+description: "Harden a single-node Compose evaluation install with a TLS edge, restored backups, and a rollback path. Not a certified rc.2 production target."
 ---
 # Deploy with Docker Compose
 
-> **2026.1 rc.2 deployment scope:** Lambda and Kubernetes/Helm are not certified
-> in this release candidate. The supported production deployment is AWS ECS
-> Fargate with RDS PostGIS, ElastiCache, and Console in S3/CloudFront.
-> Docker Compose remains the local evaluation path, not a certified production target.
+> Compose is for local evaluation, not certified rc.2 production; see [deployment scope](cloud-deployments.md#pick-a-pattern).
 
 Before choosing an image, review [default and full serving images](choose-serving-image.md).
 That guide distinguishes the planned rc.2 store variants from older published
 images and explains when the deployment health probe must change with the image.
 
-This is the **single-node** path: one host you administer, running Compose. It
+This is the **single-node local evaluation** path: one host you administer, running Compose. It
 covers what the quickstart leaves out — terminating TLS in front of it, taking
 backups you have actually restored from, and upgrading without losing the
 database.
@@ -44,9 +41,9 @@ dc() { docker compose --env-file .env -f compose.yaml "$@"; }
 Compose 2.23.1 or later is required. Nothing here needs a repository checkout, a
 compiler, or a registry credential.
 
-## Production install from the shipped Compose file
+## Hardened evaluation install from the shipped Compose file
 
-The release also ships a production Compose file,
+The release also ships a hardened Compose file (named `production`; not certified for rc.2),
 [`docker/compose/docker-compose.production.yml`](../../../docker/compose/docker-compose.production.yml), and its
 environment template, [`.env.production.example`](../../../.env.production.example).
 Use them instead of the quickstart project when you want the hardened

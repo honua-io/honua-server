@@ -1,16 +1,11 @@
 ---
 type: runbook
 title: "Deploy on AWS and Azure"
-description: "You'll pick a 2026.1 deployment pattern for Honua — Compose and ECS are GA, Lambda and Kubernetes are Preview, Azure is not offered — and know which image, configuration, and rollout mechanism each one uses."
+description: "You'll pick a 2026.1 deployment pattern for Honua — ECS Fargate is the only certified rc.2 production target, Compose is for local evaluation, Lambda and Kubernetes are Preview, Azure is not offered — and know which image, configuration, and rollout mechanism each one uses."
 ---
 # Deploy on AWS and Azure
 
-> **2026.1 rc.2 deployment scope:** Lambda and Kubernetes/Helm are not certified
-> in this release candidate. The supported production deployment is AWS ECS
-> Fargate with RDS PostGIS, ElastiCache, and Console in S3/CloudFront.
-> Docker Compose remains the local evaluation path, not a certified production target.
-
-You'll pick a 2026.1 deployment pattern for Honua — Compose and ECS are GA, Lambda and Kubernetes are Preview, Azure is not offered — and know which image, configuration, and rollout mechanism each one uses.
+You'll pick a 2026.1 deployment pattern for Honua — ECS Fargate is the only certified rc.2 production target, Compose is for local evaluation, Lambda and Kubernetes are Preview, Azure is not offered — and know which image, configuration, and rollout mechanism each one uses.
 
 **Prerequisites:** A PostGIS database (RDS or Azure Database for PostgreSQL Flexible Server), the required env vars from [Configure Honua Server](configuration.md) (`ConnectionStrings__DefaultConnection`, `HONUA_ADMIN_PASSWORD`, `Security__ConnectionEncryption__MasterKey`, `Cors__AllowedOrigins__0`), and TLS terminated at the edge (ALB, API Gateway, Front Door) — Honua does not terminate TLS.
 
@@ -35,10 +30,15 @@ ref policy, and [deployment presets](https://github.com/honua-io/honua-iac/blob/
 
 ## Pick a pattern
 
+> **2026.1 rc.2 deployment scope:** Lambda and Kubernetes/Helm are not certified
+> in this release candidate. The supported production deployment is AWS ECS
+> Fargate with RDS PostGIS, ElastiCache, and Console in S3/CloudFront.
+> Docker Compose remains the local evaluation path, not a certified production target.
+
 | Pattern | 2026.1 tier | Best for | Image family | Rollout mechanism | honua-iac module |
 |---|---|---|---|---|---|
-| Docker Compose | GA | Dev/test on one host | generic web image | Recreate the container | — |
-| AWS ECS/Fargate + ALB | GA | Steady production traffic | generic web image (multi-arch index; runs `x86_64`) | ALB weighted target groups (canary) | `aws-ecs` |
+| Docker Compose | Local evaluation | Dev/test on one host | generic web image | Recreate the container | — |
+| AWS ECS/Fargate + ALB | Certified rc.2 target | Steady production traffic | generic web image (multi-arch index; runs `x86_64`) | ALB weighted target groups (canary) | `aws-ecs` |
 | AWS Lambda | Preview | Spiky/low traffic, scale-to-zero | `*-lambda-aot` (single-arch `x86_64`/amd64) | Alias weighted versions (canary) | `aws-serverless` |
 | Kubernetes (EKS/AKS) with Helm | Preview | Existing cluster estate | generic web image (`x86_64`) | See [Deploy on Kubernetes](kubernetes.md) | `aws-eks`, `azure-aks` |
 | Azure Container Apps | Not offered in 2026.1 | Steady traffic on Azure | generic web image | Revision traffic splitting (canary) | `azure-aca` |
