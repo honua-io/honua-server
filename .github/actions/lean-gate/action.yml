@@ -428,7 +428,7 @@ runs:
       shell: bash
       run: |
         timeout "${{ inputs.governance-timeout-minutes }}m" \
-          dotnet test tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj \
+          python3 scripts/ci/run-quarantine-filtered-tests.py dotnet test tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \

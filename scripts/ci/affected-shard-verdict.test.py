@@ -176,7 +176,7 @@ class AffectedShardVerdictTests(unittest.TestCase):
             self.assertIn("| 1 | 0 | 0 | 1 |", outcome["summary"])
 
     def test_ogc_nightly_red_missing_or_invalid_receipts_do_not_mask_product_failures(self) -> None:
-        for nightly_status in ("failed", "missing", "invalid-json"):
+        for nightly_status in ("failed", "missing", "invalid-json", "string-execution", "list-execution"):
             for product_status in ("passed", "failed", "missing"):
                 with self.subTest(nightly=nightly_status, product=product_status), tempfile.TemporaryDirectory() as directory:
                     root = Path(directory)
@@ -191,6 +191,8 @@ class AffectedShardVerdictTests(unittest.TestCase):
                     elif nightly_status != "missing":
                         (root / "ogc.timing.json").write_text(json.dumps({
                             "shard": "OGC", "log_name": "ogc", "status": nightly_status,
+                            "execution": "malformed" if nightly_status == "string-execution"
+                            else ["malformed"] if nightly_status == "list-execution" else {},
                         }))
                     matrix = root / "matrix.json"
                     matrix.write_text(json.dumps([
@@ -209,6 +211,15 @@ class AffectedShardVerdictTests(unittest.TestCase):
                     self.assertEqual(result["expected"], 1)
                     self.assertEqual(result["ogc_nightly"][0]["shard"], "OGC")
                     self.assertNotEqual(result["ogc_nightly"][0]["status"], "passed")
+
+    def test_malformed_product_execution_still_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, receipt = write_passing_receipt(root)
+            receipt['execution'] = 'malformed'
+            (root / 'control.timing.json').write_text(json.dumps(receipt))
+            with self.assertRaisesRegex(ValueError, 'execution receipt'):
+                verdict._load_timings(root, {'ogc.timing.json': 'OGC'})
 
     def test_every_shard_job_preserves_test_failure(self) -> None:
         import yaml

@@ -489,3 +489,8 @@ require(
 assert TEXT.index("- name: Regenerate admin parity exports") < TEXT.index("- name: Run .NET Tests (Server Fast Tier)")
 require(r'python3 scripts/ci/test-projects\.py gate-fast\s',
         'execute the catalogued isolated Fast smoke without another build')
+
+require(r"- name: Run \.NET Tests \(GeoServices REST Smoke\)[\s\S]*?"
+        r"python3 scripts/ci/run-quarantine-filtered-tests\.py dotnet test "
+        r"tests/dotnet/Honua\.Protocols\.GeoServices\.Tests/",
+        'apply the same quarantine exclusion to the GeoServices smoke')

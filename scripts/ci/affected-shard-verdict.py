@@ -282,6 +282,8 @@ def deferred_lines(deferred: tuple[str, ...]) -> list[str]:
 
 def _verify_execution(timing: dict[str, Any], directory: Path) -> None:
     execution = timing.get("execution") or {}
+    if not isinstance(execution, dict):
+        raise ValueError("execution receipt must be an object")
     trx_name = f"{timing.get('log_name')}.trx"
     if Path(trx_name).name != trx_name or execution.get("trxFile") != trx_name:
         if timing.get("status") == "passed":
