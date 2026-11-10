@@ -33,7 +33,13 @@ cd "${REPO_ROOT}"
 
 if [[ "${1:-}" == "--trunk-overlap" ]]; then
   shift
-  exec python3 "${SCRIPT_DIR}/compute-project-overlap.py" "$@"
+  # shellcheck source=scripts/ci/lib/python-resolve.sh
+  . "${SCRIPT_DIR}/lib/python-resolve.sh"
+  if ! PYTHON_BIN="$(honua_resolve_python)"; then
+    printf '%s\n' '{"refresh_required":true,"reason":"unavailable-python"}'
+    exit 0
+  fi
+  exec "${PYTHON_BIN}" "${SCRIPT_DIR}/compute-project-overlap.py" "$@"
 fi
 
 base_ref="${BASE_REF:-origin/trunk}"
