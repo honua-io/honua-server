@@ -22,21 +22,30 @@ steps:
       REVIEW_BOTS: '["chatgpt-codex-connector", "copilot-pull-request-reviewer", "github-actions", "honua-io-bot"]'
     run: |
       mkdir -p /tmp/gh-aw/review
-      gh api graphql -F owner="${GITHUB_REPOSITORY%/*}" -F repo="${GITHUB_REPOSITORY#*/}" -F number="$PR_NUMBER" -f query='
+      pr_args=(-F owner="${GITHUB_REPOSITORY%/*}" -F repo="${GITHUB_REPOSITORY#*/}" -F number="$PR_NUMBER")
+      gh api graphql "${pr_args[@]}" -f query='
         query($owner: String!, $repo: String!, $number: Int!) {
           repository(owner: $owner, name: $repo) { pullRequest(number: $number) {
-            reviews(last: 50) { nodes { author { login } authorAssociation state body } }
-            reviewThreads(first: 100) { nodes { isResolved isOutdated path line
-              comments(first: 50) { nodes { databaseId author { login } authorAssociation body createdAt } } } }
+            reviews(last: 100) { nodes { author { login } authorAssociation state body } }
           } }
-        }' | jq --argjson bots "$REVIEW_BOTS" '
+        }' > "$RUNNER_TEMP/reviews.json"
+      gh api graphql --paginate "${pr_args[@]}" -f query='
+        query($owner: String!, $repo: String!, $number: Int!, $endCursor: String) {
+          repository(owner: $owner, name: $repo) { pullRequest(number: $number) {
+            reviewThreads(first: 100, after: $endCursor) {
+              pageInfo { hasNextPage endCursor }
+              nodes { isResolved isOutdated path line
+                comments(last: 100) { nodes { databaseId author { login } authorAssociation body createdAt } } }
+            }
+          } }
+        }' > "$RUNNER_TEMP/threads.json"
+      jq -n --argjson bots "$REVIEW_BOTS" --slurpfile reviews "$RUNNER_TEMP/reviews.json" --slurpfile pages "$RUNNER_TEMP/threads.json" '
         def trusted: (.authorAssociation | IN("OWNER", "MEMBER", "COLLABORATOR")) or ((.author.login // "") | IN($bots[]));
         def entry: {author: .author.login} + (del(.author, .authorAssociation));
-        .data.repository.pullRequest
-        | {reviews: [.reviews.nodes[] | select(trusted) | entry],
-           threads: [.reviewThreads.nodes[] | select(.isResolved | not)
-             | .comments = [.comments.nodes[] | select(trusted) | entry]
-             | select(.comments | length > 0) | del(.isResolved)]}' > /tmp/gh-aw/review/threads.json
+        {reviews: [$reviews[0].data.repository.pullRequest.reviews.nodes[] | select(trusted) | entry],
+         threads: [$pages[].data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not)
+           | .comments = [.comments.nodes[] | select(trusted) | entry]
+           | select(.comments | length > 0) | del(.isResolved)]}' > /tmp/gh-aw/review/threads.json
 
 permissions:
   contents: read
