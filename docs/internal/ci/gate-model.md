@@ -539,3 +539,8 @@ unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
+
+Affected trunk builds retain selected tooling projects that are outside `Honua.sln`.
+The managed producer filters solution members and separately restores and builds the
+selected standalone projects in Release with analyzers and warnings as errors. A
+missing or invalid project path fails planning; tooling failures fail the producer.

@@ -57,15 +57,41 @@ def validate_projects(root, projects):
     return sorted(set(projects))
 
 
-def write_filter(root, projects, target):
+def validate_standalone_projects(root, projects):
+    if not isinstance(projects, list) or any(not isinstance(p, str) for p in projects):
+        raise ValueError('Standalone selection must be a JSON array of paths')
+    for project in projects:
+        path = PurePosixPath(project)
+        if (path.is_absolute() or ':' in project or '\\' in project
+                or any(part in {'', '.', '..'} for part in project.split('/'))
+                or path.suffix != '.csproj'
+                or not (root / project).resolve().is_relative_to(root.resolve())
+                or not (root / project).is_file()):
+            raise ValueError(f'Invalid standalone project: {project}')
+    return sorted(set(projects))
+
+
+def build_standalone(root, projects):
+    for project in validate_standalone_projects(root, projects):
+        subprocess.run(['bash', str(root / 'scripts/ci/dotnet-restore-retry.sh'), project,
+                        '-p:Configuration=Release', *PROPERTIES], cwd=root, check=True)
+        subprocess.run(['dotnet', 'build', project, '--no-restore', '-c', 'Release',
+                        '-graphBuild', *PROPERTIES], cwd=root, check=True)
+
+
+def write_filter(root, projects, target, *, standalone_output=None):
     # Forward P2P references are traversed by restore and graphBuild.
     members = {path.replace('\\', '/'): path for path in re.findall(
         r'^Project\([^\n]+? = "[^"]+", "([^"]+\.csproj)"',
         (root / 'Honua.sln').read_text(), re.MULTILINE)}
     normalized = {path.replace('\\', '/') for path in projects}
     unknown = normalized - members.keys()
-    if unknown:
+    if unknown and standalone_output is None:
         raise ValueError(f'Projects missing from Honua.sln: {sorted(unknown)}')
+    standalone = validate_standalone_projects(root, sorted(unknown))
+    if standalone_output is not None:
+        standalone_output.write_text(json.dumps(standalone, indent=2) + '\n')
+    normalized -= unknown
     target.write_text(json.dumps({'solution': {'path': str(root / 'Honua.sln'),
                                              'projects': [members[p] for p in sorted(normalized)]}}, indent=2) + '\n')
 
@@ -145,7 +171,7 @@ def fallback(root, projects, restored, *, execute=True):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=['inventory', 'projects', 'filter', 'fallback'])
+    parser.add_argument('operation', choices=['inventory', 'projects', 'filter', 'fallback', 'build-standalone'])
     parser.add_argument('--root', type=Path, default=ROOT)
     parser.add_argument('--lane', choices=['pr', 'pr-shards', 'ci', 'foundation', 'shard'], default='pr')
     parser.add_argument('--family', choices=['core', 'server', 'protocols', 'providers'])
@@ -154,10 +180,16 @@ def main():
     parser.add_argument('--projects-file', type=Path)
     parser.add_argument('--restored-file', type=Path)
     parser.add_argument('--base-filter', type=Path)
+    parser.add_argument('--standalone-output', type=Path)
     parser.add_argument('--output', type=Path)
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()
     root = args.root.resolve()
+    if args.operation == 'build-standalone':
+        if not args.projects_file:
+            parser.error('--projects-file required')
+        build_standalone(root, json.loads(args.projects_file.read_text()))
+        return
     if args.operation == 'inventory':
         result = inventory(root)
     elif args.operation == 'projects':
@@ -203,8 +235,10 @@ def main():
                 parser.error('--output required')
             if args.base_filter:
                 base = json.loads(args.base_filter.read_text())['solution']['projects']
+                if not isinstance(base, list) or any(not isinstance(p, str) for p in base):
+                    raise ValueError('Base filter projects must be a JSON array of paths')
                 projects.extend(p.replace('\\', '/') for p in base)
-            write_filter(root, projects, args.output)
+            write_filter(root, projects, args.output, standalone_output=args.standalone_output)
             return
     text = json.dumps(result, indent=2) + '\n'
     if args.output:

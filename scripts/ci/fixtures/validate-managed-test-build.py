@@ -52,6 +52,55 @@ class ManagedBuildTests(unittest.TestCase):
         self.assertEqual(str(self.root / 'Honua.sln'), result['path'])
         self.assertEqual(sorted(self.literal.values()), result['projects'])
 
+    def test_filter_preserves_standalone_tooling_outside_solution(self):
+        tooling = ['scripts/cloud/lambda-deploy-driver/LambdaDeployDriver.csproj',
+                   'scripts/conformance/mcp/manifest-gen/Honua.Mcp.ManifestGen.csproj']
+        for project in tooling:
+            target = self.root / project
+            target.parent.mkdir(parents=True)
+            target.write_text('<Project />')
+        requested = self.root / 'requested.json'
+        requested.write_text(json.dumps([self.a]))
+        base = self.root / 'base.slnf'
+        base.write_text(json.dumps({'solution': {'projects': [self.b, *tooling, tooling[0]]}}))
+        target, standalone = self.root / 'build.slnf', self.root / 'standalone.json'
+        self.invoke('filter', '--projects-file', str(requested), '--base-filter', str(base),
+                    '--output', str(target), '--standalone-output', str(standalone))
+        self.assertEqual(sorted(self.literal.values()), json.loads(target.read_text())['solution']['projects'])
+        self.assertEqual(sorted(tooling), json.loads(standalone.read_text()))
+        with patch.object(managed.subprocess, 'run') as execute:
+            self.invoke('build-standalone', '--projects-file', str(standalone))
+        self.assertEqual(4, execute.call_count)
+        for project, restore, build in zip(sorted(tooling), execute.call_args_list[::2], execute.call_args_list[1::2]):
+            self.assertIn(project, restore.args[0])
+            self.assertIn(project, build.args[0])
+            self.assertTrue(restore.kwargs['check'])
+            self.assertTrue(build.kwargs['check'])
+            self.assertIn('-p:Configuration=Release', restore.args[0])
+            self.assertEqual(['dotnet', 'build'], build.args[0][:2])
+            self.assertIn('--no-restore', build.args[0])
+            for command in [restore.args[0], build.args[0]]:
+                self.assertLessEqual(set(managed.PROPERTIES), set(command))
+        with patch.object(managed.subprocess, 'run', side_effect=subprocess.CalledProcessError(1, ['restore'])):
+            with self.assertRaises(subprocess.CalledProcessError):
+                managed.build_standalone(self.root, tooling)
+
+    def test_standalone_selection_fails_closed_for_invalid_paths(self):
+        for invalid in ['missing.csproj', '../escape.csproj', '/absolute.csproj',
+                        'C:/escape.csproj', 'scripts/../escape.csproj', 'scripts//a.csproj',
+                        'scripts/not-a-project.txt']:
+            for options in [{}, {'standalone_output': self.root / 'standalone.json'}]:
+                with self.subTest(invalid=invalid, options=options), self.assertRaises(ValueError):
+                    managed.write_filter(self.root, [self.a, invalid], self.root / 'build.slnf', **options)
+        with self.assertRaises(ValueError):
+            managed.validate_standalone_projects(self.root, [12])
+        (self.root / 'escape.csproj').symlink_to(SCRIPT)
+        with self.assertRaises(ValueError):
+            managed.validate_standalone_projects(self.root, ['escape.csproj'])
+        with patch.object(managed.subprocess, 'run') as execute:
+            managed.build_standalone(self.root, [])
+        execute.assert_not_called()
+
     def test_fallback_restore_and_build_use_same_missing_filter(self):
         calls = []
 

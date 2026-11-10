@@ -32,6 +32,15 @@ class ManagedWorkflowTests(unittest.TestCase):
         self.assertLess(producer.index('Build (warnings as errors)'), producer.index('mode: publish'))
         self.assertNotIn('dotnet test ', producer)
 
+    def test_affected_standalone_tooling_remains_required(self):
+        producer = job('build')
+        self.assertIn('--standalone-output "${RUNNER_TEMP}/standalone-projects.json"', producer)
+        standalone = producer.split('- name: Build affected standalone tooling (warnings as errors)\n', 1)[1].split('\n      - name:', 1)[0]
+        self.assertIn("if: steps.affected.outputs.mode == 'affected'", standalone)
+        self.assertIn('managed-test-build.py build-standalone --projects-file "${RUNNER_TEMP}/standalone-projects.json"', standalone)
+        self.assertNotIn('continue-on-error', standalone)
+        self.assertLess(producer.index('Build affected standalone tooling'), producer.index('mode: publish'))
+
     def test_foundation_source_follows_regeneration_and_no_full_restore(self):
         family = job('dotnet-foundation-family-tests')
         self.assertIn('needs: [changes, build]', family)
