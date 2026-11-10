@@ -110,7 +110,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetTile)]
     [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/tile/{z}/{y}/{x}.pbf")]
-    public async Task VectorTileServer_Tile_InRange_ReturnsMvtBytesWithCacheHeader()
+    public async Task VectorTileServer_Tile_InRange_ReturnsMvtBytesNeverStoredForACredentialedCaller()
     {
         // Zoom 1, tile (0,0) covers a quadrant of the world; the seeded "test" service
         // resolves its EsriVectorTileLayer publication -> storage layer 0 and renders MVT.
@@ -121,9 +121,8 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         // rendered bytes or an empty (204) tile; both are valid pipeline outcomes.
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
 
-        // Cache-Control (max-age from TileOptions.CacheMaxAge) is set on both OK and 204.
-        response.Headers.Should().ContainKey("Cache-Control");
-        response.Headers.CacheControl!.MaxAge.Should().BeGreaterThan(TimeSpan.Zero);
+        // This fixture authenticates every request, so the tile is never stored; PublicLayerSharedCacheTests covers the public case.
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
 
         if (response.StatusCode == HttpStatusCode.OK)
         {

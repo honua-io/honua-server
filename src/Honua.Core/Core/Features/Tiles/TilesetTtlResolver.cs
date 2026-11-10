@@ -21,17 +21,16 @@ public static class TilesetTtlResolver
     }
 
     public static int Resolve(TileOptions options, string tilesetKey)
+        => ResolveTilesetTtl(options, tilesetKey) ?? options.CacheMaxAge;
+
+    public static int? ResolveTilesetTtl(TileOptions options, string tilesetKey)
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        if (!string.IsNullOrEmpty(tilesetKey)
+        return !string.IsNullOrEmpty(tilesetKey)
             && options.TilesetLifecycle is { Count: > 0 } lifecycle
             && lifecycle.TryGetValue(tilesetKey, out var entry)
-            && entry?.TtlSeconds is { } ttl)
-        {
-            return ttl;
-        }
-
-        return options.CacheMaxAge;
+                ? entry?.TtlSeconds
+                : null;
     }
 }

@@ -27,6 +27,7 @@ using Honua.Protocols.GeoServices.VectorTileServer.Services;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
+using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Protocols.GeoServices.VectorTileServer;
 
@@ -46,7 +47,8 @@ internal static partial class VectorTileServerEndpoints
             .WithDescription("Returns GeoServices REST VectorTileServer service metadata including the WebMercatorQuad tileInfo descriptor")
             .WithTags("VectorTileServer")
             .AllowAnonymous()
-            .CacheOutput("ServiceMetadata");
+            .CacheOutput("ServiceMetadata")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument);
 
         // Esri clients hydrate metadata by POSTing {"f":"json"}; mirror the GET form so
         // discovery succeeds. Anonymous by design and without the CacheOutput companion,

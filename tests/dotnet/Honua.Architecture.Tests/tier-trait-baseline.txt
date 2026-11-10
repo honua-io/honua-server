@@ -1342,7 +1342,6 @@ Honua.Server.Tests:Honua.Server.Tests.Features.Infrastructure.Monitoring.OpsHeal
 Honua.Server.Tests:Honua.Server.Tests.Features.Infrastructure.Monitoring.OpsHealthRollupSamplerTests.HistoryQuery_RejectsUnsupportedResolution`0(System.String)
 Honua.Server.Tests:Honua.Server.Tests.Features.Infrastructure.Monitoring.ProductionHealthMetricsTests.GetAlertConditions_IgnoresHistoricalDatabaseTimeoutsAndFailures`0()
 Honua.Server.Tests:Honua.Server.Tests.Features.Infrastructure.Monitoring.ProductionHealthMetricsTests.IsHealthy_IgnoresHistoricalDatabaseTimeoutsAndFailures`0()
-Honua.Server.Tests:Honua.Server.Tests.Features.Infrastructure.Rendering.VectorTileCachePrivacyTests.ApplyCacheHeaders_CredentialsAndDevelopmentBypass_PreservePrivacyAndTilesetTtl`0(System.String,System.String,System.Boolean)
 Honua.Server.Tests:Honua.Server.Tests.Features.Infrastructure.Services.GeometryServiceTests.ConvertGeoJsonToWkb_WhenPayloadExceedsConfiguredLimit_ReturnsSanitizedError`0()
 Honua.Server.Tests:Honua.Server.Tests.Features.Infrastructure.Services.GeometryServiceTests.ConvertGeoJsonToWkb_WithContainerWithoutOptIn_ReturnsSanitizedError`0(System.String)
 Honua.Server.Tests:Honua.Server.Tests.Features.Infrastructure.Services.GeometryServiceTests.ConvertGeoJsonToWkb_WithEmptyGeometry_ReturnsSanitizedError`0(System.String,System.Boolean)

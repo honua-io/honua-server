@@ -12,6 +12,7 @@ using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Stac.Models;
 using Honua.Protocols.Stac.Services;
 using Microsoft.AspNetCore.Mvc;
+using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Protocols.Stac;
 
@@ -32,6 +33,7 @@ internal static class CollectionEndpoints
             .WithDescription("Lists all available STAC collections")
             .WithTags("STAC")
             .CacheOutput("StacCollections")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .WithETag()
             .Produces<StacCollectionsResponse>(200, MediaTypes.Json)
             .Produces(404);
@@ -43,6 +45,7 @@ internal static class CollectionEndpoints
             .WithDescription("Returns a single STAC collection with extent and links")
             .WithTags("STAC")
             .CacheOutput("StacCollection")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .WithETag()
             .Produces<StacCollection>(200, MediaTypes.Json)
             .Produces(404);

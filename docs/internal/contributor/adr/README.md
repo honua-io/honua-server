@@ -86,6 +86,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0079](0079-protocol-route-scoping.md) | A protocol's route is scoped by its own addressable unit | Accepted | 2026-09 |
 | [0080](0080-fair-core-license.md) | Adopt the Fair Core License (FCL-1.0-ALv2) | Accepted | 2026-10 |
 | [0081](0081-postgres-job-substrate.md) | PostgreSQL is the durable job substrate | Proposed | 2026-11 |
+| [0083](0083-cdn-is-the-shared-cache.md) | The CDN is the shared cache | Proposed | 2026-11 |
 
 ## Template
 
