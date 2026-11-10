@@ -31,7 +31,7 @@ full GDAL Python interop surface:
 The in-build sanity check imports the full binding set and asserts
 `gdal.GetDriverCount() > 0` / `ogr.GetDriverCount() > 0`, so the image fails to
 build if the raster/vector interop ever regresses. See the raster sample below
-and [`docs/customcode/raster-gp-pattern.md`](../../docs/customcode/raster-gp-pattern.md)
+and [`docs/guides/raster-gp-pattern.md`](../../docs/guides/raster-gp-pattern.md)
 for the SDK-as-transport / GDAL-as-engine pattern.
 - The harness package `honua_customcode_harness` is installed; the
   `honua-customcode-harness` console script is the `ENTRYPOINT`.

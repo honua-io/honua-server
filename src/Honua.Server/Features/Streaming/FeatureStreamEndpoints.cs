@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -22,6 +23,8 @@ internal static partial class FeatureStreamEndpoints
     private const int SubscriptionBboxSrid = 4326;
     private const string WebSocketTransport = "WebSocket";
     private const string SseTransport = "SSE";
+    private const int BaselineGuidanceMaxProbeFeatures = 5000;
+    private static readonly TimeSpan BaselineGuidanceLookupBudget = TimeSpan.FromSeconds(1);
 
     public static void MapFeatureStreamEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -183,36 +186,43 @@ internal static partial class FeatureStreamEndpoints
         var edition = streamDecision.Edition;
         var enabled = streamDecision.IsActive;
         var snapshot = await deps.MetadataV2GraphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
-        var layerCapabilities = ResolveAllStreamLayers(snapshot)
+        var visibleLayers = ResolveAllStreamLayers(snapshot)
             .Where(layer =>
                 AccessPolicyHelpers.IsResourceAccessible(
                     context,
                     layer.Resource,
                     layer.Service))
-            .Select(layer =>
-            {
-                string[]? temporalFieldNames = null;
-                var temporalFields = layer.Resource.ReadTemporalFields();
-                var configuredFields = new[] { temporalFields.StartTimeField, temporalFields.EndTimeField }
-                    .Where(field => !string.IsNullOrWhiteSpace(field))
-                    .Select(field => field!)
-                    .ToArray();
-                temporalFieldNames = configuredFields is { Length: > 0 } ? configuredFields : null;
-                var supportsTemporalFilters = TemporalExtentHelpers.HasOptInTemporalFields(layer.Resource);
-                var srid = layer.Resource.ReadSrid() ?? 4326;
-
-                return new FeatureStreamLayerCapability
-                {
-                    LayerId = layer.LayerId,
-                    Name = layer.Resource.Metadata.Name,
-                    CanSubscribe = enabled,
-                    SupportsSpatialFilters = layer.Resource.ReadGeometryType() is not MetadataV2GeometryType.None,
-                    SupportsTemporalFilters = supportsTemporalFilters,
-                    TemporalFields = temporalFieldNames,
-                    Crs = $"EPSG:{srid.ToString(CultureInfo.InvariantCulture)}"
-                };
-            })
             .ToArray();
+        using var baselineBudget = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+        baselineBudget.CancelAfter(BaselineGuidanceLookupBudget);
+        var logger = context.RequestServices.GetRequiredService<ILogger<FeatureStreamEndpointsLog>>();
+        var layerCapabilities = new List<FeatureStreamLayerCapability>(visibleLayers.Length);
+        foreach (var layer in visibleLayers)
+        {
+            string[]? temporalFieldNames = null;
+            var temporalFields = layer.Resource.ReadTemporalFields();
+            var configuredFields = new[] { temporalFields.StartTimeField, temporalFields.EndTimeField }
+                .Where(field => !string.IsNullOrWhiteSpace(field))
+                .Select(field => field!)
+                .ToArray();
+            temporalFieldNames = configuredFields is { Length: > 0 } ? configuredFields : null;
+            var supportsTemporalFilters = TemporalExtentHelpers.HasOptInTemporalFields(layer.Resource);
+            var srid = layer.Resource.ReadSrid() ?? 4326;
+
+            layerCapabilities.Add(new FeatureStreamLayerCapability
+            {
+                LayerId = layer.LayerId,
+                Name = layer.Resource.Metadata.Name,
+                CanSubscribe = enabled,
+                CanCompleteBaseline = enabled
+                    ? await ProbeBaselineCompletionAsync(layer.LayerId).ConfigureAwait(false)
+                    : null,
+                SupportsSpatialFilters = layer.Resource.ReadGeometryType() is not MetadataV2GeometryType.None,
+                SupportsTemporalFilters = supportsTemporalFilters,
+                TemporalFields = temporalFieldNames,
+                Crs = $"EPSG:{srid.ToString(CultureInfo.InvariantCulture)}"
+            });
+        }
 
         var response = new FeatureStreamCapabilitiesResponse
         {
@@ -241,12 +251,38 @@ internal static partial class FeatureStreamEndpoints
             // Published under both names on purpose: see FeatureStreamCapabilitiesResponse.ServerRevision.
             ServerRevision = deploymentIdentity.Revision,
             Conformance = conformance.DescribeCapability(),
-            Layers = layerCapabilities
+            Layers = [.. layerCapabilities]
         };
 
         return Results.Json(
             ApiResponse<FeatureStreamCapabilitiesResponse>.CreateSuccess(response),
             FeatureStreamJsonContext.Default.ApiResponseFeatureStreamCapabilitiesResponse);
+
+        async Task<bool?> ProbeBaselineCompletionAsync(int layerId)
+        {
+            context.RequestAborted.ThrowIfCancellationRequested();
+            var cancellationToken = baselineBudget.Token;
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return null;
+            }
+
+            try
+            {
+                var featureCap = options.MaxSnapshotFeatures;
+                var probeLimit = Math.Min(featureCap, BaselineGuidanceMaxProbeFeatures) + 1;
+                var ids = await deps.FeatureReader.QueryObjectIdsAsync(layerId,
+                    new FeatureQuery { Limit = probeLimit }, cancellationToken)
+                    .WaitAsync(cancellationToken).ConfigureAwait(false);
+                // Visible ids beyond the cap prove truncation; fewer ids cannot prove the byte budget fits.
+                return ids.Length > featureCap ? false : null;
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException && !context.RequestAborted.IsCancellationRequested)
+            {
+                FeatureStreamLog.BaselineGuidanceUnavailable(logger, layerId, exception);
+                return null;
+            }
+        }
     }
 
     private static IResult HandleListSessions(
