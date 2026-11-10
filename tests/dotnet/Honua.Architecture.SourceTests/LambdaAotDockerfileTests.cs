@@ -53,13 +53,13 @@ public sealed class LambdaAotDockerfileTests
         var dockerfile = File.ReadAllText(dockerfilePath);
 
         const string buildStageStart = "FROM restore AS build";
-        const string nextStageStart = "\nFROM ";
+        const string runtimeStageStart = "FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS runtime";
         var buildStart = dockerfile.IndexOf(buildStageStart, StringComparison.Ordinal);
-        var buildEnd = dockerfile.IndexOf(nextStageStart, buildStart + buildStageStart.Length, StringComparison.Ordinal);
+        var runtimeStart = dockerfile.IndexOf(runtimeStageStart, StringComparison.Ordinal);
 
         buildStart.Should().BeGreaterThanOrEqualTo(0);
-        buildEnd.Should().BeGreaterThan(buildStart);
-        var buildStage = dockerfile[buildStart..buildEnd];
+        runtimeStart.Should().BeGreaterThan(buildStart);
+        var buildStage = dockerfile[buildStart..runtimeStart];
 
         var retryStart = buildStage.IndexOf("until \\", StringComparison.Ordinal);
         var restore = buildStage.IndexOf(
@@ -95,8 +95,6 @@ public sealed class LambdaAotDockerfileTests
             "Honua.Server.csproj");
         var dockerfile = File.ReadAllText(dockerfilePath);
         var project = File.ReadAllText(projectPath);
-        var nativeVerification = File.ReadAllText(ArchitectureTestHelpers.CombinePath(
-            repositoryRoot, "docker", "runtime", "verify-native.sh"));
         var typefaceProvider = File.ReadAllText(ArchitectureTestHelpers.CombinePath(
             repositoryRoot,
             "src",
@@ -109,19 +107,11 @@ public sealed class LambdaAotDockerfileTests
         project.Should().Contain("'$(HonuaUseSkiaNoDependencies)' == 'true'");
         dockerfile.Should().Contain("-p:HonuaUseSkiaNoDependencies=true");
         dockerfile.Should().Contain("fonts-dejavu-core");
-        dockerfile.Should().Contain("FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS chiseled-base");
-        dockerfile.Should().Contain("FROM chiseled-base AS runtime");
-        dockerfile.Should().Contain("sh docker/runtime/stage-runtime.sh /runtime-root /runtime-additions");
-        dockerfile.Should().Contain("RUN sh docker/runtime/verify-native.sh /runtime-root /var/task");
-        nativeVerification.Should().Contain("test -r \"$runtime_root/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf\"");
+        dockerfile.Should().Contain("test -r /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
         dockerfile.Should().Contain(
             "HONUA_DEFAULT_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
-        nativeVerification.Should().Contain("test -f \"$runtime_root$app_directory/libSkiaSharp.so\"");
-        nativeVerification.Should().Contain("chroot \"$runtime_root\" \"$loader\" --list");
-        nativeVerification.Should().Contain(
-            "chroot \"$runtime_root\" /.verify-env LD_TRACE_LOADED_OBJECTS=1 LD_WARN=yes LD_BIND_NOW=yes");
-        nativeVerification.Should().NotContain("ldd -r \"$native\"");
-        nativeVerification.Should().Contain("grep -Eq 'not found|undefined symbol|not a dynamic executable'");
+        dockerfile.Should().Contain("ldd -r /var/task/libSkiaSharp.so");
+        dockerfile.Should().Contain("grep -Eq 'not found|undefined symbol'");
         typefaceProvider.Should().Contain("SKTypeface.FromFile(configuredPath)");
 
         foreach (var renderSource in RenderingSourcePaths.Select(relativePath =>

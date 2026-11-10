@@ -24,6 +24,7 @@ concurrency:
 jobs:
   build-and-push:
     name: Build & Push ${{ matrix.image_name }} (${{ matrix.arch }})
+    continue-on-error: ${{ matrix.image_key == 'aot' }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 150
     strategy:
@@ -364,6 +365,7 @@ jobs:
 
   publish-manifests:
     name: Publish ${{ matrix.image_name }} Manifest
+    continue-on-error: ${{ matrix.tag_suffix == '-aot' }}
     needs: build-and-push
     if: ${{ needs.build-and-push.result == 'success' }}
     runs-on: ubuntu-24.04

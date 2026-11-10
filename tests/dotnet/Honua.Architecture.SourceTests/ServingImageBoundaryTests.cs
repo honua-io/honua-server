@@ -64,15 +64,15 @@ public sealed class ServingImageBoundaryTests
             "Lambda and Functions must fail before publication if registry attestations are absent or mismatched");
         nightly.Should().Contain("provenance: mode=max", Exactly.Twice());
         nightly.Should().NotContain("load: true", "local image stores can discard attestation manifests");
-        nightly.Should().Contain("nightly-aot-${tag_name#nightly-}",
+        nightly.Should().Contain("type=raw,value=nightly-aot-${{ needs.select-candidate.outputs.sha7 }}",
             "dated and SHA AOT compatibility tags must retain their established infix naming");
-        nightly.Should().Contain("actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2", Exactly.Times(5),
+        nightly.Should().Contain("actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2", Exactly.Times(6),
             "canonical, Lambda, Functions and Compose executor indexes, and the Lambda serving child, must receive GitHub provenance");
-        nightly.Should().Contain("attestations: write", Exactly.Times(5));
-        nightly.Should().Contain("id-token: write", Exactly.Times(5));
-        nightly.Should().Contain("subject-digest: ${{ steps.manifest.outputs.subject_digest }}", Exactly.Twice(),
+        nightly.Should().Contain("attestations: write", Exactly.Times(6));
+        nightly.Should().Contain("id-token: write", Exactly.Times(6));
+        nightly.Should().Contain("subject-digest: ${{ steps.manifest.outputs.subject_digest }}", Exactly.Thrice(),
             "attestations must bind the final pushed manifest digest rather than a mutable tag");
-        nightly.Should().Contain("push-to-registry: true", Exactly.Times(6),
+        nightly.Should().Contain("push-to-registry: true", Exactly.Times(7),
             "gh attestation verify oci://... requires the provenance and SBOM to be available with the image");
     }
 
@@ -145,10 +145,10 @@ public sealed class ServingImageBoundaryTests
         {
             (
                 Path: ".github/workflows/deploy.yml",
-                Candidate: "- name: Build native-AOT candidate by digest",
-                Verification: "- name: Verify native-AOT candidate before registry publication",
-                Publication: "- name: Publish verified native-AOT architecture tags",
-                Digest: "steps.aot_candidate.outputs.digest",
+                Candidate: "- name: Build serving candidate by digest",
+                Verification: "- name: Verify serving candidate before registry publication",
+                Publication: "- name: Publish verified serving architecture tags",
+                Digest: "steps.candidate.outputs.digest",
                 CrossRegistry: true),
             (
                 Path: ".github/workflows/deploy-platform-images.yml",
@@ -276,12 +276,21 @@ public sealed class ServingImageBoundaryTests
     }
 
     [ArchitectureTest]
+    public void DefaultJitDockerfile_ShouldDeclareProductionProfile()
+    {
+        var contents = File.ReadAllText(Path.Join(ArchitectureTestHelpers.ResolveRepositoryRoot(), "Dockerfile"));
+        contents.Should().Contain("honua.runtime.profile=\"web\"");
+        contents.Should().Contain("honua.runtime.compilation=\"jit\"");
+        contents.Should().Contain("honua.runtime.distribution=\"production\"");
+        contents.Should().Contain("ARG HONUA_STORE_PROFILE=postgis");
+    }
+
+    [ArchitectureTest]
     public void AuxiliaryJitDockerfiles_ShouldDeclareNonProductionProfile()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var dockerfiles = new[]
         {
-            "Dockerfile",
             "docker/Dockerfile.lambda",
             "docker/Dockerfile.functions"
         };
@@ -296,16 +305,16 @@ public sealed class ServingImageBoundaryTests
     }
 
     [ArchitectureTest]
-    public void PublishedTags_ShouldMakeAotCanonicalAndJitExplicit()
+    public void PublishedTags_ShouldMakeJitCanonicalAndAotExplicit()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var genericDeploy = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/deploy.yml"))
             .ReplaceLineEndings("\n");
         var platformDeploy = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/deploy-platform-images.yml"));
 
-        genericDeploy.Should().Contain("dockerfile: Dockerfile\n            tag_suffix: -jit");
-        genericDeploy.Should().Contain("dockerfile: docker/Dockerfile.aot\n            tag_suffix: \"\"");
-        genericDeploy.Should().Contain("compatibility_alias: -aot");
+        genericDeploy.Should().Contain("dockerfile: Dockerfile\n            tag_suffix: \"\"");
+        genericDeploy.Should().Contain("dockerfile: docker/Dockerfile.aot\n            tag_suffix: -aot");
+        genericDeploy.Should().Contain("compatibility_alias: -jit");
         genericDeploy.Should().Contain("- name: Classify mutable latest promotion", Exactly.Twice());
         genericDeploy.Should().Contain(
             "type=raw,value=latest${{ matrix.tag_suffix }},enable=${{ steps.release_kind.outputs.promote_latest }}",

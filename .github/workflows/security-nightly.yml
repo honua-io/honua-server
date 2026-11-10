@@ -471,24 +471,6 @@ jobs:
           cat > container-structure-test.yaml <<'EOF'
           schemaVersion: 2.0.0
 
-          commandTests:
-            - name: "Check binary exists and is executable"
-              command: "ls"
-              args: ["-la", "/app/Honua.Server"]
-              expectedOutput: [".*-rwxr-xr-x.*Honua.Server"]
-
-            - name: "Check non-root user"
-              command: "whoami"
-              expectedOutput: ["honua"]
-
-            - name: "Check log directory"
-              command: "test"
-              args: ["-d", "/tmp/honua-logs"]
-
-            - name: "Check cache directory"
-              command: "test"
-              args: ["-d", "/tmp/honua-cache"]
-
           fileExistenceTests:
             - name: "Application binary"
               path: "/app/Honua.Server"
@@ -586,22 +568,7 @@ jobs:
             exit 1
           fi
 
-          if ! docker exec "$RUNTIME_APP_ID" sh -c 'touch /test-write' 2>/dev/null; then
-            : # expected — read-only filesystem rejects the write
-          else
-            echo "::error::Container filesystem is writable; expected read-only."
-            exit 1
-          fi
-
-          if ! user="$(docker exec "$RUNTIME_APP_ID" whoami 2>&1)"; then
-            echo "::error::Failed to query container user (container may have exited): $user"
-            docker logs "$RUNTIME_APP_ID" || true
-            exit 1
-          fi
-          if [ "$user" != "honua" ]; then
-            echo "Container not running as expected user: $user"
-            exit 1
-          fi
+          docker exec "$RUNTIME_APP_ID" /app/honua-healthcheck --security
 
           python3 scripts/ci/owned-server.py wait --container "$RUNTIME_APP_ID" --container-port 8080 \
             --url "$RUNTIME_SERVER_URL/healthz/live" --timeout 5

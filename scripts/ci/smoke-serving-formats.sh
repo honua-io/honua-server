@@ -114,6 +114,7 @@ wait_healthy postgres 180
 wait_healthy redis 60
 compose up -d --no-build honua-server
 wait_healthy honua-server 300
+compose exec -T honua-server /app/honua-healthcheck --security
 compose stop honua-server
 pg="$(compose ps -q postgres)"
 docker cp "$SEED_FILE" "$pg:/tmp/cng-seed.sql"

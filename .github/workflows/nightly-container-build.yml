@@ -497,10 +497,10 @@ jobs:
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
             docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
-            type=raw,value=nightly
-            type=raw,value=nightly-${{ needs.mirror-base-images.outputs.build_date }}
-            type=raw,value=nightly-${{ needs.select-candidate.outputs.sha7 }}
-            type=raw,value=trunk
+            type=raw,value=nightly-aot
+            type=raw,value=nightly-aot-${{ needs.mirror-base-images.outputs.build_date }}
+            type=raw,value=nightly-aot-${{ needs.select-candidate.outputs.sha7 }}
+            type=raw,value=trunk-aot
           flavor: |
             suffix=-${{ matrix.arch }}
           labels: |
@@ -1229,10 +1229,10 @@ jobs:
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
             docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
-            type=raw,value=nightly
-            type=raw,value=nightly-${{ needs.mirror-base-images.outputs.build_date }}
-            type=raw,value=nightly-${{ needs.select-candidate.outputs.sha7 }}
-            type=raw,value=trunk
+            type=raw,value=nightly-aot
+            type=raw,value=nightly-aot-${{ needs.mirror-base-images.outputs.build_date }}
+            type=raw,value=nightly-aot-${{ needs.select-candidate.outputs.sha7 }}
+            type=raw,value=trunk-aot
 
       - name: Create and push multi-arch manifests
         id: manifest
@@ -1246,19 +1246,7 @@ jobs:
           for tag in $TAGS; do
             repository="${tag%:*}"
             tag_name="${tag##*:}"
-            case "$tag_name" in
-              nightly|trunk)
-                compatibility_tag="${repository}:${tag_name}-aot"
-                ;;
-              nightly-*)
-                compatibility_tag="${repository}:nightly-aot-${tag_name#nightly-}"
-                ;;
-              *)
-                echo "Unexpected AOT manifest tag: $tag" >&2
-                exit 1
-                ;;
-            esac
-            destinations="$(printf '%s\n' "$tag" "$compatibility_tag" | python3 scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION")"
+            destinations="$(printf '%s\n' "$tag" | python3 scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION")"
             [ -n "$destinations" ] || continue
             tag_args=()
             while IFS= read -r destination; do tag_args+=(-t "$destination"); done <<< "$destinations"
@@ -1268,7 +1256,7 @@ jobs:
               "${tag}-amd64" "${tag}-arm64"
           done
           subject_name="${REGISTRY_GHCR}/${IMAGE_NAME_GHCR}"
-          subject_ref="${subject_name}:nightly-${{ needs.select-candidate.outputs.sha7 }}"
+          subject_ref="${subject_name}:nightly-aot-${{ needs.select-candidate.outputs.sha7 }}"
           subject_digest="$(docker buildx imagetools inspect "$subject_ref" --format '{{.Manifest.Digest}}')"
           echo "subject_name=$subject_name" >> "$GITHUB_OUTPUT"
           echo "subject_digest=$subject_digest" >> "$GITHUB_OUTPUT"
@@ -1287,7 +1275,7 @@ jobs:
       cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    needs: [select-candidate, manifest-aot]
+    needs: [select-candidate, manifest-jit]
     if: needs.select-candidate.outputs.publish == 'true'
     permissions:
       contents: read
@@ -1309,7 +1297,7 @@ jobs:
           persist-credentials: false
       - name: Verify source and serving image binding
         env:
-          SERVER_IMAGE: ${{ needs.manifest-aot.outputs.image }}
+          SERVER_IMAGE: ${{ needs.manifest-jit.outputs.image }}
         run: |
           [[ "$SERVER_IMAGE" =~ @sha256:[a-f0-9]{64}$ ]]
       # Log in to Docker Hub before anything pulls from it: the QEMU and Buildx setup (binfmt and
@@ -1330,7 +1318,7 @@ jobs:
       - name: Verify serving index revision matches the candidate source
         env:
           CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
-          SERVER_IMAGE: ${{ needs.manifest-aot.outputs.image }}
+          SERVER_IMAGE: ${{ needs.manifest-jit.outputs.image }}
         run: |
           docker buildx imagetools inspect "$SERVER_IMAGE" --format '{{json .Manifest}}' \
             | jq -e --arg sha "$CANDIDATE_SHA" '.annotations["org.opencontainers.image.revision"] == $sha'
@@ -1350,7 +1338,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile.compose-executor
-          build-args: HONUA_SERVER_IMAGE=${{ needs.manifest-aot.outputs.image }}
+          build-args: HONUA_SERVER_IMAGE=${{ needs.manifest-jit.outputs.image }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
@@ -1386,7 +1374,7 @@ jobs:
             -o /dev/null "https://ghcr.io/v2/honua-io/honua-server/manifests/${EXECUTOR_DIGEST}"
       - name: Package immutable customer quickstart
         env:
-          SERVER_IMAGE: ${{ needs.manifest-aot.outputs.image }}
+          SERVER_IMAGE: ${{ needs.manifest-jit.outputs.image }}
           EXECUTOR_IMAGE: ghcr.io/honua-io/honua-server@${{ steps.executor.outputs.digest }}
           CANDIDATE_SHA7: ${{ needs.select-candidate.outputs.sha7 }}
         run: |
@@ -1416,7 +1404,11 @@ jobs:
         include:
           - store_suffix: ''
           - store_suffix: -full
+    outputs:
+      image: ${{ steps.manifest.outputs.image }}
     permissions:
+      attestations: write
+      id-token: write
       contents: read
       packages: write
     steps:
@@ -1464,12 +1456,17 @@ jobs:
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
             docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
+            type=raw,value=nightly${{ matrix.store_suffix }}
+            type=raw,value=nightly-${{ needs.mirror-base-images.outputs.build_date }}${{ matrix.store_suffix }}
+            type=raw,value=nightly-${{ needs.select-candidate.outputs.sha7 }}${{ matrix.store_suffix }}
+            type=raw,value=trunk${{ matrix.store_suffix }}
             type=raw,value=nightly-jit${{ matrix.store_suffix }}
             type=raw,value=nightly-jit-${{ needs.mirror-base-images.outputs.build_date }}${{ matrix.store_suffix }}
             type=raw,value=nightly-jit-${{ needs.select-candidate.outputs.sha7 }}${{ matrix.store_suffix }}
             type=raw,value=trunk-jit${{ matrix.store_suffix }}
 
       - name: Create and push multi-arch manifests
+        id: manifest
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
           IMAGE_VERSION: ${{ needs.select-candidate.outputs.version }}
@@ -1480,9 +1477,34 @@ jobs:
           for tag in $TAGS; do
             destination="$(printf '%s\n' "$tag" | python3 scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION")"
             [ -n "$destination" ] || continue
+            repository="${tag%:*}"
+            tag_name="${tag##*:}"
+            case "$tag_name" in
+              nightly|trunk) source_tag="${repository}:${tag_name}-jit" ;;
+              nightly-jit|nightly-jit-*|trunk-jit*) source_tag="$tag" ;;
+              trunk-full) source_tag="${repository}:trunk-jit-full" ;;
+              nightly-*) source_tag="${repository}:nightly-jit-${tag_name#nightly-}" ;;
+              *) echo "Unexpected JIT tag: $tag" >&2; exit 1 ;;
+            esac
             docker buildx imagetools create -t "$tag" \
               --annotation "index:org.opencontainers.image.revision=${CANDIDATE_SHA}" \
               --annotation "index:org.opencontainers.image.version=${IMAGE_VERSION}" \
-              "${tag}-amd64" \
-              "${tag}-arm64"
+              "${source_tag}-amd64" \
+              "${source_tag}-arm64"
           done
+          if [ -z "${{ matrix.store_suffix }}" ]; then
+            subject_name="${REGISTRY_GHCR}/${IMAGE_NAME_GHCR}"
+            subject_ref="${subject_name}:nightly-${{ needs.select-candidate.outputs.sha7 }}"
+            subject_digest="$(docker buildx imagetools inspect "$subject_ref" --format '{{.Manifest.Digest}}')"
+            echo "image=${subject_name}@${subject_digest}" >> "$GITHUB_OUTPUT"
+            echo "subject_name=$subject_name" >> "$GITHUB_OUTPUT"
+            echo "subject_digest=$subject_digest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Attest nightly JIT manifest
+        if: matrix.store_suffix == ''
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.manifest.outputs.subject_name }}
+          subject-digest: ${{ steps.manifest.outputs.subject_digest }}
+          push-to-registry: true

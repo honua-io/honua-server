@@ -25,6 +25,9 @@ class ImmutableTagsTests(unittest.TestCase):
         profile = patch.object(self.module, 'supports_full_variant', return_value=True)
         profile.start()
         self.addCleanup(profile.stop)
+        layout = patch.object(self.module, 'uses_jit_default', return_value=True)
+        layout.start()
+        self.addCleanup(layout.stop)
 
     def test_legacy_candidate_does_not_require_full_variant_tags(self):
         with patch.object(self.module, 'supports_full_variant', return_value=False), patch.object(
@@ -32,6 +35,23 @@ class ImmutableTagsTests(unittest.TestCase):
         ):
             self.assertEqual(self.module.publication_state('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''),
                              (True, True))
+
+    def test_jit_default_completion_uses_aot_arch_tags_and_full_default_manifest(self):
+        observed = []
+        with patch.object(self.module, 'inspect', side_effect=lambda tag: observed.append(tag) or 'sha256:' + 'a' * 64):
+            self.assertEqual(self.module.publication_state('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''), (True, True))
+        self.assertIn('ghcr.io/honua/server:nightly-aot-abcdef0-amd64', observed)
+        self.assertIn('ghcr.io/honua/server:nightly-abcdef0-full', observed)
+        self.assertNotIn('ghcr.io/honua/server:nightly-abcdef0-amd64', observed)
+
+    def test_legacy_layout_keeps_original_architecture_tags(self):
+        observed = []
+        with patch.object(self.module, 'uses_jit_default', return_value=False), patch.object(
+            self.module, 'inspect', side_effect=lambda tag: observed.append(tag) or 'sha256:' + 'a' * 64
+        ):
+            self.assertEqual(self.module.publication_state('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''), (True, True))
+        self.assertIn('ghcr.io/honua/server:nightly-abcdef0-amd64', observed)
+        self.assertNotIn('ghcr.io/honua/server:nightly-aot-abcdef0-amd64', observed)
 
     def test_cli_filter_and_digest_lookup_work_without_a_git_repository(self):
         script = Path(__file__).with_name('immutable-container-tags.py').resolve()
@@ -100,6 +120,11 @@ class ImmutableTagsTests(unittest.TestCase):
 
     def test_partial_publication_is_reported_for_safe_legacy_handoffs(self):
         with patch.object(self.module, 'inspect', side_effect=itertools.chain([None], itertools.repeat('sha256:' + 'a' * 64))):
+            self.assertEqual(self.module.publication_state('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''), (False, True))
+
+    def test_missing_default_full_manifest_is_partial_publication(self):
+        missing = 'ghcr.io/honua/server:nightly-abcdef0-full'
+        with patch.object(self.module, 'inspect', side_effect=lambda tag: None if tag == missing else 'sha256:' + 'a' * 64):
             self.assertEqual(self.module.publication_state('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''), (False, True))
 
     def test_missing_full_variant_is_partial_publication(self):
@@ -177,12 +202,18 @@ class CandidateProfileTests(unittest.TestCase):
             profile = Path('eng/Honua.BuildProfiles.props')
             profile.parent.mkdir()
             profile.write_text('<Project/>')
+            Path('Dockerfile').write_text('ENTRYPOINT ["./Honua.Server"]\n')
             subprocess.run(['git', 'add', '.'], check=True)
             subprocess.run(['git', 'commit', '-qm', 'base profile'], check=True)
             previous = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
             profile.write_text('<Project><PropertyGroup><HonuaStoreProfile>full</HonuaStoreProfile></PropertyGroup></Project>')
             subprocess.run(['git', 'add', '.'], check=True)
             subprocess.run(['git', 'commit', '-qm', 'store profile'], check=True)
+            self.assertFalse(module.uses_jit_default(previous))
+            Path('Dockerfile').write_text('ENTRYPOINT ["dotnet", "Honua.Server.dll"]\n')
+            subprocess.run(['git', 'add', '.'], check=True)
+            subprocess.run(['git', 'commit', '-qm', 'JIT default'], check=True)
+            self.assertTrue(module.uses_jit_default('HEAD'))
             self.assertFalse(module.supports_full_variant(previous))
             self.assertTrue(module.supports_full_variant('HEAD'))
             with self.assertRaisesRegex(RuntimeError, 'Cannot read candidate'):

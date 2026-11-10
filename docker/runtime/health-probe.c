@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/un.h>
+#include <sys/statvfs.h>
 #include <unistd.h>
 
 static int probe_unix_socket(const char *path)
@@ -24,6 +25,19 @@ static int probe_unix_socket(const char *path)
 
 int main(int argc, char **argv)
 {
+    if (argc == 2 && strcmp(argv[1], "--security") == 0) {
+        struct statvfs root;
+        if (getuid() != 1001 || getgid() != 1001 ||
+            statvfs("/", &root) != 0 || !(root.f_flag & ST_RDONLY))
+            return 1;
+        char temporary[] = "/tmp/honua-security-XXXXXX";
+        int file = mkstemp(temporary);
+        if (file < 0)
+            return 1;
+        int written = write(file, "ok", 2) == 2;
+        close(file);
+        return unlink(temporary) == 0 && written ? 0 : 1;
+    }
     if (argc == 3 && strcmp(argv[1], "--unix") == 0)
         return probe_unix_socket(argv[2]);
     if (argc > 2 || (argc == 2 && strcmp(argv[1], "--ready") != 0))

@@ -76,17 +76,28 @@ def supports_full_variant(sha):
     return any(element.tag.rsplit('}', 1)[-1] == 'HonuaStoreProfile' for element in project.iter())
 
 
+def uses_jit_default(sha):
+    result = subprocess.run(['git', 'show', f'{sha}:Dockerfile'], text=True, capture_output=True)
+    if result.returncode:
+        raise RuntimeError(f'Cannot read candidate Dockerfile at {sha}')
+    return 'ENTRYPOINT ["dotnet", "Honua.Server.dll"]' in result.stdout
+
+
 def publication_state(repository, sha, release_version):
     suffixes = ['nightly', 'nightly-aot', 'nightly-lambda-aot', 'nightly-jit', 'nightly-compose-executor', 'nightly-functions-aot']
     if repository.startswith('docker.io/'):
         suffixes.remove('nightly-compose-executor')
         suffixes.remove('nightly-functions-aot')
     tags = [f'{repository}:{suffix}-{sha[:7]}' for suffix in suffixes]
+    jit_default = uses_jit_default(sha)
+    architecture_default = 'nightly-aot' if jit_default else 'nightly'
     tags += [f'{repository}:{suffix}-{sha[:7]}-{arch}'
-             for suffix in ('nightly', 'nightly-lambda-aot', 'nightly-jit') for arch in ('amd64', 'arm64')]
+             for suffix in (architecture_default, 'nightly-lambda-aot', 'nightly-jit') for arch in ('amd64', 'arm64')]
     if supports_full_variant(sha):
         tags += [f'{repository}:nightly-jit-{sha[:7]}-full{suffix}'
                  for suffix in ('', '-amd64', '-arm64')]
+    if jit_default and supports_full_variant(sha):
+        tags.append(f'{repository}:nightly-{sha[:7]}-full')
     # Do not short circuit: an explicit version mismatch must fail even in a partial publication.
     states = [existing(tag, release_version) for tag in tags]
     return all(states), any(states)

@@ -13,6 +13,20 @@ def workflow(name):
 
 
 class StoreProfileWorkflowTests(unittest.TestCase):
+    def test_shell_free_consumers_use_native_probe_and_external_http(self):
+        jobs = workflow('security-nightly.yml')['jobs']
+        steps = next(job['steps'] for job in jobs.values()
+                     if any(step.get('id') == 'runtime-security' for step in job.get('steps', [])))
+        security = next(step['run'] for step in steps if step.get('id') == 'runtime-security')
+        self.assertIn('/app/honua-healthcheck --security', security)
+        self.assertNotIn(' sh -c ', security)
+        self.assertNotIn(' whoami', security)
+        structure = next(step['run'] for step in steps if step.get('name') == 'Create structure test config')
+        self.assertNotIn('commandTests:', structure)
+        for name in ('wfs', 'wcs'):
+            script = (ROOT / f'docker/cite/shared/tests/test-{name}-bootstrap.sh').read_text()
+            self.assertNotIn('exec -T honua-server bash', script)
+
     def test_default_profile_verification_preserves_full_producer_and_runtime_proofs(self):
         jobs = workflow('pr-gate.yml')['jobs']
         producer_names = [step.get('name', '') for step in jobs['pr-gate']['steps']]
@@ -79,6 +93,20 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertEqual(upload['if'], 'always()')
         self.assertEqual(upload['with']['if-no-files-found'], 'error')
 
+    def test_optional_aot_cannot_block_default_publication(self):
+        jobs = workflow('deploy.yml')['jobs']
+        self.assertEqual(jobs['build-and-push'].get('continue-on-error'), "${{ matrix.image_key == 'aot' }}")
+        self.assertEqual(jobs['publish-manifests'].get('continue-on-error'), "${{ matrix.tag_suffix == '-aot' }}")
+        nightly = workflow('nightly-container-build.yml')['jobs']
+        self.assertIn('manifest-jit', nightly['compose-executor']['needs'])
+        self.assertNotIn('manifest-aot', nightly['compose-executor']['needs'])
+        aot_meta = next(step for step in nightly['manifest-aot']['steps'] if step.get('id') == 'meta')
+        self.assertIn('value=nightly-aot', aot_meta['with']['tags'])
+        self.assertNotIn('value=trunk\n', aot_meta['with']['tags'])
+        jit_meta = next(step for step in nightly['manifest-jit']['steps'] if step.get('id') == 'meta')
+        self.assertIn('value=nightly${{ matrix.store_suffix }}', jit_meta['with']['tags'])
+        self.assertIn('value=trunk${{ matrix.store_suffix }}', jit_meta['with']['tags'])
+
     def test_lifecycle_proves_manual_legacy_and_automated_compatible_rollback(self):
         steps = workflow('compose-release-lifecycle.yml')['jobs']['compose-release-lifecycle']['steps']
         catalog = next(step for step in steps if step.get('with', {}).get('repository') == 'honua-io/honua-release')
@@ -89,6 +117,21 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertIn('HONUA_DEPLOYMENT_CONFIGURATION_ROOT', journey['env'])
         self.assertLess(journey['run'].index('tests/integration/test_compose_manual_rc1_rollback.py'),
                         journey['run'].index('tests/integration/test_compose_release_lifecycle.py'))
+
+    def test_nightly_jit_tag_mapping_uses_existing_architecture_tags(self):
+        job = workflow('nightly-container-build.yml')['jobs']['manifest-jit']
+        script = next(step['run'] for step in job['steps'] if step.get('id') == 'manifest')
+        mapping = script[script.index('repository='):script.index('docker buildx imagetools create')]
+        for tag, source in [('nightly', 'nightly-jit'), ('trunk', 'trunk-jit'),
+                            ('nightly-full', 'nightly-jit-full'), ('trunk-full', 'trunk-jit-full'),
+                            ('nightly-abc1234-full', 'nightly-jit-abc1234-full'),
+                            ('nightly-jit', 'nightly-jit'), ('trunk-jit-full', 'trunk-jit-full')]:
+            with self.subTest(tag=tag):
+                result = subprocess.run(['bash'], input=mapping + '\nprintf "%s" "$source_tag"',
+                                        env={**os.environ, 'tag': 'ghcr.io/honua/server:' + tag},
+                                        text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, 'ghcr.io/honua/server:' + source)
 
     def run_gate(self, required, result):
         script = workflow('ci.yml')['jobs']['ci-gate']['steps'][0]['run']
