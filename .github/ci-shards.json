@@ -58,7 +58,7 @@
     "target_utilization": 0.7,
     "warn_utilization": 0.8
   },
-  "_pr_time_budget_comment": "PR Gate time budget for the affected-shard selector (scripts/ci/compute-affected-shards.py --time-budget). A shard whose `dispatch_rank` (measured p50 job minutes on green trunk full runs) exceeds `max_shard_minutes` would set the gate's wall clock on its own, and a selection past `max_total_minutes` runner-minutes holds more runners than one pull request may. Such shards are not run in PR Gate: the receipt names them under `deferred_to_trunk` and the post-merge trunk run covers them. Refresh `dispatch_rank` from measured runs whenever shards are split or merged.",
+  "_pr_time_budget_comment": "PR Gate time budget for the affected-shard selector (scripts/ci/compute-affected-shards.py --time-budget). A shard whose `dispatch_rank` (measured p50 job minutes on green trunk full runs) exceeds `max_shard_minutes` would set the gate's wall clock on its own, and a selection past `max_total_minutes` runner-minutes holds more runners than one pull request may. Such shards are not run in PR Gate: the receipt names them under `deferred_to_trunk` and the next trunk run covers them. Refresh `dispatch_rank` from measured runs whenever shards are split or merged.",
   "pr_time_budget": {
     "max_shard_minutes": 10,
     "max_total_minutes": 45

@@ -38,7 +38,7 @@ THE TIME BUDGET
     `pr_time_budget` from the shard map: a shard whose `dispatch_rank` exceeds
     `max_shard_minutes` is not run, and a shard that would push the selection
     past `max_total_minutes` runner-minutes is not run. Both are named under
-    `deferred_to_trunk` and covered by the post-merge trunk run. When every
+    `deferred_to_trunk` and covered by the next trunk run. When every
     candidate is deferred the selection skips with
     `affected_shards_deferred_to_trunk`, which the verdict reports as a green
     `deferred` result naming those shards.

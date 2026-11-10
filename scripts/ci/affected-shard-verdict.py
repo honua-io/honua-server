@@ -172,7 +172,7 @@ def decide(
             shards_passed=False,
             extra=[
                 "- Verdict: `deferred` — every affected shard family is over the PR time budget; "
-                "the post-merge trunk run covers them.",
+                "the next trunk run covers them.",
             ],
         )
     if selection.skip == "true":
@@ -271,7 +271,7 @@ def decide(
 def deferred_lines(deferred: tuple[str, ...]) -> list[str]:
     if not deferred:
         return []
-    return ["- Deferred to the post-merge trunk run (over the PR time budget):"] + [
+    return ["- Deferred to the next trunk run (over the PR time budget):"] + [
         f"  - {name}" for name in deferred
     ]
 

@@ -266,7 +266,7 @@ class AffectedShardVerdictTests(unittest.TestCase):
             self.assertFalse(outcome["receipt"]["shards_passed"])
             self.assertIn("  - WFS", outcome["summary"])
             self.assertIn("  - Security and Authorization", outcome["summary"])
-            self.assertIn("post-merge trunk run covers them", outcome["summary"])
+            self.assertIn("next trunk run covers them", outcome["summary"])
             self.assertTrue(any(
                 message.startswith("HONUA_AFFECTED_SHARD_DEFERRED ") for message in messages(outcome)
             ))

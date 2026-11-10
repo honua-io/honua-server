@@ -79,7 +79,7 @@ delegated to machinery that already gates trunk.
    that would push the selection past `max_total_minutes` runner-minutes is
    deferred, and once six are selected the rest are dropped. Deferred families
    are listed under `deferred_to_trunk` in the receipt, the step summary and the
-   `deferred_to_trunk` job output; the post-merge trunk run covers them.
+   `deferred_to_trunk` job output; the next trunk run covers them.
 6. **All deferred is green, not skipped.** When every candidate is deferred the
    selection skips with `affected_shards_deferred_to_trunk`, and
    `scripts/ci/affected-shard-verdict.py` reports a green `deferred` verdict
