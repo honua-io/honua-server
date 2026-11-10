@@ -109,7 +109,7 @@ public sealed class SharedCachePolicyTests
         SharedCacheResponse.Apply(context);
         SharedCacheGuard.Apply(context);
 
-        context.Response.Headers.CacheControl.ToString().Should().Be("no-store");
+        context.Response.Headers.CacheControl.ToString().Should().Be(SharedCacheGuard.NotShared);
     }
 
     [UnitTest]

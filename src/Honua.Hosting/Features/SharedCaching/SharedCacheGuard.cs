@@ -23,9 +23,10 @@ internal static class SharedCacheGuard
         response.Headers.Remove(HeaderNames.Age);
 
         var cacheControl = response.Headers.CacheControl.ToString();
+        // Every refusal leaves in one form: a refusal that also carries a lifetime contradicts itself, and caches resolve the contradiction differently.
         if (cacheControl.Contains("no-store", StringComparison.OrdinalIgnoreCase))
         {
-            WriteOneRefusal(response, cacheControl);
+            response.Headers.CacheControl = NotShared;
             return;
         }
 
@@ -35,15 +36,6 @@ internal static class SharedCacheGuard
         }
 
         response.Headers.CacheControl = NotShared;
-    }
-
-    // A refusal that also carries a lifetime contradicts itself, and caches resolve the contradiction differently.
-    private static void WriteOneRefusal(HttpResponse response, string cacheControl)
-    {
-        if (!string.Equals(cacheControl, "no-store", StringComparison.OrdinalIgnoreCase))
-        {
-            response.Headers.CacheControl = NotShared;
-        }
     }
 
     internal static bool ExcludesSharedCaches(string cacheControl)

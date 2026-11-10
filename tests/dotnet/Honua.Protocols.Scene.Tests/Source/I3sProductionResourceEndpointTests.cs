@@ -172,7 +172,7 @@ public sealed class I3sProductionResourceEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
-    [InlineData(true, "no-store")]
+    [InlineData(true, "no-store, private")]
     [InlineData(false, "public, max-age=37, s-maxage=37")]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}")]
