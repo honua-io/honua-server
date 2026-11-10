@@ -47,8 +47,6 @@ public static class GdalWorkerServiceCollectionExtensions
     // substrate (queue, job store, log store, cancellation registry), the two
     // substrate hosted services (execution + reconciliation), and the
     // native-profile GDAL executors.
-    // services: Service collection.
-    // configuration: Host configuration. Requires the DefaultConnection connection string.
     public static IServiceCollection AddGdalWorker(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -113,8 +111,6 @@ public static class GdalWorkerServiceCollectionExtensions
     // headless runner / honua gp dev CLI consume so a developer
     // can run a single native op directly without the durable substrate
     // AddGdalWorker wires for the worker host.
-    // services: Service collection.
-    // configuration: Host configuration; binds the GdalWorker section.
     public static IServiceCollection AddGdalProcessExecutors(
         this IServiceCollection services,
         IConfiguration configuration)

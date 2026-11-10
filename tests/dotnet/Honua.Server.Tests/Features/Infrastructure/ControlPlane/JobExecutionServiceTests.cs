@@ -216,6 +216,35 @@ public sealed class JobExecutionServiceTests
         Assert.Same(outer, JobSecurityScope.Current!.Submitter);
     }
 
+    private static ExecutionJobRecord CreatePartitionLeasedProvisioningJob()
+        => CreateProvisioningJob() with
+        {
+            Concurrency = new OperationConcurrencyPolicy
+            {
+                PartitionKey = "tilecache:svc:webmercatorquad:default",
+                RequiresExclusiveLease = true
+            }
+        };
+
+    private static IExecutionJobStore CreateJobStoreHoldingThePartitionLease(ExecutionJobRecord provisioning)
+    {
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>()).Returns(provisioning);
+        jobStore.TryAcquireLeaseAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>())
+            .Returns(true);
+        jobStore.RenewLeaseAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>())
+            .Returns(true);
+        return jobStore;
+    }
+
     private static ExecutionJobRecord CreateProvisioningJob(
         string operationId = "job-1",
         string claimedBy = "worker-test",
@@ -436,28 +465,8 @@ public sealed class JobExecutionServiceTests
     [UnitTest]
     public async Task ProcessJob_HoldsExclusivePartitionLeaseThroughExecutorFinalization()
     {
-        var provisioning = CreateProvisioningJob() with
-        {
-            Concurrency = new OperationConcurrencyPolicy
-            {
-                PartitionKey = "tilecache:svc:webmercatorquad:default",
-                RequiresExclusiveLease = true
-            }
-        };
-        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
-        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>()).Returns(provisioning);
-        jobStore.TryAcquireLeaseAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<TimeSpan>(),
-                Arg.Any<CancellationToken>())
-            .Returns(true);
-        jobStore.RenewLeaseAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<TimeSpan>(),
-                Arg.Any<CancellationToken>())
-            .Returns(true);
+        var provisioning = CreatePartitionLeasedProvisioningJob();
+        var jobStore = CreateJobStoreHoldingThePartitionLease(provisioning);
         jobStore.TrySetIfLeaseOwnedAsync(
                 Arg.Any<ExecutionJobRecord>(),
                 Arg.Any<OwnedJobLease>(),
@@ -497,28 +506,8 @@ public sealed class JobExecutionServiceTests
     [UnitTest]
     public async Task ProcessJob_RequeuesNormalExecutorReturn_WhenFinalOwnershipCheckFails()
     {
-        var provisioning = CreateProvisioningJob() with
-        {
-            Concurrency = new OperationConcurrencyPolicy
-            {
-                PartitionKey = "tilecache:svc:webmercatorquad:default",
-                RequiresExclusiveLease = true
-            }
-        };
-        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
-        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>()).Returns(provisioning);
-        jobStore.TryAcquireLeaseAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<TimeSpan>(),
-                Arg.Any<CancellationToken>())
-            .Returns(true);
-        jobStore.RenewLeaseAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<TimeSpan>(),
-                Arg.Any<CancellationToken>())
-            .Returns(true);
+        var provisioning = CreatePartitionLeasedProvisioningJob();
+        var jobStore = CreateJobStoreHoldingThePartitionLease(provisioning);
         jobStore.TrySetIfLeaseOwnedAsync(
                 Arg.Any<ExecutionJobRecord>(),
                 Arg.Any<OwnedJobLease>(),

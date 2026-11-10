@@ -104,7 +104,6 @@ internal enum StatementRepeat
     SafeToRepeat
 }
 
-// EarlierAttemptMayHaveCommitted:
-// True when a previous attempt of this statement failed after it was sent, so "no row affected"
+// EarlierAttemptMayHaveCommitted is true when a previous attempt of this statement failed after it was sent, so "no row affected"
 // can mean that attempt already applied the change.
 internal readonly record struct StatementAttempt(bool EarlierAttemptMayHaveCommitted);
