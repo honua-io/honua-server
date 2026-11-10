@@ -493,3 +493,10 @@ partial passing results); consumers must require the overall successful outcome
 as well. Missing counts stay missing. Synthetic supervisor fixtures are labelled
 as such and do not qualify a candidate. These files are diagnostic provenance;
 local files alone do not constitute a trusted release attestation.
+
+Full CI transfers the selected shard matrix as a run-and-attempt-scoped JSON
+artifact to the managed producer, cache planners and receipt verifier. Full
+filters stay out of environment variables and command arguments, whose per-string
+limits can prevent the shell from starting. Missing matrix artifacts fail the
+selected lane. PR receipt verification receives only selected shard names; its
+execution matrix and enforced test filters remain unchanged.
