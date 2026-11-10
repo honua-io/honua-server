@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.TestKit.Attributes;
 
@@ -22,7 +23,7 @@ public sealed class LeaseVersionLockLossTests
 
         handle.Should().NotBeNull();
         handle!.LockLostToken.IsCancellationRequested.Should().BeFalse();
-        await WaitForCancellationAsync(handle.LockLostToken);
+        await WaitForLockLossAsync(handle);
         handle.LockLostToken.IsCancellationRequested.Should().BeTrue();
     }
 
@@ -34,7 +35,7 @@ public sealed class LeaseVersionLockLossTests
 
         await using var handle = await versionLock.TryAcquireAsync("honua.versioning", Guid.NewGuid(), _shortLease);
 
-        await WaitForCancellationAsync(handle!.LockLostToken);
+        await WaitForLockLossAsync(handle!);
         handle.LockLostToken.IsCancellationRequested.Should().BeTrue();
     }
 
@@ -50,10 +51,10 @@ public sealed class LeaseVersionLockLossTests
         handle!.LockLostToken.IsCancellationRequested.Should().BeFalse();
     }
 
-    private static async Task WaitForCancellationAsync(CancellationToken token)
+    private static async Task WaitForLockLossAsync(IVersionLockHandle handle)
     {
         var cancelled = new TaskCompletionSource();
-        await using var registration = token.Register(() => cancelled.TrySetResult());
+        await using var registration = handle.LockLostToken.Register(() => cancelled.TrySetResult());
         await cancelled.Task.WaitAsync(_observationTimeout);
     }
 
