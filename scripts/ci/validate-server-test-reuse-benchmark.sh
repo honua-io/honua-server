@@ -54,10 +54,11 @@ jq -e '
 # a producer, and a hand-pinned list would fail the split instead of describing
 # it. (The previous `reused == baseline - producers` identity only held while
 # the number of single-shard projects happened to equal the producer count.)
-expected_baseline="$(jq -r '.shards | length' .github/ci-shards.json)"
 shard_projects="$(jq -c --arg default "${default_csproj}" '
-  [.shards[] | (if ((.csproj // "") == "") then $default else .csproj end)]
+  [.shards[] | if .csprojs != null then .csprojs[]
+    elif ((.csproj // "") == "") then $default else .csproj end]
 ' .github/ci-shards.json)"
+expected_baseline="$(jq -r 'length' <<<"${shard_projects}")"
 expected_producers="$(jq -c --argjson projects "${shard_projects}" '
   (.projects | map({key: .csproj, value: .artifact_suffix}) | from_entries) as $suffix
   | $projects

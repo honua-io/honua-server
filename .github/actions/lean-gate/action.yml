@@ -328,7 +328,7 @@ runs:
       shell: bash
       run: |
         timeout "${{ inputs.architecture-timeout-minutes }}m" \
-          dotnet test tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj \
+          python3 scripts/ci/run-quarantine-filtered-tests.py dotnet test tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \
@@ -346,7 +346,7 @@ runs:
       shell: bash
       run: |
         timeout "${{ inputs.server-fast-timeout-minutes }}m" \
-          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+          python3 scripts/ci/run-quarantine-filtered-tests.py dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \
@@ -372,7 +372,7 @@ runs:
       shell: bash
       run: |
         timeout "${{ inputs.architecture-timeout-minutes }}m" \
-          dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
+          python3 scripts/ci/run-quarantine-filtered-tests.py dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \
@@ -389,7 +389,7 @@ runs:
       shell: bash
       run: |
         timeout "${{ inputs.ai-governance-timeout-minutes }}m" \
-          dotnet test tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj \
+          python3 scripts/ci/run-quarantine-filtered-tests.py dotnet test tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \
@@ -412,7 +412,7 @@ runs:
       shell: bash
       run: |
         timeout "${{ inputs.governance-timeout-minutes }}m" \
-          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+          python3 scripts/ci/run-quarantine-filtered-tests.py dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \

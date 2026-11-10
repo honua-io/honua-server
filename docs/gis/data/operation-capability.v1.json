@@ -4074,7 +4074,7 @@
       "operationId": "listFeatureStreamSessions",
       "capability": "admin.control-plane",
       "family": "Admin API",
-      "maturity": "preview",
+      "maturity": "experimental",
       "catalogEntryId": "get-api-v1-admin-streaming-features-sessions"
     },
     {
@@ -4084,7 +4084,7 @@
       "operationId": "disconnectFeatureStreamSession",
       "capability": "admin.control-plane",
       "family": "Admin API",
-      "maturity": "preview",
+      "maturity": "experimental",
       "catalogEntryId": "delete-api-v1-admin-streaming-features-sessions-sessionid"
     },
     {
