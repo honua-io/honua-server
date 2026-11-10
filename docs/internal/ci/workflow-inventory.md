@@ -485,8 +485,8 @@ The following workflows had `pull_request` and `push` triggers removed, leaving 
 Additionally, `cite-conformance.yml` (already schedule-only) had dead PR comment steps and a stale `pull-requests: write` permission removed to match.
 
 **Rationale**: External OGC conformance runs for every RC and on demand via
-`workflow_dispatch`. Existing OGC jobs in the 01:00 PT full CI run remain non-gating;
-OGC is excluded from the 13:00 PT and affected trunk runs.
+`workflow_dispatch`. OGC integration tests in scheduled full CI remain non-gating.
+The separate trunk-routing change limits their scheduled coverage to 01:00 PT.
 
 #### CodeQL moved off PR path
 
