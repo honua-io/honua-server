@@ -19,6 +19,10 @@ permissions:
   issues: read
   pull-requests: read
 
+tools:
+  github:
+    toolsets: [default, actions]
+
 engine:
   id: claude
   model: opus
@@ -28,7 +32,7 @@ timeout-minutes: 30
 
 concurrency:
   group: ci-doctor-${{ github.event.workflow_run.head_sha }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 safe-outputs:
   staged: true
@@ -72,13 +76,14 @@ A required workflow failed on honua-server. Find the cause and fix it, so nobody
 
 ## Steps
 
+0. First check whether this head SHA was already handled: an open pull request comment or issue containing `ci-doctor: <head SHA>`, or a draft pull request titled `fix(ci):` naming it. If so, stop with no output.
 1. List the failed jobs and read the earliest failing step's log. Find the first real error, not its consequences.
 2. Decide the class: code or test failure, generated-file or format drift, budget check (descriptor, shard time), workflow/config, runner or network flake, external service.
-3. Runner, network or GitHub flake: change nothing; add one comment on the pull request (or nothing for trunk) saying it is a flake, so a rerun is enough.
+3. Runner, network or GitHub flake: change nothing; add one comment on the pull request (or nothing for trunk) saying it is a flake, so a rerun is enough, ending with the marker `ci-doctor: <head SHA>`.
 4. Pull request run (the branch has an open pull request in this repository):
    - Check out the pull request head. Make the smallest change that fixes the failure, following AGENTS.md (clean-code rules, no history or ticket comments, tests stay meaningful: never delete, skip or weaken a test or a budget to go green).
    - Push it to that pull request's branch with a commit message `fix(ci): <what>`.
-   - Add one short comment: the cause, the fix, and the log line that proves it.
+   - Add one short comment: the cause, the fix, and the log line that proves it, ending with the marker `ci-doctor: <head SHA>`.
    - If the fix is not clear, is larger than a few files, or touches security, authentication, approval, licensing or release logic: change nothing, add the `ci-stuck` label and a comment with the cause and the suggested fix.
 5. Trunk run (branch trunk, event schedule, push or workflow_dispatch):
    - Find the merges since the last green CI run on trunk and identify the one that broke it.
