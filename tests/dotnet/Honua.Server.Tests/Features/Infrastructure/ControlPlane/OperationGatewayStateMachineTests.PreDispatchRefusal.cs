@@ -3,6 +3,7 @@
 
 using Honua.ControlPlane;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
@@ -26,7 +27,8 @@ public sealed partial class OperationGatewayStateMachineTests
         var scenario = new PostAuditRefusalScenario();
         Assert.True(await scenario.Instances.TryCreateAsync(scenario.Accepted));
 
-        var resolved = await scenario.Gateway.ApplyApprovedProposalAsync(scenario.Proposal.ProposalId, "human-approver");
+        var resolved = await scenario.Gateway.ApplyApprovedProposalAsync(scenario.Proposal.ProposalId,
+            new OperationProposalApprovalContext { ApprovedBy = "human-approver", TenantId = string.Empty });
 
         var persisted = await scenario.Proposals.GetAsync(scenario.Proposal.ProposalId);
         Assert.Equal(OperationProposalStatus.Failed, resolved!.Status);
@@ -52,7 +54,8 @@ public sealed partial class OperationGatewayStateMachineTests
             .Returns(Task.FromException(new IOException("Canonical store unavailable")));
 
         var error = await Record.ExceptionAsync(() =>
-            scenario.Gateway.ApplyApprovedProposalAsync(scenario.Proposal.ProposalId, "human-approver"));
+            scenario.Gateway.ApplyApprovedProposalAsync(scenario.Proposal.ProposalId,
+                new OperationProposalApprovalContext { ApprovedBy = "human-approver", TenantId = string.Empty }));
 
         var persisted = await scenario.Proposals.GetAsync(scenario.Proposal.ProposalId);
         Assert.Equal(OperationProposalStatus.Failed, persisted!.Status);
