@@ -539,3 +539,10 @@ unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
+
+### FeatureServer query state isolation
+
+Read-only FeatureServer metadata, renderer and query cases may share a seeded
+application with a fresh HTTP client per case. Feature edits, metadata overrides,
+and expanded datasets require separate applications and schemas. The same state
+isolation applies to PR shards and full trunk coverage.
