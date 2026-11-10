@@ -475,7 +475,7 @@ if admin_doc is not None:
         "/services/{serviceName}/settings",
         "/services/{serviceName}/access-policy",
         "/services/{serviceName}/timeinfo",
-        "/services/{serviceName}/layers/{layerId}/metadata",
+        "/services/{serviceName}/layers/{serviceLayerIndex}/metadata",
     ]
     available_admin_paths = admin_doc.get("paths", {})
     for required_path in required_admin_paths:

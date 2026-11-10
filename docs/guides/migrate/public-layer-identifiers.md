@@ -1,5 +1,5 @@
 ---
-type: how-to
+type: guide
 title: "Migrate public Layer identifiers for rc.2"
 description: "Update clients to separate storage handles, Service-local indices, and graph Layer identities."
 ---
