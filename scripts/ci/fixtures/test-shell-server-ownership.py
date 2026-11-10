@@ -1,4 +1,5 @@
 """Exercise real shell entrypoints with a foreign HTTP listener and fake tools."""
+from contextlib import suppress
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import os
 import json
@@ -84,10 +85,8 @@ class ShellServerOwnershipTests(unittest.TestCase):
             stdout, stderr = process.communicate(timeout=8)
             return process.returncode, (stdout + stderr).decode()
         finally:
-            try:
+            with suppress(ProcessLookupError):
                 os.killpg(process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
             process.wait(timeout=3)
 
     def test_boot_smoke_does_not_qualify_a_foreign_ready_server(self):
