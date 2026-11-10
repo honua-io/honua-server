@@ -2,6 +2,7 @@ name: GeoArrow Interop Fixture
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches: [trunk]
     paths:
       - '.github/workflows/geoarrow-interop-fixture.yml'
@@ -45,6 +46,7 @@ env:
 
 jobs:
   produce:
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     name: Produce GeoArrow 0.2 fixture
     runs-on: ubuntu-latest
     timeout-minutes: 30

@@ -23,6 +23,9 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
         """{"type":"message_stop"}""",
         """{"type":"content_block_start","index":0,"content_block":{"type":"text"}}""",
         """{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tool_2","name":"example_tool"}}""",
+        """{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}""",
+        """{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"PRIVATE_THINKING"}}""",
+        """{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"PRIVATE_SIGNATURE"}}""",
         """{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}""",
         """{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"late"}}""",
         """{"type":"content_block_stop","index":0}""",
@@ -76,7 +79,7 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
     }
 
     [UnitTheory]
-    [InlineData("thinking")]
+    [InlineData("future_block")]
     [InlineData("server_tool_use")]
     public async Task StreamAsync_UnsupportedContentBlock_NamesTypeAndFailsClosed(string blockType)
     {
@@ -159,7 +162,7 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
     }
 
     [UnitTheory]
-    [InlineData("{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\"}}")]
+    [InlineData("{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"future_block\"}}")]
     [InlineData("{\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\"}}")]
     [InlineData("{\"type\":\"future_event\"}")]
     public async Task StreamAsync_RejectedFrame_PreservesUsageFromMessageStart(string frame)
@@ -180,7 +183,7 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
     [UnitTheory]
     [InlineData("{\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"PRIVATE_CANARY\"}}", "overloaded_error")]
     [InlineData("{\"type\":\"error\",\"error\":{\"type\":\"PRIVATE_CANARY\\n\",\"code\":\"https://PRIVATE_CANARY\"}}", "invalid")]
-    [InlineData("{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"PRIVATE_CANARY\"}}", "thinking")]
+    [InlineData("{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"future_block\",\"body\":\"PRIVATE_CANARY\"}}", "future_block")]
     [InlineData("{\"type\":\"PRIVATE_CANARY\\n\",\"body\":\"PRIVATE_CANARY\"}", "invalid")]
     [InlineData("{\"type\":\"message_start\",\"message\":{\"model\":\"claude-opus-5-5\"}}\n\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\"}}\n\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"citations_delta\",\"body\":\"PRIVATE_CANARY\"}}", "BlockType=text, DeltaType=citations_delta")]
     [InlineData("{\"type\":\"message_start\",\"message\":{\"model\":\"claude-opus-5-5\"}}\n\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"name\":\"example_tool\"}}\n\ndata: {\"type\":\"content_block_stop\",\"index\":0}", "BlockType=tool_use, DeltaType=missing")]

@@ -49,7 +49,7 @@ env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 concurrency:
-  group: security-nightly-${{ github.ref }}-${{ inputs.existing_image || 'build' }}-${{ inputs.existing_image_platform || 'default' }}
+  group: security-nightly-${{ github.event.pull_request.number || github.ref }}-${{ inputs.existing_image || 'build' }}-${{ inputs.existing_image_platform || 'default' }}
   cancel-in-progress: true
 
 jobs:
