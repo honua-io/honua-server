@@ -38,6 +38,10 @@ concurrency:
   group: ci-doctor-${{ github.event.workflow_run.head_sha }}
   cancel-in-progress: true
 
+steps:
+  - name: Preserve doctor commit messages through excluded-file filtering
+    run: python3 scripts/ci/preserve-doctor-commit-message.py "${RUNNER_TEMP}/gh-aw/actions/generate_git_patch.cjs" "${RUNNER_TEMP}/gh-aw/safeoutputs/generate_git_patch.cjs"
+
 safe-outputs:
   github-app:
     client-id: ${{ secrets.BOT_APP_ID }}

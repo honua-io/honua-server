@@ -307,6 +307,7 @@ jobs:
       integration_reason: ${{ steps.filter.outputs.integration_reason }}
       full_ci: ${{ steps.filter.outputs.full_ci }}
       postgres_matrix: ${{ steps.filter.outputs.postgres_matrix }}
+      specialized_lanes: ${{ steps.specialized.outputs.lanes }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -481,16 +482,6 @@ jobs:
                 | sed '/^$/d' || true
             )
 
-            # A trailing run is selective across a range of already-landed commits,
-            # but the compatibility jobs below are currently routed by full_ci rather
-            # than by individual path selectors. Keep docs/CI-only ranges cheap; when
-            # the range contains runtime or test changes, run those compatibility
-            # lanes instead of silently suppressing them.
-            if [ "${{ steps.diff.outputs.trailing_selective }}" = "true" ] &&
-               [ -n "$INTEGRATION_FILES" ]; then
-              FULL_CI=true
-            fi
-
             if [ "${FULL_CI}" = "true" ]; then
               echo "build_changes=true" >> "$GITHUB_OUTPUT"
               echo "integration_changes=true" >> "$GITHUB_OUTPUT"
@@ -528,6 +519,13 @@ jobs:
           echo ""
           echo "Full CI:"
           echo "${FULL_CI:-true}"
+
+      - name: Select expensive affected lanes
+        id: specialized
+        env:
+          DIFF_RANGE: ${{ steps.diff.outputs.range }}
+          SELECTIVE: ${{ steps.diff.outputs.trailing_selective == 'true' && steps.filter.outputs.full_ci != 'true' && 'true' || 'false' }}
+        run: python3 scripts/ci/affected-ci-lanes.py --range "$DIFF_RANGE" --selective "$SELECTIVE" >> "$GITHUB_OUTPUT"
 
   # Compute the server-tests shard subset for this PR. Scheduled/manual full
   # integration runs execute every shard. See ADR-0037.
@@ -680,6 +678,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Canonical Instruction Check
         run: bash scripts/ci/check-instructions-sync.sh
@@ -707,15 +707,18 @@ jobs:
         # affected by this PR + their reverse-dependency closure. Force-fulls
         # whenever shared infra changes (Directory.Packages.props, Honua.sln,
         # .github/, scripts/ci/) so a graph change cannot bypass the gate.
-        # The trunk-merge build is unaffected: push events resolve to BASE_REF
-        # 'origin/trunk' against HEAD 'HEAD'; on trunk that diff is empty so
-        # the script emits nothing and the build step short-circuits — meaning
-        # the canonical correctness gate is the PR check that landed it.
+        # Trailing dispatches use the verified range base, rather than comparing
+        # trunk to itself and unnecessarily rebuilding the entire solution.
         env:
-          BASE_REF: ${{ github.event.pull_request.base.sha || 'origin/trunk' }}
+          FULL_CI: ${{ needs.changes.outputs.full_ci }}
+          BASE_REF: ${{ github.event.pull_request.base.sha || inputs.selective_base || 'origin/trunk' }}
           HEAD_REF: ${{ github.event.pull_request.head.sha || 'HEAD' }}
         run: |
-          affected="$(scripts/ci/compute-affected-projects.sh)"
+          if [[ "${FULL_CI}" == true ]]; then
+            affected=ALL
+          else
+            affected="$(scripts/ci/compute-affected-projects.sh)"
+          fi
           if [[ -z "${affected}" || "${affected}" == "ALL" ]]; then
             mode="full"
             projects=""
@@ -1156,7 +1159,8 @@ jobs:
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
-      max-parallel: 24
+      # Bound trailing shard fanout so PR Gate can obtain runners. Full runs retain their budget.
+      max-parallel: ${{ inputs.selective_base && needs.changes.outputs.full_ci != 'true' && 6 || 24 }}
       matrix:
         include: ${{ fromJson(needs.targeted-shards.outputs.matrix_include) }}
     env:
@@ -1787,7 +1791,7 @@ jobs:
 
   python-integration-tests:
     name: Python Integration Tests
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && (needs.changes.outputs.full_ci == 'true' || (inputs.selective_base && fromJson(needs.changes.outputs.specialized_lanes).python)) }}
     runs-on: ubuntu-24.04
     needs: changes
     timeout-minutes: 25
@@ -1968,7 +1972,7 @@ jobs:
 
   js-integration-tests:
     name: JavaScript Integration Tests
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && (needs.changes.outputs.full_ci == 'true' || (inputs.selective_base && fromJson(needs.changes.outputs.specialized_lanes).browser)) }}
     runs-on: ubuntu-24.04
     needs: changes
     timeout-minutes: 15
@@ -2108,7 +2112,7 @@ jobs:
 
   esri-leaflet-browser-tests:
     name: Esri Leaflet Browser Tests
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && (needs.changes.outputs.full_ci == 'true' || (inputs.selective_base && fromJson(needs.changes.outputs.specialized_lanes).browser)) }}
     runs-on: ubuntu-24.04
     needs: changes
     timeout-minutes: 15
@@ -2224,7 +2228,7 @@ jobs:
 
   maplibre-compat:
     name: MapLibre GL JS Browser Compatibility
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && (needs.changes.outputs.full_ci == 'true' || (inputs.selective_base && fromJson(needs.changes.outputs.specialized_lanes).browser)) }}
     runs-on: ubuntu-24.04
     needs: changes
     timeout-minutes: 15
@@ -2346,7 +2350,7 @@ jobs:
 
   mcp-certification:
     name: MCP Certification (${{ matrix.transport }})
-    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
+    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && (needs.changes.outputs.full_ci == 'true' || (inputs.selective_base && fromJson(needs.changes.outputs.specialized_lanes).mcp)) }}
     runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: [build, changes, core-package-compatibility, postgres-compat]
     timeout-minutes: 15
@@ -2556,7 +2560,7 @@ jobs:
 
   postgres-compat:
     name: Postgres Compatibility (${{ matrix.pg_image }})
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && fromJson(needs.changes.outputs.specialized_lanes).postgres }}
     runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: changes
     timeout-minutes: 40
@@ -2800,7 +2804,7 @@ jobs:
     # builds per review-fix push. It runs alongside the shard matrix (p90 88.6m)
     # under a 45-minute ceiling, so it is not expected to extend the batch
     # critical path.
-    if: ${{ success() && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
+    if: ${{ success() && needs.changes.outputs.integration_changes == 'true' && fromJson(needs.changes.outputs.specialized_lanes).aot && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: [build, changes, core-package-compatibility, postgres-compat]
     timeout-minutes: 45
@@ -2851,7 +2855,7 @@ jobs:
 
   docker-build:
     name: Docker Build & Integration Test
-    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
+    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.full_ci == 'true' || (inputs.selective_base && fromJson(needs.changes.outputs.specialized_lanes).docker)) && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: changes
     # A cold BuildKit build consumed 13m45s in run 29088883576, leaving no
@@ -3035,7 +3039,7 @@ jobs:
 
   quickstart-console-smoke:
     name: Quickstart Console Compose Smoke
-    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
+    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.full_ci == 'true' || (inputs.selective_base && fromJson(needs.changes.outputs.specialized_lanes).quickstart)) && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: changes
     timeout-minutes: 30

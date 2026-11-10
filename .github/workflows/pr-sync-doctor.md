@@ -12,6 +12,8 @@ on:
   workflow_dispatch:
 
 checkout:
+  # The agent falls back to its read token; safe_outputs has minted the write token.
+  github-token: ${{ steps.safe-outputs-app-token.outputs.token || github.token }}
   fetch-depth: 0
   fetch: ["*"]
 
