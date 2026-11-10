@@ -539,3 +539,12 @@ unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
+
+### Capability manifest endpoint fixture lifetime
+
+`CapabilityManifestEndpointTests` seeds and starts its read-only default application
+once per class. Anonymous and admin clients remain separate for each test, and
+scenarios with different licensing, tenant, registry, authentication or service
+configuration keep their own applications. Every existing case and assertion still
+runs in its selected PR shard and full trunk runs. Runner counts, required check
+names, aggregate dependencies, workflows and shard selection are unchanged.
