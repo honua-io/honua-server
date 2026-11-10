@@ -92,6 +92,20 @@ A synchronous import returns the result inline; a completed background job retur
 
 `detectedSrid` confirms CRS auto-detection. The table is now discoverable via `GET /api/v1/admin/connections/{id}/tables` and ready to publish.
 
+## Detailed polygons
+
+Default imports accept up to 100,000 vertices and 1,000 rings per feature,
+subject to the independent 1 MiB geometry WKB limit. All limits apply together;
+exceeding one rejects the geometry rather than removing rings or simplifying it.
+These bounds accommodate detailed zoning and coastal multipolygons without
+requiring a direct database load.
+
+Operators can set `Import__Limits__MaxVertices`, `Import__Limits__MaxRings`, and
+`Import__Limits__MaxWkbSize` (bytes) to positive values for their deployment's
+resource budget. An error identifies the exceeded bound; review the source
+geometry and deployment limits before retrying. The upload `/import/limits`
+endpoint reports file limits, not these per-feature geometry bounds.
+
 ## Source fields
 
 GeoJSON source attributes named `created_at` (case insensitive) are rejected

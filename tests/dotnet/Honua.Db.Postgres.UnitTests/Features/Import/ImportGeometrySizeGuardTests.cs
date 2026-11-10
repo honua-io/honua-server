@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.FileImport.Services;
+using Honua.Core.Features.Import.Domain;
 using NetTopologySuite.Geometries;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
@@ -15,6 +16,55 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 public sealed class ImportGeometrySizeGuardTests
 {
     private static readonly GeometryFactory Factory = new();
+
+    [Theory]
+    [InlineData(12_477, 127)]
+    [InlineData(12_152, 345)]
+    public void Check_DefaultImportLimits_AcceptsDetailedZoningGeometry(int totalVertices, int ringCount)
+    {
+        var polygons = Enumerable.Range(0, ringCount).Select(offset =>
+        {
+            var verticesPerRing = totalVertices / ringCount + (offset < totalVertices % ringCount ? 1 : 0);
+            var coordinates = Enumerable.Range(0, verticesPerRing).Select(index =>
+            {
+                var angle = index * Math.Tau / verticesPerRing;
+                return new Coordinate(offset * 3 + Math.Cos(angle), Math.Sin(angle));
+            }).ToList();
+            coordinates.Add(coordinates[0].Copy());
+            return Factory.CreatePolygon(coordinates.ToArray());
+        }).ToArray();
+        var geometry = Factory.CreateMultiPolygon(polygons);
+        var limits = ImportLimits.Default;
+
+        var result = ImportGeometrySizeGuard.Check(geometry, limits.MaxVertices, limits.MaxRings);
+
+        result.IsWithinLimits.Should().BeTrue(result.Message);
+        new NetTopologySuite.IO.WKBWriter().Write(geometry).LongLength.Should().BeLessThan(limits.MaxWkbSize);
+    }
+
+    [Fact]
+    public void Check_DefaultImportLimits_RejectsExcessiveRings()
+    {
+        var limits = ImportLimits.Default;
+        var geometry = Factory.CreateMultiPolygon(Enumerable.Range(0, limits.MaxRings + 1)
+            .Select(index => CreateSquare(index * 10.0)).ToArray());
+
+        var result = ImportGeometrySizeGuard.Check(geometry, limits.MaxVertices, limits.MaxRings);
+
+        result.Status.Should().Be(ImportGeometrySizeStatus.TooManyRings);
+    }
+
+    [Fact]
+    public void Check_DefaultImportLimits_RejectsExcessiveGeometry()
+    {
+        var limits = ImportLimits.Default;
+        var geometry = CreateRing(limits.MaxVertices + 1);
+
+        var result = ImportGeometrySizeGuard.Check(geometry, limits.MaxVertices, limits.MaxRings);
+
+        result.Status.Should().Be(ImportGeometrySizeStatus.TooManyVertices);
+        result.Message.Should().Contain("vertex count");
+    }
 
     [Fact]
     public void Check_WithNullGeometry_IsWithinLimits()

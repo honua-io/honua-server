@@ -29,6 +29,61 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 public sealed class ImportTypedColumnTests(PostgresFixture fixture)
 {
     [IntegrationTheory]
+    [InlineData(12_477, 127, 1899)]
+    [InlineData(12_152, 345, 2826)]
+    [Operation(Operations.Import)]
+    public async Task ImportFileAsync_DetailedZoningGeometry_PreservesGeometryAndSourceIdentity(
+        int totalVertices, int ringCount, int sourceId)
+    {
+        var polygons = Enumerable.Range(0, ringCount).Select(offset =>
+        {
+            var vertexCount = totalVertices / ringCount + (offset < totalVertices % ringCount ? 1 : 0);
+            var ring = Enumerable.Range(0, vertexCount).Select(index =>
+            {
+                var angle = index * Math.Tau / vertexCount;
+                return new[]
+                {
+                    -157 + offset % 20 * 0.004 + Math.Cos(angle) * 0.001,
+                    20 + offset / 20 * 0.004 + Math.Sin(angle) * 0.001
+                };
+            }).ToList();
+            ring.Add(ring[0]);
+            return new[] { ring.ToArray() };
+        }).ToArray();
+        var json = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            type = "FeatureCollection",
+            features = new[]
+            {
+                new
+                {
+                    type = "Feature",
+                    geometry = new { type = "MultiPolygon", coordinates = polygons },
+                    properties = new { objectid = sourceId, zone_code = "999" }
+                }
+            }
+        });
+
+        var imported = await ImportAsync("detailed_zoning", "zoning.geojson", Encoding.UTF8.GetBytes(json));
+        imported.Result.FeatureCount.Should().Be(1);
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT objectid, ST_NPoints(geometry), ST_NumGeometries(geometry),
+                   ST_IsValid(geometry), ST_Area(geometry) > 0
+            FROM "{imported.Schema}"."{imported.Table}"
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetInt64(0).Should().Be(sourceId);
+        reader.GetInt32(1).Should().Be(totalVertices + ringCount);
+        reader.GetInt32(2).Should().Be(ringCount);
+        reader.GetBoolean(3).Should().BeTrue();
+        reader.GetBoolean(4).Should().BeTrue();
+        (await reader.ReadAsync()).Should().BeFalse();
+    }
+
+    [IntegrationTheory]
     [InlineData(ImportLoadMode.Replace)]
     [InlineData(ImportLoadMode.Append)]
     [InlineData(ImportLoadMode.Upsert)]
