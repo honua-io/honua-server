@@ -23,7 +23,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: import-fidelity-scorecard-governance-${{ github.ref }}
+  group: import-fidelity-scorecard-governance-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:

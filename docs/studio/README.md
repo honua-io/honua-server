@@ -5,6 +5,10 @@ description: "One typed map, app, and dashboard composition that a person or an 
 ---
 # Honua Studio
 
+For the browser workflow, see [New map to release](new-map-to-release.md):
+create a draft, save a version, review publication and verify the viewer result.
+The guide identifies candidate requirements and pending availability.
+
 {% hint style="warning" %}
 **Preview in Honua 2026.1.** Browser Studio surfaces and their contracts may
 change. Preview does not carry a promise of general-availability support or

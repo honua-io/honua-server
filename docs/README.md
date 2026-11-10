@@ -30,6 +30,13 @@ explains the shared meanings and verification behind the agent's actions.
 
 ## What do you want to do?
 
+For the rc.2 operator workflows and their availability requirements:
+[organize services in folders](guides/publish/organize-services-in-folders.md),
+[choose an import CRS](guides/publish/choose-import-coordinate-system.md),
+[approve an agent change](guides/secure/approve-agent-changes.md),
+[choose a serving image](guides/deploy/choose-serving-image.md), or
+[take a Studio map from New map to release](studio/new-map-to-release.md).
+
 | I want to… | Go to |
 |---|---|
 | Publish files, databases, rasters, or tiles | [Publish data](guides/README.md#publish-data) |

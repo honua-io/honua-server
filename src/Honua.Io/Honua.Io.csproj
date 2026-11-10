@@ -31,8 +31,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj" />
-    <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\Honua.Core\Abstractions\Honua.Core.Abstractions.csproj" />
+    <ProjectReference Include="..\Honua.Core\Core\Honua.Core.csproj" />
     <!-- Export writers (Shapefile / GeoPackage / CSV) emit NTS geometries. -->
     <ProjectReference Include="..\Honua.Geometry\Honua.Geometry.csproj" />
     <!--
@@ -42,7 +42,7 @@
       minimal Abstractions package (never the host-side Honua.Plugins runtime) mirrors how protocol
       assemblies depend on IPluginEditPipeline.
     -->
-    <ProjectReference Include="..\Honua.Plugins.Abstractions\Honua.Plugins.Abstractions.csproj" />
+    <ProjectReference Include="..\Honua.Plugins\Abstractions\Honua.Plugins.Abstractions.csproj" />
     <ProjectReference Include="..\Honua.Hosting\Honua.Hosting.csproj" />
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
   </ItemGroup>

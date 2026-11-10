@@ -12,7 +12,7 @@ coverage support flowing through the canonical raster/coverage pipeline
 (`Honua.Core.Features.Raster`, `OGC API Coverages`, `ImageServer`, `STAC`).
 
 The current cloud-optimized raster surface (`CloudOptimizedGeoTiff`, see
-`src/Honua.Core/Features/Raster/CogParser/CogMetadataExtractor.cs`) is built on
+`src/Honua.Core/Core/Features/Raster/CogParser/CogMetadataExtractor.cs`) is built on
 an AOT-safe **pure managed** parser that walks IFDs through
 `ICloudRangeReader` HTTP range requests. The server is published with
 `<PublishAot>true</PublishAot>` and `Directory.Packages.props` does not

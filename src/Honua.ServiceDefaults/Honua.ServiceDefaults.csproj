@@ -26,7 +26,7 @@
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
     <PackageReference Include="Microsoft.Extensions.Http.Polly" />
     <PackageReference Include="StackExchange.Redis" />
-    <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\Honua.Core\Core\Honua.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

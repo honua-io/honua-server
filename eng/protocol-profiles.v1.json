@@ -18,7 +18,7 @@
   },
   "modules": {
     "geoservices": {
-      "projects": ["src/Honua.Protocols.GeoServices/Honua.Protocols.GeoServices.csproj"],
+      "projects": ["src/Honua.Protocols/GeoServices/Honua.Protocols.GeoServices.csproj"],
       "routes": [
         "/rest/services",
         "/rest/services/{serviceId}/FeatureServer",
@@ -36,7 +36,7 @@
       "note": "GeoServices family only. SceneServer and I3S are the scene module. Import clients stay on every profile."
     },
     "ogc-api": {
-      "projects": ["src/Honua.Protocols.OgcApi/Honua.Protocols.OgcApi.csproj"],
+      "projects": ["src/Honua.Protocols/OgcApi/Honua.Protocols.OgcApi.csproj"],
       "routes": ["/ogc/features", "/ogc/tiles", "/ogc/maps", "/ogc/coverages", "/edr", "/ogc/records", "/ogc/processes", "/ogc/styles"],
       "assets": [
         "src/Honua.Server/ogc-tiles-openapi.json",
@@ -48,33 +48,33 @@
       "capabilityPrefixes": ["serve.ogc-api-", "process.ogc-api-", "styling.ogc-api-"]
     },
     "ogc-classic": {
-      "projects": ["src/Honua.Protocols.OgcClassic/Honua.Protocols.OgcClassic.csproj"],
+      "projects": ["src/Honua.Protocols/OgcClassic/Honua.Protocols.OgcClassic.csproj"],
       "routes": ["/wfs", "/wps", "/ogc/services/{serviceId}/wms", "/ogc/services/{serviceId}/wmts", "/ogc/services/{serviceId}/wcs", "/ogc/wcs/{serviceId}"],
       "assets": [],
       "capabilityPrefixes": ["serve.wfs", "serve.wms", "serve.wmts", "serve.wcs", "serve.wps"],
       "note": "Included only with ogc-api. ogc-api-classic is OGC API plus these classic services."
     },
     "odata": {
-      "projects": ["src/Honua.Protocols.OData/Honua.Protocols.OData.csproj"],
+      "projects": ["src/Honua.Protocols/OData/Honua.Protocols.OData.csproj"],
       "routes": ["/odata"],
       "assets": [],
       "capabilityPrefixes": ["serve.odata"]
     },
     "stac": {
-      "projects": ["src/Honua.Protocols.Stac/Honua.Protocols.Stac.csproj"],
+      "projects": ["src/Honua.Protocols/Stac/Honua.Protocols.Stac.csproj"],
       "routes": ["/stac"],
       "assets": [],
       "capabilityPrefixes": ["serve.stac"]
     },
     "sensorthings": {
-      "projects": ["src/Honua.Protocols.SensorThings/Honua.Protocols.SensorThings.csproj"],
+      "projects": ["src/Honua.Protocols/SensorThings/Honua.Protocols.SensorThings.csproj"],
       "routes": ["/sta/v1.1"],
       "assets": [],
       "capabilityPrefixes": ["serve.sensorthings"]
     },
     "scene": {
       "projects": [
-        "src/Honua.Protocols.Scene/Honua.Protocols.Scene.csproj",
+        "src/Honua.Protocols/Scene/Honua.Protocols.Scene.csproj",
         "src/Honua.Scene/Honua.Scene.csproj"
       ],
       "routes": ["/api/scenes", "/scenes/{sceneId}/tileset.json", "/rest/services/{sceneId}/SceneServer", "/scenes/{sceneId}/SceneServer"],

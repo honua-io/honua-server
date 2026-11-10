@@ -47,8 +47,8 @@ nCrunchTemp_*
 **/[Pp]ackages/*
 !**/[Pp]ackages/build/
 !**/[Pp]ackages/repositories.config
-!src/Honua.Core/Features/Forms/Packages/
-!src/Honua.Core/Features/Forms/Packages/**
+!src/Honua.Core/Core/Features/Forms/Packages/
+!src/Honua.Core/Core/Features/Forms/Packages/**
 project.lock.json
 project.fragment.lock.json
 artifacts/
@@ -333,5 +333,7 @@ scripts/conformance/ogcapi/node_modules/
 .grok-write-*.tmp
 
 # Shipped project templates include the manifest-listed debugger configuration.
-!src/Honua.Geoprocessing.Cli/Templates/*/.vscode/
-!src/Honua.Geoprocessing.Cli/Templates/*/.vscode/*.json
+!src/Honua.Geoprocessing/Cli/Templates/*/.vscode/
+!src/Honua.Geoprocessing/Cli/Templates/*/.vscode/*.json
+
+src/**/Honua.*.xml

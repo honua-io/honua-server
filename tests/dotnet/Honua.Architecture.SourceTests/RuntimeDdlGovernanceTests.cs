@@ -48,7 +48,7 @@ public sealed partial class RuntimeDdlGovernanceTests
                 new(RuntimeDdlCategory.GeneratedImportTarget, 3, "GeocoderReferenceDataImportService owns its replaceable reference-data target and indexes."),
             ["src/Honua.Db/Postgres/Features/Migration/PostgresOgcApiFeaturesCollectionSink.cs"] =
                 new(RuntimeDdlCategory.ExternalSinkTarget, 6, "PostgresOgcApiFeaturesCollectionSink owns its destination schema/table and import-scope cleanup. The two CREATE replacement literals select collision-refusing creation after the transactional ownership check; they do not broaden the target scope."),
-            ["src/Honua.Geoprocessing/Features/Geoprocessing/Execution/ExternalPostgisSinkExecutor.cs"] =
+            ["src/Honua.Geoprocessing/Core/Features/Geoprocessing/Execution/ExternalPostgisSinkExecutor.cs"] =
                 new(RuntimeDdlCategory.ExternalSinkTarget, 2, "ExternalPostgisSinkExecutor owns the caller-selected external sink table transaction."),
             ["src/Honua.Io/Features/Export/Writers/GeoPackageExportWriter.cs"] =
                 new(RuntimeDdlCategory.ExportArtifact, 4, "GeoPackageExportWriter owns and disposes the standalone export artifact."),

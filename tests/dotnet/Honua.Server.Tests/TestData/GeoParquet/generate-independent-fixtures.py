@@ -16,7 +16,7 @@ from shapely.wkb import dumps
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[4]
-CATALOG = json.loads((ROOT / "src/Honua.Core/Features/Infrastructure/Crs/Resources/geoparquet-crs-projjson.json").read_text())
+CATALOG = json.loads((ROOT / "src/Honua.Core/Core/Features/Infrastructure/Crs/Resources/geoparquet-crs-projjson.json").read_text())
 
 
 def write(name: str, version: str, point: Point, *, epoch: float | None = None) -> None:

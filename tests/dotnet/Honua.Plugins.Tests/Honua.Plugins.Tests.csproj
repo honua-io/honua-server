@@ -8,8 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\src\Honua.Plugins\Honua.Plugins.csproj" />
-    <ProjectReference Include="..\..\..\src\Honua.Plugins.Abstractions\Honua.Plugins.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Plugins\Core\Honua.Plugins.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Plugins\Abstractions\Honua.Plugins.Abstractions.csproj" />
     <ProjectReference Include="..\..\fixtures\plugins\Honua.Sample.UtilityValidationPlugin\Honua.Sample.UtilityValidationPlugin.csproj" />
     <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
   </ItemGroup>

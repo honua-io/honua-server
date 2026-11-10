@@ -32,7 +32,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\..\Honua.Core\Core\Honua.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

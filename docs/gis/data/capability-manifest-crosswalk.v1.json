@@ -4,7 +4,7 @@
   "trackingIssue": "https://github.com/honua-io/honua-server/issues/3607",
   "description": "Joins honua.capability_manifest.v1 ids to licensing capability keys. `direct` and `entitlement` are derived from CapabilityRegistry.cs; `mapped`, `register`, `declared-gap` and `not-licensable` come from capability-manifest-adjudication.v1.json. Every manifest id appears exactly once.",
   "sources": {
-    "manifestIds": "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs",
+    "manifestIds": "src/Honua.Core/Core/Features/Capabilities/CapabilityRegistry.cs",
     "capabilityKeys": "docs/gis/data/capability-keys.v1.json",
     "adjudication": "docs/gis/data/capability-manifest-adjudication.v1.json"
   },

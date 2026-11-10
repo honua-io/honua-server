@@ -104,7 +104,7 @@ public void InfrastructureTypes_ShouldBeInternal()
 
 **Domain Interface (Core)**
 ```csharp
-// Honua.Core/Features/Abstractions/IFeatureStore.cs
+// Honua.Core/Core/Features/Abstractions/IFeatureStore.cs
 public interface IFeatureStore
 {
     Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query);
@@ -135,7 +135,7 @@ builder.Services.AddScoped<IFeatureStore, PostgresFeatureStore>();
 
 **Shared Domain Model**
 ```csharp
-// Honua.Core/Features/Models/FeatureQuery.cs
+// Honua.Core/Core/Features/Models/FeatureQuery.cs
 public record FeatureQuery
 {
     public string? Where { get; init; }

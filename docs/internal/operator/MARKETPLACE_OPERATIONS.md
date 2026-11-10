@@ -195,7 +195,7 @@ The Azure Marketplace SDK does **not** ship a managed first-party client
 for the SaaS Fulfillment v2 surface. The adapter implements a small HTTP
 client (`AzureFulfillmentClient`) over the documented v2 endpoints using
 `IHttpClientFactory` plus the existing
-`Honua.Core/Features/Infrastructure/Resilience/HttpResiliencePolicies`.
+`Honua.Core/Core/Features/Infrastructure/Resilience/HttpResiliencePolicies`.
 
 ### Webhook lifecycle
 

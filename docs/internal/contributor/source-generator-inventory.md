@@ -79,7 +79,7 @@ repository to port.
 
 ## Cache behaviour (measured)
 
-`src/Honua.Core/Honua.Core.csproj`, Debug, `--no-restore`:
+`src/Honua.Core/Core/Honua.Core.csproj`, Debug, `--no-restore`:
 
 | Scenario                                                                  | Wall time |
 |---------------------------------------------------------------------------|-----------|

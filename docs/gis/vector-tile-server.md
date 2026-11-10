@@ -56,8 +56,8 @@ These decisions were ratified under epic **#1776** (VectorTileServer) and its ch
 
 ## Implementation
 
-- Endpoints: `src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints*.cs`
-- Style composition: `src/Honua.Protocols.GeoServices/VectorTileServer/Services/VectorTileStyleComposer.cs`
-- Sprite stubs and bundled glyph ranges: `src/Honua.Protocols.GeoServices/VectorTileServer/Services/VectorTileEmbeddedAssets.cs`
+- Endpoints: `src/Honua.Protocols/GeoServices/VectorTileServer/VectorTileServerEndpoints*.cs`
+- Style composition: `src/Honua.Protocols/GeoServices/VectorTileServer/Services/VectorTileStyleComposer.cs`
+- Sprite stubs and bundled glyph ranges: `src/Honua.Protocols/GeoServices/VectorTileServer/Services/VectorTileEmbeddedAssets.cs`
 - Route catalog: `src/Honua.Server/EndpointRegistry.cs`
 - Integration tests: `tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/`

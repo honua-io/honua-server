@@ -33,7 +33,7 @@ public sealed class GeoprocessingIsolationTests
         var geoprocessingCsproj = ArchitectureTestHelpers.CombinePath(
             repositoryRoot,
             "src",
-            "Honua.Geoprocessing",
+            "Honua.Geoprocessing", "Core",
             "Honua.Geoprocessing.csproj");
 
         File.Exists(geoprocessingCsproj).Should().BeTrue(

@@ -32,7 +32,7 @@ Grants are case-insensitive and trimmed. A key may combine grants; its authority
 | `admin`, `*`, `admin:*` | Full admin: every admin endpoint, plus data access governed by access policies. |
 | `admin:write`, `admin:manage` | Admin write (implies admin read), except credential and identity management; see [Credential and identity management](#credential-and-identity-management). |
 | `admin:read` | Admin read only (safe HTTP methods). Grants **no** service or layer data access on its own. |
-| `admin:approve` | Admin read plus proposal approve/reject. Grants no data access on its own. |
+| `admin:approve` | Admin read plus proposal rejection. Approval additionally requires a verified interactive human session and private review capability; an API key cannot approve. Grants no data access on its own. |
 | `ops:read`, `ops:reader`, `ops:*` | Read-only operational surfaces (operate status, ops health, findings, alerts). No data access. |
 | `write:{service}` | Write any layer of the named service. No read or admin authority. |
 | `write:{service}/{layer}` | Write the single named layer. |

@@ -9,8 +9,21 @@ class PartitionSource(NamedTuple):
     classes: dict
 
 
+def current_source_paths(paths):
+    relocated = []
+    for path in paths:
+        if path.startswith("src/Honua.Core/") and not path.startswith(
+                ("src/Honua.Core/Core/", "src/Honua.Core/Abstractions/")):
+            path = path.replace("src/Honua.Core/", "src/Honua.Core/Core/", 1)
+        elif path.startswith("src/Honua.Protocols."):
+            path = path.replace("src/Honua.Protocols.", "src/Honua.Protocols/", 1)
+        relocated.append(path)
+    return relocated
+
+
 def check_method_partition(source, original, children):
     coverage, classes = source
+    original = {**original, "paths": current_source_paths(original["paths"])}
 
     methods = coverage.selection_pool(classes, original["csproj"] or coverage.DEFAULT_CSPROJ)
     parent = coverage._FilterParser(original["filter"]).parse()
@@ -44,3 +57,14 @@ def check_partition(source, original, children):
             expected_owners = owners if coverage._eval(parent, name) else [False] * len(parsed)
             assert [coverage._eval(expression, name) for expression in parsed] == expected_owners, name
     return selected
+
+
+def capacity_split_names(config, name):
+    """The shard itself, or the numbered children it was split into for capacity."""
+    names = [shard["name"] for shard in config["shards"]]
+    if name in names:
+        return [name]
+    children = [candidate for candidate in names
+                if candidate.startswith(f"{name} ") and candidate[len(name) + 1:].isdecimal()]
+    assert children, f"{name} is neither a shard nor a capacity-split parent."
+    return sorted(children, key=lambda candidate: int(candidate[len(name) + 1:]))

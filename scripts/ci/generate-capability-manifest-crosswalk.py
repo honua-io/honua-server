@@ -35,7 +35,7 @@ from collections import Counter
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-REGISTRY_CS = REPO_ROOT / "src" / "Honua.Core" / "Features" / "Capabilities" / "CapabilityRegistry.cs"
+REGISTRY_CS = REPO_ROOT / "src" / "Honua.Core" / "Core" / "Features" / "Capabilities" / "CapabilityRegistry.cs"
 KEYS = REPO_ROOT / "docs" / "gis" / "data" / "capability-keys.v1.json"
 ADJUDICATION = REPO_ROOT / "docs" / "gis" / "data" / "capability-manifest-adjudication.v1.json"
 OUTPUT = REPO_ROOT / "docs" / "gis" / "data" / "capability-manifest-crosswalk.v1.json"
@@ -57,7 +57,7 @@ COMMENT_RE = re.compile("//[^" + chr(10) + "]*|/[*].*?[*]/", re.DOTALL)
 
 def feature_catalog_constants() -> dict[str, str]:
     """`FeatureCatalog.XKey` -> the capability key it holds."""
-    path = REPO_ROOT / "src" / "Honua.Core" / "Features" / "Licensing" / "Domain" / "FeatureCatalog.cs"
+    path = REPO_ROOT / "src" / "Honua.Core" / "Core" / "Features" / "Licensing" / "Domain" / "FeatureCatalog.cs"
     return dict(FEATURE_CATALOG_CONST_RE.findall(path.read_text(encoding="utf-8")))
 
 
@@ -188,7 +188,7 @@ def build() -> tuple[dict, list[str]]:
             "appears exactly once."
         ),
         "sources": {
-            "manifestIds": "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs",
+            "manifestIds": "src/Honua.Core/Core/Features/Capabilities/CapabilityRegistry.cs",
             "capabilityKeys": "docs/gis/data/capability-keys.v1.json",
             "adjudication": "docs/gis/data/capability-manifest-adjudication.v1.json",
         },

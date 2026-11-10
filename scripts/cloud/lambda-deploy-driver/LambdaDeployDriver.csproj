@@ -5,7 +5,7 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../../src/Honua.Core/Honua.Core.csproj" />
+    <ProjectReference Include="../../../src/Honua.Core/Core/Honua.Core.csproj" />
     <PackageReference Include="AWSSDK.Lambda" />
     <!-- Compile the actual deploy path: no copy, CLI reimplementation, or production change. -->
     <Compile Include="../../../src/Honua.Cloud/Aws/Features/ControlPlane/AwsLambdaGitOpsDeployBackend.cs" Link="AwsLambdaGitOpsDeployBackend.cs" />

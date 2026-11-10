@@ -5,6 +5,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+from shard_capacity_partition import current_source_paths
+
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location('coverage', ROOT / 'scripts/ci/check-server-test-shard-coverage.py')
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -31,7 +33,7 @@ def check(children):
     assert sum(map(len, selected)) == len(EXPECTED), 'Duplicate method ownership.'
     assert selected[1] == PUBLISHING, 'Measured publishing methods changed ownership.'
     for child in children:
-        assert child['paths'] == ORIGINAL['paths'], 'An original source trigger changed.'
+        assert child['paths'] == current_source_paths(ORIGINAL['paths']), 'An original source trigger changed.'
         assert child['csproj'] == ORIGINAL['csproj'] == '', 'Test assembly changed.'
         assert child['max_cpu_count'] == ORIGINAL['max_cpu_count'] == '', 'Parallelism changed.'
         assert (child['test_timeout_minutes'], child['timeout_minutes']) == (27, 37), 'Budget changed.'

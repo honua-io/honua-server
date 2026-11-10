@@ -14,8 +14,8 @@ that the prompts encoded hard-won cartographic defaults — palettes,
 classification methods, class counts, ramps. **They did not.** Real cartography
 lives outside the delete boundary and is untouched:
 
-- `src/Honua.Core/Features/Styling/Domain/ColorPalettes.cs`
-- `src/Honua.Core/Features/Styling/Services/StyleSuggestionService.cs`
+- `src/Honua.Core/Core/Features/Styling/Domain/ColorPalettes.cs`
+- `src/Honua.Core/Core/Features/Styling/Services/StyleSuggestionService.cs`
 - `src/Honua.Server/Features/WorkflowPackages/AuthoringWorkflowNodeProvider.cs`
   — including the choropleth defaults (`classes = "5"`, `colorRamp = "Blues"`)
 
@@ -137,7 +137,7 @@ Recorded because `QueryGeneration` looks like the NL-to-SQL feature and is not.
 The pipeline is `NL -> FilterPlan -> FilterPlanCompiler -> SQL`, and both
 load-bearing pieces sit outside the delete boundary:
 
-- `FilterPlan` — `src/Honua.Core/Features/NlQuery/Domain/`
+- `FilterPlan` — `src/Honua.Core/Core/Features/NlQuery/Domain/`
 - `FilterPlanCompiler` — `src/Honua.Geometry/Features/NlQuery/Services/`
 
 `QueryGeneration` was one route to a `FilterPlan`. A second, separate feature —

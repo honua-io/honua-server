@@ -31,7 +31,7 @@ shell command provided by these instructions.
 Check the managed execution path before starting:
 
 ```bash
-dotnet run --project src/Honua.Geoprocessing.Cli -- doctor --managed-only --json
+dotnet run --project src/Honua.Geoprocessing/Cli -- doctor --managed-only --json
 ```
 
 Without `--managed-only`, `doctor` also checks whether Docker can find the
@@ -40,9 +40,9 @@ representative process with `--real-worker` to verify that path. Service-backed
 functions still require the integration stack.
 
 ```bash
-dotnet run --project src/Honua.Geoprocessing.Cli -- list
-dotnet run --project src/Honua.Geoprocessing.Cli -- describe geometry.buffer
-dotnet run --project src/Honua.Geoprocessing.Cli -- run geometry.buffer \
+dotnet run --project src/Honua.Geoprocessing/Cli -- list
+dotnet run --project src/Honua.Geoprocessing/Cli -- describe geometry.buffer
+dotnet run --project src/Honua.Geoprocessing/Cli -- run geometry.buffer \
   --param wkb=AQEAAAAAAAAAAAAAAAAAAAAAAAAA --param srid=3857 \
   --param distance=500 --out /tmp/honua-buffer.geojson
 ```
@@ -95,7 +95,7 @@ Contributors can pack and install a candidate outside the source tree. This is n
 the published package:
 
 ```bash
-dotnet pack src/Honua.Geoprocessing.Cli -c Release -o artifacts/gp-tool
+dotnet pack src/Honua.Geoprocessing/Cli -c Release -o artifacts/gp-tool
 cat > artifacts/gp-tool/nuget.config <<'NUGET'
 <?xml version="1.0" encoding="utf-8"?>
 <configuration>
@@ -229,9 +229,9 @@ honua-gp-devkit list --project . --json
 ## Scaffold and test your own built-in executor
 
 ```bash
-dotnet run --project src/Honua.Geoprocessing.Cli -- new geometry.recenter --kind geometry
-dotnet run --project src/Honua.Geoprocessing.Cli -- run geometry.recenter --param value=hello
-dotnet run --project src/Honua.Geoprocessing.Cli -- test geometry-recenter
+dotnet run --project src/Honua.Geoprocessing/Cli -- new geometry.recenter --kind geometry
+dotnet run --project src/Honua.Geoprocessing/Cli -- run geometry.recenter --param value=hello
+dotnet run --project src/Honua.Geoprocessing/Cli -- test geometry-recenter
 ```
 
 The scaffold writes an executor, adds its registration and catalog entry, and
@@ -247,8 +247,8 @@ mode prints the registration steps instead of applying them.
 After an intentional change, regenerate and review the golden result:
 
 ```bash
-dotnet run --project src/Honua.Geoprocessing.Cli -- test geometry-recenter --update
-dotnet run --project src/Honua.Geoprocessing.Cli -- test geometry-recenter
+dotnet run --project src/Honua.Geoprocessing/Cli -- test geometry-recenter --update
+dotnet run --project src/Honua.Geoprocessing/Cli -- test geometry-recenter
 ```
 
 `test` compares geometry with the fixture's tolerance and compares scalar or
@@ -267,7 +267,7 @@ stack. This builds the image without starting PostGIS, Redis, or the server:
 docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile gdal-worker build gdal-worker
 export HONUA_GP_WORKER_IMAGE=honua-worker-etl:gp-local
 
-dotnet run --project src/Honua.Geoprocessing.Cli -- run gdal.ogr2ogr \
+dotnet run --project src/Honua.Geoprocessing/Cli -- run gdal.ogr2ogr \
   --real-worker --input ../honua-samples/samples/gp-local-dev/points.csv \
   --param sourceFormat=CSV --param targetFormat=GeoJSON \
   --out /tmp/honua-points.geojson --glass-box
@@ -311,7 +311,7 @@ publishes that version. It references deployed process IDs and does not upload
 C# code or replace worker images.
 
 ```bash
-dotnet run --project src/Honua.Geoprocessing.Cli -- --help
+dotnet run --project src/Honua.Geoprocessing/Cli -- --help
 ```
 
 See [automate workflows](automate-workflows.md) for the workflow lifecycle and

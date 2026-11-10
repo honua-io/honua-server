@@ -1362,7 +1362,7 @@ with 1,201 seconds elapsed and four seconds of idle time at exit, but no TRX.
 The 108 passed console records are partial execution, not a completed suite.
 The deliberately throwing exception-mapping provider near the end is not itself an assertion failure.
 
-The matrix now partitions that entire legacy WMS namespace into:
+The matrix partitions that entire legacy WMS namespace into the following children:
 
 - `OGC Classic Maps Core`: the measured `OgcClassicWmsTests` class family.
 - `OGC Classic Maps Supporting`: the exact complement, retaining temporal, bounds, CRS,
@@ -1444,3 +1444,114 @@ Both budgets match the original shard. These class-interval estimates are not
 fresh post-split runtime measurements. The method-level partition guard rejects
 missing, overlapping or leaking ownership. Package, form and temporal source
 paths select their executing child within the unchanged six-family PR cap.
+
+
+## Same-project consolidation withdrawn after contention failures
+
+The proposed seven packs reduced the roster from 132 to 123 jobs. Ordinary full runs
+[42524495976](https://github.com/honua-io/honua-server/actions/runs/42524495976),
+[42518262877](https://github.com/honua-io/honua-server/actions/runs/42518262877) and
+[42532577743](https://github.com/honua-io/honua-server/actions/runs/42532577743)
+provided three observations per former member. Summing each member's nearest-rank p90
+(the maximum of three samples) put every proposed pack below 70% utilization.
+That estimate did not predict execution under contention.
+
+In integration batch [42561946615](https://github.com/honua-io/honua-server/actions/runs/42561946615)
+at source `67e5fd98106bef528a406c0ff994e647a8eb93dc`, both MapServer and Scene
+reached their unchanged inner caps while still producing output. The table audits all
+seven packs against a requirement that measured p90 use at most 70% of the inner cap
+(at least 30% headroom). Elapsed times below come from the actual test step, excluding
+queue, build and artifact time. Cancelled steps are censored observations, not completed
+samples and not valid inputs to a completion-time p90.
+
+| Proposed pack | Historical member p90 sum | Inner cap | Historical utilization | Contended test-step observation | Decision |
+| --- | --- | --- | --- | --- | --- |
+| GeoServices Maintenance and Durable Jobs | 894s | 22m | 67.7% | Cancelled at 1095s; already 83.0% of cap | Restore three members |
+| GeoServices SOAP and MVT Tiles | 327s | 22m | 24.8% | Test step never started | Restore two members |
+| OData Errors and Mutations | 817s | 20m | 68.1% | Test step never started | Restore two members |
+| OGC API Rendering Records and Tiles | 882s | 22m | 66.8% | Cancelled at 818s; completion unknown | Restore two members |
+| OGC Classic WMS | 767s | 20m | 63.9% | Test step never started | Restore two members |
+| GeoServices MapServer | 1139s | 29m | 65.5% | Capacity exhausted at 1749s; still emitting output | Restore three members |
+| Scene | 1203s | 30m | 66.8% | Capacity exhausted at 1810s; still emitting output | Restore two members |
+
+There is no completed contended sample for any pack, so no contended p90 or 30% margin
+can honestly be established. All seven packs are withdrawn rather than extrapolating
+new timeouts from incomplete observations. The canonical roster returns to **132 jobs**,
+with the exact former selectors, projects, paths, dispatch ranks, inner/outer budgets,
+CPU settings and report flags. Method-level SOAP progress ownership and the original
+WMS, MapServer and Scene partitions remain intact. No test is dropped, and no timeout
+is raised. Historical receipts retain the roster at their own source SHA.
+
+Issue #7170 remains open. Before reintroducing any pack, collect completed durations
+under representative contention, evaluate its completed-sample p90 against 70% of the
+proposed inner budget, and qualify it in main's ordinary integration batch. Historical
+member sums alone do not qualify a pack. The deeper 60-job consolidation remains parked.
+
+## Capabilities budget
+
+The `Server Features Capabilities` test-step history is:
+
+| Full CI run | Test-step seconds | Outcome |
+|---|---:|---|
+| [42518262877](https://github.com/honua-io/honua-server/actions/runs/42518262877) | 1028 | Passed |
+| [42524495976](https://github.com/honua-io/honua-server/actions/runs/42524495976) | 922 | Passed |
+| [42532577743](https://github.com/honua-io/honua-server/actions/runs/42532577743) | 1072 | Passed |
+| [42575571107](https://github.com/honua-io/honua-server/actions/runs/42575571107/job/129039342167) | 1323 | Capacity exhausted at the 22-minute cap |
+
+The completed hosted-run nearest-rank p90 is 17.9 minutes. The failed batch
+produced output two seconds before termination and no final TRX; its 22.1-minute
+duration is censored and does not establish the time needed to finish.
+
+The build-host reproduction of batch source `0f1e9d672f20ffa11dc6055c675963cd9ce437b2`
+completed the unchanged selection on 9 November in 1,402 seconds: 101 executed,
+101 passed, zero failed or skipped. The timing artifact records a clean source
+snapshot and passing execution attestation. This exceeds 70% of the provisional
+32-minute cap (22.4 minutes), so the measured basis now sets a 34-minute inner
+cap: `ceil((1402 / 60) / 0.7)`. Utilization is 68.7%; the 44-minute outer cap
+preserves ten minutes for setup and artifact upload. Test selection and the
+five-minute silence detector stay the same.
+
+Release coordination authorized this capacity rebase for #7210 as an exception
+to policy rule 4. This focused build-host result establishes a completed sample,
+not hosted contention qualification. The passing combined batch must confirm
+that the completed test step uses at most 70% of the new cap (23.8 minutes), or
+supply a new measured basis for splitting or rebudgeting.
+
+## Seven slowest shards split under the PR time budget (November 2026)
+
+PR Gate defers any affected shard whose `dispatch_rank` exceeds
+`pr_time_budget.max_shard_minutes` (10). The seven shards over 20 measured minutes are
+split into numbered children (`<parent> 1` .. `<parent> N`) so each fits the budget and
+can run before merge.
+
+Children are sized from the per-test durations in one green trunk full run's TRX,
+attributed sequentially (each test is charged the time since the previous test ended,
+so per-test setup counts) and scaled so the shard's total matches its five-run p50
+test-step minutes. Each child targets at most 380 seconds of tests, about 8.5 job
+minutes with the measured setup overhead. A class over that target is split by method;
+methods whose names are prefixes of one another stay together. Every child except one
+lists its classes or methods intersected with the parent filter. The remaining child is
+the complement: the parent filter minus everything the others list, so new classes and
+methods have exactly one owner. Children keep the parent's paths, project, budgets and
+report flags. `dispatch_rank` holds the estimate until a full run measures the children.
+
+| Parent | Measured job p50 (min) | Children | Estimated child job minutes | Partition granularity |
+|---|---:|---:|---|---|
+| WFS | 55.4 | 9 | 8.1-8.4 | method |
+| Security and Authorization | 42.0 | 7 | 7.7-7.8 | method |
+| Server Features Spec Printing and Static Maps | 25.2 | 4 | 7.8-8.3 | method |
+| FeatureServer Query Services and Replication | 22.7 | 4 | 7.3-7.7 | class |
+| Server Features Streaming Endpoints | 22.0 | 4 | 3.2-8.4 | method |
+| Admin & Infrastructure | 21.6 | 4 | 6.9-7.2 | class |
+| Server Features Admin Integrations and Automation | 21.4 | 4 | 6.9-6.9 | class |
+
+`scripts/ci/check-server-test-shard-coverage.py` proves each partition exact: every
+class (or method, for method partitions) the parent selected belongs to exactly one
+child. A split parent that was already a child of another partition is replaced in that
+partition's child list.
+
+Route assertions in `scripts/ci/validate-ci-router.sh` may name a split parent, which
+expands to all of its children. The affected-shard selector ranks one child per split
+family before any family's second child when the routing signals tie, so a change to a
+class split across many children does not take every slot from another changed test's
+owner.
