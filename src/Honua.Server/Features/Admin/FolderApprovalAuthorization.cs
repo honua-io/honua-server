@@ -238,7 +238,7 @@ internal static class FolderApprovalAuthorization
             writer.WriteEndArray();
             if (OperationProposerApiKeyAuthority.IsApiKeyActor(authorization.RequesterId))
                 await WriteCredentialPolicyAsync(writer, services, authorization.RequesterId, cancellationToken).ConfigureAwait(false);
-            writer.WriteBooleanValue(LicenseGate.HasLiveEntitlement(services, FeatureCatalog.OidcClaimsMappingKey));
+            writer.WriteBooleanValue(LicenseGate.HasLiveEntitlement(services, FeatureCatalog.OidcAuthenticationKey));
             await WriteMembershipPolicyAsync(writer, services, authorization, requester, cancellationToken).ConfigureAwait(false);
             var store = services.GetService<IRoleStore>();
             writer.WriteBooleanValue(store is not null);

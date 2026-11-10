@@ -495,6 +495,8 @@ internal sealed class PortalOAuthPrincipal
 
     public bool? RolesRequireClaimsMappingEntitlement { get; init; }
 
+    public bool RolesDependOnlyOnRoleClaimSelection { get; init; }
+
     // Null fallback roles mean unknown and stay fail-closed; an empty array is a known empty fallback.
     public string[]? RolesWithoutClaimsMapping { get; init; }
 
@@ -512,6 +514,7 @@ internal sealed class PortalOAuthPrincipal
             TenantId = principal.TenantId,
             Roles = principal.Roles.ToArray(),
             RolesRequireClaimsMappingEntitlement = principal.RolesRequireClaimsMappingEntitlement,
+            RolesDependOnlyOnRoleClaimSelection = principal.RolesDependOnlyOnRoleClaimSelection,
             RolesWithoutClaimsMapping = principal.RolesWithoutClaimsMapping?.ToArray(),
             TenantRequiresClaimsMappingEntitlement =
                 principal.TenantId is not null && principal.TenantRequiresClaimsMappingEntitlement,

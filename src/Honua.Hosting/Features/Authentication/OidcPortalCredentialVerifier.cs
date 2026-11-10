@@ -141,8 +141,12 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
 
         // Carry the transformation's provenance marker so the issued token knows whether its
         // roles depend on an entitlement that can expire (honua-server#2997 review).
-        var rolesRequireClaimsMapping = principal.HasClaim(
-            static claim => claim.Type == OidcClaimsTransformation.RolesFromClaimsMappingClaimType);
+        var rolesMappingMarker = principal.FindFirst(OidcClaimsTransformation.RolesFromClaimsMappingClaimType);
+        var rolesRequireClaimsMapping = rolesMappingMarker is not null;
+        var rolesDependOnlyOnRoleClaimSelection = string.Equals(
+            rolesMappingMarker?.Value,
+            OidcClaimsTransformation.RoleClaimSelectionProvenance,
+            StringComparison.Ordinal);
         var rolesWithoutClaimsMapping = rolesRequireClaimsMapping
             ? principal.FindAll(OidcClaimsTransformation.RolesWithoutClaimsMappingClaimType)
                 .Select(static claim => claim.Value)
@@ -185,7 +189,8 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
                 PortalCredentialSourceKind.FederatedToken,
                 Reference: $"{bridged?.Issuer}|{principalId}",
                 Version: null,
-                ExpiresAt: bridgedExpiry));
+                ExpiresAt: bridgedExpiry),
+            RolesDependOnlyOnRoleClaimSelection: rolesDependOnlyOnRoleClaimSelection);
     }
 
     private async Task<TokenValidationParameters?> ResolveParametersAsync(

@@ -11,7 +11,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication;
 
-// Custom claims mapping is skipped, and is not an authentication failure, when the identity.claims-mapping entitlement is inactive.
+// Role claim selection needs identity.oidc; custom mappings and tenant mapping need identity.claims-mapping. Either is skipped, and is not an authentication failure, when its entitlement is inactive.
 internal sealed class OidcClaimsTransformation(
     IOptions<OidcAuthenticationOptions> oidcOptions,
     ILogger<OidcClaimsTransformation> logger,
@@ -21,6 +21,10 @@ internal sealed class OidcClaimsTransformation(
     private readonly OidcAuthenticationOptions _options = oidcOptions.Value;
 
     internal const string RolesFromClaimsMappingClaimType = "honua_roles_from_claims_mapping";
+
+    internal const string RoleClaimSelectionProvenance = "role-claim-selection";
+
+    internal const string CustomMappingProvenance = "custom-mapping";
 
     internal const string RolesWithoutClaimsMappingClaimType = "honua_roles_without_claims_mapping";
 
@@ -80,23 +84,32 @@ internal sealed class OidcClaimsTransformation(
             return principal;
         }
 
-        // #2997: custom claims mapping is Enterprise (identity.claims-mapping). When configured
-        // but unentitled, skip the custom mappings and additional role claim types while default
-        // claims normalization continues to run.
-        // A non-default PRIMARY RoleClaimType is a custom mapping too. Without counting it,
-        // an unentitled deployment could point RoleClaimType at `groups` and have raw provider
-        // group values read as roles and match AdminRoles, straight past this gate
-        // (honua-server#2997 review).
+        // Founder ruling (2026-11-09): choosing which claims carry roles (RoleClaimType,
+        // AdditionalRoleClaimTypes) belongs to single-provider OIDC (identity.oidc, Pro), so Okta
+        // `groups` and Auth0 namespaced role claims work without identity.claims-mapping. Below
+        // Pro the selection is skipped and only the default role claim types are read, so an
+        // unentitled deployment cannot point RoleClaimType at `groups` and have raw provider
+        // group values read as roles and match AdminRoles.
         var customRoleClaimType = !string.Equals(
             _options.ClaimsMapping.RoleClaimType,
             ClaimsMappingOptions.DefaultRoleClaimType,
             StringComparison.OrdinalIgnoreCase);
-        var customMappingConfigured = _options.ClaimsMapping.CustomMappings.Count > 0
-            || _options.ClaimsMapping.AdditionalRoleClaimTypes.Length > 0
-            || customRoleClaimType;
+        var roleClaimSelectionConfigured = customRoleClaimType
+            || _options.ClaimsMapping.AdditionalRoleClaimTypes.Length > 0;
+        var roleClaimSelectionEntitled = !roleClaimSelectionConfigured
+            || LicenseGate.IsEntitlementActive(serviceProvider, FeatureCatalog.OidcAuthenticationKey);
+        if (!roleClaimSelectionEntitled)
+        {
+            OidcAuthenticationLog.RoleClaimSelectionNotEntitled(logger);
+        }
+
+        // #2997: arbitrary CustomMappings, including a mapped tenant, are Enterprise
+        // (identity.claims-mapping). When configured but unentitled they are skipped while
+        // default claims normalization continues to run.
+        var customMappingConfigured = _options.ClaimsMapping.CustomMappings.Count > 0;
         var claimsMappingEntitled = !customMappingConfigured
             || LicenseGate.IsEntitlementActive(serviceProvider, FeatureCatalog.OidcClaimsMappingKey);
-        if (customMappingConfigured && !claimsMappingEntitled)
+        if (!claimsMappingEntitled)
         {
             OidcAuthenticationLog.CustomClaimsMappingNotEntitled(logger);
         }
@@ -141,10 +154,11 @@ internal sealed class OidcClaimsTransformation(
         }
 
         // Map roles from provider-specific claims
-        var rolesWithoutMapping = GetRoleClaims(identity, claimsMappingEntitled: false);
-        var roles = GetRoleClaims(mappingSource, claimsMappingEntitled);
+        var rolesWithoutMapping = GetRoleClaims(identity, roleClaimSelectionEntitled: false);
+        var roles = GetRoleClaims(mappingSource, roleClaimSelectionEntitled);
         var fallbackRoles = BuildEffectiveRoles(identity, rolesWithoutMapping);
         var fullRoles = BuildEffectiveRoles(identity, roles);
+        var customMappingAddsRole = false;
 
         // A CustomMappings entry targeting ClaimTypes.Role runs after the gathered-role and
         // admin passes below. Include any value it will actually emit in the full persisted set
@@ -161,6 +175,7 @@ internal sealed class OidcClaimsTransformation(
                     !fullRoles.Contains(sourceValue, StringComparer.OrdinalIgnoreCase))
                 {
                     fullRoles.Add(sourceValue);
+                    customMappingAddsRole = true;
                 }
             }
         }
@@ -182,9 +197,13 @@ internal sealed class OidcClaimsTransformation(
         // mapping-derived even though the loop emitted nothing - so an expired entitlement
         // stripped a legitimate role that direct OIDC authentication keeps
         // (honua-server#2997 review).
-        var rolesDependOnClaimsMapping = claimsMappingEntitled
+        var rolesDependOnClaimsMapping = (roleClaimSelectionEntitled || claimsMappingEntitled)
             && !new HashSet<string>(fullRoles, StringComparer.OrdinalIgnoreCase)
                 .SetEquals(fallbackRoles);
+
+        // The restore revalidates against identity.oidc only when no custom mapping contributed
+        // a role; a role set a custom mapping touched needs identity.claims-mapping as a whole.
+        var rolesProvenance = customMappingAddsRole ? CustomMappingProvenance : RoleClaimSelectionProvenance;
 
         // Roles are not the only authorization claim a CustomMappings entry can synthesize.
         // A mapping may target `tenant_id` (or the Azure `tid` the verifier falls back to),
@@ -221,7 +240,7 @@ internal sealed class OidcClaimsTransformation(
 
         if (rolesDependOnClaimsMapping && !identity.HasClaim(c => c.Type == RolesFromClaimsMappingClaimType))
         {
-            transformedClaims.Add(new Claim(RolesFromClaimsMappingClaimType, "1"));
+            transformedClaims.Add(new Claim(RolesFromClaimsMappingClaimType, rolesProvenance));
             transformedClaims.AddRange(fallbackRoles
                 .Where(role => !identity.HasClaim(
                     claim => claim.Type == RolesWithoutClaimsMappingClaimType &&
@@ -268,7 +287,7 @@ internal sealed class OidcClaimsTransformation(
             OidcAuthenticationLog.ClaimsTransformed(logger, transformedClaims.Count);
         }
 
-        // Gating the claim GATHERING above is not sufficient on its own. The JWT/OIDC handlers
+        // Gating the role claim GATHERING above is not sufficient on its own. The JWT/OIDC handlers
         // install ClaimsMapping.RoleClaimType as TokenValidationParameters.RoleClaimType, so the
         // identity itself resolves IsInRole / [Authorize(Roles=...)] against THAT claim type,
         // never consulting the ClaimTypes.Role claims this transformation just normalized into.
@@ -334,7 +353,7 @@ internal sealed class OidcClaimsTransformation(
         }
     }
 
-    private List<string> GetRoleClaims(ClaimsIdentity identity, bool claimsMappingEntitled)
+    private List<string> GetRoleClaims(ClaimsIdentity identity, bool roleClaimSelectionEntitled)
     {
         var roles = new List<string>();
 
@@ -350,18 +369,11 @@ internal sealed class OidcClaimsTransformation(
         // existing plural `roles` normalization.
         roles.AddRange(identity.FindAll("role").Select(c => c.Value));
 
-        // A configured PRIMARY role claim type is only honoured when entitled, for the same
-        // reason as the additional types below (honua-server#2997 review).
-        if (claimsMappingEntitled)
+        // The configured primary and additional role claim types (e.g. Okta "groups", Auth0
+        // "{namespace}/roles") are honoured only under identity.oidc.
+        if (roleClaimSelectionEntitled)
         {
             roles.AddRange(identity.FindAll(_options.ClaimsMapping.RoleClaimType).Select(c => c.Value));
-        }
-
-        // Check provider-configurable additional role claim types
-        // (e.g. Okta "groups", Auth0 "{namespace}/roles", "{namespace}/permissions") —
-        // Enterprise identity.claims-mapping only (#2997).
-        if (claimsMappingEntitled)
-        {
             foreach (var claimType in _options.ClaimsMapping.AdditionalRoleClaimTypes)
             {
                 roles.AddRange(identity.FindAll(claimType).Select(c => c.Value));

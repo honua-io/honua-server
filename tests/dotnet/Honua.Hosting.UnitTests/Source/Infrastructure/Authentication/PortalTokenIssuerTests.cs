@@ -343,6 +343,63 @@ public sealed class PortalTokenIssuerTests
     }
 
     [UnitTest]
+    public async Task ValidateAsync_RolesFromRoleClaimSelection_SurviveOnProAndFallBackOnCommunity()
+    {
+        var entitlements = new MutableLicenseEntitlementService(HonuaEdition.Pro);
+        var issuer = CreateIssuer(entitlements);
+        var issuance = await issuer.IssueAsync(
+            new PortalTokenIssueRequest(
+                PrincipalId: "alice",
+                DisplayName: null,
+                TenantId: null,
+                Roles: ["viewer", "editor"],
+                ClientType: PortalTokenClientType.Ip,
+                BindingValue: "192.0.2.12",
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30),
+                RolesRequireClaimsMappingEntitlement: true,
+                RolesWithoutClaimsMapping: ["viewer"],
+                RolesDependOnlyOnRoleClaimSelection: true),
+            CancellationToken.None);
+        var binding = new PortalTokenBinding(Referer: null, ClientIp: "192.0.2.12");
+
+        var onPro = await issuer.ValidateAsync(issuance.Token, binding, CancellationToken.None);
+
+        onPro!.Principal.IsInRole("editor").Should().BeTrue(
+            "role claim selection needs identity.oidc, which Pro includes without identity.claims-mapping");
+
+        entitlements.Expire();
+        var afterExpiry = await issuer.ValidateAsync(issuance.Token, binding, CancellationToken.None);
+
+        afterExpiry!.Principal.IsInRole("viewer").Should().BeTrue();
+        afterExpiry.Principal.IsInRole("editor").Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task ValidateAsync_RolesFromCustomMapping_FallBackOnProWithoutClaimsMapping()
+    {
+        var issuer = CreateIssuer(new MutableLicenseEntitlementService(HonuaEdition.Pro));
+        var issuance = await issuer.IssueAsync(
+            new PortalTokenIssueRequest(
+                PrincipalId: "alice",
+                DisplayName: null,
+                TenantId: null,
+                Roles: ["viewer", "editor"],
+                ClientType: PortalTokenClientType.Ip,
+                BindingValue: "192.0.2.13",
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30),
+                RolesRequireClaimsMappingEntitlement: true,
+                RolesWithoutClaimsMapping: ["viewer"]),
+            CancellationToken.None);
+
+        var validation = await issuer.ValidateAsync(
+            issuance.Token,
+            new PortalTokenBinding(Referer: null, ClientIp: "192.0.2.13"),
+            CancellationToken.None);
+
+        validation!.Principal.IsInRole("editor").Should().BeFalse();
+    }
+
+    [UnitTest]
     public async Task ValidateAsync_MappingRolesWithUnknownFallback_FailsClosedAfterEntitlementExpires()
     {
         var entitlements = new MutableLicenseEntitlementService(HonuaEdition.Enterprise);

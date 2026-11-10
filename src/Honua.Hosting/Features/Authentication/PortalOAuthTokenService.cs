@@ -503,7 +503,8 @@ internal sealed class PortalOAuthTokenService(
                 RolesRequireClaimsMappingEntitlement: principal.RolesRequireClaimsMappingEntitlement,
                 TenantRequiresClaimsMappingEntitlement: principal.TenantRequiresClaimsMappingEntitlement,
                 RolesWithoutClaimsMapping: principal.RolesWithoutClaimsMapping,
-                Source: principal.Source),
+                Source: principal.Source,
+                RolesDependOnlyOnRoleClaimSelection: principal.RolesDependOnlyOnRoleClaimSelection),
             cancellationToken).ConfigureAwait(false);
 
         string? refreshToken = null;
