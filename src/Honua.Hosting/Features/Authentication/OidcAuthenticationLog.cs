@@ -120,6 +120,12 @@ internal static partial class OidcAuthenticationLog
     public static partial void CustomClaimsMappingNotEntitled(ILogger logger);
 
     [LoggerMessage(
+        EventId = 4221,
+        Level = LogLevel.Debug,
+        Message = "OIDC role claim types are configured but the identity.oidc entitlement is not active; reading roles from the default claim types only.")]
+    public static partial void RoleClaimSelectionNotEntitled(ILogger logger);
+
+    [LoggerMessage(
         EventId = 4219,
         Level = LogLevel.Debug,
         Message = "OIDC token reuse admitted as a continuation of the server-issued session it is bound to.")]

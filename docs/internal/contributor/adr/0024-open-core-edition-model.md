@@ -86,9 +86,9 @@ Everything in Community, plus:
 | **MCP gRPC Transport** | MCP server over gRPC-Web (lower latency than REST) | Product Assurance |
 | **CDC + Event Bus** | Feature change events via webhooks and Redis Streams — real-time notifications on edits | Integrations |
 | **Real-Time Streaming** | WebSocket/SSE feature subscriptions with spatial and attribute filters | Integrations |
-| **Spatial Analytics API** | Server-side clustering (DBSCAN), density heatmaps, spatial joins, buffer analytics — PostGIS power as clean endpoints | Product Assurance |
+| **Spatial Analytics API** | Server-side clustering (DBSCAN), density heatmaps, spatial joins, buffer analytics, and data enrichment (which runs on spatial join) — PostGIS power as clean endpoints | Product Assurance |
 | **AI Spatial Agent** | Natural language spatial query translation; anomaly detection (statistical outliers on geometry/attributes); auto-documentation (ISO 19115/FGDC metadata generation from layer schemas); schema suggestion (field type, index, and spatial reference recommendations for imported data) — all via enhanced MCP | Product Assurance |
-| **Basic SSO** | Single-provider OIDC authentication with Azure AD, Google, Okta, Auth0, or generic OIDC — no SSO tax for teams that only need one identity provider | Single Sign-On |
+| **Basic SSO** | Single-provider OIDC authentication with Azure AD, Google, Okta, Auth0, or generic OIDC, including the choice of which claims carry roles — no SSO tax for teams that only need one identity provider | Single Sign-On |
 | **Offline Sync** | GeoPackage-based delta sync for field collection workflows | Product Assurance |
 | **Style Engine** | Programmatic style generation, theme engine (dark, accessible, print), style versioning and diffing | Product Assurance |
 | **Priority Support** | Email support, 48hr response SLA | Support |
@@ -108,7 +108,7 @@ Everything in Pro, plus:
 
 | Area | Included | EnterpriseReady Pillar |
 |------|----------|----------------------|
-| **Identity Governance** | Multi-provider OIDC configuration, claim-to-role mapping, SAML bridge, SCIM user/group provisioning | Single Sign-On |
+| **Identity Governance** | Multi-provider OIDC configuration, custom claim mappings and tenant mapping, SAML bridge, SCIM user/group provisioning | Single Sign-On |
 | **RBAC governance** | Advanced organisational policy administration; essential authorization and isolation remain baseline in every edition | Role-Based Access Control |
 | **Audit governance** | Advanced audit reporting and SIEM export; essential audit integrity remains baseline in every edition | Audit Logging |
 | **Change Management** | Advanced GitOps automation, drift detection and organisational approval workflows; essential rollback/recovery remains baseline | Change Management |
@@ -249,13 +249,17 @@ areas. Decisions, all "gate as declared" (no tier changes):
   keeps working regardless of edition, and no eager boot-time validator is
   introduced. `identity.claims-mapping` (Enterprise) has no admin DTO surface;
   it is enforced as a config-driven soft-degrade in `OidcClaimsTransformation`:
-  configured `CustomMappings`/`AdditionalRoleClaimTypes` are skipped (default
+  configured `CustomMappings`, including a mapped tenant, are skipped (default
   claims normalization still runs) when the entitlement is missing, so
   authentication never fails on edition.
-  **A non-default `ClaimsMapping:RoleClaimType` is a custom mapping too**, and is
-  gated with them — treating the primary role-claim setting as an ungated
-  exception would let an unentitled deployment point it at a provider claim such
-  as `groups` and have raw group values read as roles and match `AdminRoles`.
+  **Choosing which claims carry roles belongs to `identity.oidc` (Pro)** (founder
+  decision, 2026-11-09, superseding the earlier rule here that classed a
+  non-default `ClaimsMapping:RoleClaimType` as a custom mapping). `RoleClaimType`
+  and `AdditionalRoleClaimTypes` are honoured under a live `identity.oidc`
+  entitlement and skipped below Pro, so a Community deployment still cannot point
+  them at a provider claim such as `groups` and have raw group values read as
+  roles and match `AdminRoles`. A non-default `Rbac:RoleClaimType` follows the
+  same rule.
   Gating the claim *gathering* is not sufficient on its own: the JWT/OIDC handlers
   install the configured type as `TokenValidationParameters.RoleClaimType`, so the
   identity resolves `IsInRole`/`[Authorize(Roles=…)]` against that claim directly
@@ -270,10 +274,12 @@ areas. Decisions, all "gate as declared" (no tier changes):
   portal token exchange persists the transformed roles into a durable record and
   the restore path never re-runs the transformation, so a token minted while the
   entitlement was valid would keep satisfying role authorization after it expired.
-  The transformation marks a principal whose roles depended on claims mapping, the
-  exchange persists that provenance, and `PortalTokenIssuer` re-checks the live
-  entitlement on every restore and introspection — dropping those roles when it is
-  no longer active.
+  The transformation marks a principal whose roles depended on role claim selection
+  or on a custom mapping, the exchange persists that provenance, and
+  `PortalTokenIssuer` re-checks the matching live entitlement (`identity.oidc` for
+  role claim selection alone, `identity.claims-mapping` once a custom mapping
+  contributed a role) on every restore and introspection — dropping those roles
+  when it is no longer active.
 - **Alerts/Channels (#2998).** The standalone `Alerts:Edition` knob no longer
   defines the alert tier. `IAlertEditionPolicy` derives allowed triggers and
   channels from the active license entitlements
@@ -326,3 +332,20 @@ areas. Decisions, all "gate as declared" (no tier changes):
   services registered does not cache. `AddOutputCache` registration remains
   unconditional, so when the branch is skipped the endpoint `CacheOutput` metadata
   is inert and Community deployments serve identical, uncached responses.
+
+### 2026-11-09 — Lower-edition capabilities and higher-edition entitlements
+
+A review found capabilities whose own edition was lower than an entitlement they
+needed. Founder decisions:
+
+- **`enrichment.datasets` is Pro.** Every enrichment route (catalog, run, dataset
+  discovery, dataset registration) is gated by `analytics.spatial-join`, so the
+  key is listed as Pro and declares that requirement.
+- **OIDC role claim selection is Pro.** See the amended 2026-07-27 OIDC entry.
+- **Declared requirements.** A capability lists the keys it requires
+  (`CapabilityKeyDefinition.Requires`), and a unit test fails when a required key
+  sits in a higher edition than the capability that requires it.
+- **Known exception.** `jobs.durable-runtime` and `operations.proposals`
+  (Community) still require `caching.redis` (Pro) when Redis is configured. The
+  test lists both as allowed exceptions until durable job and approval state
+  moves to PostgreSQL (honua-server#6809).
