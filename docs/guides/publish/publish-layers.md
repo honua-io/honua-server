@@ -125,7 +125,7 @@ Accepted work uses its own publication budget and survives a disconnected
 request. Small tables retain the HTTP 201 layer response. Lambda needs a
 configured remote durable runner for large tables; without one it returns a
 typed 503 rather than accepting work that cannot finish. See
-[AWS Batch worker configuration](../../operator/geoprocessing-aws-batch.md#large-layer-publishes)
+[AWS Batch worker configuration](../deploy/geoprocessing-aws-batch.md#large-layer-publishes)
 for the API and worker rollout prerequisites.
 
 Publication and refresh copy every page from one repeatable-read database
