@@ -11,6 +11,13 @@ import subprocess
 from flake_quarantine import (MAX_AGE, MAX_QUARANTINED, SCHEMA, active_entries,
                               read_cases, retry_replacements, validate_identity)
 
+ISSUES_PER_PAGE = 100
+MAX_ISSUE_PAGES = 100
+MAX_CANDIDATE_TESTS = 1000
+MAX_CANDIDATE_FILES = 1000
+MAX_CANDIDATE_BYTES = 64 * 1024
+MAX_EVIDENCE_BYTES = 64 * 1024 * 1024
+
 LABEL = 'ci-flake'
 ACTIVE_LABEL = 'ci-flake-quarantine'
 PREFIX = 'Automated flaky-test evidence. Fix the test before closing this issue.\n\n```json\n'
@@ -28,10 +35,10 @@ def api(endpoint, payload=None):
 def issues(label, state='open'):
     repository = os.environ['GITHUB_REPOSITORY']
     found = []
-    for page in range(1, 101):
-        batch = api(f'repos/{repository}/issues?labels={label}&state={state}&per_page=100&page={page}')
+    for page in range(1, MAX_ISSUE_PAGES + 1):
+        batch = api(f'repos/{repository}/issues?labels={label}&state={state}&per_page={ISSUES_PER_PAGE}&page={page}')
         found.extend(issue for issue in batch if 'pull_request' not in issue)
-        if len(batch) < 100:
+        if len(batch) < ISSUES_PER_PAGE:
             return found
     raise ValueError('Issue inventory exceeded bounded pagination')
 
@@ -64,14 +71,14 @@ def verified_tests(path, candidate):
     first = path.with_name(stem + '.first-attempt.xml')
     retry = path.with_name(stem + '.retry-attempt.xml')
     for name, evidence in (('first', first), ('retry', retry)):
-        if evidence.stat().st_size > 64 * 1024 * 1024:
+        if evidence.stat().st_size > MAX_EVIDENCE_BYTES:
             raise ValueError('Retry evidence exceeds size limit')
         if hashlib.sha256(evidence.read_bytes()).hexdigest() != candidate[name + '_sha256']:
             raise ValueError('Retry evidence digest mismatch')
     retry_replacements(first, retry)
     failed = {case[0] for case in read_cases(first) if case[2] == 'Failed'}
     tests = candidate['tests']
-    if not isinstance(tests, list) or len(tests) > 1000 or set(tests) != failed:
+    if not isinstance(tests, list) or len(tests) > MAX_CANDIDATE_TESTS or set(tests) != failed:
         raise ValueError('Candidates must exactly identify the verified failed methods')
     return tests
 
@@ -79,10 +86,10 @@ def verified_tests(path, candidate):
 def candidate_entries(directory):
     entries = {}
     files = list(directory.rglob('*.flake-candidates.json'))
-    if len(files) > 1000:
+    if len(files) > MAX_CANDIDATE_FILES:
         raise ValueError('Too many candidate files')
     for path in files:
-        if path.stat().st_size > 65536:
+        if path.stat().st_size > MAX_CANDIDATE_BYTES:
             raise ValueError('Candidate exceeds size limit')
         candidate = json.loads(path.read_text())
         if candidate.get('schema') != 'honua.flake-candidates/v1':
@@ -91,7 +98,7 @@ def candidate_entries(directory):
             entry = dict(project=candidate['project'], test=test)
             validate_identity(entry)
             entries[title(entry)] = entry
-    if len(entries) > 1000:
+    if len(entries) > MAX_CANDIDATE_TESTS:
         raise ValueError('Too many candidate tests')
     return entries
 

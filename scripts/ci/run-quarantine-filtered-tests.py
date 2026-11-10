@@ -11,7 +11,7 @@ spec.loader.exec_module(runner)
 
 def main():
     command = sys.argv[1:]
-    if command[:2] != ['dotnet', 'test'] or len(command) < 3:
+    if command[:2] != ['dotnet', 'test'] or not command[2:]:
         raise ValueError('Expected dotnet test and an explicit project')
     return runner.call_test(runner.snapshot_filter(command, command[2]))
 

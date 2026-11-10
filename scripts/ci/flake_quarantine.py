@@ -81,8 +81,12 @@ def read_cases(path):
         cases.append((method, row.attrib['testName'], row.attrib['outcome'], row))
     if not cases:
         raise ValueError('No executed result rows')
-    totals = Counter(case[2] for case in cases)
-    expected = dict(total=len(cases), executed=len(cases) - totals['NotExecuted'],
+    validate_run_summary(tree, Counter(case[2] for case in cases))
+    return cases
+
+
+def validate_run_summary(tree, totals):
+    expected = dict(total=sum(totals.values()), executed=sum(totals.values()) - totals['NotExecuted'],
                     passed=totals['Passed'], failed=totals['Failed'])
     counters = tree.find('.//{*}ResultSummary/{*}Counters')
     if counters is None or any(int(counters.attrib[key]) != value for key, value in expected.items()):
@@ -98,7 +102,6 @@ def read_cases(path):
             raise ValueError('TRX contains run-level failures')
     if tree.findall('.//{*}ResultSummary/{*}Output/{*}ErrorInfo'):
         raise ValueError('TRX contains run-level failures')
-    return cases
 
 
 def retry_replacements(first, retry):
