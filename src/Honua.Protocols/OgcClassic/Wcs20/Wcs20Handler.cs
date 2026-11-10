@@ -735,7 +735,7 @@ internal sealed partial class Wcs20Handler
         var raster = await GetPrimaryRasterWithExtentAsync(layerId, cancellationToken).ConfigureAwait(false);
         return raster is null
             ? new LayerCoverageResult(null, null)
-            : new LayerCoverageResult(new WcsCoverage(resource, layerId, raster.Value, null), null);
+            : new LayerCoverageResult(new WcsCoverage(resource, layerId, raster.Value, owningService), null);
     }
 
     private static bool TryResolveResourceForLayer(

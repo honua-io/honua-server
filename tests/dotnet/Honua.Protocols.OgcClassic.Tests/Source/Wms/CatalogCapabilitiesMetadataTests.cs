@@ -31,13 +31,11 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
     [InlineData("/ogc/services/test/wms?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.1.1", "Service survey")]
     [InlineData("/ogc/services/test/wmts?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0", "Service survey")]
     [InlineData("/ogc/services/test/wcs?SERVICE=WCS&REQUEST=GetCapabilities&VERSION=2.0.1", "Service survey")]
-    [InlineData("/rest/services/1/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCapabilities&VERSION=2.0.1", "Service survey")]
     [InlineData("/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0", "Global survey")]
     [InlineData("/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=1.1.0", "Global survey")]
     [Endpoint("GET /ogc/services/{serviceId}/wms")]
     [Endpoint("GET /ogc/services/{serviceId}/wmts")]
     [Endpoint("GET /ogc/services/{serviceId}/wcs")]
-    [Endpoint("GET /rest/services/{serviceId}/ImageServer/WCS")]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
     [InterfaceOperation(TestProtocols.Wmts10, "GetCapabilities")]
@@ -61,6 +59,19 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
         identification.Elements().Single(element => element.Name.LocalName == "Fees").Value.Should().Be("USD 5 per request");
         identification.Elements().Single(element => element.Name.LocalName == "AccessConstraints").Value.Should().Be("Registered users");
         text.Should().NotContain("1 Honua Way").And.NotContain("support@honua.local").And.NotContain("Honua Support");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/WCS")]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCapabilities")]
+    public Task NumericWcsCapabilities_CatalogMetadata_UsesOwningServiceIdentificationAndContact()
+    {
+        return RasterIntegrationTestData.RunWithIssue522MosaicAsync(
+            _fixture,
+            () => GetCapabilities_CatalogMetadata_UsesAuthoredIdentificationAndContact(
+                "/rest/services/1/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCapabilities&VERSION=2.0.1",
+                "Service survey"),
+            layerId: 1);
     }
 
     [IntegrationTheory]
