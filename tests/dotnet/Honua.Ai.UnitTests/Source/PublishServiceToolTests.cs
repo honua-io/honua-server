@@ -28,7 +28,7 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 /// into a structured Completed / RequiresApproval / unavailable result.
 /// </summary>
 [Protocol(TestProtocols.Mcp)]
-public sealed class PublishServiceToolTests
+public sealed partial class PublishServiceToolTests
 {
     private static DefaultHttpContext ContextWithInvoker(IOperationInvoker? invoker)
     {
@@ -75,6 +75,12 @@ public sealed class PublishServiceToolTests
         descriptor.Annotations!.ReadOnlyHint.Should().BeFalse("publishing mutates the catalog");
         descriptor.Annotations.DestructiveHint.Should().BeFalse("publish creates a layer rather than destroying state");
         descriptor.Annotations.IdempotentHint.Should().BeFalse("service.publish does not honor an idempotency key");
+
+        var inputs = descriptor.InputSchema.GetProperty("properties");
+        inputs.GetProperty("folderId").GetProperty("type").EnumerateArray().Select(value => value.GetString())
+            .Should().ContainInOrder("string", "null");
+        inputs.GetProperty("publicName").GetProperty("type").GetString().Should().Be("string");
+        inputs.GetProperty("namespace").GetProperty("type").GetString().Should().Be("string");
 
         descriptor.OutputSchema.Should().NotBeNull();
         var schema = descriptor.OutputSchema!.Value;

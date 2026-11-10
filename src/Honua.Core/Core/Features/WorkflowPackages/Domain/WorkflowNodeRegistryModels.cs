@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
 using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Core.Features.WorkflowPackages.Domain;
@@ -88,13 +89,16 @@ public sealed record WorkflowSchemaDefinition
 {
     public required WorkflowSchemaValueType Type { get; init; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool AllowsNull { get; init; }
+
     public string? Format { get; init; }
 
     public string? Unit { get; init; }
 
     public string? Crs { get; init; }
 
-    public IReadOnlyList<string> EnumValues { get; init; } = [];
+    public IReadOnlyList<string?> EnumValues { get; init; } = [];
 
     public WorkflowSchemaDefinition? Items { get; init; }
 

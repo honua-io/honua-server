@@ -7,6 +7,7 @@ using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Mvc;
+using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Protocols.Ogc.Api.Features;
 
@@ -15,8 +16,6 @@ namespace Honua.Protocols.Ogc.Api.Features;
 /// </summary>
 internal static class CoreEndpoints
 {
-    private static readonly TimeSpan _landingPageCacheDuration = TimeSpan.FromMinutes(30);
-    private static readonly TimeSpan _conformanceCacheDuration = TimeSpan.FromHours(1);
     private const string GmlApplicationSchema = """
 <?xml version="1.0" encoding="UTF-8"?>
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
@@ -57,6 +56,7 @@ internal static class CoreEndpoints
             .WithDescription("The landing page provides links to the API definition and other resources")
             .WithTags("OGC API Features")
             .CacheOutput("OgcLandingPage")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces<LandingPage>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html)
             .Produces(404);
@@ -68,10 +68,28 @@ internal static class CoreEndpoints
             .WithDescription("Conformance classes that this API conforms to")
             .WithTags("OGC API Features")
             .CacheOutput("OgcConformance")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces<ConformanceDeclaration>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html)
             .Produces(404);
 
+        MapApiDefinitionEndpoints(endpoints);
+
+        _ = endpoints.MapGet(OgcFeaturesUtilities.GmlApplicationSchemaPath, HandleGetGmlApplicationSchema)
+            .WithDisplayName("OGC API Features GML Application Schema")
+            .WithName("OgcFeaturesGmlApplicationSchema")
+            .WithSummary("Get the GML application schema for OGC API Features GML responses")
+            .WithDescription("The schema declares Honua's feature member and property elements used by GML feature collection responses.")
+            .WithTags("OGC API Features")
+            .CacheOutput("OgcGmlApplicationSchema")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
+            .Produces<string>(200, "application/xml");
+
+        return endpoints;
+    }
+
+    private static void MapApiDefinitionEndpoints(IEndpointRouteBuilder endpoints)
+    {
         endpoints.MapGet("/openapi.json", HandleGetOpenApiSpec)
             .WithDisplayName("OGC API Features OpenAPI Specification")
             .WithName("OpenApiSpec")
@@ -80,6 +98,7 @@ internal static class CoreEndpoints
             .WithTags("OGC API Features")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .CacheOutput("OgcOpenApi")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces<object>(200, MediaTypes.OpenApi)
             .Produces(404);
 
@@ -92,19 +111,9 @@ internal static class CoreEndpoints
             .WithTags("OGC API Features")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .CacheOutput("OgcOpenApi")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces<object>(200, MediaTypes.OpenApi)
             .Produces(404);
-
-        _ = endpoints.MapGet(OgcFeaturesUtilities.GmlApplicationSchemaPath, HandleGetGmlApplicationSchema)
-            .WithDisplayName("OGC API Features GML Application Schema")
-            .WithName("OgcFeaturesGmlApplicationSchema")
-            .WithSummary("Get the GML application schema for OGC API Features GML responses")
-            .WithDescription("The schema declares Honua's feature member and property elements used by GML feature collection responses.")
-            .WithTags("OGC API Features")
-            .CacheOutput("OgcGmlApplicationSchema")
-            .Produces<string>(200, "application/xml");
-
-        return endpoints;
     }
 
     private static IResult HandleGetGmlApplicationSchema()
@@ -133,7 +142,6 @@ internal static class CoreEndpoints
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var basePath = $"{baseUrl}/ogc/features";
-        EnsureCacheControl(context, _landingPageCacheDuration);
 
         var links = OgcCoreMetadataUtilities.BuildLandingPageLinks(context, basePath, outputFormat);
 
@@ -217,7 +225,6 @@ internal static class CoreEndpoints
             return errorResult!;
         }
 
-        EnsureCacheControl(context, _conformanceCacheDuration);
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
 
         var conformance = new ConformanceDeclaration
@@ -261,17 +268,6 @@ internal static class CoreEndpoints
 
         OgcFeaturesLog.ConformanceReturned(logger, conformance.ConformsTo.Length);
         return OgcCommonUtilities.FormatMetadataResponse(conformance, OgcJsonContext.Default.ConformanceDeclaration, outputFormat, "Conformance");
-    }
-
-    private static void EnsureCacheControl(HttpContext context, TimeSpan maxAge)
-    {
-        if (context.Response.Headers.ContainsKey("Cache-Control"))
-        {
-            return;
-        }
-
-        var maxAgeSeconds = (int)Math.Max(0, maxAge.TotalSeconds);
-        context.Response.Headers.CacheControl = $"public, max-age={maxAgeSeconds}";
     }
 
     /// <summary>
