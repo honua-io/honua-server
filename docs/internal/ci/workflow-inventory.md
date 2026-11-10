@@ -2,7 +2,6 @@
 
 Draft pull requests run Format, Clean code, and Repository hygiene only; optional PR verification and PR Gate heavy jobs wait for `ready_for_review`. Converting a ready PR back to draft cancels its previous run. The stable `PR Gate` aggregate still runs with `always()` and fails on skipped heavy dependencies, so a draft run cannot supply mergeable verification. Manual and trunk verification retain their existing coverage.
 
-
 > Canonical inventory of **every** workflow in `.github/workflows/` in this
 > repository (122 files). Other Honua repositories keep their own inventories;
 > this page no longer mirrors the SDK repos, because a copy here could not be
@@ -47,10 +46,10 @@ analysis.
 CodeQL, Compose Release Lifecycle, GeoArrow/GeoParquet interop, OGC API
 building-block conformance, and serving/GDAL image verification defer heavy jobs
 until the PR is ready. They subscribe to `ready_for_review` and ready-head
-`synchronize` events; conversion back to draft cancels the active run. PR Gate,
-its affected-shard verdict, clean code and repository hygiene continue on drafts.
-PR Gate also runs on `ready_for_review`, waking the trusted Claude observer after
-its exact-head verification completes.
+`synchronize` events; conversion back to draft cancels the active verification run.
+Drafts run Format, Clean code, and Repository hygiene. The `PR Gate` aggregate
+rejects their skipped heavy dependencies. Ready PRs run the complete gate, waking
+the trusted Claude observer after exact-head verification completes.
 
 Verification workflows cancel superseded admission per PR; automation helpers
 queue superseding events without cancellation. Trusted observers resolve the
