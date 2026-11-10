@@ -89,9 +89,10 @@ class ManagedBuildTests(unittest.TestCase):
         for invalid in ['missing.csproj', '../escape.csproj', '/absolute.csproj',
                         'C:/escape.csproj', 'scripts/../escape.csproj', 'scripts//a.csproj',
                         'scripts/not-a-project.txt']:
-            for options in [{}, {'standalone_output': self.root / 'standalone.json'}]:
-                with self.subTest(invalid=invalid, options=options), self.assertRaises(ValueError):
-                    managed.write_filter(self.root, [self.a, invalid], self.root / 'build.slnf', **options)
+            for standalone in [None, self.root / 'standalone.json']:
+                with self.subTest(invalid=invalid, standalone=standalone), self.assertRaises(ValueError):
+                    managed.write_filter(self.root, [self.a, invalid],
+                                         managed.FilterOutputs(self.root / 'build.slnf', standalone))
         with self.assertRaises(ValueError):
             managed.validate_standalone_projects(self.root, [12])
         (self.root / 'escape.csproj').symlink_to(SCRIPT)

@@ -9,6 +9,7 @@ import re
 from pathlib import Path, PurePosixPath
 import subprocess
 import tempfile
+from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVER = 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
@@ -71,28 +72,41 @@ def validate_standalone_projects(root, projects):
     return sorted(set(projects))
 
 
+class FilterOutputs(NamedTuple):
+    solution: Path
+    standalone: Path | None = None
+
+
+def restore_target(root, target):
+    subprocess.run(['bash', str(root / 'scripts/ci/dotnet-restore-retry.sh'), str(target),
+                    '-p:Configuration=Release', *PROPERTIES], cwd=root, check=True)
+
+
+def build_target(root, target):
+    subprocess.run(['dotnet', 'build', str(target), '--no-restore', '-c', 'Release',
+                    '-graphBuild', *PROPERTIES], cwd=root, check=True)
+
+
 def build_standalone(root, projects):
     for project in validate_standalone_projects(root, projects):
-        subprocess.run(['bash', str(root / 'scripts/ci/dotnet-restore-retry.sh'), project,
-                        '-p:Configuration=Release', *PROPERTIES], cwd=root, check=True)
-        subprocess.run(['dotnet', 'build', project, '--no-restore', '-c', 'Release',
-                        '-graphBuild', *PROPERTIES], cwd=root, check=True)
+        restore_target(root, project)
+        build_target(root, project)
 
 
-def write_filter(root, projects, target, *, standalone_output=None):
+def write_filter(root, projects, outputs):
     # Forward P2P references are traversed by restore and graphBuild.
     members = {path.replace('\\', '/'): path for path in re.findall(
         r'^Project\([^\n]+? = "[^"]+", "([^"]+\.csproj)"',
         (root / 'Honua.sln').read_text(), re.MULTILINE)}
     normalized = {path.replace('\\', '/') for path in projects}
     unknown = normalized - members.keys()
-    if unknown and standalone_output is None:
+    if unknown and outputs.standalone is None:
         raise ValueError(f'Projects missing from Honua.sln: {sorted(unknown)}')
     standalone = validate_standalone_projects(root, sorted(unknown))
-    if standalone_output is not None:
-        standalone_output.write_text(json.dumps(standalone, indent=2) + '\n')
+    if outputs.standalone is not None:
+        outputs.standalone.write_text(json.dumps(standalone, indent=2) + '\n')
     normalized -= unknown
-    target.write_text(json.dumps({'solution': {'path': str(root / 'Honua.sln'),
+    outputs.solution.write_text(json.dumps({'solution': {'path': str(root / 'Honua.sln'),
                                              'projects': [members[p] for p in sorted(normalized)]}}, indent=2) + '\n')
 
 
@@ -151,9 +165,8 @@ def fallback(root, projects, restored, *, execute=True):
     if execute:
         with tempfile.TemporaryDirectory(prefix='honua-managed-fallback-') as directory:
             selection = Path(directory) / 'restore.slnf'
-            write_filter(root, restore_projects, selection)
-            subprocess.run(['bash', str(root / 'scripts/ci/dotnet-restore-retry.sh'), str(selection), '-p:Configuration=Release',
-                            *PROPERTIES], cwd=root, check=True)
+            write_filter(root, restore_projects, FilterOutputs(selection))
+            restore_target(root, selection)
             still_missing = [project for project in missing_dependencies
                              if not package_dependencies_ready(root, project)]
             if still_missing:
@@ -163,9 +176,8 @@ def fallback(root, projects, restored, *, execute=True):
                 build_selection = selection
                 if missing != restore_projects:
                     build_selection = Path(directory) / 'build.slnf'
-                    write_filter(root, missing, build_selection)
-                subprocess.run(['dotnet', 'build', str(build_selection), '--no-restore', '-c', 'Release',
-                                '-graphBuild', *PROPERTIES], cwd=root, check=True)
+                    write_filter(root, missing, FilterOutputs(build_selection))
+                build_target(root, build_selection)
     return missing
 
 
@@ -238,7 +250,7 @@ def main():
                 if not isinstance(base, list) or any(not isinstance(p, str) for p in base):
                     raise ValueError('Base filter projects must be a JSON array of paths')
                 projects.extend(p.replace('\\', '/') for p in base)
-            write_filter(root, projects, args.output, standalone_output=args.standalone_output)
+            write_filter(root, projects, FilterOutputs(args.output, args.standalone_output))
             return
     text = json.dumps(result, indent=2) + '\n'
     if args.output:
