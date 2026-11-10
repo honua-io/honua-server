@@ -1,7 +1,7 @@
 # CI Gate Model
 
 > Defines the five-tier quality gate model governing all CI workflows across the Honua project.
-> Last updated: 2026-09-11
+> Last updated: 2026-11-09
 
 ## Tier Definitions
 
@@ -30,6 +30,48 @@
 6. **The `Tier=Fast|Integration|Slow` test trait is a sub-tier inside this gate model, not a replacement for it.** ADR-0037 splits the .NET test suite by execution cost so that PRs run the `Tier=Fast` foundation tests plus a targeted subset of `server-tests` shards selected by `scripts/ci/honua-server-targeted-tests.sh`. The `targeted-shards` job emits a JSON `matrix_include` drawn from `.github/ci-shards.json` and `server-tests` consumes it via `strategy.matrix.include: fromJson(...)`, so unselected shards never instantiate a runner. The shared shard runner composes `&Tier!=Slow&Tier!=Fast` onto the matrix filter so Slow-tagged tests inside a shard's namespace are skipped and Fast tests run only once in the foundation lane; it also emits heartbeat/tail diagnostics over normal-verbosity test logs, writes timing artifacts, and enforces the inner `test_timeout_minutes` cap before the job-level timeout cancels the runner. `Tier=Slow&Category=Emulator` runs nightly via `nightly-slow-tier.yml`, and `flaky-detection.yml` re-runs a bounded rotating window of the same `.github/ci-shards.json` shards several times a night for flake reporting (the whole shard set is covered every ceil(shards / shard_count) days). The Scale/Cloud/External slow subfamilies need dedicated workflows once their fixtures are wired up. The five-tier PR/nightly/release/deploy/maintenance gate model above still defines *where* a workflow lives; the trait defines *which subset of tests* runs inside the workflow.
 
 Full CI runs twice daily at `09:00` and `21:00` UTC (01:00 and 13:00 Pacific standard time). It retains protocol-profile compilation, remote-source and server execution proofs, and import/export fidelity. The existing Worker GDAL job owns native GDAL/PDAL coverage and the raster execution receipt checks.
+
+## Verification stages
+
+Every stage reacts to a repository event; no stage polls. A change is verified
+in widening rings, each cheaper than the next and each catching what the
+earlier one could not.
+
+| Stage | Trigger | Workflow | Scope | Blocks merge |
+|---|---|---|---|---|
+| **0 Pre-PR** | Author, before opening or pushing | `scripts/ci/pre-pr-check.sh` (local) | Affected build, Fast tests and affected shards on the author's machine | No; the PR template asks for the result |
+| **1 PR gate** | `pull_request` | `pr-gate.yml`, `review-gate.yml`, `repo-hygiene.yml` | Affected-scope build, selected shards, Fast/architecture, format, router validation, exact-head review | Yes: `PR Gate`, `Review Gate`, Repository hygiene |
+| **2 Pre-merge** | Trunk moves under an open PR | `pr-sync-doctor.md` and the fleet lander | A behind PR is refreshed only when trunk touched its affected projects; the refreshed head reruns stage 1. The lander merges only an exact-head green, thread-free PR | Yes, through stage 1 on the refreshed head |
+| **3 Post-merge affected** | `push` to `trunk` | `trunk-affected.yml` dispatching `ci.yml` | Selective CI over the merges since the last green CI run (`selective_base`): the shards and lanes those merges touch | No; a red run starts the CI doctor |
+| **4 Full** | `schedule` 09:00 and 21:00 UTC | `ci.yml` | The full matrix, compatibility and certification lanes | No; full proof clears the lander's trunk-red brake |
+
+Stage 3 details:
+
+- The base is the newest successful `CI` run on trunk whose head is an
+  ancestor of the pushed head, whether that run was selective or full; a
+  selective green proves its own range, so the chain of greens covers trunk.
+  With no green ancestor in the newest 50 successful runs, the dispatch is a
+  full matrix.
+- Runs queue in one concurrency group without cancellation. GitHub keeps one
+  pending run per group and replaces it with a newer one; the newer run diffs
+  from the last green head, so it covers every merge the replaced run would
+  have. A run whose push is no longer the trunk tip exits for the same reason.
+- Shards the PR gate deferred by time budget run here: the router selects
+  them again from the merged diff, so a deferred shard is verified within one
+  affected run of its merge.
+- `ci.yml` puts selective runs in their own concurrency group, so a burst of
+  merges never replaces a pending scheduled full run.
+- The dispatched run is titled `CI affected <base>..<head>`. Its `changes`
+  job prints the suspect range (`scripts/ci/trunk-suspect-range.sh`: every
+  trunk commit in the range and the pull requests it names) to the job log and
+  summary. A red run triggers the CI doctor through its `workflow_run`
+  listener on `CI`, which reads the title and the log to find the breaking
+  merge.
+- Affected runs never certify a sha: `scripts/ci/select-certified-nightly-sha.py`
+  ignores runs titled `CI affected ...`, so a selective run that finishes after
+  a full run on the same sha cannot supersede that full run's certification.
+  The full-matrix fallback is titled `CI full matrix ...` and still certifies.
+- Stage 3 is not a required check and changes no ruleset.
 
 ## PR Lane (Required Checks)
 
@@ -109,7 +151,11 @@ diff base. At the default depth 1 those parent commits are absent, the scope
 computation force-fulls, and the optimization silently never fires.
 
 **Format scope.** The PR's existing independent format job retains its affected
-or full document selection and complete formatter restore context. Full CI runs
+or full document selection and complete formatter restore context. It also owns
+the analyzer pass: the managed producer builds with `/p:RunAnalyzers=false`
+(about a third of its compile), and the format job then builds the affected
+or full scope with analyzers, code style and documentation diagnostics as
+warnings-as-errors, so `PR Gate` still fails on every analyzer finding. Full CI runs
 an independent full-solution format job; `CI Gate` requires it when build inputs
 are selected, without making test consumers wait for formatting.
 
