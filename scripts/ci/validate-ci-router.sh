@@ -217,6 +217,7 @@ jq -e '
 echo "Validating PR Gate affected-shard selection..."
 if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-affected-shards.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-protocol-pr-policy.py
 else
   echo "⚠️  Skipping PR Gate affected-shard selection (no working Python 3)."
 fi
