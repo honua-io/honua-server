@@ -494,6 +494,51 @@ as well. Missing counts stay missing. Synthetic supervisor fixtures are labelled
 as such and do not qualify a candidate. These files are diagnostic provenance;
 local files alone do not constitute a trusted release attestation.
 
+## Bounded flaky-test quarantine
+
+The founder-approved quarantine policy in [known-flakes.md](known-flakes.md#automatic-bounded-quarantine)
+allows one same-job failed-method retry within the original shard budget. Success requires
+complete passing retry evidence, retained alongside the first attempt. Ambiguous theory-row
+names are rejected so a passing sibling cannot conceal a missing failure. Infrastructure and
+execution failures remain blocking. Tests retain the supervisor’s process group so shared deadlines clean up the full tree.
+Cancellation signals the test’s descendants, including those that leave the inherited
+process group, and escalates to SIGKILL after at most half a second. Required check names and minimum-execution checks remain
+unchanged. Bot-authored issues provide a validated, project-scoped exclusion list capped at
+25 methods and 14 days per entry; expiry restores gating automatically. Foundation and lean
+gate duplicate coverage consume the same list. A separate `Flaky Test Detection` job runs
+quarantined methods without exclusions or retries and is explicitly non-gating.
+
+The publisher has issue-write permission only on a trusted `workflow_run` path. It checks
+same-repository provenance, checks out default-branch code, validates raw case evidence and
+hashes, and never executes downloaded data or checks out the triggering branch.
+Publication uses GitHub's FIFO concurrency queue (`queue: max`, up to 100 pending
+runs), keeping issue mutations serial without replacing a pending completion event.
+If that service limit is reached, rerun canceled publishers to recover their evidence.
+
+### Grouped unit and component shards
+
+The server matrix combines 33 small unit/component assemblies into four jobs:
+Provider and AI Units, Runtime Units, Protocol Units, and Protocol and Host
+Components. Each `csprojs` list is an explicit assembly union. Routing, build
+selection, resource classification, and the source coverage guard inspect every
+member. Catalogued Docker, Postgres, and Redis dependencies remain supported;
+resourceful members retain service provisioning. Unknown resources fail closed.
+The existing required check names and tier policies remain unchanged.
+
+The shared runner executes each member with its own fresh TRX and timing record,
+within one shared 20-minute test budget. Every assembly must execute tests and
+pass; a passing sibling cannot conceal an empty, failed, or timed-out assembly.
+It also emits a combined TRX and timing receipt for the existing aggregates.
+Capability selection retains a group's full filter so sibling assemblies cannot
+receive empty proving-test selections. Shared-budget timeouts retain the existing
+capacity-versus-hang classification, progress measurement, and diagnostic tokens.
+The optional cache observer uses normal build fallback for grouped jobs.
+
+The scheduled baseline run 42685503356 spent 75.38 runner-minutes across these
+33 jobs. Reusing one setup per group estimates 22.80 runner-minutes; this is a
+planning estimate, not an observed result. Post-merge elapsed minutes must come
+from a full trunk run before claiming savings or refreshing child dispatch ranks.
+
 Full CI transfers the selected shard matrix as a run-and-attempt-scoped JSON
 artifact to the managed producer, cache planners and receipt verifier. Full
 filters stay out of environment variables and command arguments, whose per-string
@@ -539,3 +584,26 @@ unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
+
+### Governance capacity split
+
+The former `Server Features Admin Governance and Sharing` shard timed out at
+22.05 minutes in affected run 42846296623. Three numbered children partition
+its original filter exactly, including method-name matches outside governance
+classes. A fallback child retains future matches. The original paths, test and
+job budgets, reporting, and CPU limits remain unchanged. The partition fixture
+checks method-level union, disjointness, nonempty children, and inherited limits.
+
+Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
+spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
+minutes, including setup allowance. These initialize dispatch ranks; actual
+child minutes and measured ranks require the next completed full trunk run.
+
+### Standalone tooling in affected producer builds
+
+The affected producer keeps solution members in its managed solution filter. The
+Lambda deployment driver and MCP manifest generator are explicit standalone
+projects: when selected, each restores and builds by its own project path before
+managed outputs are published. Restore and build failures remain gating, with
+the same warnings, analyzers and graph-build settings as the solution build.
+Unknown projects outside the solution still fail planning; test selection is unchanged.

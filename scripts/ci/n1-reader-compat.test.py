@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import sys
 import subprocess
@@ -38,7 +39,7 @@ INCIDENT = ["126_AddStudioContentHashInput.sql", "127_CompleteSensorThingsSensin
 
 def evidence(**overrides) -> "n1.Evidence":
     values = dict(journal_delta=["140_AddThing.sql"], classifications={"140_AddThing.sql": "expand"},
-                  pr_added={"140_AddThing.sql"}, prior_has_reader_declarations=True, refusal=None,
+                  prior_has_reader_declarations=True, refusal=None,
                   ready=True, serve_ok=True)
     values.update(overrides)
     return n1.Evidence(**values)
@@ -61,6 +62,62 @@ class ParseRefusal(unittest.TestCase):
 
 
 class Classify(unittest.TestCase):
+    def test_reviewed_opt_out_without_boundary_fails_even_when_served(self) -> None:
+        script = "144_RenameGeoServicesRestSourceKind.sql"
+        outcome, why = n1.classify(evidence(
+            journal_delta=[], classifications={script: "expand"},
+            script_text={script: "-- honua:reader-incompatible reason=old enum\n"}))
+        self.assertEqual(outcome, "release-boundary-violation")
+        self.assertIn(script, why)
+        self.assertIn("honua:reader-incompatible", why)
+
+    def test_boundary_requires_exact_name_and_hash(self) -> None:
+        script = "144_RenameGeoServicesRestSourceKind.sql"
+        sql = "-- honua:reader-incompatible reason=old enum\n"
+        hashes = {script: hashlib.sha256(sql.encode()).hexdigest().upper()}
+        for name, text, allowed in ((script, sql, True), (script, sql + "-- changed", False),
+                                    ("999_Other.sql", sql, False)):
+            outcome, _ = n1.classify(evidence(
+                journal_delta=[], classifications={name: "expand"}, script_text={name: text},
+                boundary_hashes=hashes))
+            self.assertEqual(outcome == "compatible", allowed)
+
+    def test_pinned_boundary_contract_typed_refusal_is_expected(self) -> None:
+        script = "140_DropThing.sql"
+        sql = "DROP TABLE x;\n"
+        outcome, _ = n1.classify(evidence(
+            journal_delta=[script], classifications={script: "contract"},
+            script_text={script: sql}, boundary_hashes={script: hashlib.sha256(sql.encode()).hexdigest().upper()},
+            refusal=n1.parse_refusal(DECLARED_LOG), ready=False, serve_ok=False))
+        self.assertEqual(outcome, "expected-refusal")
+        self.assertEqual(n1.exit_code_for(outcome), 0)
+
+    def test_frozen_baseline_cannot_waive_explicit_opt_out(self) -> None:
+        script = "144_RenameGeoServicesRestSourceKind.sql"
+        sql = "-- honua:reader-incompatible reason=old enum\n"
+        outcome, _ = n1.classify(evidence(
+            journal_delta=[], classifications={script: "expand"}, script_text={script: sql},
+            baseline_hashes={script: hashlib.sha256(sql.encode()).hexdigest().upper()}))
+        self.assertEqual(outcome, "release-boundary-violation")
+
+    def test_pinned_boundary_incompatible_script_served_is_failure(self) -> None:
+        script = "144_RenameGeoServicesRestSourceKind.sql"
+        sql = "-- honua:reader-incompatible reason=old enum\n"
+        outcome, _ = n1.classify(evidence(
+            journal_delta=[script], classifications={script: "reader-incompatible"},
+            script_text={script: sql}, boundary_hashes={script: hashlib.sha256(sql.encode()).hexdigest().upper()}))
+        self.assertEqual(outcome, "expected-refusal-missing")
+        self.assertEqual(n1.exit_code_for(outcome), 1)
+
+    def test_frozen_baseline_contract_requires_unchanged_bytes(self) -> None:
+        script = "115_AddDropImportStagingTable.sql"
+        sql = "DROP FUNCTION import_staging;"
+        outcome, why = n1.classify(evidence(
+            journal_delta=[], classifications={script: "contract"}, script_text={script: sql + "-- changed"},
+            baseline_hashes={script: hashlib.sha256(sql.encode()).hexdigest().upper()}))
+        self.assertEqual(outcome, "release-boundary-violation")
+        self.assertIn(script, why)
+
     def test_compatible(self) -> None:
         self.assertEqual(n1.classify(evidence())[0], "compatible")
 
@@ -72,7 +129,7 @@ class Classify(unittest.TestCase):
 
     def test_incident_against_old_prior_is_known_blocked_not_pass(self) -> None:
         outcome, _ = n1.classify(evidence(
-            journal_delta=INCIDENT, classifications={s: "undeclared" for s in INCIDENT}, pr_added=set(),
+            journal_delta=INCIDENT, classifications={s: "undeclared" for s in INCIDENT},
             prior_has_reader_declarations=False, refusal=n1.parse_refusal(INCIDENT_LOG), ready=False,
             serve_ok=False))
         self.assertEqual(outcome, "prior-lacks-reader-declarations")
@@ -86,29 +143,28 @@ class Classify(unittest.TestCase):
         self.assertEqual(outcome, "reader-incompatible-regression")
         self.assertEqual(n1.exit_code_for(outcome), 1)
 
-    def test_declared_contract_refusal_documented(self) -> None:
+    def test_declared_contract_refusal_review_does_not_waive_boundary(self) -> None:
         script = "140_DropThing.sql"
         outcome, _ = n1.classify(evidence(
-            journal_delta=[script], classifications={script: "contract"}, pr_added={script},
+            journal_delta=[script], classifications={script: "contract"},
             refusal=n1.parse_refusal(DECLARED_LOG), ready=False, serve_ok=False,
-            script_text={script: "-- honua:compatibility-review reason=drop\nDROP TABLE x;\n"},
-            rollback_doc="Rollback boundary: 140_DropThing requires a restore."))
-        self.assertEqual(outcome, "expected-refusal")
-        self.assertEqual(n1.exit_code_for(outcome), 0)
+            script_text={script: "-- honua:compatibility-review reason=drop\nDROP TABLE x;\n"}))
+        self.assertEqual(outcome, "release-boundary-violation")
+        self.assertEqual(n1.exit_code_for(outcome), 1)
 
     def test_declared_contract_refusal_without_review_or_doc(self) -> None:
         script = "140_DropThing.sql"
         outcome, why = n1.classify(evidence(
-            journal_delta=[script], classifications={script: "contract"}, pr_added={script},
+            journal_delta=[script], classifications={script: "contract"},
             refusal=n1.parse_refusal(DECLARED_LOG), ready=False, serve_ok=False,
-            script_text={script: "DROP TABLE x;\n"}, rollback_doc=""))
-        self.assertEqual(outcome, "expected-refusal-undocumented")
-        self.assertIn("compatibility-review", why)
-        self.assertIn("upgrade-and-rollback.md", why)
+            script_text={script: "DROP TABLE x;\n"}))
+        self.assertEqual(outcome, "release-boundary-violation")
+        self.assertIn("contract", why)
+        self.assertIn("schema-release-boundary.v1.json", why)
 
     def test_reader_incompatible_served_is_failure(self) -> None:
         outcome, _ = n1.classify(evidence(classifications={"140_AddThing.sql": "reader-incompatible"}))
-        self.assertEqual(outcome, "expected-refusal-missing")
+        self.assertEqual(outcome, "release-boundary-violation")
 
     def test_prior_that_changes_the_journal_is_not_compatible(self) -> None:
         outcome, why = n1.classify(evidence(journal_changed=True))
@@ -122,6 +178,9 @@ class Classify(unittest.TestCase):
             journal_delta=["115_AddDropImportStagingTable.sql", "135_RecordMigrationReaderCompatibility.sql"],
             classifications={"115_AddDropImportStagingTable.sql": "contract",
                              "135_RecordMigrationReaderCompatibility.sql": "expand"},
+            script_text={"115_AddDropImportStagingTable.sql": "DROP FUNCTION import_staging;"},
+            baseline_hashes={"115_AddDropImportStagingTable.sql":
+                             hashlib.sha256(b"DROP FUNCTION import_staging;").hexdigest().upper()},
             prior_has_reader_declarations=False, prior_has_reader_guard=False,
             journal_changed=True, serve_ok=True))
         self.assertNotIn(outcome, n1.PASSING)
@@ -135,6 +194,9 @@ class Classify(unittest.TestCase):
             journal_delta=["115_AddDropImportStagingTable.sql", "135_RecordMigrationReaderCompatibility.sql"],
             classifications={"115_AddDropImportStagingTable.sql": "contract",
                              "135_RecordMigrationReaderCompatibility.sql": "expand"},
+            script_text={"115_AddDropImportStagingTable.sql": "DROP FUNCTION import_staging;"},
+            baseline_hashes={"115_AddDropImportStagingTable.sql":
+                             hashlib.sha256(b"DROP FUNCTION import_staging;").hexdigest().upper()},
             prior_has_reader_declarations=False, prior_has_reader_guard=False))
         self.assertEqual(outcome, "prior-unguarded")
         self.assertIn("115_AddDropImportStagingTable.sql", why)
@@ -143,7 +205,7 @@ class Classify(unittest.TestCase):
     def test_guarded_prior_serving_contract_is_failure(self) -> None:
         outcome, _ = n1.classify(evidence(classifications={"140_AddThing.sql": "contract"},
                                           prior_has_reader_declarations=False))
-        self.assertEqual(outcome, "expected-refusal-missing")
+        self.assertEqual(outcome, "release-boundary-violation")
 
     def test_unknown_outcomes_fail(self) -> None:
         for outcome in ("prior-unresolved", "infrastructure-error", "candidate-migration-failed"):
@@ -157,6 +219,7 @@ class Applies(unittest.TestCase):
                      "src/Honua.Db/Postgres/Features/Infrastructure/Migrations/PostgresCoreSchemaGuard.cs",
                      "src/Honua.Core/Core/Features/Infrastructure/Migrations/MigrationReaderCompatibility.cs",
                      "eng/schema/schema-migration-hashes.v1.json",
+                     n1.RELEASE_BOUNDARY,
                      "scripts/ci/n1-reader-compat.py"):
             self.assertTrue(n1.path_applies(path), path)
         for path in ("src/Honua.Server/Program.cs", "docs/guides/deploy/upgrade-and-rollback.md",
