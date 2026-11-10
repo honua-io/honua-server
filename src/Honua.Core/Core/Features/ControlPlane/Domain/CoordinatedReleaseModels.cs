@@ -215,6 +215,10 @@ public sealed record CoordinatedReleaseContext
     /// </summary>
     public bool DataGateApproved { get; init; }
 
+    public CoordinatedReleaseHumanApproval? ContainerHumanApproval { get; init; }
+
+    public CoordinatedReleaseHumanApproval? DataHumanApproval { get; init; }
+
     /// <summary>
     /// Non-blocking advisory messages for the coordinated op.
     /// </summary>

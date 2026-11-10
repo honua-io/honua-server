@@ -94,7 +94,7 @@ A required workflow failed on honua-server. Find the cause and fix it, so nobody
    - Add one short comment: the cause, the fix, and the log line that proves it, ending with the marker `ci-doctor: <head SHA>`.
    - If the fix is not clear, is larger than a few files, or touches security, authentication, approval, licensing or release logic: change nothing, add the `ci-stuck` label and a comment with the cause and the suggested fix.
 5. Trunk run (branch trunk, event schedule, push or workflow_dispatch):
-   - Find the merges since the last green CI run on trunk and identify the one that broke it.
+   - Find the merges since the last green CI run on trunk and identify the one that broke it. A run titled `CI affected <base>..<head>` names that range itself; its `changes` job log lists the range's commits and pull requests under "Suspect merge range".
    - Open a draft pull request against trunk with the fix; if the fix is not clear, open a draft pull request that reverts the breaking merge (`git revert -m 1 <merge>`), naming the pull request it reverts.
 6. Only one fix attempt per head SHA. If this head SHA was produced by an earlier ci-doctor fix, do not push again: add `ci-stuck` instead.
 
