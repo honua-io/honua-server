@@ -119,6 +119,17 @@ class RetryTests(unittest.TestCase):
             with self.subTest(cases=cases), self.assertRaises(ValueError):
                 self.compare(cases)
 
+    def test_ambiguous_theory_rows_cannot_hide_an_omitted_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            first, retry = Path(directory) / 'first.xml', Path(directory) / 'retry.xml'
+            for original, repeated in (
+                    ([('Flaky(...)', 'Failed'), ('Flaky(...)', 'Passed')], [('Flaky(...)', 'Passed')]),
+                    ([('Flaky(...)', 'Failed')], [('Flaky(...)', 'Passed'), ('Flaky(...)', 'Passed')])):
+                trx(first, original)
+                trx(retry, repeated)
+                with self.subTest(original=original), self.assertRaises(ValueError):
+                    q.retry_replacements(first, retry)
+
     def test_run_level_errors_cannot_be_reclassified_as_a_flake(self):
         for key in ('error', 'timeout', 'aborted', 'disconnected', 'notRunnable'):
             with self.subTest(key=key), tempfile.TemporaryDirectory() as directory:

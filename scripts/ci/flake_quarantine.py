@@ -105,8 +105,14 @@ def validate_run_summary(tree, totals):
 
 
 def retry_replacements(first, retry):
-    failed = [c for c in read_cases(first) if c[2] == 'Failed']
-    retried = read_cases(retry)
+    original, retried = read_cases(first), read_cases(retry)
+    # Truncated theory display names can collide. Refuse ambiguous evidence
+    # rather than letting a passing sibling stand in for a missing failure.
+    for cases in (original, retried):
+        identities = Counter((c[0], c[1]) for c in cases)
+        if any(count > 1 for count in identities.values()):
+            raise ValueError('Retry evidence has ambiguous test-case identities')
+    failed = [c for c in original if c[2] == 'Failed']
     methods = {c[0] for c in failed}
     if not failed or any(c[0] not in methods or c[2] != 'Passed' for c in retried):
         raise ValueError('Retry must pass every selected method')

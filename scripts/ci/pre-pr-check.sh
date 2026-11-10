@@ -794,6 +794,8 @@ else
         kept+="${ARCHITECTURE_TEST_PROJECT}"${HONUA_NL}
     fi
     kept+="${SOURCE_ARCHITECTURE_TEST_PROJECT}"${HONUA_NL}
+    # Group selection can add assemblies outside the changed-project closure.
+    kept+="${SHARD_TEST_PROJECTS}"${HONUA_NL}
     kept+="${MONOLITH_TEST_PROJECT}"${HONUA_NL}
     kept+="$("${PYTHON_BIN}" scripts/ci/test-projects.py gate-fast-projects)"${HONUA_NL}
     projects_json="$(printf '%s' "${kept}" \

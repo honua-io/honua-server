@@ -2,7 +2,6 @@
 """Offline regression fixtures for FAST selection and real closure reporting."""
 import json
 import os
-import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -231,6 +230,11 @@ pathlib.Path(out).write_text(json.dumps({'projects': projects}))
                 output = self.plan()
                 self.assertIn('Server-test shards: 1/1 selected', output)
                 self.assertEqual(not grouped, '1 of those capability-narrowed' in output, output)
+                build = self.execute(env_extra={'HONUA_PRE_PR_PRINT_BUILD_PLAN': '1'})
+                self.assertEqual(build.returncode, 0, build.stdout)
+                if grouped:
+                    for project in self.projects[3:5]:
+                        self.assertIn(project, build.stdout.replace('\\', '/'))
 
     def test_default_preserves_transitive_test_closure(self):
         self.source_repair()

@@ -83,12 +83,26 @@ case "${mode}" in
     sleep 600
     ;;
   ppidkill)
+    # The retry supervisor sits between this stub and GNU timeout. Find the
+    # wrapper by identity so this fixture still kills the intended process.
+    timeout_pid="${PPID}"
+    for (( ancestor = 0; ancestor < 8; ancestor++ )); do
+      timeout_command="$(ps -p "${timeout_pid}" -o comm=)"
+      case "${timeout_command##*/}" in
+        timeout|gtimeout) break ;;
+      esac
+      timeout_pid="$(ps -p "${timeout_pid}" -o ppid= | tr -d ' ')"
+    done
+    case "${timeout_command##*/}" in
+      timeout|gtimeout) ;;
+      *) echo 'GNU timeout ancestor not found' >&2; exit 1 ;;
+    esac
     trap '' TERM
     kill_at=$(( $(date +%s) + seconds ))
     while :; do
       echo "stub progress $(date -u +'%H:%M:%S')"
       if [[ "$(date +%s)" -ge "${kill_at}" ]]; then
-        kill -9 "${PPID}" 2>/dev/null || true
+        kill -9 "${timeout_pid}"
         exit 0
       fi
       sleep 0.2

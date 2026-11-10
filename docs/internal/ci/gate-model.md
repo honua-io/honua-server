@@ -498,7 +498,8 @@ local files alone do not constitute a trusted release attestation.
 
 The founder-approved quarantine policy in [known-flakes.md](known-flakes.md#automatic-bounded-quarantine)
 allows one same-job failed-method retry within the original shard budget. Success requires
-complete passing retry evidence, retained alongside the first attempt. Infrastructure and
+complete passing retry evidence, retained alongside the first attempt. Ambiguous theory-row
+names are rejected so a passing sibling cannot conceal a missing failure. Infrastructure and
 execution failures remain blocking. Required check names and minimum-execution checks remain
 unchanged. Bot-authored issues provide a validated, project-scoped exclusion list capped at
 25 methods and 14 days per entry; expiry restores gating automatically. Foundation and lean

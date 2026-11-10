@@ -47,6 +47,7 @@ def terminate_tree(process):
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
+            # The process group exited between the deadline and our kill.
             pass
     process.wait()
 
