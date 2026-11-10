@@ -193,9 +193,12 @@ Proposal lists, proposal reads and decisions, and operation-handle reads are
 restricted to the tenant recorded when the operation was accepted. A record
 owned by another tenant is omitted from lists and returns `404` on direct
 access. MCP proposal resources use the same ownership boundary.
-Legacy records without a tenant owner are hidden from tenant-scoped callers;
-a platform operator can inspect those records and re-propose pending work in
-its intended tenant. Idempotency keys are scoped to the accepted tenant.
+In single-tenant mode, the configured default tenant retains access to legacy
+records without a tenant owner. Multi-tenant callers and credentials bound to
+a tenant for replay or background execution cannot use this compatibility path.
+Proposal evidence must still match the resolved tenant. A platform operator can
+inspect legacy records and re-propose pending work in its intended tenant.
+Idempotency keys are scoped to the accepted tenant.
 
 ### 3. Enable OIDC for browser and admin sign-in
 

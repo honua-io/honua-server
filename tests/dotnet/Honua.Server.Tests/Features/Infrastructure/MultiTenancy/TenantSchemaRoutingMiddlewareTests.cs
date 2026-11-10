@@ -32,6 +32,8 @@ namespace Honua.Server.Tests.Features.Infrastructure.MultiTenancy;
 public class TenantSchemaRoutingMiddlewareTests
 {
     [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /schema")]
     public async Task StartAsync_SchemaRoutingWithoutExplicitMultiTenancy_RejectsConfiguration()
     {
         foreach (var multiTenancyEnabled in new string?[] { null, "false" })
@@ -52,6 +54,8 @@ public class TenantSchemaRoutingMiddlewareTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /schema")]
     public async Task StartAsync_UnconfiguredTenancy_UsesConsistentSingleTenantDefaults()
     {
         var builder = WebApplication.CreateBuilder();

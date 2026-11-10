@@ -432,6 +432,31 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
         string? group = null)
     {
         var handler = new JwtSecurityTokenHandler();
+        var token = new JwtSecurityToken(
+            issuer: issuer ?? _issuer,
+            audience: omitAudience ? null : audience ?? ClientId,
+            claims: CreateTokenClaims(scope, tenant, clientId, tokenUse, group),
+            notBefore: notBefore ?? DateTime.UtcNow.AddMinutes(-5),
+            expires: expires ?? DateTime.UtcNow.AddMinutes(30),
+            signingCredentials: new SigningCredentials(_signingKey, SecurityAlgorithms.RsaSha256));
+
+        var jwt = handler.WriteToken(token);
+
+        if (!tamperSignature)
+        {
+            return jwt;
+        }
+
+        var segments = jwt.Split('.');
+        var signatureBytes = Base64UrlEncoder.DecodeBytes(segments[2]);
+        signatureBytes[0] ^= 0xFF;
+        segments[2] = Base64UrlEncoder.Encode(signatureBytes);
+        return string.Join('.', segments);
+    }
+
+    private static List<Claim> CreateTokenClaims(
+        string? scope, string? tenant, string? clientId, string? tokenUse, string? group)
+    {
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, "test-user-1"),
@@ -466,26 +491,7 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
             claims.Add(new Claim("tenant_id", tenant));
         }
 
-        var token = new JwtSecurityToken(
-            issuer: issuer ?? _issuer,
-            audience: omitAudience ? null : audience ?? ClientId,
-            claims: claims,
-            notBefore: notBefore ?? DateTime.UtcNow.AddMinutes(-5),
-            expires: expires ?? DateTime.UtcNow.AddMinutes(30),
-            signingCredentials: new SigningCredentials(_signingKey, SecurityAlgorithms.RsaSha256));
-
-        var jwt = handler.WriteToken(token);
-
-        if (!tamperSignature)
-        {
-            return jwt;
-        }
-
-        var segments = jwt.Split('.');
-        var signatureBytes = Base64UrlEncoder.DecodeBytes(segments[2]);
-        signatureBytes[0] ^= 0xFF;
-        segments[2] = Base64UrlEncoder.Encode(signatureBytes);
-        return string.Join('.', segments);
+        return claims;
     }
 
     private string BuildJwksJson()
