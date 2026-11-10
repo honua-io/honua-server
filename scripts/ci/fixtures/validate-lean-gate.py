@@ -137,7 +137,8 @@ assert steps[0].startswith('    - name: Validate gate phase')
 assert steps[1].startswith('    - name: Pre-pull Testcontainers PostGIS image')
 assert TEXT.index('Regenerate projections') < TEXT.index('Run .NET Tests (Architecture Source)')
 assert "default: 'all'" in TEXT and 'all|build|test)' in TEXT
-assert TEXT.count('/p:RunAnalyzers=true') == 2
+assert TEXT.count('/p:RunAnalyzers="${GATE_RUN_ANALYZERS}"') == 2
+assert re.search(r"run-analyzers:.*?\n(?:.*\n)*?\s+default: 'true'", TEXT)
 assert TEXT.count('/p:UseSharedCompilation=false') == 2
 assert '--projects-file "${PRODUCER_PROJECTS_FILE}"' in TEXT
 assert '--base-filter "${GATE_BUILD_FILTER}" --output "${GATE_BUILD_FILTER}"' in TEXT
@@ -208,6 +209,43 @@ require(
     "same --verify-no-changes/--no-restore contract as the full run",
     text=FORMAT_TEXT,
 )
+# Analyzer contract: a producer build without inline format skips analyzers,
+# so the format action must build the same scope with analyzers, code style and
+# documentation diagnostics as errors, and only the inline caller may opt out.
+require(
+    r"analyzer-build:.*?\n(?:.*\n)*?\s+default: 'true'",
+    "default the format action's analyzer build on",
+    text=FORMAT_TEXT,
+)
+require(
+    r"BUILD_SCOPE: \$\{\{ inputs\.format-scope \}\}\n(?:.*\n)*?\s+run: scripts/ci/compute-lean-gate-build-scope\.sh",
+    "scope the analyzer build with the shared build-scope script",
+    text=FORMAT_TEXT,
+)
+require(
+    r"dotnet build \"\$\{target\}\" \\\s+--no-restore \\\s+--configuration Release \\\s+-graphBuild \\\s+"
+    r"/p:TreatWarningsAsErrors=true \\\s+/p:RunAnalyzers=true \\\s+"
+    r"/p:EnforceCodeStyleInBuild=true \\\s+/p:GenerateDocumentationFile=true",
+    "build with analyzers, code style and documentation diagnostics as errors",
+    text=FORMAT_TEXT,
+)
+require(
+    r"uses: \./\.github/actions/format-check\n\s+with:\n\s+format-scope: \$\{\{ inputs\.format-scope \}\}\n(?:\s+#.*\n)*\s+analyzer-build: 'false'",
+    "skip the format action's analyzer build only for the inline caller whose build ran analyzers",
+)
+require(
+    r"format:\n[\s\S]*?- check: Format\n\s+format: 'true'\n\s+analyzer-build: 'false'\n"
+    r"\s+- check: Analyzers\n\s+format: 'false'\n\s+analyzer-build: 'true'\n",
+    "run format and the analyzer build as parallel PR Gate format jobs",
+    text=PR_GATE.read_text(encoding="utf-8"),
+)
+require(
+    r"format-scope: affected\n\s+format: \$\{\{ matrix\.format \}\}\n"
+    r"\s+analyzer-build: \$\{\{ matrix\.analyzer-build \}\}",
+    "pass each format matrix job its own check",
+    text=PR_GATE.read_text(encoding="utf-8"),
+)
+
 require(
     r"include list is missing or empty",
     "fail loudly when format scope says 'affected' without a non-empty "
@@ -219,14 +257,12 @@ if not SCOPE_SCRIPT.is_file():
     raise AssertionError(f"lean gate must ship {SCOPE_SCRIPT.relative_to(ROOT)}")
 SCOPE_TEXT = SCOPE_SCRIPT.read_text(encoding="utf-8")
 
-required_block = re.search(
-    r"REQUIRED_TEST_PROJECTS=\(\n(.*?)\n\)", SCOPE_TEXT, flags=re.DOTALL
-)
-if required_block is None:
-    raise AssertionError(
-        "compute-lean-gate-build-scope.sh must declare REQUIRED_TEST_PROJECTS"
-    )
-seeded = set(re.findall(r'"([^"]+\.csproj)"', required_block.group(1)))
+seeded = set()
+for group_array in ("SERVER_TEST_PROJECTS", "ARCHITECTURE_TEST_PROJECTS"):
+    block = re.search(rf"{group_array}=\(\n(.*?)\n\)", SCOPE_TEXT, flags=re.DOTALL)
+    if block is None:
+        raise AssertionError(f"compute-lean-gate-build-scope.sh must declare {group_array}")
+    seeded |= set(re.findall(r'"([^"]+\.csproj)"', block.group(1)))
 
 # Every project the gate's own `dotnet test` steps execute must be compiled by a
 # narrowed build, because all of them run --no-build.
@@ -243,7 +279,7 @@ if seeded != executed:
     missing = sorted(executed - seeded)
     extra = sorted(seeded - executed)
     raise AssertionError(
-        "compute-lean-gate-build-scope.sh REQUIRED_TEST_PROJECTS must be exactly the "
+        "compute-lean-gate-build-scope.sh test group roots must be exactly the "
         "projects the lean gate's --no-build verification and generation require; "
         f"missing={missing} unexpected={extra}"
     )
@@ -364,7 +400,8 @@ require(
 )
 require(
     r"- name: Await Testcontainers PostGIS pre-pull\n"
-    r"\s+if: inputs\.phase != 'build' && inputs\.prepull-postgis == 'true'\n"
+    r"\s+if: inputs\.phase != 'build' && inputs\.prepull-postgis == 'true' && "
+    r"contains\(fromJSON\('\[\"all\",\"server-governance\"\]'\), inputs\.test-group\)\n"
     r"\s+shell: bash\n"
     r"\s+run: scripts/ci/prepull-testcontainers-postgis\.sh --await\n\n"
     r"\s+- name: Run \.NET Tests \(Server Governance/Drift\)",
@@ -439,7 +476,16 @@ print("Lean-gate command contract fixtures passed.")
 # Dynamic isolated Fast projects must be the same reviewed catalog in build and run.
 require(r'python3 scripts/ci/test-projects\.py gate-fast-projects',
         'seed catalogued unit Fast projects in the combined build', text=SCOPE_TEXT)
-require(r'for project in "\$\{REQUIRED_TEST_PROJECTS\[@\]\}" "\$\{UNIT_FAST_TEST_PROJECTS\[@\]\}"',
-        'union dynamic Fast smoke inputs with existing required test projects', text=SCOPE_TEXT)
+require(r'unit-fast\) ROOT_PROJECTS=\("\$\{UNIT_FAST_TEST_PROJECTS\[@\]\}"\)',
+        'build the dynamic Fast smoke inputs in the job that runs them', text=SCOPE_TEXT)
+require(r'architecture\) ROOT_PROJECTS=\("\$\{ARCHITECTURE_TEST_PROJECTS\[@\]\}" "\$\{SERVER_TEST_PROJECTS\[@\]\}"\)',
+        'build Server.Tests for the admin parity export that projection regeneration runs', text=SCOPE_TEXT)
+require(
+    r"- name: Regenerate admin parity exports\n"
+    r"\s+if: inputs\.phase != 'build' && contains\(fromJSON\('\[\"server-fast\",\"server-governance\"\]'\), inputs\.test-group\)\n"
+    r"[\s\S]*?generate-admin-operation-parity-exports\.sh --configuration Release --no-build --no-restore",
+    "refresh the admin parity exports Server.Tests compares before the server groups test",
+)
+assert TEXT.index("- name: Regenerate admin parity exports") < TEXT.index("- name: Run .NET Tests (Server Fast Tier)")
 require(r'python3 scripts/ci/test-projects\.py gate-fast\s',
         'execute the catalogued isolated Fast smoke without another build')

@@ -50,6 +50,34 @@ public sealed class ComponentContractVersionsTests
     }
 
     [UnitTest]
+    public void ApprovalSchemas_EmbeddedDeclaration_MatchesPersistedEvidenceVersions()
+    {
+        var validate = () => ContractVersionsStartupCheck.ValidateApprovalSchemas(
+            ComponentVersionsDeclaration.Embedded.SchemaVersions);
+
+        validate.Should().NotThrow();
+    }
+
+    [UnitTheory]
+    [InlineData("operation-initiation", false)]
+    [InlineData("operation-initiation", true)]
+    [InlineData("operation-human-approval", false)]
+    [InlineData("operation-human-approval", true)]
+    [InlineData("coordinated-release-human-approval", false)]
+    [InlineData("coordinated-release-human-approval", true)]
+    public void ApprovalSchemas_MissingOrStaleDeclaration_RefusesStartup(string name, bool missing)
+    {
+        var declared = ComponentVersionsDeclaration.Embedded.SchemaVersions.ToDictionary(
+            entry => entry.Key, entry => entry.Value, StringComparer.Ordinal);
+        if (missing) declared.Remove(name);
+        else declared[name] = "v0";
+
+        var validate = () => ContractVersionsStartupCheck.ValidateApprovalSchemas(declared);
+
+        validate.Should().Throw<InvalidOperationException>().WithMessage("*'" + name + "'*v1*");
+    }
+
+    [UnitTest]
     public void ServedContractVersions_ReadTheConstantsEachSurfaceOwns()
     {
         var served = ServedContractVersions.Current;

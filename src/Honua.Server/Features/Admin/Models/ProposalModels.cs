@@ -36,6 +36,18 @@ public sealed record ProposalDetailResponse
 {
     public required string ProposalId { get; init; }
 
+    public long Version { get; init; }
+
+    public string? PlanHash { get; init; }
+
+    public string Initiation { get; init; } = "Unknown";
+
+    public string? ApprovalChannel { get; init; }
+
+    public bool RequiresReproposal { get; init; }
+
+    public string? ApprovalRemediation { get; init; }
+
     public required string Kind { get; init; }
 
     public required string Status { get; init; }
@@ -95,3 +107,13 @@ public sealed record RejectProposalRequest
 [JsonSerializable(typeof(ProposalListResponse))]
 [JsonSerializable(typeof(RejectProposalRequest))]
 public sealed partial class ProposalJsonContext : JsonSerializerContext;
+
+internal sealed class ProposalHumanReviewResponse
+{
+    public required ProposalDetailResponse Proposal { get; init; }
+    public required Honua.ControlPlane.OperationHumanApprovalReview Review { get; init; }
+}
+
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(ProposalHumanReviewResponse))]
+internal sealed partial class ProposalHumanReviewJsonContext : JsonSerializerContext;

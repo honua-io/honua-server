@@ -11,6 +11,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.ControlPlane.Restore;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.TestKit.Attributes;
+using Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -51,7 +52,7 @@ public sealed class DurableRestoreWorkerTests
                     IdempotencyKey = "converge:rc2:compose-local"
                 };
                 var payload = new DeployExecutionPayload { TargetId = "compose-local", DesiredRevision = "candidate" }.Serialize();
-                claims[request.ApprovedProposalId] = new OperationProposal
+                var claim = new OperationProposal
                 {
                     ProposalId = request.ApprovedProposalId,
                     Kind = OperationClass.Deploy,
@@ -63,6 +64,10 @@ public sealed class DurableRestoreWorkerTests
                     Plan = new OperationProposalPlan { Summary = $"Converge {slot}", ExecutionPayload = payload },
                     CreatedAt = DateTimeOffset.UtcNow,
                     UpdatedAt = DateTimeOffset.UtcNow
+                };
+                claims[request.ApprovedProposalId] = claim with
+                {
+                    SealedPlanHash = Honua.Server.Features.Operations.OperationApprovalPlanSeal.Compute(claim.Plan)
                 };
                 var id = await queue.EnqueueAsync(request, payload, CancellationToken.None);
                 Assert.True(ids.Add(id), "A new approved operation must not reuse another restore record.");
@@ -158,7 +163,7 @@ public sealed class DurableRestoreWorkerTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task Enqueue_SelfApproval_IsRejectedBeforeWriting()
+    public async Task Enqueue_MissingDurableApproval_IsRejectedBeforeWriting()
     {
         var store = Substitute.For<IWorkflowOperationStore>();
         var queue = new DurableRestoreQueue(store, Substitute.For<IOperationProposalStore>());
@@ -186,17 +191,75 @@ public sealed class DurableRestoreWorkerTests
         Assert.Equal(WorkflowOperationStatus.Succeeded, harness.Restore.Status);
     }
 
+    [UnitTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Reconcile_ModernRecovery_RequiresDurableHumanProof(bool validProof)
+    {
+        using var host = new OperationHumanApprovalTestHost();
+        var harness = new Harness("awaiting-deploy");
+        var approved = await DeployHumanApprovalReplayTests.CreateApprovedProposalAsync(host, true);
+        var proposal = approved with
+        {
+            ExecutionOperationId = harness.RestoreId,
+            Status = OperationProposalStatus.Submitted,
+            HumanApproval = validProof ? approved.HumanApproval : null,
+        };
+        harness.Restore = harness.Restore with
+        {
+            Audit = new OperationAuditInfo
+            {
+                ProposalId = proposal.ProposalId,
+                OperationInstanceId = proposal.Audit.OperationInstanceId,
+                RequestedBy = proposal.RequestedBy,
+                TenantId = proposal.TenantId,
+            },
+            PreMigrationRestore = harness.Restore.PreMigrationRestore! with
+            {
+                Payload = proposal.Plan.ExecutionPayload!,
+                ApprovedBy = proposal.ResolvedBy!,
+            },
+        };
+        harness.Proposals.GetAsync(proposal.ProposalId, Arg.Any<CancellationToken>()).Returns(proposal);
+        harness.Deployment = harness.Deployment with { Status = WorkflowOperationStatus.Succeeded };
+
+        await harness.Worker.ReconcileAsync(harness.RestoreId, CancellationToken.None);
+
+        Assert.Equal(validProof ? WorkflowOperationStatus.Succeeded : WorkflowOperationStatus.Failed, harness.Restore.Status);
+        await harness.Customer.Received(validProof ? 1 : 0).SucceededAsync(Arg.Any<CancellationToken>());
+    }
+
     private sealed class Harness
     {
         public string RestoreId => "restore-test";
         public IPreMigrationRestoreAudit Audit { get; } = Substitute.For<IPreMigrationRestoreAudit>();
         public IServingCustomerProbe Customer { get; } = Substitute.For<IServingCustomerProbe>();
         public IConnectionSecretRetarget Secrets { get; } = Substitute.For<IConnectionSecretRetarget>();
-        public WorkflowOperationRecord Restore { get; private set; }
+        public WorkflowOperationRecord Restore { get; set; }
+        public IOperationProposalStore Proposals { get; } = Substitute.For<IOperationProposalStore>();
         public WorkflowOperationRecord Deployment { get; set; }
         public DurableRestoreWorker Worker { get; }
         public IRevisionSchemaCatalog Revisions { get; } = Substitute.For<IRevisionSchemaCatalog>();
         public IRestoredSchemaProbe Probe { get; } = Substitute.For<IRestoredSchemaProbe>();
+
+        private OperationProposal CreateLegacyApproval(string payload, string phase)
+        {
+            var plan = new OperationProposalPlan { Summary = "Claimed restore", ExecutionPayload = payload };
+            return new OperationProposal
+            {
+                ProposalId = "legacy-proposal",
+                Kind = OperationClass.Deploy,
+                Status = phase == "queued" ? OperationProposalStatus.Executing : OperationProposalStatus.Submitted,
+                RequestedBy = "requester",
+                ResolvedBy = "approver",
+                ExecutionOperationId = RestoreId,
+                Plan = plan,
+                SealedPlanHash = Honua.Server.Features.Operations.OperationApprovalPlanSeal.Compute(plan),
+                CreatedAt = Restore.CreatedAt,
+                UpdatedAt = Restore.UpdatedAt,
+            };
+        }
 
         public Harness(string phase)
         {
@@ -219,6 +282,11 @@ public sealed class DurableRestoreWorkerTests
                     RestoredHostHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(host))).ToLowerInvariant()
                 }
             };
+            Restore = Restore with
+            {
+                Audit = new OperationAuditInfo { ProposalId = "legacy-proposal", RequestedBy = "requester" },
+            };
+            Proposals.GetAsync("legacy-proposal", Arg.Any<CancellationToken>()).Returns(CreateLegacyApproval(payload, phase));
             Deployment = new WorkflowOperationRecord
             {
                 OperationId = "deploy-test",
@@ -245,7 +313,7 @@ public sealed class DurableRestoreWorkerTests
                 Options.Create(new RestoreCellOptions { ConnectionSecretId = "honua-cert-db" }));
             var workflow = new DeployWorkflowService(Substitute.For<IDeployTargetRegistry>(), [store], [],
                 Substitute.For<IOperatorApprovalEvaluator>(), NullLogger<DeployWorkflowService>.Instance);
-            Worker = new DurableRestoreWorker(store, Substitute.For<IOperationProposalStore>(), null!,
+            Worker = new DurableRestoreWorker(store, Proposals, null!,
                 new DeployOperationExecutor(workflow), verifier, Audit, NullLogger<DurableRestoreWorker>.Instance);
         }
     }

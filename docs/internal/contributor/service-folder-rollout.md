@@ -30,6 +30,11 @@ selection through approval replay. A namespace selects ownership and confers no 
 GeoServices directory entries advertise the canonical folder/public leaf path. The root directory
 lists root services and caller-visible folders; a folder lists its qualified service facets.
 Historical aliases continue resolving their original facets but do not appear in discovery.
+Parent-directory lookup gives an already visible standalone locator or scene entry precedence
+when its configured identity collides with a graph Service's public name. This applies at both
+root and `/arcgis` mounts. If no standalone entry is advertised, graph Service resolution and
+caller visibility determine the response; a collision never grants access to that Service or
+exposes its logical name.
 Empty and inaccessible folders are indistinguishable from unknown folders. Folder membership
 does not grant service or resource access.
 
@@ -39,6 +44,9 @@ Existing constrained numeric raster aliases and independently configured namespa
 routes. SOAP catalog discovery and existing SOAP service prefixes follow the public path.
 The optional `/arcgis` prefix and configured public base continue to apply to advertised links.
 WMS and WMTS capabilities retain the incoming supported protocol base, including historical aliases.
+WMTS capability projection uses the graph snapshot captured by canonical Service validation,
+including its Folder, publications and resources. If validation supplies no snapshot, it returns a
+retryable service-unavailable response rather than combining independently read revisions.
 
 Read-only GeoServices Admin probes accept a qualified folder/public leaf. A bare public leaf
 resolves only when it identifies one logical service; an existing root reservation takes

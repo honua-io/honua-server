@@ -37,12 +37,13 @@ public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) 
     private readonly FolderRequesterMembership _memberships = new();
     private readonly FolderRequesterLicense _licensing = new();
     private HttpClient _proposer = null!;
-    private HttpClient _approver = null!;
+    private HumanApprovalHttpClient _approver = null!;
+    private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identity = AdminAuthEndpointsTests.CreateStubFactory();
     private IOperationProposalStore _proposals = null!;
 
     public async Task InitializeAsync()
     {
-        _fixture.UseKestrel().ConfigureWebHost(builder =>
+        HumanApprovalHttpClient.Configure(_fixture, _identity).UseKestrel().ConfigureWebHost(builder =>
         {
             builder.UseEnvironment("Test");
             builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
@@ -64,15 +65,17 @@ public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) 
         await _fixture.InitializeAsync();
         await FolderPostgresTestHost.InstallSchemaAsync(_fixture);
         _proposer = await CreateClientAsync("proposer", ["admin:*"]);
-        _approver = await CreateClientAsync("approver", ["admin:*"]);
+        _approver = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identity, tenantId: "public");
         _proposals = _fixture.Services.GetRequiredService<IOperationProposalStore>();
     }
 
     public async Task DisposeAsync()
     {
+        await DeletePublishConnectionAsync();
         _proposer.Dispose();
         _approver.Dispose();
-        await _fixture.DisposeAsync();
+        try { await _fixture.DisposeAsync(); }
+        finally { _identity.Dispose(); }
     }
 
     [IntegrationTest]
@@ -218,7 +221,7 @@ public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) 
         applied.Status.Should().Be(OperationProposalStatus.Succeeded, string.Join("; ", applied.Plan.BlockingReasons));
         var after = await SnapshotAsync();
         after.Etag.Should().NotBe(before.Etag);
-        using var replay = await _approver.PostAsync($"/api/v1/admin/proposals/{proposal}/approve", null);
+        using var replay = await _approver.Client.PostAsync($"/api/v1/admin/proposals/{proposal}/approve", null);
         replay.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await SnapshotAsync()).Etag.Should().Be(after.Etag, "duplicate approval cannot repeat a mutation");
     }
@@ -245,7 +248,7 @@ public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) 
 
     private async Task ApproveAsync(string proposal)
     {
-        using var response = await _approver.PostAsync($"/api/v1/admin/proposals/{proposal}/approve", null);
+        using var response = await _approver.ApproveAsync(proposal);
         response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
     }
 
@@ -266,7 +269,7 @@ public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) 
     private static Dictionary<string, string?> ApprovalPolicy()
     {
         var settings = new Dictionary<string, string?> { ["Operations:Policy:Enabled"] = "true" };
-        var operations = new[] { "folder.create", "folder.update", "folder.delete", "service.move" };
+        var operations = new[] { "folder.create", "folder.update", "folder.delete", "service.move", "service.publish" };
         for (var index = 0; index < operations.Length; index++)
         {
             settings[$"Operations:Policy:Rules:{index}:OperationId"] = operations[index];

@@ -1456,7 +1456,7 @@ internal sealed class CapabilityManifestService(
         => RbacRoleClaims.IsAdmin(
             principal,
             options.Rbac,
-            entitlementService.GetSnapshot().HasEntitlement(FeatureCatalog.OidcClaimsMappingKey));
+            entitlementService.GetSnapshot().HasEntitlement(FeatureCatalog.OidcAuthenticationKey));
 
     private static bool HasPolicyCapability(CapabilityPolicyContext context, string capability)
     {

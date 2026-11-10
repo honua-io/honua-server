@@ -1516,3 +1516,42 @@ to policy rule 4. This focused build-host result establishes a completed sample,
 not hosted contention qualification. The passing combined batch must confirm
 that the completed test step uses at most 70% of the new cap (23.8 minutes), or
 supply a new measured basis for splitting or rebudgeting.
+
+## Seven slowest shards split under the PR time budget (November 2026)
+
+PR Gate defers any affected shard whose `dispatch_rank` exceeds
+`pr_time_budget.max_shard_minutes` (10). The seven shards over 20 measured minutes are
+split into numbered children (`<parent> 1` .. `<parent> N`) so each fits the budget and
+can run before merge.
+
+Children are sized from the per-test durations in one green trunk full run's TRX,
+attributed sequentially (each test is charged the time since the previous test ended,
+so per-test setup counts) and scaled so the shard's total matches its five-run p50
+test-step minutes. Each child targets at most 380 seconds of tests, about 8.5 job
+minutes with the measured setup overhead. A class over that target is split by method;
+methods whose names are prefixes of one another stay together. Every child except one
+lists its classes or methods intersected with the parent filter. The remaining child is
+the complement: the parent filter minus everything the others list, so new classes and
+methods have exactly one owner. Children keep the parent's paths, project, budgets and
+report flags. `dispatch_rank` holds the estimate until a full run measures the children.
+
+| Parent | Measured job p50 (min) | Children | Estimated child job minutes | Partition granularity |
+|---|---:|---:|---|---|
+| WFS | 55.4 | 9 | 8.1-8.4 | method |
+| Security and Authorization | 42.0 | 7 | 7.7-7.8 | method |
+| Server Features Spec Printing and Static Maps | 25.2 | 4 | 7.8-8.3 | method |
+| FeatureServer Query Services and Replication | 22.7 | 4 | 7.3-7.7 | class |
+| Server Features Streaming Endpoints | 22.0 | 4 | 3.2-8.4 | method |
+| Admin & Infrastructure | 21.6 | 4 | 6.9-7.2 | class |
+| Server Features Admin Integrations and Automation | 21.4 | 4 | 6.9-6.9 | class |
+
+`scripts/ci/check-server-test-shard-coverage.py` proves each partition exact: every
+class (or method, for method partitions) the parent selected belongs to exactly one
+child. A split parent that was already a child of another partition is replaced in that
+partition's child list.
+
+Route assertions in `scripts/ci/validate-ci-router.sh` may name a split parent, which
+expands to all of its children. The affected-shard selector ranks one child per split
+family before any family's second child when the routing signals tie, so a change to a
+class split across many children does not take every slot from another changed test's
+owner.

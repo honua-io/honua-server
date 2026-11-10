@@ -5,7 +5,7 @@ description: "Install the honua-helm chart as one coordinated replica with a per
 ---
 # Deploy on Kubernetes
 
-Kubernetes with Helm is Preview in 2026.1: available for evaluation, and outside
+Kubernetes with Helm is Preview and not certified for 2026.1 rc.2; [ECS Fargate is the certified target](cloud-deployments.md#pick-a-pattern). It is available for evaluation, and outside
 the GA operational, SLA, and scale commitments. `x86_64` is the supported
 architecture. This guide starts with one coordinated Honua replica and a
 persistent volume. That is the safe Kubernetes baseline. Horizontal scaling is
