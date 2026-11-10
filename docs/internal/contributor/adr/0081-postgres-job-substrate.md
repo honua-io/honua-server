@@ -17,8 +17,7 @@ already holds the catalog, and already runs a `FOR UPDATE SKIP LOCKED` outbox (m
 The four interfaces do not change shape: `IExecutionJobStore`, `IJobQueue` (with
 `IQueueClaimReconciler`), `IExecutionLogStore`, `IGeoprocessingResultPackageStore`. The guarantees do
 not change: at-least-once execution with fencing by version compare-and-set, lease-owned updates, the
-per-attempt job token and `CommittedEffectReferences`. `JobExecutionService` (5 s poll),
-`JobReconciliationService` (30 s sweep) and durable cancellation keep their flows.
+per-attempt job token and `CommittedEffectReferences`.
 
 ## Decision
 One table holds a job and its queue position. The queue is a query over that table. Each PostgreSQL
@@ -30,15 +29,15 @@ The stores are `PostgresExecutionJobStore`, `PostgresJobQueue`, `PostgresExecuti
 `Honua.Jobs` and must not reference `Honua.Server` (ADR-0038), and the module policy forbids a
 `Honua.Postgres` to `Honua.Jobs` reference in either direction.
 
-SQL below is written with the default system schema `honua`; migrations use `$HonuaSchema$` and the
-stores quote the configured `Database:Schema`.
+SQL below is written with the default system schema `honua`; the migration uses `$HonuaSchema$` and
+the stores quote the configured `Database:Schema`. The migration only creates tables and indexes.
 
 ### 1. Tables
 
 ```sql
 CREATE TABLE honua.execution_jobs (
     operation_id      TEXT COLLATE "C" PRIMARY KEY CHECK (length(operation_id) BETWEEN 1 AND 512),
-    -- attempt state: authoritative, changed by claim, heartbeat, progress and transitions
+    -- attempt state: authoritative, stamped by the database, overlaid on record when read
     version           BIGINT NOT NULL CHECK (version > 0),
     status            TEXT NOT NULL CHECK (status IN
                           ('Queued', 'Provisioning', 'Running', 'Succeeded', 'Failed', 'Cancelled')),
@@ -47,6 +46,7 @@ CREATE TABLE honua.execution_jobs (
     claimed_at        TIMESTAMPTZ,
     last_heartbeat_at TIMESTAMPTZ,
     next_retry_at     TIMESTAMPTZ,
+    completed_at      TIMESTAMPTZ,
     percent_complete  DOUBLE PRECISION,
     current_phase     TEXT,
     updated_at        TIMESTAMPTZ NOT NULL,
@@ -55,27 +55,23 @@ CREATE TABLE honua.execution_jobs (
     queue_visible_at  TIMESTAMPTZ,
     -- retention
     expires_at        TIMESTAMPTZ NOT NULL,
-    -- the rest of ExecutionJobRecord: authoritative for every field not listed above
+    -- the whole ExecutionJobRecord as last written
     record            JSON NOT NULL,
-    record_hash       BYTEA NOT NULL CHECK (octet_length(record_hash) = 32),
     -- projections of record, written in the same statement as record
-    kind              TEXT NOT NULL,
-    runtime_profile   TEXT NOT NULL,
-    created_at        TIMESTAMPTZ NOT NULL,
-    tenant_id         TEXT,
-    lookup_keys       TEXT[] NOT NULL,
-    CHECK ((queue_visible_at IS NULL) = (queue_priority IS NULL))
-) WITH (fillfactor = 50, toast_tuple_target = 128,
-        autovacuum_vacuum_scale_factor = 0.02, autovacuum_vacuum_threshold = 200,
+    kind                   TEXT NOT NULL,
+    runtime_profile        TEXT NOT NULL,
+    backend                TEXT NOT NULL,
+    priority               SMALLINT NOT NULL,
+    created_at             TIMESTAMPTZ NOT NULL,
+    tenant_id              TEXT,
+    cancellation_requested BOOLEAN NOT NULL,
+    heartbeat_timeout      INTERVAL NOT NULL,
+    max_duration           INTERVAL NOT NULL,
+    lookup_keys            TEXT[] NOT NULL,
+    CHECK ((queue_visible_at IS NULL) = (queue_priority IS NULL)),
+    CHECK (queue_visible_at IS NULL OR backend = 'local')
+) WITH (autovacuum_vacuum_scale_factor = 0.02, autovacuum_vacuum_threshold = 200,
         autovacuum_analyze_scale_factor = 0.05, autovacuum_analyze_threshold = 200);
-
--- Every variable-length column except record stays in the heap row, so only record moves to TOAST.
-ALTER TABLE honua.execution_jobs
-    ALTER COLUMN operation_id SET STORAGE MAIN,  ALTER COLUMN status SET STORAGE MAIN,
-    ALTER COLUMN claimed_by SET STORAGE MAIN,    ALTER COLUMN current_phase SET STORAGE MAIN,
-    ALTER COLUMN record_hash SET STORAGE MAIN,   ALTER COLUMN kind SET STORAGE MAIN,
-    ALTER COLUMN runtime_profile SET STORAGE MAIN, ALTER COLUMN tenant_id SET STORAGE MAIN,
-    ALTER COLUMN lookup_keys SET STORAGE MAIN;
 
 CREATE INDEX idx_execution_jobs_created ON honua.execution_jobs (created_at DESC, operation_id DESC);
 CREATE INDEX idx_execution_jobs_status_created
@@ -84,8 +80,14 @@ CREATE INDEX idx_execution_jobs_kind_created
     ON honua.execution_jobs (kind, created_at DESC, operation_id DESC);
 CREATE INDEX idx_execution_jobs_lookup_keys ON honua.execution_jobs USING GIN (lookup_keys);
 CREATE INDEX idx_execution_jobs_claimable
-    ON honua.execution_jobs (queue_priority, created_at, operation_id)
+    ON honua.execution_jobs (runtime_profile, queue_priority, queue_visible_at, operation_id)
     WHERE status = 'Queued' AND queue_visible_at IS NOT NULL;
+CREATE INDEX idx_execution_jobs_undispatched ON honua.execution_jobs (backend)
+    WHERE status = 'Queued' AND queue_visible_at IS NULL;
+CREATE INDEX idx_execution_jobs_reconcilable ON honua.execution_jobs (status)
+    WHERE status IN ('Queued', 'Provisioning', 'Running')
+      AND NOT (status = 'Queued' AND backend = 'local' AND attempt_count = 0
+               AND NOT cancellation_requested);
 CREATE INDEX idx_execution_jobs_expired ON honua.execution_jobs (expires_at)
     WHERE status IN ('Succeeded', 'Failed', 'Cancelled');
 
@@ -93,7 +95,7 @@ CREATE TABLE honua.leases (
     lease_key  TEXT COLLATE "C" PRIMARY KEY,
     owner_id   TEXT NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL
-) WITH (fillfactor = 50);
+);
 CREATE INDEX idx_leases_expires ON honua.leases (expires_at);
 
 CREATE TABLE honua.execution_job_log_streams (
@@ -103,7 +105,7 @@ CREATE TABLE honua.execution_job_log_streams (
     event_identity_count INTEGER NOT NULL DEFAULT 0,
     expires_at           TIMESTAMPTZ NOT NULL,
     CONSTRAINT execution_job_log_streams_event_identity_limit CHECK (event_identity_count <= 8192)
-) WITH (fillfactor = 50);
+);
 CREATE INDEX idx_execution_job_log_streams_expires ON honua.execution_job_log_streams (expires_at);
 
 CREATE TABLE honua.execution_job_log_entries (
@@ -130,8 +132,8 @@ CREATE INDEX idx_geoprocessing_result_packages_expires
     ON honua.geoprocessing_result_packages (expires_at);
 ```
 
-`record` is `JSON`, not `JSONB`: the stores never query inside it, `JSON` keeps the serialized text
-byte for byte, and `JSONB` rejects the `\u0000` escape that a caller-supplied job parameter can carry.
+`record` is `JSON`, not `JSONB`: the stores never query inside it, and `JSONB` rejects the `\u0000`
+escape that a caller-supplied job parameter can carry.
 
 `lookup_keys` holds one `dimension:VALUE` entry per filterable value of the record: `backend`,
 `queue`, `requested-by`, `correlation`, `trace`, `definition` (definition id and geoprocessing plan
@@ -139,33 +141,33 @@ id), `resource` (one per resource reference), `environment`, `server`, `release`
 `alert`. The value is trimmed and upper-cased, which reproduces the Redis store's trimmed,
 case-insensitive match. These are the dimensions the Redis store indexed.
 
+Autovacuum starts at 2 % dead rows (plus 200) instead of the default 20 %: the claim index is a small
+partial index over a table that churns, and dead entries in it lengthen every claim.
+
 ### 2. Record of truth and projections
 
 | Columns | Role | Kept consistent by |
 |---|---|---|
-| `version`, `status`, `attempt_count`, `claimed_by`, `claimed_at`, `last_heartbeat_at`, `next_retry_at`, `percent_complete`, `current_phase`, `updated_at` | Record of truth for those ten `ExecutionJobRecord` fields. | `record` stores placeholders for them; a read overlays the columns on the deserialized record, so a reader never sees the placeholder. |
-| `queue_priority`, `queue_visible_at` | Record of truth for the local queue. Not part of `ExecutionJobRecord`. | Written only by the queue statements and by the compare-and-set statement (section 3.3). |
-| `expires_at` | Record of truth for retention. | Set in the statement that changes `status` or `record`. |
-| `record` | Record of truth for every other field (spec, audit, policies, artifact and committed-effect references, error, provider id, completion and cancellation times, priority, creation time). | Rewritten only when one of those fields changes. |
-| `record_hash` | SHA-256 of the stored `record` text. | Written with `record`. |
-| `kind`, `runtime_profile`, `created_at`, `tenant_id`, `lookup_keys` | Projections of `record`, used only in `WHERE` and `ORDER BY`. | Computed from the record in the store and written in the same `INSERT` or `UPDATE` as `record`; no statement writes one without the other. |
+| `version`, `status`, `attempt_count`, `claimed_by`, `claimed_at`, `last_heartbeat_at`, `next_retry_at`, `completed_at`, `percent_complete`, `current_phase`, `updated_at` | Record of truth for those eleven `ExecutionJobRecord` fields. | A read deserializes `record` and overlays these columns. `record` holds the writer's copy of them, which a reader never sees. |
+| `queue_priority`, `queue_visible_at` | Record of truth for the local queue. Not part of `ExecutionJobRecord`. | Written only by the queue statements and by the compare-and-set statement (3.3). |
+| `expires_at` | Record of truth for retention. | Set by every write of the job. |
+| `record` | Record of truth for every other field. | Rewritten by every write of the job, in the one statement that writes the columns. |
+| `kind`, `runtime_profile`, `backend`, `priority`, `created_at`, `tenant_id`, `cancellation_requested`, `heartbeat_timeout`, `max_duration`, `lookup_keys` | Projections of `record`, used only in `WHERE` and `ORDER BY`. | Computed from the record in the store and written in the same statement as `record`. |
 
-A status change that touches none of the JSON-held fields (claim, `Provisioning` to `Running`, the
-heartbeat, progress) does not rewrite `record`.
+There is one write path: every create and every compare-and-set is a single statement that writes
+`record`, the attempt state and the projections together. The claim (3.2) and the queue statements
+(3.6) are the only writes that do not carry the record; they change only columns whose record of
+truth is the column.
 
 ### 3. Statements
 
-Every statement below runs as its own transaction on a pooled connection. `now()` is therefore the
+Every statement runs as its own transaction on a pooled connection. `now()` is therefore the
 statement start time on the database server.
 
 #### 3.1 Create if absent (`TryCreateAsync`)
 ```sql
-INSERT INTO honua.execution_jobs (operation_id, version, status, attempt_count, claimed_by,
-    claimed_at, last_heartbeat_at, next_retry_at, percent_complete, current_phase, updated_at,
-    expires_at, record, record_hash, kind, runtime_profile, created_at, tenant_id, lookup_keys)
-VALUES (@operation_id, 1, @status, @attempt_count, @claimed_by, @claimed_at, @last_heartbeat_at,
-    @next_retry_at, @percent_complete, @current_phase, @updated_at, now() + @retention, @record,
-    @record_hash, @kind, @runtime_profile, @created_at, @tenant_id, @lookup_keys)
+INSERT INTO honua.execution_jobs (<all columns except the queue columns>)
+VALUES (@operation_id, 1, @status, ..., now() + @retention, @record, <projections>)
 ON CONFLICT (operation_id) DO NOTHING;
 ```
 One affected row means created. `SetAsync` (used only by the operate fixture seeder) is the same
@@ -177,9 +179,9 @@ These two are the only statements that store the caller's timestamps as given.
 WITH next_job AS (
     SELECT operation_id FROM honua.execution_jobs
     WHERE status = 'Queued' AND queue_visible_at <= now()
+      AND runtime_profile = @runtime_profile
       AND (@kinds::text[] IS NULL OR kind = ANY (@kinds))
-      AND runtime_profile = ANY (@runtime_profiles)
-    ORDER BY queue_priority, created_at, operation_id
+    ORDER BY queue_priority, queue_visible_at, operation_id
     LIMIT 1
     FOR UPDATE SKIP LOCKED)
 UPDATE honua.execution_jobs AS job
@@ -187,28 +189,38 @@ SET status = 'Provisioning', version = job.version + 1, attempt_count = job.atte
     claimed_by = @worker_id, claimed_at = now(), last_heartbeat_at = now(), next_retry_at = NULL,
     current_phase = 'Claimed', updated_at = now()
 FROM next_job WHERE job.operation_id = next_job.operation_id
-RETURNING job.operation_id;
+RETURNING <attempt-state columns>, record;
 ```
-`@runtime_profiles` is the worker's accepted set, or `{managed}` when the worker declares none, as
-`RuntimeProfiles.CanClaim` defines. `queue_priority` is 0 Critical, 1 High, 2 Normal, 3 Low. The
-Redis score ordered a band by enqueue time; this orders it by creation time, so a retried job keeps
-its place instead of moving to the back of its band.
+A worker's accepted runtime profiles are `{managed}` when it declares none, as
+`RuntimeProfiles.CanClaim` defines. A worker with one profile, which is every worker today, runs the
+statement with `runtime_profile = @runtime_profile`, so the scan is the ordered range of
+`idx_execution_jobs_claimable` for that profile and a native worker never reads managed rows. A
+worker with several profiles runs it with `runtime_profile = ANY (@runtime_profiles)`.
 
-#### 3.3 Version compare-and-set (`TrySetAsync`), heartbeat and progress
-The store serializes the record with the ten attempt-state fields replaced by placeholders and hashes
-it. It first sends the narrow statement, which carries no JSON:
+`queue_priority` is 0 Critical, 1 High, 2 Normal, 3 Low. Within a band the order is the time the job
+became visible, which is the Redis score: a requeued or retrying job goes to the back of its band, so
+a job that keeps being handed back (partition-lease contention requeues with a 5 s delay and does
+not consume an attempt) cannot hold the head of the band.
+
+**Lost reply.** If the claim fails after it was sent, the queue remembers that for its worker id
+(unique per process). The next `TryClaimAsync` first runs
+```sql
+SELECT <attempt-state columns>, record FROM honua.execution_jobs
+WHERE claimed_by = @worker_id AND status = 'Provisioning' AND current_phase = 'Claimed'
+ORDER BY claimed_at LIMIT 1;
+```
+and returns that job if there is one. A worker runs one job at a time and moves a job out of the
+`Claimed` phase before it claims again, so such a row can only be the claim whose reply was lost.
+
+#### 3.3 Version compare-and-set (`TrySetAsync`), heartbeat, progress, cancel request
 ```sql
 UPDATE honua.execution_jobs SET
     version = version + 1,
     status = @status, attempt_count = @attempt_count, claimed_by = @claimed_by,
     percent_complete = @percent_complete, current_phase = @current_phase, updated_at = now(),
-    claimed_at = CASE WHEN @claimed_at IS NULL THEN NULL
-                      WHEN claimed_at IS NOT DISTINCT FROM @claimed_at THEN claimed_at
-                      ELSE now() END,
-    last_heartbeat_at = CASE WHEN @last_heartbeat_at IS NULL THEN NULL
-                             WHEN last_heartbeat_at IS NOT DISTINCT FROM @last_heartbeat_at
-                                 THEN last_heartbeat_at
-                             ELSE now() END,
+    claimed_at        = <stamp>(claimed_at, @claimed_at),
+    last_heartbeat_at = <stamp>(last_heartbeat_at, @last_heartbeat_at),
+    completed_at      = <stamp>(completed_at, @completed_at),
     next_retry_at = CASE WHEN @next_retry_at IS NULL THEN NULL
                          WHEN next_retry_at IS NOT DISTINCT FROM @next_retry_at THEN next_retry_at
                          ELSE now() + @retry_delay END,
@@ -219,29 +231,27 @@ UPDATE honua.execution_jobs SET
         ELSE queue_visible_at END,
     queue_priority = CASE WHEN @status IN ('Succeeded', 'Failed', 'Cancelled') THEN NULL
                           ELSE queue_priority END,
-    expires_at = CASE WHEN status IS DISTINCT FROM @status THEN now() + @retention
-                      ELSE expires_at END
-WHERE operation_id = @operation_id AND version = @expected_version AND record_hash = @record_hash;
+    expires_at = now() + @retention,
+    record = @record, <projections>
+WHERE operation_id = @operation_id AND version = @expected_version;
 ```
-If no row is affected it sends the full statement: the same `SET` list plus
-`record = @record, record_hash = @record_hash, kind = @kind, runtime_profile = @runtime_profile,
-created_at = @created_at, tenant_id = @tenant_id, lookup_keys = @lookup_keys,
-expires_at = now() + @retention`, with `WHERE operation_id = @operation_id AND version =
-@expected_version`. No row affected by the full statement is a version conflict and returns `false`.
+where `<stamp>(column, @value)` is
+`CASE WHEN @value IS NULL THEN NULL WHEN column IS NOT DISTINCT FROM @value THEN column ELSE now() END`:
+a timestamp the writer left as it read it is kept, one the writer changed becomes the database time,
+and null clears it. No row affected is a version conflict and returns `false`.
 
-The **heartbeat** and **progress** writes are `TrySetAsync` calls from `JobExecutionService` whose
-record differs from the stored one only in `LastHeartbeatAt`, `UpdatedAt`, `PercentComplete` and
-`CurrentPhase`, so they are always the narrow statement. `@retry_delay` is the writer's
-`NextRetryAt - UpdatedAt` (zero when `NextRetryAt` is null): the writer states a delay on its own
-clock and the database turns it into a time on the database clock.
+`@retry_delay` is the writer's `NextRetryAt - UpdatedAt` (zero when `NextRetryAt` is null): the
+writer states a delay on its own clock and the database turns it into a time on the database clock.
+`next_retry_at` and `queue_visible_at` come from that one expression. `next_retry_at` is what the
+record reports and what the provider reconciler waits on for a job no local worker runs;
+`queue_visible_at` is the only time a claim compares.
 
-A job that was claimed from the local queue and is written back to `Queued` becomes claimable again
-in that same statement (`queue_visible_at = now() + @retry_delay`). There is no window in which such
-a job is `Queued` and absent from the queue, which is the window `ReconcileStaleClaimsAsync` existed
-to repair.
+The heartbeat, progress, cancel-request and terminal writes are all this statement. A job that was
+claimed from the local queue and is written back to `Queued` becomes claimable again in this
+statement; there is no window in which it is `Queued` and absent from the queue.
 
 #### 3.4 Lease-owned update (`TrySetIfLeaseOwnedAsync`)
-The narrow and full statements of 3.3 with the lease row locked for the statement:
+Statement 3.3 with the lease row locked for the statement:
 ```sql
 WITH owned_lease AS MATERIALIZED (
     SELECT 1 FROM honua.leases
@@ -271,32 +281,64 @@ As with the Redis lock, the holder cannot re-acquire a lease it still holds.
 #### 3.6 Enqueue, requeue with delay, remove, depth
 ```sql
 UPDATE honua.execution_jobs SET queue_visible_at = now(), queue_priority = @priority
-WHERE operation_id = @operation_id AND status = 'Queued' AND queue_visible_at IS NULL;   -- enqueue
+WHERE operation_id = @operation_id AND status = 'Queued' AND backend = 'local'
+  AND queue_visible_at IS NULL;                                                          -- enqueue
 
 UPDATE honua.execution_jobs SET queue_visible_at = now() + @visible_after, queue_priority = @priority
-WHERE operation_id = @operation_id AND status NOT IN ('Succeeded', 'Failed', 'Cancelled'); -- requeue
+WHERE operation_id = @operation_id AND backend = 'local'
+  AND status NOT IN ('Succeeded', 'Failed', 'Cancelled');                                -- requeue
 
 UPDATE honua.execution_jobs SET queue_visible_at = NULL, queue_priority = NULL
-WHERE operation_id = @operation_id AND queue_visible_at IS NOT NULL;                     -- remove
+WHERE operation_id = @operation_id AND status = 'Queued' AND queue_visible_at IS NOT NULL; -- remove
 
 SELECT count(*) FROM honua.execution_jobs
 WHERE status = 'Queued' AND queue_visible_at IS NOT NULL;                                -- depth
 ```
-A repeated enqueue keeps the original position, as the Redis `ZADD NX` did. A job that a remote
-backend runs (AWS Batch, Azure Batch, Kubernetes Jobs, the local process pool) is never enqueued, so
-its `queue_visible_at` stays `NULL` and no local worker can claim it while it is `Queued` awaiting
-submission.
+A repeated enqueue keeps the original position, as the Redis `ZADD NX` did. Only a job whose backend
+is `local` can be in the queue; the table constraint enforces it. A job that a remote backend runs
+(AWS Batch, Azure Batch, Kubernetes Jobs, the local process pool) sits `Queued` with
+`queue_visible_at` `NULL` until that backend submits it.
 
-#### 3.7 Cancel request
-Cancellation stays a durable `CancellationRequestedAt` on the record, written by the API host through
-`TrySetAsync` (the full statement of 3.3, because the field is JSON-held). The worker reads it on its
-next heartbeat; the reconciler honours it when a heartbeat has expired.
+#### 3.7 Dispatch repair (`IQueueClaimReconciler.ReconcileStaleClaimsAsync`)
+Every producer creates the job and then enqueues it in a second call: geoprocessing, imports, tile
+cache, layer publish, share export, provisioner build, topology rebuild, multidimensional scan, and
+the console's manual retry. A process that dies between the two leaves a local job `Queued` and not
+in the queue. `JobReconciliationService` repairs first-attempt geoprocessing jobs immediately
+(`NeedsLocalDispatchRepair`); every other case is repaired by this statement, which the service
+already calls each sweep with a 60 s threshold:
+```sql
+UPDATE honua.execution_jobs SET queue_visible_at = now(), queue_priority = priority
+WHERE status = 'Queued' AND queue_visible_at IS NULL AND backend = 'local'
+  AND NOT cancellation_requested AND updated_at <= now() - @stale_threshold;
+```
+Enqueueing is the step the producer was about to take and the job has not started, so the repair
+enqueues for every local kind instead of failing the job. A cancellation-requested job is left for
+the cancellation path.
 
-#### 3.8 Stale-claim reconciliation
-`PostgresJobQueue.ReconcileStaleClaimsAsync` does nothing. The Redis queue moved a job between two
-sorted sets and then updated the store, and repaired the gap between those steps. Claim (3.2) is one
-statement, and a return to `Queued` re-queues in the same statement (3.3), so the state it repaired
-cannot occur. `JobReconciliationService` still calls it every sweep.
+#### 3.8 Reconciler candidates
+`ListActiveAsync` returned every non-terminal job to two loops. With a deep queue that is the whole
+backlog every 5 s on every serving node. The two loops now read candidates instead:
+```sql
+-- JobReconciliationService, every 30 s: claims that may have expired, and local dispatch repair
+SELECT <attempt-state columns>, record FROM honua.execution_jobs
+WHERE (status IN ('Provisioning', 'Running')
+       AND (COALESCE(last_heartbeat_at, claimed_at) <= now() - heartbeat_timeout
+            OR claimed_at <= now() - max_duration))
+   OR (status = 'Queued' AND queue_visible_at IS NULL AND backend = 'local');
+
+-- ExecutionJobReconcilerBackgroundService, every 5 s: jobs the reconciler acts on
+SELECT operation_id FROM honua.execution_jobs
+WHERE status IN ('Queued', 'Provisioning', 'Running')
+  AND NOT (status = 'Queued' AND backend = 'local' AND attempt_count = 0
+           AND NOT cancellation_requested);
+```
+The second excludes exactly the first-attempt local jobs waiting in the queue, for which the
+reconciler only reads progress. It keeps local `Queued` jobs with a cancellation request or an
+earlier attempt, because the reconciler cancels the former and resets the progress of the latter.
+The reconciler's per-job lease is unchanged; the rows that made it expensive no longer reach it.
+Both services keep their own checks on each record; the queries only narrow what they look at. They
+are `IReconcilableJobSource`, implemented by the job store; a store without it (the in-memory
+doubles) is read through `ListActiveAsync` as before.
 
 #### 3.9 List and query with cursor
 ```sql
@@ -314,20 +356,17 @@ LIMIT @limit + 1;                                             -- QueryAsync, lim
 
 SELECT <attempt-state columns>, record FROM honua.execution_jobs
 WHERE status IN ('Queued', 'Provisioning', 'Running') AND (@kind::text IS NULL OR kind = @kind)
-ORDER BY updated_at DESC LIMIT @limit;                        -- ListActiveAsync
+ORDER BY updated_at DESC LIMIT 2 * @limit;                    -- ListActiveAsync
 ```
 The store builds the text with only the predicates a query uses. The cursor is the opaque base64 of
-`<created_at in Unix microseconds>|<operation_id>` of the last row returned. The Redis cursor carried
-milliseconds; ordering within one millisecond is now by time first, then by id.
+`<created_at in Unix microseconds>|<operation_id>` of the last row returned.
 
 #### 3.10 Log append with dedupe and trim, tail, page, retention
 Append is one batch (one round trip, one implicit transaction):
 ```sql
-DELETE FROM honua.execution_job_log_streams WHERE operation_id = @operation_id AND expires_at <= now();
-
 INSERT INTO honua.execution_job_log_streams (operation_id, expires_at)
 VALUES (@operation_id, now() + @retention)
-ON CONFLICT (operation_id) DO UPDATE SET operation_id = EXCLUDED.operation_id;  -- locks the stream
+ON CONFLICT (operation_id) DO UPDATE SET expires_at = EXCLUDED.expires_at;      -- locks the stream
 
 WITH accepted AS (
     INSERT INTO honua.execution_job_log_event_identities (operation_id, event_id)
@@ -358,7 +397,7 @@ WITH stream AS (
     SELECT appended_count, dropped_count,
            CASE WHEN @start < 0 THEN GREATEST(dropped_count, appended_count - @limit)
                 ELSE GREATEST(dropped_count, @start) END AS window_start
-    FROM honua.execution_job_log_streams WHERE operation_id = @operation_id AND expires_at > now())
+    FROM honua.execution_job_log_streams WHERE operation_id = @operation_id)
 SELECT stream.appended_count, stream.dropped_count, stream.window_start, entry.entry
 FROM stream LEFT JOIN LATERAL (
     SELECT sequence, entry FROM honua.execution_job_log_entries
@@ -366,8 +405,10 @@ FROM stream LEFT JOIN LATERAL (
     ORDER BY sequence LIMIT @limit + 1) AS entry ON TRUE
 ORDER BY entry.sequence;
 ```
-`SetRetentionAsync` is `UPDATE honua.execution_job_log_streams SET expires_at = now() + @ttl WHERE
-operation_id = @operation_id`.
+Every append moves the stream's expiry to `Jobs:Store:LogRetention` from now, and
+`SetRetentionAsync`, which the execution and reconciliation services call when a job reaches a
+terminal state, sets it from that moment. The sweep (3.12) does not delete the log of a job that is
+not terminal. A log therefore never expires while its job runs.
 
 #### 3.11 Result packages
 ```sql
@@ -388,10 +429,21 @@ WITH expired AS (
     WHERE status IN ('Succeeded', 'Failed', 'Cancelled') AND expires_at <= now()
     ORDER BY expires_at LIMIT @batch_size FOR UPDATE SKIP LOCKED)
 DELETE FROM honua.execution_jobs AS job USING expired WHERE job.operation_id = expired.operation_id;
+
+WITH expired AS (
+    SELECT stream.operation_id FROM honua.execution_job_log_streams AS stream
+    WHERE stream.expires_at <= now()
+      AND NOT EXISTS (SELECT 1 FROM honua.execution_jobs AS job
+                      WHERE job.operation_id = stream.operation_id
+                        AND job.status IN ('Queued', 'Provisioning', 'Running'))
+    ORDER BY stream.expires_at LIMIT @log_stream_batch_size FOR UPDATE SKIP LOCKED)
+DELETE FROM honua.execution_job_log_streams AS stream USING expired
+WHERE stream.operation_id = expired.operation_id;
 ```
-and the same shape for `execution_job_log_streams` (entries and event identities cascade),
-`geoprocessing_result_packages` and `leases`. It runs on every serving node without leader election:
-the deletes are bounded, idempotent and skip rows another node has locked.
+and the first shape for `geoprocessing_result_packages` and `leases`. A log stream cascades to up to
+2,000 entries and 8,192 event identities, so `@log_stream_batch_size` is 10: one statement deletes at
+most about 100,000 small rows. The sweep runs on every serving node without leader election: the
+deletes are bounded, idempotent and skip rows another node has locked.
 
 | Setting | Default | Was |
 |---|---|---|
@@ -401,14 +453,13 @@ the deletes are bounded, idempotent and skip rows another node has locked.
 | `Jobs:Store:RetentionSweepInterval` | 10 minutes | Redis expiry |
 | `Jobs:Store:RetentionSweepBatchSize` | 1,000 | n/a |
 
-Two differences from Redis expiry, both deliberate. A job's retention runs from its last status or
-record change, not from its last heartbeat. A job that is not in a terminal state is never swept:
-Redis silently dropped a job left `Queued` for seven days, which contradicts invariant 3 below.
+A job that is not in a terminal state is never swept. Redis silently dropped a job left `Queued` for
+seven days; here it stays visible and, if local, is repaired by 3.7.
 
 #### 3.13 Database time
-`IExecutionJobStore.GetUtcNowAsync` returns `SELECT now()`. It is a default interface method that
-returns the node clock, so the in-memory test doubles, which stamp with the node clock, stay
-consistent.
+`IJobStoreClock.GetUtcNowAsync`, implemented by the job store, returns `SELECT now()`. A consumer
+given no clock uses the node clock, which is right for a store that stamps with the node clock (the
+in-memory doubles).
 
 ### 4. Invariants and the tests that prove them
 Tests are in `tests/dotnet/Honua.Server.Tests/Features/Infrastructure/ControlPlane/` and run against
@@ -416,71 +467,76 @@ PostgreSQL through Testcontainers.
 
 | # | Invariant | Mechanism | Test |
 |---|---|---|---|
-| 1 | A job is claimed by at most one worker per attempt. | Claim is one statement that row-locks the candidate with `SKIP LOCKED`, and re-checks `status = 'Queued'` on the locked row. | `PostgresJobClaimContentionTests.TryClaimAsync_EightWorkersRaceOneJob_ExactlyOneWinsWithOneAttempt`, `...TryClaimAsync_WorkersDrainContestedQueue_EveryJobIsClaimedExactlyOnce` |
-| 2 | A stale attempt cannot write after it is superseded. | Every write carries the version it read; a requeue or a new claim increments it. Finalization under a partition lease also requires the lease row. | `PostgresStaleAttemptFencingIntegrationTests.StaleAttempt_IsFencedAcrossReclaimDuplicateDeliveryAndTerminalization`, `PostgresJobClaimContentionTests.WorkerLoss_NaturalHeartbeatLapse_ReExecutesOnceAndSuppressesTheStaleWorkersTerminal`, `PostgresExecutionJobStoreTests.TrySetIfLeaseOwnedAsync_FinalizesOnlyWhileLeaseIsOwned` |
-| 3 | A `Queued` row in the local queue is always eventually claimable. | Queue position is a column on the row; a return to `Queued` restores it in the same statement; a job is never swept before it is terminal. A persisted initial local job that was never enqueued is still enqueued by the reconciliation sweep. | `PostgresJobQueueTests.TrySetAsync_ClaimedJobReturnedToQueued_IsClaimableWithoutRequeue`, `PostgresExecutionSubstrateIntegrationTests.JobReconciliation_PersistedLocalJobWithoutDelivery_ReplacementWorkerExecutesOnce` |
+| 1 | A job is claimed by at most one worker per attempt. | Claim is one statement that row-locks the candidate with `SKIP LOCKED` and re-checks `status = 'Queued'` on the locked row. | `PostgresJobClaimContentionTests.TryClaimAsync_EightWorkersRaceOneJob_ExactlyOneWinsWithOneAttempt`, `...TryClaimAsync_WorkersDrainContestedQueue_EveryJobIsClaimedExactlyOnce` |
+| 2 | A stale attempt cannot write after it is superseded. | Every write carries the version it read; a requeue or a new claim increments it. Finalization under a partition lease also requires the lease row. | `PostgresStaleAttemptFencingIntegrationTests.StaleAttempt_IsFencedAcrossReclaimDuplicateDeliveryAndTerminalization`, `PostgresJobClaimContentionTests.WorkerLoss_NaturalHeartbeatLapse_ReExecutesOnceAndSuppressesTheStaleWorkersTerminal`, `PostgresExecutionSubstrateIntegrationTests.ExecutionJobStore_FinalizesOnlyWhileLeaseIsOwned` |
+| 3 | A local `Queued` job is always eventually claimable. | A return to `Queued` restores the queue position in the same statement; a local `Queued` job that is not in the queue is enqueued by the next sweep after 60 s (3.7); a job is never swept before it is terminal. | `PostgresJobQueueTests.TrySetAsync_ClaimedJobReturnedToQueued_IsClaimableWithoutRequeue`, `PostgresJobQueueTests.ReconcileStaleClaimsAsync_LocalJobCreatedButNeverEnqueued_IsEnqueued` (one case per job kind), `...ReconcileStaleClaimsAsync_ManualRetryThatNeverRequeued_IsEnqueued`, `...ReconcileStaleClaimsAsync_RemoteBackendJob_IsLeftForItsBackend`, `PostgresExecutionSubstrateIntegrationTests.JobReconciliation_PersistedLocalJobWithoutDelivery_ReplacementWorkerExecutesOnce` |
 | 4 | Cancellation is observed. | Durable `CancellationRequestedAt`; read on each heartbeat and by the reconciler. | `PostgresExecutionSubstrateIntegrationTests.JobReconciliationService_CancelsDurablyRequestedStaleJob`, `PostgresStaleAttemptFencingIntegrationTests.CancellationDuringBackoff_PreventsTheNextAutomaticAttempt` |
-| 5 | Retries respect the delay. | `queue_visible_at = now() + delay`; claim filters on it. | `PostgresJobQueueTests.RequeueAsync_WithDelay_HidesTheJobUntilTheDelayElapses`, `PostgresStaleAttemptFencingIntegrationTests.AutomaticTransientFailure_UsesConfiguredBackoffAndStopsAtExactMaxAttempts` |
+| 5 | Retries respect the delay and go to the back of their band. | `queue_visible_at = now() + delay`; claim filters and orders on it. | `PostgresJobQueueTests.RequeueAsync_WithDelay_HidesTheJobUntilTheDelayElapses`, `...TryClaimAsync_RequeuedJob_GoesBehindJobsAlreadyWaitingInItsBand`, `PostgresStaleAttemptFencingIntegrationTests.AutomaticTransientFailure_UsesConfiguredBackoffAndStopsAtExactMaxAttempts` |
 | 6 | A worker killed mid-job is recovered within the heartbeat timeout plus one sweep. | `last_heartbeat_at` stops advancing; the 30 s sweep requeues or fails the job once it is 90 s old. | `PostgresJobClaimContentionTests.WorkerLoss_NaturalHeartbeatLapse_ReExecutesOnceAndSuppressesTheStaleWorkersTerminal`, `PostgresStaleAttemptFencingIntegrationTests.StaleAttempt_IsFencedAcrossReclaimDuplicateDeliveryAndTerminalization` (kills the worker process) |
-| 7 | Log events are not duplicated. | Primary key on `(operation_id, event_id)`, checked in the append transaction. | `PostgresExecutionLogStoreTests.BoundedLog_TrimsWithAbsoluteCursorsAndDeduplicatesExternalEvents` |
+| 7 | Log events are not duplicated. | Primary key on `(operation_id, event_id)`, checked in the append transaction. | `PostgresExecutionLogStoreTests.BoundedLog_TrimsWithAbsoluteCursorsAndDeduplicatesExternalEvents`, `...AppendOnceAsync_ConcurrentDeliveriesOfOneEvent_AppendExactlyOneEntry` |
 | 8 | Correctness depends only on database time. | Section 5. | `PostgresJobStoreClockTests.ClaimLeaseAndHeartbeatExpiry_UnderSkewedNodeClocks_FollowDatabaseTime` |
 | 9 | A database restart during a running job loses nothing and does not run the job twice. | Section 8. | `PostgresJobExecutionResilienceTests.JobExecutionService_WhenPostgresRestartsMidJob_JobCompletesExactlyOnce` |
+| 10 | A database outage longer than the heartbeat timeout does not expire healthy workers' jobs. | Section 8. | `PostgresJobExecutionResilienceTests.JobReconciliation_AfterAnOutageLongerThanTheHeartbeatTimeout_DoesNotExpireALiveWorkersJob` |
+| 11 | A claim whose reply was lost is taken by the worker that made it and costs no attempt. | 3.2. | `PostgresJobQueueTests.TryClaimAsync_AfterAClaimWhoseReplyWasLost_ReturnsThatJobWithOneAttempt` |
 
 ### 5. Time
 Every lease expiry, visibility delay, heartbeat timeout, execution timeout and retention comparison
 uses the database clock.
 
-- Stamped in SQL with `now()`: `claimed_at`, `last_heartbeat_at`, `next_retry_at`, `updated_at`,
-  `queue_visible_at`, `expires_at` and every lease `expires_at`. A compare-and-set write replaces a
-  timestamp the writer changed with the database time (3.3); it never stores the writer's value.
+- Stamped in SQL with `now()`: `claimed_at`, `last_heartbeat_at`, `next_retry_at`, `completed_at`,
+  `updated_at`, `queue_visible_at`, `expires_at` and every lease `expires_at`. A compare-and-set
+  write replaces a timestamp the writer changed with the database time (3.3); it never stores the
+  writer's value. A duration between two of them cannot be negative.
 - Compared in SQL with `now()`: claim visibility, lease acquire and renew, the lease-owned update,
-  log and result-package expiry on read, the retention sweep.
-- Compared in C# against `IExecutionJobStore.GetUtcNowAsync`: the places that today compare a stored
-  timestamp against the node clock.
+  the reconciler candidate queries, result-package expiry on read, the retention sweep.
+- Compared in C# against `IJobStoreClock`: the places that today compare a stored timestamp against
+  the node clock.
 
 | Today (node clock) | Change |
 |---|---|
-| `JobReconciliationService`: heartbeat and timeout expiry against `DateTimeOffset.UtcNow` (five reads) | Reads the store clock. `LastHeartbeatAt` and `ClaimedAt` it compares against are database-stamped. |
+| `JobReconciliationService`: heartbeat and timeout expiry against `DateTimeOffset.UtcNow` | Reads the store clock once per sweep, and once more for each job it is about to expire. |
 | `ExecutionJobReconciler`: `NextRetryAt > DateTimeOffset.UtcNow` for provider-run retries | Reads the store clock. `NextRetryAt` is database-stamped. |
 | `AssignedExecutionJobQueue`: heartbeat expiry of another worker's claim against its `TimeProvider` | Reads the store clock. |
 | `RedisJobQueue`: visibility and stale-claim age against `DateTimeOffset.UtcNow` | Deleted; SQL `now()`. |
 | Redis key TTLs (server clock already) | `expires_at` and SQL `now()`. |
 
-`CreatedAt`, `CompletedAt` and `CancellationRequestedAt` remain the writer's values: they are shown
-and sorted, never compared with a clock to make a decision. A worker's own execution timeout and
-drain deadline are durations on its monotonic clock.
+`CreatedAt` and `CancellationRequestedAt` remain the writer's values: they are shown and sorted,
+never compared with a clock to make a decision. A worker's own execution timeout and drain deadline
+are durations on its monotonic clock. `TryCreateAsync` and `SetAsync` store timestamps as given,
+which is how a job is first written and how tests age a record.
 
-`TryCreateAsync` and `SetAsync` store timestamps as given, which is how a job is first written and
-how tests age a record.
+### 6. Write volume and reconciler load
+Every write of a job rewrites its row including `record`. A heartbeat is one read and one such
+write: 200 running jobs at the 30 s interval is about 14 statements and 7 row versions per second.
+A record over about 2 kB is stored out of line, so each of those writes also replaces its TOAST
+chunks; autovacuum reclaims them. The measured row versions and heap, TOAST and index growth for that
+load are in the pull request. If they show a problem, the fix is a heartbeat statement that does not
+carry the record, which the column layout already allows.
 
-### 6. Write volume
-A heartbeat or progress write changes `version`, `updated_at`, `last_heartbeat_at`,
-`percent_complete` and `current_phase`. None is in an index or an index predicate, so PostgreSQL can
-make the update heap-only. Three settings make that the normal case:
+Reconciler load per process, with R running or provisioning jobs and any number queued:
 
-- `toast_tuple_target = 128` with every other variable-length column `STORAGE MAIN` moves `record`
-  out of the heap row, so a new row version is a few hundred bytes and does not copy the JSON.
-- `fillfactor = 50` leaves half of each heap page free at insert for those row versions; a later
-  access to the page prunes the dead ones without vacuum.
-- Autovacuum at 2 % dead rows (plus 200) instead of the default 20 %, because the claim index is a
-  small partial index over a table that churns, and dead entries in it lengthen every claim.
+| Loop | Where | Statements |
+|---|---|---|
+| Claim poll, every 5 s when idle | each worker | 1 index-ordered claim |
+| Heartbeat, every 30 s per running job | the worker running it | 2 |
+| `JobReconciliationService`, every 30 s | each serving node, each GDAL worker | 1 clock read, 1 candidate query (3.8, returns only expired claims and undispatched local jobs), 1 dispatch repair (3.7); then work only for jobs it recovers |
+| `ExecutionJobReconcilerBackgroundService`, every 5 s | each serving node in poll mode | 1 candidate query; per candidate a lease insert, a read, a write only if the observation changed something, a lease delete. Candidates are R plus remote-backend and retrying jobs, not the local backlog |
 
-Each heartbeat is one read of the row and one narrow update: 200 running jobs at the 30 s interval is
-about 14 statements per second. The measured row versions, heap-only ratio and size growth for that
-load are in the pull request.
+With 200 running jobs that last loop is about 120 to 160 statements per second per serving node,
+which is what it costs on Redis today. A backlog of 10,000 queued local jobs adds nothing to any
+loop.
 
 ### 7. Connections
-The stores hold no connection between statements and use no session state, so they are safe behind
-RDS Proxy and on a frozen Lambda.
+The stores hold no connection between statements and use no session state of their own. They are
+free of connection pinning behind RDS Proxy only when `Database:SessionSettings:Mode` is
+`role-defaults`: in the default mode the shared data source runs `SET` in its connection
+initializer, for every user of the pool.
 
-| Host | Pool | Configured by |
-|---|---|---|
-| Serving host | The system `NpgsqlDataSource` (default max 200, min 20). | `Limits:Connections:*` |
-| Single-job execution worker (AWS Batch, Azure Batch, Kubernetes Jobs; the server image started with `HONUA_OPERATION_ID`) | The system data source, with max 8 and min 0 when the operator set neither. | `Limits:Connections:MaxConnectionPoolSize` / `MinConnectionPoolSize`; the default changes in `PostgresDataSourceFactory.ResolveConnectionLimits`, next to the existing Lambda default. |
-| GDAL worker (`Honua.Worker.Gdal`) | Its own data source for the job store only: max 4, min 0. | `Jobs:Store:WorkerMaxPoolSize`; connection string `ConnectionStrings:DefaultConnection`, which the GDAL worker now requires in place of `ConnectionStrings:redis`. |
-
-A single-job worker uses at most three job-store connections at once (claim or finalize, heartbeat,
-log append).
+A single-job execution worker (the server image started with `HONUA_OPERATION_ID`) defaults to a
+pool of at most 8 and at least 0 connections when `Limits:Connections` sets neither; the GDAL worker
+opens its own data source for the job store with at most 4 and at least 0
+(`Jobs:Store:WorkerMaxPoolSize`), from `ConnectionStrings:DefaultConnection`, which it now requires
+in place of `ConnectionStrings:redis`. The serving host is unchanged (200 and 20).
 
 ### 8. Failure behaviour
 A statement that fails with a transient error (connection refused or reset, `57P01`, `57P03`, class
@@ -490,22 +546,27 @@ A statement that fails with a transient error (connection refused or reset, `57P
   release, `AppendOnceAsync`, result-package writes.
 - Safe with confirmation: `TryCreateAsync` and the compare-and-set writes. If an attempt failed after
   the statement was sent and the retry affects no row, the store reads the row; version
-  `expected + 1` with the same `record_hash` and attempt state means the first attempt committed, and
-  the call returns `true`.
-- Not repeated after send: claim, lease acquire, `AppendAsync` without an event id. The error reaches
-  the caller.
+  `expected + 1` holding exactly the record that was sent means the first attempt committed, and the
+  call returns `true`.
+- Claim: not repeated blindly; recovered as in 3.2.
+- Not repeated after send: lease acquire, `AppendAsync` without an event id. The error reaches the
+  caller.
 
-Beyond that budget the existing loops carry on: the claim loop retries at its 5 s poll, the heartbeat
-pump at its next interval, the reconciler at its next sweep. Nothing is held in memory that the
-database does not have, so an outage loses no job.
+Beyond that budget the existing loops carry on: the claim loop retries at its 5 s poll and the
+reconciler at its next sweep. A heartbeat pump whose write failed retries every 2 s instead of
+waiting for its next interval, so heartbeats resume as soon as the database is back. Nothing is held
+in memory that the database does not have, so an outage loses no job.
+
+After an outage every heartbeat in the table is older than the outage, and a sweep that compared
+them with the current database time would expire healthy workers' jobs, failing those with
+`MaxAttempts = 1`. `JobReconciliationService` therefore does not expire a heartbeat until it has
+completed sweeps without a store error for that job's heartbeat timeout: a failed sweep starts the
+period again. Execution-timeout expiry is not delayed.
 
 - An outage shorter than the retry budget is invisible to jobs.
-- An outage shorter than the heartbeat timeout minus the interval (60 s by default) causes no
-  re-execution: heartbeats resume before any job looks dead.
-- A longer outage can make a live job look dead; the reconciler requeues it and the original attempt
-  is fenced by version on its next write. That is the existing at-least-once guarantee, unchanged.
-- A claim whose reply is lost leaves a `Provisioning` row with no worker; it is requeued after the
-  heartbeat timeout and has consumed one attempt.
+- A longer outage, of any length, does not by itself expire a job whose worker is alive.
+- A worker that died during the outage is recovered one heartbeat timeout after the reconciler next
+  sees the database.
 - The API returns its existing store-unavailable error for a job request it cannot persist.
 
 Capability manifest: `jobs.runner` is available when the job store and queue are registered, which
@@ -518,24 +579,25 @@ takes the node out of rotation. The Redis durability attestation leaves the job 
 requirement and is gated on its own store instead of on the job-store classification.
 
 ### 9. Upgrade
-There is no migration tool. Operators let running jobs finish before upgrading. A job still in Redis
-after the upgrade is abandoned: nothing claims it, its record, logs and result are not visible
-through any API, and its keys expire in Redis after seven days. Upgrade the serving host first (it
-applies the migrations); a worker started against a database without the tables logs the store error
-and retries until they exist.
+Jobs in progress are not carried over from earlier pre-release builds; start from a clean
+deployment.
 
 ### 10. Limits
 Expected envelope: hundreds of concurrently running jobs, a backlog of the order of 100,000 queued or
-retained rows, tens of submissions per second. The claim is an index scan of the first claimable row;
-at 200,000 rows it reads about ten buffers.
+retained rows, tens of submissions per second, one database.
 
-What would be added if that is exceeded, each behind the same interfaces:
+What would be added if that is exceeded, each behind the same interfaces: a heartbeat statement that
+does not carry the record; claiming several jobs per statement (`LIMIT n`); an optional wake-up
+signal so an idle worker does not wait for its 5 s poll.
 
-- a heartbeat statement that does not read the record first (a default interface method on
-  `IExecutionJobStore`);
-- claiming several jobs per statement (`LIMIT n`) for a worker that runs several at once;
-- time partitioning of `execution_jobs` so retention becomes dropping a partition;
-- an optional wake-up signal so an idle worker does not wait for its 5 s poll.
+Not reachable without a redesign: time partitioning of `execution_jobs` (a partitioned table cannot
+keep `operation_id` unique across partitions, which create-if-absent relies on), and active-active
+operation across regions (every guarantee here rests on one writable database and its clock).
+
+Known follow-ups: a point-in-time restore of the database restores job state with it, so a job that
+had finished can come back as `Queued` or `Running` and run again; there is no switch yet to hold
+claiming while an operator reviews them. Job hosts (GDAL and single-job workers) use the system
+database role; a role limited to the job tables is not implemented.
 
 Deliberately not done: `LISTEN/NOTIFY`, session advisory locks, `SET`, any second queue structure,
 any cross-statement transaction.
@@ -551,6 +613,9 @@ any cross-statement transaction.
   Redis as a requirement for running a job at all, which is what the decision removes.
 - **An external broker (SQS, RabbitMQ).** A third required service, per-cloud variants, and still no
   atomic move between the broker and the job record.
+- **A narrow heartbeat write that leaves `record` untouched** (a second statement, a record hash and
+  heap-only-update tuning). Rejected in design review: two write paths can drift, and the volume one
+  path writes is small. It stays available as the first step in section 10.
 
 ## Consequences
 - A deployment with PostgreSQL and no Redis runs durable jobs. Community edition gets the durable job
@@ -558,6 +623,4 @@ any cross-statement transaction.
 - The GDAL worker needs database credentials and network access to PostgreSQL; it no longer needs
   Redis.
 - Job state is queryable with SQL and is covered by database backup and restore.
-- Job writes add load to the system database: about 14 statements per second per 200 running jobs,
-  plus about ten statements per job over its life.
-- Jobs in Redis at upgrade are abandoned (section 9).
+- Job writes and reconciliation add load to the system database (section 6).
