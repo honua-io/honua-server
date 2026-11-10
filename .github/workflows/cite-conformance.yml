@@ -40,14 +40,9 @@ permissions:
   contents: read
   packages: write
 
-concurrency:
-  group: cite-conformance-${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
-  cancel-in-progress: true
-
 jobs:
   cite:
     uses: ./.github/workflows/cite-conformance-common.yml
-    secrets: inherit
     with:
       suite: features
       display-name: OGC API Features
@@ -58,7 +53,7 @@ jobs:
       job-timeout-minutes: 45
       cite-profile: ${{ inputs.profile || 'default' }}
       honua-image: ${{ inputs.honua_image || '' }}
-      tested-honua-git-sha: ${{ inputs.source_sha || github.sha }}
+      tested-honua-git-sha: ${{ inputs.honua_image != '' && inputs.source_sha || github.sha }}
       release-suite-id: ${{ contains(inputs.honua_image, '@sha256:') && 'server-cite-conformance' || '' }}
       release-compose-file: docker/cite/ogc-api-features/compose.yml
       validation-command: bash ./scripts/conformance/ogc/validate-ogc-conformance.sh --results cite-results

@@ -47,44 +47,77 @@ class OgcReleaseCandidateTests(unittest.TestCase):
                       jobs["aggregate"]["if"])
 
     def test_reusable_calls_supply_required_inputs(self):
-        for job in workflow("ogc-rc-conformance.yml")["jobs"].values():
-            target = workflow(job["uses"].split("/")[-1])
-            inputs = (target["on"]["workflow_call"] or {}).get("inputs", {})
-            supplied = job.get("with", {})
-            self.assertLessEqual(set(supplied), set(inputs))
-            for key, definition in inputs.items():
-                if definition.get("required") == "true":
-                    self.assertIn(key, supplied)
+        def inspect(name, ancestors=()):
+            self.assertNotIn(name, ancestors)
+            for job in workflow(name)["jobs"].values():
+                target_path = job.get("uses", "")
+                if not target_path.startswith("./.github/workflows/"):
+                    continue
+                target_name = target_path.split("/")[-1]
+                target = workflow(target_name)
+                inputs = (target["on"]["workflow_call"] or {}).get("inputs", {})
+                supplied = job.get("with", {})
+                self.assertLessEqual(set(supplied), set(inputs), target_name)
+                for key, definition in inputs.items():
+                    if definition.get("required") == "true":
+                        self.assertIn(key, supplied, target_name)
+                self.assertNotEqual(job.get("secrets"), "inherit", target_name)
+                inspect(target_name, (*ancestors, name))
+        inspect("ogc-rc-conformance.yml")
+        self.assertNotIn("secrets", workflow("release-bundle.yml")["jobs"]["ogc-conformance"])
 
-    def test_digest_and_permissions_survive_reusable_call_chain(self):
-        release = workflow("release-bundle.yml")["jobs"]
-        self.assertIn("@${{ steps.build.outputs.digest }}", release["rc-image"]["outputs"]["image_digest_ref"])
-        dispatcher = workflow("ogc-rc-conformance.yml")
-        for job in dispatcher["jobs"].values():
-            target = workflow(job["uses"].split("/")[-1])
-            for permission, access in target.get("permissions", {}).items():
-                if access == "write":
-                    self.assertEqual(dispatcher["permissions"].get(permission), "write")
-                    self.assertEqual(release["ogc-conformance"]["permissions"].get(permission), "write")
+    def test_permissions_survive_every_reusable_call(self):
+        rank = {"none": 0, "read": 1, "write": 2}
+        def check(child, parent):
+            for permission, access in child.items():
+                self.assertGreaterEqual(rank[parent.get(permission, "none")], rank[access], permission)
+        def inspect(name, caller_permissions):
+            doc = workflow(name)
+            declared = doc.get("permissions", caller_permissions)
+            check(declared, caller_permissions)
+            for job in doc["jobs"].values():
+                permissions = job.get("permissions", declared)
+                check(permissions, caller_permissions)
+                if job.get("uses", "").startswith("./.github/workflows/"):
+                    inspect(job["uses"].split("/")[-1], permissions)
+        caller = workflow("release-bundle.yml")["jobs"]["ogc-conformance"]["permissions"]
+        inspect("ogc-rc-conformance.yml", caller)
 
     def test_manual_dispatch_cannot_cancel_a_candidate_suite(self):
-        for job in workflow("ogc-rc-conformance.yml")["jobs"].values():
+        dispatcher = workflow("ogc-rc-conformance.yml")
+        self.assertNotIn("concurrency", dispatcher)
+        for job in dispatcher["jobs"].values():
             target = workflow(job["uses"].split("/")[-1])
-            concurrency = target.get("concurrency", {})
-            if concurrency.get("cancel-in-progress") != "false" and concurrency:
-                self.assertIn("github.run_id", concurrency["group"])
+            self.assertNotIn("concurrency", target)
+        pages = workflow("cite-evidence-report.yml")["jobs"]["deploy-pages"]["concurrency"]
+        self.assertEqual(pages, {"group": "cite-evidence-report-pages",
+                                 "cancel-in-progress": "false", "queue": "max"})
+
+    def test_source_identity_uses_image_only_when_supplied(self):
+        for job in workflow("ogc-rc-conformance.yml")["jobs"].values():
+            name = job["uses"].split("/")[-1]
+            doc = workflow(name)
+            image = "honua_image" if name == "cite-conformance.yml" else "server_image"
+            text = (WORKFLOWS / name).read_text()
+            if image in (doc["on"]["workflow_call"] or {}).get("inputs", {}) and "inputs.source_sha || github.sha" in text:
+                self.assertIn(f"inputs.{image} != '' && inputs.source_sha || github.sha", text, name)
 
     def test_duplicate_yaml_keys_are_rejected(self):
         with self.assertRaises(ValueError):
             yaml.load("with:\n  profile: basic\n  profile: full\n", Loader=UniqueKeyLoader)
 
-    def test_independent_classic_profiles_keep_distinct_artifacts(self):
+    def test_classic_suites_have_distinct_artifact_identities(self):
         jobs = workflow("cite-classic-conformance.yml")["jobs"]
-        for job in jobs.values():
-            self.assertEqual(job["with"]["artifact-suffix"], "-classic")
-        steps = workflow("cite-conformance-common.yml")["jobs"]["cite"]["steps"]
-        names = [step.get("with", {}).get("name", "") for step in steps]
-        self.assertTrue(any("inputs.artifact-suffix" in name for name in names))
+        suites = [job["with"]["suite"] for job in jobs.values()]
+        self.assertEqual(len(suites), len(set(suites)))
+        self.assertNotIn("artifact-suffix", workflow("cite-conformance-common.yml")["on"]["workflow_call"]["inputs"])
+
+    def test_building_blocks_never_skip_release_candidate_work(self):
+        job = workflow("ogc-api-building-block-conformance.yml")["jobs"]["conformance"]
+        self.assertNotIn("if", job)
+        self.assertFalse(any(step.get("id") == "generated-only" for step in job["steps"]))
+        text = (WORKFLOWS / "ogc-api-building-block-conformance.yml").read_text()
+        self.assertNotIn("pull_request", text)
 
 
 if __name__ == "__main__":

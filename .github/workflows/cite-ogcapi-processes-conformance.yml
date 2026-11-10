@@ -1,5 +1,8 @@
 name: OGC API Processes 1.0 Release Gate
 
+# Tier: required release gate. Manual and RC builds supply
+# the immutable candidate digest after publication. This is never a per-PR job.
+
 on:
   workflow_dispatch:
     inputs:
@@ -12,8 +15,6 @@ on:
         required: true
         type: string
 
-# Tier: required release gate. Manual and RC builds supply
-# the immutable candidate digest after publication. This is never a per-PR job.
   workflow_call:
     inputs:
       server_image:
@@ -26,10 +27,6 @@ on:
 permissions:
   contents: read
   packages: write
-
-concurrency:
-  group: cite-ogcapi-processes-conformance-${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
-  cancel-in-progress: true
 
 jobs:
   validate-image:

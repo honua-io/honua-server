@@ -32,16 +32,12 @@ permissions:
   contents: read
   packages: write
 
-concurrency:
-  group: cite-wms-conformance-${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
-  cancel-in-progress: true
-
 jobs:
   cite:
     uses: ./.github/workflows/cite-conformance-common.yml
     with:
       honua-image: ${{ inputs.server_image || '' }}
-      tested-honua-git-sha: ${{ inputs.source_sha || github.sha }}
+      tested-honua-git-sha: ${{ inputs.server_image != '' && inputs.source_sha || github.sha }}
       suite: wms
       display-name: WMS
       runner-script: ./scripts/conformance/cite/run-cite-wms-tests.sh

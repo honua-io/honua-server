@@ -12,10 +12,6 @@ permissions:
 env:
   DOTNET_VERSION: '10.0.x'
 
-concurrency:
-  group: ogc-maps-conformance-${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
-  cancel-in-progress: true
-
 jobs:
   ogc-maps-conformance:
     runs-on: ubuntu-latest

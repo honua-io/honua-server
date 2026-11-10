@@ -39,11 +39,7 @@ permissions:
   actions: read
   pages: write
   id-token: write
-  issues: write
 
-concurrency:
-  group: cite-evidence-report
-  cancel-in-progress: false
 
 jobs:
   evidence:
@@ -56,7 +52,7 @@ jobs:
       actions: read
       pages: write
       id-token: write
-      issues: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -167,7 +163,7 @@ jobs:
           HONUA_CITE_SKIP_BUILD: 'true'
           HONUA_CITE_SERVER_BUILD_MODE: ${{ inputs.server_image == '' && 'source-build' || 'prebuilt' }}
           HONUA_CITE_REQUESTED_SERVER_IMAGE: ${{ inputs.server_image }}
-          HONUA_CITE_TESTED_GIT_SHA: ${{ inputs.source_sha || github.sha }}
+          HONUA_CITE_TESTED_GIT_SHA: ${{ inputs.server_image != '' && inputs.source_sha || github.sha }}
         run: |
           set -euo pipefail
           date -u +%Y-%m-%dT%H:%M:%SZ > cite-execution-started-at.txt
@@ -222,7 +218,7 @@ jobs:
         if: always()
         env:
           CITE_EVIDENCE_PUBLIC_BASE_URL: ${{ inputs.publish_pages && format('https://{0}.github.io/{1}', github.repository_owner, github.event.repository.name) || '' }}
-          CITE_EVIDENCE_TESTED_GIT_SHA: ${{ inputs.source_sha || github.sha }}
+          CITE_EVIDENCE_TESTED_GIT_SHA: ${{ inputs.server_image != '' && inputs.source_sha || github.sha }}
           CITE_EVIDENCE_PRODUCER_GIT_SHA: ${{ github.sha }}
         run: |
           scripts/conformance/cite/build-cite-evidence.sh --output artifacts/cite-evidence
@@ -339,62 +335,16 @@ jobs:
           retention-days: 90
           if-no-files-found: error
 
-      - name: Open/update issue on scheduled failure
-        if: failure() && github.event_name == 'schedule'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        with:
-          script: |
-            const title = 'CITE Evidence Report: scheduled run failed or evidence is stale';
-            const runUrl = `${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`;
-            const body = `## CITE Evidence Report Alert
-
-            The weekly scheduled \`CITE Evidence Report\` run failed — either one or more CITE
-            conformance suites regressed, or \`docs/cite-status.md\` has gone stale beyond the
-            14-day freshness threshold (honua-server#2944).
-
-            **Run**: ${runUrl}
-
-            ## Acceptance Criteria
-
-            - If a suite regressed: root-cause and fix the regression, then re-run this workflow.
-            - If only the freshness check failed: refresh \`docs/cite-status.md\` from the latest
-              passing evidence bundle and re-run this workflow to confirm it is fresh.
-
-            This issue was created automatically by the CITE Evidence Report workflow.
-            `;
-
-            const issues = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              labels: 'cite-evidence,automated'
-            });
-
-            const existingIssue = issues.data.find(issue => issue.title === title);
-
-            if (existingIssue) {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: existingIssue.number,
-                body: `Recurred: ${runUrl}`
-              });
-            } else {
-              await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title,
-                body,
-                labels: ['cite-evidence', 'automated', 'high-priority']
-              });
-            }
-
   deploy-pages:
     name: Deploy CITE Evidence Pages
     needs: evidence
     if: inputs.publish_pages
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    concurrency:
+      group: cite-evidence-report-pages
+      cancel-in-progress: false
+      queue: max
     environment:
       name: github-pages
       url: ${{ steps.deploy-pages.outputs.page_url }}

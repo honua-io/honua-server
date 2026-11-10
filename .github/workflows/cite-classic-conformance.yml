@@ -58,18 +58,13 @@ permissions:
   contents: read
   packages: write
 
-concurrency:
-  group: cite-classic-conformance-${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
-  cancel-in-progress: true
-
 jobs:
   wms13:
     if: ${{ (inputs.suite || 'both') == 'both' || inputs.suite == 'wms13' }}
     uses: ./.github/workflows/cite-conformance-common.yml
     with:
       honua-image: ${{ inputs.server_image || '' }}
-      tested-honua-git-sha: ${{ inputs.source_sha || github.sha }}
-      artifact-suffix: '-classic'
+      tested-honua-git-sha: ${{ inputs.server_image != '' && inputs.source_sha || github.sha }}
       suite: wms13
       display-name: WMS 1.3
       runner-script: ./scripts/conformance/cite/run-cite-wms-tests.sh
@@ -85,8 +80,7 @@ jobs:
     uses: ./.github/workflows/cite-conformance-common.yml
     with:
       honua-image: ${{ inputs.server_image || '' }}
-      tested-honua-git-sha: ${{ inputs.source_sha || github.sha }}
-      artifact-suffix: '-classic'
+      tested-honua-git-sha: ${{ inputs.server_image != '' && inputs.source_sha || github.sha }}
       suite: wfs20
       display-name: WFS 2.0
       runner-script: ./scripts/conformance/cite/run-cite-wfs20-tests.sh

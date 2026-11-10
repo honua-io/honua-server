@@ -31,10 +31,6 @@ permissions:
 env:
   CITE_PROFILE: ${{ inputs.profile || 'basic' }}
 
-concurrency:
-  group: cite-wfs20-conformance-${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
-  cancel-in-progress: true
-
 jobs:
   wfs20-cite-conformance:
     name: WFS 2.0 CITE Conformance

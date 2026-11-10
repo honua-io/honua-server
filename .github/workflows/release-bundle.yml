@@ -19,6 +19,10 @@ on:
       - '.github/workflows/release-bundle.yml'
       - '.github/workflows/cite-conformance.yml'
       - '.github/workflows/cite-conformance-common.yml'
+      - '.github/workflows/cite-*-conformance.yml'
+      - '.github/workflows/cite-evidence-report.yml'
+      - '.github/workflows/ogc-*-conformance.yml'
+      - 'scripts/ci/fixtures/validate-ogc-rc-workflows.py'
       - 'scripts/release/dispatch-and-wait.sh'
       - 'eng/release/bundle-suites.v1.json'
       - 'tests/dotnet/Honua.ReleaseWorkflows.Tests/**'
@@ -364,9 +368,7 @@ jobs:
       actions: read
       pages: write
       id-token: write
-      issues: write
       checks: write
-    secrets: inherit
     with:
       server_image: ${{ needs.rc-image.outputs.image_digest_ref }}
       source_sha: ${{ needs.rc-image.outputs.server_sha }}

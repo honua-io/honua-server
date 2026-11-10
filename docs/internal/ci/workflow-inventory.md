@@ -411,9 +411,9 @@ which is why both the run count and exact observed span are recorded.
 | `ogc-maps-conformance.yml` | OGC API Maps Conformance | `workflow_dispatch`, RC `workflow_call` | |
 | `ogc-api-building-block-conformance.yml` | OGC API Building-Block Conformance | `workflow_dispatch`, RC `workflow_call` | Builds and verifies an exact source-SHA image (reads registry cache `buildcache:honua-jit-amd64` on trusted refs), then runs the vendored CQL2, MVT/TMS 2.0, Maps, and Schemathesis validators; uploads the complete evidence pack and fails on any validator failure. |
 | `cng-candidate.yml` | Candidate CNG qualification | `workflow_dispatch`, `workflow_call` | Resolves one frozen honua-release manifest into the exact server digest, source SHA and cut time; calls the existing conformance lane and retains the candidate identity. |
-| `cng-conformance.yml` | Cloud-Native-Geospatial Conformance | path-filtered PR/push, weekly, `workflow_dispatch`, `workflow_call` | COG/GeoParquet/PMTiles-class CNG conformance; verifies the candidate image revision and builds offline helpers from the pinned candidate source. |
+| `cng-conformance.yml` | Cloud-Native-Geospatial Conformance | weekly `schedule` (Wed 06:00 UTC), `workflow_dispatch`, `workflow_call`, scoped `pull_request`/`push` self-tests | COG/GeoParquet/PMTiles-class CNG conformance; verifies the candidate image revision and builds offline helpers from the pinned candidate source. |
 | `cite-classic-conformance.yml` | Classic OGC CITE Conformance | `workflow_dispatch`, RC `workflow_call` | On-demand combined WMS 1.3 + WFS 2.0 classic lane. |
-| `cite-evidence-report.yml` | CITE Evidence Report | `workflow_dispatch`, RC `workflow_call` | Runs the public CITE suite set and builds `artifacts/cite-evidence/` (summary JSON, badge SVG, static index, full TeamEngine HTML) with optional Pages deployment. Also asserts `docs/cite-status.md` freshness and opens/updates an issue when the reviewed snapshot is >14 days stale (#2944). |
+| `cite-evidence-report.yml` | CITE Evidence Report | `workflow_dispatch`, RC `workflow_call` | Runs the public CITE suite set and builds `artifacts/cite-evidence/` (summary JSON, badge SVG, static index, full TeamEngine HTML) with optional Pages deployment. Also asserts `docs/cite-status.md` freshness and blocks RC qualification when the reviewed snapshot is >14 days stale (#2944); refresh the reviewed snapshot manually before cutting an RC. |
 | `cite-certification.yml` | Exact-candidate CITE protocol certification | `workflow_dispatch` | Release-only producer that runs the full CITE inventory against a canonical immutable GHCR digest, verifies its OCI source revision, and emits post-cut normalized certification observations for the governed release denominator (#3382). |
 
 External OGC conformance runs after the immutable image is built for channel `rc`, through
@@ -426,7 +426,6 @@ Building-Block suites retain their source-build checks at the release workflow c
 Exact-candidate certification remains a separate manual operation requiring its governed
 candidate context. Building-Block Conformance is currently disabled in repository settings;
 its trigger policy is safe to re-enable after this change lands.
-
 
 ## Release and deploy
 
@@ -485,7 +484,7 @@ The following workflows had `pull_request` and `push` triggers removed, leaving 
 
 Additionally, `cite-conformance.yml` (already schedule-only) had dead PR comment steps and a stale `pull-requests: write` permission removed to match.
 
-**Rationale**: Conformance suites are external, heavyweight, and non-deterministic. They belong in the nightly certification lane, not the PR-blocking path. Regressions are caught by the weekly schedule and can be tested on-demand via `workflow_dispatch`.
+**Rationale**: Conformance suites are external, heavyweight, and non-deterministic. They belong in the nightly certification lane, not the PR-blocking path. Superseded by the release-candidate routing above: external OGC conformance now runs for every RC and on demand via `workflow_dispatch`; the pre-existing 01:00 PT full integration coverage is retained.
 
 #### CodeQL moved off PR path
 

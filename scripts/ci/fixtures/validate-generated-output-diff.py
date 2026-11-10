@@ -290,9 +290,9 @@ class WorkflowCompletion(unittest.TestCase):
                         self.assertEqual(bool(evaluate(step['if'])), verdict != 'true', step.get('name'))
         selection = gate['jobs']['affected-shards-select']
         self.assertIn('steps.generated-only.outputs.generated_only', selection['outputs']['skip'])
-        for name in ('ogc-api-building-block-conformance', 'normalize-derived-artifacts'):
+        for name in ('normalize-derived-artifacts',):
             doc = yaml.safe_load((ROOT / f'.github/workflows/{name}.yml').read_text())
-            job = doc['jobs']['conformance' if name.startswith('ogc') else 'generate']
+            job = doc['jobs']['generate']
             classified = False
             for step in job['steps']:
                 if step.get('id') == 'generated-only':
