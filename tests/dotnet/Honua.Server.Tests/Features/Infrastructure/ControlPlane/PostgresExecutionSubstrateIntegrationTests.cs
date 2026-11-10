@@ -1,0 +1,1170 @@
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+
+using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.ControlPlane;
+using Honua.Server.Tests.Infrastructure;
+using Honua.TestKit;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+
+namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
+
+/// <summary>
+/// PostgreSQL Testcontainers integration coverage for the durable execution substrate
+/// used by the control-plane worker and reconciler services.
+/// </summary>
+[Protocol(TestProtocols.Infrastructure)]
+[Operation(Operations.TestInfrastructure)]
+public sealed class PostgresExecutionSubstrateIntegrationTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
+{
+    [IntegrationTest]
+    public Task SweepActiveJobs_HeartbeatRefreshedBeforeRetryWrite_PreservesRunningClaim()
+        => AssertLateHeartbeatPreservesClaimAsync(maxAttempts: 3);
+
+    [IntegrationTest]
+    public Task SweepActiveJobs_HeartbeatRefreshedBeforeFailureWrite_PreservesRunningClaim()
+        => AssertLateHeartbeatPreservesClaimAsync(maxAttempts: 1);
+
+    private async Task AssertLateHeartbeatPreservesClaimAsync(int maxAttempts)
+    {
+        await using var harness = await CreateHarnessAsync();
+        var queued = CreateQueuedJob($"late-heartbeat-{Guid.NewGuid():N}",
+            retryPolicy: new JobRetryPolicy { MaxAttempts = maxAttempts });
+        await harness.JobStore.TryCreateAsync(queued);
+        await harness.Queue.EnqueueAsync(queued.OperationId);
+        (await harness.Queue.TryClaimAsync("live-worker")).Should().Be(queued.OperationId);
+        var claimed = (await harness.JobStore.GetAsync(queued.OperationId))!;
+        (await harness.JobStore.TrySetAsync(claimed with
+        {
+            Status = ExecutionJobStatus.Running,
+            HeartbeatPolicy = JobHeartbeatPolicy.Default
+        })).Should().BeTrue();
+        await harness.AgeClaimAsync(queued.OperationId, TimeSpan.FromSeconds(92));
+        var snapshot = (await harness.JobStore.GetAsync(queued.OperationId))!;
+        var refreshedAt = DateTimeOffset.UtcNow;
+        var reads = 0;
+        // Only interpose at the read boundary. Heartbeat and recovery writes still
+        // use the real compare-and-set, and claim/requeue use the real queue statements.
+        var store = Substitute.For<IExecutionJobStore>();
+        store.ListActiveAsync(null, null, Arg.Any<CancellationToken>()).Returns([snapshot]);
+        store.GetAsync(queued.OperationId, Arg.Any<CancellationToken>()).Returns(async _ =>
+        {
+            if (++reads == 2)
+            {
+                var current = (await harness.JobStore.GetAsync(queued.OperationId))!;
+                (await harness.JobStore.TrySetAsync(current with
+                {
+                    LastHeartbeatAt = refreshedAt,
+                    UpdatedAt = refreshedAt
+                })).Should().BeTrue();
+            }
+            return await harness.JobStore.GetAsync(queued.OperationId);
+        });
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => harness.JobStore.TrySetAsync(call.Arg<ExecutionJobRecord>(),
+                call.Arg<TimeSpan?>(), call.Arg<CancellationToken>()));
+        var callback = new RecordingTerminalCallback();
+        using var service = new JobReconciliationService(store, harness.Queue, harness.Queue,
+            new ExecutionJobCancellationTokens(), [callback], harness.LogStore,
+            NullLogger<JobReconciliationService>.Instance, harness.JobStore);
+
+        await service.SweepActiveJobsAsync(CancellationToken.None);
+
+        reads.Should().Be(2, "the heartbeat must land after the first expiry check");
+        var preserved = (await harness.JobStore.GetAsync(queued.OperationId))!;
+        preserved.Status.Should().Be(ExecutionJobStatus.Running);
+        preserved.LastHeartbeatAt.Should().BeAfter(snapshot.LastHeartbeatAt!.Value)
+            .And.BeCloseTo(await harness.JobStore.GetUtcNowAsync(), TimeSpan.FromSeconds(30));
+        preserved.ClaimedBy.Should().Be("live-worker");
+        preserved.AttemptCount.Should().Be(1);
+        callback.IsCompleted.Should().BeFalse();
+        (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
+        (await harness.Queue.TryClaimAsync("duplicate-worker")).Should().BeNull();
+        (await harness.IsInQueueAsync(queued.OperationId)).Should().BeTrue("the live worker still holds its delivery");
+    }
+
+    [IntegrationTest]
+    public async Task JobReconciliation_PersistedLocalJobWithoutDelivery_ReplacementWorkerExecutesOnce()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var queued = CreateQueuedJob($"interrupted-admission-{Guid.NewGuid():N}");
+        queued = queued with { Spec = queued.Spec with { Backend = "local" }, Priority = OperationPriority.High };
+        await harness.JobStore.TryCreateAsync(queued);
+        // Simulate process loss after durable creation: no progress or pending membership.
+        using var sweep = new JobReconciliationService(harness.JobStore, harness.Queue, harness.Queue,
+            new ExecutionJobCancellationTokens(), [], harness.LogStore, NullLogger<JobReconciliationService>.Instance,
+            harness.JobStore);
+        await sweep.SweepActiveJobsAsync(CancellationToken.None);
+        await sweep.SweepActiveJobsAsync(CancellationToken.None);
+        (await harness.Queue.GetQueueDepthAsync()).Should().Be(1);
+        var executions = 0;
+        var callback = new RecordingTerminalCallback();
+        var executor = new DelegatingJobExecutor(ExecutionJobKind.Geoprocessing, (_, _, _) =>
+        {
+            Interlocked.Increment(ref executions);
+            return Task.FromResult(JobExecutionResult.Succeeded());
+        });
+        using var replacement = new JobExecutionService(harness.Queue, harness.JobStore, [executor],
+            new ExecutionJobCancellationTokens(), [callback], harness.LogStore, NullLogger<JobExecutionService>.Instance);
+        await replacement.StartAsync(CancellationToken.None);
+        try
+        {
+            var terminal = await callback.WhenCompleted.WaitAsync(TimeSpan.FromSeconds(15));
+            terminal.Status.Should().Be(ExecutionJobStatus.Succeeded);
+            terminal.AttemptCount.Should().Be(1);
+            executions.Should().Be(1);
+            (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
+        }
+        finally
+        {
+            await replacement.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task JobQueue_RepeatedAdmissionRepair_DoesNotRepublishAnAlreadyClaimedDelivery()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var job = CreateQueuedJob($"dispatch-repair-{Guid.NewGuid():N}");
+        await harness.JobStore.TryCreateAsync(job);
+        await harness.Queue.EnqueueAsync(job.OperationId);
+        (await harness.Queue.TryClaimAsync("worker-first")).Should().Be(job.OperationId);
+        await harness.Queue.EnqueueAsync(job.OperationId);
+
+        (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
+        (await harness.Queue.TryClaimAsync("worker-second")).Should().BeNull();
+    }
+
+    [IntegrationTest]
+    public async Task ExecutionJobStore_TenantScope_FiltersBeforePaginationAndCursorCreation()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var owner = $"tenant-owner-{Guid.NewGuid():N}";
+        var created = DateTimeOffset.UtcNow;
+        var expected = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var tenant in new[] { "tenant-a", "tenant-b", "unscoped" })
+        {
+            expected[tenant] = [];
+            for (var i = 0; i < 2; i++)
+            {
+                var id = $"{tenant}-{Guid.NewGuid():N}";
+                expected[tenant].Add(id);
+                var job = CreateQueuedJob(id) with
+                {
+                    CreatedAt = created.AddMinutes(-i),
+                    Audit = new OperationAuditInfo
+                    {
+                        RequestedBy = owner,
+                        SubmitterSecurityContext = tenant == "unscoped" ? null : new JobSecurityContext(owner, tenant, [], "roles")
+                    }
+                };
+                (await harness.JobStore.TryCreateAsync(job)).Should().BeTrue();
+            }
+        }
+
+        foreach (var (tenant, ids) in expected)
+        {
+            var query = new ExecutionJobQuery
+            {
+                RequestedBy = owner,
+                ApplyTenantScope = true,
+                TenantId = tenant == "unscoped" ? null : tenant,
+                Limit = 1
+            };
+            var first = await harness.JobStore.QueryAsync(query);
+            first.Items.Should().ContainSingle().Which.OperationId.Should().Be(ids[0]);
+            first.NextCursor.Should().NotBeNull();
+            var second = await harness.JobStore.QueryAsync(query with { Cursor = first.NextCursor });
+            second.Items.Should().ContainSingle().Which.OperationId.Should().Be(ids[1]);
+            second.NextCursor.Should().BeNull();
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ExecutionJobStore_SupportsCasUpdatesAndActiveIndexes()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var operationId = $"job-{Guid.NewGuid():N}";
+        var job = CreateQueuedJob(operationId);
+
+        var created = await harness.JobStore.TryCreateAsync(job);
+        created.Should().BeTrue();
+
+        var loaded = await harness.JobStore.GetAsync(operationId);
+        loaded.Should().NotBeNull();
+        loaded!.Version.Should().Be(1);
+        loaded.Status.Should().Be(ExecutionJobStatus.Queued);
+
+        var claimTimestamp = DateTimeOffset.UtcNow;
+        var claimed = loaded with
+        {
+            Status = ExecutionJobStatus.Provisioning,
+            ClaimedBy = "worker-integration",
+            ClaimedAt = claimTimestamp,
+            LastHeartbeatAt = claimTimestamp,
+            CurrentPhase = "Claimed"
+        };
+
+        var casApplied = await harness.JobStore.TrySetAsync(claimed);
+        casApplied.Should().BeTrue();
+
+        var afterClaim = await harness.JobStore.GetAsync(operationId);
+        afterClaim.Should().NotBeNull();
+        afterClaim!.Version.Should().Be(2);
+        afterClaim.Status.Should().Be(ExecutionJobStatus.Provisioning);
+
+        var staleWriteApplied = await harness.JobStore.TrySetAsync(claimed with
+        {
+            Status = ExecutionJobStatus.Running,
+            CurrentPhase = "stale-overwrite"
+        });
+        staleWriteApplied.Should().BeFalse();
+
+        var now = DateTimeOffset.UtcNow;
+        await harness.JobStore.SetAsync(afterClaim with
+        {
+            Status = ExecutionJobStatus.Succeeded,
+            UpdatedAt = now,
+            CompletedAt = now,
+            CurrentPhase = "Completed"
+        });
+
+        var activeJobs = await harness.JobStore.ListActiveAsync();
+        activeJobs.Should().NotContain(entry => entry.OperationId == operationId);
+    }
+
+    [IntegrationTest]
+    public async Task ExecutionJobStore_FinalizesOnlyWhileLeaseIsOwned()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var operationId = $"job-lease-finalize-{Guid.NewGuid():N}";
+        var leaseOperationId = $"partition:{Guid.NewGuid():N}";
+        const string owner = "worker-a:job";
+        var job = CreateQueuedJob(operationId) with
+        {
+            Status = ExecutionJobStatus.Running,
+            ClaimedBy = "worker-a"
+        };
+        (await harness.JobStore.TryCreateAsync(job)).Should().BeTrue();
+        var running = await harness.JobStore.GetAsync(operationId);
+        running.Should().NotBeNull();
+        (await harness.JobStore.TryAcquireLeaseAsync(
+            leaseOperationId,
+            owner,
+            TimeSpan.FromMinutes(1))).Should().BeTrue();
+
+        var succeeded = running! with
+        {
+            Status = ExecutionJobStatus.Succeeded,
+            CompletedAt = DateTimeOffset.UtcNow
+        };
+        (await harness.JobStore.TrySetIfLeaseOwnedAsync(
+            succeeded,
+            leaseOperationId,
+            "worker-b:job")).Should().BeFalse();
+        (await harness.JobStore.GetAsync(operationId)).Should().Match<ExecutionJobRecord>(
+            value => value.Status == ExecutionJobStatus.Running);
+
+        (await harness.JobStore.TrySetIfLeaseOwnedAsync(
+            succeeded,
+            leaseOperationId,
+            owner)).Should().BeTrue();
+        (await harness.JobStore.GetAsync(operationId)).Should().Match<ExecutionJobRecord>(
+            value => value.Status == ExecutionJobStatus.Succeeded);
+    }
+
+    [IntegrationTest]
+    public async Task ExecutionJobStore_QueriesByFiltersAndCursor()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var now = DateTimeOffset.UtcNow;
+        var firstId = $"job-query-first-{Guid.NewGuid():N}";
+        var secondId = $"job-query-second-{Guid.NewGuid():N}";
+        var otherId = $"job-query-other-{Guid.NewGuid():N}";
+        var fallbackId = $"job-query-fallback-{Guid.NewGuid():N}";
+
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(firstId) with
+        {
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = now.AddMinutes(-3),
+            UpdatedAt = now.AddMinutes(-2),
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = "alice",
+                CorrelationId = "corr-query"
+            },
+            Spec = CreateQueuedJob(firstId).Spec with
+            {
+                Parameters = new Dictionary<string, string>
+                {
+                    [ExecutionJobParameterKeys.DefinitionId] = "definition-query",
+                    [ExecutionJobParameterKeys.Queue] = "critical",
+                    [ExecutionJobParameterKeys.ResourceRefs] = "service/parcels|layer/parcels",
+                    [ExecutionJobParameterKeys.TraceId] = "trace-query",
+                    [ExecutionJobParameterKeys.Environment] = "test"
+                }
+            }
+        });
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(secondId) with
+        {
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = now.AddMinutes(-1),
+            UpdatedAt = now,
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = "alice",
+                CorrelationId = "corr-query"
+            },
+            Spec = CreateQueuedJob(secondId).Spec with
+            {
+                Parameters = new Dictionary<string, string>
+                {
+                    [ExecutionJobParameterKeys.DefinitionId] = "definition-query",
+                    [ExecutionJobParameterKeys.Queue] = "critical",
+                    [ExecutionJobParameterKeys.ResourceRefs] = "service/parcels",
+                    [ExecutionJobParameterKeys.TraceId] = "trace-query",
+                    [ExecutionJobParameterKeys.Environment] = "test"
+                }
+            }
+        });
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(otherId) with
+        {
+            Status = ExecutionJobStatus.Succeeded,
+            CreatedAt = now.AddMinutes(-2),
+            UpdatedAt = now.AddMinutes(-1),
+            CompletedAt = now,
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = "bob",
+                CorrelationId = "corr-other"
+            },
+            Spec = CreateQueuedJob(otherId).Spec with
+            {
+                Parameters = new Dictionary<string, string>
+                {
+                    [ExecutionJobParameterKeys.Queue] = "standard"
+                }
+            }
+        });
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(fallbackId) with
+        {
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = now.AddMinutes(-4),
+            UpdatedAt = now.AddMinutes(-3),
+            Spec = CreateQueuedJob(fallbackId).Spec with
+            {
+                Backend = "fallback-queue",
+                Parameters = new Dictionary<string, string>()
+            }
+        });
+
+        var firstPage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Statuses = [ExecutionJobStatus.Running],
+            RequestedBy = "alice",
+            CorrelationId = "corr-query",
+            TraceId = "trace-query",
+            DefinitionId = "definition-query",
+            Queue = "critical",
+            ResourceRef = "service/parcels",
+            Environment = "test",
+            Limit = 1
+        });
+
+        firstPage.Items.Should().ContainSingle(job => job.OperationId == secondId);
+        firstPage.NextCursor.Should().NotBeNullOrWhiteSpace();
+
+        var secondPage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Statuses = [ExecutionJobStatus.Running],
+            RequestedBy = "alice",
+            CorrelationId = "corr-query",
+            TraceId = "trace-query",
+            DefinitionId = "definition-query",
+            Queue = "critical",
+            ResourceRef = "service/parcels",
+            Environment = "test",
+            Cursor = firstPage.NextCursor,
+            Limit = 1
+        });
+
+        secondPage.Items.Should().ContainSingle(job => job.OperationId == firstId);
+        secondPage.NextCursor.Should().BeNull();
+
+        var queuePage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Queue = "critical",
+            Limit = 10
+        });
+
+        queuePage.Items.Should().Contain(job => job.OperationId == firstId);
+        queuePage.Items.Should().Contain(job => job.OperationId == secondId);
+        queuePage.Items.Should().NotContain(job => job.OperationId == otherId);
+
+        var fallbackQueuePage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Queue = "fallback-queue",
+            Limit = 10
+        });
+
+        fallbackQueuePage.Items.Should().ContainSingle(job => job.OperationId == fallbackId);
+
+        var fallback = await harness.JobStore.GetAsync(fallbackId);
+        await harness.JobStore.SetAsync(fallback! with
+        {
+            UpdatedAt = now.AddMinutes(2),
+            Spec = fallback!.Spec with
+            {
+                Backend = "fallback-queue-next"
+            }
+        });
+
+        var oldFallbackQueuePage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Queue = "fallback-queue",
+            Limit = 10
+        });
+        oldFallbackQueuePage.Items.Should().NotContain(job => job.OperationId == fallbackId);
+
+        var newFallbackQueuePage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Queue = "fallback-queue-next",
+            Limit = 10
+        });
+        newFallbackQueuePage.Items.Should().ContainSingle(job => job.OperationId == fallbackId);
+
+        var loaded = await harness.JobStore.GetAsync(secondId);
+        await harness.JobStore.SetAsync(loaded! with
+        {
+            Status = ExecutionJobStatus.Succeeded,
+            CompletedAt = now.AddMinutes(1),
+            UpdatedAt = now.AddMinutes(1)
+        });
+
+        var running = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Statuses = [ExecutionJobStatus.Running],
+            Queue = "critical",
+            ResourceRef = "service/parcels",
+            Limit = 10
+        });
+
+        running.Items.Should().ContainSingle(job => job.OperationId == firstId);
+        running.Items.Should().NotContain(job => job.OperationId == secondId);
+
+        var invalidCursor = () => harness.JobStore.QueryAsync(new ExecutionJobQuery { Cursor = "not-a-cursor" });
+        await invalidCursor.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [IntegrationTest]
+    public async Task ExecutionJobStore_QueryPaginatesAcrossCreatedAtTies()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var createdAt = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        var prefix = $"job-query-tie-{Guid.NewGuid():N}";
+        var targetId = $"{prefix}-000";
+        const int sameMillisecondJobCount = 270;
+
+        for (var index = 0; index < sameMillisecondJobCount; index++)
+        {
+            var operationId = $"{prefix}-{index:D3}";
+            var resourceRef = index == 0 ? "service/tie-late" : "service/tie-other";
+            var template = CreateQueuedJob(operationId);
+            await harness.JobStore.TryCreateAsync(template with
+            {
+                Status = ExecutionJobStatus.Running,
+                CreatedAt = createdAt,
+                UpdatedAt = createdAt,
+                Spec = template.Spec with
+                {
+                    Parameters = new Dictionary<string, string>
+                    {
+                        [ExecutionJobParameterKeys.ResourceRefs] = resourceRef
+                    }
+                }
+            });
+        }
+
+        var firstPage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Statuses = [ExecutionJobStatus.Running],
+            Limit = 200
+        });
+
+        firstPage.Items.Should().HaveCount(200);
+        firstPage.NextCursor.Should().NotBeNullOrWhiteSpace();
+
+        var secondPage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Statuses = [ExecutionJobStatus.Running],
+            Cursor = firstPage.NextCursor,
+            Limit = 200
+        });
+
+        secondPage.Items.Should().HaveCount(sameMillisecondJobCount - 200);
+        secondPage.Items.Should().Contain(job => job.OperationId == targetId);
+        secondPage.NextCursor.Should().BeNull();
+
+        var filteredPage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Statuses = [ExecutionJobStatus.Running],
+            ResourceRef = "service/tie-late",
+            Limit = 1
+        });
+
+        filteredPage.Items.Should().ContainSingle(job => job.OperationId == targetId);
+        filteredPage.NextCursor.Should().BeNull();
+    }
+
+    [IntegrationTest]
+    public async Task ExecutionJobStore_UpdateKeepsJobVisibleInIndexesItStillBelongsTo()
+    {
+        // A job must never drop out of a listing it belongs to both before and after an update
+        // (the unfiltered listing, the requested-by listing), or a reader racing the update
+        // cannot list a job whose status it can already read.
+        await using var harness = await CreateHarnessAsync();
+        var owner = $"index-owner-{Guid.NewGuid():N}";
+        var operationId = $"job-index-{Guid.NewGuid():N}";
+        (await harness.JobStore.TryCreateAsync(CreateQueuedJob(operationId) with
+        {
+            Audit = new OperationAuditInfo { RequestedBy = owner }
+        })).Should().BeTrue();
+
+        const int updates = 300;
+        var writerFinished = 0;
+        var writer = Task.Run(async () =>
+        {
+            try
+            {
+                for (var i = 0; i < updates; i++)
+                {
+                    var current = (await harness.JobStore.GetAsync(operationId))!;
+                    await harness.JobStore.SetAsync(current with
+                    {
+                        Status = i % 2 == 0 ? ExecutionJobStatus.Running : ExecutionJobStatus.Provisioning,
+                        UpdatedAt = DateTimeOffset.UtcNow,
+                        CurrentPhase = $"update-{i}"
+                    });
+                }
+            }
+            finally
+            {
+                Volatile.Write(ref writerFinished, 1);
+            }
+        });
+
+        var reads = 0;
+        var misses = new List<string>();
+        while (Volatile.Read(ref writerFinished) == 0)
+        {
+            reads++;
+            var all = await harness.JobStore.QueryAsync(new ExecutionJobQuery { Limit = 10 });
+            if (!all.Items.Any(job => job.OperationId == operationId))
+            {
+                misses.Add($"read {reads}: unfiltered query");
+            }
+
+            var mine = await harness.JobStore.QueryAsync(new ExecutionJobQuery { RequestedBy = owner, Limit = 10 });
+            if (!mine.Items.Any(job => job.OperationId == operationId))
+            {
+                misses.Add($"read {reads}: requested-by query");
+            }
+        }
+
+        await writer;
+        reads.Should().BePositive("the reader must overlap the writer for this proof to mean anything");
+        misses.Should().BeEmpty(
+            $"the job existed for all {reads} reads, so no read may miss it; missed: {string.Join(", ", misses.Take(10))}");
+
+        // The status filter tracks the final state and releases the previous one.
+        var final = (await harness.JobStore.GetAsync(operationId))!;
+        final.Status.Should().Be(ExecutionJobStatus.Provisioning);
+        (await harness.JobStore.QueryAsync(new ExecutionJobQuery { Statuses = [ExecutionJobStatus.Provisioning] }))
+            .Items.Should().ContainSingle(job => job.OperationId == operationId);
+        (await harness.JobStore.QueryAsync(new ExecutionJobQuery { Statuses = [ExecutionJobStatus.Running] }))
+            .Items.Should().NotContain(job => job.OperationId == operationId, "a job leaves the listing of a status it no longer has");
+    }
+
+    [IntegrationTest]
+    public async Task ExecutionJobStore_CreatedToInsideSameMillisecond_HonoursExclusiveBound()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var createdAtMillisecond = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        var includedId = $"job-query-created-to-included-{Guid.NewGuid():N}";
+        var excludedId = $"job-query-created-to-excluded-{Guid.NewGuid():N}";
+
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(includedId) with
+        {
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = createdAtMillisecond.AddTicks(1_000),
+            UpdatedAt = createdAtMillisecond.AddTicks(1_000)
+        });
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(excludedId) with
+        {
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = createdAtMillisecond.AddTicks(3_000),
+            UpdatedAt = createdAtMillisecond.AddTicks(3_000)
+        });
+
+        var page = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            CreatedTo = createdAtMillisecond.AddTicks(2_000),
+            Statuses = [ExecutionJobStatus.Running],
+            Limit = 10
+        });
+
+        page.Items.Should().ContainSingle(job => job.OperationId == includedId);
+        page.Items.Should().NotContain(job => job.OperationId == excludedId);
+    }
+
+    [IntegrationTest]
+    public async Task ExecutionLogStore_AppendsInOrderAndHonoursRetention()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var operationId = $"job-log-{Guid.NewGuid():N}";
+
+        await harness.LogStore.AppendAsync(operationId, new ExecutionLogEntry
+        {
+            Timestamp = DateTimeOffset.UtcNow,
+            Level = ExecutionLogLevel.Info,
+            Message = "Started execution.",
+            Phase = "Queued"
+        });
+
+        await harness.LogStore.AppendAsync(operationId, new ExecutionLogEntry
+        {
+            Timestamp = DateTimeOffset.UtcNow,
+            Level = ExecutionLogLevel.Warning,
+            Message = "Completed with warning.",
+            Phase = "Completed"
+        });
+
+        var logs = await harness.LogStore.GetLogsAsync(operationId);
+        logs.Select(entry => entry.Message).Should().Equal(
+            "Started execution.",
+            "Completed with warning.");
+
+        var firstPage = await harness.LogStore.QueryAsync(operationId, new ExecutionLogQuery { Limit = 1 });
+        firstPage.Items.Should().ContainSingle(entry => entry.Message == "Started execution.");
+        firstPage.NextCursor.Should().NotBeNullOrWhiteSpace();
+
+        var secondPage = await harness.LogStore.QueryAsync(operationId, new ExecutionLogQuery
+        {
+            Cursor = firstPage.NextCursor,
+            Limit = 1
+        });
+        secondPage.Items.Should().ContainSingle(entry => entry.Message == "Completed with warning.");
+        secondPage.NextCursor.Should().BeNull();
+
+        var invalidCursor = () => harness.LogStore.QueryAsync(operationId, new ExecutionLogQuery { Cursor = "not-a-cursor" });
+        await invalidCursor.Should().ThrowAsync<ArgumentException>();
+
+        await harness.LogStore.SetRetentionAsync(operationId, TimeSpan.FromMinutes(2));
+
+        var remaining = await GetLogRetentionRemainingAsync(harness, operationId);
+        remaining.Should().BeLessThanOrEqualTo(TimeSpan.FromMinutes(2));
+        remaining.Should().BeGreaterThan(TimeSpan.FromSeconds(30));
+    }
+
+    [IntegrationTest]
+    public async Task JobExecutionService_CompletesJobAndPersistsArtifactsLogsAndCallbacks()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var operationId = $"job-exec-{Guid.NewGuid():N}";
+        var callback = new RecordingTerminalCallback();
+        var executor = new DelegatingJobExecutor(
+            ExecutionJobKind.Geoprocessing,
+            async (_, context, cancellationToken) =>
+            {
+                await context.ReportProgressAsync(42, "Running integration step", cancellationToken);
+                await context.AppendLogAsync(new ExecutionLogEntry
+                {
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Level = ExecutionLogLevel.Info,
+                    Message = "Executor reached integration step.",
+                    Phase = "Running"
+                }, cancellationToken);
+                await context.PublishArtifactAsync("s3://integration/results.geojson", cancellationToken);
+                return JobExecutionResult.Succeeded();
+            });
+
+        var service = new JobExecutionService(
+            harness.Queue,
+            harness.JobStore,
+            [executor],
+            new ExecutionJobCancellationTokens(),
+            [callback],
+            harness.LogStore,
+            NullLogger<JobExecutionService>.Instance);
+
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(operationId));
+        await harness.Queue.EnqueueAsync(operationId);
+
+        await service.StartAsync(CancellationToken.None);
+        try
+        {
+            var terminal = await callback.WhenCompleted.WaitAsync(TimeSpan.FromSeconds(30));
+            terminal.OperationId.Should().Be(operationId);
+            terminal.Status.Should().Be(ExecutionJobStatus.Succeeded);
+
+            var stored = await WaitForJobAsync(
+                harness.JobStore,
+                operationId,
+                job => job.Status == ExecutionJobStatus.Succeeded,
+                TimeSpan.FromSeconds(5));
+
+            stored.PercentComplete.Should().Be(100);
+            stored.CurrentPhase.Should().Be("Completed");
+            stored.ArtifactReferences.Should().ContainSingle("s3://integration/results.geojson");
+
+            var logs = await harness.LogStore.GetLogsAsync(operationId);
+            logs.Should().ContainSingle(entry =>
+                entry.Level == ExecutionLogLevel.Info &&
+                entry.Message == "Executor reached integration step.");
+
+            var queueDepth = await harness.Queue.GetQueueDepthAsync();
+            queueDepth.Should().Be(0);
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task NativeWorkerHandoff_ClaimsMaterializesAndSurfacesCompletedResult()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var operationId = $"job-native-handoff-{Guid.NewGuid():N}";
+        var callback = new RecordingTerminalCallback();
+        var executor = new DelegatingJobExecutor(
+            ExecutionJobKind.Geoprocessing,
+            async (_, context, cancellationToken) =>
+            {
+                await context.ReportProgressAsync(65, "Native raster processing", cancellationToken);
+                await context.PublishArtifactAsync("s3://integration/native-result.tif", cancellationToken);
+                return JobExecutionResult.Succeeded();
+            },
+            new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native });
+        var service = new JobExecutionService(
+            harness.Queue,
+            harness.JobStore,
+            [executor],
+            new ExecutionJobCancellationTokens(),
+            [callback],
+            harness.LogStore,
+            NullLogger<JobExecutionService>.Instance);
+
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(operationId) with
+        {
+            Spec = CreateQueuedJob(operationId).Spec with { RuntimeProfile = RuntimeProfiles.Native }
+        });
+        await harness.Queue.EnqueueAsync(operationId);
+
+        await service.StartAsync(CancellationToken.None);
+        try
+        {
+            var terminal = await callback.WhenCompleted.WaitAsync(TimeSpan.FromSeconds(30));
+            terminal.OperationId.Should().Be(operationId);
+
+            var surfaced = await harness.JobStore.GetAsync(operationId);
+            surfaced.Should().NotBeNull();
+            surfaced!.Status.Should().Be(ExecutionJobStatus.Succeeded);
+            surfaced.CurrentPhase.Should().Be("Completed");
+            surfaced.PercentComplete.Should().Be(100);
+            surfaced.ArtifactReferences.Should().ContainSingle("s3://integration/native-result.tif");
+            (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
+            (await harness.IsInQueueAsync(operationId)).Should().BeFalse();
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task NativeWorkerHandoff_WhenWorkerHeartbeatExpires_SurfacesTerminalFailure()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var operationId = $"job-native-crash-{Guid.NewGuid():N}";
+        var callback = new RecordingTerminalCallback();
+        var heartbeatPolicy = new JobHeartbeatPolicy
+        {
+            Interval = TimeSpan.FromMilliseconds(50),
+            Timeout = TimeSpan.FromMilliseconds(50)
+        };
+        var retryPolicy = new JobRetryPolicy
+        {
+            MaxAttempts = 1,
+            Strategy = BackoffStrategy.Fixed,
+            BaseDelay = TimeSpan.Zero,
+            MaxDelay = TimeSpan.Zero
+        };
+        var queued = CreateQueuedJob(operationId, retryPolicy, heartbeatPolicy) with
+        {
+            Spec = CreateQueuedJob(operationId).Spec with { RuntimeProfile = RuntimeProfiles.Native }
+        };
+        await harness.JobStore.TryCreateAsync(queued);
+        await harness.Queue.EnqueueAsync(operationId);
+
+        var claimedId = await harness.Queue.TryClaimAsync(
+            "native-worker-that-crashed",
+            new HashSet<ExecutionJobKind> { ExecutionJobKind.Geoprocessing },
+            new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native });
+        claimedId.Should().Be(operationId);
+
+        var claimed = await harness.JobStore.GetAsync(operationId);
+        var staleTimestamp = DateTimeOffset.UtcNow.AddMinutes(-5);
+        await harness.JobStore.SetAsync(claimed! with
+        {
+            Status = ExecutionJobStatus.Running,
+            UpdatedAt = staleTimestamp,
+            ClaimedAt = staleTimestamp,
+            LastHeartbeatAt = staleTimestamp,
+            CurrentPhase = "Running"
+        });
+
+        var reconciler = new JobReconciliationService(
+            harness.JobStore,
+            harness.Queue,
+            harness.Queue,
+            new ExecutionJobCancellationTokens(),
+            [callback],
+            harness.LogStore,
+            NullLogger<JobReconciliationService>.Instance,
+            harness.JobStore);
+
+        await reconciler.SweepActiveJobsAsync(CancellationToken.None);
+
+        var surfaced = await harness.JobStore.GetAsync(operationId);
+        surfaced.Should().NotBeNull();
+        surfaced!.Status.Should().Be(ExecutionJobStatus.Failed);
+        surfaced.CurrentPhase.Should().Be("Failed (heartbeat expired)");
+        surfaced.ErrorMessage.Should().Contain("Worker heartbeat expired");
+        surfaced.CompletedAt.Should().NotBeNull();
+        (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
+        (await harness.IsInQueueAsync(operationId)).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    public async Task NativeWorkerHandoff_EnqueueWithoutAJobRecord_RejectsWithoutExecutionOrJobMutation()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var unknownOperationId = $"{{not-an-operation-envelope:{Guid.NewGuid():N}";
+        var executorCalls = 0;
+        var executor = new DelegatingJobExecutor(
+            ExecutionJobKind.Geoprocessing,
+            (_, _, _) =>
+            {
+                Interlocked.Increment(ref executorCalls);
+                return Task.FromResult(JobExecutionResult.Succeeded());
+            },
+            new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native });
+        var service = new JobExecutionService(
+            harness.Queue,
+            harness.JobStore,
+            [executor],
+            new ExecutionJobCancellationTokens(),
+            [],
+            harness.LogStore,
+            NullLogger<JobExecutionService>.Instance);
+
+        await harness.Queue.EnqueueAsync(unknownOperationId);
+
+        await service.StartAsync(CancellationToken.None);
+        try
+        {
+            await WaitForQueueDepthAsync(harness.Queue, depth => depth == 0, TimeSpan.FromSeconds(5));
+            executorCalls.Should().Be(0);
+            (await harness.JobStore.GetAsync(unknownOperationId)).Should().BeNull();
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task JobReconciliationService_CancelsDurablyRequestedStaleJob()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var operationId = $"job-cancel-{Guid.NewGuid():N}";
+        var callback = new RecordingTerminalCallback();
+        var retryPolicy = new JobRetryPolicy
+        {
+            MaxAttempts = 3,
+            Strategy = BackoffStrategy.Fixed,
+            BaseDelay = TimeSpan.Zero,
+            MaxDelay = TimeSpan.Zero
+        };
+        var heartbeatPolicy = new JobHeartbeatPolicy
+        {
+            Interval = TimeSpan.FromMilliseconds(50),
+            Timeout = TimeSpan.FromMilliseconds(50)
+        };
+
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(operationId, retryPolicy, heartbeatPolicy));
+        await harness.Queue.EnqueueAsync(operationId);
+
+        var claimedId = await harness.Queue.TryClaimAsync(
+            "worker-stale",
+            new HashSet<ExecutionJobKind> { ExecutionJobKind.Geoprocessing });
+        claimedId.Should().Be(operationId);
+
+        var claimed = await harness.JobStore.GetAsync(operationId);
+        claimed.Should().NotBeNull();
+
+        await harness.LogStore.AppendAsync(operationId, new ExecutionLogEntry
+        {
+            Timestamp = DateTimeOffset.UtcNow,
+            Level = ExecutionLogLevel.Info,
+            Message = "Worker produced an early log.",
+            Phase = "Running"
+        });
+
+        var staleTimestamp = DateTimeOffset.UtcNow.AddMinutes(-5);
+        await harness.JobStore.SetAsync(claimed! with
+        {
+            Status = ExecutionJobStatus.Running,
+            UpdatedAt = staleTimestamp,
+            ClaimedAt = staleTimestamp,
+            LastHeartbeatAt = staleTimestamp,
+            CurrentPhase = "Running",
+            CancellationRequestedAt = DateTimeOffset.UtcNow.AddSeconds(-1)
+        });
+
+        var service = new JobReconciliationService(
+            harness.JobStore,
+            harness.Queue,
+            harness.Queue,
+            new ExecutionJobCancellationTokens(),
+            [callback],
+            harness.LogStore,
+            NullLogger<JobReconciliationService>.Instance,
+            harness.JobStore);
+
+        await service.StartAsync(CancellationToken.None);
+        try
+        {
+            var terminal = await callback.WhenCompleted.WaitAsync(TimeSpan.FromSeconds(10));
+            terminal.OperationId.Should().Be(operationId);
+            terminal.Status.Should().Be(ExecutionJobStatus.Cancelled);
+
+            var stored = await WaitForJobAsync(
+                harness.JobStore,
+                operationId,
+                job => job.Status == ExecutionJobStatus.Cancelled,
+                TimeSpan.FromSeconds(5));
+
+            stored.CurrentPhase.Should().Be("Cancelled");
+            stored.CompletedAt.Should().NotBeNull();
+
+            var queueDepth = await harness.Queue.GetQueueDepthAsync();
+            queueDepth.Should().Be(0);
+
+            (await GetLogRetentionRemainingAsync(harness, operationId)).Should().BeGreaterThan(TimeSpan.FromDays(6));
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task JobReconciliationService_RequeuesHeartbeatExpiredJobForRetry()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var operationId = $"job-retry-{Guid.NewGuid():N}";
+        var callback = new RecordingTerminalCallback();
+        var retryPolicy = new JobRetryPolicy
+        {
+            MaxAttempts = 3,
+            Strategy = BackoffStrategy.Fixed,
+            BaseDelay = TimeSpan.Zero,
+            MaxDelay = TimeSpan.Zero
+        };
+        var heartbeatPolicy = new JobHeartbeatPolicy
+        {
+            Interval = TimeSpan.FromMilliseconds(50),
+            Timeout = TimeSpan.FromMilliseconds(50)
+        };
+
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(operationId, retryPolicy, heartbeatPolicy));
+        await harness.Queue.EnqueueAsync(operationId);
+
+        var claimedId = await harness.Queue.TryClaimAsync(
+            "worker-retry",
+            new HashSet<ExecutionJobKind> { ExecutionJobKind.Geoprocessing });
+        claimedId.Should().Be(operationId);
+
+        var claimed = await harness.JobStore.GetAsync(operationId);
+        claimed.Should().NotBeNull();
+
+        var staleTimestamp = DateTimeOffset.UtcNow.AddMinutes(-5);
+        await harness.JobStore.SetAsync(claimed! with
+        {
+            Status = ExecutionJobStatus.Running,
+            UpdatedAt = staleTimestamp,
+            ClaimedAt = staleTimestamp,
+            LastHeartbeatAt = staleTimestamp,
+            CurrentPhase = "Running"
+        });
+
+        var service = new JobReconciliationService(
+            harness.JobStore,
+            harness.Queue,
+            harness.Queue,
+            new ExecutionJobCancellationTokens(),
+            [callback],
+            harness.LogStore,
+            NullLogger<JobReconciliationService>.Instance,
+            harness.JobStore);
+
+        await service.StartAsync(CancellationToken.None);
+        try
+        {
+            var stored = await WaitForJobAsync(
+                harness.JobStore,
+                operationId,
+                job => job.Status == ExecutionJobStatus.Queued && job.ClaimedBy is null,
+                TimeSpan.FromSeconds(10));
+
+            stored.CurrentPhase.Should().StartWith("Retrying");
+            stored.NextRetryAt.Should().BeNull();
+
+            callback.IsCompleted.Should().BeFalse();
+
+            var queueDepth = await WaitForQueueDepthAsync(
+                harness.Queue,
+                depth => depth == 1,
+                TimeSpan.FromSeconds(5));
+            queueDepth.Should().Be(1);
+
+            var reclaimed = await harness.Queue.TryClaimAsync(
+                "worker-reclaim",
+                new HashSet<ExecutionJobKind> { ExecutionJobKind.Geoprocessing });
+            reclaimed.Should().Be(operationId);
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    private static ExecutionJobRecord CreateQueuedJob(
+        string operationId,
+        JobRetryPolicy? retryPolicy = null,
+        JobHeartbeatPolicy? heartbeatPolicy = null)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new ExecutionJobRecord
+        {
+            OperationId = operationId,
+            Status = ExecutionJobStatus.Queued,
+            CreatedAt = now,
+            UpdatedAt = now,
+            RetryPolicy = retryPolicy,
+            HeartbeatPolicy = heartbeatPolicy,
+            TimeoutPolicy = new JobTimeoutPolicy
+            {
+                MaxDuration = TimeSpan.FromMinutes(30)
+            },
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "integration-test",
+                WorkloadName = "postgres-substrate-integration"
+            }
+        };
+    }
+
+    private static async Task<ExecutionJobRecord> WaitForJobAsync(
+        PostgresExecutionJobStore jobStore,
+        string operationId,
+        Func<ExecutionJobRecord, bool> predicate,
+        TimeSpan timeout)
+    {
+        var deadline = DateTimeOffset.UtcNow.Add(timeout);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var job = await jobStore.GetAsync(operationId);
+            if (job != null && predicate(job))
+            {
+                return job;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
+        }
+
+        throw new TimeoutException($"Timed out waiting for job '{operationId}' to reach the expected state.");
+    }
+
+    private static async Task<long> WaitForQueueDepthAsync(
+        PostgresJobQueue queue,
+        Func<long, bool> predicate,
+        TimeSpan timeout)
+    {
+        var deadline = DateTimeOffset.UtcNow.Add(timeout);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var depth = await queue.GetQueueDepthAsync();
+            if (predicate(depth))
+            {
+                return depth;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
+        }
+
+        throw new TimeoutException("Timed out waiting for the job queue to reach the expected depth.");
+    }
+
+    private Task<PostgresJobSubstrateHarness> CreateHarnessAsync()
+        => PostgresJobSubstrateHarness.CreateAsync(database, nameof(PostgresExecutionSubstrateIntegrationTests));
+
+    private static async Task<TimeSpan> GetLogRetentionRemainingAsync(PostgresJobSubstrateHarness harness, string operationId)
+        => await harness.ScalarAsync<TimeSpan>(
+            $"SELECT expires_at - now() FROM {harness.Database.Table("execution_job_log_streams")} WHERE operation_id = @operation_id",
+            new Npgsql.NpgsqlParameter("operation_id", operationId));
+
+    private sealed class DelegatingJobExecutor(
+        ExecutionJobKind kind,
+        Func<ExecutionJobRecord, IJobExecutionContext, CancellationToken, Task<JobExecutionResult>> executeAsync,
+        IReadOnlySet<string>? acceptedRuntimeProfiles = null)
+        : IJobExecutor
+    {
+        public ExecutionJobKind Kind { get; } = kind;
+
+        public IReadOnlySet<string> AcceptedRuntimeProfiles { get; } =
+            acceptedRuntimeProfiles ?? RuntimeProfiles.DefaultAccepted;
+
+        public Task<JobExecutionResult> ExecuteAsync(
+            ExecutionJobRecord job,
+            IJobExecutionContext context,
+            CancellationToken cancellationToken)
+            => executeAsync(job, context, cancellationToken);
+    }
+
+    private sealed class RecordingTerminalCallback : IJobTerminalCallback
+    {
+        private readonly TaskCompletionSource<ExecutionJobRecord> _whenCompleted =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<ExecutionJobRecord> WhenCompleted => _whenCompleted.Task;
+
+        public bool IsCompleted => _whenCompleted.Task.IsCompleted;
+
+        public ValueTask OnTerminalAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+        {
+            _whenCompleted.TrySetResult(job);
+            return ValueTask.CompletedTask;
+        }
+    }
+}

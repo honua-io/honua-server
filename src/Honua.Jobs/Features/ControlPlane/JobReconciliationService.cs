@@ -23,8 +23,11 @@ internal sealed partial class JobReconciliationService(
     ExecutionJobCancellationTokens cancellationTokens,
     IEnumerable<IJobTerminalCallback> terminalCallbacks,
     IExecutionLogStore? logStore,
-    ILogger<JobReconciliationService> logger) : BackgroundService
+    ILogger<JobReconciliationService> logger,
+    IJobStoreClock? storeClock = null) : BackgroundService
 {
+    private readonly IJobStoreClock _storeClock = storeClock ?? NodeJobStoreClock.Instance;
+
     private static readonly TimeSpan SweepInterval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan StaleClaimThreshold = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan LogRetention = TimeSpan.FromDays(7);
@@ -66,7 +69,7 @@ internal sealed partial class JobReconciliationService(
     internal async Task SweepActiveJobsAsync(CancellationToken cancellationToken)
     {
         var activeJobs = await jobStore.ListActiveAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
-        var now = DateTimeOffset.UtcNow;
+        var now = await _storeClock.GetUtcNowAsync(cancellationToken).ConfigureAwait(false);
         var reconciled = 0;
 
         foreach (var job in activeJobs)
@@ -185,7 +188,7 @@ internal sealed partial class JobReconciliationService(
         // Re-validate heartbeat expiry against the fresh record. A heartbeat
         // landing between the sweep snapshot and this handler means the worker
         // is still alive — skip the transition to avoid duplicate execution.
-        var freshNow = DateTimeOffset.UtcNow;
+        var freshNow = await _storeClock.GetUtcNowAsync(cancellationToken).ConfigureAwait(false);
         if (!ShouldExpireHeartbeat(current!, freshNow))
         {
             Log.ReconciliationSkippedHeartbeatRefreshed(logger, snapshot.OperationId);
@@ -220,7 +223,7 @@ internal sealed partial class JobReconciliationService(
             // The cancellation read above also observes concurrent heartbeat writes.
             // Validate that exact CAS version: an earlier expiry check cannot authorize
             // recovery of a worker that has since reported it is alive.
-            if (!ShouldExpireHeartbeat(preRetry, DateTimeOffset.UtcNow))
+            if (!ShouldExpireHeartbeat(preRetry, await _storeClock.GetUtcNowAsync(cancellationToken).ConfigureAwait(false)))
             {
                 Log.ReconciliationSkippedHeartbeatRefreshed(logger, snapshot.OperationId);
                 return false;
@@ -280,7 +283,7 @@ internal sealed partial class JobReconciliationService(
             // The cancellation read above also observes concurrent heartbeat writes.
             // Validate that exact CAS version: an earlier expiry check cannot authorize
             // recovery of a worker that has since reported it is alive.
-            if (!ShouldExpireHeartbeat(preFail, DateTimeOffset.UtcNow))
+            if (!ShouldExpireHeartbeat(preFail, await _storeClock.GetUtcNowAsync(cancellationToken).ConfigureAwait(false)))
             {
                 Log.ReconciliationSkippedHeartbeatRefreshed(logger, snapshot.OperationId);
                 return false;
@@ -354,7 +357,7 @@ internal sealed partial class JobReconciliationService(
         // reclaimed job (possibly by the same worker) will have a fresh ClaimedAt
         // that resets the timeout window — skip the transition to avoid failing
         // a new attempt that has not actually timed out.
-        var freshNow = DateTimeOffset.UtcNow;
+        var freshNow = await _storeClock.GetUtcNowAsync(cancellationToken).ConfigureAwait(false);
         if (!ShouldExpireTimeout(current!, freshNow))
         {
             Log.ReconciliationSkippedTimeoutRefreshed(logger, snapshot.OperationId);

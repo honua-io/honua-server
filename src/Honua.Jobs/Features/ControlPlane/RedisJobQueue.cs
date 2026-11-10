@@ -8,11 +8,6 @@ using StackExchange.Redis;
 
 namespace Honua.ControlPlane;
 
-internal interface IQueueClaimReconciler
-{
-    Task ReconcileStaleClaimsAsync(TimeSpan staleThreshold, CancellationToken cancellationToken);
-}
-
 internal sealed partial class RedisJobQueue(
     IConnectionMultiplexer redis,
     IExecutionJobStore jobStore,

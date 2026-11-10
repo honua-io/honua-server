@@ -18,8 +18,11 @@ internal sealed partial class ExecutionJobReconciler(
     ILogger<ExecutionJobReconciler> logger,
     ILicenseOperationPolicy? licensePolicy = null,
     IEnumerable<IJobTerminalCallback>? terminalCallbacks = null,
-    IEnumerable<IExecutionJobRetryGuard>? retryGuards = null) : IExecutionJobReconciler
+    IEnumerable<IExecutionJobRetryGuard>? retryGuards = null,
+    IJobStoreClock? storeClock = null) : IExecutionJobReconciler
 {
+    private readonly IJobStoreClock _storeClock = storeClock ?? NodeJobStoreClock.Instance;
+
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan LeaseRenewInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan LeaseCleanupTimeout = TimeSpan.FromSeconds(5);
@@ -101,6 +104,8 @@ internal sealed partial class ExecutionJobReconciler(
                 return;
             }
 
+            var retryIsNotDue = job is { Status: ExecutionJobStatus.Queued, NextRetryAt: { } nextRetryAt }
+                && nextRetryAt > await _storeClock.GetUtcNowAsync(reconciliationCancellation.Token).ConfigureAwait(false);
             var updated = job.Status switch
             {
                 ExecutionJobStatus.Queued when string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
@@ -121,7 +126,7 @@ internal sealed partial class ExecutionJobReconciler(
                     => await ObserveJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Queued when job.CancellationRequestedAt.HasValue
                     => CancelQueuedJob(job),
-                ExecutionJobStatus.Queued when job.NextRetryAt.HasValue && job.NextRetryAt.Value > DateTimeOffset.UtcNow
+                ExecutionJobStatus.Queued when retryIsNotDue
                     => job,
                 ExecutionJobStatus.Queued => await StartJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running when job.CancellationRequestedAt.HasValue

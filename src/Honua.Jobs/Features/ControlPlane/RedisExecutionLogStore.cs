@@ -1,8 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
-using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -19,9 +17,8 @@ internal sealed partial class RedisExecutionLogStore(
     private const int MaxQueryLimit = 500;
     private readonly IDatabase _database = redis.GetDatabase();
 
-    // 2,000 x 4 KiB bounds payload storage to 8 MiB per job, excluding Redis overhead.
-    internal const int MaxStoredEntries = 2000;
-    internal const int MaxEntryBytes = 4096;
+    internal const int MaxStoredEntries = ExecutionLogEntryBounds.MaxStoredEntries;
+    internal const int MaxEntryBytes = ExecutionLogEntryBounds.MaxEntryBytes;
     private const string AppendScript = """
         local length = redis.call('LLEN', KEYS[1])
         if length == 0 then redis.call('DEL', KEYS[2]) end
@@ -61,7 +58,7 @@ internal sealed partial class RedisExecutionLogStore(
     public Task AppendOnceAsync(string operationId, string eventId, ExecutionLogEntry entry, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(eventId);
-        if (eventId.Length > 160)
+        if (eventId.Length > ExecutionLogEntryBounds.MaxEventIdLength)
         {
             throw new ArgumentException("Event identity exceeds the storage limit.", nameof(eventId));
         }
@@ -72,43 +69,7 @@ internal sealed partial class RedisExecutionLogStore(
     {
         ArgumentNullException.ThrowIfNull(entry);
         cancellationToken.ThrowIfCancellationRequested();
-        // Bound inputs before serialization so an oversized message/metadata cannot allocate
-        // another copy of an arbitrarily large caller payload at this storage boundary.
-        var metadata = entry.Metadata?.Take(32).ToDictionary(
-            pair => pair.Key, pair => pair.Value[..Math.Min(pair.Value.Length, 128)], StringComparer.Ordinal);
-        var truncated = entry.Message.Length > 384 || entry.Phase?.Length > 128 ||
-            entry.Metadata is { Count: > 32 } || entry.Metadata?.Any(pair => pair.Key.Length > 128 || pair.Value.Length > 128) == true;
-        if (metadata is not null)
-        {
-            foreach (var keyToRemove in metadata.Keys.Where(key => key.Length > 128).ToArray())
-            {
-                metadata.Remove(keyToRemove);
-            }
-        }
-        if (truncated)
-        {
-            metadata ??= new Dictionary<string, string>(StringComparer.Ordinal);
-            metadata["honua.log.truncated"] = "true";
-        }
-        var bounded = entry with
-        {
-            Message = entry.Message[..Math.Min(entry.Message.Length, 384)],
-            Phase = entry.Phase is null ? null : entry.Phase[..Math.Min(entry.Phase.Length, 128)],
-            Metadata = metadata
-        };
-        var payload = JsonSerializer.Serialize(bounded, ControlPlaneJsonContext.Default.ExecutionLogEntry);
-        if (Encoding.UTF8.GetByteCount(payload) > MaxEntryBytes)
-        {
-            // Keep canonical event identity/status even when arbitrary metadata exceeds the
-            // byte budget. Oversized messages must never erase a terminal event's meaning.
-            var canonical = metadata?.Where(pair => pair.Key is "honua.event.v" or "honua.event.kind" or
-                    "honua.event.seq" or "honua.event.attempt" or "honua.event.status" or "honua.event.exitCode")
-                .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
-                ?? new Dictionary<string, string>(StringComparer.Ordinal);
-            canonical["honua.log.truncated"] = "true";
-            bounded = bounded with { Message = "Execution log payload omitted: 4 KiB entry limit exceeded.", Phase = null, Metadata = canonical };
-            payload = JsonSerializer.Serialize(bounded, ControlPlaneJsonContext.Default.ExecutionLogEntry);
-        }
+        var payload = ExecutionLogEntryBounds.SerializeBounded(entry);
         var key = GetLogKey(operationId);
         await _database.ScriptEvaluateAsync(AppendScript, [key, GetStateKey(key)],
             [payload, MaxStoredEntries, (long)DefaultRetention.TotalSeconds, eventId]).ConfigureAwait(false);
@@ -127,9 +88,9 @@ internal sealed partial class RedisExecutionLogStore(
     public async Task<ExecutionLogPage> QueryAsync(string operationId, ExecutionLogQuery query, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
-        if (!TryDecodeOffsetCursor(query.Cursor, out var offset, out var cursorError))
+        if (!ExecutionLogCursor.TryDecode(query.Cursor, out var offset))
         {
-            throw new ArgumentException(cursorError, nameof(query));
+            throw new ArgumentException(ExecutionLogCursor.InvalidCursorMessage, nameof(query));
         }
         var limit = Math.Clamp(query.Limit, MinQueryLimit, MaxQueryLimit);
         var window = await ReadWindowAsync(operationId, offset, limit, cancellationToken).ConfigureAwait(false);
@@ -139,7 +100,7 @@ internal sealed partial class RedisExecutionLogStore(
         {
             Items = window.Items,
             DroppedCount = window.Dropped,
-            NextCursor = window.More ? EncodeOffsetCursor(window.Start + window.Items.Count) : null,
+            NextCursor = window.More ? ExecutionLogCursor.Encode(window.Start + window.Items.Count) : null,
             TotalCount = Math.Max(window.Total, coveredCount)
         };
     }
@@ -185,36 +146,6 @@ internal sealed partial class RedisExecutionLogStore(
         var close = open < 0 ? -1 : logKey.IndexOf('}', open + 1);
         return close > open + 1 ? logKey + ":state" : "{" + logKey + "}:state";
     }
-
-    private static bool TryDecodeOffsetCursor(string? cursor, out long offset, out string error)
-    {
-        offset = 0;
-        error = string.Empty;
-        if (string.IsNullOrWhiteSpace(cursor))
-        {
-            return true;
-        }
-
-        try
-        {
-            var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(cursor));
-            if (!long.TryParse(decoded, NumberStyles.Integer, CultureInfo.InvariantCulture, out offset) || offset < 0)
-            {
-                error = "Invalid log cursor.";
-                return false;
-            }
-
-            return true;
-        }
-        catch (FormatException)
-        {
-            error = "Invalid log cursor.";
-            return false;
-        }
-    }
-
-    private static string EncodeOffsetCursor(long offset)
-        => Convert.ToBase64String(Encoding.UTF8.GetBytes(offset.ToString(CultureInfo.InvariantCulture)));
 
     private static partial class Log
     {
