@@ -30,14 +30,14 @@ public sealed class SharedBucketCloudFileStorage(
     public CloudStorageProvider Provider => provider;
 
     public Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
-        => StoreAsync(request, mustBeAbsent: false, cancellationToken);
+        => ReplaceAsync(request, cancellationToken);
 
     public Task<UploadResult> UploadIfMatchAsync(
         FileUploadRequest request,
         string? expectedETag,
         CancellationToken cancellationToken = default)
         => expectedETag is null
-            ? StoreAsync(request, mustBeAbsent: true, cancellationToken)
+            ? CreateAsync(request, cancellationToken)
             : throw new NotSupportedException("Only create-if-absent is modelled.");
 
     public Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
@@ -106,31 +106,37 @@ public sealed class SharedBucketCloudFileStorage(
     public Task<int> CleanupExpiredFilesAsync(CancellationToken cancellationToken = default)
         => throw new NotSupportedException();
 
-    private async Task<UploadResult> StoreAsync(FileUploadRequest request, bool mustBeAbsent, CancellationToken cancellationToken)
+    private async Task<UploadResult> ReplaceAsync(FileUploadRequest request, CancellationToken cancellationToken)
     {
-        var key = request.ObjectKeyOverride
-            ?? throw new InvalidOperationException("The shared bucket double stores only explicitly keyed objects.");
-        if (mustBeAbsent && !request.Content.CanSeek)
+        var key = KeyOf(request);
+        var stored = await ReadAsync(request, cancellationToken);
+        bucket.Objects[key] = stored;
+        return UploadResult.CreateSuccess(ToCloudFile(key, stored));
+    }
+
+    private async Task<UploadResult> CreateAsync(FileUploadRequest request, CancellationToken cancellationToken)
+    {
+        var key = KeyOf(request);
+        if (!request.Content.CanSeek)
         {
             return UploadResult.CreateFailure("A conditional create is one request and needs a seekable body, as on S3.");
         }
 
+        var stored = await ReadAsync(request, cancellationToken);
+        return bucket.Objects.TryAdd(key, stored)
+            ? UploadResult.CreateSuccess(ToCloudFile(key, stored))
+            : UploadResult.CreateFailure("The object already exists.");
+    }
+
+    private static string KeyOf(FileUploadRequest request)
+        => request.ObjectKeyOverride
+            ?? throw new InvalidOperationException("The shared bucket double stores only explicitly keyed objects.");
+
+    private static async Task<SharedBucket.StoredObject> ReadAsync(FileUploadRequest request, CancellationToken cancellationToken)
+    {
         using var buffer = new MemoryStream();
         await request.Content.CopyToAsync(buffer, cancellationToken);
-        var stored = new SharedBucket.StoredObject(buffer.ToArray(), request.ContentType, DateTimeOffset.UtcNow);
-        if (mustBeAbsent)
-        {
-            if (!bucket.Objects.TryAdd(key, stored))
-            {
-                return UploadResult.CreateFailure("The object already exists.");
-            }
-        }
-        else
-        {
-            bucket.Objects[key] = stored;
-        }
-
-        return UploadResult.CreateSuccess(ToCloudFile(key, stored));
+        return new SharedBucket.StoredObject(buffer.ToArray(), request.ContentType, DateTimeOffset.UtcNow);
     }
 
     private CloudFile ToCloudFile(string key, SharedBucket.StoredObject stored)

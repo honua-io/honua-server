@@ -14,15 +14,18 @@ internal sealed class ObjectStorageGeoprocessingOutputStoreHealthCheck(
     IGeoprocessingOutputObjectStore store,
     IOptions<GeoprocessingOutputStagingOptions> options) : IHealthCheck
 {
-    private const string ProbeObjectName = ".reachability-probe";
+    private const string ProbeFolderName = ".reachability-probe";
     private const string UnreachableMessage = "The geoprocessing output object store cannot be reached.";
 
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
         try
         {
-            await store.GetInfoAsync($"{options.Value.KeyPrefix.TrimEnd('/')}/{ProbeObjectName}", cancellationToken)
-                .ConfigureAwait(false);
+            // A listing fails on a bucket or container that does not exist, where a lookup of one absent
+            // object reads the same as an empty store.
+            var probe = store.ListAsync($"{options.Value.KeyPrefix.TrimEnd('/')}/{ProbeFolderName}", cancellationToken);
+            await using var listing = probe.GetAsyncEnumerator(cancellationToken);
+            await listing.MoveNextAsync().ConfigureAwait(false);
             return HealthCheckResult.Healthy("Output object store reachable.", new Dictionary<string, object>
             {
                 ["provider"] = store.Provider.ToString(),

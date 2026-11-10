@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.FileStorage;
 using Honua.TestKit.Attributes;
@@ -27,7 +28,7 @@ public sealed class ObjectStorageGeoprocessingOutputObjectStoreTests
     {
         var key = NewKey();
 
-        var identity = await CreateStore().WriteAsync(key, new MemoryStream(_payload), "image/tiff");
+        var identity = await WriteAsync(CreateStore(), key, _payload);
 
         identity.SizeBytes.Should().Be(_payload.Length);
         identity.MediaType.Should().Be("image/tiff");
@@ -52,7 +53,7 @@ public sealed class ObjectStorageGeoprocessingOutputObjectStoreTests
     public async Task SetRetentionHoldAsync_WhenTheHoldCannotBeWritten_ThrowsInsteadOfReportingAHold()
     {
         var key = NewKey();
-        await CreateStore().WriteAsync(key, new MemoryStream(_payload), "image/tiff");
+        await WriteAsync(CreateStore(), key, _payload);
         var storage = Substitute.For<Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage>();
         storage.UploadIfMatchAsync(default!, default, default)
             .ReturnsForAnyArgs(UploadResult.CreateFailure("access denied"));
@@ -71,9 +72,9 @@ public sealed class ObjectStorageGeoprocessingOutputObjectStoreTests
     public async Task WriteAsync_ToAKeyThatAlreadyExists_ThrowsAndKeepsTheFirstObject()
     {
         var key = NewKey();
-        await CreateStore().WriteAsync(key, new MemoryStream(_payload), "image/tiff");
+        await WriteAsync(CreateStore(), key, _payload);
 
-        var secondWrite = () => CreateStore().WriteAsync(key, new MemoryStream([1, 2, 3]), "image/tiff");
+        var secondWrite = () => WriteAsync(CreateStore(), key, [1, 2, 3]);
 
         await secondWrite.Should().ThrowAsync<InvalidOperationException>().WithMessage("*already exists*");
         (await ReadAllAsync(CreateStore(), key)).Should().Equal(_payload);
@@ -83,7 +84,7 @@ public sealed class ObjectStorageGeoprocessingOutputObjectStoreTests
     public async Task OpenReadAsync_OnASecondHost_ReturnsTheWholeObjectWithItsLength()
     {
         var key = NewKey();
-        await CreateStore().WriteAsync(key, new MemoryStream(_payload), "image/tiff");
+        await WriteAsync(CreateStore(), key, _payload);
 
         await using var stream = await CreateStore().OpenReadAsync(key);
 
@@ -98,7 +99,7 @@ public sealed class ObjectStorageGeoprocessingOutputObjectStoreTests
     public async Task OpenReadAsync_SeekingForward_ReadsTheRequestedRange()
     {
         var key = NewKey();
-        await CreateStore().WriteAsync(key, new MemoryStream(_payload), "image/tiff");
+        await WriteAsync(CreateStore(), key, _payload);
         await using var stream = await CreateStore().OpenReadAsync(key);
 
         stream!.Seek(150_000, SeekOrigin.Begin);
@@ -129,7 +130,7 @@ public sealed class ObjectStorageGeoprocessingOutputObjectStoreTests
     {
         var store = CreateStore();
         var key = NewKey();
-        await store.WriteAsync(key, new MemoryStream(_payload), "image/tiff");
+        await WriteAsync(store, key, _payload);
         await store.TryAcquireReadLeaseAsync(key, TimeSpan.FromMinutes(15));
         await store.SetRetentionHoldAsync(key);
 
@@ -143,7 +144,7 @@ public sealed class ObjectStorageGeoprocessingOutputObjectStoreTests
     public async Task ReadLease_TakenOnOneHost_IsSeenByAnotherUntilItExpires()
     {
         var key = NewKey();
-        await CreateStore().WriteAsync(key, new MemoryStream(_payload), "image/tiff");
+        await WriteAsync(CreateStore(), key, _payload);
 
         (await CreateStore().TryAcquireReadLeaseAsync(key, TimeSpan.FromMinutes(15))).Should().BeTrue();
 
@@ -156,7 +157,7 @@ public sealed class ObjectStorageGeoprocessingOutputObjectStoreTests
     public async Task RetentionHold_IsAddedOnceSeenByEveryHostAndReleasable()
     {
         var key = NewKey();
-        await CreateStore().WriteAsync(key, new MemoryStream(_payload), "image/tiff");
+        await WriteAsync(CreateStore(), key, _payload);
 
         (await CreateStore().SetRetentionHoldAsync(key)).Should().Be(GeoprocessingRetentionHoldResult.Added);
         (await CreateStore().SetRetentionHoldAsync(key)).Should().Be(GeoprocessingRetentionHoldResult.AlreadyHeld);
@@ -175,11 +176,11 @@ public sealed class ObjectStorageGeoprocessingOutputObjectStoreTests
         var store = CreateStore(storageKeyPrefix);
         var first = GeoprocessingOutputObjectKeys.Build(keyPrefix, "job-a", 1, "outputRaster", "result.tif");
         var second = GeoprocessingOutputObjectKeys.Build(keyPrefix, "job-b", 1, "outputRaster", "result.tif");
-        await store.WriteAsync(first, new MemoryStream(_payload), "image/tiff");
-        await store.WriteAsync(second, new MemoryStream([1, 2, 3]), "image/tiff");
+        await WriteAsync(store, first, _payload);
+        await WriteAsync(store, second, [1, 2, 3]);
         await store.TryAcquireReadLeaseAsync(first, TimeSpan.FromMinutes(15));
         await store.SetRetentionHoldAsync(first);
-        await CreateStore(storageKeyPrefix).WriteAsync("other/unrelated.bin", new MemoryStream([9]), "application/octet-stream");
+        await WriteAsync(CreateStore(storageKeyPrefix), "other/unrelated.bin", [9], "application/octet-stream");
 
         var listed = new List<GeoprocessingStagedObjectInfo>();
         await foreach (var info in CreateStore(storageKeyPrefix).ListAsync(keyPrefix))
@@ -230,6 +231,16 @@ public sealed class ObjectStorageGeoprocessingOutputObjectStoreTests
 
         compressed.Position = 0;
         return compressed;
+    }
+
+    private static async Task<RasterContentIdentity> WriteAsync(
+        ObjectStorageGeoprocessingOutputObjectStore store,
+        string key,
+        byte[] bytes,
+        string mediaType = "image/tiff")
+    {
+        using var content = new MemoryStream(bytes);
+        return await store.WriteAsync(key, content, mediaType);
     }
 
     private static string NewKey()
