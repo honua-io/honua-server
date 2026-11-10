@@ -31,13 +31,15 @@ A request counts as credentialed when it carries any of: the `Authorization`, `X
 
 | Change | What is invalidated | When |
 | --- | --- | --- |
-| A release is promoted or rolled back | Everything | When the operation completes |
+| A new release starts, or a release is rolled back | Everything | When the first task of that release starts |
 | A layer, service or scene is published, unpublished, enabled, disabled, secured or made public | Everything | Before the admin request returns |
 | A style or a read policy changes | Everything | Before the admin request returns |
 | An operator invalidates the cache | Everything | Before the admin request returns |
-| Data is edited through Honua | That layer's tiles, queries and metadata | At once for the first edit, then at most once every 30 seconds per layer |
+| Data is edited through Honua | That layer's tiles and queries, and the OGC API surfaces | At once for the first edit, then at most once every 30 seconds |
 
 If you edit a table outside Honua, with a desktop GIS or a load script, the server does not see the change. Tiles and queries refresh after the layer's cache lifetime, or immediately when you invalidate the layer's cache.
+
+CloudFront limits how many invalidations may be in progress. When it is busy the service retries for up to 17 seconds; when many layers are edited in the same 30 seconds it invalidates everything once instead of naming each layer.
 
 An admin request that told the CDN carries the response header `Honua-Cdn-Invalidation: submitted`, or `failed` when CloudFront refused. A failure never undoes the change and never blocks a rollback; a release operation records it in the operation's warnings. Until the invalidation is repeated, cached responses expire with their lifetime.
 

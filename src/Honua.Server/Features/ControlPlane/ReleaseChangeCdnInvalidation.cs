@@ -30,7 +30,8 @@ internal sealed partial class ReleaseChangeCdnInvalidation(
             if (await new PostgresCdnReleaseRecord(dataSource).TryRecordChangeAsync(release, stoppingToken).ConfigureAwait(false))
             {
                 var result = await invalidation.InvalidateNowAsync(CdnPaths.Everything, stoppingToken).ConfigureAwait(false);
-                Log.ReleaseChanged(logger, release, result.Outcome.ToString(), result.Detail ?? string.Empty);
+                var outcome = result.Outcome.ToString();
+                Log.ReleaseChanged(logger, release, outcome, result.Detail ?? string.Empty);
             }
         }
         catch (Exception exception) when (exception is NpgsqlException or TimeoutException)

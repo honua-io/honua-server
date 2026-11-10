@@ -30,7 +30,7 @@ response whose class cannot be decided, is sent as `Cache-Control: private, no-s
 | The route declares a public response class (`WithSharedCacheClass`) | Endpoint metadata; routes without it are never shared-cacheable |
 | The request is `GET` or `HEAD` and the status is 200, 204, 206 or 304 | Guard, when the response starts |
 | The request carries no credential, names no tenant, and the principal is anonymous with no claims | Guard, when the response starts |
-| The access pipeline granted this request as an anonymous caller, and denied nothing | Recorded where access is decided (`AccessPolicyHelpers.CreateAccessDeniedResult`) |
+| The access pipeline granted this request as an anonymous caller, and refused nothing | Recorded where access is evaluated and where it is refused (`AccessPolicyHelpers`) |
 | No authentication decision was made, no cookie is set, and the body is not a GeoServices error envelope | Guard, when the response starts |
 
 "Secured" is therefore not looked up when the header is written. It is the absence of proof that an
@@ -110,23 +110,31 @@ report it in the response.
 
 | Operation | Paths | Ordering |
 | --- | --- | --- |
-| Rollout completes | `/*` | After the operation is terminal; a failure cannot fail it |
-| Rollback completes | `/*` | After the operation is terminal; a failure cannot block it |
+| A task starts on a release other than the one last recorded | `/*` | Once per release change: the record is one database row changed by compare-and-set |
+| Rollout or rollback completes in the control plane | `/*` | After the operation is terminal; a failure cannot fail or block it |
 | Layer, service or scene published, unpublished, enabled, disabled, secured or made public; style or read policy changed; operator purge | `/*` | After commit, before the response |
-| Data edited through Honua's APIs | That layer's path prefixes | At once for the first edit, then at most once per layer every 30 seconds per node |
+| Data edited through Honua's APIs | `/tiles/{layerId}/*`, `/ogc/*`, `/rest/services/{serviceId}/*` | At once for the first edit, then at most one invalidation every 30 seconds per node for all edits |
 
 An administrative change invalidates everything, not the resource's own prefixes. Routes match
 without regard to case and the CDN keys with regard to it, so a prefix cannot reach every cached
 spelling of an address, and a change that reduces access must not leave one behind. These changes
-are rare and lifetimes are short. An edit only needs freshness, so it uses prefixes and relies on
-the lifetime for any other spelling. Invalidation by cache tag removes the distinction.
+are rare and lifetimes are short. An edit only needs freshness, so it names the layer's prefixes in
+the spelling given and in lower case, and relies on the lifetime for any other spelling.
+
+CloudFront allows 15 wildcard paths in progress at once across a distribution. One edit is three or
+four wildcard paths; edits inside a window are sent together when it closes, and more than six
+distinct paths are replaced by `/*`. When CloudFront answers that too many invalidations are in
+progress, the request is retried after 2, 5 and 10 seconds and then reported as failed.
+
+A deployment that replaces tasks does not pass through the control plane, so the release change is
+detected at startup: `honua.cdn_release_record` holds the release last announced to the CDN.
 
 ### 5. Rollouts
 
-A serving task has no cheap way to know that a rollout is in progress: the operation record is
-written by whichever task drives the control plane, and the other tasks do not observe it. The
-server therefore does not shorten lifetimes during a rollout. Metadata documents live 60 seconds at
-the CDN, and `/*` is invalidated when the operation completes or rolls back.
+A serving task has no cheap way to know that a rollout is in progress, so lifetimes are not
+shortened during one. The first task of a new release invalidates `/*` when it starts, and the task
+that flips the record back on a rollback does the same. Until the old tasks are gone a response of
+either release can be cached again, for at most its lifetime.
 
 ## Consequences
 
