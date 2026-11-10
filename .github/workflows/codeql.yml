@@ -7,6 +7,7 @@ on:
   # - schedule: performs a full instrumented build with security-extended
   #   queries to catch lower-confidence findings and dependency churn.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches: [trunk]
     paths:
       - 'src/**'
@@ -27,13 +28,15 @@ env:
   DOTNET_NOLOGO: true
 
 concurrency:
-  group: codeql-${{ github.ref }}
+  group: codeql-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   analyze:
     name: Analyze C#
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    if: >-
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft) &&
+      (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]')
     runs-on: ubuntu-latest
     # The scheduled manual-build scan remains the upper bound for this job.
     timeout-minutes: 90
@@ -67,7 +70,7 @@ jobs:
 
       - name: Initialize CodeQL (pull request)
         if: ${{ github.event_name == 'pull_request' }}
-        uses: github/codeql-action/init@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
+        uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           languages: csharp
           config-file: ./.github/codeql/codeql-config.yml
@@ -76,7 +79,7 @@ jobs:
 
       - name: Initialize CodeQL (full scan)
         if: ${{ github.event_name != 'pull_request' }}
-        uses: github/codeql-action/init@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
+        uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           languages: csharp
           config-file: ./.github/codeql/codeql-config.yml
@@ -92,6 +95,6 @@ jobs:
         run: dotnet build Honua.sln --no-restore --configuration Release
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
+        uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           category: "/language:csharp"

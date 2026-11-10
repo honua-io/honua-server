@@ -76,7 +76,7 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
     public override void Write(Utf8JsonWriter writer, MetadataV2Status value, JsonSerializerOptions options)
     {
         ArgumentNullException.ThrowIfNull(writer);
-        ArgumentNullException.ThrowIfNull(value);
+        value ??= new MetadataV2Status();
 
         writer.WriteStartObject();
         WriteEnum(writer, "lifecycle", value.LifecycleValue);
