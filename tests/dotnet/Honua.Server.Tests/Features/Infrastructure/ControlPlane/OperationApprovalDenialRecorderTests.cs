@@ -18,7 +18,7 @@ public sealed class OperationApprovalDenialRecorderTests
     private const string Canary = "FAKE_AUDIT_SINK_SECRET_CANARY";
 
     [UnitTheory]
-    [InlineData(0, "self_approval")]
+    [InlineData(0, "human_session_required")]
     [InlineData(1, "evidence_invalid")]
     [InlineData(2, "current_authority")]
     public async Task RecordAsync_PersistedDecision_JoinsOnlyAllowlistedDetails(
@@ -64,7 +64,7 @@ public sealed class OperationApprovalDenialRecorderTests
         await using var provider = services.BuildServiceProvider();
         var act = () => OperationApprovalDenialRecorder.RecordAsync(
             provider.GetRequiredService<IServiceScopeFactory>(), Proposal(), "decider",
-            OperationApprovalDenialReason.SelfApproval, default);
+            OperationApprovalDenialReason.HumanSessionRequired, default);
         var error = (await act.Should().ThrowAsync<ServiceUnavailableException>()).Which;
         error.Message.Should().Be(OperationApprovalDenialRecorder.UnavailableMessage);
         error.InnerException.Should().BeNull();
@@ -85,7 +85,7 @@ public sealed class OperationApprovalDenialRecorderTests
             })).BuildServiceProvider();
         var act = () => OperationApprovalDenialRecorder.RecordAsync(
             provider.GetRequiredService<IServiceScopeFactory>(), Proposal(), "decider",
-            OperationApprovalDenialReason.SelfApproval, cancellation.Token);
+            OperationApprovalDenialReason.HumanSessionRequired, cancellation.Token);
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
@@ -96,7 +96,7 @@ public sealed class OperationApprovalDenialRecorderTests
         await using var provider = new ServiceCollection().AddScoped<IAuditLog>(_ => sink).BuildServiceProvider();
         await OperationApprovalDenialRecorder.RecordAsync(
             provider.GetRequiredService<IServiceScopeFactory>(), Proposal() with { Audit = new() }, "decider",
-            OperationApprovalDenialReason.SelfApproval, default);
+            OperationApprovalDenialReason.HumanSessionRequired, default);
         sink.Event!.CorrelationId.Should().Be("proposal");
     }
 

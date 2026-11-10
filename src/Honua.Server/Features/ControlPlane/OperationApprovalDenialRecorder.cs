@@ -9,7 +9,7 @@ namespace Honua.ControlPlane;
 
 internal enum OperationApprovalDenialReason
 {
-    SelfApproval,
+    HumanSessionRequired,
     EvidenceInvalid,
     CurrentAuthority
 }
@@ -28,7 +28,7 @@ internal static class OperationApprovalDenialRecorder
         cancellationToken.ThrowIfCancellationRequested();
         var reasonCode = reason switch
         {
-            OperationApprovalDenialReason.SelfApproval => "self_approval",
+            OperationApprovalDenialReason.HumanSessionRequired => "human_session_required",
             OperationApprovalDenialReason.EvidenceInvalid => "evidence_invalid",
             OperationApprovalDenialReason.CurrentAuthority => "current_authority",
             _ => throw new ArgumentOutOfRangeException(nameof(reason))

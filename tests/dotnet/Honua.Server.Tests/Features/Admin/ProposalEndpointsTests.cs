@@ -37,7 +37,7 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ApprovalManagement)]
-public sealed class ProposalEndpointsTests : IAsyncLifetime
+public sealed partial class ProposalEndpointsTests : IAsyncLifetime
 {
     private const string AdminPassword = "proposal-admin-bootstrap-key";
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -49,12 +49,13 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     private readonly StubGuardrailLadder _ladder = new();
     private readonly RecordingProposalNotifier _notifier = new();
     private readonly RecordingExecutor _executor = new();
+    private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
     public ProposalEndpointsTests()
     {
-        _fixture = new WebAppFixture()
+        _fixture = HumanApprovalHttpClient.Configure(new WebAppFixture(), _identityProvider)
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -86,7 +87,11 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         _client = _fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        try { await _fixture.DisposeAsync(); }
+        finally { _identityProvider.Dispose(); }
+    }
 
     private async Task<OperationProposal> SeedProposalAsync(
         OperationProposalStatus status = OperationProposalStatus.AwaitingApproval,
@@ -94,15 +99,14 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         OperationProposalAutonomyMetadata? autonomyMetadata = null,
         string? executionPayload = null,
         OperationClass kind = OperationClass.AdminConfigChange,
-        OperationProposalEvidence? evidence = null)
+        OperationProposalEvidence? evidence = null,
+        string? operationId = null)
     {
         if (status == OperationProposalStatus.AwaitingApproval &&
             autonomyMetadata is null &&
             kind == OperationClass.AdminConfigChange &&
-            evidence is null)
+            evidence is null && operationId is null)
         {
-            // Ruling 4: approval fixtures must enter through canonical acceptance so
-            // replay can prove the original instance identity and sealed plan hash.
             var gateway = _fixture.Services.GetRequiredService<IOperationGateway>();
             var routed = await gateway.RouteAsync(new OperationGatewayRequest
             {
@@ -121,6 +125,13 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         }
 
         var now = DateTimeOffset.UtcNow;
+        var plan = new OperationProposalPlan
+        {
+            Summary = "Change setting X",
+            RiskLevel = ProposalRiskLevel.Medium,
+            ExecutionPayload = executionPayload,
+        };
+        var policy = _ladder.Resolve(kind);
         var proposal = new OperationProposal
         {
             ProposalId = $"proposal-{Guid.NewGuid():N}",
@@ -129,18 +140,18 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             Status = status,
             RequestedBy = requestedBy,
             AutonomyMetadata = autonomyMetadata,
-            Plan = new OperationProposalPlan
-            {
-                Summary = "Change setting X",
-                RiskLevel = ProposalRiskLevel.Medium,
-                ExecutionPayload = executionPayload,
-            },
+            OperationId = operationId,
+            Plan = plan,
+            SealedPlanHash = Honua.Server.Features.Operations.OperationApprovalPlanSeal.Compute(plan),
+            GuardrailDecision = policy,
             CreatedAt = now,
             UpdatedAt = now,
             Evidence = evidence,
         };
+        proposal = Honua.Server.Tests.Features.Infrastructure.ControlPlane.CanonicalOperationGatewayTestComposition
+            .WithVersionedInitiation(proposal);
         await _proposalStore.TryCreateAsync(proposal);
-        return proposal;
+        return (await _proposalStore.GetAsync(proposal.ProposalId))!;
     }
 
     [IntegrationTest]
@@ -265,14 +276,44 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [IntegrationTheory]
+    [InlineData(OperationProposalStatus.AwaitingApproval, true)]
+    [InlineData(OperationProposalStatus.Succeeded, false)]
+    [Endpoint("GET /api/v1/admin/proposals/{id}")]
+    [Endpoint("GET /api/v1/admin/proposals/{id}/approval-review")]
+    public async Task GetProposal_LegacyEvidence_PreservesHistoryAndNamesFreshProposalRequirement(
+        OperationProposalStatus status, bool requiresFreshProposal)
+    {
+        var proposal = await SeedProposalAsync(status: status);
+        await _proposalStore.TrySetAsync(proposal with { Initiation = null });
+        using var response = await _client.GetAsync($"/api/v1/admin/proposals/{proposal.ProposalId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("requiresReproposal").GetBoolean().Should().Be(requiresFreshProposal);
+        document.RootElement.GetProperty("initiation").GetString().Should().Be("Unknown");
+        document.RootElement.TryGetProperty("approvalChannel", out _).Should().BeFalse();
+        if (requiresFreshProposal)
+        {
+            using var human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider);
+            using var review = await human.Client.GetAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approval-review");
+            review.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            (await review.Content.ReadAsStringAsync()).Should().Contain("fresh proposal");
+        }
+        var legacy = await _proposalStore.GetAsync(proposal.ProposalId);
+        legacy!.Initiation.Should().BeNull();
+        legacy.HumanApproval.Should().BeNull();
+        _executor.ExecutionCount.Should().Be(0);
+    }
+
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     public async Task ApproveProposal_HappyPath_ExecutesAndMarksSucceeded()
     {
-        // Requester differs from the admin approver so separation-of-duties passes.
         var proposal = await SeedProposalAsync(requestedBy: "agent:proposer");
 
-        var response = await _client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+        using var human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider);
+        using var response = await human.ApproveAsync(proposal.ProposalId);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var responseJson = await response.Content.ReadAsStringAsync();
@@ -292,7 +333,8 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             requestedBy: "agent:proposer",
             kind: OperationClass.Seed);
 
-        var response = await _client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+        using var human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider);
+        using var response = await human.ApproveAsync(proposal.ProposalId);
 
         response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
@@ -310,7 +352,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     [Endpoint("POST /api/v1/admin/proposals/{id}/reject")]
     [Endpoint("PUT /api/v1/admin/services/{serviceId}/access-policy")]
-    public async Task ApproveScopedKey_CanReadAndApproveButCannotMutateOtherAdminSurfaces()
+    public async Task ApproveScopedKey_CanReadButRequiresHumanApprovalAndCannotMutateOtherAdminSurfaces()
     {
         var key = await CreateApiKeyAsync("console-read-approve", ["admin:read", "admin:approve"]);
         var proposal = await SeedProposalAsync(requestedBy: "agent:proposer");
@@ -332,7 +374,11 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         readBody.RootElement.GetProperty("status").GetString().Should().Be("AwaitingApproval");
         _executor.ExecutionCount.Should().Be(0);
 
-        var approve = await client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+        using var refused = await client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+        refused.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        _executor.ExecutionCount.Should().Be(0);
+        using var human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider);
+        using var approve = await human.ApproveAsync(proposal.ProposalId);
         approve.StatusCode.Should().Be(HttpStatusCode.OK);
         (await _proposalStore.GetAsync(proposal.ProposalId))!.Status.Should().Be(OperationProposalStatus.Succeeded);
         _executor.ExecutionCount.Should().Be(1);
@@ -397,15 +443,21 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
-    public async Task ApproveProposal_BySameRequester_IsForbiddenForSeparationOfDuties()
+    public async Task ApproveProposal_RequesterInteractiveSession_ExecutesOnce()
     {
-        // Seed the proposal with the bootstrap admin's stable API-key actor id so
-        // the same authenticated caller must trip the separation-of-duties guard.
-        var proposal = await SeedProposalAsync(requestedBy: WebAppFixture.SharedAdminActorId);
+        using var human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider, "requester");
+        var proposal = await SeedProposalAsync(requestedBy: human.ActorId);
 
-        var response = await _client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+        using var response = await human.ApproveAsync(proposal.ProposalId);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _executor.ExecutionCount.Should().Be(1);
+        var resolved = await _proposalStore.GetAsync(proposal.ProposalId);
+        resolved!.HumanApproval.Should().NotBeNull();
+        resolved.HumanApproval!.Channel.Should().Be(OperationHumanApprovalEvidence.InteractiveOidcChannel);
+        resolved.HumanApproval.PlanHash.Should().Be(proposal.SealedPlanHash);
+        resolved.ResolvedBy.Should().Be(resolved.HumanApproval.ActorId);
+        resolved.ResolvedBy.Should().Be(proposal.RequestedBy);
     }
 
     [IntegrationTest]
@@ -414,7 +466,8 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     {
         var proposal = await SeedProposalAsync(status: OperationProposalStatus.Rejected, requestedBy: "agent:proposer");
 
-        var response = await _client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+        using var human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider);
+        using var response = await human.Client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
@@ -519,6 +572,10 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         _notifier.PendingCount.Should().BeGreaterThan(0);
         var proposal = await _proposalStore.GetAsync(result.ProposalId!);
         proposal.Should().NotBeNull();
+        proposal!.Initiation.Should().NotBeNull();
+        proposal.Initiation!.Version.Should().Be(OperationInitiationEvidence.CurrentVersion);
+        proposal.Initiation.PlanHash.Should().Be(proposal.SealedPlanHash);
+        proposal.Initiation.PrincipalId.Should().Be(proposal.RequestedBy);
         var instanceStore = _fixture.Services.GetRequiredService<IOperationInstanceStore>();
         var instance = await instanceStore.GetAsync(proposal!.Audit.OperationInstanceId!);
         instance.Should().NotBeNull();
@@ -657,6 +714,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
 
     private sealed class TestProposalStore : IOperationProposalStore
     {
+        public bool AdvanceVersionOnNextClaim { get; set; }
         private readonly Dictionary<string, OperationProposal> _proposals = new(StringComparer.Ordinal);
 
         public Task<bool> TryAcquireLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
@@ -684,6 +742,14 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
 
         public Task<bool> TrySetAsync(OperationProposal proposal, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
         {
+            if (AdvanceVersionOnNextClaim && proposal.Status == OperationProposalStatus.Executing)
+            {
+                AdvanceVersionOnNextClaim = false;
+                var pending = _proposals[proposal.ProposalId];
+                _proposals[proposal.ProposalId] = pending with { Version = pending.Version + 1 };
+                return Task.FromResult(false);
+            }
+
             if (_proposals.TryGetValue(proposal.ProposalId, out var existing) && existing.Version != proposal.Version)
             {
                 return Task.FromResult(false);
