@@ -179,9 +179,9 @@ class RunnerTests(unittest.TestCase):
         self.assert_timeout_cleanup(foreground=True)
 
     def test_timeout_cleans_up_descendant_outside_inherited_group(self):
-        self.assert_timeout_cleanup(foreground=False, detached=True)
+        self.assert_timeout_cleanup(foreground=False, descendant_setup='os.setsid()')
 
-    def assert_timeout_cleanup(self, foreground, detached=False):
+    def assert_timeout_cleanup(self, foreground, descendant_setup='pass'):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             fake = root / 'dotnet'
@@ -189,7 +189,7 @@ class RunnerTests(unittest.TestCase):
                             'import os, pathlib, signal, time\n'
                             'signal.signal(signal.SIGTERM, signal.SIG_IGN)\n'
                             'is_child = os.fork() == 0\n'
-                            f'if is_child and {detached}: os.setsid()\n'
+                            f'if is_child: {descendant_setup}\n'
                             'suffix = ".descendant.pid" if is_child else ".pid"\n'
                             'pathlib.Path(__file__).with_suffix(suffix).write_text(str(os.getpid()))\n'
                             'time.sleep(30)\n')
