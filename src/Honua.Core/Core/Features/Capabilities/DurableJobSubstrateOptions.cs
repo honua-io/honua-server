@@ -58,6 +58,10 @@ public sealed class DurableJobSubstrateOptions
 {
     public const string SectionName = "DurableJobSubstrate";
 
+    // The job store and queue are tables of the system database, so a host configured with one has
+    // the durable job store that Jobs:RequireDurableStore asks for.
+    public bool SystemDatabaseConfigured { get; set; }
+
     public bool RedisConfigured { get; set; }
 
     public bool RedisEntitled { get; set; }
