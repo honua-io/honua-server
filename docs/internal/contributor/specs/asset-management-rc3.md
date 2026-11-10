@@ -74,11 +74,17 @@ Do not expose private resident contact fields through task queries or exports.
 | Programme asset cycle | Programme/asset stable ID, cycle key, scheduled due-at, programme revision, task ID and generation receipt. Unique `(programme_id, asset_id, cycle_key)` enforced by PostgreSQL, not a pre-insert lookup |
 | Reporter triage | Submission/form version, intake category/location/details/photos, optional private contact, received time, review status and linked task. Separate restricted intake; triage status is not a sixth task state |
 
-Resolve the programme override or profile default form at task creation and pin
-its published package ID/version on the task. Later form publication never
-changes an existing task; offline-created requests resolve their permitted
-binding on reconciliation before inspection work can begin. Form mappings bind
-condition and date answers to the profile fields.
+Resolve and pin a published form package ID/version at task creation. Inspection
+tasks use the inspection binding; maintenance, repair and request tasks use the
+service binding. An authorized explicit create/triage form override takes
+precedence over the programme override, then the matching profile default.
+Validate form compatibility with task type and mapped fields. Assetless tasks
+require an explicit service form binding. Missing bindings reject server creation
+with an actionable field error. Offline-created requests remain local pending
+reconciliation until a permitted binding resolves; no inspection work may start
+before acceptance. Later publication never changes a pinned task. Completion
+creates the corresponding inspection or service record; assetless service records
+retain task/location provenance without inventing an asset reference.
 
 Tasks with no asset (for example a new resident request) carry explicit location.
 Copy geometry when creating an asset-linked task; later asset movement does not
@@ -94,13 +100,14 @@ cleaned by existing retention mechanisms; never claim object storage itself is
 part of a database transaction. A failure at any database write rolls back all
 of these records. Dates derive from validated observation timestamps, with
 server timestamps retained; older inspections must not regress the latest
-asset summary. Maintain a domain-owned asset-summary revision in a sidecar keyed by stable
-profile/asset identity; customer layers need no native per-feature version.
-Within the same transaction, serialize summary updates on that key and update
-only mapped summary fields when observedAt is newer. Stale downloaded summary
-revisions do not reject an otherwise authorized task completion; its observation
-is retained even when the summary remains unchanged. Equal-time conflicting
-observations become explicit correction/review candidates, not blind overwrites.
+asset summary. Maintain a domain-owned summary revision in a sidecar keyed by
+stable profile/asset identity; customer layers need no native feature version.
+Store independent observed-at watermarks for the inspection field group
+(condition/last-inspected) and service field group (last-serviced). Serialize
+updates on the sidecar key within the transaction; each group advances only for
+a newer observation in that group. Stale downloaded summary revisions do not
+reject authorized completion; retain the observation even if the summary stays
+unchanged. Equal-time conflicting values become correction/review candidates.
 
 Migrations choose the next number at implementation time, after checking open
 PRs. Add tables, nullable columns and safe indexes only; no drops, renames,
@@ -136,9 +143,14 @@ effects are committed together. Retrying an identical command returns its stored
 receipt; reuse of the ID with a different body is rejected. No last-write-wins
 whole-record update. Task REST deliberately uses a body version so offline
 commands retain one transport-neutral replay envelope; it does not change the
-existing field-review If-Match/ETag contract. Map commandId to the existing
-field-sync change_id replay key and scope it to actor/service/operation; adapters
-must not create separate receipt namespaces for the same command. Assignee, status, cycle keys and completion fields cannot
+existing field-review surface without an explicit extension. Add an expand-only
+task command receipt table keyed by (service scope, commandId), storing actor,
+operation, body hash and outcome. Field sync forwards change_id = commandId into
+that same task receipt namespace; adapters never execute a task command twice.
+The existing generic feature-sync receipt table remains unchanged (global
+change_id primary key, insert/update/delete operations). Actor, operation or body
+reuse inconsistent with an existing task receipt returns 409. Assignee, status,
+cycle keys and completion fields cannot
 be edited around the service through generic layer edits. Protocol edit adapters
 either invoke the same command semantics with concurrency tokens or reject the
 protected field mutation with an actionable domain error. Read-only capability
@@ -241,23 +253,27 @@ nullability, concurrency and idempotency behavior, including anonymous intake.
 | Resource/operation | Input | Output |
 |---|---|---|
 | `/api/v1/assets/profiles` list/create; `/{id}` get/update | Layer identity, mapped fields, labels; expectedVersion/commandId on update | Profile and validation diagnostics; schema setup preview |
-| `/api/v1/tasks` list/create; `/{id}` get | Filters status/assignee/programme/type/due/bbox, cursor; create client task UUID, commandId, assetRef or location, type, dueAt, priority | Task projection with version, permitted actions and provenance |
+| `/api/v1/tasks` list/create; `/{id}` get | Filters status/assignee/programme/type/due/bbox, cursor; create client task UUID, commandId, assetRef or location, type, dueAt, priority, optional form override | Task projection with version, permitted actions and provenance |
 | `/api/v1/tasks/{id}/transitions` create | commandId, expectedVersion, action, assignee/reason as applicable | Task and durable command receipt |
 | `/api/v1/tasks/{id}/completion` create | commandId, expectedVersion, optional downloaded summary revision (informational), observedAt, pinned form reference, condition/answers/notes, ready attachment references | Task, inspection/service IDs, versions and receipt |
 | `/api/v1/tasks/{id}/history` list | Authorized cursor/limit | Immutable history projection |
 | `/api/v1/programmes` list/create; `/{id}` get/update | Target/filter, interval/unit/mode/anchor/timezone/end/default assignee, expectedVersion/commandId | Versioned programme and validation diagnostics |
 | `/api/v1/programmes/{id}/preview` | Expected programme version and bounded sample size | Cohort counts, sample scheduled dates, warnings; no tasks created |
 | `/api/v1/reporters/{id}/submissions` create | Published form version, commandId, category/location/details/photos and bot proof | Opaque submission receipt and triage acknowledgement |
-| Reporter triage via existing field-review surface | Authorized decision, existing If-Match/ETag, commandId, optional asset link | Review receipt and request task reference on approval |
+| Reporter triage via existing field-review surface | Authorized decision, required If-Match/ETag and commandId (proposed extensions), optional asset link/form override | Review receipt and request task reference on approval |
 
 Proposed error contract: invalid body/domain is 400 with field errors, missing
 identity 401, forbidden 403, invisible/missing resource 404, stale version or
 conflicting command ID 409 with safe conflict details, oversized intake 413,
-edge rate limit 429 with Retry-After, unavailable dependency 503. Create returns 201,
+unavailable dependency 503. Edge-owned rate limiting emits 429 and its headers
+per ADR-0004; these are outside the server response contract. Create returns 201,
 query/update 200, asynchronous intake 202; duplicate commands return original
 operation outcome with duplicate indication. Missing required expectedVersion
-is 400 for the proposed task body contract; existing review uses If-Match and
-returns 428 when that precondition is missing. Do not expose stack traces, queries or internal storage details.
+is 400 for the proposed task body contract. Existing field review accepts an
+optional If-Match and otherwise applies an unconditional decision; its current
+request has status/note, without commandId. For reporter triage, propose mandatory
+If-Match (428 when absent; 409 when stale) and commandId replay protection as
+explicit extensions. Do not expose stack traces, queries or storage details.
 
 FeatureServer and OGC API Features expose asset, task, inspection and service
 collections plus programme/history tables through existing query pipelines.
@@ -298,7 +314,7 @@ Metric policy needs approval below before freezing fixtures.
 |---|---|
 | A1 | Each starter and an existing custom point/line/polygon layer: preview/mapping validates identity/types; repeat install creates no duplicate tables or profiles |
 | A2 | Inspection completion: inject failure at each database write; task/history/record/condition/dates/outbox all commit or none do; attachment retries remain recoverable |
-| A3 | Older observation arrives after newer inspection: preserve both records, never regress condition/latest dates without explicit correction |
+| A3 | Stale downloaded summary revision still permits completion and retains observation; concurrent tasks serialize summaries without regression; inspection/service arrive out of order and advance independent watermarks; equal-time conflicting values create review candidates |
 | T1 | Exercise every allowed transition and every disallowed edge above; actor/permission/version violations leave all state unchanged |
 | T2 | Two concurrent transitions at one version: exactly one accepted, one conflict; replay winner creates no second history; changed-body ID reuse rejected |
 | T3 | Generic protocol edit attempts protected assignment/status/completion: same domain validation or explicit rejection, no bypass |
@@ -312,6 +328,8 @@ Metric policy needs approval below before freezing fixtures.
 | A4 | Move source asset after task creation: task geometry stays fixed; authorized versioned re-link/move records provenance; stale/unauthorized mutation leaves geometry and history unchanged |
 | N1 | Retry overdue dispatch: one notification per task/version/policy; completion/cancellation before dispatch suppresses the pending alert |
 | R1 | Anonymous report passes through deployed CDN, form validation and abuse controls into restricted triage; one approval produces one request task; staff can link asset |
+| F1 | Programme form override beats profile default; authorized explicit override wins; publication does not alter pinned tasks; missing/incorrect binding rejects create; assetless triage requires service binding; offline request resolves binding on reconciliation before start |
+| R3 | Triage approval without If-Match returns 428; stale ETag returns 409 with no task; retry identical command creates one task; changed-body replay is rejected |
 | R2 | Rate and upload limits, spam rejection and accessible alternative work; two anonymous clients never receive another receipt/contact/photo; every reporter response/error is no-store and edge/service-worker caches stay empty |
 | X1 | REST/OpenAPI snapshots match runtime; FeatureServer desktop client and OGC API Features read same IDs/state/relationships; cross-scope queries and edits denied |
 | X2 | MCP read scopes match REST; a proposal changes nothing before human approval; stale approval cannot overwrite concurrent work |
