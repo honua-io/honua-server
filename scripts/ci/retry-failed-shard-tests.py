@@ -14,26 +14,41 @@ import xml.etree.ElementTree as ET
 from flake_quarantine import exclude_filter, load_snapshot, merge_retry, read_cases
 
 
+def descendant_pids(parent):
+    listing = subprocess.check_output(['ps', '-e', '-o', 'pid=,ppid='], text=True)
+    pairs = [tuple(map(int, line.split())) for line in listing.splitlines()]
+    descendants = {parent}
+    while True:
+        expanded = descendants | {pid for pid, ppid in pairs if ppid in descendants}
+        if expanded == descendants:
+            return descendants
+        descendants = expanded
+
+
 def call_test(command):
-    # Own the test process group: foreground supervisors only signal this wrapper.
-    with subprocess.Popen(command, start_new_session=os.name == 'posix') as child:
+    # Keep the inherited group so the shared shard deadline can kill every test.
+    with subprocess.Popen(command) as child:
         cancellation_signal = None
 
         def forward(signum, _frame):
             nonlocal cancellation_signal
             cancellation_signal = signum
-            if child.poll() is not None:
+            foreground = os.environ.get('HONUA_SERVER_TEST_TIMEOUT_FOREGROUND') == 'true'
+            if not foreground or os.name != 'posix':
+                if child.poll() is None:
+                    child.send_signal(signum)
                 return
-            if os.name != 'posix':
-                child.send_signal(signum)
-                return
-            with suppress(ProcessLookupError):
-                os.killpg(child.pid, signum)
+            # Foreground timeout only signals this wrapper. Snapshot descendants
+            # before TERM so reparented grandchildren remain in the cleanup set.
+            descendants = descendant_pids(child.pid)
+            for pid in descendants:
+                with suppress(ProcessLookupError):
+                    os.kill(pid, signum)
             with suppress(subprocess.TimeoutExpired):
                 child.wait(timeout=0.5)
-            # Descendants can outlive the immediate child after cancellation.
-            with suppress(ProcessLookupError):
-                os.killpg(child.pid, signal.SIGKILL)
+            for pid in descendants:
+                with suppress(ProcessLookupError):
+                    os.kill(pid, signal.SIGKILL)
         previous = {sig: signal.signal(sig, forward) for sig in (signal.SIGTERM, signal.SIGINT)}
         try:
             code = child.wait()

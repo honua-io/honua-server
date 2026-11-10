@@ -500,9 +500,9 @@ The founder-approved quarantine policy in [known-flakes.md](known-flakes.md#auto
 allows one same-job failed-method retry within the original shard budget. Success requires
 complete passing retry evidence, retained alongside the first attempt. Ambiguous theory-row
 names are rejected so a passing sibling cannot conceal a missing failure. Infrastructure and
-execution failures remain blocking. On cancellation, the runner signals its owned test process
-group and escalates to SIGKILL after at most half a second, including under foreground
-timeout supervision. Required check names and minimum-execution checks remain
+execution failures remain blocking. Tests retain the supervisor’s process group so shared deadlines clean up the full tree.
+Under foreground timeout supervision, cancellation signals the test’s descendants and
+escalates to SIGKILL after at most half a second. Required check names and minimum-execution checks remain
 unchanged. Bot-authored issues provide a validated, project-scoped exclusion list capped at
 25 methods and 14 days per entry; expiry restores gating automatically. Foundation and lean
 gate duplicate coverage consume the same list. A separate `Flaky Test Detection` job runs
