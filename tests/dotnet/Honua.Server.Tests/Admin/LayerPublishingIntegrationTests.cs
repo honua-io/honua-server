@@ -379,6 +379,7 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         listApi!.Success.Should().BeTrue();
         listApi.Data.Should().NotBeNull();
 
+        AdminListContractAssertions.MatchesPublishedSchema("/connections/{id}/layers", listPayload);
         var listedLayer = listApi.Data!.Items.Single(layer => layer.StorageLayerId == _layerId);
         listedLayer.Enabled.Should().BeTrue();
 
