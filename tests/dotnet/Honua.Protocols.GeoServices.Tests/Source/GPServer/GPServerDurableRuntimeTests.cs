@@ -33,10 +33,12 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
 /// <summary>
 /// Verifies the GPServer adapter against the real durable execution substrate.
+/// The class fixture retains PostgreSQL between cases to avoid repeated bootstrap;
+/// application hosts, schemas, workers, and Redis cleanup remain per case.
 /// </summary>
 [Collection("Redis")]
 [Protocol(TestProtocols.GPServer)]
-public sealed partial class GPServerDurableRuntimeTests(RedisFixture redis)
+public sealed partial class GPServerDurableRuntimeTests(RedisFixture redis) : IClassFixture<PostgresFixture>
 {
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
     private const string ServiceId = WebAppFixture.TestServiceId;

@@ -539,3 +539,11 @@ unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
+
+### Durable GPServer database lifetime
+
+`GPServerDurableRuntimeTests` retains a `PostgresFixture` for the class to avoid
+repeating shared database initialization. Each case retains its application,
+isolated schema, execution store and worker lifetime, and existing Redis key
+cleanup. Every durable-runtime assertion remains in its existing GPServer shard
+and in full trunk runs.
