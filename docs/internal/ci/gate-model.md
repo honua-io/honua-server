@@ -543,5 +543,6 @@ twice-daily full matrix are preserved.
 ## Automatic merge admission
 
 [Automatic merge admission](workflow-inventory.md#automatic-merge-admission) uses
-the bot App to enable GitHub auto-merge. Required checks, review admission, and
-rulesets retain authority over when a PR merges.
+the bot App to enable GitHub auto-merge. Repository rulesets and required checks decide when a PR merges.
+The workflow does not override protections. Exact-head review admission must be
+configured as a required check to be enforced by GitHub auto-merge.

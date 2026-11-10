@@ -2,10 +2,10 @@ name: auto-merge ready pull requests
 
 on:
   pull_request:
-    types: [opened, ready_for_review, reopened]
+    branches: [trunk]
+    types: [opened, ready_for_review, reopened, synchronize, labeled, unlabeled, converted_to_draft, edited]
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: auto-merge-ready-${{ github.event.pull_request.number }}
@@ -16,9 +16,8 @@ jobs:
   enable:
     name: Enable ruleset-governed auto-merge
     if: >-
-      !github.event.pull_request.draft
-      && github.event.pull_request.head.repo.full_name == github.repository
-      && !contains(github.event.pull_request.labels.*.name, 'hold')
+      github.event.pull_request.head.repo.full_name == github.repository
+      && (!github.event.pull_request.draft || github.event.action == 'converted_to_draft')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -41,22 +40,33 @@ jobs:
               query($owner: String!, $repo: String!, $number: Int!) {
                 repository(owner: $owner, name: $repo) {
                   pullRequest(number: $number) {
-                    id state isDraft headRepository { nameWithOwner }
+                    id state isDraft baseRefName headRepository { nameWithOwner }
                     labels(first: 100) { nodes { name } pageInfo { hasNextPage } }
                     commits { totalCount }
-                    autoMergeRequest { enabledAt }
+                    autoMergeRequest { mergeMethod }
                   }
                 }
               }`, { ...context.repo, number: context.issue.number });
-            const eligible = pr && pr.state === 'OPEN' && !pr.isDraft
+            const eligible = pr && pr.state === 'OPEN' && !pr.isDraft && pr.baseRefName === 'trunk'
               && pr.headRepository?.nameWithOwner === `${context.repo.owner}/${context.repo.repo}`
               && !pr.labels.pageInfo.hasNextPage
-              && !pr.labels.nodes.some(label => label.name === 'hold');
-            if (!eligible || pr.autoMergeRequest) {
-              core.notice('Auto-merge unchanged: pull request is ineligible or already enabled.');
+              && !pr.labels.nodes.some(label => ['hold', 'train:hold', 'train:escalated'].includes(label.name));
+            const mergeMethod = pr?.commits.totalCount > 1 ? 'MERGE' : 'SQUASH';
+            if (pr?.autoMergeRequest && (!eligible || pr.autoMergeRequest.mergeMethod !== mergeMethod)) {
+              await github.graphql(`
+                mutation($pullRequestId: ID!) {
+                  disablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId }) {
+                    pullRequest { number }
+                  }
+                }`, { pullRequestId: pr.id });
+            } else if (pr?.autoMergeRequest) {
+              core.notice('Auto-merge already uses the live commit-count method.');
               return;
             }
-            const mergeMethod = pr.commits.totalCount > 1 ? 'MERGE' : 'SQUASH';
+            if (!eligible) {
+              core.notice('Auto-merge disabled or unchanged: live pull request is ineligible.');
+              return;
+            }
             await github.graphql(`
               mutation($pullRequestId: ID!, $mergeMethod: PullRequestMergeMethod!) {
                 enablePullRequestAutoMerge(input: {
