@@ -71,6 +71,7 @@ public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) 
 
     public async Task DisposeAsync()
     {
+        await DeletePublishConnectionAsync();
         _proposer.Dispose();
         _approver.Dispose();
         try { await _fixture.DisposeAsync(); }
@@ -268,7 +269,7 @@ public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) 
     private static Dictionary<string, string?> ApprovalPolicy()
     {
         var settings = new Dictionary<string, string?> { ["Operations:Policy:Enabled"] = "true" };
-        var operations = new[] { "folder.create", "folder.update", "folder.delete", "service.move" };
+        var operations = new[] { "folder.create", "folder.update", "folder.delete", "service.move", "service.publish" };
         for (var index = 0; index < operations.Length; index++)
         {
             settings[$"Operations:Policy:Rules:{index}:OperationId"] = operations[index];

@@ -13,6 +13,10 @@ public sealed record FileUploadRequest
 
     public required string ContentType { get; init; }
 
+    public string? ContentEncoding { get; init; }
+
+    public StoredObjectCachePolicy CachePolicy { get; init; }
+
     public long? SizeBytes { get; init; }
 
     public TimeSpan? TimeToLive { get; init; }
@@ -40,6 +44,10 @@ public sealed record ByteArrayUploadRequest
 
     public required string ContentType { get; init; }
 
+    public string? ContentEncoding { get; init; }
+
+    public StoredObjectCachePolicy CachePolicy { get; init; }
+
     public TimeSpan? TimeToLive { get; init; }
 
     public ImmutableDictionary<string, string> Metadata { get; init; } = ImmutableDictionary<string, string>.Empty;
@@ -65,6 +73,8 @@ public sealed record BatchUploadRequest
     public required IReadOnlyList<BatchFileItem> Files { get; init; }
 
     public TimeSpan? TimeToLive { get; init; }
+
+    public StoredObjectCachePolicy CachePolicy { get; init; }
 
     public string? Folder { get; init; }
 
