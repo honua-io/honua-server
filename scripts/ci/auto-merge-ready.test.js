@@ -120,4 +120,8 @@ test('mergeability computation race stays neutral only for the clean-status API 
   await assert.rejects(run(pr, 'publication rejected'), /publication rejected/);
   await assert.rejects(run(pr, ['Pull request is in clean status', 'publication rejected']), /publication rejected/);
   await assert.rejects(run(pr, new Error('network failure')), /network failure/);
+  await assert.rejects(run(pr, new Error('Pull request is in clean status')), /clean status/);
+  const emptyErrors = new Error('Pull request is in clean status');
+  emptyErrors.errors = [];
+  await assert.rejects(run(pr, emptyErrors), /clean status/);
 });
