@@ -47,6 +47,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-workflow-load.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-testcontainer-images.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-heavy-runners.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-trunk-affected.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-native-tools-image.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-gate-apt-provisioning.py --self-test
   "${PYTHON_BIN}" scripts/ci/source-inventory-pilot/test_run.py
@@ -84,6 +85,14 @@ jq -e '
   and (.unmapped_source_run_all_prefixes | type == "array")
   and (.default_shards_when_no_match | type == "array" and length > 0)
   and (.shards | type == "array" and length > 0)
+  and (
+    .pr_time_budget
+    | type == "object"
+    and (keys == ["max_shard_minutes", "max_total_minutes"])
+    and (.max_shard_minutes | type == "number" and . > 0)
+    and (.max_total_minutes | type == "number")
+    and (.max_total_minutes >= .max_shard_minutes)
+  )
   and (
     [
       .shards[]
@@ -2088,7 +2097,11 @@ if [[ -n "${PYTHON_BIN}" ]]; then
 fi
 
 if [[ -n "${PYTHON_BIN}" ]]; then
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-serving-image-boundary.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-promote-verified-image.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-shard-resources.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/test-owned-server.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/test-quickstart-console-smoke.py
 fi
 
 if [[ -n "${PYTHON_BIN}" ]]; then
