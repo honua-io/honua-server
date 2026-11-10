@@ -101,6 +101,11 @@ case "${test_group}" in
   *) echo "::error::Unknown lean gate test group '${test_group}'" >&2; exit 1 ;;
 esac
 
+if [[ "${1:-}" == "--test-roots" ]]; then
+  printf '%s\n' "${ROOT_PROJECTS[@]}"
+  exit 0
+fi
+
 build_scope="${BUILD_SCOPE:-full}"
 event_name="${GITHUB_EVENT_NAME:-}"
 filter_path="${GATE_FILTER_PATH:-${RUNNER_TEMP:-/tmp}/lean-gate.slnf}"

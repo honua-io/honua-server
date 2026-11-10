@@ -224,7 +224,7 @@ require(
 )
 require(
     r"dotnet build \"\$\{target\}\" \\\s+--no-restore \\\s+--configuration Release \\\s+-graphBuild \\\s+"
-    r"/p:TreatWarningsAsErrors=true \\\s+/p:RunAnalyzers=true \\\s+"
+    r"/p:TreatWarningsAsErrors=true \\\s+/p:HonuaAnalyzerPartition=\"\$\{ANALYZER_PARTITION\}\" \\\s+"
     r"/p:EnforceCodeStyleInBuild=true \\\s+/p:GenerateDocumentationFile=true",
     "build with analyzers, code style and documentation diagnostics as errors",
     text=FORMAT_TEXT,
@@ -233,15 +233,20 @@ require(
     r"uses: \./\.github/actions/format-check\n\s+with:\n\s+format-scope: \$\{\{ inputs\.format-scope \}\}\n(?:\s+#.*\n)*\s+analyzer-build: 'false'",
     "skip the format action's analyzer build only for the inline caller whose build ran analyzers",
 )
-require(
-    r"format:\n[\s\S]*?- check: Format\n\s+format: 'true'\n\s+analyzer-build: 'false'\n"
-    r"\s+- check: Analyzers\n\s+format: 'false'\n\s+analyzer-build: 'true'\n",
-    "run format and the analyzer build as parallel PR Gate format jobs",
-    text=PR_GATE.read_text(encoding="utf-8"),
-)
+# Drafts execute formatting while ready PRs retain both strict analyzer passes.
+format_matrix = re.search(r"include: \$\{\{ fromJSON\(github.event.pull_request.draft && '([^']+)' \|\| '([^']+)'\) \}\}", PR_GATE.read_text())
+if not format_matrix:
+    raise AssertionError('format matrix must distinguish draft and ready PRs')
+import json
+_draft, _ready = (json.loads(value) for value in format_matrix.groups())
+assert [row['check'] for row in _draft] == ['Format']
+assert [(row['check'], row['analyzer-partition'], row['analyzer-build']) for row in _ready] == [
+    ('Format', 'all', 'false'), ('Analyzers', 'source', 'true'), ('Analyzers (tests)', 'tests', 'true')]
+assert _draft == _ready[:1]
 require(
     r"format-scope: affected\n\s+format: \$\{\{ matrix\.format \}\}\n"
-    r"\s+analyzer-build: \$\{\{ matrix\.analyzer-build \}\}",
+    r"\s+analyzer-build: \$\{\{ matrix\.analyzer-build \}\}\n"
+    r"\s+analyzer-partition: \$\{\{ matrix\.analyzer-partition \}\}",
     "pass each format matrix job its own check",
     text=PR_GATE.read_text(encoding="utf-8"),
 )
