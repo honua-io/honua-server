@@ -539,3 +539,12 @@ unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
+
+### FeatureServer authorization-denial fixture lifetime
+
+`FeatureServerServiceRbacTests` shares one class-lifetime application for eleven
+requests rejected before a state change. Each request keeps its own client and
+claims. Successful edits, calculations, replica creation, and tests that create a
+replica before checking denial retain isolated applications. Every status and
+response assertion remains in the Security and Authorization shard family;
+required checks, aggregate dependencies, and full trunk coverage are unchanged.

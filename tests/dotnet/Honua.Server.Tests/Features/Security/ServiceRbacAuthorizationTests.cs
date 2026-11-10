@@ -41,8 +41,25 @@ using OgcGeoJsonFeature = Honua.Protocols.Ogc.Common.GeoJsonFeature;
 
 namespace Honua.Server.Tests.Features.Security;
 
-public sealed class FeatureServerServiceRbacTests
+public sealed class FeatureServerServiceRbacTests : IClassFixture<FeatureServerServiceRbacTests.Fixture>
 {
+    private readonly Fixture _fixture;
+
+    public FeatureServerServiceRbacTests(Fixture fixture)
+    {
+        _fixture = fixture;
+    }
+
+    /// <summary>
+    /// Shares the immutable application only for requests rejected before any state change.
+    /// </summary>
+    public sealed class Fixture : IDisposable
+    {
+        public WebApplicationFactory<Program> Application { get; } = ServiceRbacTestFixture.CreateFactory();
+
+        public void Dispose() => Application.Dispose();
+    }
+
     private const string CalculateExpression = "[{\"field\":\"name\",\"sqlExpression\":\"'RBAC'\"}]";
 
     // calculate is POST-only (#6100).
@@ -58,8 +75,7 @@ public sealed class FeatureServerServiceRbacTests
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithReadOnlyRole_ReturnsForbidden()
     {
-        using var factory = ServiceRbacTestFixture.CreateFactory();
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "reader");
+        using var client = ServiceRbacTestFixture.CreateClient(_fixture.Application, "reader");
 
         var response = await client.PostAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/applyEdits",
@@ -90,8 +106,7 @@ public sealed class FeatureServerServiceRbacTests
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithScopedDataEditor_DeniesOtherService()
     {
-        using var factory = ServiceRbacTestFixture.CreateFactory();
-        using var client = ServiceRbacTestFixture.CreateClient(factory, $"data-editor:{ServiceRbacTestFixture.AlphaService}");
+        using var client = ServiceRbacTestFixture.CreateClient(_fixture.Application, $"data-editor:{ServiceRbacTestFixture.AlphaService}");
 
         var response = await client.PostAsync(
             $"/rest/services/{ServiceRbacTestFixture.BetaService}/FeatureServer/{ServiceRbacTestFixture.BetaLayerId}/applyEdits",
@@ -122,8 +137,7 @@ public sealed class FeatureServerServiceRbacTests
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/append")]
     public async Task Append_WithAnonymousClient_AndEmptyEdits_ReturnsUnauthorized()
     {
-        using var factory = ServiceRbacTestFixture.CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         var payload = JsonSerializer.Serialize(new
         {
@@ -146,8 +160,7 @@ public sealed class FeatureServerServiceRbacTests
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/append")]
     public async Task Append_WithReadOnlyRole_AndEmptyEdits_ReturnsForbidden()
     {
-        using var factory = ServiceRbacTestFixture.CreateFactory();
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "reader");
+        using var client = ServiceRbacTestFixture.CreateClient(_fixture.Application, "reader");
 
         var payload = JsonSerializer.Serialize(new
         {
@@ -170,8 +183,7 @@ public sealed class FeatureServerServiceRbacTests
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     public async Task Calculate_WithAnonymousClient_ReturnsUnauthorized()
     {
-        using var factory = ServiceRbacTestFixture.CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var calculateContent = CreateCalculateContent();
         var response = await client.PostAsync(
@@ -187,8 +199,7 @@ public sealed class FeatureServerServiceRbacTests
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     public async Task Calculate_WithReadOnlyRole_ReturnsForbidden()
     {
-        using var factory = ServiceRbacTestFixture.CreateFactory();
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "reader");
+        using var client = ServiceRbacTestFixture.CreateClient(_fixture.Application, "reader");
 
         using var calculateContent = CreateCalculateContent();
         var response = await client.PostAsync(
@@ -204,8 +215,7 @@ public sealed class FeatureServerServiceRbacTests
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     public async Task Calculate_WithScopedDataEditor_DeniesOtherService()
     {
-        using var factory = ServiceRbacTestFixture.CreateFactory();
-        using var client = ServiceRbacTestFixture.CreateClient(factory, $"data-editor:{ServiceRbacTestFixture.AlphaService}");
+        using var client = ServiceRbacTestFixture.CreateClient(_fixture.Application, $"data-editor:{ServiceRbacTestFixture.AlphaService}");
 
         using var calculateContent = CreateCalculateContent();
         var response = await client.PostAsync(
@@ -238,8 +248,7 @@ public sealed class FeatureServerServiceRbacTests
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     public async Task CreateReplica_WithReadOnlyRole_ReturnsForbidden()
     {
-        using var factory = ServiceRbacTestFixture.CreateFactory();
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "reader");
+        using var client = ServiceRbacTestFixture.CreateClient(_fixture.Application, "reader");
 
         var payload = JsonSerializer.Serialize(new
         {
@@ -291,8 +300,7 @@ public sealed class FeatureServerServiceRbacTests
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     public async Task CreateReplica_WithAnonymousClient_AndMalformedBody_ReturnsUnauthorizedBeforeBodyValidation()
     {
-        using var factory = ServiceRbacTestFixture.CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var content = new StringContent("{", Encoding.UTF8, "application/json");
         var response = await client.PostAsync(
@@ -308,8 +316,7 @@ public sealed class FeatureServerServiceRbacTests
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task SynchronizeReplica_WithReadOnlyRole_AndMalformedBody_ReturnsForbiddenBeforeBodyValidation()
     {
-        using var factory = ServiceRbacTestFixture.CreateFactory();
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "reader");
+        using var client = ServiceRbacTestFixture.CreateClient(_fixture.Application, "reader");
 
         using var content = new StringContent("{", Encoding.UTF8, "application/json");
         var response = await client.PostAsync(
@@ -325,8 +332,7 @@ public sealed class FeatureServerServiceRbacTests
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/unRegisterReplica")]
     public async Task UnRegisterReplica_WithReadOnlyRole_AndMalformedBody_ReturnsForbiddenBeforeBodyValidation()
     {
-        using var factory = ServiceRbacTestFixture.CreateFactory();
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "reader");
+        using var client = ServiceRbacTestFixture.CreateClient(_fixture.Application, "reader");
 
         using var content = new StringContent("{", Encoding.UTF8, "application/json");
         var response = await client.PostAsync(
