@@ -57,7 +57,7 @@ Keep open pull requests in ${{ github.repository }} mergeable with trunk.
 
 ## Steps
 
-1. List open, non-draft pull requests from branches in this repository. Pick at most two, in this order: first those whose mergeable state is conflicting; then those whose required checks are all green but whose branch is behind trunk (oldest first). Skip pull requests labelled `conflict-stuck`.
+1. List open, non-draft pull requests from branches in this repository. Pick at most two, in this order: first those whose mergeable state is conflicting; then those whose required checks are all green, whose branch is behind trunk, AND where trunk's commits since the branch point change files in the same projects (directories containing a .csproj, or the same top-level folder for non-.NET files) as the pull request (oldest first). Leave behind-but-unaffected pull requests alone. Skip pull requests labelled `conflict-stuck`.
 2. For each: check out its head branch, merge origin/trunk into it, and resolve conflicts by keeping both sides' intent: keep trunk's moves and renames, re-apply the pull request's changes on top, regenerate generated files with the repository's own scripts when a generated file conflicts, and union allowlist-style JSON entries.
 3. Build check: run `dotnet build` only for projects whose files you changed while resolving (if the toolchain is available); never weaken tests to resolve a conflict.
 4. Push the merge result to that pull request's branch, and add one comment: "Merged trunk <short sha>; conflicts in <files> resolved by <one line each>."
