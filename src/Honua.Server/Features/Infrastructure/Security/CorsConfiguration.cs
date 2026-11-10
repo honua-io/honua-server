@@ -191,6 +191,14 @@ public static class CorsConfiguration
             .ToArray();
     }
 
+    internal static bool IsExplicitOriginAllowed(IConfiguration configuration, string origin)
+    {
+        return Uri.TryCreate(origin, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp)
+            && string.Equals(origin, uri.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase)
+            && FilterExplicitOrigins(ResolveAllowedOrigins(configuration)).Contains(origin, StringComparer.OrdinalIgnoreCase);
+    }
+
     private static string[] ResolveAllowedOrigins(IConfiguration configuration)
     {
         var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();

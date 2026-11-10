@@ -61,6 +61,11 @@ internal static class AdminAuthEndpoints
             .WithMetadata(new RequireBrowserCsrfMetadata())
             .WithMetadata(new RateLimitAttribute(5));
 
+        _ = group.MapPost("/password-token", (HttpContext context,
+                AdminPasswordSignInRequest request, AdminPasswordTokenEndpoint endpoint) => endpoint.HandleAsync(context, request))
+            .WithDisplayName("Sign In Browser Administrator Bearer")
+            .WithMetadata(new RateLimitAttribute(5));
+
         _ = group.MapPost("/providers/{providerKey}/authorize-url", HandleCreateAuthorizeUrl)
             .WithDisplayName("Create Admin Auth Authorize Url")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
@@ -131,15 +136,7 @@ internal static class AdminAuthEndpoints
                 Origin = AdminAuthSessionOrigin.Builtin,
                 ProviderKey = "builtin",
                 AccessToken = string.Empty,
-                Claims = principal.Claims.Select(claim => new AdminAuthSessionClaim
-                {
-                    Type = claim.Type,
-                    Value = claim.Value
-                }).Append(new AdminAuthSessionClaim
-                {
-                    Type = ClaimTypes.NameIdentifier,
-                    Value = ApiKeyAuthenticationHandler.BootstrapAdminActorId.ToString()
-                }).ToArray(),
+                Claims = AdminPasswordAuthenticator.CreateClaims(principal),
                 ExpiresAt = DateTimeOffset.UtcNow.Add(lifetime)
             }, context.RequestAborted).ConfigureAwait(false);
             SetCookie(context.Response, AdminAuthSessionStore.AuthSessionCookieName, sessionId,
@@ -295,15 +292,17 @@ internal static class AdminAuthEndpoints
                 "Operator bearer issuance is not configured on this server.");
         }
 
-        var expiresInSeconds = (long)Math.Max(0, (issuance.ExpiresAt - DateTimeOffset.UtcNow).TotalSeconds);
-        return TypedResults.Ok(new AdminOperatorBearerResponse
+        return TypedResults.Ok(CreateOperatorBearerResponse(issuance));
+    }
+
+    internal static AdminOperatorBearerResponse CreateOperatorBearerResponse(OperatorBearerIssuance issuance) =>
+        new()
         {
             AccessToken = issuance.Token,
             TokenType = "Bearer",
             ExpiresAt = issuance.ExpiresAt,
-            ExpiresIn = expiresInSeconds
-        });
-    }
+            ExpiresIn = (long)Math.Max(0, (issuance.ExpiresAt - DateTimeOffset.UtcNow).TotalSeconds)
+        };
 
     private static async Task<IResult> HandleCreateAuthorizeUrl(
         string providerKey,

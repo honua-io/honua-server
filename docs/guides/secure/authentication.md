@@ -215,10 +215,21 @@ not managed API keys. It works without enabling OIDC. Existing OIDC sign-in uses
 server-held state and an authorization code with PKCE; provider credentials and
 provider tokens stay on the server. Fetch a fresh CSRF token after OIDC sign-in too.
 
-For a separately hosted Console, use the short-lived operator bearer flow described
-below and configure exact `Cors:AllowedOrigins` entries. Credentialed CORS never
-expands wildcard origins. Cookies remain same-origin; CORS does not authorize
-cross-origin cookie writes.
+For a separately hosted Console, configure exact `Cors:AllowedOrigins` entries
+and enable `Authentication:OperatorBearer` with a signing key. The Console submits
+the administrator password to `/api/v1/admin/auth/password-token` over HTTPS with
+credentials omitted. The request must have an explicitly allowed Origin. The
+response contains an operator bearer and its expiry without setting cookies.
+Keep the bearer in memory and send it in the Authorization header; its lifetime
+is bounded by the configured operator bearer maximum and 30 minutes. Sign in again
+after expiry. Credentialed CORS never expands wildcard origins. Cookies remain
+same-origin; CORS does not authorize cross-origin cookie writes.
+
+Separate-origin OIDC requires a public SPA client registered with the provider.
+Use authorization code with PKCE and an API-audience access token accepted by the
+server's configured JWT validation. Configure the provider's SPA redirect and
+origin allowlists; never give the browser a client secret. The backend-assisted
+OIDC endpoints continue to use same-origin session cookies.
 
 ### 3. Enable OIDC for browser and admin sign-in
 
