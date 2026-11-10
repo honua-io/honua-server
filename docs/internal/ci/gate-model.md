@@ -545,4 +545,4 @@ twice-daily full matrix are preserved.
 `GeocodingEndpointTests` uses one class-lifetime Community application for
 request-derived default-provider responses. Each case owns its HTTP client.
 Request-capture, custom-provider and Enterprise configurations own separate
-applications. All cases run in the geocoding shard for PR and full trunk coverage.
+applications. Full trunk runs include every case; PR routing selects affected geocoding shards.
