@@ -19,15 +19,13 @@ using Testcontainers.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Executes the Redis durability attestation against real Redis containers, for the control plane
-/// that is stored in Redis: operation proposals. The attestation is information. Its outcome is
-/// published as <see cref="DurableJobSubstrateOptions.RedisDurabilityStatus"/> and on the Redis
-/// health check, the proposal store serves whatever the outcome, and only
-/// <c>Jobs:RequireDurableStore</c> turns a non-attested outcome into a startup refusal. The
-/// recovery case kills the container process abruptly so graceful shutdown cannot stand in for
-/// AOF recovery evidence.
-/// </summary>
+// Executes the Redis durability attestation against real Redis containers, for the control plane
+// that is stored in Redis: operation proposals. The attestation is information. Its outcome is
+// published as RedisDurabilityStatus and on the Redis
+// health check, the proposal store serves whatever the outcome, and only
+// Jobs:RequireDurableStore turns a non-attested outcome into a startup refusal. The
+// recovery case kills the container process abruptly so graceful shutdown cannot stand in for
+// AOF recovery evidence.
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.TestInfrastructure)]
 public sealed class RedisDurabilityAttestationIntegrationTests

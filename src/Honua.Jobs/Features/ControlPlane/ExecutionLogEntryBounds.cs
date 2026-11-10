@@ -7,9 +7,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Storage bounds of a job log: 2,000 entries of at most 4 KiB each, 8 MiB of payload per job.
-/// </summary>
+// Storage bounds of a job log: 2,000 entries of at most 4 KiB each, 8 MiB of payload per job.
 internal static class ExecutionLogEntryBounds
 {
     public const int MaxStoredEntries = 2000;

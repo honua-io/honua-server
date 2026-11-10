@@ -20,11 +20,9 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Runtime handoff over the PostgreSQL job store and the real geometry executor. These are local
-/// substrate tests; the release journey must also run between two candidate images on ECS and
-/// Lambda/Batch.
-/// </summary>
+// Runtime handoff over the PostgreSQL job store and the real geometry executor. These are local
+// substrate tests; the release journey must also run between two candidate images on ECS and
+// Lambda/Batch.
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.TestInfrastructure)]
 public sealed class GpDeploymentHandoffTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>

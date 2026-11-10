@@ -17,15 +17,13 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// End-to-end proof for honua-server#2349: the default/seeded GPServer service
-/// (<see cref="GeoprocessingServiceSeeder.ServiceName"/>) can be driven to a terminal
-/// job with results through the GPServer facade using the real geometry.buffer
-/// executor and the durable job runtime — i.e. GPServer is demonstrably usable out
-/// of the box once the default service is present. The seeder that materializes a
-/// service of exactly this shape is unit-tested in
-/// <c>GeoprocessingServiceSeederTests</c>.
-/// </summary>
+// End-to-end proof for honua-server#2349: the default/seeded GPServer service
+// (ServiceName) can be driven to a terminal
+// job with results through the GPServer facade using the real geometry.buffer
+// executor and the durable job runtime — i.e. GPServer is demonstrably usable out
+// of the box once the default service is present. The seeder that materializes a
+// service of exactly this shape is unit-tested in
+// GeoprocessingServiceSeederTests.
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.GPServer)]
 public sealed class GPServerDefaultServiceTests

@@ -7,10 +7,10 @@ internal sealed class JobStoreOptions
 {
     public const string SectionName = "Jobs:Store";
 
-    /// <summary>How long a job is kept after its last status or record change once it is terminal.</summary>
+    // How long a job is kept after its last status or record change once it is terminal.
     public TimeSpan JobRetention { get; set; } = TimeSpan.FromDays(7);
 
-    /// <summary>How long a job's log is kept from its first entry unless a caller sets another period.</summary>
+    // How long a job's log is kept from its first entry unless a caller sets another period.
     public TimeSpan LogRetention { get; set; } = TimeSpan.FromDays(7);
 
     public int WorkerMaxPoolSize { get; set; } = 4;

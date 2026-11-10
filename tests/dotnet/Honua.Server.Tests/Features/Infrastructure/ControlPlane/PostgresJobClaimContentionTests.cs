@@ -14,23 +14,15 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// At-most-once claim evidence for the control-plane job queue against a real PostgreSQL.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Proves the atomicity of the claim statement under genuine
-/// <see cref="Task.WhenAll(System.Collections.Generic.IEnumerable{Task})"/> contention against
-/// the real server-side row locking.
-/// </para>
-/// <para>
-/// It also carries the crash-recovery receipt: an executor with a counted, observable side
-/// effect, a heartbeat that lapses naturally (rather than a test writing an old
-/// <c>last_heartbeat_at</c>), and an assertion that the recovered attempt produces exactly one
-/// terminal notification and one artifact even though the stale worker later returns a success
-/// of its own.
-/// </para>
-/// </remarks>
+// At-most-once claim evidence for the control-plane job queue against a real PostgreSQL.
+// Proves the atomicity of the claim statement under genuine
+// Task.WhenAll(System.Collections.Generic.IEnumerable{Task}) contention against
+// the real server-side row locking.
+// It also carries the crash-recovery receipt: an executor with a counted, observable side
+// effect, a heartbeat that lapses naturally (rather than a test writing an old
+// last_heartbeat_at), and an assertion that the recovered attempt produces exactly one
+// terminal notification and one artifact even though the stale worker later returns a success
+// of its own.
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.TestInfrastructure)]
 public sealed class PostgresJobClaimContentionTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
@@ -79,11 +71,9 @@ public sealed class PostgresJobClaimContentionTests(DatabaseFixtureAdapter datab
         (await harness.Queue.TryClaimAsync("worker-late")).Should().BeNull();
     }
 
-    /// <summary>
-    /// The same invariant at queue scale: many workers draining a contested queue must
-    /// partition it, never duplicate it. This is the case that catches a claim that is
-    /// atomic for one row but loses its guarantee when workers skip each other's locked rows.
-    /// </summary>
+    // The same invariant at queue scale: many workers draining a contested queue must
+    // partition it, never duplicate it. This is the case that catches a claim that is
+    // atomic for one row but loses its guarantee when workers skip each other's locked rows.
     [IntegrationTest]
     public async Task TryClaimAsync_WorkersDrainContestedQueue_EveryJobIsClaimedExactlyOnce()
     {
@@ -138,30 +128,22 @@ public sealed class PostgresJobClaimContentionTests(DatabaseFixtureAdapter datab
         (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
     }
 
-    /// <summary>
-    /// End-to-end worker-loss recovery with a counted side effect (#4403 criteria 4 and 5).
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// The heartbeat lapses <em>naturally</em> under a <see cref="JobHeartbeatPolicy"/> that
-    /// honours its own contract (<see cref="JobHeartbeatPolicy.Timeout"/> greater than
-    /// <see cref="JobHeartbeatPolicy.Interval"/>), so a merely slow worker would never be
-    /// declared abandoned here. Worker loss is simulated the way it actually presents to the
-    /// control plane: the lost worker's link to the durable store is severed, so its heartbeat
-    /// pump keeps running locally but its beats stop landing — exactly what the reconciler sees
-    /// when a pod is killed or partitioned away from the database. No test code backdates
-    /// <c>LastHeartbeatAt</c>; the expiry the reconciler acts on is the one the worker's own
-    /// silence produced, and the test asserts the stored beat never advanced.
-    /// </para>
-    /// <para>
-    /// The side effect is counted: the executor appends one ledger entry per invocation.
-    /// After recovery the ledger must hold exactly two entries under two distinct owners —
-    /// proving the recovered attempt genuinely re-ran an executor rather than being a bare
-    /// re-claim — while the terminal notification and the published artifact must each
-    /// appear exactly once, even though the stale first worker afterwards returns a success
-    /// of its own and tries to publish and finalize it.
-    /// </para>
-    /// </remarks>
+    // End-to-end worker-loss recovery with a counted side effect (#4403 criteria 4 and 5).
+    // The heartbeat lapses <em>naturally</em> under a JobHeartbeatPolicy that
+    // honours its own contract (Timeout greater than
+    // Interval), so a merely slow worker would never be
+    // declared abandoned here. Worker loss is simulated the way it actually presents to the
+    // control plane: the lost worker's link to the durable store is severed, so its heartbeat
+    // pump keeps running locally but its beats stop landing — exactly what the reconciler sees
+    // when a pod is killed or partitioned away from the database. No test code backdates
+    // LastHeartbeatAt; the expiry the reconciler acts on is the one the worker's own
+    // silence produced, and the test asserts the stored beat never advanced.
+    // The side effect is counted: the executor appends one ledger entry per invocation.
+    // After recovery the ledger must hold exactly two entries under two distinct owners —
+    // proving the recovered attempt genuinely re-ran an executor rather than being a bare
+    // re-claim — while the terminal notification and the published artifact must each
+    // appear exactly once, even though the stale first worker afterwards returns a success
+    // of its own and tries to publish and finalize it.
     [IntegrationTest]
     public async Task WorkerLoss_NaturalHeartbeatLapse_ReExecutesOnceAndSuppressesTheStaleWorkersTerminal()
     {
@@ -394,20 +376,16 @@ public sealed class PostgresJobClaimContentionTests(DatabaseFixtureAdapter datab
             => _completions.GetOrAdd(attempt, _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
     }
 
-    /// <summary>
-    /// Models the loss of a worker the way the control plane actually experiences it: the
-    /// worker's heartbeats stop reaching the durable store, while the worker itself keeps
-    /// running.
-    /// </summary>
-    /// <remarks>
-    /// Only heartbeat-shaped writes are dropped — a write that leaves status, ownership,
-    /// attempt count, phase and artifact set unchanged and merely advances
-    /// <see cref="ExecutionJobRecord.LastHeartbeatAt"/>, which is exactly the shape of
-    /// <c>JobExecutionContext.RunHeartbeatPumpAsync</c>'s update. Every state-changing write the
-    /// lost worker attempts (its Running transition, its late artifact publication, its terminal
-    /// finalize) still reaches the database, so the stale worker is fenced by production code rather
-    /// than muted by the test. Reads are never suppressed.
-    /// </remarks>
+    // Models the loss of a worker the way the control plane actually experiences it: the
+    // worker's heartbeats stop reaching the durable store, while the worker itself keeps
+    // running.
+    // Only heartbeat-shaped writes are dropped — a write that leaves status, ownership,
+    // attempt count, phase and artifact set unchanged and merely advances
+    // LastHeartbeatAt, which is exactly the shape of
+    // JobExecutionContext.RunHeartbeatPumpAsync's update. Every state-changing write the
+    // lost worker attempts (its Running transition, its late artifact publication, its terminal
+    // finalize) still reaches the database, so the stale worker is fenced by production code rather
+    // than muted by the test. Reads are never suppressed.
     private sealed class HeartbeatSeveringJobStore(IExecutionJobStore inner) : IExecutionJobStore
     {
         public Task<bool> TryCreateAsync(

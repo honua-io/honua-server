@@ -8,11 +8,9 @@ using NpgsqlTypes;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// How an <see cref="ExecutionJobRecord"/> is laid out in an <c>execution_jobs</c> row: the whole
-/// record as JSON, the attempt-state fields as database-stamped columns that override their JSON
-/// copies when read, and a few values of the record projected into columns for filtering.
-/// </summary>
+// How an ExecutionJobRecord is laid out in an execution_jobs row: the whole
+// record as JSON, the attempt-state fields as database-stamped columns that override their JSON
+// copies when read, and a few values of the record projected into columns for filtering.
 internal sealed record ExecutionJobRow(
     string RecordJson,
     string Kind,
@@ -28,7 +26,7 @@ internal sealed record ExecutionJobRow(
 {
     public const string TableName = "execution_jobs";
 
-    /// <summary>Select list that <see cref="Read"/> expects, in order.</summary>
+    // Select list that Read expects, in order.
     public const string SelectColumns =
         "version, status, attempt_count, claimed_by, claimed_at, last_heartbeat_at, next_retry_at, "
         + "completed_at, percent_complete, current_phase, updated_at, record";

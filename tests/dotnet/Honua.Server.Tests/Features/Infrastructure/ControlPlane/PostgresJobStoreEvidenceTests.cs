@@ -15,11 +15,9 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Measurements quoted in ADR-0081 and its pull request: write volume under heartbeat load, and
-/// the query plans of the claim, list and reconciler statements on a seeded table. They take
-/// minutes and print their result, so they run only when asked for.
-/// </summary>
+// Measurements quoted in ADR-0081 and its pull request: write volume under heartbeat load, and
+// the query plans of the claim, list and reconciler statements on a seeded table. They take
+// minutes and print their result, so they run only when asked for.
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.TestInfrastructure)]
 public sealed class PostgresJobStoreEvidenceTests(DatabaseFixtureAdapter database, ITestOutputHelper output)

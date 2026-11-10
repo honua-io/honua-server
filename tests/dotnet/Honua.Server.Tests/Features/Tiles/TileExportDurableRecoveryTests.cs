@@ -25,23 +25,18 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Tiles;
 
-/// <summary>
-/// Multi-node (cross-replica) certification for the durable tile-export job lifecycle over the
-/// PostgreSQL execution substrate (issue #2689 / the remaining acceptance criterion of #2660). These
-/// tests submit, poll, cancel, and retry across independent <see cref="TileExportJobService"/>
-/// instances that share one job store, one queue and one artifact store, and drive the real
-/// <see cref="JobExecutionService"/> worker and <see cref="JobReconciliationService"/> reconciler.
-///
-/// They certify that:
-/// <list type="bullet">
-///   <item>submission on one replica converges to status/result reads on another;</item>
-///   <item>cancellation issued from a different replica than the submitter is honoured;</item>
-///   <item>worker loss recovers through lease/heartbeat expiry without a duplicate terminal
-///     artifact, with a second worker completing the job exactly once; and</item>
-///   <item>a retry (fresh idempotency key, identical plan) reuses the completed package
-///     checkpoint instead of regenerating tiles.</item>
-/// </list>
-/// </summary>
+// Multi-node (cross-replica) certification for the durable tile-export job lifecycle over the
+// PostgreSQL execution substrate (issue #2689 / the remaining acceptance criterion of #2660). These
+// tests submit, poll, cancel, and retry across independent TileExportJobService
+// instances that share one job store, one queue and one artifact store, and drive the real
+// JobExecutionService worker and JobReconciliationService reconciler.
+// They certify that:
+//   submission on one replica converges to status/result reads on another;
+//   cancellation issued from a different replica than the submitter is honoured;
+//   worker loss recovers through lease/heartbeat expiry without a duplicate terminal
+//     artifact, with a second worker completing the job exactly once; and
+//   a retry (fresh idempotency key, identical plan) reuses the completed package
+//     checkpoint instead of regenerating tiles.
 [Collection("Database")]
 [Protocol(TestProtocols.MapServer)]
 [Operation(Operations.Export)]
@@ -373,10 +368,8 @@ public sealed class TileExportDurableRecoveryTests(DatabaseFixtureAdapter databa
     private static ClaimsPrincipal Principal()
         => new(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, Submitter)], authenticationType: "test"));
 
-    /// <summary>
-    /// Owns the shared job substrate, artifact store, and tile-export executor for a single test,
-    /// and exposes helpers to run the worker/reconciler background services for a scoped operation.
-    /// </summary>
+    // Owns the shared job substrate, artifact store, and tile-export executor for a single test,
+    // and exposes helpers to run the worker/reconciler background services for a scoped operation.
     private sealed class TileExportJobHarness : IAsyncDisposable
     {
         private readonly PostgresJobSubstrateHarness _jobs;

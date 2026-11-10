@@ -11,10 +11,8 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Workers whose clocks are an hour ahead of and an hour behind the database write to the store.
-/// Claims, retry delays, heartbeat expiry and leases must come out as if their clocks were right.
-/// </summary>
+// Workers whose clocks are an hour ahead of and an hour behind the database write to the store.
+// Claims, retry delays, heartbeat expiry and leases must come out as if their clocks were right.
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.TestInfrastructure)]
 public sealed class PostgresJobStoreClockTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>

@@ -11,21 +11,17 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Waits for durable GPServer jobs driven through the real worker.
-/// </summary>
-/// <remarks>
-/// The deadlines come from the runtime's own timing. A submitted job waits up to one
-/// <see cref="JobExecutionService.PollInterval"/> before a worker claims it (the claim loop has no
-/// wake-up signal), and a four-vCPU runner booting several test hosts at once can stall any single
-/// store call for up to <see cref="StallTolerance"/>. A timeout reports the last status response
-/// and the durable job record, so a genuine hang stays diagnosable.
-/// </remarks>
+// Waits for durable GPServer jobs driven through the real worker.
+// The deadlines come from the runtime's own timing. A submitted job waits up to one
+// PollInterval before a worker claims it (the claim loop has no
+// wake-up signal), and a four-vCPU runner booting several test hosts at once can stall any single
+// store call for up to StallTolerance. A timeout reports the last status response
+// and the durable job record, so a genuine hang stays diagnosable.
 internal static class GPServerJobWait
 {
     private static readonly TimeSpan StallTolerance = TimeSpan.FromSeconds(30);
 
-    /// <summary>HTTP timeout for one request: one tolerated stall plus headroom.</summary>
+    // HTTP timeout for one request: one tolerated stall plus headroom.
     public static readonly TimeSpan RequestTimeout = StallTolerance + TimeSpan.FromSeconds(15);
 
     /// <summary>Budget for a job to reach a terminal status: one tolerated stall plus six idle claim polls.</summary>

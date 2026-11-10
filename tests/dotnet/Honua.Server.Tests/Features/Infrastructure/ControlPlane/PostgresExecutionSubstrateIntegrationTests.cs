@@ -15,10 +15,8 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// PostgreSQL Testcontainers integration coverage for the durable execution substrate
-/// used by the control-plane worker and reconciler services.
-/// </summary>
+// PostgreSQL Testcontainers integration coverage for the durable execution substrate
+// used by the control-plane worker and reconciler services.
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.TestInfrastructure)]
 public sealed class PostgresExecutionSubstrateIntegrationTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>

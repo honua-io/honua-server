@@ -12,10 +12,8 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// The job queue contract against PostgreSQL: which jobs a claim may take, in which order, and
-/// that a job in the queue is never stranded.
-/// </summary>
+// The job queue contract against PostgreSQL: which jobs a claim may take, in which order, and
+// that a job in the queue is never stranded.
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.TestInfrastructure)]
 public sealed class PostgresJobQueueTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>

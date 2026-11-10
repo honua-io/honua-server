@@ -6,15 +6,13 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.TestKit.Helpers;
 
-/// <summary>
-/// Functional in-memory <see cref="IExecutionJobStore"/> for integration tests. Production
-/// registers its job store from the system database in an order the default <c>WebAppFixture</c>
-/// host does not follow, so that host has none and the durable-operation endpoint tests register
-/// this store to exercise the durable
-/// cancel/retry paths (the endpoints resolve <see cref="IExecutionJobStore"/> optionally and take
-/// the durable path when it is present). State is a plain dictionary; not thread-optimised, but the
-/// per-test server is single-caller.
-/// </summary>
+// Functional in-memory IExecutionJobStore for integration tests. Production
+// registers its job store from the system database in an order the default WebAppFixture
+// host does not follow, so that host has none and the durable-operation endpoint tests register
+// this store to exercise the durable
+// cancel/retry paths (the endpoints resolve IExecutionJobStore optionally and take
+// the durable path when it is present). State is a plain dictionary; not thread-optimised, but the
+// per-test server is single-caller.
 public sealed class InMemoryExecutionJobStore : IExecutionJobStore
 {
     private readonly Dictionary<string, ExecutionJobRecord> _jobs = new(StringComparer.Ordinal);

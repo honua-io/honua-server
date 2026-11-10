@@ -13,12 +13,10 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Phase 1 tests for the hybrid-trigger seam: the event handler reconciles one operation once and
-/// is safe under duplicate/out-of-order invocation (lease/CAS no-op), and the backstop sweep
-/// reconciles stale operations while no-opping fresh ones. Both drive the same execution-job
-/// reconciler the poll loop uses.
-/// </summary>
+// Phase 1 tests for the hybrid-trigger seam: the event handler reconciles one operation once and
+// is safe under duplicate/out-of-order invocation (lease/CAS no-op), and the backstop sweep
+// reconciles stale operations while no-opping fresh ones. Both drive the same execution-job
+// reconciler the poll loop uses.
 public sealed class ControlPlaneTriggerTests
 {
     // ---- Event handler -----------------------------------------------------
@@ -192,11 +190,9 @@ public sealed class ControlPlaneTriggerTests
             }
         };
 
-    /// <summary>
-    /// In-memory execution-job store that enforces optimistic-concurrency CAS via the record
-    /// <see cref="ExecutionJobRecord.Version"/> token, so duplicate/out-of-order reconciles exercise
-    /// the same conflict path the durable store would. Counts successful advancing writes.
-    /// </summary>
+    // In-memory execution-job store that enforces optimistic-concurrency CAS via the record
+    // Version token, so duplicate/out-of-order reconciles exercise
+    // the same conflict path the durable store would. Counts successful advancing writes.
     private sealed class VersionedJobStore(params ExecutionJobRecord[] jobs) : IExecutionJobStore
     {
         private readonly Dictionary<string, ExecutionJobRecord> _jobs =

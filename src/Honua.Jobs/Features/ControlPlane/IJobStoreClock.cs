@@ -3,17 +3,15 @@
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// The clock the job store stamps and compares claims, heartbeats, retry times and leases with.
-/// Code that decides whether a stored timestamp has expired compares against this clock, never
-/// against the node's own.
-/// </summary>
+// The clock the job store stamps and compares claims, heartbeats, retry times and leases with.
+// Code that decides whether a stored timestamp has expired compares against this clock, never
+// against the node's own.
 internal interface IJobStoreClock
 {
     Task<DateTimeOffset> GetUtcNowAsync(CancellationToken cancellationToken = default);
 }
 
-/// <summary>The clock of a store that stamps with the node's time, such as an in-memory store.</summary>
+// The clock of a store that stamps with the node's time, such as an in-memory store.
 internal sealed class NodeJobStoreClock : IJobStoreClock
 {
     public static readonly NodeJobStoreClock Instance = new();

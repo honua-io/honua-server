@@ -24,11 +24,9 @@ using TestProtocols = Honua.TestKit.Constants.ProtocolNames;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// The three execution cases relocated from OgcProcessesEndpointsTests for #4400.
-/// Every case requires the production job substrate, job loop and executors.
-/// RasterExecutionProof includes these public API proofs in the required PR Gate.
-/// </summary>
+// The three execution cases relocated from OgcProcessesEndpointsTests for #4400.
+// Every case requires the production job substrate, job loop and executors.
+// RasterExecutionProof includes these public API proofs in the required PR Gate.
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Trait("Category", "RasterExecutionProof")]
 [Protocol(TestProtocols.OgcApiProcesses)]

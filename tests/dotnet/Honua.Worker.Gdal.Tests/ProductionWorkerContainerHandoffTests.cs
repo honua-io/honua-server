@@ -26,12 +26,10 @@ using Xunit.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Release-lane certification of the durable queue handoff through the exact
-/// production GDAL worker image. The image is built and loaded by
-/// <c>worker-gdal-image.yml</c>; this test deliberately never substitutes the
-/// worker host, executor, native command runner, job queue, or filesystem.
-/// </summary>
+// Release-lane certification of the durable queue handoff through the exact
+// production GDAL worker image. The image is built and loaded by
+// worker-gdal-image.yml; this test deliberately never substitutes the
+// worker host, executor, native command runner, job queue, or filesystem.
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper output)
 {

@@ -9,10 +9,8 @@ using NpgsqlTypes;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Job logs in PostgreSQL (ADR-0081). A stream row counts what was appended and dropped; an entry's
-/// sequence is its absolute position, so a cursor stays valid when older entries are trimmed.
-/// </summary>
+// Job logs in PostgreSQL (ADR-0081). A stream row counts what was appended and dropped; an entry's
+// sequence is its absolute position, so a cursor stays valid when older entries are trimmed.
 internal sealed partial class PostgresExecutionLogStore : IExecutionLogStore
 {
     internal const string EventIdentityLimitConstraint = "execution_job_log_streams_event_identity_limit";

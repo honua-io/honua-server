@@ -6,10 +6,8 @@ using System.Text;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Position of the last job returned by a newest-first page: creation time at the database's
-/// microsecond precision, then operation id.
-/// </summary>
+// Position of the last job returned by a newest-first page: creation time at the database's
+// microsecond precision, then operation id.
 internal readonly record struct ExecutionJobCursor(DateTimeOffset CreatedAt, string OperationId)
 {
     private const char Separator = '|';

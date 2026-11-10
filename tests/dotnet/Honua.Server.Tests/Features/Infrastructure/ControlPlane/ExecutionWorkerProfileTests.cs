@@ -24,13 +24,11 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// e2e-cloud-aws run 38048901509 (aws-serverless/redis-on): the GP Batch worker runs the generic
-/// server image. It booted as a full server, and its execution-job reconciler
-/// re-dispatched the shared queued GP jobs to AWS Batch from inside the worker (EventId 9046,
-/// <c>batch:SubmitJob</c> denied for the gp-job role), failing <c>geometry.buffer</c> and leaving
-/// <c>geometry.area</c> running. These tests pin the worker-only composition profile that replaces it.
-/// </summary>
+// e2e-cloud-aws run 38048901509 (aws-serverless/redis-on): the GP Batch worker runs the generic
+// server image. It booted as a full server, and its execution-job reconciler
+// re-dispatched the shared queued GP jobs to AWS Batch from inside the worker (EventId 9046,
+// batch:SubmitJob denied for the gp-job role), failing geometry.buffer and leaving
+// geometry.area running. These tests pin the worker-only composition profile that replaces it.
 [Collection("ControlPlaneTransitionTelemetry")]
 public sealed class ExecutionWorkerProfileTests
 {
@@ -730,10 +728,8 @@ public sealed class ExecutionWorkerProfileTests
         }
     }
 
-    /// <summary>
-    /// Stands in for the connection-backed store the container owns: it is disposed with the host, and
-    /// any read after that is recorded and fails the way a disposed connection does.
-    /// </summary>
+    // Stands in for the connection-backed store the container owns: it is disposed with the host, and
+    // any read after that is recorded and fails the way a disposed connection does.
     private sealed class DisposalTrackingJobStore(VersionedJobStore inner) : IExecutionJobStore, IDisposable
     {
         public VersionedJobStore Inner { get; } = inner;
@@ -786,7 +782,7 @@ public sealed class ExecutionWorkerProfileTests
             => Live().ListActiveAsync(kind, limit, cancellationToken);
     }
 
-    /// <summary>An in-memory store with the version CAS the durable store enforces.</summary>
+    // An in-memory store with the version CAS the durable store enforces.
     private sealed class VersionedJobStore(params ExecutionJobRecord[] jobs) : IExecutionJobStore
     {
         private readonly object _gate = new();

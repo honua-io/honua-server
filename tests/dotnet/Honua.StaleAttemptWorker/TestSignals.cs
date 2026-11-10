@@ -5,10 +5,8 @@ using Npgsql;
 
 namespace Honua.StaleAttemptWorker;
 
-/// <summary>
-/// Signals and counters two test processes share through one PostgreSQL table: a value per key,
-/// or a value per field of a key.
-/// </summary>
+// Signals and counters two test processes share through one PostgreSQL table: a value per key,
+// or a value per field of a key.
 public sealed class TestSignals(NpgsqlDataSource dataSource, string schema)
 {
     private const string ValueField = "";

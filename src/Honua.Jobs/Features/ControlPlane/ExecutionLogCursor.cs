@@ -6,7 +6,7 @@ using System.Text;
 
 namespace Honua.ControlPlane;
 
-/// <summary>Opaque cursor over a job log: the absolute position of the next entry to read.</summary>
+// Opaque cursor over a job log: the absolute position of the next entry to read.
 internal static class ExecutionLogCursor
 {
     public const string InvalidCursorMessage = "Invalid log cursor.";

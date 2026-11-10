@@ -9,10 +9,8 @@ using NpgsqlTypes;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Execution jobs in PostgreSQL (ADR-0081). Every statement is its own transaction and every
-/// expiry and stamp uses the database clock.
-/// </summary>
+// Execution jobs in PostgreSQL (ADR-0081). Every statement is its own transaction and every
+// expiry and stamp uses the database clock.
 internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJobStoreClock, IReconcilableJobSource
 {
     private const int MinQueryLimit = 1;

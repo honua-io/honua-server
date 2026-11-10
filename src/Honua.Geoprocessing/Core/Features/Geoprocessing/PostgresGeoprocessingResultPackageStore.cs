@@ -10,10 +10,8 @@ using NpgsqlTypes;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Geoprocessing result packages in PostgreSQL (ADR-0081). A package past its retention is not
-/// returned, whether or not the retention sweep has deleted it yet.
-/// </summary>
+// Geoprocessing result packages in PostgreSQL (ADR-0081). A package past its retention is not
+// returned, whether or not the retention sweep has deleted it yet.
 internal sealed partial class PostgresGeoprocessingResultPackageStore(
     JobStoreDatabase database,
     IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,

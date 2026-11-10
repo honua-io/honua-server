@@ -15,10 +15,8 @@ using Testcontainers.PostgreSql;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Job execution across a PostgreSQL outage. Each test owns its container, because it stops and
-/// starts it, which the process-wide shared container cannot survive.
-/// </summary>
+// Job execution across a PostgreSQL outage. Each test owns its container, because it stops and
+// starts it, which the process-wide shared container cannot survive.
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.TestInfrastructure)]
 public sealed class PostgresJobExecutionResilienceTests

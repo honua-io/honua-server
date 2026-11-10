@@ -23,13 +23,11 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// End-to-end durable file import (honua-server#5916) over the PostgreSQL job store and queue
-/// and real PostGIS: the accepting host stages the source in file storage and enqueues a
-/// <see cref="ExecutionJobKind.FileImport"/> job; the worker downloads it, imports every feature
-/// and the job document reports the runner. Covers the in-process worker loop (local backend) and
-/// the execution-worker composition a batch backend launches (assigned queue, one operation).
-/// </summary>
+// End-to-end durable file import (honua-server#5916) over the PostgreSQL job store and queue
+// and real PostGIS: the accepting host stages the source in file storage and enqueues a
+// FileImport job; the worker downloads it, imports every feature
+// and the job document reports the runner. Covers the in-process worker loop (local backend) and
+// the execution-worker composition a batch backend launches (assigned queue, one operation).
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]

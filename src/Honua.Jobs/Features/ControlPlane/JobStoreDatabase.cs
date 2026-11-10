@@ -5,10 +5,8 @@ using Npgsql;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// The system database as the job stores use it: schema-qualified table names and one place that
-/// decides when a failed statement is sent again.
-/// </summary>
+// The system database as the job stores use it: schema-qualified table names and one place that
+// decides when a failed statement is sent again.
 internal sealed class JobStoreDatabase(NpgsqlDataSource dataSource, string? schemaName = null)
 {
     internal const string DefaultSchemaName = "honua";
@@ -26,11 +24,9 @@ internal sealed class JobStoreDatabase(NpgsqlDataSource dataSource, string? sche
 
     public string Table(string tableName) => $"{_quotedSchema}.{tableName}";
 
-    /// <summary>
-    /// Runs <paramref name="statement"/> on a pooled connection. A transient failure to open the
-    /// connection is always retried. A transient failure after the statement was sent is retried
-    /// only when <paramref name="repeat"/> allows it, because the statement may have committed.
-    /// </summary>
+    // Runs statement on a pooled connection. A transient failure to open the
+    // connection is always retried. A transient failure after the statement was sent is retried
+    // only when repeat allows it, because the statement may have committed.
     public async Task<TResult> ExecuteAsync<TResult>(
         Func<NpgsqlConnection, StatementAttempt, CancellationToken, Task<TResult>> statement,
         StatementRepeat repeat,
@@ -95,15 +91,14 @@ internal sealed class JobStoreDatabase(NpgsqlDataSource dataSource, string? sche
 
 internal enum StatementRepeat
 {
-    /// <summary>Sending the statement twice could change the outcome; its failure reaches the caller.</summary>
+    // Sending the statement twice could change the outcome; its failure reaches the caller.
     NotAfterSend,
 
-    /// <summary>Sending the statement again after it may have committed leaves the same state.</summary>
+    // Sending the statement again after it may have committed leaves the same state.
     SafeToRepeat
 }
 
-/// <param name="EarlierAttemptMayHaveCommitted">
-/// True when a previous attempt of this statement failed after it was sent, so "no row affected"
-/// can mean that attempt already applied the change.
-/// </param>
+// EarlierAttemptMayHaveCommitted:
+// True when a previous attempt of this statement failed after it was sent, so "no row affected"
+// can mean that attempt already applied the change.
 internal readonly record struct StatementAttempt(bool EarlierAttemptMayHaveCommitted);

@@ -20,16 +20,14 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Worker.Gdal;
 
-/// <summary>
-/// Registers the heavyweight GDAL worker. The worker reuses the durable
-/// job-execution substrate from <c>Honua.Jobs</c> (the same
-/// <c>JobExecutionService</c> claim/lease/heartbeat loop and PostgreSQL job
-/// stores) rather than forking a parallel runtime — it simply
-/// registers a native-profile <see cref="IJobExecutor"/> set and lets the shared
-/// loop dispatch to it. GDAL is reached through the <c>gdalwarp</c> / <c>ogr2ogr</c>
-/// CLI tools shipped in the worker image base layer; no managed GDAL bindings or
-/// native package references are introduced.
-/// </summary>
+// Registers the heavyweight GDAL worker. The worker reuses the durable
+// job-execution substrate from Honua.Jobs (the same
+// JobExecutionService claim/lease/heartbeat loop and PostgreSQL job
+// stores) rather than forking a parallel runtime — it simply
+// registers a native-profile IJobExecutor set and lets the shared
+// loop dispatch to it. GDAL is reached through the gdalwarp / ogr2ogr
+// CLI tools shipped in the worker image base layer; no managed GDAL bindings or
+// native package references are introduced.
 public static class GdalWorkerServiceCollectionExtensions
 {
     internal static void AddLicenseSecretResolvers(IServiceCollection services, IConfiguration configuration)
@@ -45,14 +43,12 @@ public static class GdalWorkerServiceCollectionExtensions
             .AddAzureLicenseSecretResolver(services, configuration);
     }
 
-    /// <summary>
-    /// Wires the GDAL worker host: the system database connection, the shared durable execution
-    /// substrate (queue, job store, log store, cancellation registry), the two
-    /// substrate hosted services (execution + reconciliation), and the
-    /// native-profile GDAL executors.
-    /// </summary>
-    /// <param name="services">Service collection.</param>
-    /// <param name="configuration">Host configuration. Requires the <c>DefaultConnection</c> connection string.</param>
+    // Wires the GDAL worker host: the system database connection, the shared durable execution
+    // substrate (queue, job store, log store, cancellation registry), the two
+    // substrate hosted services (execution + reconciliation), and the
+    // native-profile GDAL executors.
+    // services: Service collection.
+    // configuration: Host configuration. Requires the DefaultConnection connection string.
     public static IServiceCollection AddGdalWorker(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -110,17 +106,15 @@ public static class GdalWorkerServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Registers ONLY the native GDAL <see cref="IProcessExecutor"/> set plus its
-    /// dependencies — the <c>GdalWorkerOptions</c>, the <see cref="IGdalCommandRunner"/>
-    /// CLI runner, and each per-process executor — with NO database connection, queue,
-    /// job store, or hosted execution loop. This is the store-free seam the GP Devkit
-    /// headless runner / <c>honua gp</c> dev CLI consume (issue #2123) so a developer
-    /// can run a single native op directly without the durable substrate
-    /// <see cref="AddGdalWorker"/> wires for the worker host.
-    /// </summary>
-    /// <param name="services">Service collection.</param>
-    /// <param name="configuration">Host configuration; binds the <c>GdalWorker</c> section.</param>
+    // Registers ONLY the native GDAL IProcessExecutor set plus its
+    // dependencies — the GdalWorkerOptions, the IGdalCommandRunner
+    // CLI runner, and each per-process executor — with NO database connection, queue,
+    // job store, or hosted execution loop. This is the store-free seam the GP Devkit
+    // headless runner / honua gp dev CLI consume (issue #2123) so a developer
+    // can run a single native op directly without the durable substrate
+    // AddGdalWorker wires for the worker host.
+    // services: Service collection.
+    // configuration: Host configuration; binds the GdalWorker section.
     public static IServiceCollection AddGdalProcessExecutors(
         this IServiceCollection services,
         IConfiguration configuration)

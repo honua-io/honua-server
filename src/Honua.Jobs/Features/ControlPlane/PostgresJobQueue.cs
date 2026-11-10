@@ -8,10 +8,8 @@ using NpgsqlTypes;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// The local job queue as a query over <c>execution_jobs</c> (ADR-0081). A job is in the queue
-/// while <c>queue_visible_at</c> is set and claimable while it is also <c>Queued</c> and visible.
-/// </summary>
+// The local job queue as a query over execution_jobs (ADR-0081). A job is in the queue
+// while queue_visible_at is set and claimable while it is also Queued and visible.
 internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconciler
 {
     internal const string ClaimedPhase = "Claimed";

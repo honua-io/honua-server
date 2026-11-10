@@ -30,11 +30,9 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Real PostgreSQL/PostGIS proof of stale-attempt fencing. The first worker is a separate process so SIGSTOP
-/// pauses its heartbeat pump and executor together; the test never edits durable timestamps,
-/// attempt counts, status, or queue membership to manufacture a stale lease.
-/// </summary>
+// Real PostgreSQL/PostGIS proof of stale-attempt fencing. The first worker is a separate process so SIGSTOP
+// pauses its heartbeat pump and executor together; the test never edits durable timestamps,
+// attempt counts, status, or queue membership to manufacture a stale lease.
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.TestInfrastructure)]
 public sealed class PostgresStaleAttemptFencingIntegrationTests(

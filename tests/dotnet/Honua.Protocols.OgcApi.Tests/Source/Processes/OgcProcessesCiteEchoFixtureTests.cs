@@ -16,10 +16,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// Exercises the suite-owned OGC API Processes echo fixture through the real durable
-/// job submission, job store, worker, status, and result projection path.
-/// </summary>
+// Exercises the suite-owned OGC API Processes echo fixture through the real durable
+// job submission, job store, worker, status, and result projection path.
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesCiteEchoFixtureTests

@@ -28,21 +28,17 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Multi-node execution-admission proofs (#3853). Every test composes two or more independent
-/// "server nodes" — each with its own Redis connection, job store instance, admission evaluator,
-/// admission coordinator, and job service, sharing nothing in-process — against the PostgreSQL
-/// job tables that hold the durable job records and one real Redis that holds the admission lease.
-/// Submissions are released together from a barrier across nodes, and an independent observer
-/// samples the durable active set throughout, so the assertions are on what any node could see
-/// at any observation point rather than on a single evaluator's arithmetic.
-/// </summary>
-/// <remarks>
-/// Each test writes its request ledger (node, tenant, principal, timestamp, idempotency key,
-/// limits, outcome, dimension, Retry-After, job id) and the maximum observed global, partition,
-/// and cost values to the test output. The expected values are derived from the configured
-/// limits, never from a snapshot of current output.
-/// </remarks>
+// Multi-node execution-admission proofs (#3853). Every test composes two or more independent
+// "server nodes" — each with its own Redis connection, job store instance, admission evaluator,
+// admission coordinator, and job service, sharing nothing in-process — against the PostgreSQL
+// job tables that hold the durable job records and one real Redis that holds the admission lease.
+// Submissions are released together from a barrier across nodes, and an independent observer
+// samples the durable active set throughout, so the assertions are on what any node could see
+// at any observation point rather than on a single evaluator's arithmetic.
+// Each test writes its request ledger (node, tenant, principal, timestamp, idempotency key,
+// limits, outcome, dimension, Retry-After, job id) and the maximum observed global, partition,
+// and cost values to the test output. The expected values are derived from the configured
+// limits, never from a snapshot of current output.
 [Protocol(TestProtocols.GPServer)]
 public sealed class ExecutionAdmissionMultiNodeTests
     : IClassFixture<ExecutionAdmissionMultiNodeTests.RedisServer>, IClassFixture<DatabaseFixtureAdapter>, IAsyncLifetime

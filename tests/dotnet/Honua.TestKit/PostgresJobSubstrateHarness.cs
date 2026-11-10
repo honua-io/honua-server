@@ -10,10 +10,8 @@ using Npgsql;
 
 namespace Honua.TestKit;
 
-/// <summary>
-/// The PostgreSQL job substrate in a schema of its own: the job substrate migration applied, and
-/// the job store, queue and log store built on it.
-/// </summary>
+// The PostgreSQL job substrate in a schema of its own: the job substrate migration applied, and
+// the job store, queue and log store built on it.
 internal sealed class PostgresJobSubstrateHarness : IAsyncDisposable
 {
     private const string MigrationResourceName = "Honua.Server.Migrations.147_CreateJobSubstrate.sql";
@@ -48,10 +46,8 @@ internal sealed class PostgresJobSubstrateHarness : IAsyncDisposable
     public static Task<PostgresJobSubstrateHarness> CreateAsync(IIsolatedSchemaFixture fixture, string testClassName)
         => CreateAsync(fixture, fixture.DataSource, testClassName);
 
-    /// <summary>
-    /// Builds the substrate over <paramref name="dataSource"/> instead of the fixture's pool, for
-    /// tests that count or break their own connections.
-    /// </summary>
+    // Builds the substrate over dataSource instead of the fixture's pool, for
+    // tests that count or break their own connections.
     public static async Task<PostgresJobSubstrateHarness> CreateAsync(
         IIsolatedSchemaFixture fixture,
         NpgsqlDataSource dataSource,
@@ -77,10 +73,8 @@ internal sealed class PostgresJobSubstrateHarness : IAsyncDisposable
         return value is null or DBNull ? default : (T)value;
     }
 
-    /// <summary>
-    /// Moves a claimed job's claim and heartbeat into the past on the database clock, which is
-    /// how a worker that stopped heartbeating looks to the reconciler.
-    /// </summary>
+    // Moves a claimed job's claim and heartbeat into the past on the database clock, which is
+    // how a worker that stopped heartbeating looks to the reconciler.
     public Task AgeClaimAsync(string operationId, TimeSpan age)
         => ExecuteAsync(
             $"UPDATE {JobsTable} SET claimed_at = now() - @age, last_heartbeat_at = now() - @age WHERE operation_id = @operation_id",
@@ -105,10 +99,8 @@ internal sealed class PostgresJobSubstrateHarness : IAsyncDisposable
             LogStore,
             NullLogger<JobExecutionService>.Instance);
 
-    /// <summary>
-    /// Runs one reconciliation sweep with its own cancellation-token registry, as a reconciler in
-    /// another process than the worker has.
-    /// </summary>
+    // Runs one reconciliation sweep with its own cancellation-token registry, as a reconciler in
+    // another process than the worker has.
     public async Task RunReconciliationSweepAsync(CancellationToken cancellationToken)
     {
         using var service = new JobReconciliationService(

@@ -1214,14 +1214,12 @@ public sealed partial class CapabilityManifestEndpointTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Owner ruling (2026-10-10): the Redis durability attestation is INFORMATION. A host with a
-    /// durable proposal store advertises <c>operations.proposals</c> whatever the attestation
-    /// said, next to a <c>jobs.runner</c> that follows the job store and queue, and the manifest
-    /// publishes the outcome as <c>limits.job.redisDurability</c>: <c>attested</c>,
-    /// <c>unverified</c> (the managed-Redis shape: AWS ElastiCache and MemoryDB block
-    /// <c>CONFIG</c>), or <c>not-durable</c> (<c>appendonly no</c>).
-    /// </summary>
+    // Owner ruling (2026-10-10): the Redis durability attestation is INFORMATION. A host with a
+    // durable proposal store advertises operations.proposals whatever the attestation
+    // said, next to a jobs.runner that follows the job store and queue, and the manifest
+    // publishes the outcome as limits.job.redisDurability: attested,
+    // unverified (the managed-Redis shape: AWS ElastiCache and MemoryDB block
+    // CONFIG), or not-durable (appendonly no).
     [IntegrationTheory]
     [Endpoint("GET /api/v1/capabilities/manifest")]
     [InlineData(null, "attested")]
