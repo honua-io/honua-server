@@ -1,5 +1,6 @@
 """The fixture must migrate before seeding and seed before any client runs."""
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+import re
 import unittest
 
 import yaml
@@ -21,6 +22,30 @@ class ClientCompatBootstrapTests(unittest.TestCase):
                 self.assertEqual(services[lane]["depends_on"]["honua"]["condition"], "service_healthy")
         self.assertNotIn("HONUA_SKIP_MIGRATIONS", services["honua"]["environment"])
         self.assertIn("/healthz/ready", services["honua"]["healthcheck"]["test"][-1])
+
+    def test_r_lane_mounts_include_driver_and_receipt_inputs(self):
+        compose = ROOT / "docker/client-compat/compose.yml"
+        lane = yaml.safe_load(compose.read_text(encoding="utf-8"))["services"]["r-sf"]
+        mounts = {}
+        for volume in lane["volumes"]:
+            source, target, *_ = volume.split(":")
+            mounts[PurePosixPath(target)] = (compose.parent / source).resolve()
+        launcher = (ROOT / "docker/client-compat/r-sf/run.sh").read_text(encoding="utf-8")
+        driver = re.search(r"^Rscript (\S+)", launcher, re.MULTILINE)
+        self.assertIsNotNone(driver)
+        suite_setting = re.search(r"^export HONUA_R_CERT_DIR=(\S+)", launcher, re.MULTILINE)
+        self.assertIsNotNone(suite_setting)
+        suite_directory = PurePosixPath(suite_setting.group(1))
+        required = [driver.group(1), suite_directory / "cert_envelope.R",
+                    suite_directory / "canonical_fixture.R",
+                    "/workspace/tests/seed/client-compat-v1.sql",
+                    "/workspace/tests/config/client-compat-server-v1.json"]
+        for target in map(PurePosixPath, required):
+            with self.subTest(target=str(target)):
+                providers = [mount for mount in mounts if target.is_relative_to(mount)]
+                self.assertTrue(providers, f"No bind mount provides {target}")
+                mount = max(providers, key=lambda path: len(path.parts))
+                self.assertTrue((mounts[mount] / target.relative_to(mount)).is_file())
 
     def test_auth_fixture_does_not_overwrite_transaction_scratch_layers(self):
         auth = (ROOT / "tests/seed/client-compat-auth-wave1.yaml").read_text(encoding="utf-8")

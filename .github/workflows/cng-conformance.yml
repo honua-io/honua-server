@@ -81,7 +81,7 @@ concurrency:
   # cancellation would destroy a full conformance result and produce nothing in its
   # place. Split the group by tier: self-tests serialise against self-tests, the lane
   # against the lane.
-  group: cng-conformance-${{ github.ref }}-${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || inputs.server_image != '') && 'lane' || 'selftest' }}
+  group: cng-conformance-${{ github.event.pull_request.number || github.ref }}-${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || inputs.server_image != '') && 'lane' || 'selftest' }}
   cancel-in-progress: true
 
 jobs:
@@ -172,7 +172,7 @@ jobs:
 
       - name: Authenticate read access to worker cache and base images
         if: inputs.derived_zarr_rehearsal
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

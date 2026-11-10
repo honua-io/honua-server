@@ -56,6 +56,7 @@ Against an already-running server, using the lane image directly:
 ```bash
 docker build -f docker/client-compat/r-sf/Dockerfile -t honua-clientcompat-r-sf:dev .
 docker run --rm --network client-compat_compat \
+  -v "$PWD/docker/client-compat/r-sf:/workspace/docker/client-compat/r-sf:ro" \
   -v "$PWD/tests:/workspace/tests:ro" \
   -v "$PWD/artifacts/client-interop/r-sf:/output" \
   -e HONUA_BASE_URL=http://honua:5000 \
@@ -68,7 +69,7 @@ installed:
 ```bash
 HONUA_R_SF_BASE_URL=http://localhost:5000 \
 HONUA_R_SF_OUTPUT_DIR="$PWD/artifacts/test-results" \
-Rscript tests/r/certification/run_sf_lane.R
+Rscript docker/client-compat/r-sf/certification/run_sf_lane.R
 ```
 
 ## Environment

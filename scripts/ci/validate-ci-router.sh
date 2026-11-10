@@ -44,7 +44,9 @@ scripts/ci/validate-review-first-dispatch.sh
 
 echo "Validating PR Gate impact observation..."
 if [[ -n "${PYTHON_BIN}" ]]; then
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-workflow-load.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-testcontainer-images.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-heavy-runners.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-native-tools-image.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-gate-apt-provisioning.py --self-test
   "${PYTHON_BIN}" scripts/ci/source-inventory-pilot/test_run.py
@@ -2087,6 +2089,13 @@ fi
 
 if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-shard-resources.py
+fi
+
+if [[ -n "${PYTHON_BIN}" ]]; then
+  "${PYTHON_BIN}" scripts/ci/fixtures/test-js-bootstrap-cleanup.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/test-owned-server.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/test-quickstart-console-smoke.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/test-shell-server-ownership.py
 fi
 
 echo "CI router validation passed."

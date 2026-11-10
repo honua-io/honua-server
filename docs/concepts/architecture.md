@@ -124,7 +124,7 @@ work directory. Declare the substrate — `ControlPlane:Substrate:Profile` set t
 `Serverless`, plus `ControlPlane:Substrate:SharedWorkDir` — and the server fails closed with a
 Critical `local-backend-substrate-incompatible` ops finding instead of re-queuing doomed jobs.
 
-Routing details are in [Routing geoprocessing jobs to AWS Batch](../operator/geoprocessing-aws-batch.md)
+Routing details are in [Routing geoprocessing jobs to AWS Batch](../guides/deploy/geoprocessing-aws-batch.md)
 and the [ops control plane section](../guides/deploy/cloud-deployments.md#ops-control-plane-and-batch-compute-backends).
 
 ## Deployment topology
