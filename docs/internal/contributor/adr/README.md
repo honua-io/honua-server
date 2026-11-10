@@ -87,6 +87,8 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0080](0080-fair-core-license.md) | Adopt the Fair Core License (FCL-1.0-ALv2) | Accepted | 2026-10 |
 | [0083](0083-cdn-is-the-shared-cache.md) | The CDN is the shared cache | Proposed | 2026-11 |
 
+| [0084](0084-task-first-asset-management.md) | Task-first asset management on ordinary layers | Proposed | 2026-11 |
+
 ## Template
 
 ```markdown
