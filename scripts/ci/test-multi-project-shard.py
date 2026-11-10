@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
@@ -44,6 +45,9 @@ class MultiProjectTests(unittest.TestCase):
                 return 0 if outcome in ('Passed', 'empty') else 1
             with patch.dict(os.environ, environment, clear=True), patch.object(multi, 'execute', side_effect=execute):
                 code = multi.main()
+            self.assertEqual([Path(directory) / 'group.timing.json'],
+                             list(Path(directory).rglob('*.timing.json')))
+            self.assertEqual(2, len(list(Path(directory).rglob('*.member.json'))))
             record = json.loads((Path(directory) / 'group.timing.json').read_text())
             return code, record
 
@@ -71,6 +75,43 @@ class MultiProjectTests(unittest.TestCase):
             self.assertEqual(124, code)
             self.assertEqual(1, len(attempts))
             self.assertFalse(stale.exists())
+
+    def test_member_receives_fractional_remaining_budget(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(multi.time, 'monotonic', side_effect=[0, 30]), \
+                    patch.object(multi, 'execute', return_value=124) as execute:
+                multi.run_projects(['a.csproj'],
+                    {'HONUA_SERVER_TEST_TIMEOUT_MINUTES': '2'}, Path(directory))
+            child, remaining = execute.call_args.args
+            self.assertEqual(90, remaining)
+            self.assertEqual('1.5', child['HONUA_SERVER_TEST_TIMEOUT_MINUTES'])
+            self.assertEqual('true', child['HONUA_SERVER_TEST_TIMEOUT_FOREGROUND'])
+
+    def test_shared_deadline_stops_the_test_process(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            pid_file = root / 'test.pid'
+            fake = root / 'dotnet'
+            fake.write_text('#!/usr/bin/env python3\nimport os, signal, time\n'
+                            'from pathlib import Path\n'
+                            'signal.signal(signal.SIGTERM, signal.SIG_IGN)\n'
+                            f'Path({str(pid_file)!r}).write_text(str(os.getpid()))\n'
+                            'time.sleep(30)\n')
+            fake.chmod(0o755)
+            environment = {**os.environ, 'PATH': f'{root}:{os.environ["PATH"]}',
+                           'HONUA_SERVER_TEST_CSPROJS': '',
+                           'HONUA_SERVER_TEST_SHARD_NAME': 'deadline',
+                           'HONUA_SERVER_TEST_LOG_NAME': 'deadline',
+                           'HONUA_SERVER_TEST_FILTER': 'FullyQualifiedName~Honua',
+                           'HONUA_SERVER_TEST_RESULTS_DIR': directory,
+                           'HONUA_SERVER_TEST_TIMEOUT_MINUTES': '1',
+                           'HONUA_SERVER_TEST_TIMEOUT_FOREGROUND': 'true'}
+            self.assertEqual(124, multi.execute(environment, 2))
+            self.assertTrue(pid_file.exists(), 'Test process must have started')
+            status = Path(f'/proc/{pid_file.read_text()}/stat')
+            time.sleep(0.1)
+            self.assertTrue(not status.exists() or status.read_text().split()[2] == 'Z',
+                            'Test process survived the group deadline')
 
 
 if __name__ == '__main__':

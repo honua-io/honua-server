@@ -142,7 +142,11 @@ if [[ -n "${timeout_minutes}" ]]; then
   fi
 
   if [[ -n "${timeout_command}" ]]; then
-    run_command=("${timeout_command}" --kill-after="${kill_after_seconds}s" "${timeout_minutes}m" "${test_command[@]}")
+    timeout_options=()
+    if [[ "${HONUA_SERVER_TEST_TIMEOUT_FOREGROUND:-false}" == "true" ]]; then
+      timeout_options+=(--foreground)
+    fi
+    run_command=("${timeout_command}" "${timeout_options[@]}" --kill-after="${kill_after_seconds}s" "${timeout_minutes}m" "${test_command[@]}")
   fi
 fi
 

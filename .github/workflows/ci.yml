@@ -1227,7 +1227,10 @@ jobs:
         id: managed-status
         env:
           RESTORED_PROJECTS: ${{ steps.managed-consume.outputs.restored-projects-file }}
-        run: echo "restored=$(jq -r 'length > 0' "${RESTORED_PROJECTS}")" >> "$GITHUB_OUTPUT"
+        run: |
+          restored="$(jq -r --slurpfile requested "${RUNNER_TEMP}/shard-projects.json" \
+            '($requested[0] - .) | length == 0' "${RESTORED_PROJECTS}")"
+          echo "restored=${restored}" >> "$GITHUB_OUTPUT"
 
       - name: Plan shard-local exact-head cache
         id: shard-cache-plan
@@ -1299,7 +1302,7 @@ jobs:
 
       - name: Verify and unpack exact-head shard cache
         id: shard-cache-materialize
-        if: steps.managed-status.outputs.restored != 'true'
+        if: steps.managed-status.outputs.restored != 'true' && matrix.csprojs == null
         shell: bash
         env:
           CACHE_HIT_FIRST: ${{ steps.shard-cache-download.outputs.cache-hit }}

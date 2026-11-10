@@ -67,10 +67,13 @@ def run_projects(projects, environment, directory):
                  'HONUA_SERVER_TEST_CSPROJ': project,
                  'HONUA_SERVER_TEST_RESULTS_DIR': str(directory),
                  'HONUA_SERVER_TEST_LOG_NAME': f'project-{index}',
-                 'HONUA_SERVER_TEST_TIMEOUT_MINUTES': str(max(1, int(remaining / 60)))}
+                 'HONUA_SERVER_TEST_TIMEOUT_FOREGROUND': 'true',
+                 'HONUA_SERVER_TEST_TIMEOUT_MINUTES': str(remaining / 60)}
         code = execute(child, remaining)
         timing = directory / f'project-{index}.timing.json'
         record = json.loads(timing.read_text()) if timing.is_file() else {'status': 'missing'}
+        if timing.is_file():
+            timing.rename(directory / f'project-{index}.member.json')
         if code != 0:
             record['status'] = 'failed'
         attempts.append(record)
