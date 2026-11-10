@@ -2,6 +2,7 @@ name: GP Lifecycle Qualification
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches: [trunk]
     paths:
       - 'scripts/qualification/gp-lifecycle-harness.sh'
@@ -54,6 +55,7 @@ concurrency:
 
 jobs:
   job-tools-journey:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: Published MCP SDK job tools journey
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -103,6 +105,7 @@ jobs:
           retention-days: 30
 
   mcp-adapter-controls:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: Durable GP installed MCP adapter controls
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -164,7 +167,9 @@ jobs:
           retention-days: 30
 
   lifecycle:
-    if: github.event_name == 'workflow_dispatch'
+    if: >-
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+      && (github.event_name == 'workflow_dispatch')
     needs: mcp-adapter-controls
     runs-on: ubuntu-latest
     timeout-minutes: 90

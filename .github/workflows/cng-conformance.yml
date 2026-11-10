@@ -13,6 +13,7 @@ on:
   # itself unverified. The `validator-selftest` job below is cheap (no Docker, no
   # geospatial toolchain), so it runs on every change to the lane, not weekly.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - 'scripts/conformance/cng/**'
       - '.github/workflows/cng-conformance.yml'
@@ -86,6 +87,7 @@ concurrency:
 
 jobs:
   validator-selftest:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: CNG Validator Self-Tests
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -116,7 +118,9 @@ jobs:
     runs-on: ubuntu-24.04
     # The lane must not run against a validator whose own tests are red.
     needs: validator-selftest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || inputs.server_image != ''
+    if: >-
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+      && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || inputs.server_image != '')
     timeout-minutes: 45
     env:
       # honua-release nightly-certification correlation id; empty when not

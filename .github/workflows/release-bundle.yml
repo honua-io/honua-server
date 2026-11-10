@@ -15,6 +15,7 @@ name: Release Bundle (Compatibility Train)
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - '.github/workflows/release-bundle.yml'
       - '.github/workflows/cite-conformance.yml'
@@ -78,6 +79,7 @@ env:
 
 jobs:
   workflow-contract-tests:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: Release workflow contracts
     # Offline PR tests must not inherit the cross-repository dispatch token.
     env:
@@ -99,7 +101,9 @@ jobs:
   release-context:
     name: Classify release ref
     needs: workflow-contract-tests
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    if: >-
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+      && (github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -128,6 +132,7 @@ jobs:
           fi
 
   rc-image:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: Build & publish AOT image
     needs: release-context
     runs-on: ubuntu-24.04
@@ -239,7 +244,9 @@ jobs:
   integration:
     name: Integration & conformance evidence
     needs: rc-image
-    if: ${{ github.event.inputs.run_integration != 'false' }}
+    if: >-
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+      && (github.event.inputs.run_integration != 'false')
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -286,7 +293,9 @@ jobs:
   sdk-cut:
     name: SDK cut (dry-run) & compat evidence
     needs: rc-image
-    if: ${{ github.event.inputs.run_sdk != 'false' }}
+    if: >-
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+      && (github.event.inputs.run_sdk != 'false')
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -331,6 +340,7 @@ jobs:
           if-no-files-found: warn
 
   realtime-preview-qualification:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: Realtime Preview exact-candidate gate
     needs: rc-image
     permissions:
@@ -357,7 +367,9 @@ jobs:
     needs: [release-context, rc-image, integration, sdk-cut, realtime-preview-qualification]
     # Off-trunk runs deliberately stop at the unambiguous test image/evidence channel.
     # No candidate manifest is produced for the downstream release validator to accept.
-    if: ${{ always() && needs.release-context.outputs.candidate == 'true' && needs.rc-image.result == 'success' && needs.realtime-preview-qualification.result == 'success' }}
+    if: >-
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+      && (always() && needs.release-context.outputs.candidate == 'true' && needs.rc-image.result == 'success' && needs.realtime-preview-qualification.result == 'success')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
@@ -429,7 +441,9 @@ jobs:
   promote:
     name: Promote (publish SDKs + retag image)
     needs: [release-context, rc-image, aggregate]
-    if: ${{ needs.release-context.outputs.candidate == 'true' && github.event.inputs.promote == 'true' && needs.aggregate.outputs.verdict == 'pass' }}
+    if: >-
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+      && (needs.release-context.outputs.candidate == 'true' && github.event.inputs.promote == 'true' && needs.aggregate.outputs.verdict == 'pass')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: release-promote

@@ -6,6 +6,7 @@ on:
     - cron: '0 2 * * *'
   # Dependency changes run only the NuGet vulnerability gate; every other job is nightly/dispatch.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - 'Directory.Packages.props'
       - 'Directory.Build.props'
@@ -55,7 +56,9 @@ concurrency:
 jobs:
   existing-image-scan:
     name: Scan existing immutable image
-    if: github.event_name == 'workflow_dispatch' && inputs.existing_image != ''
+    if: >-
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+      && (github.event_name == 'workflow_dispatch' && inputs.existing_image != '')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -113,7 +116,9 @@ jobs:
           retention-days: 90
 
   nuget-vulnerability-scan:
-    if: inputs.existing_image == ''
+    if: >-
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+      && (inputs.existing_image == '')
     name: NuGet Vulnerability Scan
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -226,7 +231,9 @@ jobs:
             }
 
   trivy-filesystem-scan:
-    if: github.event_name != 'pull_request' && inputs.existing_image == ''
+    if: >-
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+      && (github.event_name != 'pull_request' && inputs.existing_image == '')
     name: Trivy Filesystem Scan
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -275,7 +282,9 @@ jobs:
           exit-code: '1'
 
   third-party-notices-check:
-    if: github.event_name != 'pull_request' && inputs.existing_image == ''
+    if: >-
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+      && (github.event_name != 'pull_request' && inputs.existing_image == '')
     name: Third-party notices are current
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -289,7 +298,9 @@ jobs:
         run: python3 scripts/ci/generate-third-party-notices.py --check
 
   container-security-scan:
-    if: github.event_name != 'pull_request' && inputs.existing_image == ''
+    if: >-
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+      && (github.event_name != 'pull_request' && inputs.existing_image == '')
     name: Container Security Scan (${{ matrix.variant }})
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout_minutes }}

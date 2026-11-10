@@ -2,6 +2,7 @@ name: GP Installed Authoring
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - 'src/Honua.Geoprocessing/Cli/**'
       - 'docker/worker-customcode-*/harness/**'
@@ -19,6 +20,7 @@ concurrency:
 
 jobs:
   pack:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -37,6 +39,7 @@ jobs:
           if-no-files-found: error
 
   installed:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     needs: pack
     strategy:
       fail-fast: false
@@ -78,6 +81,7 @@ jobs:
           if-no-files-found: warn
 
   handoff:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     needs: installed
     runs-on: ubuntu-latest
     timeout-minutes: 10

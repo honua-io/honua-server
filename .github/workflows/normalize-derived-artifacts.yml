@@ -5,7 +5,7 @@ name: Derived Artifact Normalization
 # consumer validates that artifact without executing anything from this head.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, edited]
+    types: [opened, synchronize, reopened, ready_for_review, edited, converted_to_draft]
     branches: [trunk]
     paths:
       - 'src/**'
@@ -46,7 +46,9 @@ env:
 jobs:
   generate:
     name: Generate bounded normalization projections
-    if: github.event.action != 'edited' || github.event.changes.base.ref.from != null
+    if: >-
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+      && (github.event.action != 'edited' || github.event.changes.base.ref.from != null)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
@@ -162,7 +164,9 @@ jobs:
   produce:
     name: Produce data-only normalization envelope
     needs: generate
-    if: needs.generate.result == 'success' && needs.generate.outputs.generated_only != 'true'
+    if: >-
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+      && (needs.generate.result == 'success' && needs.generate.outputs.generated_only != 'true')
     permissions:
       contents: read
     runs-on: ubuntu-latest

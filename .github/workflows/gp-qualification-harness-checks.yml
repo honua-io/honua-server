@@ -2,6 +2,7 @@ name: GP Qualification Harness Checks
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - 'scripts/qualification/gp-*.sh'
       - 'scripts/qualification/gp_canary*.py'
@@ -32,6 +33,7 @@ concurrency:
 
 jobs:
   harness-checks:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -49,7 +51,9 @@ jobs:
           python3 -m unittest discover -s scripts/qualification -p 'test_gp*.py' -v
 
   native-store-rehearsal:
-    if: github.event_name == 'workflow_dispatch' && inputs.native_store_rehearsal
+    if: >-
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+      && (github.event_name == 'workflow_dispatch' && inputs.native_store_rehearsal)
     needs: harness-checks
     runs-on: ubuntu-latest
     timeout-minutes: 90

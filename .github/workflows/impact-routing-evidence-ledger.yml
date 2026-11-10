@@ -11,6 +11,7 @@ name: Impact Routing Evidence Ledger
 on:
   workflow_dispatch:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - '.github/workflows/impact-routing-evidence-ledger.yml'
       - '.github/workflows/native-image-impact-observe.yml'
@@ -31,7 +32,9 @@ concurrency:
 jobs:
   replay:
     name: Replay seven-day receipt evidence
-    if: github.event_name == 'pull_request'
+    if: >-
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+      && (github.event_name == 'pull_request')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -46,7 +49,9 @@ jobs:
 
   audit:
     name: Audit trusted impact-routing observations
-    if: github.ref_name == github.event.repository.default_branch
+    if: >-
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+      && (github.ref_name == github.event.repository.default_branch)
     runs-on: ubuntu-latest
     # Indexing the PR Gate stream's receipts (previously invisible to the
     # reader, see PR_GATE_ARTIFACT) roughly doubles the number of receipt

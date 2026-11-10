@@ -37,6 +37,16 @@ class PrManagedBuildTests(unittest.TestCase):
             for result in ['failure','cancelled','skipped','']:
                 self.assertNotEqual(subprocess.run(['bash','-e','-c',script],env=dict(os.environ,**(success | {key:result})),capture_output=True).returncode,0,(key,result))
 
+    def test_draft_skips_cannot_satisfy_required_aggregate(self):
+        import yaml
+        required = yaml.load(TEXT, Loader=yaml.BaseLoader)['jobs']['required']
+        step = required['steps'][0]
+        results = {key: 'skipped' for key in step['env']}
+        results['FORMAT_RESULT'] = 'success'
+        run = subprocess.run(['bash', '-e', '-c', step['run']], capture_output=True,
+                             env=dict(os.environ, GITHUB_EVENT_NAME='pull_request', **results))
+        self.assertNotEqual(run.returncode, 0)
+
     def test_fast_architecture_remains_independent_and_required(self):
         fast = job('fast-tests')
         self.assertIn('    needs: runner-select\n', fast)

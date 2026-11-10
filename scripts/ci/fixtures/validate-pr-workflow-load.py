@@ -90,10 +90,38 @@ class PullRequestLoadTests(unittest.TestCase):
         self.assertIn("ready_for_review", gate["on"]["pull_request"].get("types", []))
         self.assertEqual(gate["jobs"]["required"]["name"], "PR Gate")
         self.assertEqual(gate["jobs"]["affected-shards"]["name"], "PR Gate / Affected shards")
-        required = ("pr-gate.yml", "clean-code.yml", "repo-hygiene.yml")
+        required = ("clean-code.yml", "repo-hygiene.yml")
         for name, key, job in workflow_jobs(required):
             with self.subTest(workflow=name, job=key):
                 self.assertNotIn("draft", job.get("if", ""))
+
+    def test_gate_heavy_jobs_refuse_drafts(self):
+        jobs = workflow("pr-gate.yml")["jobs"]
+        for key in ("pr-gate", "fast-tests", "ci-router-validation", "n1-reader-compatibility"):
+            with self.subTest(job=key):
+                self.assertEqual(jobs[key]["if"], DRAFT_GUARD)
+                self.assertFalse(evaluate(jobs[key]["if"], {
+                    "event_name": "pull_request", "event": {"pull_request": {"draft": True}},
+                }))
+        for key in ("affected-shards-select", "affected-shard", "affected-shards"):
+            self.assertIn("!github.event.pull_request.draft", jobs[key]["if"])
+        self.assertEqual(jobs["required"]["if"], "always()")
+        self.assertNotIn("draft", jobs["runner-select"].get("if", ""))
+
+    def test_optional_pr_jobs_refuse_drafts(self):
+        for path in sorted(WORKFLOWS.glob("*.y*ml")):
+            definition = workflow(path.name)
+            if "pull_request" not in definition.get("on", {}):
+                continue
+            if path.name in ("pr-gate.yml", "clean-code.yml", "repo-hygiene.yml"):
+                continue
+            with self.subTest(workflow=path.name):
+                types = definition["on"]["pull_request"].get("types", [])
+                self.assertIn("ready_for_review", types)
+                self.assertIn("converted_to_draft", types)
+            for key, job in definition["jobs"].items():
+                with self.subTest(workflow=path.name, job=key):
+                    self.assertIn(DRAFT_GUARD, job.get("if", ""))
 
     def test_trusted_observers_keep_current_draft_refusal(self):
         observer = workflow("server-test-prebuild-observe.yml")
