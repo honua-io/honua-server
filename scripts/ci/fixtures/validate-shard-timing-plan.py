@@ -96,7 +96,7 @@ class SchedulingTests(unittest.TestCase):
         registry = json.loads((ROOT / '.github/ci-shards.json').read_text())
         catalog = json.loads((ROOT / '.github/test-projects.json').read_text())
         selected = [next(shard for shard in registry['shards']
-                         if catalog['projects'][shard.get('csproj') or plan.MONOLITH]['role'] == role)
+                         if catalog['projects'][(shard.get('csprojs') or [shard.get('csproj') or plan.MONOLITH])[0]]['role'] == role)
                     for role in ('unit', 'component', 'mixed')]
         cfg = {'shards': selected}
         with tempfile.TemporaryDirectory() as directory:
@@ -107,7 +107,7 @@ class SchedulingTests(unittest.TestCase):
                     effective = '(' + effective + ')&Tier!=Fast'
                 record = timing('A', seconds=(index + 1) * 10, filter=effective,
                                 started_at=datetime.now(timezone.utc).isoformat(),
-                                project=shard.get('csproj') or plan.MONOLITH)
+                                project=(shard.get('csprojs') or [shard.get('csproj') or plan.MONOLITH])[0], projects=shard.get('csprojs'))
                 record['shard'] = shard['shard_name']
                 (root / f'{index}.timing.json').write_text(json.dumps(record))
             samples = plan.observations(cfg, root)

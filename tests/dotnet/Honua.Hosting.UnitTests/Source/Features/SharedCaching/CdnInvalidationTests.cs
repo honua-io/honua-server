@@ -109,6 +109,36 @@ public sealed class CdnInvalidationTests
     }
 
     [UnitTest]
+    public async Task InvalidateCollectionAsync_OperatorPurge_InvalidatesEverythingBeforeReturning()
+    {
+        await Invalidation().InvalidateCollectionAsync("parcels", CancellationToken.None);
+
+        _cloudFront.Accepted.Should().ContainSingle().Which.Should().Equal("/*");
+    }
+
+    [UnitTest]
+    public async Task InvalidateOgcMetadataAsync_OperatorPurge_InvalidatesEverythingBeforeReturning()
+    {
+        await Invalidation().InvalidateOgcMetadataAsync(CancellationToken.None);
+
+        _cloudFront.Accepted.Should().ContainSingle().Which.Should().Equal("/*");
+    }
+
+    [UnitTest]
+    public async Task InvalidateEditedCollectionAsync_ManyEdits_InvalidateTheOgcSurfacesThroughTheEditWindow()
+    {
+        var invalidation = Invalidation();
+
+        for (var edit = 0; edit < 20; edit++)
+        {
+            await invalidation.InvalidateEditedCollectionAsync("parcels", CancellationToken.None);
+            await invalidation.InvalidateEditedOgcMetadataAsync(CancellationToken.None);
+        }
+
+        _cloudFront.Accepted.Should().ContainSingle().Which.Should().Equal("/ogc/*");
+    }
+
+    [UnitTest]
     public async Task InvalidateServiceCatalogAsync_ServiceSecured_InvalidatesEverythingBeforeReturning()
     {
         await Invalidation().InvalidateServiceCatalogAsync("Parcels", null, CancellationToken.None);
