@@ -86,7 +86,7 @@ internal sealed class PublishedOperationTool : IMcpTool
         IsDeterministic
         && _descriptor.Policy.SideEffectClass == OperationSideEffectClass.ReadOnly;
 
-    private static string? FolderToolName(string operationId) => operationId switch
+    internal static string? FolderToolName(string operationId) => operationId switch
     {
         "folder.list" => "honua_list_folders",
         "folder.create" => "honua_create_folder",

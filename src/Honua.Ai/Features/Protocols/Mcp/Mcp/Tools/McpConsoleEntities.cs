@@ -35,6 +35,7 @@ internal static class McpConsoleEntities
             return Identity("job", Text(payload, "jobId"));
         if (toolName.StartsWith(PublishedOperationTool.NamePrefix, StringComparison.Ordinal)
             || toolName.StartsWith(PublishedOperationTool.AdminNamePrefix, StringComparison.Ordinal)
+            || toolName == PublishedOperationTool.FolderToolName(Text(payload, "operationId") ?? string.Empty)
             || toolName is PublishServiceTool.ToolName or PublishResultTool.ToolName)
             return Operation(payload);
         return [];

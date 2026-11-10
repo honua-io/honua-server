@@ -39,6 +39,24 @@ public sealed class McpConsoleEntitiesTests
     }
 
     [UnitTheory]
+    [InlineData("folder.create")]
+    [InlineData("folder.update")]
+    [InlineData("folder.delete")]
+    [InlineData("service.move")]
+    public void Enrich_FolderMutationAlias_ExposesApproval(string operation)
+    {
+        var result = Result(JsonSerializer.Serialize(new
+        {
+            status = "RequiresApproval",
+            operationId = operation,
+            proposalId = "p?x&y"
+        }));
+        McpConsoleEntities.Enrich(PublishedOperationTool.ProjectName(operation), result);
+        result.Meta!.Value.GetProperty("honua/consoleEntities")[0]
+            .GetProperty("href").GetString().Should().Be("/inbox?proposalId=p%3Fx%26y");
+    }
+
+    [UnitTheory]
     [InlineData("7", 2)]
     [InlineData("x", 1)]
     public void Enrich_CompletedLayerPublication_EmitsOnlyUsableTargets(string layerId, int count)
