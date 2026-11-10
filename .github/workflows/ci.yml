@@ -946,11 +946,19 @@ jobs:
           bash scripts/ci/regenerate-generated-files.sh --configuration Release --no-build --no-restore
           bash scripts/ci/report-generated-file-drift.sh
 
+      - name: Load validated flaky-test quarantine
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HONUA_TEST_QUARANTINE_FILE: ${{ runner.temp }}/honua-flake-quarantine.json
+        run: |
+          python3 scripts/ci/quarantine-issues.py snapshot --output "${HONUA_TEST_QUARANTINE_FILE}"
+          echo "HONUA_TEST_QUARANTINE_FILE=${HONUA_TEST_QUARANTINE_FILE}" >> "${GITHUB_ENV}"
+
       - name: Run source architecture after projection regeneration
         if: matrix.family == 'server'
         timeout-minutes: 15
         run: >-
-          dotnet test tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj
+          python3 scripts/ci/run-quarantine-filtered-tests.py dotnet test tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj
           --configuration Release --no-build --no-restore
           --logger "trx;LogFileName=source-architecture-tests.trx" --results-directory ./artifacts/test-results
 
@@ -966,14 +974,6 @@ jobs:
             providers) scripts/ci/prepare-testcontainer-images.sh ryuk mysql ;;
             *) echo "::error::Unknown container-consuming foundation family"; exit 2 ;;
           esac
-
-      - name: Load validated flaky-test quarantine
-        env:
-          GH_TOKEN: ${{ github.token }}
-          HONUA_TEST_QUARANTINE_FILE: ${{ runner.temp }}/honua-flake-quarantine.json
-        run: |
-          python3 scripts/ci/quarantine-issues.py snapshot --output "${HONUA_TEST_QUARANTINE_FILE}"
-          echo "HONUA_TEST_QUARANTINE_FILE=${HONUA_TEST_QUARANTINE_FILE}" >> "${GITHUB_ENV}"
 
       - name: Run foundation family tests
         timeout-minutes: 45
@@ -1670,11 +1670,19 @@ jobs:
         timeout-minutes: 12
         run: scripts/ci/prepare-testcontainer-images.sh ryuk postgis18 redis
 
+      - name: Load validated flaky-test quarantine
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HONUA_TEST_QUARANTINE_FILE: ${{ runner.temp }}/honua-flake-quarantine.json
+        run: |
+          python3 scripts/ci/quarantine-issues.py snapshot --output "${HONUA_TEST_QUARANTINE_FILE}"
+          echo "HONUA_TEST_QUARANTINE_FILE=${HONUA_TEST_QUARANTINE_FILE}" >> "${GITHUB_ENV}"
+
       - name: Run Worker GDAL tests
         id: run-tests
         timeout-minutes: 10
         run: |
-          dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
+          python3 scripts/ci/run-quarantine-filtered-tests.py dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
             --no-build \
             --configuration Release \
             --logger "trx;LogFileName=worker-gdal-tests.trx" \

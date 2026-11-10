@@ -4,12 +4,28 @@ import argparse
 import hashlib
 import json
 import os
+import signal
 from pathlib import Path
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
 from flake_quarantine import exclude_filter, load_snapshot, merge_retry, read_cases
+
+
+def call_test(command):
+    # Stay alive through TERM so GNU timeout retains ownership of the whole
+    # process group and can escalate against a child that ignores cancellation.
+    with subprocess.Popen(command) as child:
+        def forward(signum, _frame):
+            if child.poll() is None:
+                child.send_signal(signum)
+        previous = {sig: signal.signal(sig, forward) for sig in (signal.SIGTERM, signal.SIGINT)}
+        try:
+            return child.wait()
+        finally:
+            for sig, handler in previous.items():
+                signal.signal(sig, handler)
 
 
 def replace_option(command, option, value):
@@ -51,7 +67,7 @@ def attempt_retry(options, command):
     if not failed:
         return 1
     print(f'::warning::Retrying {len(failed)} failed case(s) once within the original shard deadline', flush=True)
-    code = subprocess.call(retry_command(command, failed, options.retry))
+    code = call_test(retry_command(command, failed, options.retry))
     if code != 0:
         return code
     merge_retry(options.first, options.retry, options.output)
@@ -63,7 +79,7 @@ def run(options):
     command = snapshot_filter(options.command, options.project)
     for path in (options.first, options.retry, options.candidates):
         path.unlink(missing_ok=True)
-    code = subprocess.call(command)
+    code = call_test(command)
     if code != 1 or os.environ.get('HONUA_SERVER_TEST_RETRY_FAILED', 'true') != 'true':
         return code
     if not options.output.is_file():
@@ -93,4 +109,9 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    result = main()
+    if result < 0 and os.name == 'posix':
+        if -result not in (signal.SIGKILL, signal.SIGSTOP):
+            signal.signal(-result, signal.SIG_DFL)
+        os.kill(os.getpid(), -result)
+    sys.exit(result)

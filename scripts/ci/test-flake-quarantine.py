@@ -2,6 +2,7 @@
 """Quarantine expiry and retry completeness must fail closed."""
 from datetime import datetime, timedelta, timezone
 import importlib.util
+import json
 import os
 import subprocess
 import sys
@@ -67,6 +68,18 @@ class PolicyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             q.active_entries([entry(), entry()], NOW)
 
+    def test_isolated_fast_gate_excludes_the_same_quarantined_method(self):
+        catalog = module('catalog', 'test-projects.py')
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot = Path(directory) / 'quarantine.json'
+            snapshot.write_text(json.dumps({'schema': q.SCHEMA, 'entries': [entry()]}))
+            with patch.dict(os.environ, {'HONUA_TEST_QUARANTINE_FILE': str(snapshot)}), \
+                    patch.object(catalog.subprocess, 'run') as execute:
+                catalog.execute_gate_fast(q.ROOT, [PROJECT])
+            command = execute.call_args.args[0]
+            self.assertEqual('(Tier=Fast)&FullyQualifiedName!=Honua.Tests.Case.Test0',
+                             command[command.index('--filter') + 1])
+
     def test_exclusion_is_project_specific_and_exact(self):
         self.assertEqual('(Tier=Integration)&FullyQualifiedName!=Honua.Tests.Case.Test0',
                          q.exclude_filter('Tier=Integration', [entry()], PROJECT))
@@ -112,6 +125,25 @@ class RetryTests(unittest.TestCase):
                 tree.write(path)
                 with self.assertRaises(ValueError):
                     q.read_cases(path)
+
+    def test_xunit_failure_and_warning_messages_allow_retry_but_host_errors_do_not(self):
+        messages = [('Error', '[xUnit.net 00:00:01.52]     Flaky [FAIL]', True),
+                    ('Warning', "Data collector 'Blame': All tests finished", True),
+                    ('Error', 'Test host crashed', False),
+                    ('Error', '[xUnit.net 00:00:01.52] host crashed', False)]
+        for outcome, text, accepted in messages:
+            with self.subTest(text=text), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'run.xml'
+                trx(path, [('Flaky', 'Failed')])
+                tree = ET.parse(path)
+                info = ET.SubElement(ET.SubElement(tree.find('.//ResultSummary'), 'RunInfos'), 'RunInfo', outcome=outcome)
+                ET.SubElement(info, 'Text').text = text
+                tree.write(path)
+                if accepted:
+                    self.assertEqual('Failed', q.read_cases(path)[0][2])
+                else:
+                    with self.assertRaises(ValueError):
+                        q.read_cases(path)
 
     def test_counter_tampering_cannot_supply_retry_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -164,7 +196,7 @@ class RunnerTests(unittest.TestCase):
                 trx(options.retry, retry_cases)
             return retry_code
         environment = {'HONUA_SERVER_TEST_RETRY_FAILED': enabled}
-        with patch.dict(os.environ, environment, clear=True), patch.object(runner.subprocess, 'call', side_effect=execute) as call:
+        with patch.dict(os.environ, environment, clear=True), patch.object(runner, 'call_test', side_effect=execute) as call:
             code = runner.run(options)
         return code, options, call
 

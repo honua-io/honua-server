@@ -306,6 +306,10 @@ def gate_fast_actions(projects):
 def execute_gate_fast(root, projects):
     for action in gate_fast_actions(projects):
         project = action['project']
+        snapshot = os.environ.get('HONUA_TEST_QUARANTINE_FILE')
+        if snapshot and os.environ.get('HONUA_TEST_QUARANTINE_OBSERVE') != 'true':
+            from flake_quarantine import exclude_filter, load_snapshot
+            action['filter'] = exclude_filter(action['filter'], load_snapshot(snapshot), project)
         subprocess.run(['dotnet', 'test', project, '--no-build', '--no-restore',
                         '--configuration', 'Release', '--filter',
                         action['filter'],

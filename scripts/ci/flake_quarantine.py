@@ -90,7 +90,13 @@ def read_cases(path):
     for key in ('error', 'timeout', 'aborted', 'disconnected', 'notRunnable'):
         if int(counters.attrib.get(key, '0')) != 0:
             raise ValueError('TRX contains infrastructure failures')
-    if tree.findall('.//{*}ResultSummary/{*}RunInfos/{*}RunInfo') or tree.findall('.//{*}ResultSummary/{*}Output/{*}ErrorInfo'):
+    for info in tree.findall('.//{*}ResultSummary/{*}RunInfos/{*}RunInfo'):
+        text = info.findtext('{*}Text', default='').strip()
+        ordinary_failure = (totals['Failed'] > 0 and text.startswith('[xUnit.net ')
+                            and text.endswith('[FAIL]') and '\n' not in text)
+        if info.attrib.get('outcome') not in ('Warning', 'Informational') and not ordinary_failure:
+            raise ValueError('TRX contains run-level failures')
+    if tree.findall('.//{*}ResultSummary/{*}Output/{*}ErrorInfo'):
         raise ValueError('TRX contains run-level failures')
     return cases
 
