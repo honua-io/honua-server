@@ -172,7 +172,9 @@ public sealed class OgcFeaturesEndpointTests : IAsyncLifetime
         var response = await client.GetAsync(path);
 
         response.Be200Ok();
-        response.Headers.CacheControl!.ToString().Should().Be("private, no-store");
+        response.Headers.CacheControl!.Private.Should().BeTrue();
+        response.Headers.CacheControl.NoStore.Should().BeTrue();
+        response.Headers.CacheControl.Public.Should().BeFalse();
         response.Headers.CacheControl.MaxAge.Should().BeNull();
         response.Headers.CacheControl.SharedMaxAge.Should().BeNull();
     }
