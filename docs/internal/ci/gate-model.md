@@ -539,3 +539,11 @@ unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
+
+### GPServer endpoint state isolation
+
+`GPServerEndpointTests` retains PostgreSQL for the class lifetime. Each case
+keeps its own application, schema and execution-job store; default setup runs
+only in cases that use it. Cases with custom services initialize and dispose
+their custom applications as before. Retaining database infrastructure avoids
+repeating container bootstrap without sharing job state or changing assertions.
