@@ -84,6 +84,13 @@ class FeedbackTests(unittest.TestCase):
         self.assertEqual(len(result['shards']), 3)
         self.assertFalse(result['emptySelection'])
 
+    def test_unit_feedback_omits_integration_but_preserves_routing_validation(self):
+        result = feedback.make_plan(self.catalog, {'selectedProjects': [self.unit]},
+                                    {'run_all': True, 'shards': []}, self.registry, [], unit_only=True)
+        self.assertEqual(result['projects'], [self.unit])
+        self.assertEqual(result['shards'], [])
+        self.assertEqual(len(result['skips']), 3)
+
     def test_unknown_shard_fails_instead_of_silent_omission(self):
         with self.assertRaisesRegex(ValueError, 'Unknown routed shards'):
             self.plan(routed=['unknown'])
@@ -118,11 +125,15 @@ class FeedbackTests(unittest.TestCase):
             (directory / 'feedback.trx').write_text('<TestRun><ResultSummary><Counters total="2" executed="2"/></ResultSummary></TestRun>')
         with tempfile.TemporaryDirectory() as root:
             feedback.execute(Path(root), result, run=run)
-        self.assertEqual([c[0][0:2] for c in calls], [['dotnet', 'build'], ['dotnet', 'test'], ['bash', 'scripts/ci/run-server-test-shard.sh']])
-        self.assertIn('--no-build', calls[1][0])
-        self.assertIn('--no-restore', calls[1][0])
-        self.assertEqual(calls[2][1]['env']['HONUA_SERVER_TEST_FILTER'], 'FullyQualifiedName~Component')
+        self.assertEqual([c[0][0:2] for c in calls], [['dotnet', 'restore'], ['dotnet', 'build'], ['dotnet', 'test'], ['bash', 'scripts/ci/run-server-test-shard.sh']])
+        self.assertTrue(all(call[1]['env']['DOTNET_PROCESSOR_COUNT'] == '5' for call in calls))
+        self.assertIn('--no-build', calls[2][0])
+        self.assertIn('--no-restore', calls[2][0])
+        self.assertEqual(calls[3][1]['env']['HONUA_SERVER_TEST_FILTER'], 'FullyQualifiedName~Component')
         self.assertTrue(all(c[1]['check'] for c in calls))
+        self.assertIn('--no-restore', calls[1][0])
+        self.assertIn('-p:RunAnalyzers=false', calls[1][0])
+        self.assertTrue(any(arg.startswith('-maxCpuCount:') for arg in calls[1][0]))
 
     def test_zero_or_missing_trx_fails_even_if_executor_exits_successfully(self):
         for contents in [None, '<TestRun><Counters total="0"/></TestRun>',
@@ -190,11 +201,13 @@ class FeedbackTests(unittest.TestCase):
             (binaries / 'python3').chmod(0o755)
             env = os.environ.copy()
             env['PATH'] = str(binaries) + os.pathsep + env['PATH']
-            for flag in ['--affected-tests', '--unit-only']:
-                result = subprocess.run(['bash', str(ci / 'pre-pr-check.sh'), flag,
+            for flags, expected in [(['--affected-tests'], ['--unit-only']),
+                                    (['--affected-tests', '--integration'], []),
+                                    (['--unit-only'], [])]:
+                result = subprocess.run(['bash', str(ci / 'pre-pr-check.sh'), *flags,
                                          '--dry-run', '--base', 'fixture-base'],
                                         env=env, text=True, capture_output=True, check=True)
-                self.assertEqual(json.loads(result.stdout), ['plan', '--base', 'fixture-base'])
+                self.assertEqual(json.loads(result.stdout), ['plan', '--base', 'fixture-base'] + expected)
 
     def test_namespaced_trx_is_supported(self):
         with tempfile.TemporaryDirectory() as root:

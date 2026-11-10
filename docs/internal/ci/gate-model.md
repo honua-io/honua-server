@@ -455,3 +455,26 @@ partial passing results); consumers must require the overall successful outcome
 as well. Missing counts stay missing. Synthetic supervisor fixtures are labelled
 as such and do not qualify a candidate. These files are diagnostic provenance;
 local files alone do not constitute a trusted release attestation.
+
+### Pre-PR and trailing affected execution
+
+`pre-pr-check.sh --affected-tests` restores once, builds the affected unit-test
+closure without analyzers, then runs unit tests by default. Pass `--integration`
+with `--affected-tests` to include affected integration shards. The independent
+PR Format check retains analyzer coverage. Positively classified docs/CI-only
+changes use the existing governance checks without starting a .NET build;
+unknown or invalid routing still fails closed. Stage 0 uses
+`HONUA_STAGE0_MAX_CPU_COUNT` (default 5, range 1–16) and reports restore, build,
+and test durations separately. Host queue/sync timings are reported by the
+local lane runner; they are separate from execution time.
+
+Trailing `selective_base` dispatches use their verified base for the managed
+producer's affected project graph. Consumers reuse the single producer's
+artifacts. Server shards retain descending measured `dispatch_rank` order and
+run at most six at once (full runs retain 24). Expensive AOT, Docker,
+Postgres compatibility, browser, Python, MCP and quickstart lanes use
+`scripts/ci/affected-ci-lanes.py` to select their own inputs. Shared inputs,
+unknown paths, missing diff evidence, and the canonical router's `run_all`
+fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
+as a prerequisite. PR routing, required check names, shard definitions, and the
+twice-daily full matrix are preserved.

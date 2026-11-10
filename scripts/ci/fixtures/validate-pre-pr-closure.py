@@ -167,6 +167,15 @@ pathlib.Path(out).write_text(json.dumps({'projects': projects}))
         self.write("src/Honua.Geometry/Repair.cs", 'internal class Repair\n{\n    internal int Value()\n    {\n        return 2;\n    }\n}\n')
         self.commit()
 
+    def test_affected_ci_only_changes_keep_governance_fast_path(self):
+        self.write("scripts/ci/fixture-ci-only.sh", "#!/bin/bash\ntrue\n", executable=True)
+        self.commit()
+        result = self.execute("--affected-tests", "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("Mode: CI-SHELL-ONLY", result.stdout)
+        self.assertIn("no restore/build/format/test", result.stdout)
+        self.assertFalse((self.root / "artifacts/test-results/local-feedback").exists())
+
     def test_fast_source_closure_and_format_owner(self):
         self.source_repair()
         output = self.plan("--fast")

@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import xml.etree.ElementTree as ET
 import uuid
 
@@ -54,7 +55,7 @@ def route(root, changed):
         input='\n'.join(changed), text=True, cwd=root))
 
 
-def make_plan(catalog, unit_plan, routing, registry, changed):
+def make_plan(catalog, unit_plan, routing, registry, changed, unit_only=False):
     if not isinstance(routing, dict) or type(routing.get('run_all')) is not bool:
         raise ValueError('Canonical router must report a boolean run_all')
     if not isinstance(routing.get('shards'), list) or any(not isinstance(n, str) or not n for n in routing['shards']):
@@ -81,6 +82,9 @@ def make_plan(catalog, unit_plan, routing, registry, changed):
             raise ValueError('Architecture project cannot enter feedback selection')
         if project in units:
             skips.append({'shard': name, 'reason': 'selected isolated unit full suite covers this shard'})
+            continue
+        if unit_only and entry['role'] != 'unit':
+            skips.append({'shard': name, 'reason': 'integration feedback is opt-in'})
             continue
         expression = shard.get('filter')
         if not expression:
@@ -135,8 +139,14 @@ def execute(root, plan, run=subprocess.run, results_directory=None):
         log = results / ('command-' + str(index) + '.log')
         status['commands'].append({'command': command, 'log': str(log), 'status': 'running'})
         print('Feedback command log: ' + str(log), flush=True)
-        with log.open('w') as output:
-            run(command, stdout=output, stderr=subprocess.STDOUT, **kwargs)
+        started = time.monotonic()
+        try:
+            with log.open('w') as output:
+                run(command, stdout=output, stderr=subprocess.STDOUT, **kwargs)
+        finally:
+            elapsed = round(time.monotonic() - started, 3)
+            status['commands'][-1]['durationSeconds'] = elapsed
+            print(f'Feedback timing: {command[0]} {command[1]}={elapsed}s', flush=True)
         status['commands'][-1]['status'] = 'passed'
     # PATH dotnet preserves the supervisor/Flow admission wrapper.
     try:
@@ -145,18 +155,27 @@ def execute(root, plan, run=subprocess.run, results_directory=None):
             temporary = Path(temporary)
             selection = temporary / 'feedback.slnf'
             selection.write_text(json.dumps({'solution': {'path': str(root / 'Honua.sln'), 'projects': plan['projects']}}))
-            invoke(['dotnet', 'build', str(selection), '--configuration', 'Release',
-                 '-p:TreatWarningsAsErrors=true', '-p:UseSharedCompilation=false'], cwd=root, check=True)
+            cpu_count = int(os.environ.get('HONUA_STAGE0_MAX_CPU_COUNT', '5'))
+            if not 1 <= cpu_count <= 16:
+                raise ValueError('HONUA_STAGE0_MAX_CPU_COUNT must be between 1 and 16')
+            execution_env = os.environ.copy()
+            execution_env['DOTNET_PROCESSOR_COUNT'] = str(cpu_count)
+            build_properties = ['-p:TreatWarningsAsErrors=true', '-p:UseSharedCompilation=false',
+                                '-p:RunAnalyzers=false', '-p:RunAnalyzersDuringBuild=false',
+                                f'-maxCpuCount:{cpu_count}', '-nodeReuse:false']
+            invoke(['dotnet', 'restore', str(selection), *build_properties], cwd=root, check=True, env=execution_env)
+            invoke(['dotnet', 'build', str(selection), '--no-restore', '--configuration', 'Release',
+                    *build_properties], cwd=root, check=True, env=execution_env)
             for index, project in enumerate(plan['units']):
                 directory = results / ('unit-' + str(index))
                 directory.mkdir()
                 invoke(['dotnet', 'test', project, '--no-build', '--no-restore', '--configuration', 'Release',
-                     '--logger', 'trx;LogFileName=feedback.trx', '--results-directory', str(directory)], cwd=root, check=True)
+                     '--logger', 'trx;LogFileName=feedback.trx', '--results-directory', str(directory)], cwd=root, check=True, env=execution_env)
                 require_tests(directory)
             for index, shard in enumerate(plan['shards']):
                 directory = results / ('shard-' + str(index))
                 directory.mkdir()
-                env = os.environ.copy()
+                env = execution_env.copy()
                 env.update({'HONUA_SERVER_TEST_SHARD_NAME': shard['name'], 'HONUA_SERVER_TEST_CSPROJ': shard['project'],
                             'HONUA_SERVER_TEST_FILTER': shard['filter'], 'HONUA_SERVER_TEST_LOG_NAME': 'feedback',
                             'HONUA_SERVER_TEST_CONFIGURATION': 'Release', 'HONUA_SERVER_TEST_RESULTS_DIR': str(directory),
@@ -187,6 +206,7 @@ def main():
     parser.add_argument('--root', type=Path, default=ROOT)
     parser.add_argument('--base', default='origin/trunk')
     parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--unit-only', action='store_true', help='Omit component/integration shards')
     parser.add_argument('--results-directory', type=Path, help='Parent for a unique retained feedback run directory')
     parser.add_argument('--timings-dir', type=Path, help='Optional retained timing evidence; affects order only')
     args = parser.parse_args()
@@ -197,7 +217,7 @@ def main():
     changed = changed_files(root, args.base)
     unit_plan = module.plan(root, catalog, changed)
     routing = route(root, changed)
-    result = make_plan(catalog, unit_plan, routing, json.loads((root / '.github/ci-shards.json').read_text()), changed)
+    result = make_plan(catalog, unit_plan, routing, json.loads((root / '.github/ci-shards.json').read_text()), changed, unit_only=args.unit_only)
     try:
         order_shards(root, result, args.timings_dir or Path(os.environ.get('HONUA_LOCAL_CI_TIMINGS', str(root / 'artifacts/test-results'))))
     except (ValueError, OSError, KeyError):
