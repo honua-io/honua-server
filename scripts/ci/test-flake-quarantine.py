@@ -178,25 +178,42 @@ class RunnerTests(unittest.TestCase):
     def test_foreground_timeout_kills_term_ignoring_test_group(self):
         self.assert_timeout_cleanup(foreground=True)
 
-    def assert_timeout_cleanup(self, foreground):
+    def test_timeout_cleans_up_descendant_outside_inherited_group(self):
+        self.assert_timeout_cleanup(foreground=False, detached=True)
+
+    def assert_timeout_cleanup(self, foreground, detached=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             fake = root / 'dotnet'
             fake.write_text('#!/usr/bin/env python3\n'
                             'import os, pathlib, signal, time\n'
                             'signal.signal(signal.SIGTERM, signal.SIG_IGN)\n'
-                            'suffix = ".descendant.pid" if os.fork() == 0 else ".pid"\n'
+                            'is_child = os.fork() == 0\n'
+                            f'if is_child and {detached}: os.setsid()\n'
+                            'suffix = ".descendant.pid" if is_child else ".pid"\n'
                             'pathlib.Path(__file__).with_suffix(suffix).write_text(str(os.getpid()))\n'
                             'time.sleep(30)\n')
             fake.chmod(0o755)
+            def cleanup():
+                for suffix in ('.pid', '.descendant.pid'):
+                    path = fake.with_suffix(suffix)
+                    if path.exists():
+                        try:
+                            os.kill(int(path.read_text()), signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
             command = ['timeout', *(['--foreground'] if foreground else []), '--kill-after=1', '1', sys.executable,
                        str(Path(runner.__file__).with_name('run-quarantine-filtered-tests.py')),
                        'dotnet', 'test', PROJECT]
             with patch.dict(os.environ, {'PATH': f'{directory}:{os.environ["PATH"]}',
                                          'HONUA_TEST_QUARANTINE_OBSERVE': 'true',
                                          'HONUA_SERVER_TEST_TIMEOUT_FOREGROUND': str(foreground).lower()}):
-                result = subprocess.run(command, timeout=5, capture_output=True)
-            self.assertEqual(124 if foreground else -signal.SIGKILL, result.returncode)
+                try:
+                    result = subprocess.run(command, timeout=5, capture_output=True)
+                except BaseException:
+                    cleanup()
+                    raise
+            self.assertEqual(124, result.returncode)
             for suffix in ('.pid', '.descendant.pid'):
                 process = Path('/proc') / fake.with_suffix(suffix).read_text() / 'stat'
                 if process.exists():

@@ -32,14 +32,15 @@ def call_test(command):
 
         def forward(signum, _frame):
             nonlocal cancellation_signal
+            if cancellation_signal is not None:
+                return
             cancellation_signal = signum
-            foreground = os.environ.get('HONUA_SERVER_TEST_TIMEOUT_FOREGROUND') == 'true'
-            if not foreground or os.name != 'posix':
+            if os.name != 'posix':
                 if child.poll() is None:
                     child.send_signal(signum)
                 return
-            # Foreground timeout only signals this wrapper. Snapshot descendants
-            # before TERM so reparented grandchildren remain in the cleanup set.
+            # Descendants can leave the timeout group. Snapshot them before TERM
+            # so reparented grandchildren remain in the cleanup set.
             descendants = descendant_pids(child.pid)
             for pid in descendants:
                 with suppress(ProcessLookupError):
