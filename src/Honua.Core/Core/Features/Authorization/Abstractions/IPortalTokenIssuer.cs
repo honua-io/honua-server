@@ -181,7 +181,11 @@ public sealed record PortalTokenIssueRequest(
     IReadOnlyList<string>? RolesWithoutClaimsMapping = null,
     bool IsClientCredentials = false,
     PortalCredentialSource? Source = null,
-    bool AcceptMissingReferer = false);
+    bool AcceptMissingReferer = false)
+{
+    // Roles flagged by RolesRequireClaimsMappingEntitlement that differ from the fallback only through the configured role claim types are revalidated against identity.oidc instead of identity.claims-mapping.
+    public bool RolesDependOnlyOnRoleClaimSelection { get; init; }
+}
 
 /// <summary>
 /// Inputs for exchanging a presented portal token for a token bound to a new client binding.

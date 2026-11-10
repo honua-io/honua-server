@@ -1,7 +1,7 @@
 ---
 type: capability
 title: "Claims Mapping"
-description: "Custom claim-to-role mapping and identity governance for OIDC providers."
+description: "Arbitrary custom claim mappings and tenant mapping for OIDC providers. Choosing which claim carries roles is part of identity.oidc."
 resource: "honua://capability/identity.claims-mapping"
 tags: [capability, identity, enterprise]
 ---
@@ -9,7 +9,7 @@ tags: [capability, identity, enterprise]
 
 # Claims Mapping
 
-Custom claim-to-role mapping and identity governance for OIDC providers.
+Arbitrary custom claim mappings and tenant mapping for OIDC providers. Choosing which claim carries roles is part of identity.oidc.
 
 | | |
 | --- | --- |

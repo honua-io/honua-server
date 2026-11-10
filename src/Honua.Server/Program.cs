@@ -834,6 +834,7 @@ builder.Services.AddScoped<Honua.ControlPlane.IAutonomousOperationConvergence,
 
 // Configure tile options
 InfrastructureCompositionRoot.ConfigureTileOptions(builder.Services, builder.Configuration);
+Honua.Infrastructure.SharedCaching.SharedCacheExtensions.AddSharedCachePolicy(builder.Services, builder.Configuration);
 
 // Configure caching options and register cache services
 InfrastructureCompositionRoot.ConfigureCaching(builder.Services, builder.Configuration, redisCacheEntitled);
@@ -844,6 +845,9 @@ builder.Services.Configure<Honua.Core.Features.Import.ObjectStore.ImportObjectSt
     builder.Configuration.GetSection(Honua.Core.Features.Import.ObjectStore.ImportObjectStoreOptions.SectionName));
 #if !HONUA_EXCLUDE_AWS
 builder.Services.AddAwsImportObjectStore();
+Honua.Cloud.Aws.Features.Cdn.CloudFrontCdnServiceCollectionExtensions.AddCloudFrontCdnInvalidation(
+    builder.Services, builder.Configuration);
+builder.Services.AddHostedService<Honua.ControlPlane.ReleaseChangeCdnInvalidation>();
 #endif
 
 // Configure file upload security limits
@@ -1360,6 +1364,12 @@ if (activeDbConnectionTracker != null)
     EnhancedTelemetry.ConfigureActiveDbConnectionsProvider(activeDbConnectionTracker.GetActiveCount);
 }
 
+// First in the pipeline so its response-start callback runs last, on every response including the
+// ones short-circuited below. Authentication decisions and authenticated data must not survive
+// credential changes in client caches, and a response that is not provably public leaves as
+// private, no-store.
+app.UseMiddleware<AuthenticationResponseCacheMiddleware>();
+
 app.UseGeoServicesPublicPaths();
 
 // Restore HEAD after routing so cross-cutting middleware sees the method the client sent.
@@ -1702,13 +1712,6 @@ app.UseGlobalExceptionHandling();
 // untouched. Runs after global exception handling so thrown exceptions keep their
 // existing protocol shaping and only status-only responses are re-shaped here.
 app.UseRestErrorEnvelope();
-
-// Authentication decisions and authenticated data must not survive credential changes
-// in client caches, including clients using non-standard credential headers. Registered
-// before every middleware below that can terminate a credential route (license expiry,
-// a disabled deployment capability, invalid input) so a short-circuited denial still
-// registers the OnStarting callback that applies the final cache policy (#4609 review).
-app.UseMiddleware<AuthenticationResponseCacheMiddleware>();
 
 // Paid deployments stop every data surface at expiry, including cached reads and exports.
 app.UseMiddleware<Honua.Infrastructure.Licensing.LicenseOperationMiddleware>();
