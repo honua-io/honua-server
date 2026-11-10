@@ -260,7 +260,7 @@ certification and LLM smoke, PostgreSQL and core-package compatibility, AOT,
 Docker build, and Console quickstart smoke. Admission, routing, receipt
 aggregation and final verdict jobs remain on standard hosted runners so a
 compute-pool problem cannot strand their reporting. Light checks such as JS
-type checking also stay hosted. The PR Gate is unchanged.
+type checking also stay hosted. The PR Gate has its own selection, below.
 
 The selected runner must provide a clean Ubuntu x64 environment compatible with
 GitHub's hosted tools, Docker, passwordless sudo, .NET/Node/Python setup actions,
@@ -273,6 +273,43 @@ Main checks the chosen pool on the first ordinary combined batch using it;
 no separate branch full run is needed. Clear the variable to restore the hosted
 default for new runs. Treat existing runs as assigned to their original pool;
 main handles their completion or cancellation.
+
+## PR Gate compute runner selection
+
+`PR Gate / Runner select` decides where `pr-gate` (Build and tests),
+`fast-tests` and `format` run. With the repository variable
+`HONUA_PR_GATE_RUNNER` unset, its steps skip and those jobs stay on
+`ubuntu-latest`. Set it to `honua-build` to use the ephemeral runners on the lane
+build host (honua-iac `bootstrap/aws-build-host`, "PR Gate runners"). It also
+needs the variable `HONUA_PR_GATE_RUNNER_REGION` and the secret
+`HONUA_PR_GATE_WAKE_ROLE_ARN`. The job assumes that role through GitHub OIDC
+(`id-token: write` on this job only; the role can describe and wake the build
+host and read its heartbeat, nothing else) and runs
+`scripts/ci/select-gate-runner.sh`:
+
+- When the host's heartbeat is fresh and shows two idle runners, the three jobs
+  use the label.
+- When the host is busy, or no heartbeat arrives within three minutes, they use
+  `ubuntu-latest`. A stopped host is still woken for later runs.
+- Any failure selects `ubuntu-latest`. Every selection step is
+  `continue-on-error`, so the job cannot fail and skip the required producer,
+  which carries no job condition.
+
+Shards, admission, routing and aggregate jobs always stay hosted. Under
+`REVIEW_FIRST_MODE: enforce` the selection steps skip and the gate stays hosted:
+the review release reruns only failed jobs, so attempt 2 would reuse a choice
+made at admission and could queue on a host that has since stopped.
+
+The build-host runners are clean per job but are not hosted images. They have no
+sudo, so the disk-cleanup steps do nothing there. Docker is rootless and per job,
+and tools come from the setup actions plus the host's packages (Python 3, Node 22,
+PowerShell, git, jq). Do not point `HONUA_CI_HEAVY_RUNNER` at this label: full CI
+expects passwordless sudo.
+
+A spot interruption fails the running job. Use **Re-run all jobs**, which selects
+compute again; **Re-run failed jobs** keeps the earlier choice, and it waits if
+the host has stopped since then. Clear `HONUA_PR_GATE_RUNNER` to return new runs
+to hosted runners immediately.
 
 ## Nightly Lane
 

@@ -39,7 +39,7 @@ class PrManagedBuildTests(unittest.TestCase):
 
     def test_fast_architecture_remains_independent_and_required(self):
         fast = job('fast-tests')
-        self.assertNotIn('needs:', fast)
+        self.assertIn('    needs: runner-select\n', fast)
         self.assertIn('phase: all', fast)
         self.assertIn('build-scope: test-roots', fast)
         self.assertIn("run-analyzers: 'false'", fast)
