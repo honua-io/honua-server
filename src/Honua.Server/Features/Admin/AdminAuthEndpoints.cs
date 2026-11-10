@@ -135,6 +135,10 @@ internal static class AdminAuthEndpoints
                 {
                     Type = claim.Type,
                     Value = claim.Value
+                }).Append(new AdminAuthSessionClaim
+                {
+                    Type = ClaimTypes.NameIdentifier,
+                    Value = ApiKeyAuthenticationHandler.BootstrapAdminActorId.ToString()
                 }).ToArray(),
                 ExpiresAt = DateTimeOffset.UtcNow.Add(lifetime)
             }, context.RequestAborted).ConfigureAwait(false);

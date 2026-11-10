@@ -83,7 +83,20 @@ public sealed class AdminLogoutDependencyLossTests
         }
         Assert.NotNull(await otherReplica.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None));
         using var client = fixture.CreateClient(allowAutoRedirect: false);
+        client.BaseAddress = new Uri("https://localhost");
+        if (!saml && !warmCache && !readsAvailable)
+        {
+            await SetCsrfHeaderAsync(client);
+        }
         client.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}");
+        if (!saml && (warmCache || readsAvailable))
+        {
+            await SetCsrfHeaderAsync(client);
+            if (!warmCache)
+            {
+                memory.Clear();
+            }
+        }
         var path = saml ? "/saml/slo" : "/api/v1/admin/auth/logout";
         var signedRequest = SamlTestAssertions.CreateSignedLogoutRequest(certificate, "admin");
         using var content = new FormUrlEncodedContent(new Dictionary<string, string> { ["SAMLRequest"] = signedRequest });
@@ -96,6 +109,10 @@ public sealed class AdminLogoutDependencyLossTests
             Assert.Equal(HttpStatusCode.OK, sessionResponse.StatusCode);
             Assert.Contains(sessionResponse.Headers.GetValues("Set-Cookie"), cookie =>
                 cookie.StartsWith(AdminAuthSessionStore.AuthSessionCookieName + "=;", StringComparison.Ordinal));
+        }
+        if (!saml && sessionAbsent)
+        {
+            await SetCsrfHeaderAsync(client);
         }
         using var failed = await client.PostAsync(path, saml ? content : null);
         if (sessionAbsent)
@@ -118,6 +135,10 @@ public sealed class AdminLogoutDependencyLossTests
         unavailable = false;
         // The failed response must be honest: revocation has not yet happened.
         Assert.NotNull(await otherReplica.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None));
+        if (!saml)
+        {
+            await SetCsrfHeaderAsync(client);
+        }
         using var retried = await client.PostAsync(path, saml ? content : null);
         Assert.Equal(HttpStatusCode.OK, retried.StatusCode);
         Assert.Contains(retried.Headers.GetValues("Set-Cookie"), cookie =>
@@ -127,5 +148,14 @@ public sealed class AdminLogoutDependencyLossTests
         using var coldMemory = new MemoryCache(new MemoryCacheOptions());
         var coldReplica = new AdminAuthSessionStore(coldMemory, NullLogger<AdminAuthSessionStore>.Instance, cache);
         Assert.Null(await coldReplica.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None));
+    }
+
+    private static async Task SetCsrfHeaderAsync(HttpClient client)
+    {
+        using var response = await client.GetAsync("/api/v1/admin/auth/csrf");
+        response.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        client.DefaultRequestHeaders.Remove("X-Honua-CSRF");
+        client.DefaultRequestHeaders.Add("X-Honua-CSRF", document.RootElement.GetProperty("requestToken").GetString());
     }
 }

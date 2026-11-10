@@ -104,6 +104,59 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/auth/session")]
+    [Endpoint("GET /api/v1/studio/package-families")]
+    public async Task PasswordSignIn_WithoutOidc_CanAccessStudio()
+    {
+        _client.BaseAddress = new Uri("https://localhost");
+        await SetCsrfHeaderAsync(_client);
+        using var signIn = await _client.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "test-admin-key" });
+        signIn.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        using var studio = await _client.GetAsync("/api/v1/studio/package-families");
+        studio.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/session")]
+    [Endpoint("POST /api/v1/admin/auth/bearer")]
+    [Endpoint("POST /mcp")]
+    public async Task PasswordSignIn_WithoutOidc_IssuesBearerWithDurableMcpIdentity()
+    {
+        await using var fixture = CreateBaseFixture().ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("Oidc:Enabled", "false");
+            builder.UseSetting("Authentication:OperatorBearer:Enabled", "true");
+            builder.UseSetting("Authentication:OperatorBearer:SigningKey", TestOperatorBearerSigningKey);
+        });
+        await fixture.InitializeAsync();
+        using var browser = fixture.CreateClient();
+        browser.BaseAddress = new Uri("https://localhost");
+        await SetCsrfHeaderAsync(browser);
+        using var signIn = await browser.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "test-admin-key" });
+        signIn.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        await SetCsrfHeaderAsync(browser);
+        using var bearer = await browser.PostAsync("/api/v1/admin/auth/bearer", null);
+        bearer.StatusCode.Should().Be(HttpStatusCode.OK);
+        var token = await bearer.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminOperatorBearerResponse);
+        using var mcp = fixture.CreateClient();
+        mcp.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token!.AccessToken);
+        using var initialized = await mcp.PostAsJsonAsync("/mcp", new
+        {
+            jsonrpc = "2.0",
+            id = 1,
+            method = "initialize",
+            @params = new
+            {
+                protocolVersion = "2025-06-18",
+                capabilities = new { },
+                clientInfo = new { name = "browser-session-test", version = "1.0" }
+            }
+        });
+        initialized.StatusCode.Should().Be(HttpStatusCode.OK);
+        initialized.Headers.Contains("Mcp-Session-Id").Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/session")]
     public async Task PasswordSignIn_InvalidPassword_IsUnauthorized()
     {
         _client.BaseAddress = new Uri("https://localhost");

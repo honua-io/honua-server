@@ -31,7 +31,7 @@ internal sealed class ApiKeyAuthenticationHandler(
     private const string AdminAuthenticationNotConfigured = "Admin authentication not configured";
     private const string RequestNotPermittedMessage = "This API key is not permitted from this origin or network.";
     private static readonly Guid DevelopmentBypassActorId = new("00000000-0000-0000-0000-000000000001");
-    private static readonly Guid BootstrapAdminActorId = new("00000000-0000-0000-0000-000000000002");
+    internal static readonly Guid BootstrapAdminActorId = new("00000000-0000-0000-0000-000000000002");
 
     private readonly ApiKeyAuthenticationDependencies _dependencies = dependencies ?? throw new ArgumentNullException(nameof(dependencies));
     private readonly ApiKeyAuthenticationOptions _authOptions = dependencies.Options;
