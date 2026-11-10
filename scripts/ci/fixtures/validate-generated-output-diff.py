@@ -36,7 +36,7 @@ class GeneratedOutputAdmission(unittest.TestCase):
         self.env = patch.dict(os.environ, GITHUB_EVENT_NAME='pull_request')
         self.env.start()
         self.git('init', '-b', 'trunk')
-        for name in ('generated-files.sh', 'generated-output-diff.py'):
+        for name in ('generated-files.sh', 'generated-output-diff.py', 'classify-generated-output.sh'):
             target = self.repo / 'scripts/ci' / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(ROOT / 'scripts/ci' / name, target)

@@ -39,6 +39,8 @@ fi
 # binary, not this wrapper function.
 source "${SCRIPT_DIR}/lib/jq-cr-safe.sh"
 
+node --test .github/scripts/revalidate-exact-head-review.test.cjs
+
 echo "Validating review-first PR Gate transition..."
 scripts/ci/validate-review-first-dispatch.sh
 
