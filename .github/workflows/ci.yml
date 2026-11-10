@@ -2633,6 +2633,14 @@ jobs:
         timeout-minutes: 8
         run: scripts/ci/prepare-testcontainer-images.sh ryuk postgres16
 
+      - name: Load validated flaky-test quarantine
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HONUA_TEST_QUARANTINE_FILE: ${{ runner.temp }}/honua-flake-quarantine.json
+        run: |
+          python3 scripts/ci/quarantine-issues.py snapshot --output "${HONUA_TEST_QUARANTINE_FILE}"
+          echo "HONUA_TEST_QUARANTINE_FILE=${HONUA_TEST_QUARANTINE_FILE}" >> "${GITHUB_ENV}"
+
       - name: Run Postgres compatibility tests
         env:
           HONUA_TEST_DB_URL: "Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=honua"
@@ -2657,6 +2665,7 @@ jobs:
           TEST_TIMEOUT_MINUTES: ${{ matrix.collect_coverage && '20' || '10' }}
         run: |
           test_args=(
+            python3 scripts/ci/run-quarantine-filtered-tests.py
             dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj
             --configuration Release
             --no-build

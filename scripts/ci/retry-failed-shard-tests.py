@@ -108,10 +108,13 @@ def main():
     return run(options)
 
 
-if __name__ == '__main__':
-    result = main()
+def exit_with_status(result):
     if result < 0 and os.name == 'posix':
         if -result not in (signal.SIGKILL, signal.SIGSTOP):
             signal.signal(-result, signal.SIG_DFL)
         os.kill(os.getpid(), -result)
     sys.exit(result)
+
+
+if __name__ == '__main__':
+    exit_with_status(main())
