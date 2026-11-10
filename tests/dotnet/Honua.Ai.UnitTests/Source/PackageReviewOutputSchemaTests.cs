@@ -29,9 +29,8 @@ public sealed class PackageReviewOutputSchemaTests
         }.OutputSchema!.Value;
 
         using var schema = JsonDocument.Parse(published.GetRawText());
-        var rootStatus = schema.RootElement.GetProperty("properties").GetProperty("status");
-        rootStatus.TryGetProperty("const", out _).Should().BeFalse(
-            "a root const of error rejects every successful review");
+        schema.RootElement.GetProperty("properties").TryGetProperty("status", out _)
+            .Should().BeFalse("the branches carry the status constraints without a redundant root placeholder");
 
         var branches = schema.RootElement.GetProperty("oneOf").EnumerateArray().ToArray();
         var success = branches.Single(branch => branch.TryGetProperty("not", out _));
@@ -52,6 +51,29 @@ public sealed class PackageReviewOutputSchemaTests
         Accepts(parsed, """
             {"status":"error","code":"unauthenticated","message":"Authentication is required.","error":{"kind":"AuthorizationDenied","message":"Authentication is required."}}
             """);
+    }
+
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void IncludeErrorEnvelope_OverlappingProperties_PreservesBranchValidation(bool closed)
+    {
+        using var document = JsonDocument.Parse("""
+            {"type":"object","required":["status","value"],"properties":{"status":{"const":"ready"},"value":{"type":"integer"}}}
+            """);
+        var input = System.Text.Json.Nodes.JsonNode.Parse(document.RootElement.GetRawText())!;
+        input["additionalProperties"] = !closed;
+        using var configured = JsonDocument.Parse(input.ToJsonString());
+        var output = McpToolOutputSchemas.IncludeErrorEnvelope(configured.RootElement);
+        output.GetProperty("properties").TryGetProperty("status", out _).Should().BeFalse();
+        var parsed = JSchema.Parse(output.GetRawText());
+        Accepts(parsed, """{"status":"ready","value":1}""");
+        Accepts(parsed, """{"status":"error","code":"invalid","message":"Invalid request.","error":{}}""");
+        JToken.Parse("""{"status":"other","value":1}""").IsValid(parsed).Should().BeFalse();
+        JToken.Parse("""{"status":"ready","value":"wrong"}""").IsValid(parsed).Should().BeFalse();
+        JToken.Parse("""{"status":"ready","value":1,"extra":true}""").IsValid(parsed).Should().Be(!closed);
+        JToken.Parse("""{"status":"ready","value":1,"code":"invalid","message":"Invalid request.","error":{}}""")
+            .IsValid(parsed).Should().BeFalse();
     }
 
     private static void Accepts(JSchema schema, string json)

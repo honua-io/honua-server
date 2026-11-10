@@ -104,7 +104,7 @@ internal static class McpToolOutputSchemas
             {
                 successOverlapProperties[errorProperty.Key] = successProperty.DeepClone();
                 errorOverlapProperties[errorProperty.Key] = errorProperty.Value?.DeepClone();
-                successProperties[errorProperty.Key] = new JsonObject();
+                successProperties.Remove(errorProperty.Key);
                 continue;
             }
 
