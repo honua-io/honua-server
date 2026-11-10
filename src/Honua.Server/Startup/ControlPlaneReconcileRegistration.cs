@@ -41,7 +41,6 @@ internal static class ControlPlaneReconcileRegistration
             sp.GetRequiredService<IOptions<Honua.Core.Features.Alerts.Domain.AlertOptions>>(),
             sp.GetRequiredService<ILogger<Honua.Alerts.Ops.NotifyingWorkflowOperationStore>>()));
         services.AddSingleton<IWorkflowOperationReconciler, DeployWorkflowReconciler>();
-        services.AddSingleton<IExecutionJobReconciler, ExecutionJobReconciler>();
 
         // Additive metadata-release layer-evolution lifecycle: create service, stage-action services,
         // reconciler, and its background loop. Sibling to the deploy reconciler; processes only
@@ -68,28 +67,57 @@ internal static class ControlPlaneReconcileRegistration
         // operation kind. Both the poll loops and the Phase 1 event handler call this single method.
         // Phase 1: the event handler is the cloud (EventBridge -> Lambda) entrypoint, and the backstop
         // sweep self-heals dropped events; the TriggerMode flag chooses poll (on-prem) vs event (cloud).
-        services.Configure<ControlPlaneTriggerOptions>(
-            configuration.GetSection(ControlPlaneTriggerOptions.SectionName));
         services.AddSingleton<IOperationReconcileDispatcher, OperationReconcileDispatcher>();
         services.AddSingleton<ControlPlaneEventHandler>();
 
-        // The backstop sweep is registered as a resolvable singleton so the EventBridge-Scheduler
-        // entrypoint (ControlPlaneEventEndpoints) can drive a single sweep on demand. The long-running
-        // host additionally registers it as a hosted timer in Poll mode (see Program.cs); in Event mode
-        // the scheduler drives SweepOnceAsync instead, so the timer is not hosted.
-        services.AddSingleton<ExecutionJobBackstopSweepService>();
-
-        // The workflow-operation backstop is resolvable for the same reason: a control-plane
-        // event-handler Lambda hosts neither backstop timer, so its backstop invocation drives both
-        // sweeps through IControlPlaneLambdaEventTargets.
+        // The workflow-operation backstop is resolvable on its own: a control-plane event-handler
+        // Lambda hosts neither backstop timer, so its backstop invocation drives both sweeps
+        // through IControlPlaneLambdaEventTargets.
         services.AddSingleton<WorkflowOperationBackstopSweepService>();
-        services.AddHonuaControlPlaneLambdaEventTargets();
+        services.AddHonuaControlPlaneLambdaEventTargets(configuration);
 
         return services;
     }
 
-    public static IServiceCollection AddHonuaControlPlaneLambdaEventTargets(this IServiceCollection services)
+    // The reconciler and the backstop sweep are resolvable singletons so the scheduler entrypoint
+    // can drive one reconcile or one sweep on a host that runs no timers.
+    public static IServiceCollection AddExecutionJobReconciliation(this IServiceCollection services)
     {
+        services.TryAddSingleton<IExecutionJobReconciler, ExecutionJobReconciler>();
+        services.TryAddSingleton<ExecutionJobBackstopSweepService>();
+        return services;
+    }
+
+    // Poll mode runs the 5 s reconcile loop; event mode leaves reconciliation to provider events.
+    // The backstop sweep and the queue-depth gauge run in both modes, except on an event-handler
+    // Lambda, which is frozen between invocations and must not hold a connection in a loop.
+    public static IServiceCollection AddExecutionJobReconciliationLoops(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        var triggerMode = configuration
+            .GetSection(ControlPlaneTriggerOptions.SectionName)
+            .GetValue("TriggerMode", ControlPlaneTriggerMode.Poll);
+        if (triggerMode == ControlPlaneTriggerMode.Poll)
+        {
+            services.AddHostedService<ExecutionJobReconcilerBackgroundService>();
+        }
+
+        if (!ControlPlaneLambdaConnectionRelease.IsEventHandlerProfile(configuration))
+        {
+            services.AddHostedService<ExecutionJobBackstopSweepService>();
+            services.AddHostedService<ExecutionQueueDepthCollectorBackgroundService>();
+        }
+
+        return services;
+    }
+
+    public static IServiceCollection AddHonuaControlPlaneLambdaEventTargets(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        services.Configure<ControlPlaneTriggerOptions>(
+            configuration.GetSection(ControlPlaneTriggerOptions.SectionName));
         services.TryAddSingleton<IScheduledTickDispatcher, ScheduledTickDispatcher>();
         services.TryAddSingleton<IControlPlaneLambdaEventTargets, ControlPlaneLambdaEventTargets>();
         return services;

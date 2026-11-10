@@ -3,12 +3,6 @@
 
 namespace Honua.Core.Features.Capabilities;
 
-// Entitlement decides whether the durable job substrate is composed; durability attestation only decides what the server advertises.
-public sealed class DurableJobSubstrateEntitlement
-{
-    public const string CapabilityId = CapabilityUnavailableCodes.DurableJobsCapability;
-}
-
 public sealed class JobDurabilityOptions
 {
     public const string SectionName = "Jobs";

@@ -39,7 +39,7 @@
   <ItemGroup>
     <!--
       Reuses the durable job-execution substrate from Honua.Jobs (the shared
-      JobExecutionService loop, RedisJobQueue, and Redis-backed stores). The
+      JobExecutionService loop and the PostgreSQL job stores). The
       worker DELIBERATELY does NOT ProjectReference Honua.Server — ADR-0038's
       lean-worker boundary requires the worker image to ship only the substrate
       plus GDAL CLI shims, not the serving image's full ASP.NET / protocol /
@@ -55,7 +55,6 @@
 
   <ItemGroup>
     <!-- Microsoft.Extensions.Hosting is provided by the Worker SDK. -->
-    <PackageReference Include="StackExchange.Redis" />
     <!--
       Managed-only NTS dependencies used by the raster.clip / raster.zonal-statistics
       executors to convert the catalog's WKB clip boundary into an OGR-readable

@@ -8,22 +8,19 @@ using Npgsql;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Registers the PostgreSQL job substrate (ADR-0081) over the host's system
-/// <see cref="NpgsqlDataSource"/>. A host without that data source gets no job store, and its
-/// job capabilities report the store as not configured.
-/// </summary>
+// A host without a system NpgsqlDataSource gets no job store, and its job capabilities report the runner as unavailable.
 internal static class PostgresJobSubstrateServiceCollectionExtensions
 {
+    internal const string SystemConnectionStringName = "DefaultConnection";
+
     private const string SystemSchemaKey = "Database:Schema";
 
     public static bool HasSystemDataSource(this IServiceCollection services)
         => services.Any(descriptor => descriptor.ServiceType == typeof(NpgsqlDataSource));
 
-    /// <summary>
-    /// Registers the job store, with its clock and reconciliation candidates. Returns false, and
-    /// registers nothing, when the host has no system data source.
-    /// </summary>
+    public static bool HasExecutionJobStore(this IServiceCollection services)
+        => services.Any(descriptor => descriptor.ServiceType == typeof(IExecutionJobStore));
+
     public static bool TryAddPostgresExecutionJobStore(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -48,21 +45,10 @@ internal static class PostgresJobSubstrateServiceCollectionExtensions
         return true;
     }
 
-    private static TimeSpan ReadRetention(IConfiguration configuration, string settingName, TimeSpan defaultValue)
-        => TimeSpan.TryParse(
-            configuration[$"{JobStoreOptions.SectionName}:{settingName}"], CultureInfo.InvariantCulture, out var configured)
-            && configured > TimeSpan.Zero
-            ? configured
-            : defaultValue;
-
-    /// <summary>
-    /// Registers the job queue and the job log store. Returns false, and registers nothing, when
-    /// the job store is not registered.
-    /// </summary>
     public static bool TryAddPostgresJobQueueAndLogStore(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
-        if (!services.Any(descriptor => descriptor.ServiceType == typeof(PostgresExecutionJobStore)))
+        if (!services.Any(descriptor => descriptor.ServiceType == typeof(JobStoreDatabase)))
         {
             return false;
         }
@@ -73,4 +59,45 @@ internal static class PostgresJobSubstrateServiceCollectionExtensions
         services.TryAddSingleton<IExecutionLogStore, PostgresExecutionLogStore>();
         return true;
     }
+
+    // A job host that serves no requests holds a handful of connections: claim, heartbeat, log and reconciliation statements, one job at a time.
+    public static IServiceCollection AddJobHostSystemDataSource(this IServiceCollection services, IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        var connectionString = configuration.GetConnectionString(SystemConnectionStringName);
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new InvalidOperationException(
+                $"A job worker requires ConnectionStrings:{SystemConnectionStringName}: the system PostgreSQL database "
+                + "the serving host uses, which holds the job queue.");
+        }
+
+        var maxPoolSize = int.TryParse(
+            configuration[$"{JobStoreOptions.SectionName}:{nameof(JobStoreOptions.WorkerMaxPoolSize)}"],
+            NumberStyles.None,
+            CultureInfo.InvariantCulture,
+            out var configuredMaxPoolSize) && configuredMaxPoolSize > 0
+            ? configuredMaxPoolSize
+            : new JobStoreOptions().WorkerMaxPoolSize;
+
+        services.TryAddSingleton(_ =>
+        {
+            var builder = new NpgsqlConnectionStringBuilder(connectionString)
+            {
+                MaxPoolSize = maxPoolSize,
+                MinPoolSize = 0,
+            };
+            return NpgsqlDataSource.Create(builder.ConnectionString);
+        });
+        return services;
+    }
+
+    private static TimeSpan ReadRetention(IConfiguration configuration, string settingName, TimeSpan defaultValue)
+        => TimeSpan.TryParse(
+            configuration[$"{JobStoreOptions.SectionName}:{settingName}"], CultureInfo.InvariantCulture, out var configured)
+            && configured > TimeSpan.Zero
+            ? configured
+            : defaultValue;
 }

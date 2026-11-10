@@ -12,4 +12,6 @@ internal sealed class JobStoreOptions
 
     /// <summary>How long a job's log is kept from its first entry unless a caller sets another period.</summary>
     public TimeSpan LogRetention { get; set; } = TimeSpan.FromDays(7);
+
+    public int WorkerMaxPoolSize { get; set; } = 4;
 }

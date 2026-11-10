@@ -337,18 +337,6 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
         connectedRedis = ConnectionMultiplexer.Connect(redisOptions);
         builder.Services.TryAddSingleton<IConnectionMultiplexer>(connectedRedis);
 
-        // The durable job substrate is composed only when it is ENTITLED (honua-server#4502).
-        // The multiplexer above is registered regardless, because requiresDurableDistributedEvents
-        // connects infrastructure Redis for distributed events in every non-Development/Test
-        // deployment — so it is not evidence of a jobs entitlement, and AddGeoprocessing keys the
-        // IExecutionJobStore registration on THIS marker instead. Deliberately independent of the
-        // durability attestation registered below: durability decides what is advertised,
-        // entitlement decides what exists.
-        if (redisCacheEntitled)
-        {
-            builder.Services.TryAddSingleton(new DurableJobSubstrateEntitlement());
-        }
-
         if (!connectedRedis.IsConnected)
         {
             if (requireRedisAtStartup)
@@ -688,13 +676,11 @@ builder.Services.AddHonuaBatchAndDeployBackends();
 builder.Services.AddHonuaSelfHostedRollingProxy(builder.Configuration);
 // ---- End extracted block
 
-// Gated on the ENTITLED substrate, not merely a connected multiplexer (honua-server#4502): the
-// members of this block take IExecutionJobStore as a required dependency, and AddGeoprocessing
-// composes that store only when the entitlement marker is present. Keying the two on different
-// facts is precisely what made a non-AOF Redis abort ServiceProvider validation with 31
-// unresolved-service failures; an unentitled deployment with connected infrastructure Redis was
-// the second trigger of the same defect.
-if (connectedRedis != null && redisCacheEntitled)
+// The workflow, proposal and release members of this block are stored in Redis and also take the
+// job store, which exists only on a host with a system database. A Test host registers its data
+// source after this point, from the test fixture.
+var hostHasSystemDatabase = !registerProviderInfrastructure || builder.Services.HasSystemDataSource();
+if (connectedRedis != null && redisCacheEntitled && hostHasSystemDatabase)
 {
     builder.Services.AddHonuaControlPlaneReconcilers(builder.Configuration);
 
@@ -720,7 +706,6 @@ if (connectedRedis != null && redisCacheEntitled)
         if (controlPlaneTriggerMode == Honua.ControlPlane.ControlPlaneTriggerMode.Poll)
         {
             builder.Services.AddHostedService<DeployWorkflowReconcilerBackgroundService>();
-            builder.Services.AddHostedService<ExecutionJobReconcilerBackgroundService>();
             builder.Services.AddHostedService<Honua.ControlPlane.MetadataReleaseReconcilerBackgroundService>();
             builder.Services.AddHostedService<Honua.ControlPlane.CoordinatedReleaseReconcilerBackgroundService>();
         }
@@ -732,21 +717,14 @@ if (connectedRedis != null && redisCacheEntitled)
         // hosts keep them.
         if (!Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.IsEventHandlerProfile(builder.Configuration))
         {
-            // The backstop sweeps ship in BOTH modes so a dropped/missed event (or, under poll, a wedged
-            // loop) self-heals. They are low-frequency and are a no-op when the active operations are
-            // fresh. The execution-job backstop covers Batch jobs; the workflow backstop covers the
-            // deploy/metadata/coordinated operations and walks any wedged staged release forward.
-            builder.Services.AddHostedService<Honua.ControlPlane.ExecutionJobBackstopSweepService>();
+            // The workflow backstop ships in BOTH modes so a dropped/missed event (or, under poll, a
+            // wedged loop) self-heals. It covers the deploy/metadata/coordinated operations and walks
+            // any wedged staged release forward.
             builder.Services.AddHostedService<Honua.ControlPlane.WorkflowOperationBackstopSweepService>();
-
-            // GP-plane observability spine (#2463): sample the execution-job store on a low-frequency
-            // loop and publish per-(status, backend) queue depth for the honua.execution.queue.depth
-            // gauge. Runs in both trigger modes since it only reads state to emit telemetry.
-            builder.Services.AddHostedService<Honua.ControlPlane.ExecutionQueueDepthCollectorBackgroundService>();
 
             // Graduated ops-findings autonomy (#2557): a leased singleton evaluator that can
             // route auto-safe remediation findings back through the operation gateway. It is
-            // only hosted when Redis/job-store coordination is active; no-Redis hosts stay inert.
+            // only hosted with the Redis-backed operation gateway; no-Redis hosts stay inert.
             builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.OpsFindingsAutonomyEvaluationService>();
         }
     }
@@ -806,7 +784,7 @@ else
 // HONUA_CONTROL_PLANE_LAMBDA_HANDLER is set, Redis or not, so what it resolves is registered on
 // every host. On a Redis-off cell the Redis-independent ticks run and the rest refuse with a typed
 // 503 (missingDependency=redis) instead of a 500 (honua-release run 38242272260).
-builder.Services.AddHonuaControlPlaneLambdaEventTargets();
+builder.Services.AddHonuaControlPlaneLambdaEventTargets(builder.Configuration);
 
 // Pending-approval notification channel (#1695): emitted from the gateway/store
 // boundary, not per-endpoint. Safe to register regardless of Redis availability.
@@ -1127,6 +1105,15 @@ builder.Services.AddAdminRealtime(builder.Configuration);
 if (!isTestEnvironment)
 {
     builder.Services.AddOrchestrationBackgroundServices(builder.Configuration);
+}
+
+if (builder.Services.HasExecutionJobStore())
+{
+    builder.Services.AddExecutionJobReconciliation();
+    if (!isTestEnvironment)
+    {
+        builder.Services.AddExecutionJobReconciliationLoops(builder.Configuration);
+    }
 }
 
 var offlineSyncEnabled = CapabilityFlagOptions.IsExperimentalEnabled(builder.Configuration, "sync.offline");

@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
@@ -18,15 +17,14 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using StackExchange.Redis;
 
 namespace Honua.Worker.Gdal;
 
 /// <summary>
 /// Registers the heavyweight GDAL worker. The worker reuses the durable
-/// job-execution substrate from <c>Honua.Server</c> (the same
-/// <c>JobExecutionService</c> claim/lease/heartbeat loop, <c>RedisJobQueue</c>,
-/// and Redis-backed stores) rather than forking a parallel runtime — it simply
+/// job-execution substrate from <c>Honua.Jobs</c> (the same
+/// <c>JobExecutionService</c> claim/lease/heartbeat loop and PostgreSQL job
+/// stores) rather than forking a parallel runtime — it simply
 /// registers a native-profile <see cref="IJobExecutor"/> set and lets the shared
 /// loop dispatch to it. GDAL is reached through the <c>gdalwarp</c> / <c>ogr2ogr</c>
 /// CLI tools shipped in the worker image base layer; no managed GDAL bindings or
@@ -48,25 +46,19 @@ public static class GdalWorkerServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Wires the GDAL worker host: Redis connection, the shared durable execution
+    /// Wires the GDAL worker host: the system database connection, the shared durable execution
     /// substrate (queue, job store, log store, cancellation registry), the two
     /// substrate hosted services (execution + reconciliation), and the
     /// native-profile GDAL executors.
     /// </summary>
     /// <param name="services">Service collection.</param>
-    /// <param name="configuration">Host configuration. Requires the <c>redis</c> connection string.</param>
+    /// <param name="configuration">Host configuration. Requires the <c>DefaultConnection</c> connection string.</param>
     public static IServiceCollection AddGdalWorker(
         this IServiceCollection services,
         IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
-
-        var redisConnectionString = configuration.GetConnectionString("redis")
-            ?? configuration["ConnectionStrings:redis"]
-            ?? throw new InvalidOperationException(
-                "The GDAL worker requires a 'redis' connection string (the durable job substrate's "
-                + "coordination layer per ADR-0031 / ADR-0038).");
 
         services.Configure<LicenseOptions>(configuration.GetSection(LicenseOptions.SectionName));
         if (LicenseOptions.ParseMode(configuration[$"{LicenseOptions.SectionName}:Mode"]) == LicenseMode.Disabled)
@@ -87,60 +79,9 @@ public static class GdalWorkerServiceCollectionExtensions
             services.AddHostedService(sp => sp.GetRequiredService<FileBackedLicenseService>());
         }
 
-        var redisOptions = ConfigurationOptions.Parse(redisConnectionString, ignoreUnknown: true);
-        redisOptions.AllowAdmin = true;
-        redisOptions.AbortOnConnectFail = true;
-        var redis = ConnectionMultiplexer.Connect(redisOptions);
-        // The durability attestation is INFORMATION (owner ruling 2026-10-10): a connected Redis
-        // runs the worker whatever it says, so the worker starts on managed Redis that blocks
-        // CONFIG (AWS ElastiCache, MemoryDB). Only the explicit Jobs:RequireDurableStore=true
-        // opt-in turns a non-attested outcome into a typed startup refusal, exactly as on the
-        // serving host.
-        var durability = RedisDurabilityAttestor.InspectAsync(redis).GetAwaiter().GetResult();
-        var requireDurableStore = bool.TryParse(
-                configuration[$"{JobDurabilityOptions.SectionName}:{nameof(JobDurabilityOptions.RequireDurableStore)}"],
-                out var required)
-            && required;
-        if (!durability.Accepted && requireDurableStore)
-        {
-            redis.Dispose();
-            throw new DurableJobSubstrateNotAttestedException(
-                durability.FailureCause ?? DurableJobSubstrateCause.RedisAttestationUnavailable,
-                durability.FailureDetail);
-        }
-
-        services.TryAddSingleton<IConnectionMultiplexer>(redis);
-        if (durability.Attestation is not null)
-        {
-            services.TryAddSingleton(durability.Attestation);
-        }
-
-        services.AddHostedService(sp => new GdalWorkerRedisDurabilityReporter(
-            durability.Attestation is not null,
-            durability.FailureCause,
-            durability.FailureDetail,
-            sp.GetRequiredService<ILogger<GdalWorkerRedisDurabilityReporter>>()));
-
-        // Shared durable substrate stores. These are the same internal Redis-backed
-        // implementations the API/serving host registers; the worker host reuses them
-        // so claim/lease/heartbeat/finalization semantics are identical.
-        services.TryAddSingleton<IExecutionJobStore>(sp =>
-            new RedisExecutionJobStore(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<ILogger<RedisExecutionJobStore>>()));
-
-        services.TryAddSingleton<RedisJobQueue>(sp =>
-            new RedisJobQueue(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<IExecutionJobStore>(),
-                sp.GetRequiredService<ILogger<RedisJobQueue>>()));
-        services.TryAddSingleton<IJobQueue>(sp => sp.GetRequiredService<RedisJobQueue>());
-        services.TryAddSingleton<IQueueClaimReconciler>(sp => sp.GetRequiredService<RedisJobQueue>());
-
-        services.TryAddSingleton<IExecutionLogStore>(sp =>
-            new RedisExecutionLogStore(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<ILogger<RedisExecutionLogStore>>()));
+        services.AddJobHostSystemDataSource(configuration);
+        services.TryAddPostgresExecutionJobStore(configuration);
+        services.TryAddPostgresJobQueueAndLogStore();
 
         // Worker-side execution loop dependencies and the two hosted services. This
         // is the SAME JobExecutionService / JobReconciliationService the substrate
@@ -156,7 +97,7 @@ public static class GdalWorkerServiceCollectionExtensions
         // The per-process executors implement IProcessExecutor and self-declare their
         // process id(s) (GP Devkit authoring contract #2122), so GdalDispatchJobExecutor
         // builds its routing table by enumerating IProcessExecutor instead of a
-        // hand-maintained ctor. Shared with the Redis-free AddGdalProcessExecutors seam.
+        // hand-maintained ctor. Shared with the store-free AddGdalProcessExecutors seam.
         services.AddGdalProcessExecutors(configuration);
 
         // Register the native dispatcher as the single IJobExecutor for the
@@ -172,8 +113,8 @@ public static class GdalWorkerServiceCollectionExtensions
     /// <summary>
     /// Registers ONLY the native GDAL <see cref="IProcessExecutor"/> set plus its
     /// dependencies — the <c>GdalWorkerOptions</c>, the <see cref="IGdalCommandRunner"/>
-    /// CLI runner, and each per-process executor — with NO Redis connection, queue,
-    /// job store, or hosted execution loop. This is the Redis-free seam the GP Devkit
+    /// CLI runner, and each per-process executor — with NO database connection, queue,
+    /// job store, or hosted execution loop. This is the store-free seam the GP Devkit
     /// headless runner / <c>honua gp</c> dev CLI consume (issue #2123) so a developer
     /// can run a single native op directly without the durable substrate
     /// <see cref="AddGdalWorker"/> wires for the worker host.
