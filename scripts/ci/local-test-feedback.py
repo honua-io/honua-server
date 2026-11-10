@@ -156,6 +156,21 @@ def build_feedback(root, projects, invoke):
                 *properties], cwd=root, check=True, env=env)
 
 
+def shard_environment(execution_env, shard, directory):
+    env = execution_env.copy()
+    env.update({'HONUA_SERVER_TEST_SHARD_NAME': shard['name'], 'HONUA_SERVER_TEST_CSPROJ': shard['project'],
+                'HONUA_SERVER_TEST_FILTER': shard['filter'], 'HONUA_SERVER_TEST_LOG_NAME': 'feedback',
+                'HONUA_SERVER_TEST_CONFIGURATION': 'Release', 'HONUA_SERVER_TEST_RESULTS_DIR': str(directory),
+                'HONUA_SERVER_TEST_EXCLUDE_SLOW': 'true', 'HONUA_SERVER_TEST_EXCLUDE_FAST': 'true'})
+    for key, value in [('HONUA_SERVER_TEST_TIMEOUT_MINUTES', shard['timeoutMinutes']),
+                       ('HONUA_SERVER_TEST_MAX_CPU_COUNT', shard['maxCpuCount'])]:
+        if value is not None:
+            env[key] = str(value)
+        else:
+            env.pop(key, None)
+    return env
+
+
 def run_feedback_tests(plan, results, invoke):
     execution_env = feedback_environment()
     for index, project in enumerate(plan['units']):
@@ -168,17 +183,7 @@ def run_feedback_tests(plan, results, invoke):
     for index, shard in enumerate(plan['shards']):
         directory = results / ('shard-' + str(index))
         directory.mkdir()
-        env = execution_env.copy()
-        env.update({'HONUA_SERVER_TEST_SHARD_NAME': shard['name'], 'HONUA_SERVER_TEST_CSPROJ': shard['project'],
-                    'HONUA_SERVER_TEST_FILTER': shard['filter'], 'HONUA_SERVER_TEST_LOG_NAME': 'feedback',
-                    'HONUA_SERVER_TEST_CONFIGURATION': 'Release', 'HONUA_SERVER_TEST_RESULTS_DIR': str(directory),
-                    'HONUA_SERVER_TEST_EXCLUDE_SLOW': 'true', 'HONUA_SERVER_TEST_EXCLUDE_FAST': 'true'})
-        for key, value in [('HONUA_SERVER_TEST_TIMEOUT_MINUTES', shard['timeoutMinutes']),
-                           ('HONUA_SERVER_TEST_MAX_CPU_COUNT', shard['maxCpuCount'])]:
-            if value is not None:
-                env[key] = str(value)
-            else:
-                env.pop(key, None)
+        env = shard_environment(execution_env, shard, directory)
         invoke(['bash', 'scripts/ci/run-server-test-shard.sh'], check=True, env=env)
         require_tests(directory)
 

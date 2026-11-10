@@ -5,13 +5,15 @@ import json
 import re
 import subprocess
 
+# Native publishing, container publishing and MCP live backends consume the
+# runtime dependency graph. Keep all runtime inputs until a proven closure exists.
 LANES = {
-    'aot': r'(^eng/aot/|Aot|AOT|[.]rd[.]xml$|[.]csproj$|^src/Honua[.]Server/Program[.]cs$)',
-    'docker': r'(^docker/|(^|/)Dockerfile|^scripts/.*docker|^src/Honua[.]Server/Program[.]cs$)',
+    'aot': r'(^src/|Aot|AOT|[.]rd[.]xml$|[.]csproj$)',
+    'docker': r'(^src/|^docker/|(^|/)Dockerfile|^scripts/.*docker)',
     'postgres': r'(Postgres|PostgreSql|PostGIS|Postgis|Migrations?/|^src/Honua[.]Db/|^tests/dotnet/Honua[.]Db[.])',
     'browser': r'(^tests/(js|js-browser|shared)/|^src/Honua[.]Server/Features/(Protocols/|FeatureServer|MapServer|Ogc|Styles|Styling|Tiles)|^src/Honua[.]Protocols/|^src/Honua[.]Server/wwwroot/)',
     'python': r'(^tests/python/|^src/Honua[.]Protocols/|^src/Honua[.]Server/Features/(Protocols/|FeatureServer|Ogc))',
-    'mcp': r'(^src/Honua[.]Ai/|^tests/mcp-certification/|Mcp|MCP|(^|/)mcp/)',
+    'mcp': r'(^src/|^tests/mcp-certification/|Mcp|MCP|(^|/)mcp/)',
     'quickstart': r'(^samples/|^scripts/.*quickstart|^docker/|(^|/)Dockerfile)',
 }
 # Changes to common runtime/contracts/build inputs or shared seeds invalidate

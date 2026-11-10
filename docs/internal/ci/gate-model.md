@@ -509,11 +509,15 @@ and test durations separately. Host queue/sync timings are reported by the
 local lane runner; they are separate from execution time.
 
 Trailing `selective_base` dispatches use their verified base for the managed
-producer's affected project graph. Consumers reuse the single producer's
+producer's affected project graph. An effective full-CI decision (including a
+router promotion or manual override) builds the whole solution. Consumers reuse the single producer's
 artifacts. Server shards retain descending measured `dispatch_rank` order and
 run at most six at once (full runs retain 24). Expensive AOT, Docker,
 Postgres compatibility, browser, Python, MCP and quickstart lanes use
-`scripts/ci/affected-ci-lanes.py` to select their own inputs. Shared seed files select every compatibility lane. Shared inputs,
+`scripts/ci/affected-ci-lanes.py` to select their own inputs. Native, container
+and MCP checks conservatively include every runtime source or project change,
+including transitive publish inputs and REST/gRPC backends. Shared seed files
+select every compatibility lane. Shared inputs,
 unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the

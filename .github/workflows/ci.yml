@@ -710,10 +710,15 @@ jobs:
         # Trailing dispatches use the verified range base, rather than comparing
         # trunk to itself and unnecessarily rebuilding the entire solution.
         env:
+          FULL_CI: ${{ needs.changes.outputs.full_ci }}
           BASE_REF: ${{ github.event.pull_request.base.sha || inputs.selective_base || 'origin/trunk' }}
           HEAD_REF: ${{ github.event.pull_request.head.sha || 'HEAD' }}
         run: |
-          affected="$(scripts/ci/compute-affected-projects.sh)"
+          if [[ "${FULL_CI}" == true ]]; then
+            affected=ALL
+          else
+            affected="$(scripts/ci/compute-affected-projects.sh)"
+          fi
           if [[ -z "${affected}" || "${affected}" == "ALL" ]]; then
             mode="full"
             projects=""

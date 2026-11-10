@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Guard expensive trailing lanes without changing selection or PR/full coverage."""
 import importlib.util
+import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import unittest
 
 import yaml
@@ -44,7 +46,7 @@ class AffectedLaneTests(unittest.TestCase):
 
     def test_each_lane_selects_its_own_inputs(self):
         inputs = {
-            'aot': 'eng/aot/smoke.sh', 'docker': 'docker/Dockerfile',
+            'aot': 'tests/native/AotSmoke.cs', 'docker': 'docker/Dockerfile',
             'postgres': 'src/Honua.Db/Postgres/Query.cs',
             'browser': 'tests/js-browser/maplibre.spec.ts',
             'python': 'tests/python/test_query.py', 'mcp': 'src/Honua.Ai/Features/Grounding/Tool.cs',
@@ -53,6 +55,22 @@ class AffectedLaneTests(unittest.TestCase):
         for lane, path in inputs.items():
             with self.subTest(lane=lane):
                 self.assertTrue(MODULE.select([path])[lane])
+
+    def test_runtime_and_publish_inputs_keep_native_and_container_verification(self):
+        for path in ['src/Honua.Protocols/Stac/SearchEndpoints.cs',
+                     'src/Honua.Protocols/Stac/Honua.Protocols.Stac.csproj',
+                     'src/Honua.Scene/SceneUrls.cs']:
+            with self.subTest(path=path):
+                selected = MODULE.select([path])
+                self.assertTrue(selected['aot'])
+                self.assertTrue(selected['docker'])
+
+    def test_mcp_backend_changes_keep_certification(self):
+        for path in ['src/Honua.Server/Features/Protocols/Grpc/HonuaFeatureService.cs',
+                     'src/Honua.Server/Features/FeatureServer/Query.cs',
+                     'src/Honua.Protocols/Stac/SearchEndpoints.cs']:
+            with self.subTest(path=path):
+                self.assertTrue(MODULE.select([path])['mcp'])
 
     def test_protocol_adapters_select_wire_compatibility(self):
         selected = MODULE.select(['src/Honua.Server/Features/Protocols/OgcFeatures/Query.cs'])
@@ -74,6 +92,27 @@ class AffectedLaneTests(unittest.TestCase):
                                      '--range', 'not-a-real-reference..HEAD', '--selective', mode],
                                     cwd=ROOT, text=True, capture_output=True, check=True)
             self.assertNotIn('false', result.stdout)
+
+    def test_effective_full_ci_forces_whole_solution_producer(self):
+        ci = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
+        step = next(step for step in ci['jobs']['build']['steps'] if step.get('id') == 'affected')
+        self.assertEqual('${{ needs.changes.outputs.full_ci }}', step['env'].get('FULL_CI'))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            scripts = root / 'scripts/ci'
+            scripts.mkdir(parents=True)
+            compute = scripts / 'compute-affected-projects.sh'
+            compute.write_text('#!/bin/bash\n[[ "$FULL_CI" != true ]] || exit 99\necho tests/Example.csproj\n')
+            compute.chmod(0o755)
+            (scripts / 'protocol-profile-selection.py').write_text('print("{}")')
+            for full_ci, expected in [('true', 'full'), ('false', 'affected')]:
+                with self.subTest(full_ci=full_ci):
+                    output = root / 'output'
+                    output.write_text('')
+                    env = dict(os.environ, FULL_CI=full_ci, RUNNER_TEMP=temporary, GITHUB_OUTPUT=str(output))
+                    subprocess.run(['bash', '-e', '-c', step['run']], cwd=root, env=env,
+                                   capture_output=True, text=True, check=True)
+                    self.assertIn('mode=' + expected, output.read_text())
 
     def test_workflow_preserves_slow_first_build_reuse_and_full_fallback(self):
         ci = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
