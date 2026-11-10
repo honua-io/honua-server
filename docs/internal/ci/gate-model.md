@@ -1,7 +1,7 @@
 # CI Gate Model
 
 > Defines the five-tier quality gate model governing all CI workflows across the Honua project.
-> Last updated: 2026-09-11
+> Last updated: 2026-11-09
 
 ## Tier Definitions
 
@@ -31,13 +31,55 @@
 
 Full CI runs twice daily at `09:00` and `21:00` UTC (01:00 and 13:00 Pacific standard time). It retains protocol-profile compilation, remote-source and server execution proofs, and import/export fidelity. The existing Worker GDAL job owns native GDAL/PDAL coverage and the raster execution receipt checks.
 
+## Verification stages
+
+Every stage reacts to a repository event; no stage polls. A change is verified
+in widening rings, each cheaper than the next and each catching what the
+earlier one could not.
+
+| Stage | Trigger | Workflow | Scope | Blocks merge |
+|---|---|---|---|---|
+| **0 Pre-PR** | Author, before opening or pushing | `scripts/ci/pre-pr-check.sh` (local) | Affected build, Fast tests and affected shards on the author's machine | No; the PR template asks for the result |
+| **1 PR gate** | `pull_request` | `pr-gate.yml`, `review-gate.yml`, `repo-hygiene.yml` | Affected-scope build, selected shards, Fast/architecture, format, router validation, exact-head review | Yes: `PR Gate`, `Review Gate`, Repository hygiene |
+| **2 Pre-merge** | Trunk moves under an open PR | `pr-sync-doctor.md` and the fleet lander | A behind PR is refreshed only when trunk touched its affected projects; the refreshed head reruns stage 1. The lander merges only an exact-head green, thread-free PR | Yes, through stage 1 on the refreshed head |
+| **3 Post-merge affected** | `push` to `trunk` | `trunk-affected.yml` dispatching `ci.yml` | Selective CI over the merges since the last green CI run (`selective_base`): the shards and lanes those merges touch | No; a red run starts the CI doctor |
+| **4 Full** | `schedule` 09:00 and 21:00 UTC | `ci.yml` | The full matrix, compatibility and certification lanes | No; full proof clears the lander's trunk-red brake |
+
+Stage 3 details:
+
+- The base is the newest successful `CI` run on trunk whose head is an
+  ancestor of the pushed head, whether that run was selective or full; a
+  selective green proves its own range, so the chain of greens covers trunk.
+  With no green ancestor in the newest 50 successful runs, the dispatch is a
+  full matrix.
+- Runs queue in one concurrency group without cancellation. GitHub keeps one
+  pending run per group and replaces it with a newer one; the newer run diffs
+  from the last green head, so it covers every merge the replaced run would
+  have. A run whose push is no longer the trunk tip exits for the same reason.
+- Shards the PR gate deferred by time budget run here: the router selects
+  them again from the merged diff, so a deferred shard is verified within one
+  affected run of its merge.
+- `ci.yml` puts selective runs in their own concurrency group, so a burst of
+  merges never replaces a pending scheduled full run.
+- The dispatched run is titled `CI affected <base>..<head>`. Its `changes`
+  job prints the suspect range (`scripts/ci/trunk-suspect-range.sh`: every
+  trunk commit in the range and the pull requests it names) to the job log and
+  summary. A red run triggers the CI doctor through its `workflow_run`
+  listener on `CI`, which reads the title and the log to find the breaking
+  merge.
+- Affected runs never certify a sha: `scripts/ci/select-certified-nightly-sha.py`
+  ignores runs titled `CI affected ...`, so a selective run that finishes after
+  a full run on the same sha cannot supersede that full run's certification.
+  The full-matrix fallback is titled `CI full matrix ...` and still certifies.
+- Stage 3 is not a required check and changes no ruleset.
+
 ## PR Lane (Required Checks)
 
 These workflows are merge-blocking for all PRs to trunk:
 
 | Workflow | What it validates | Path filter |
 |---|---|---|
-| `pr-gate.yml` | **Required verification context `PR Gate`.** Admission includes tracked-text UTF-8 validation. The affected-scope warnings-as-errors producer publishes pristine, verified managed test outputs and runs the required boot/migration smoke against its canonical host output; selected shard consumers run the affected tests that fit the `pr_time_budget` in `.github/ci-shards.json` (shards over 10 measured minutes, or past 45 runner-minutes in total, are deferred to the next trunk run and named in the verdict). Independent Fast/architecture, format and CI-router jobs remain required. `required.needs` includes `pr-gate`, `fast-tests`, `format`, `ci-router-validation`, and `affected-shards`. The affected-shard aggregate enforces every selected timing/TRX result before `PR Gate` succeeds. See the [artifact contract](server-test-binary-artifacts.md) for same-run identity, bounds, rollback and scoped fallback. | None — a required context must never be path-filtered |
+| `pr-gate.yml` | **Required verification context `PR Gate`.** Admission includes tracked-text UTF-8 validation. The affected-scope warnings-as-errors producer publishes pristine, verified managed test outputs and runs the required boot/migration smoke against its canonical host output; selected shard consumers run the affected tests that fit the `pr_time_budget` in `.github/ci-shards.json` (shards over 10 measured minutes, or past 45 runner-minutes in total, are deferred to the next trunk run and named in the verdict). Independent Fast/architecture jobs (one per test group, each compiling only its test roots), format, analyzer and CI-router jobs remain required. `required.needs` includes `pr-gate`, `fast-tests`, `format`, `ci-router-validation`, and `affected-shards`. The affected-shard aggregate enforces every selected timing/TRX result before `PR Gate` succeeds. See the [artifact contract](server-test-binary-artifacts.md) for same-run identity, bounds, rollback and scoped fallback. | None — a required context must never be path-filtered |
 | `review-gate.yml` | **Required admission context `Review Gate`.** Immutable default-branch workflow policy publishes exact-head review evidence from an attesting reviewer (Codex or Claude — see [Attesting reviewers](#attesting-reviewers)) and, in enforce mode, releases one admitted PR Gate rerun. In observe mode it retains a SHA-bound decision receipt for the read-only `review-first-evidence-ledger.yml`; the ledger reports but cannot promote. Review events arrive through the read-only `review-event-bridge.yml`; no PR-authored workflow has status or Actions write authority. | None — it must publish on every PR head |
 | `repo-hygiene.yml` | **Required context `repo-hygiene / Repository hygiene`.** Reads the root allowlist and exact gate-input exceptions from the trusted base branch; checks only PR-added paths for scratch, backups, run output, dated history, product samples and unexpected roots. The shared checker is pinned by SHA, runs with read-only permissions and has a five-minute timeout. | None — it must publish on every PR head |
 | `ci.yml` | **No `pull_request` trigger.** Full CI runs twice daily at 09:00 and 21:00 UTC (01:00 and 13:00 Pacific standard time) and through manual dispatch. It covers managed builds, protocol profiles, foundation and server shards, native Worker tests, runtime proofs, architecture checks, JavaScript checks and compatibility. `CI Gate` requires the runtime proof result and appears only on full CI runs. | n/a — not PR-triggered |
@@ -109,11 +151,12 @@ diff base. At the default depth 1 those parent commits are absent, the scope
 computation force-fulls, and the optimization silently never fires.
 
 **Format scope.** The PR's existing independent format job retains its affected
-or full document selection and complete formatter restore context. It also owns
-the analyzer pass: the managed producer builds with `/p:RunAnalyzers=false`
-(about a third of its compile), and the format job then builds the affected
-or full scope with analyzers, code style and documentation diagnostics as
-warnings-as-errors, so `PR Gate` still fails on every analyzer finding. Full CI runs
+or full document selection and complete formatter restore context. A parallel
+`PR Gate / Analyzers` job of the same matrix owns the analyzer pass: every other
+PR build runs with `/p:RunAnalyzers=false`, and this job builds the diff's
+affected closure (or the full solution on fallback, and nothing when the diff
+reaches no project) with analyzers, code style and documentation diagnostics
+as warnings-as-errors, so `PR Gate` still fails on every analyzer finding. Full CI runs
 an independent full-solution format job; `CI Gate` requires it when build inputs
 are selected, without making test consumers wait for formatting.
 
@@ -217,7 +260,7 @@ certification and LLM smoke, PostgreSQL and core-package compatibility, AOT,
 Docker build, and Console quickstart smoke. Admission, routing, receipt
 aggregation and final verdict jobs remain on standard hosted runners so a
 compute-pool problem cannot strand their reporting. Light checks such as JS
-type checking also stay hosted. The PR Gate is unchanged.
+type checking also stay hosted. The PR Gate has its own selection, below.
 
 The selected runner must provide a clean Ubuntu x64 environment compatible with
 GitHub's hosted tools, Docker, passwordless sudo, .NET/Node/Python setup actions,
@@ -230,6 +273,43 @@ Main checks the chosen pool on the first ordinary combined batch using it;
 no separate branch full run is needed. Clear the variable to restore the hosted
 default for new runs. Treat existing runs as assigned to their original pool;
 main handles their completion or cancellation.
+
+## PR Gate compute runner selection
+
+`PR Gate / Runner select` decides where `pr-gate` (Build and tests),
+`fast-tests` and `format` run. With the repository variable
+`HONUA_PR_GATE_RUNNER` unset, its steps skip and those jobs stay on
+`ubuntu-latest`. Set it to `honua-build` to use the ephemeral runners on the lane
+build host (honua-iac `bootstrap/aws-build-host`, "PR Gate runners"). It also
+needs the variable `HONUA_PR_GATE_RUNNER_REGION` and the secret
+`HONUA_PR_GATE_WAKE_ROLE_ARN`. The job assumes that role through GitHub OIDC
+(`id-token: write` on this job only; the role can describe and wake the build
+host and read its heartbeat, nothing else) and runs
+`scripts/ci/select-gate-runner.sh`:
+
+- When the host's heartbeat is fresh and shows two idle runners, the three jobs
+  use the label.
+- When the host is busy, or no heartbeat arrives within three minutes, they use
+  `ubuntu-latest`. A stopped host is still woken for later runs.
+- Any failure selects `ubuntu-latest`. Every selection step is
+  `continue-on-error`, so the job cannot fail and skip the required producer,
+  which carries no job condition.
+
+Shards, admission, routing and aggregate jobs always stay hosted. Under
+`REVIEW_FIRST_MODE: enforce` the selection steps skip and the gate stays hosted:
+the review release reruns only failed jobs, so attempt 2 would reuse a choice
+made at admission and could queue on a host that has since stopped.
+
+The build-host runners are clean per job but are not hosted images. They have no
+sudo, so the disk-cleanup steps do nothing there. Docker is rootless and per job,
+and tools come from the setup actions plus the host's packages (Python 3, Node 22,
+PowerShell, git, jq). Do not point `HONUA_CI_HEAVY_RUNNER` at this label: full CI
+expects passwordless sudo.
+
+A spot interruption fails the running job. Use **Re-run all jobs**, which selects
+compute again; **Re-run failed jobs** keeps the earlier choice, and it waits if
+the host has stopped since then. Clear `HONUA_PR_GATE_RUNNER` to return new runs
+to hosted runners immediately.
 
 ## Nightly Lane
 
@@ -413,3 +493,32 @@ partial passing results); consumers must require the overall successful outcome
 as well. Missing counts stay missing. Synthetic supervisor fixtures are labelled
 as such and do not qualify a candidate. These files are diagnostic provenance;
 local files alone do not constitute a trusted release attestation.
+
+### Pre-PR and trailing affected execution
+
+`pre-pr-check.sh --affected-tests` restores once, builds the affected unit-test
+closure without analyzers, then runs unit tests by default. Pass `--integration`
+with `--affected-tests` to include affected integration shards. The independent
+PR Format check retains analyzer coverage. Positively classified docs/CI-only
+changes use the existing governance checks without starting a .NET build;
+unknown or invalid routing still fails closed. A full-build fallback retains
+these Stage 0 CPU limits and disables build analyzers; its validation scope is
+unchanged. Stage 0 uses
+`HONUA_STAGE0_MAX_CPU_COUNT` (default 5, range 1–16) and reports restore, build,
+and test durations separately. Host queue/sync timings are reported by the
+local lane runner; they are separate from execution time.
+
+Trailing `selective_base` dispatches use their verified base for the managed
+producer's affected project graph. An effective full-CI decision (including a
+router promotion or manual override) builds the whole solution. Consumers reuse the single producer's
+artifacts. Server shards retain descending measured `dispatch_rank` order and
+run at most six at once (full runs retain 24). Expensive AOT, Docker,
+Postgres compatibility, browser, Python, MCP and quickstart lanes use
+`scripts/ci/affected-ci-lanes.py` to select their own inputs. Native, container
+and MCP checks conservatively include every runtime source or project change,
+including transitive publish inputs and REST/gRPC backends. Shared seed files
+select every compatibility lane. Shared inputs,
+unknown paths, missing diff evidence, and the canonical router's `run_all`
+fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
+as a prerequisite. PR routing, required check names, shard definitions, and the
+twice-daily full matrix are preserved.

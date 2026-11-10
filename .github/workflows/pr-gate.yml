@@ -52,10 +52,66 @@ env:
   AFFECTED_SHARDS_CAP: '6'
 
 jobs:
-  format:
-    name: PR Gate / Format
+  # Chooses compute for the heavy jobs: the build-host runner label in
+  # vars.HONUA_PR_GATE_RUNNER when the host has idle runners, else ubuntu-latest.
+  # With the variable unset every step skips and the output stays ubuntu-latest.
+  # This job must never fail: its dependents include the required producer,
+  # which may not carry a job condition. Step timeouts therefore sum below the
+  # job timeout, so a slow step falls back to hosted instead of failing the job. Enforce mode stays hosted because the
+  # review release reruns only failed jobs and would reuse a stale choice.
+  runner-select:
+    name: PR Gate / Runner select
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      runner: ${{ steps.select.outputs.runner || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: vars.HONUA_PR_GATE_RUNNER != '' && env.REVIEW_FIRST_MODE != 'enforce'
+        continue-on-error: true
+        timeout-minutes: 1
+        with:
+          sparse-checkout: scripts/ci/select-gate-runner.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Assume the build-host wake role
+        if: vars.HONUA_PR_GATE_RUNNER != '' && env.REVIEW_FIRST_MODE != 'enforce' && github.event_name == 'pull_request'
+        continue-on-error: true
+        timeout-minutes: 2
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6
+        with:
+          role-to-assume: ${{ secrets.HONUA_PR_GATE_WAKE_ROLE_ARN }}
+          aws-region: ${{ vars.HONUA_PR_GATE_RUNNER_REGION }}
+          mask-aws-account-id: true
+
+      - name: Select compute
+        id: select
+        if: vars.HONUA_PR_GATE_RUNNER != '' && env.REVIEW_FIRST_MODE != 'enforce'
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          HONUA_PR_GATE_RUNNER: ${{ vars.HONUA_PR_GATE_RUNNER }}
+        run: scripts/ci/select-gate-runner.sh
+
+  format:
+    name: PR Gate / ${{ matrix.check }}
+    needs: runner-select
+    runs-on: ${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 45
+    # Format and the analyzer build run side by side; each needs the restore only.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - check: Format
+            format: 'true'
+            analyzer-build: 'false'
+          - check: Analyzers
+            format: 'false'
+            analyzer-build: 'true'
     steps:
       # `rerun-failed-jobs` only releases jobs that failed attempt 1. Make this
       # independent path an admission failure too, otherwise a skipped-success
@@ -112,11 +168,20 @@ jobs:
         uses: ./.github/actions/format-check
         with:
           format-scope: affected
+          format: ${{ matrix.format }}
+          analyzer-build: ${{ matrix.analyzer-build }}
 
   fast-tests:
-    name: PR Gate / Fast and architecture
-    runs-on: ubuntu-latest
+    name: PR Gate / Fast and architecture (${{ matrix.test-group }})
+    needs: runner-select
+    runs-on: ${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 45
+    # Each group compiles only its own test roots; the producer and the analyzer
+    # job compile the diff's affected closure.
+    strategy:
+      fail-fast: false
+      matrix:
+        test-group: [architecture, unit-fast, server-fast, server-governance]
     steps:
       # `rerun-failed-jobs` only releases jobs that failed attempt 1. Make this
       # independent path an admission failure too, otherwise a skipped-success
@@ -156,14 +221,12 @@ jobs:
         id: docs-only
         run: scripts/ci/docs-only-diff.sh --github-output
 
+      # One test group builds a fraction of the solution, so the deletion runs in
+      # the background while setup and the build proceed.
       - name: Free disk space
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         run: |
-          sudo rm -rf /usr/local/lib/android || true
-          sudo rm -rf /usr/share/swift || true
-          sudo rm -rf /usr/local/.ghcup || true
-          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
-          df -h / || true
+          nohup sudo rm -rf /usr/local/lib/android /usr/share/swift /usr/local/.ghcup /opt/hostedtoolcache/CodeQL >/dev/null 2>&1 &
 
       - name: Setup .NET
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
@@ -177,10 +240,12 @@ jobs:
         uses: ./.github/actions/lean-gate
         with:
           phase: all
-          trx-prefix: pr-fast
-          prepull-postgis: 'true'
-          build-scope: affected
+          test-group: ${{ matrix.test-group }}
+          trx-prefix: pr-fast-${{ matrix.test-group }}
+          prepull-postgis: ${{ matrix.test-group == 'server-governance' }}
+          build-scope: test-roots
           run-format: 'false'
+          run-analyzers: 'false'
 
       - name: Revalidate exact-head review before success
         if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
@@ -205,7 +270,8 @@ jobs:
     # This exact string is the branch-protection verification context. Changing it
     # silently un-gates trunk or leaves pull requests waiting forever.
     name: PR Gate / Build and tests
-    runs-on: ubuntu-latest
+    needs: runner-select
+    runs-on: ${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}
     # Runtime toolchain proofs run in the full CI workflow.
     timeout-minutes: 75
     outputs:
@@ -508,15 +574,17 @@ jobs:
           trx-prefix: pr-gate
           prepull-postgis: 'true'
           # Per-PR only. The gate compiles the diff's reverse-dependency closure
-          # plus every project its own --no-build test steps consume, and falls
-          # back to the full solution whenever the diff base is untrustworthy or
-          # shared build infrastructure changed. A closure miss fails the merge
-          # train's full-solution build before landing, so it is fixed forward
-          # and never reaches trunk unverified.
+          # plus the shards' managed projects and the host the boot smoke runs,
+          # and falls back to the full solution whenever the diff base is
+          # untrustworthy or shared build infrastructure changed. A closure miss
+          # fails the merge train's full-solution build before landing, so it is
+          # fixed forward and never reaches trunk unverified.
           build-scope: affected
-          # Format retains this same affected/full/skip contract in the parallel
-          # format job above. The default remains inline for every other caller.
+          test-group: producer
+          # Format and analyzers retain this same affected/full contract in the
+          # parallel format matrix above. Every other caller keeps both inline.
           run-format: 'false'
+          run-analyzers: 'false'
 
       - name: Publish pristine managed test outputs
         id: managed-producer

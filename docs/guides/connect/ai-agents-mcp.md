@@ -52,7 +52,7 @@ Clients may send one printable `Idempotency-Key` header of up to 128 characters 
 
 ## Folder management
 
-The `configure` view exposes `honua_list_folders`, `honua_create_folder`,
+The `folders` view exposes `honua_list_folders`, `honua_create_folder`,
 `honua_update_folder`, `honua_delete_folder` and `honua_move_service`. Mutations
 submit canonical proposals; review and approve them in Console. Supply the
 catalog ETag from the Folder listing as `If-Match`. Moving a Service uses its
