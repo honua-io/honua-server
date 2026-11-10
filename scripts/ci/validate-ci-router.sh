@@ -89,6 +89,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
 fi
 
 echo "Validating ci-shards.json structure..."
+validate_shard_structure() {
 jq -e '
   type == "object"
   and (.infrastructure_paths | type == "array")
@@ -140,6 +141,8 @@ jq -e '
     )
   )
 ' .github/ci-shards.json >/dev/null
+}
+run_fixture shard-structure validate_shard_structure
 
 # #2721: the artifact registry must cover the exact unique shard-project set, and
 # its package/restore contract must fail closed on RID leakage, tampering and limits.
@@ -170,6 +173,8 @@ run_fixture managed-artifact-client node --test .github/actions/managed-test-art
 # its log/timing/TRX artifacts, and the failure surfaces as an unattributable
 # cancellation instead of an actionable capacity signal.
 echo "Validating shard timeout budgets..."
+validate_shard_budgets() {
+local budget_violations
 budget_violations="$(jq -r '
   (.shard_budget_policy.min_job_overhead_minutes // 10) as $gap
   | .shards[]
@@ -181,6 +186,8 @@ if [[ -n "${budget_violations}" ]]; then
   printf '%s\n' "${budget_violations}" >&2
   exit 1
 fi
+}
+run_fixture shard-budgets validate_shard_budgets
 
 echo "Validating shard headroom instrumentation..."
 run_fixture scripts/ci/fixtures/validate-shard-headroom.sh scripts/ci/fixtures/validate-shard-headroom.sh
@@ -193,7 +200,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-actions-baseline.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-actions-baseline.py
 
   echo "Validating external sample inputs..."
-  "${PYTHON_BIN}" tests/python/unit/test_validated_sample_inputs.py
+  run_fixture tests/python/unit/test_validated_sample_inputs.py "${PYTHON_BIN}" tests/python/unit/test_validated_sample_inputs.py
 
   echo "Validating server-test archive entry checks..."
   run_fixture scripts/ci/validate-server-test-archive.test.py "${PYTHON_BIN}" scripts/ci/validate-server-test-archive.test.py
@@ -210,12 +217,15 @@ else
 fi
 
 echo "Validating targeted_override_prefixes reference real shards..."
+validate_override_references() {
 jq -e '
   ([.shards[].name]) as $names
   | (.targeted_override_prefixes // [])
   | all(.shards[] | . as $s | $names | index($s) != null)
 ' .github/ci-shards.json >/dev/null \
   || { echo "::error::a targeted_override_prefixes entry references an unknown shard name" >&2; exit 1; }
+}
+run_fixture override-references validate_override_references
 
 # The PR Gate affected-shard detector selects from this same shard map, so a
 # routing edit that stops a feature namespace selecting its owning shard has to
@@ -255,7 +265,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/validate-docker-gate-timeouts.py "${PYTHON_BIN}" scripts/ci/validate-docker-gate-timeouts.py
 
   echo "Checking workflow YAML syntax..."
-  "${PYTHON_BIN}" - <<'PY'
+  run_fixture workflow-yaml "${PYTHON_BIN}" - <<'PY'
 from pathlib import Path
 try:
     import yaml

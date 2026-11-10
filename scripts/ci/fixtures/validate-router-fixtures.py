@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -15,10 +16,10 @@ class RouterFixturesTests(unittest.TestCase):
         environment = dict(os.environ, CI=ci, GITHUB_ACTIONS='', HONUA_ROUTER_WORKERS=workers)
         return subprocess.run(
             ['bash', '-c', 'set -euo pipefail\n'
-             'SCRIPT_DIR="$1/scripts/ci"\nPYTHON_BIN=python3\n'
-             'source "$SCRIPT_DIR/lib/router-fixtures.sh"\nshift\n'
+             'SCRIPT_DIR="$1/scripts/ci"\nPYTHON_BIN="$2"\n'
+             'source "$SCRIPT_DIR/lib/router-fixtures.sh"\nshift 2\n'
              'router_fixtures_init "$@"\n' + body,
-             'fixture', str(ROOT), *arguments],
+             'fixture', str(ROOT), sys.executable, *arguments],
             cwd=ROOT, env=environment, text=True, capture_output=True)
 
     def test_collects_every_failure_and_preserves_arguments(self):
@@ -83,7 +84,7 @@ router_fixtures_finish
 class ChangedInputsTests(unittest.TestCase):
     def test_missing_base_selects_everything(self):
         with tempfile.TemporaryDirectory() as directory:
-            result = subprocess.run(['python3', str(ROOT / 'scripts/ci/router-fixture-inputs.py')],
+            result = subprocess.run([sys.executable, str(ROOT / 'scripts/ci/router-fixture-inputs.py')],
                                     cwd=directory, text=True, capture_output=True, check=True)
         self.assertEqual(result.stdout.strip(), '*')
 
@@ -103,11 +104,11 @@ class ChangedInputsTests(unittest.TestCase):
             git('mv', 'old', 'new')
             (root / 'unstaged').write_text('modified')
             (root / 'untracked').write_text('new')
-            result = subprocess.run(['python3', str(ROOT / 'scripts/ci/router-fixture-inputs.py')],
+            result = subprocess.run([sys.executable, str(ROOT / 'scripts/ci/router-fixture-inputs.py')],
                                     cwd=root, text=True, capture_output=True, check=True)
             self.assertEqual(set(result.stdout.splitlines()), {'old', 'new', 'unstaged', 'untracked'})
             (root / 'newline\nname').write_text('ambiguous')
-            result = subprocess.run(['python3', str(ROOT / 'scripts/ci/router-fixture-inputs.py')],
+            result = subprocess.run([sys.executable, str(ROOT / 'scripts/ci/router-fixture-inputs.py')],
                                     cwd=root, text=True, capture_output=True, check=True)
             self.assertEqual(result.stdout.strip(), '*')
 
