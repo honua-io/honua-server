@@ -72,6 +72,10 @@ delegated to machinery that already gates trunk.
       dispatches by. Front-loading the longest shard is what keeps six parallel
       shards near one shard of wall clock.
    5. Shard name, for determinism.
+
+   Numbered children of a shard split for capacity (`WFS 1` .. `WFS 9`) form one
+   family: when the first three terms tie, each family's first child ranks
+   before any family's second child.
 5. **Spend the cap and the time budget.** PR Gate passes `--time-budget`, which
    applies `pr_time_budget` from `.github/ci-shards.json`
    (`max_shard_minutes: 10`, `max_total_minutes: 45`). Walking the ranking, a

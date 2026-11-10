@@ -85,6 +85,12 @@ ORDERING ("largest-impact first")
          near one shard of wall clock.
       5. Shard name, so the selection is deterministic.
 
+    Numbered children of a shard split for capacity ("WFS 1" .. "WFS 9") are
+    one family. Among candidates that tie on the first three terms, each
+    family's first child ranks before any family's second child, so a change to
+    a class split across many children cannot spend the whole cap and time
+    budget on that one class while another changed test's owner waits.
+
     `path_hits` is computed here with the same `startswith` prefix test the
     router's jq uses. Both it and `test_class_hits` are RANKING inputs only --
     membership of the candidate set always comes from the router's own answer --
@@ -119,6 +125,7 @@ from typing import Any, Iterable, Sequence
 
 CONTRACT = "honua.pr-gate-affected-shards/v1"
 DEFAULT_CAP = 6
+SPLIT_CHILD_SUFFIX = re.compile(r" \d+$")
 TIME_BUDGET_KEY = "pr_time_budget"
 DEFERRED_SKIP_REASON = "affected_shards_deferred_to_trunk"
 DEFAULT_CONFIG = ".github/ci-shards.json"
@@ -635,6 +642,7 @@ def select(
             entry["name"],
         )
     )
+    ranked = interleave_split_families(ranked)
 
     selected, dropped, deferred = spend_budget(ranked, cap, time_budget)
 
@@ -676,6 +684,22 @@ def select(
         result["skip"] = True
         result["reason"] = DEFERRED_SKIP_REASON if deferred else "no_shards_selected"
     return result
+
+
+def interleave_split_families(ranked: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Within each tie on the routing signals, take one child per split family per round."""
+    rounds: dict[tuple[Any, ...], int] = {}
+
+    def round_of(entry: dict[str, Any]) -> int:
+        family = (tie(entry), SPLIT_CHILD_SUFFIX.sub("", entry["name"]))
+        rounds[family] = rounds.get(family, 0) + 1
+        return rounds[family]
+
+    def tie(entry: dict[str, Any]) -> tuple[Any, ...]:
+        return (-entry["test_class_hits"], -entry["path_hits"], not entry["project_affected"])
+
+    keyed = [(tie(entry), round_of(entry), position, entry) for position, entry in enumerate(ranked)]
+    return [entry for *_, entry in sorted(keyed, key=lambda item: item[:3])]
 
 
 def spend_budget(

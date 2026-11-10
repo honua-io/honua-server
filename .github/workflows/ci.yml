@@ -1433,10 +1433,10 @@ jobs:
           # Only these current shard filters select explicit Redis fixtures.
           images=()
           case "${SERVER_SHARD}" in
-            'Admin & Infrastructure'| \
+            'Admin & Infrastructure '[0-9]*| \
             'Migration'| \
             'FeatureServer Editing and Relationships'| \
-            'FeatureServer Query Services and Replication'| \
+            'FeatureServer Query Services and Replication '[0-9]*| \
             'OGC API Tiles Coverages and Processes'| \
             'GeoServices GPServer and NAServer'| \
             'Caching File Storage Styling and Infrastructure'| \
@@ -1447,7 +1447,7 @@ jobs:
             'Server Features Admin Authorization'| \
             'Server Features Admin Authorization Matrix'| \
             'Server Features Admin Network and Jobs'| \
-            'Server Features Admin Integrations and Automation'| \
+            'Server Features Admin Integrations and Automation '[0-9]*| \
             'Server Features Admin Alert Endpoints'| \
             'Server Features Streaming Snapshot and Conformance'| \
             'Server Features Data Enrichment and Capabilities'| \
