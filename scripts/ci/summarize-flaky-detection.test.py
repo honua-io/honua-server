@@ -160,7 +160,7 @@ class FlakyDetectionTests(unittest.TestCase):
 
 
 class FlakeHuntPlanTests(unittest.TestCase):
-    def plan(self, iterations, shards="WFS", project="", budget="45"):
+    def plan(self, iterations, shards="WFS 1", project="", budget="45"):
         root = Path(__file__).resolve().parents[2]
         workflow = (root / ".github/workflows/flaky-detection.yml").read_text()
         start = workflow.index("        run: |", workflow.index("      - id: plan"))

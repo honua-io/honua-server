@@ -28,6 +28,7 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Admission;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Operations;
+using Honua.Server.Tests.Features.Admin;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Security;
@@ -77,6 +78,8 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
     private FaultSwitchProposalStore _proposals = null!;
     private WebAppFixture _fixture = null!;
     private IAdminApiKeyStore _apiKeys = null!;
+    private HumanApprovalHttpClient _human = null!;
+    private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identity = AdminAuthEndpointsTests.CreateStubFactory();
 
     public async Task InitializeAsync()
     {
@@ -84,15 +87,18 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         _proposals = new FaultSwitchProposalStore(new RedisOperationProposalStore(
             _redis, NullLogger<RedisOperationProposalStore>.Instance));
 
-        _fixture = new WebAppFixture()
+        _fixture = HumanApprovalHttpClient.Configure(new WebAppFixture(), _identity)
             .ConfigureWebHost(ConfigureHost)
             .ConfigureServices(ConfigureServices);
         await _fixture.InitializeAsync();
         _apiKeys = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        _human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identity, tenantId: TenantA);
     }
 
     public async Task DisposeAsync()
     {
+        _human?.Dispose();
+        _identity.Dispose();
         foreach (var client in _clients)
         {
             client.Dispose();
@@ -127,8 +133,8 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         await RejectEvidenceTamperAsync("descriptor-revision-mismatch", evidence => evidence with { DescriptorRevision = "changed" }, receipts);
         await RejectEvidenceTamperAsync("policy-revision-mismatch", evidence => evidence with { PolicyRevision = "changed" }, receipts);
         await RejectPayloadTamperAsync(receipts);
-        await RejectSelfApprovalAsync(receipts);
-        await RejectExpiredEvidenceAsync(receipts);
+        await RejectNoninteractiveProposerApprovalAsync(receipts);
+        await RejectExpiredHumanCapabilityAsync(receipts);
         await RejectRevokedBeforeCallAsync(receipts);
         await RejectRevokedBeforeApprovalAsync(receipts);
         await RejectUnauthorizedApproverAsync(receipts);
@@ -143,7 +149,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
             "allow-deploy", "allow-metadata-release", "direct-execution", "opaque-extra-field",
             "unsupported-descriptor", "parameter-tamper", "candidate-mismatch", "tenant-mismatch",
             "target-mismatch", "descriptor-revision-mismatch", "policy-revision-mismatch",
-            "payload-digest-mismatch", "proposer-self-approval", "expired", "revoked-before-call",
+            "payload-digest-mismatch", "noninteractive-proposer-approval", "human-capability-expired", "revoked-before-call",
             "revoked-before-approval", "unauthorized-approver", "cross-tenant-read", "sequential-replay",
             "concurrent-approval", "proposal-store-failure", "audit-store-failure",
         };
@@ -219,10 +225,8 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
             Evidence = context.Proposal.Evidence! with { DescriptorRevision = "invalid-for-audit-test" }
         };
         (await _proposals.TrySetAsync(changed)).Should().BeTrue();
-        var approver = await CreateKeyAsync($"audit-outage-approver-{Guid.NewGuid():N}", ["admin:*"]);
         _auditFailure.FailWrites = true;
-        using var response = await CreateClient(approver.Key, TenantA).PostAsync(
-            $"/api/v1/admin/proposals/{changed.ProposalId}/approve", null);
+        using var response = await _human.ApproveAsync(changed.ProposalId);
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, await response.Content.ReadAsStringAsync());
         MutationCount.Should().Be(before);
         (await _proposals.GetAsync(changed.ProposalId))!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
@@ -241,10 +245,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         var proposal = await CreateProposalAsync(toolName);
         MutationCount.Should().Be(before, "model output and proposal creation must not actuate");
 
-        var approver = await CreateKeyAsync($"approver-{Guid.NewGuid():N}", ["admin:*"]);
-        var approverClient = CreateClient(approver.Key, TenantA);
-        using var approval = await approverClient.PostAsync(
-            $"/api/v1/admin/proposals/{proposal.Proposal.ProposalId}/approve", null);
+        using var approval = await _human.ApproveAsync(proposal.Proposal.ProposalId);
         approval.StatusCode.Should().Be(HttpStatusCode.OK, await approval.Content.ReadAsStringAsync());
 
         var persisted = await _proposals.GetAsync(proposal.Proposal.ProposalId);
@@ -270,7 +271,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         evidence.McpSessionId.Should().NotBeNullOrWhiteSpace();
         evidence.McpCallId.Should().NotBeNullOrWhiteSpace();
         persisted.RequestedBy.Should().Contain($":api-key:{proposal.Proposer.Record.Id:D}");
-        persisted.ResolvedBy.Should().Contain($":api-key:{approver.Record.Id:D}");
+        persisted.ResolvedBy.Should().Be(_human.ActorId);
         persisted.Audit.OperationInstanceId.Should().NotBeNullOrWhiteSpace();
         persisted.Audit.AuditId.Should().NotBeNullOrWhiteSpace();
         persisted.Audit.CorrelationId.Should().NotBeNullOrWhiteSpace();
@@ -384,20 +385,23 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         var context = await CreateProposalAsync(ProposeDeployOperationTool.ToolName);
         var changed = context.Proposal with { Evidence = tamper(context.Proposal.Evidence!) };
         (await _proposals.TrySetAsync(changed)).Should().BeTrue();
-        var approver = await CreateKeyAsync($"{scenario}-approver-{Guid.NewGuid():N}", ["admin:*"]);
-        using var response = await CreateClient(approver.Key, TenantA).PostAsync(
-            $"/api/v1/admin/proposals/{changed.ProposalId}/approve", null);
+        using var response = await _human.ApproveAsync(changed.ProposalId);
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         MutationCount.Should().Be(before);
-        using var auditScope = _fixture.Services.CreateScope();
-        var audits = await auditScope.ServiceProvider.GetRequiredService<IAuditLogReader>().ListAsync(
-            new AuditLogFilter { ResourceId = changed.ProposalId, PageSize = 20 });
+        await AssertApprovalDenialAsync(changed, "evidence_invalid");
+        receipts.Add(ToReceipt(scenario, "rejected-at-approval", changed, 0));
+    }
+
+    private async Task AssertApprovalDenialAsync(OperationProposal proposal, string reason)
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var audits = await scope.ServiceProvider.GetRequiredService<IAuditLogReader>().ListAsync(
+            new AuditLogFilter { ResourceId = proposal.ProposalId, PageSize = 20 });
         var denial = audits.Items.Should().ContainSingle(item => item.Action == "operation.approval_denied").Subject;
         denial.Outcome.Should().Be(AuditOutcome.Denied);
-        denial.CorrelationId.Should().Be(changed.Audit.CorrelationId ?? changed.ProposalId);
+        denial.CorrelationId.Should().Be(proposal.Audit.CorrelationId ?? proposal.ProposalId);
         using var details = JsonDocument.Parse(denial.Details);
-        details.RootElement.GetProperty("reason").GetString().Should().Be("evidence_invalid");
-        receipts.Add(ToReceipt(scenario, "rejected-at-approval", changed, 0));
+        details.RootElement.GetProperty("reason").GetString().Should().Be(reason);
     }
 
     private async Task RejectPayloadTamperAsync(List<JourneyReceipt> receipts)
@@ -412,17 +416,17 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         {
             Plan = plan,
             SealedPlanHash = OperationApprovalPlanSeal.Compute(plan),
+            Initiation = context.Proposal.Initiation! with { PlanHash = OperationApprovalPlanSeal.Compute(plan) },
         };
         (await _proposals.TrySetAsync(changed)).Should().BeTrue();
-        var approver = await CreateKeyAsync($"payload-approver-{Guid.NewGuid():N}", ["admin:*"]);
-        using var response = await CreateClient(approver.Key, TenantA).PostAsync(
-            $"/api/v1/admin/proposals/{changed.ProposalId}/approve", null);
+        using var response = await _human.ApproveAsync(changed.ProposalId);
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         MutationCount.Should().Be(before);
+        await AssertApprovalDenialAsync(changed, "evidence_invalid");
         receipts.Add(ToReceipt("payload-digest-mismatch", "rejected-at-approval", changed, 0));
     }
 
-    private async Task RejectSelfApprovalAsync(List<JourneyReceipt> receipts)
+    private async Task RejectNoninteractiveProposerApprovalAsync(List<JourneyReceipt> receipts)
     {
         var before = MutationCount;
         var context = await CreateProposalAsync(ProposeDeployOperationTool.ToolName);
@@ -430,22 +434,22 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
             $"/api/v1/admin/proposals/{context.Proposal.ProposalId}/approve", null);
         response.StatusCode.Should().BeOneOf(HttpStatusCode.Forbidden, HttpStatusCode.Conflict);
         MutationCount.Should().Be(before);
-        receipts.Add(ToReceipt("proposer-self-approval", "rejected-at-approval", context.Proposal, 0));
+        receipts.Add(ToReceipt("noninteractive-proposer-approval", "rejected-at-approval", context.Proposal, 0));
     }
 
-    private async Task RejectExpiredEvidenceAsync(List<JourneyReceipt> receipts)
+    private async Task RejectExpiredHumanCapabilityAsync(List<JourneyReceipt> receipts)
     {
         var before = MutationCount;
         var context = await CreateProposalAsync(ProposeDeployOperationTool.ToolName);
-        var approver = await CreateKeyAsync($"expired-approver-{Guid.NewGuid():N}", ["admin:*"]);
+        var review = await _human.OpenReviewAsync(context.Proposal.ProposalId);
         _clock.Advance(TimeSpan.FromSeconds(31));
         try
         {
-            using var response = await CreateClient(approver.Key, TenantA).PostAsync(
-                $"/api/v1/admin/proposals/{context.Proposal.ProposalId}/approve", null);
-            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            using var response = await _human.SubmitReviewAsync(context.Proposal.ProposalId, review);
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
             MutationCount.Should().Be(before);
-            receipts.Add(ToReceipt("expired", "rejected-at-approval", context.Proposal, 0));
+            await AssertApprovalDenialAsync(context.Proposal, "human_session_required");
+            receipts.Add(ToReceipt("human-capability-expired", "rejected-at-approval", context.Proposal, 0));
         }
         finally
         {
@@ -483,9 +487,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         var before = MutationCount;
         var context = await CreateProposalAsync(ProposeDeployOperationTool.ToolName);
         await _apiKeys.RevokeAsync(context.Proposer.Record.Id, CancellationToken.None);
-        var approver = await CreateKeyAsync($"revocation-approver-{Guid.NewGuid():N}", ["admin:*"]);
-        using var response = await CreateClient(approver.Key, TenantA).PostAsync(
-            $"/api/v1/admin/proposals/{context.Proposal.ProposalId}/approve", null);
+        using var response = await _human.ApproveAsync(context.Proposal.ProposalId);
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         MutationCount.Should().Be(before);
         receipts.Add(ToReceipt("revoked-before-approval", "rejected-at-approval", context.Proposal, 0));
@@ -519,10 +521,9 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
     {
         var before = MutationCount;
         var context = await CreateProposalAsync(ProposeDeployOperationTool.ToolName);
-        var approver = await CreateKeyAsync($"replay-approver-{Guid.NewGuid():N}", ["admin:*"]);
-        var client = CreateClient(approver.Key, TenantA);
-        using var first = await client.PostAsync($"/api/v1/admin/proposals/{context.Proposal.ProposalId}/approve", null);
-        using var second = await client.PostAsync($"/api/v1/admin/proposals/{context.Proposal.ProposalId}/approve", null);
+        var review = await _human.OpenReviewAsync(context.Proposal.ProposalId);
+        using var first = await _human.SubmitReviewAsync(context.Proposal.ProposalId, review);
+        using var second = await _human.SubmitReviewAsync(context.Proposal.ProposalId, review);
         first.StatusCode.Should().Be(HttpStatusCode.OK);
         second.StatusCode.Should().Be(HttpStatusCode.Conflict);
         MutationCount.Should().Be(before + 1);
@@ -533,10 +534,9 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
     {
         var before = MutationCount;
         var context = await CreateProposalAsync(ProposeMetadataReleaseTool.ToolName);
-        var approver = await CreateKeyAsync($"concurrent-approver-{Guid.NewGuid():N}", ["admin:*"]);
-        var client = CreateClient(approver.Key, TenantA);
-        var path = $"/api/v1/admin/proposals/{context.Proposal.ProposalId}/approve";
-        var responses = await Task.WhenAll(client.PostAsync(path, null), client.PostAsync(path, null));
+        var review = await _human.OpenReviewAsync(context.Proposal.ProposalId);
+        var responses = await Task.WhenAll(_human.SubmitReviewAsync(context.Proposal.ProposalId, review),
+            _human.SubmitReviewAsync(context.Proposal.ProposalId, review));
         try
         {
             foreach (var response in responses)
@@ -973,7 +973,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
             ResolvedAt: proposal.ResolvedAt,
             IssuedAt: evidence?.IssuedAt,
             VerifierVerdict: evidence?.VerifierDecision,
-            ExpiryDecision: scenario == "expired" ? "expired" : "valid-at-decision",
+            ExpiryDecision: scenario == "human-capability-expired" ? "expired" : "valid-at-decision",
             NegativeReason: outcome is "allowed" or "at-most-once" ? null : scenario);
     }
 

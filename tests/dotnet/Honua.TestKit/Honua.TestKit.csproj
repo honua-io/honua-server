@@ -91,6 +91,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Honua.CloudIntegration.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="TestData/Proj/us_noaa_conus.tif" />
   </ItemGroup>
 

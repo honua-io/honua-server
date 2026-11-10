@@ -18,6 +18,7 @@ using Honua.Core.Features.Studio.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Server.Tests.Features.Admin;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -25,39 +26,26 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Tests.Features.Studio;
 
-/// <summary>
-/// Regression proof for honua-server#4901: the principal that proposed a Studio publication
-/// cannot approve it, and a different authorized principal in the same tenant can.
-/// </summary>
-/// <remarks>
-/// The Studio propose path records the Studio owner key
-/// (<c>subject:{iss}:{sub}@tenant:{tenant}</c>) as the requester, while the approval
-/// endpoint's separation-of-duties check compared the raw <c>sub</c> claim, so the two never
-/// matched and the proposer's own approval executed the publication. The tokens are
-/// deliberately <b>issuer-bearing</b>: an issuer-less identity collapses both encodings onto
-/// the bare subject and cannot observe the defect. The propose token omits the admin role
-/// because an admin-role call publishes in the same request; the admin-role token of that
-/// same subject is what attempts approval and must still be forbidden.
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
 {
     private const string JsonMediaType = "application/json";
-    private const string Issuer = "https://idp.example.com";
-    private const string Audience = "honua-mcp-client-id";
+    private const string Issuer = AdminAuthEndpointsTests.TestOidcIssuer;
+    private const string Audience = AdminAuthEndpointsTests.TestOidcAudience;
     private const string SigningKey = "studio-publication-self-approval-signing-key-at-least-32-chars";
     private const string Tenant = "tenant-a";
-    private const string SeparationOfDuties = "Separation of duties";
+    private const string HumanSessionRequired = "Human approval requires";
 
     private readonly WebAppFixture _fixture = new();
+    private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
     private readonly RedisFixture _redis = new();
     private string _denialAuditMode = "ok";
 
     public async Task InitializeAsync()
     {
         await _redis.InitializeAsync();
-        _fixture
+        HumanApprovalHttpClient.Configure(_fixture, _identityProvider)
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -75,6 +63,9 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
                 builder.UseSetting("Oidc:RequireHttps", "true");
                 builder.UseSetting("Oidc:TokenValidation:SymmetricSigningKey", SigningKey);
                 builder.UseSetting("Oidc:TokenValidation:EnableTokenReplayProtection", "false");
+                builder.UseSetting("Oidc:TokenValidation:ValidateIssuer", "true");
+                builder.UseSetting("Oidc:TokenValidation:ValidateAudience", "true");
+                builder.UseSetting("Oidc:TokenValidation:ValidateIssuerSigningKey", "true");
                 builder.UseSetting("Oidc:Generic:Enabled", "true");
                 builder.UseSetting("Oidc:Generic:Authority", Issuer);
                 builder.UseSetting("Oidc:Generic:ClientId", Audience);
@@ -91,8 +82,7 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
                     () => _denialAuditMode));
                 services.RemoveAll<IStudioPackageStore>();
                 services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
-                // The generic operator gate is admitted so the assertions isolate the
-                // separation-of-duties decision rather than an operator-grant denial.
+                // The independent operator gate remains admitted while the human channel is verified.
                 services.RemoveAll<IOperatorAuthorizationEvaluator>();
                 services.AddSingleton<IOperatorAuthorizationEvaluator, AllowAllOperatorAuthorizationEvaluator>();
             });
@@ -102,8 +92,8 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        await _fixture.DisposeAsync();
-        await _redis.DisposeAsync();
+        try { await _fixture.DisposeAsync(); }
+        finally { await _redis.DisposeAsync(); _identityProvider.Dispose(); }
     }
 
     [IntegrationTest]
@@ -111,7 +101,7 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
     [Endpoint("POST /mcp tools/call honua_studio_propose_publication")]
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     [Endpoint("GET /api/v1/admin/proposals/{id}")]
-    public async Task ApproveProposal_StudioPublicationByItsOwnIssuerBearingProposer_IsForbidden()
+    public async Task ApproveProposal_IssuerBearingRequesterBearer_RequiresHumanSession()
     {
         const string subject = "studio-proposer-alice";
         using var proposer = CreateBearerClient(CreateToken(subject));
@@ -127,14 +117,14 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
         var body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden, body);
-        body.Should().Contain(SeparationOfDuties);
+        body.Should().Contain(HumanSessionRequired);
         var after = await GetProposalAsync(sameAdmin, proposalId);
         after.GetProperty("status").GetString().Should().Be(
             "AwaitingApproval",
-            "a refused self-approval must not move the publication pointer");
+            "an unverified human decision must not move the publication pointer");
         // The detail response omits null members, so an unresolved proposal carries no resolver.
         (after.TryGetProperty("resolvedBy", out var resolvedBy) && resolvedBy.ValueKind != JsonValueKind.Null)
-            .Should().BeFalse("a refused self-approval must not record a resolver");
+            .Should().BeFalse("an unverified human decision must not record a resolver");
 
         using var scope = _fixture.Services.CreateScope();
         var stored = await scope.ServiceProvider.GetRequiredService<IOperationProposalStore>().GetAsync(proposalId);
@@ -145,27 +135,31 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
         denial.Actor.Should().Be(subject);
         denial.CorrelationId.Should().Be(stored!.Audit.CorrelationId ?? proposalId);
         using var details = JsonDocument.Parse(denial.Details!);
-        details.RootElement.GetProperty("reason").GetString().Should().Be("self_approval");
+        details.RootElement.GetProperty("reason").GetString().Should().Be("human_session_required");
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData(true)]
+    [InlineData(false)]
     [Operation(Operations.ApprovalManagement)]
     [Endpoint("POST /mcp tools/call honua_studio_propose_publication")]
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
-    public async Task ApproveProposal_StudioPublicationByADifferentPrincipal_Succeeds()
+    public async Task ApproveProposal_VerifiedHumanRequesterOrAnotherPerson_Succeeds(bool requesterApproves)
     {
         using var proposer = CreateBearerClient(CreateToken("studio-proposer-carol"));
-        using var approver = CreateBearerClient(CreateToken("studio-approver-dave", administrator: true));
+        var humanSubject = requesterApproves ? "studio-proposer-carol" : "studio-approver-dave";
+        using var approver = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider, humanSubject, Tenant);
 
         var proposalId = await ProposeAsync(proposer);
 
-        using var response = await approver.PostAsync($"/api/v1/admin/proposals/{proposalId}/approve", null);
+        using var response = await approver.ApproveAsync(proposalId);
         var body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
         using var document = JsonDocument.Parse(body);
         document.RootElement.GetProperty("status").GetString().Should().Be("Succeeded", body);
-        document.RootElement.GetProperty("resolvedBy").GetString().Should().NotContain("studio-proposer-carol");
+        document.RootElement.GetProperty("resolvedBy").GetString().Should().Contain(humanSubject);
+        document.RootElement.GetProperty("approvalChannel").GetString().Should().Be("console-interactive-oidc");
         using var scope = _fixture.Services.CreateScope();
         var audits = await scope.ServiceProvider.GetRequiredService<IAuditLogReader>().ListAsync(
             new AuditLogFilter { ResourceId = proposalId, PageSize = 20 });
@@ -175,7 +169,7 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ApprovalManagement)]
     [Endpoint("POST /mcp tools/call honua_studio_propose_publication")]
-    public async Task ApplyApprovedProposal_ApproverIdentitiesNameTheRequester_GatewayRefuses()
+    public async Task ApplyApprovedProposal_AssertedActorWithoutHumanRequest_GatewayRefuses()
     {
         const string subject = "studio-proposer-erin";
         using var proposer = CreateBearerClient(CreateToken(subject));
@@ -184,18 +178,15 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
         var requestedBy = (await GetProposalAsync(sameAdmin, proposalId)).GetProperty("requestedBy").GetString()!;
         var gateway = _fixture.Services.GetRequiredService<IOperationGateway>();
 
-        // Every approval entry point reaches the gateway, so it refuses the requester on its own
-        // even when a caller presents a different primary actor string.
         var act = () => gateway.ApplyApprovedProposalAsync(
             proposalId,
             new OperationProposalApprovalContext
             {
-                ApprovedBy = "studio-proposer-erin",
+                ApprovedBy = requestedBy,
                 TenantId = Tenant,
-                ApproverIdentities = ["studio-proposer-erin", requestedBy],
             });
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage($"{SeparationOfDuties}*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage($"{HumanSessionRequired}*");
         (await GetProposalAsync(sameAdmin, proposalId)).GetProperty("status").GetString()
             .Should().Be("AwaitingApproval");
         using var scope = _fixture.Services.CreateScope();
@@ -204,10 +195,6 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
         audits.Items.Should().ContainSingle(item => item.Action == "operation.approval_denied");
     }
 
-    /// <summary>
-    /// Composes, saves and proposes a publication as one principal over MCP, as the SDK replay
-    /// harness does, returning the proposal id the tool reports.
-    /// </summary>
     private static async Task<string> ProposeAsync(HttpClient client)
     {
         var packageKey = $"self-approval-{Guid.NewGuid():N}";
