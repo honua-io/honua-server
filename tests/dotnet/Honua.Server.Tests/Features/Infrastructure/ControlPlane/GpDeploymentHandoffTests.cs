@@ -308,13 +308,14 @@ public sealed class GpDeploymentHandoffTests(DatabaseFixtureAdapter database) : 
             executor.Executions.Should().Be(1);
             callback.Count.Should().Be(1);
             (await queue.GetQueueDepthAsync()).Should().Be(0);
+            var storedTerminal = (await store.GetAsync(job.OperationId))!;
 
             // A replayed queue delivery after cutover cannot execute a terminal job again.
             await queue.EnqueueAsync(job.OperationId);
             (await queue.TryClaimAsync("replacement-probe", new HashSet<ExecutionJobKind> { ExecutionJobKind.Geoprocessing }))
                 .Should().BeNull();
             var reread = (await store.GetAsync(job.OperationId))!;
-            reread.CompletedAt.Should().Be(terminal.CompletedAt);
+            reread.CompletedAt.Should().Be(storedTerminal.CompletedAt);
             reread.ArtifactReferences.Should().Equal(terminal.ArtifactReferences);
             executor.Executions.Should().Be(1);
         }

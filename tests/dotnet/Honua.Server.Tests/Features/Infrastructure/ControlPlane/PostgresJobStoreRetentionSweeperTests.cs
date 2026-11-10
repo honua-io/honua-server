@@ -168,7 +168,7 @@ public sealed class PostgresJobStoreRetentionSweeperTests(DatabaseFixtureAdapter
         ResultPackageId = id,
         Status = GeoprocessingWorkflowStatus.Completed,
         Summary = new ResultSummary { Title = id },
-        Provenance = null!
+        Provenance = new ProvenanceRecord { Sources = [], ProcessDefinitions = [] }
     };
 
     private static ExecutionLogEntry Entry(string message) => new()
