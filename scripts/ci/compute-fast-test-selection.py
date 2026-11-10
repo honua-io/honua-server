@@ -23,21 +23,30 @@ def select(closure, roots):
             if group == 'architecture' or set(closure).intersection(roots[group])]
 
 
+def linked_patterns(project):
+    for node in ET.parse(ROOT / project).getroot().iter():
+        if node.tag.rsplit('}', 1)[-1] in {'Compile', 'Content', 'EmbeddedResource', 'None'}:
+            yield from node.attrib.get('Include', '').replace('\\', '/').split(';')
+
+
+def normalize_link(project, include):
+    if '$(' in include:
+        raise ValueError('Cannot resolve linked build input')
+    return posixpath.normpath(posixpath.join(posixpath.dirname(project), include))
+
+
 def linked_inputs(changed, members):
     """The shared P2P closure cannot represent files linked from another directory."""
-    for project in members:
-        for node in ET.parse(ROOT / project).getroot().iter():
-            if node.tag.rsplit('}', 1)[-1] not in {'Compile', 'Content', 'EmbeddedResource', 'None'}:
-                continue
-            for include in node.attrib.get('Include', '').replace('\\', '/').split(';'):
-                if not include.startswith('../'):
-                    continue
-                if '$(' in include:
-                    raise ValueError('Cannot resolve linked build input')
-                pattern = posixpath.normpath(posixpath.join(posixpath.dirname(project), include))
-                if any(fnmatch.fnmatchcase(path, pattern) for path in changed):
-                    return True
-    return False
+    patterns = (normalize_link(project, include) for project in members
+                for include in linked_patterns(project) if include.startswith('../'))
+    return any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns for path in changed)
+
+
+def docs_proven(paths):
+    verdict = subprocess.run(
+        ['bash', 'scripts/ci/docs-only-diff.sh', '--paths'], input='\n'.join(paths) + '\n',
+        cwd=ROOT, capture_output=True, text=True, check=False)
+    return verdict.returncode == 0 and 'docs_only=true' in verdict.stdout.splitlines()
 
 
 def safe_selection(closure, members):
@@ -45,12 +54,16 @@ def safe_selection(closure, members):
         ['git', 'diff', '--no-renames', '--name-only', '-z', 'HEAD^1', 'HEAD'],
         cwd=ROOT, text=True).rstrip('\0').split('\0')
     if not closure:
-        # Only the existing governed-input classifier may prove docs safe.
-        verdict = subprocess.run(
-            ['bash', 'scripts/ci/docs-only-diff.sh', '--base', 'HEAD^1', '--head', 'HEAD'],
-            cwd=ROOT, capture_output=True, text=True, check=False)
-        return [] if verdict.returncode == 0 and 'docs_only=true' in verdict.stdout.splitlines() else list(GROUPS)
+        return [] if docs_proven(changed) else list(GROUPS)
     if 'ALL' in closure or linked_inputs(changed, members):
+        return list(GROUPS)
+    # Only ordinary managed source is represented by a project-directory/P2P
+    # closure. Prove every other input independently, including mixed diffs.
+    directories = [posixpath.dirname(project) + '/' for project in members]
+    unmapped = [path for path in changed
+                if not (path.endswith(('.cs', '.csproj'))
+                        and any(path.startswith(directory) for directory in directories))]
+    if unmapped and not docs_proven(unmapped):
         return list(GROUPS)
     return None
 

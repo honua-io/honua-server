@@ -67,6 +67,15 @@ class SelectionTests(unittest.TestCase):
                     patch.object(selection.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, verdict)):
                 self.assertEqual(expected, selection.safe_selection([], set()))
 
+    def test_mixed_governed_input_retains_all_groups(self):
+        changed = 'tests/dotnet/Honua.Core.Security.Tests/DataConnectionTests.cs\0certification/cite-protocol-requirements.v1.json\0'
+        members = {'tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj'}
+        with patch.object(selection.subprocess, 'check_output', return_value=changed), \
+                patch.object(selection, 'linked_inputs', return_value=False), \
+                patch.object(selection, 'docs_proven', return_value=False) as proof:
+            self.assertEqual(list(selection.GROUPS), selection.safe_selection(list(members), members))
+            proof.assert_called_once_with(['certification/cite-protocol-requirements.v1.json'])
+
     def test_linked_sources_retain_every_group(self):
         cases = ['tests/dotnet/Shared/ProtocolUnits/Ai/McpTaxonomyAlignmentTests.Shared.cs',
                  'tests/dotnet/Honua.Server.Tests/Features/NlQuery/NlQueryTestResources.cs']
