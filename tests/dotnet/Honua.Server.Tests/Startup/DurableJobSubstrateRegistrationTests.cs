@@ -115,7 +115,23 @@ public sealed class DurableJobSubstrateRegistrationTests
             typeof(ExecutionJobReconcilerBackgroundService),
             typeof(ExecutionJobBackstopSweepService),
             typeof(ExecutionQueueDepthCollectorBackgroundService),
+            typeof(JobStoreRetentionSweepService),
         ]);
+    }
+
+    [UnitTest]
+    public void ExecutionJobReconciliation_OnAHostWithTheJobStore_RegistersTheRetentionSweepAsAScheduledTick()
+    {
+        var services = ComposeServingHost(withSystemDatabase: true);
+
+        services.AddExecutionJobReconciliation();
+        using var provider = BuildProvider(services);
+
+        services.Should().ContainSingle(descriptor =>
+            descriptor.ServiceType == typeof(IScheduledTickHandler)
+            && descriptor.ImplementationType == typeof(JobStoreRetentionScheduledTickHandler));
+        ActivatorUtilities.CreateInstance<JobStoreRetentionScheduledTickHandler>(provider)
+            .Kind.Should().Be(ScheduledTickKind.JobStoreRetention);
     }
 
     [UnitTheory]

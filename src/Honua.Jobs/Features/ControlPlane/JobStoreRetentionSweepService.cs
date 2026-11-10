@@ -1,7 +1,18 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.ControlPlane.Abstractions;
+
 namespace Honua.ControlPlane;
+
+// Drives the sweep where no in-process timer runs, such as a serverless host.
+internal sealed class JobStoreRetentionScheduledTickHandler(JobStoreRetentionSweeper sweeper) : IScheduledTickHandler
+{
+    public ScheduledTickKind Kind => ScheduledTickKind.JobStoreRetention;
+
+    public Task RunTickAsync(CancellationToken cancellationToken = default)
+        => sweeper.SweepAsync(cancellationToken);
+}
 
 internal sealed partial class JobStoreRetentionSweepService(
     JobStoreRetentionSweeper sweeper,

@@ -79,12 +79,13 @@ internal static class ControlPlaneReconcileRegistration
         return services;
     }
 
-    // The reconciler and the backstop sweep are resolvable singletons so the scheduler entrypoint
-    // can drive one reconcile or one sweep on a host that runs no timers.
+    // The reconciler, the backstop sweep and the retention sweep tick are resolvable so the
+    // scheduler entrypoint can drive each once on a host that runs no timers.
     public static IServiceCollection AddExecutionJobReconciliation(this IServiceCollection services)
     {
         services.TryAddSingleton<IExecutionJobReconciler, ExecutionJobReconciler>();
         services.TryAddSingleton<ExecutionJobBackstopSweepService>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IScheduledTickHandler, JobStoreRetentionScheduledTickHandler>());
         return services;
     }
 

@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.ControlPlane;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
@@ -92,6 +93,21 @@ public sealed class PostgresJobStoreRetentionSweeperTests(DatabaseFixtureAdapter
         (await RowCountAsync(harness, "geoprocessing_result_packages", "job_id", "expired-package")).Should().Be(0);
         (await RowCountAsync(harness, "leases", "lease_key", "held-lease")).Should().Be(1);
         (await RowCountAsync(harness, "leases", "lease_key", "expired-lease")).Should().Be(0);
+    }
+
+    [IntegrationTest]
+    public async Task RunTickAsync_RetentionScheduledTick_DeletesExpiredTerminalJobsThroughTheSharedSweeper()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var expiredTerminal = await CreateJobAsync(harness, ExecutionJobStatus.Cancelled, expired: true);
+        var expiredButRunning = await CreateJobAsync(harness, ExecutionJobStatus.Running, expired: true);
+        var handler = new JobStoreRetentionScheduledTickHandler(CreateSweeper(harness));
+
+        handler.Kind.Should().Be(ScheduledTickKind.JobStoreRetention);
+        await handler.RunTickAsync(CancellationToken.None);
+
+        (await harness.JobStore.GetAsync(expiredTerminal)).Should().BeNull();
+        (await harness.JobStore.GetAsync(expiredButRunning)).Should().NotBeNull("a job that is not terminal is never swept");
     }
 
     [IntegrationTest]
