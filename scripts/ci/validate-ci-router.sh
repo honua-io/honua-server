@@ -48,6 +48,8 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-testcontainer-images.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-heavy-runners.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-trunk-affected.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-affected-ci-lanes.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-project-overlap.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-native-tools-image.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-gate-apt-provisioning.py --self-test
   "${PYTHON_BIN}" scripts/ci/source-inventory-pilot/test_run.py
@@ -147,6 +149,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-managed-test-build.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-artifact-install-cancellation.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-managed-ci-workflow.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-matrix-file-transport.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-managed-build.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-managed-sdk-selection.py
 fi

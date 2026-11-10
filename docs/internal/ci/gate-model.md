@@ -493,3 +493,49 @@ partial passing results); consumers must require the overall successful outcome
 as well. Missing counts stay missing. Synthetic supervisor fixtures are labelled
 as such and do not qualify a candidate. These files are diagnostic provenance;
 local files alone do not constitute a trusted release attestation.
+
+Full CI transfers the selected shard matrix as a run-and-attempt-scoped JSON
+artifact to the managed producer, cache planners and receipt verifier. Full
+filters stay out of environment variables and command arguments, whose per-string
+limits can prevent the shell from starting. Missing matrix artifacts fail the
+selected lane. PR receipt verification receives only selected shard names; its
+execution matrix and enforced test filters remain unchanged.
+
+### Pre-PR and trailing affected execution
+
+Before refreshing a behind branch, lanes and the sync doctor share
+`bash scripts/ci/compute-affected-projects.sh --trunk-overlap HEAD origin/trunk`.
+Its JSON `refresh_required` compares committed changes on both sides of their
+merge base using the canonical reverse-dependency selector. Disjoint project
+closures avoid an unnecessary merge and gate restart. Non-managed files use
+their top-level folder; root files, changed project graphs and unavailable refs
+require revalidation conservatively. This decision does not resolve conflicts
+or attest test execution. Callers must treat an execution or parsing failure
+as requiring revalidation. Commit local changes before using this mode.
+
+`pre-pr-check.sh --affected-tests` restores once, builds the affected unit-test
+closure without analyzers, then runs unit tests by default. Pass `--integration`
+with `--affected-tests` to include affected integration shards. The independent
+PR Format check retains analyzer coverage. Positively classified docs/CI-only
+changes use the existing governance checks without starting a .NET build;
+unknown or invalid routing still fails closed. A full-build fallback retains
+these Stage 0 CPU limits and disables build analyzers; its validation scope is
+unchanged. Stage 0 uses
+`HONUA_STAGE0_MAX_CPU_COUNT` (default 5, range 1–16) and reports restore, build,
+and test durations separately. Host queue/sync timings are reported by the
+local lane runner; they are separate from execution time.
+
+Trailing `selective_base` dispatches use their verified base for the managed
+producer's affected project graph. An effective full-CI decision (including a
+router promotion or manual override) builds the whole solution. Consumers reuse the single producer's
+artifacts. Server shards retain descending measured `dispatch_rank` order and
+run at most six at once (full runs retain 24). Expensive AOT, Docker,
+Postgres compatibility, browser, Python, MCP and quickstart lanes use
+`scripts/ci/affected-ci-lanes.py` to select their own inputs. Native, container
+and MCP checks conservatively include every runtime source or project change,
+including transitive publish inputs and REST/gRPC backends. Shared seed files
+select every compatibility lane. Shared inputs,
+unknown paths, missing diff evidence, and the canonical router's `run_all`
+fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
+as a prerequisite. PR routing, required check names, shard definitions, and the
+twice-daily full matrix are preserved.
