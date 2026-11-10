@@ -9,6 +9,7 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
+[Protocol(TestProtocols.TestQuality)]
 [Collection("Database")]
 public sealed class PostgresCdnReleaseRecordTests : IAsyncLifetime
 {
@@ -25,6 +26,7 @@ public sealed class PostgresCdnReleaseRecordTests : IAsyncLifetime
     public Task DisposeAsync() => _postgres.DisposeAsync();
 
     [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task TryRecordChangeAsync_TasksOfOneDeploymentStartTogether_ExactlyOneAnnouncesTheRelease()
     {
         var record = new PostgresCdnReleaseRecord(_postgres.DataSource);
@@ -36,6 +38,7 @@ public sealed class PostgresCdnReleaseRecordTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task TryRecordChangeAsync_SameReleaseRestarts_AnnouncesNothingUntilTheReleaseChanges()
     {
         var record = new PostgresCdnReleaseRecord(_postgres.DataSource);
