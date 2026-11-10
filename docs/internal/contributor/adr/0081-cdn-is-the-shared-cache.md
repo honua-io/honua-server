@@ -28,105 +28,113 @@ response whose class cannot be decided, is sent as `Cache-Control: private, no-s
 | Condition | Where it is checked |
 | --- | --- |
 | The route declares a public response class (`WithSharedCacheClass`) | Endpoint metadata; routes without it are never shared-cacheable |
-| The request is `GET` or `HEAD` and the status is 200, 204, 206 or 304 (or 404 at a generation address) | Guard, when the response starts |
-| The request carries no credential (any header, query parameter, cookie or client certificate the server accepts) and the principal is anonymous with no claims | Guard, when the response starts |
+| The request is `GET` or `HEAD` and the status is 200, 204, 206 or 304 | Guard, when the response starts |
+| The request carries no credential, names no tenant, and the principal is anonymous with no claims | Guard, when the response starts |
 | The access pipeline granted this request as an anonymous caller, and denied nothing | Recorded where access is decided (`AccessPolicyHelpers.CreateAccessDeniedResult`) |
-| No authentication decision was made and no cookie is set | Guard, when the response starts |
-| No rollout is in progress, unless the address is generation-addressed | Guard, when the response starts |
+| No authentication decision was made, no cookie is set, and the body is not a GeoServices error envelope | Guard, when the response starts |
 
 "Secured" is therefore not looked up when the header is written. It is the absence of proof that an
 anonymous caller was granted access. A layer whose access policy does not allow anonymous access
 denies the anonymous caller, so no grant is recorded; a credentialed caller is refused by the request
 check before the grant is considered.
 
-The guard runs last, when the response starts. It only removes cacheability: it never adds it. A
-handler that writes `public` by hand on a route with no declared class is overwritten.
+One callback runs when the response starts (`AuthenticationResponseCacheMiddleware`, first in the
+pipeline so that it runs last). It applies the authentication policy and then the guard. The guard
+only removes cacheability: it never adds it. A handler that writes `public` by hand on a route with
+no declared class is overwritten.
+
+Why sharing the anonymous answer is sound on this deployment:
+
+- Row-level security and field masks are selected by the caller's role claims and the layer. An
+  anonymous caller has no roles and no claim values, so every anonymous caller gets the same rows
+  and fields.
+- A grant never admits an anonymous caller; anonymous access comes only from the resource's access
+  policy, which is the same for every anonymous caller.
+- The licence that filters metadata documents is one per deployment. Earlier work kept responses
+  `private` because a CDN cannot see the licence. With one licence per deployment the only exposure
+  is a licence change, and it lasts at most the metadata lifetime (60 seconds at the CDN).
+- A request that names a tenant, by claim or by the `X-Honua-Tenant` header, is never shared.
 
 ### 2. Response classes
 
 Lifetimes are seconds. `max-age` is for browsers, which cannot be purged; `s-maxage` is for the CDN,
-which can.
+which can. `s-maxage` is always written, because the CDN's own minimum is 0 and the origin header is
+the only lifetime it has.
 
 | Response class | `Cache-Control` | `ETag` | `Vary` | Lifetime comes from |
 | --- | --- | --- | --- | --- |
-| Public tile, generation-addressed (`g` matches the current generation) | `public, max-age=31536000, s-maxage=31536000, immutable, stale-if-error=86400` | Yes | `Accept-Encoding` | Fixed: the address changes instead |
-| Public tile, plain address | `public, max-age=60, s-maxage=300, stale-while-revalidate=60, stale-if-error=86400` | Yes | `Accept-Encoding` | Per-layer setting, then the tileset setting, then `SharedCache:Tile` |
-| Public feature query | `public, max-age=0, s-maxage=30, stale-while-revalidate=30, stale-if-error=86400` | Yes | `Accept, Accept-Encoding, Prefer` | Per-layer setting, then `SharedCache:FeatureQuery` |
-| Capabilities and metadata documents, including every document that hands out a tile address | `public, max-age=30, s-maxage=60` | Yes | `Accept, Accept-Encoding, Accept-Language` | `SharedCache:MetadataDocument` |
-| Static map image | `public, max-age=0, s-maxage=60, stale-while-revalidate=30` | Yes | `Accept-Encoding` | Per-layer setting, then `SharedCache:StaticMapImage` |
-| Stored object served by the server from a key that is overwritten in place (scene assets, raster and tile archives) | `public, max-age=60, s-maxage=300` | Yes, from the store | `Accept-Encoding` | The dataset's own setting, then `SharedCache:StaticObject` |
-| Secured anything (credential on the request, authenticated principal, denied or undecided access) | `private, no-store` | Unchanged | Unchanged | Not configurable |
+| Public tile | `public, max-age=60, s-maxage=300, stale-while-revalidate=60, stale-if-error=86400` | Yes | `Origin, Accept-Encoding` | Per-layer setting, then the tileset setting, then `SharedCache:Tile` |
+| Public feature query | `public, max-age=0, s-maxage=30, stale-while-revalidate=30, stale-if-error=86400` | Yes | `Origin, Accept, Accept-Encoding, Prefer` | Per-layer setting, then `SharedCache:FeatureQuery` |
+| Capabilities and metadata documents | `public, max-age=30, s-maxage=60` | Yes | `Origin, Accept, Accept-Encoding, Accept-Language` | `SharedCache:MetadataDocument` |
+| Static map image | `public, max-age=0, s-maxage=60, stale-while-revalidate=30` | Yes | `Origin, Accept-Encoding` | Per-layer setting, then `SharedCache:StaticMapImage` |
+| Stored object served by the server from a key that is overwritten in place (scene assets) | `public, max-age=60, s-maxage=300` | Yes, from the store | `Origin, Accept-Encoding` | The dataset's own setting, then `SharedCache:StaticObject` |
+| Secured anything (credential on the request, authenticated principal, tenant named, denied or undecided access) | `private, no-store` | Unchanged | Unchanged | Not configurable |
 | Admin | `private, no-store` | Unchanged | Unchanged | Not configurable |
 | Editing (any method other than `GET` or `HEAD`) | `private, no-store` | Unchanged | Unchanged | Not configurable |
-| Errors (every 5xx, and every 4xx except a 404 at a generation address) | `private, no-store` | Unchanged | Unchanged | Not configurable |
+| Errors (every 4xx and 5xx, and every GeoServices error envelope sent as 200) | `private, no-store` | Unchanged | Unchanged | Not configurable |
 
-Objects written to object storage carry the same two shapes: `public, max-age=31536000, immutable`
-when the key is content-addressed or generation-addressed, `public, max-age=60, s-maxage=300` when
-the key is overwritten in place, and `private, no-store` for everything that is not public.
+Objects written to object storage: `public, max-age=31536000, immutable` only when the key is
+content-addressed; `public, max-age=60, s-maxage=300` when a public key is overwritten in place; and
+`private, no-store` for everything else, including exports and job outputs, which are handed out as
+presigned URLs and never pass through the CDN.
 
 Three controls set a public lifetime, in increasing precedence: the product default above; a
-per-layer lifetime (or the per-tileset lifetime where one is configured) for the classes that are
-not generation-addressed; and the emergency setting. The emergency setting forces `max-age=0,
-s-maxage=15` and drops `immutable` for the named public layers, or for all of them, without
+per-layer lifetime (or the per-tileset lifetime where one is configured); and the emergency setting,
+which forces `max-age=0, s-maxage=15` for the named public layers, or for all of them, without
 changing any stored per-layer value, and is reversed by unsetting it.
 
 `stale-if-error` is written only together with `public`, by the one component that writes `public`,
 so it never appears on a secured response.
 
-### 3. A generation in long-lived addresses
+If a table is edited outside Honua, the server does not see the change: tiles and queries refresh
+after the layer's cache lifetime, or immediately when an operator purges the layer.
 
-The generation is a short hash of three values the server already has: the catalog revision (layer
-and style changes), the feature change generation (data edits), and the release revision. No new
-counter is added.
+Every response knows its subject (service, layer and style identifiers), read from the route or
+declared by the handler. Lifetimes and the emergency setting are chosen by it today. Invalidation by
+cache tag, planned for the next release candidate, derives its tags from the same subject without
+touching a call site.
 
-It travels as the query parameter `g`, which must be part of the CDN cache key. A tile request whose
-`g` equals the current generation gets the immutable lifetime. Any other tile request, with no `g`
-or a stale one, gets the plain-address lifetime, so a client that builds tile addresses by
-convention keeps working.
+### 3. Addresses do not carry a generation
 
-Clients obtain the current address from the documents that already hand out tile addresses: OGC
-tileset links, TileJSON, style documents, VectorTileServer resources, WMTS capabilities and terrain
-metadata. Those documents are in the metadata class, so a new generation reaches clients within its
-lifetime.
+There is no per-layer generation to put in an address: the tile cache's "generation" is the stored
+object's ETag, and the only numeric change signal is one global counter that edits through Honua's
+APIs advance. Freshness is therefore governed by lifetimes and by invalidation.
 
 ### 4. Invalidation is a provider
 
 `ICdnInvalidator` takes a list of paths and returns a result. The default does nothing and says so.
-The CloudFront implementation uses the task role, one distribution id from configuration, and
-batches paths. A failure is returned, never thrown and never swallowed: release operations record it
-in the operation's warnings, and admin operations report it in the response.
+The CloudFront implementation uses the task role, the distribution id in
+`SharedCache:CloudFront:DistributionId`, and batches paths. A failure is returned, never thrown and
+never swallowed: release operations record it in the operation's warnings, and admin operations
+report it in the response.
 
 | Operation | Paths | Ordering |
 | --- | --- | --- |
 | Rollout completes | `/*` | After the operation is terminal; a failure cannot fail it |
 | Rollback completes | `/*` | After the operation is terminal; a failure cannot block it |
-| Layer or service published or enabled | That resource's path prefixes | After commit |
+| Layer or service published or enabled, service made public, style changed | That resource's path prefixes | After commit |
 | Layer or service unpublished, disabled or secured | That resource's path prefixes | After commit, before the response |
-| Service made public | That resource's path prefixes | After commit |
-| Style changed | That layer's path prefixes | After commit |
-| Operator purge, one layer | That layer's path prefixes | On request |
-| Operator purge, everything | `/*` | On request |
-
-Data edits do not invalidate: the generation changes the address.
+| Data edited through Honua's APIs | That layer's path prefixes | At most once per layer every 30 seconds per node |
+| Operator purge, one layer or everything | That layer's path prefixes, or `/*` | On request |
 
 ### 5. Rollouts
 
-While a deploy, rollback or coordinated release is in progress, two releases can answer the same
-address with different bytes. During that window no response becomes shared-cacheable, with one
-exception: a generation-addressed tile, because the release revision is part of the generation, so
-each release has its own addresses. When the operation completes, `/*` is invalidated.
+While a rollout is in progress, metadata documents are sent with `s-maxage=0`, because two releases
+can describe the same service differently. Tiles and feature queries keep their lifetimes. When the
+operation completes or rolls back, `/*` is invalidated.
 
 ## Consequences
 
 - Every response carries `Cache-Control`. Routes that do not declare a class are `private, no-store`,
-  which is safe and costs cache efficiency until they declare one.
+  which is safe and costs cache efficiency until they declare one. WMS and WMTS key-value routes are
+  in that group.
 - A route-table test fails if an admin route, an authorized route or a write route declares a public
-  class, and sweeps every route with credentials to prove the guard.
-- CloudFront must forward `g` in the cache key. Its cache policies need a minimum lifetime of 0, a
-  default equal to the product default for that behaviour, a maximum of one year, and an error
-  caching minimum of 0 (CloudFront otherwise caches errors for 10 seconds). The distribution, the
-  task-role permission and the Console's static assets are configured outside this repository.
+  class, and sweeps every route with every credential carrier to prove the guard.
+- The CloudFront cache policies need a minimum lifetime of 0, a default equal to the product default
+  for that behaviour, a maximum of one year, and an error caching minimum of 0. Every credential
+  carrier must reach the origin, and `Origin` and the negotiation headers must be in the cache key.
 - `TileOptions:CacheMaxAge` no longer sets the tile lifetime: its default of one hour would override
   the product default on every tile. A tileset entry under `TileOptions:TilesetLifecycle` still does.
+- A deployment that resolves tenants gets no shared caching.
 - An anonymous caller that edits a public layer can read a feature query up to `s-maxage` old through
-  the CDN. Layers that allow anonymous writes should set the feature query lifetime to 0.
+  the CDN.

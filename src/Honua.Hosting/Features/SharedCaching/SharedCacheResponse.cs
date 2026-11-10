@@ -127,11 +127,13 @@ internal static class SharedCacheResponse
         }
     }
 
+    // Origin is always listed: the CORS policy reflects the request origin, and only on requests that send one.
     private static string[] VaryFor(ResponseCacheClass cacheClass) => cacheClass switch
     {
-        ResponseCacheClass.FeatureQuery => [HeaderNames.Accept, HeaderNames.AcceptEncoding, "Prefer"],
-        ResponseCacheClass.MetadataDocument => [HeaderNames.Accept, HeaderNames.AcceptEncoding, HeaderNames.AcceptLanguage],
-        _ => [HeaderNames.AcceptEncoding],
+        ResponseCacheClass.FeatureQuery => [HeaderNames.Origin, HeaderNames.Accept, HeaderNames.AcceptEncoding, "Prefer"],
+        ResponseCacheClass.MetadataDocument =>
+            [HeaderNames.Origin, HeaderNames.Accept, HeaderNames.AcceptEncoding, HeaderNames.AcceptLanguage],
+        _ => [HeaderNames.Origin, HeaderNames.AcceptEncoding],
     };
 }
 
