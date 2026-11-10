@@ -10,6 +10,7 @@ on:
     paths:
       - 'src/**'
       - 'tests/dotnet/**'
+      - 'tests/fixtures/plugins/**'
       - 'tests/baselines/client-compat/**'
       - 'scripts/ci/generate-feature-catalog.sh'
       - 'scripts/ci/generate-admin-operation-parity-exports.sh'

@@ -553,7 +553,7 @@ retains its existing serializer/query/import/build-input boundary.
 
 Docs Link Gate retains its complete PR suite for documentation, skills, checker
 and manifest edits. Source/docker/eng-only edits instead run the link checker and
-its adversarial fixtures in the existing ci.yml changes job on affected trunk
+its adversarial fixtures in the existing ci.yml CI Router Validation job on affected trunk
 runs and twice-daily full runs. That job already participates in CI Gate; no
 required check name or aggregate dependency changes. The runtime URL scan still
 runs and fails the trunk gate when a source/config link breaks.
