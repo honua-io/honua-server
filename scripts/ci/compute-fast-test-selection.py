@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Select independent PR fast-test groups from the shared affected closure."""
 import argparse
+import fnmatch
 import json
 import os
+import posixpath
 from pathlib import Path
 import subprocess
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
 GROUPS = ('architecture', 'unit-fast', 'server-fast', 'server-governance')
@@ -20,6 +23,38 @@ def select(closure, roots):
             if group == 'architecture' or set(closure).intersection(roots[group])]
 
 
+def linked_inputs(changed, members):
+    """The shared P2P closure cannot represent files linked from another directory."""
+    for project in members:
+        for node in ET.parse(ROOT / project).getroot().iter():
+            if node.tag.rsplit('}', 1)[-1] not in {'Compile', 'Content', 'EmbeddedResource', 'None'}:
+                continue
+            for include in node.attrib.get('Include', '').replace('\\', '/').split(';'):
+                if not include.startswith('../'):
+                    continue
+                if '$(' in include:
+                    raise ValueError('Cannot resolve linked build input')
+                pattern = posixpath.normpath(posixpath.join(posixpath.dirname(project), include))
+                if any(fnmatch.fnmatchcase(path, pattern) for path in changed):
+                    return True
+    return False
+
+
+def safe_selection(closure, members):
+    changed = subprocess.check_output(
+        ['git', 'diff', '--no-renames', '--name-only', '-z', 'HEAD^1', 'HEAD'],
+        cwd=ROOT, text=True).rstrip('\0').split('\0')
+    if not closure:
+        # Only the existing governed-input classifier may prove docs safe.
+        verdict = subprocess.run(
+            ['bash', 'scripts/ci/docs-only-diff.sh', '--base', 'HEAD^1', '--head', 'HEAD'],
+            cwd=ROOT, capture_output=True, text=True, check=False)
+        return [] if verdict.returncode == 0 and 'docs_only=true' in verdict.stdout.splitlines() else list(GROUPS)
+    if 'ALL' in closure or linked_inputs(changed, members):
+        return list(GROUPS)
+    return None
+
+
 def plan():
     if os.environ.get('GITHUB_EVENT_NAME') != 'pull_request':
         return list(GROUPS)
@@ -32,6 +67,9 @@ def plan():
         ['git', 'ls-files', '*.csproj'], cwd=ROOT, text=True).splitlines())
     if any(project != 'ALL' and project not in members for project in closure):
         raise ValueError('Affected closure contains an unknown project')
+    safe = safe_selection(closure, members)
+    if safe is not None:
+        return safe
     roots = {}
     for group in GROUPS:
         roots[group] = subprocess.check_output(
@@ -48,7 +86,7 @@ def main():
     args = parser.parse_args()
     try:
         groups = plan()
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, ET.ParseError, subprocess.SubprocessError) as error:
         print(f'::warning::Fast-test selection unavailable; retaining every group: {error}')
         groups = list(GROUPS)
     print(json.dumps({'groups': groups}))

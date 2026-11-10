@@ -559,3 +559,5 @@ unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
+
+Fast-test selection retains every group for linked cross-project inputs and for empty closures unless the governed docs classifier positively proves the diff safe.
