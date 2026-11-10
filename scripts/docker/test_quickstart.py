@@ -124,7 +124,9 @@ class QuickstartTests(unittest.TestCase):
                    {"status": "Healthy", "entries": {"database": {"status": "Healthy"}}}]
         for status in ("Unhealthy", "Degraded"):
             reports.append({"status": "Healthy", "entries": {
-                "audit-chain-integrity": {"status": "Healthy"}, "database": {"status": status}}})
+                **healthy["entries"], "database": {"status": status}}})
+            reports.append({"status": "Healthy", "entries": {
+                "audit-chain-integrity": {**healthy["entries"]["audit-chain-integrity"], "status": status}}})
         with tempfile.TemporaryDirectory() as directory:
             report_file = Path(directory) / "health.json"
             for index, report in enumerate(reports):
