@@ -71,9 +71,9 @@ public sealed class PostgresIdempotencyReservationStoreTests(DatabaseFixtureAdap
         var abandoned = await store.TryReserveAsync(scopeKey, _reservationWindow, CancellationToken.None);
 
         await store.ReleaseAsync(abandoned!.Value, CancellationToken.None);
-        var completed = await store.TryReserveAsync(scopeKey, _reservationWindow, CancellationToken.None);
-        await store.CompleteAsync(completed!.Value, _receipt, _receiptRetention, CancellationToken.None);
-        await store.ReleaseAsync(completed.Value, CancellationToken.None);
+        var completed = (await store.TryReserveAsync(scopeKey, _reservationWindow, CancellationToken.None))!.Value;
+        await store.CompleteAsync(completed, _receipt, _receiptRetention, CancellationToken.None);
+        await store.ReleaseAsync(completed, CancellationToken.None);
 
         (await store.FindReceiptAsync(scopeKey, CancellationToken.None)).Should().Equal(_receipt);
     }
