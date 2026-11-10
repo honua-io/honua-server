@@ -124,6 +124,11 @@ test_command=(
   "${extra_args[@]}"
 )
 
+# The outer timeout covers both attempts and evidence checks.
+test_command=(python3 "${SCRIPT_DIR}/retry-failed-shard-tests.py"
+  --project "${test_csproj}" --results "${results_dir}" --log "${log_name}"
+  -- "${test_command[@]}")
+
 run_command=("${test_command[@]}")
 timeout_command=""
 if [[ -n "${timeout_minutes}" ]]; then

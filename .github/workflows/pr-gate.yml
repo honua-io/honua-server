@@ -23,6 +23,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  issues: read
   actions: read
   contents: read
   packages: read
@@ -233,6 +234,15 @@ jobs:
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Load validated flaky-test quarantine
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HONUA_TEST_QUARANTINE_FILE: ${{ runner.temp }}/honua-flake-quarantine.json
+        run: |
+          python3 scripts/ci/quarantine-issues.py snapshot --output "${HONUA_TEST_QUARANTINE_FILE}"
+          echo "HONUA_TEST_QUARANTINE_FILE=${HONUA_TEST_QUARANTINE_FILE}" >> "${GITHUB_ENV}"
+
 
       # This independent build avoids serializing Fast coverage behind the producer.
       - name: Lean gate (build and fast unit/architecture verification)
@@ -778,6 +788,14 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Load validated flaky-test quarantine
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HONUA_TEST_QUARANTINE_FILE: ${{ runner.temp }}/honua-flake-quarantine.json
+        run: |
+          python3 scripts/ci/quarantine-issues.py snapshot --output "${HONUA_TEST_QUARANTINE_FILE}"
+          echo "HONUA_TEST_QUARANTINE_FILE=${HONUA_TEST_QUARANTINE_FILE}" >> "${GITHUB_ENV}"
 
       - name: Start freeing disk space
         run: scripts/ci/server-test-shard-free-disk.sh

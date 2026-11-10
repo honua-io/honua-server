@@ -73,6 +73,7 @@ env:
   CERTIFICATION_LANE_JOBS: 'build dotnet-foundation-tests python-integration-tests test-all ci-gate'
 
 permissions:
+  issues: read
   contents: read
   packages: read
 
@@ -966,6 +967,14 @@ jobs:
             *) echo "::error::Unknown container-consuming foundation family"; exit 2 ;;
           esac
 
+      - name: Load validated flaky-test quarantine
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HONUA_TEST_QUARANTINE_FILE: ${{ runner.temp }}/honua-flake-quarantine.json
+        run: |
+          python3 scripts/ci/quarantine-issues.py snapshot --output "${HONUA_TEST_QUARANTINE_FILE}"
+          echo "HONUA_TEST_QUARANTINE_FILE=${HONUA_TEST_QUARANTINE_FILE}" >> "${GITHUB_ENV}"
+
       - name: Run foundation family tests
         timeout-minutes: 45
         run: scripts/ci/run-foundation-family.sh run ${{ matrix.family }}
@@ -1181,6 +1190,14 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Load validated flaky-test quarantine
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HONUA_TEST_QUARANTINE_FILE: ${{ runner.temp }}/honua-flake-quarantine.json
+        run: |
+          python3 scripts/ci/quarantine-issues.py snapshot --output "${HONUA_TEST_QUARANTINE_FILE}"
+          echo "HONUA_TEST_QUARANTINE_FILE=${HONUA_TEST_QUARANTINE_FILE}" >> "${GITHUB_ENV}"
 
       # Reclaim runner disk while .NET setup and cache planning run. The
       # modular topology (8 protocol

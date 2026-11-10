@@ -2130,4 +2130,8 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/test-shell-server-ownership.py
 fi
 
+if [[ -n "${PYTHON_BIN}" ]]; then
+  "${PYTHON_BIN}" scripts/ci/test-flake-quarantine.py
+fi
+
 echo "CI router validation passed."

@@ -493,3 +493,18 @@ partial passing results); consumers must require the overall successful outcome
 as well. Missing counts stay missing. Synthetic supervisor fixtures are labelled
 as such and do not qualify a candidate. These files are diagnostic provenance;
 local files alone do not constitute a trusted release attestation.
+
+## Bounded flaky-test quarantine
+
+The founder-approved quarantine policy in [known-flakes.md](known-flakes.md#automatic-bounded-quarantine)
+allows one same-job failed-method retry within the original shard budget. Success requires
+complete passing retry evidence, retained alongside the first attempt. Infrastructure and
+execution failures remain blocking. Required check names and minimum-execution checks remain
+unchanged. Bot-authored issues provide a validated, project-scoped exclusion list capped at
+25 methods and 14 days per entry; expiry restores gating automatically. Foundation and lean
+gate duplicate coverage consume the same list. A separate `Flaky Test Detection` job runs
+quarantined methods without exclusions or retries and is explicitly non-gating.
+
+The publisher has issue-write permission only on a trusted `workflow_run` path. It checks
+same-repository provenance, checks out default-branch code, validates raw case evidence and
+hashes, and never executes downloaded data or checks out the triggering branch.
