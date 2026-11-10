@@ -14,6 +14,7 @@ using Honua.TestKit.Hosting;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -24,6 +25,9 @@ namespace Honua.Protocols.Scene.ComponentTests;
 [Protocol(ProtocolNames.Scene)]
 public sealed class SceneComponentTests
 {
+    // The server removes Age before a response leaves, so the host marks a replayed entry for the tests that prove cache reuse.
+    internal const string OutputCacheHitHeader = "X-Test-Output-Cache-Hit";
+
     [IntegrationTest]
     [Operation(Operations.GetTile)]
     [Endpoint("GET /scenes/{sceneId}/{*assetPath}")]
@@ -94,6 +98,20 @@ public sealed class SceneComponentTests
         {
             app.UseGlobalExceptionHandling();
             app.UseMiddleware<AuthenticationResponseCacheMiddleware>();
+            app.Use(static (context, next) =>
+            {
+                context.Response.OnStarting(static state =>
+                {
+                    var response = ((HttpContext)state).Response;
+                    if (response.Headers.ContainsKey("Age"))
+                    {
+                        response.Headers[OutputCacheHitHeader] = "1";
+                    }
+
+                    return Task.CompletedTask;
+                }, context);
+                return next(context);
+            });
             app.UseAuthentication();
             app.UseAuthorization();
             app.UseWhen(context => OutputCachingRegistration.HasLiveOutputCacheEntitlements(context.RequestServices, false),

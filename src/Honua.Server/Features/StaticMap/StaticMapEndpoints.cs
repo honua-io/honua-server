@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Infrastructure.SharedCaching;
+
 namespace Honua.Server.Features.StaticMap;
 
 internal static partial class StaticMapEndpoints
@@ -14,7 +16,8 @@ internal static partial class StaticMapEndpoints
             .WithName("StaticMapCenterZoom")
             .WithSummary("Generate a static map image by center point and zoom level")
             .WithDescription("Renders a map image centered at lon,lat with a given zoom level, dimensions, and format")
-            .WithTags("StaticMap");
+            .WithTags("StaticMap")
+            .WithSharedCacheClass(ResponseCacheClass.StaticMapImage);
 
         // Bbox: GET /static/{serviceId}/bbox/{bbox}/{width}x{height}.{format}
         endpoints.MapGet("/static/{serviceId}/bbox/{bbox}/{dimensions}.{format}",
@@ -23,7 +26,8 @@ internal static partial class StaticMapEndpoints
             .WithName("StaticMapBbox")
             .WithSummary("Generate a static map image by bounding box")
             .WithDescription("Renders a map image for the specified bounding box, dimensions, and format")
-            .WithTags("StaticMap");
+            .WithTags("StaticMap")
+            .WithSharedCacheClass(ResponseCacheClass.StaticMapImage);
 
         return endpoints;
     }

@@ -107,7 +107,9 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
                 Metadata = metadata,
                 HttpHeaders = new BlobHttpHeaders
                 {
-                    ContentType = request.ContentType
+                    ContentType = request.ContentType,
+                    ContentEncoding = request.ContentEncoding,
+                    CacheControl = StoredObjectCacheControl.For(request.CachePolicy)
                 },
                 Conditions = conditional
                     ? expectedETag is null
@@ -161,6 +163,7 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
                 ExpiresAt = expiresAt,
                 ContentHash = null,
                 ETag = uploadResponse.Value.ETag.ToString(),
+                CacheControl = StoredObjectCacheControl.For(request.CachePolicy),
                 Metadata = request.Metadata,
                 Provider = CloudStorageProvider.AzureBlob
             };

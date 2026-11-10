@@ -65,7 +65,7 @@ each page. Some entitlement keys are deliberately not published here at all.
 | [RTO/RPO Reporting](dr.rto-rpo-reporting.md) | DisasterRecovery | Enterprise | ga |
 | [Branch Versioning](editing.branch-versioning.md) | Editing | Pro | ga |
 | [FeatureServer Editing](editing.featureserver-edits.md) | Editing | Pro | ga |
-| [Data Enrichment Datasets](enrichment.datasets.md) | Enrichment | Community | ga |
+| [Data Enrichment Datasets](enrichment.datasets.md) | Enrichment | Pro | ga |
 | [Field Collection Forms](fieldops.forms.md) | FieldOps | Community | ga |
 | [Offline/Field Sync](fieldops.offline-sync.md) | FieldOps | Pro | **preview** |
 | [GeoArrow Response Format](format.geoarrow.md) | Format | Community | **live** |

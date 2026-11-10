@@ -8,7 +8,10 @@ public sealed record FeatureDefinition(
     string DisplayName,
     string Category,
     HonuaEdition MinimumEdition,
-    string Description);
+    string Description)
+{
+    public IReadOnlyList<string> Requires { get; init; } = [];
+}
 
 public static class FeatureCatalog
 {
@@ -195,13 +198,19 @@ public static class FeatureCatalog
 
         // Identity — Pro (no SSO tax for one provider)
         new(OidcAuthenticationKey, "OIDC Authentication", Categories.Identity,
-            HonuaEdition.Pro, "Single-provider OpenID Connect authentication with Azure AD, Google, Okta, Auth0, or generic OIDC."),
+            HonuaEdition.Pro, "Single-provider OpenID Connect authentication with Azure AD, Google, Okta, Auth0, or generic OIDC, including the choice of which claims carry roles."),
 
         // Identity — Enterprise (multi-provider governance)
         new(OidcMultiProviderKey, "OIDC Multi-Provider SSO", Categories.Identity,
-            HonuaEdition.Enterprise, "Configure multiple OIDC identity providers in one deployment."),
+            HonuaEdition.Enterprise, "Configure multiple OIDC identity providers in one deployment.")
+        {
+            Requires = [OidcAuthenticationKey],
+        },
         new(OidcClaimsMappingKey, "Claims Mapping", Categories.Identity,
-            HonuaEdition.Enterprise, "Custom claim-to-role mapping and identity governance for OIDC providers."),
+            HonuaEdition.Enterprise, "Arbitrary custom claim mappings and tenant mapping for OIDC providers. Choosing which claim carries roles is part of identity.oidc.")
+        {
+            Requires = [OidcAuthenticationKey],
+        },
         new(MtlsClientCertificateKey, "mTLS Client-Certificate Authentication", Categories.Identity,
             HonuaEdition.Enterprise, "Native client-certificate (mTLS) authentication: trust profiles, issuer/chain validation with CRL/OCSP revocation, and certificate-to-principal mapping."),
         new(SamlAuthenticationKey, "SAML 2.0 Authentication", Categories.Identity,

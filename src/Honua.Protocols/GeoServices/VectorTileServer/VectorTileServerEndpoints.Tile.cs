@@ -33,6 +33,7 @@ using Honua.Infrastructure.Rendering;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
+using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Protocols.GeoServices.VectorTileServer;
 
@@ -53,6 +54,7 @@ internal static partial class VectorTileServerEndpoints
             .WithTags("VectorTileServer")
             .AllowAnonymous()
             .CacheOutput("MvtTile")
+            .WithSharedCacheClass(ResponseCacheClass.Tile)
             .Produces(200, contentType: MvtContentType)
             .Produces(204)
             .Produces(400)
@@ -121,6 +123,7 @@ internal static partial class VectorTileServerEndpoints
             }
 
             var (publication, resource) = primary.Value;
+            SharedCacheResponse.UsePublication(context, service, publication);
 
             var storageLayerId = snapshot.ResolveStorageLayerId(publication)
                 ?? snapshot.ResolveStorageLayerId(resource)
