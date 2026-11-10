@@ -23,6 +23,16 @@ class AffectedLaneTests(unittest.TestCase):
             with self.subTest(paths=paths):
                 self.assertTrue(all(MODULE.select(paths).values()))
 
+    def test_shared_setup_actions_keep_their_consumers(self):
+        for path in ['.github/actions/setup-honua-server/action.yml',
+                     '.github/actions/setup-honua-mcp/action.yml']:
+            with self.subTest(path=path):
+                self.assertTrue(all(MODULE.select([path]).values()))
+
+    def test_styling_and_mcp_seed_keep_direct_consumers(self):
+        self.assertTrue(MODULE.select(['src/Honua.Server/Features/Styling/StyleEndpoints.cs'])['browser'])
+        self.assertTrue(MODULE.select(['tests/seed/mcp.yaml'])['mcp'])
+
     def test_scoped_unit_change_does_not_start_compatibility_fanout(self):
         self.assertFalse(any(MODULE.select(['tests/dotnet/Honua.Server.Tests/Utilities/ParserTests.cs']).values()))
 
@@ -62,6 +72,8 @@ class AffectedLaneTests(unittest.TestCase):
     def test_workflow_preserves_slow_first_build_reuse_and_full_fallback(self):
         ci = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
         jobs = ci['jobs']
+        checkout = next(step for step in jobs['build']['steps'] if 'actions/checkout@' in step.get('uses', ''))
+        self.assertEqual('0', checkout.get('with', {}).get('fetch-depth'))
         scripts = '\n'.join(step.get('run', '') for step in jobs['targeted-shards']['steps'])
         self.assertIn('sort_by(-.dispatch_rank)', scripts)
         self.assertIn('build', jobs['server-tests']['needs'])
