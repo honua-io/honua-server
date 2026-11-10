@@ -135,12 +135,13 @@ class PrManagedBuildTests(unittest.TestCase):
     def test_same_canonical_selector_and_runtime_tests(self):
         producer = job('pr-gate')
         selector = job('affected-shards-select')
-        self.assertIn('compute-affected-shards.py --cap "${CAP}" --annotate-resources',producer)
+        self.assertIn('compute-affected-shards.py --cap "${CAP}" --time-budget --annotate-resources',producer)
         self.assertIn('compute-affected-shards.py',selector)
         self.assertIn('AFFECTED_SHARDS_CAP',producer)
         self.assertIn('AFFECTED_SHARDS_CAP',selector)
         self.assertIn('--cap "${CAP}"', selector)
         self.assertIn('--annotate-resources', selector)
+        self.assertIn('--time-budget', selector)
         consumer=job('runtime-proofs', CI)
         # Server receipts stay in the managed consumer; native Worker coverage
         # uses the existing full-CI owner instead of compiling PDAL twice.
