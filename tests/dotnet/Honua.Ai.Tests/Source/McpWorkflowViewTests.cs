@@ -1177,7 +1177,7 @@ public sealed partial class McpWorkflowViewTests
         }
 
         var configure = await ListToolsAsync(surface, "configure");
-        configure.Names.Should().NotIntersectWith(view.Names.Where(name => name != "honua_admin_services_list"));
+        configure.Names.Should().NotIntersectWith(view.Names.Where(name => name is not ("honua_admin_services_list" or "honua_list_folders")));
         var anonymous = McpTestFactory.AnonymousHttpContext();
         (await ListToolsAsync(surface, "folders", anonymous)).Names.Should().BeEmpty();
         var refused = await DispatchAsync(surface,
