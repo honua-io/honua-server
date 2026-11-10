@@ -539,3 +539,5 @@ unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
+
+Catalog SOAP host reuse is limited to identical default raster configuration without mock interaction assertions. Raster overrides and call-history assertions remain isolated; all SOAP operations, responses and assertions still run.

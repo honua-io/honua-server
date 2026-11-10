@@ -569,3 +569,5 @@ The budget job records each run's phase and credits, total triage/fix credits,
 paid-run counts and the share of triage events reaching a paid Opus run. Deterministic
 skips use zero model credits. The combined envelopes are 2500 credits ($25) per day;
 triage and fix do not each receive a separate allowance.
+
+Catalog SOAP tests share the default raster application for five cases that do not inspect mock call history, using fresh HTTP clients. Custom raster metadata, telemetry and mock interaction cases retain their own applications.
