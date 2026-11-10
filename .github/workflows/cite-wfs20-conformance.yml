@@ -14,11 +14,11 @@ on:
         - transactional
         - full
 
-  # Weekly scheduled run
+  # Invoked by the release-candidate qualification workflow.
   workflow_call:
     inputs:
       profile:
-        required: true
+        required: false
         type: string
         default: basic
 
@@ -29,10 +29,10 @@ permissions:
   checks: write
 
 env:
-  CITE_PROFILE: ${{ github.event.inputs.profile || 'basic' }}
+  CITE_PROFILE: ${{ inputs.profile || 'basic' }}
 
 concurrency:
-  group: cite-wfs20-conformance-${{ github.ref }}
+  group: cite-wfs20-conformance-${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -50,7 +50,7 @@ jobs:
       fail-fast: false
       matrix:
         profile:
-          - ${{ github.event.inputs.profile || 'basic' }}
+          - ${{ inputs.profile || 'basic' }}
 
     steps:
     - name: Checkout repository

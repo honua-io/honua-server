@@ -33,7 +33,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: cite-tiles-conformance-${{ github.ref }}
+  group: cite-tiles-conformance-${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
   cancel-in-progress: true
 
 jobs:

@@ -15,6 +15,7 @@ permissions:
   pages: write
   id-token: write
   issues: write
+  checks: write
 jobs:
   cite-classic-conformance:
     uses: ./.github/workflows/cite-classic-conformance.yml

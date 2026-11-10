@@ -12,11 +12,11 @@ on:
           - basic-async
           - basic-sync
           - all
-# Tier: nightly. The external ETS is intentionally not a PR-blocking lane.
+# External ETS runs manually and during release-candidate qualification.
   workflow_call:
     inputs:
       profile:
-        required: true
+        required: false
         type: string
         default: basic-async
       server_image:
@@ -33,7 +33,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: cite-wps20-conformance-${{ github.ref }}
+  group: cite-wps20-conformance-${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -50,5 +50,4 @@ jobs:
       timeout-seconds: 3600
       job-timeout-minutes: 70
       cite-profile: ${{ inputs.profile || 'basic-async' }}
-      tested-honua-git-sha: ${{ github.sha }}
       extra-artifact-paths: docker/cite/wps20/config/

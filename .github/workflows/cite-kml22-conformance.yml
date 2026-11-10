@@ -32,7 +32,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: cite-kml22-conformance-${{ github.ref }}
+  group: cite-kml22-conformance-${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
   cancel-in-progress: true
 
 jobs:

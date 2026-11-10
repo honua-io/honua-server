@@ -141,6 +141,7 @@ jobs:
       image_ref: ${{ steps.ref.outputs.image_ref }}
       image_tag: ${{ steps.ref.outputs.image_tag }}
       image_digest: ${{ steps.build.outputs.digest }}
+      image_digest_ref: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
       server_sha: ${{ steps.ref.outputs.server_sha }}
     steps:
       - name: Checkout
@@ -364,9 +365,10 @@ jobs:
       pages: write
       id-token: write
       issues: write
+      checks: write
     secrets: inherit
     with:
-      server_image: ${{ needs.rc-image.outputs.image_ref }}
+      server_image: ${{ needs.rc-image.outputs.image_digest_ref }}
       source_sha: ${{ needs.rc-image.outputs.server_sha }}
 
   aggregate:

@@ -33,7 +33,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: cite-wms-conformance-${{ github.ref }}
+  group: cite-wms-conformance-${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
   cancel-in-progress: true
 
 jobs:

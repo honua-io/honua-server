@@ -28,7 +28,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: cite-ogcapi-processes-conformance-${{ github.ref }}
+  group: cite-ogcapi-processes-conformance-${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
   cancel-in-progress: true
 
 jobs:

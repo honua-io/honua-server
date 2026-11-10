@@ -13,7 +13,7 @@ env:
   DOTNET_VERSION: '10.0.x'
 
 concurrency:
-  group: ogc-maps-conformance-${{ github.ref }}
+  group: ogc-maps-conformance-${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
   cancel-in-progress: true
 
 jobs:

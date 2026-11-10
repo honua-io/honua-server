@@ -59,7 +59,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: cite-classic-conformance-${{ github.ref }}
+  group: cite-classic-conformance-${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
   cancel-in-progress: true
 
 jobs:
