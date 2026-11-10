@@ -797,6 +797,8 @@ def append_github_output(result: dict[str, Any], include: list[dict[str, Any]]) 
         handle.write(f"reason={result['reason']}\n")
         handle.write(f"selected_count={len(result['shards'])}\n")
         handle.write(f"matrix_include={json.dumps(include, separators=(',', ':'))}\n")
+        receipt_matrix = [{"shard_name": entry["shard_name"]} for entry in include]
+        handle.write(f"receipt_matrix={json.dumps(receipt_matrix, separators=(',', ':'))}\n")
         deferred_names = [entry["name"] for entry in result["deferred_to_trunk"]]
         handle.write(f"deferred_to_trunk={json.dumps(deferred_names, separators=(',', ':'))}\n")
 
