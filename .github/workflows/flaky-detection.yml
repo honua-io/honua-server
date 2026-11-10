@@ -339,6 +339,7 @@ jobs:
             artifacts/test-results/flake-*.trx
             artifacts/test-results/flake-*.log
             artifacts/test-results/flake-*.timing.json
+            artifacts/test-results/flake-*/**
           if-no-files-found: warn
           retention-days: 30
 
