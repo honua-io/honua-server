@@ -2092,6 +2092,8 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-serving-image-boundary.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-promote-verified-image.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-shard-resources.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/test-owned-server.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/test-quickstart-console-smoke.py
 fi
 
 if [[ -n "${PYTHON_BIN}" ]]; then
