@@ -78,6 +78,10 @@ class PullRequestLoadTests(unittest.TestCase):
                 types = workflow(name)["on"]["pull_request"].get("types", [])
                 self.assertTrue(expected <= set(types), types)
 
+    def test_gp_contract_excludes_markdown_after_all_positive_paths(self):
+        paths = workflow("gp-scoped-key-contract.yml")["on"]["pull_request"]["paths"]
+        self.assertEqual(paths[-1], "!**/*.md")
+
     def test_each_pr_workflow_cancels_admission_by_pr_number(self):
         for name, concurrency in pr_admissions():
             with self.subTest(workflow=name):
