@@ -121,7 +121,7 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
         var text = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, text);
         var document = XDocument.Parse(text);
-        var bounds = document.Descendants().First(element => element.Name.LocalName == "BoundingBox" &&
+        var bounds = document.Descendants().Single(element => element.Name.LocalName == "BoundingBox" &&
             element.Attributes().Any(attribute => attribute.Name.LocalName is "CRS" or "SRS" && attribute.Value == "EPSG:4258"));
 
         double.Parse(bounds.Attribute("minx")!.Value, CultureInfo.InvariantCulture).Should().BeApproximately(minX, 0.001);
@@ -286,6 +286,30 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
         var declared = layer.Elements().Where(element => element.Name.LocalName == elementName).Select(element => element.Value).ToArray();
         declared.Should().Contain(expected).And.NotContain("EPSG:");
         declared.Should().HaveCount(version == "1.3.0" ? 2 : 1);
+    }
+
+    [IntegrationTheory]
+    [InlineData("1.3.0", "CRS")]
+    [InlineData("1.1.1", "SRS")]
+    [Endpoint("GET /ogc/services/{serviceId}/wms")]
+    [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
+    [InterfaceOperation(TestProtocols.Wms111, "GetCapabilities")]
+    public async Task WmsCapabilities_DisjointChildCrs_RootDeclaresNoCommonCrs(string version, string elementName)
+    {
+        var resource = _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[1];
+        _fixture.UpdateV2ResourceMetadata(1, spatial: resource.Spatial! with
+        {
+            SupportedCrs = [new() { Srid = 26910, Crs = "EPSG:26910" }]
+        });
+        using var response = await _fixture.Client.GetAsync($"/ogc/services/test/wms?SERVICE=WMS&REQUEST=GetCapabilities&VERSION={version}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var document = XDocument.Parse(await response.Content.ReadAsStringAsync());
+        var rootLayer = document.Descendants().First(element => element.Name.LocalName == "Layer");
+        var declared = rootLayer.Elements().Where(element => element.Name.LocalName == elementName).ToArray();
+        if (version == "1.1.1")
+            declared.Should().ContainSingle().Which.Value.Should().BeEmpty();
+        else
+            declared.Should().BeEmpty();
     }
 
     private void SeedMetadata()
