@@ -159,8 +159,10 @@ affected closure (or the full solution on fallback, and nothing when the diff
 reaches no project) with analyzers, code style and documentation diagnostics
 as warnings-as-errors. `HonuaAnalyzerPartition` in `Directory.Build.targets`
 assigns `IsTestProject=true` projects to `tests` and every other project to
-`source`. Each partition still compiles dependencies but runs analyzers only
-for its own set; source generators remain enabled. The `format` matrix remains
+`source`. After restore, the source partition evaluates `IsTestProject` through MSBuild
+and omits test-only compilation roots; imports are respected, incomplete evaluation
+fails closed, and multi-targeted projects conservatively remain included. Each
+partition still compiles forward dependencies but runs analyzers only for its own set; source generators remain enabled. The `format` matrix remains
 in `required.needs`, so both partitions must pass. The existing analyzer check
 name is retained for the source partition. Unpartitioned callers default to
 `all`; invalid partitions fail the build. `PR Gate` still fails on every analyzer finding. Full CI runs
