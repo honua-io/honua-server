@@ -34,6 +34,7 @@
       Honua.Server.
     -->
     <PackageReference Include="StackExchange.Redis" />
+    <PackageReference Include="Npgsql" />
     <PackageReference Include="Polly" />
   </ItemGroup>
 

@@ -206,7 +206,7 @@ services:
   # the managed worker and local artifacts, `--profile integration`.
   #
   # It is headless (no ports) and joins the SAME durable substrate as the server
-  # by sharing Redis: it runs the identical JobExecutionService claim/lease loop
+  # by sharing the system database: it runs the identical JobExecutionService claim/lease loop
   # but registers ONLY native-profile executors, so it claims ONLY jobs whose
   # RuntimeProfile is "native" and leaves managed jobs to the in-process loop.
   gdal-worker:
@@ -219,9 +219,9 @@ services:
       dockerfile: docker/worker-gdal/Dockerfile
     environment:
       DOTNET_ENVIRONMENT: Development
-      # The worker requires a `redis` connection string (AddGdalWorker throws
-      # without it). Same Redis instance as the server = same job substrate.
-      ConnectionStrings__Redis: "${HONUA_REDIS_URL:-redis:6379}"
+      # The worker requires the system database connection string (AddGdalWorker
+      # throws without it). Same database as the server = same job queue.
+      ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_dev;Username=honua_user;Password=honua_password"
       # Per-job scratch root (already set in the image; pinned here for clarity).
       GdalWorker__ScratchRoot: "/tmp/honua-gdal-worker"
       # Keep referenced /vsis3 reads on the same registered object store as the API.
@@ -235,7 +235,7 @@ services:
       AWS_SECRET_ACCESS_KEY: "${HONUA_S3_SECRET_ACCESS_KEY:-}"
       AWS_SESSION_TOKEN: "${HONUA_S3_SESSION_TOKEN:-}"
     depends_on:
-      redis:
+      postgres:
         condition: service_healthy
     restart: unless-stopped
     volumes:

@@ -29,12 +29,11 @@
       "category": "ControlPlane",
       "edition": "Community",
       "status": null,
-      "entryCount": 399,
-      "provingTestCount": 1593,
+      "entryCount": 406,
+      "provingTestCount": 1670,
       "maturity": {
-        "implemented": 396,
-        "preview": 2,
-        "experimental": 1
+        "implemented": 403,
+        "experimental": 3
       },
       "noSurface": null,
       "cite": [],
@@ -672,11 +671,11 @@
       "displayName": "Map Collaboration Sessions",
       "category": "Collaboration",
       "edition": "Community",
-      "status": null,
+      "status": "experimental",
       "entryCount": 9,
       "provingTestCount": 67,
       "maturity": {
-        "implemented": 9
+        "experimental": 9
       },
       "noSurface": null,
       "cite": [],
@@ -859,10 +858,10 @@
       "key": "enrichment.datasets",
       "displayName": "Data Enrichment Datasets",
       "category": "Enrichment",
-      "edition": "Community",
+      "edition": "Pro",
       "status": null,
       "entryCount": 7,
-      "provingTestCount": 24,
+      "provingTestCount": 29,
       "maturity": {
         "implemented": 7
       },
@@ -1356,7 +1355,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 13,
-      "provingTestCount": 28,
+      "provingTestCount": 29,
       "maturity": {
         "implemented": 13
       },
@@ -1374,7 +1373,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 18,
-      "provingTestCount": 244,
+      "provingTestCount": 248,
       "maturity": {
         "preview": 18
       },
@@ -1696,7 +1695,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 49,
-      "provingTestCount": 586,
+      "provingTestCount": 593,
       "maturity": {
         "implemented": 49
       },
@@ -1913,7 +1912,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 21,
-      "provingTestCount": 130,
+      "provingTestCount": 133,
       "maturity": {
         "implemented": 21
       },
@@ -1937,7 +1936,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 9,
-      "provingTestCount": 39,
+      "provingTestCount": 42,
       "maturity": {
         "implemented": 9
       },
@@ -2096,7 +2095,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 19,
-      "provingTestCount": 336,
+      "provingTestCount": 337,
       "maturity": {
         "implemented": 19
       },
@@ -2163,7 +2162,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 12,
-      "provingTestCount": 151,
+      "provingTestCount": 152,
       "maturity": {
         "implemented": 12
       },
@@ -2218,7 +2217,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 13,
-      "provingTestCount": 71,
+      "provingTestCount": 72,
       "maturity": {
         "implemented": 13
       },
@@ -2290,7 +2289,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 7,
-      "provingTestCount": 58,
+      "provingTestCount": 62,
       "maturity": {
         "implemented": 7
       },
@@ -2346,7 +2345,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 142,
+      "provingTestCount": 143,
       "maturity": {
         "implemented": 2
       },
@@ -2417,7 +2416,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 1,
-      "provingTestCount": 12,
+      "provingTestCount": 14,
       "maturity": {
         "implemented": 1
       },
@@ -2476,7 +2475,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 1,
-      "provingTestCount": 10,
+      "provingTestCount": 13,
       "maturity": {
         "preview": 1
       },
@@ -2622,12 +2621,11 @@
       "displayName": "Real-Time Feature Streams",
       "category": "Streaming",
       "edition": "Pro",
-      "status": null,
+      "status": "experimental",
       "entryCount": 5,
-      "provingTestCount": 122,
+      "provingTestCount": 127,
       "maturity": {
-        "implemented": 3,
-        "preview": 2
+        "experimental": 5
       },
       "noSurface": null,
       "cite": [],

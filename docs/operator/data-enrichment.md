@@ -25,12 +25,12 @@ shared spatial-analytics pipeline.
 | `DELETE` | `/api/enrich/datasets/{id}` | **Admin:** deregister an enrichment dataset. |
 | `POST` | `/api/enrich`         | Enrich a registered source layer with attributes from an enrichment dataset. |
 
-The compute endpoint (`POST /api/enrich`) requires an active **Pro** entitlement
-(it shares the `analytics.spatial-join` entitlement, since enrichment is a curated
-facade over the same join primitive). Discovery (`GET /api/enrich/datasets`) is
-**edition-filtered** rather than hard-gated: callers see only datasets whose
-minimum edition is at or below theirs. The admin registration routes require the
-admin authorization policy and are only mapped when the active data provider is
+Every route above requires an active **Pro** entitlement (they share the
+`analytics.spatial-join` entitlement, since enrichment is a curated facade over the
+same join primitive) and returns HTTP 402 without it. Discovery
+(`GET /api/enrich/datasets`) is also **edition-filtered**: callers see only datasets
+whose minimum edition is at or below theirs. The admin registration routes also
+require the admin authorization policy and are only mapped when the active data provider is
 Postgres (the managed registry table is Postgres-backed).
 
 ## Managed enrichment-dataset catalog

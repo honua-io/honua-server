@@ -71,12 +71,14 @@ internal sealed class PublishedOperationTool : IMcpTool
     private bool IsRuntimeDynamic =>
         _descriptor.Policy.Determinism == OperationDeterminism.RuntimeDynamic;
 
+    private bool IsFolderOperation => FolderToolName(_descriptor.OperationId) is not null;
+
     private bool RequiresAdminAuthorization =>
-        _descriptor.OperationId.StartsWith("admin.", StringComparison.Ordinal);
+        IsFolderOperation || _descriptor.OperationId.StartsWith("admin.", StringComparison.Ordinal);
 
     private bool RequiresProposalSubmission =>
         _descriptor.ApprovalModel == OperationApprovalModel.OperatorGate
-        && _descriptor.OperationId is "admin.api-key.create" or "admin.api-key.revoke";
+        && (IsFolderOperation || _descriptor.OperationId is "admin.api-key.create" or "admin.api-key.revoke");
 
     // Deterministic AND read-only invocations are the only ones safe to cache: a
     // cache must never skip a side effect or return a stale AI turn.
@@ -84,8 +86,19 @@ internal sealed class PublishedOperationTool : IMcpTool
         IsDeterministic
         && _descriptor.Policy.SideEffectClass == OperationSideEffectClass.ReadOnly;
 
+    private static string? FolderToolName(string operationId) => operationId switch
+    {
+        "folder.list" => "honua_list_folders",
+        "folder.create" => "honua_create_folder",
+        "folder.update" => "honua_update_folder",
+        "folder.delete" => "honua_delete_folder",
+        "service.move" => "honua_move_service",
+        _ => null
+    };
+
     public static string ProjectName(string operationId)
     {
+        if (FolderToolName(operationId) is { } folderToolName) return folderToolName;
         if (operationId == McpConnectionDiscoveryProjection.TablesOperationId)
             return "honua_admin_connection_tables_list";
 
@@ -124,21 +137,21 @@ internal sealed class PublishedOperationTool : IMcpTool
             : McpToolAnnotationSets.Write(title, destructive, idempotent: !destructive);
 
         var determinismNote = IsRuntimeDynamic
-            ? " This operation reports live runtime status and is not cacheable."
+            ? " Reports live runtime status; not cacheable."
             : IsDeterministic
-            ? " This operation is deterministic (AI-free); identical inputs return an identical, param-keyed-cached result."
-            : " This operation is AI-assisted.";
+            ? " AI-free, deterministic: identical inputs yield identical, param-keyed-cached results."
+            : " AI-assisted.";
 
         return new McpToolDescriptor
         {
             Name = Name,
             Title = title,
             Description = _descriptor.Description
-                + " Published operations-toolset operation '" + _descriptor.OperationId
-                + "', governed by the operation policy decision point on every invocation"
+                + " Published operation '" + _descriptor.OperationId
+                + "'; policy decision point checked every invocation"
                 + " (allow / require-approval / dry-run-first / deny)."
                 + (RequiresProposalSubmission
-                    ? " This tool submits a proposal only, never the key mutation. A separately authenticated authorized approver must approve the sealed proposal; one-time keys remain in the protected secret channel."
+                    ? " Submits a proposal only; never mutates. Execution requires sealed-proposal approval by a separately authenticated authorized approver."
                     : string.Empty)
                 + determinismNote,
             InputSchema = _inputSchema,
@@ -577,7 +590,7 @@ internal sealed class PublishedOperationTool : IMcpTool
 
     private static void WriteSchema(Utf8JsonWriter writer, Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaDefinition schema)
     {
-        writer.WriteString("type", schema.Type switch
+        var type = schema.Type switch
         {
             Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.WholeNumber => "integer",
             Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.DecimalNumber => "number",
@@ -585,7 +598,18 @@ internal sealed class PublishedOperationTool : IMcpTool
             Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.List => "array",
             Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.Structured => "object",
             _ => "string"
-        });
+        };
+        if (schema.AllowsNull)
+        {
+            writer.WriteStartArray("type");
+            writer.WriteStringValue(type);
+            writer.WriteStringValue("null");
+            writer.WriteEndArray();
+        }
+        else
+        {
+            writer.WriteString("type", type);
+        }
         if (!string.IsNullOrWhiteSpace(schema.Format)) writer.WriteString("format", schema.Format);
         if (schema.EnumValues.Count > 0)
         {

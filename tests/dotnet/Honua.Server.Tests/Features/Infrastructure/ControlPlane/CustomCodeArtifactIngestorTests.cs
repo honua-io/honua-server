@@ -14,25 +14,24 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Geoprocessing.CustomCode;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-[Collection("Redis")]
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.TestInfrastructure)]
-public sealed class CustomCodeArtifactIngestorTests(RedisFixture fixture)
+public sealed class CustomCodeArtifactIngestorTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
     [IntegrationTest]
     public async Task CrashAfterProviderAcceptance_RecoversDurableAttemptCapabilityWithoutReminting()
     {
-        await using var redis = await ConnectionMultiplexer.ConnectAsync(fixture.ConnectionString);
-        var jobs = new RedisExecutionJobStore(redis, NullLogger<RedisExecutionJobStore>.Instance);
+        await using var harness = await CreateHarnessAsync();
+        var jobs = harness.JobStore;
         using var cache = new MemoryCache(new MemoryCacheOptions());
         var issuer = new ScopedJobTokenIssuer(cache, NullLogger<ScopedJobTokenIssuer>.Instance);
         var client = new StubAwsBatchJobClient { SubmitException = new InjectedDispatchCrashException() };
@@ -54,7 +53,8 @@ public sealed class CustomCodeArtifactIngestorTests(RedisFixture fixture)
         client.LastSubmission!.EnvironmentOverrides.Single(entry => entry.Name == "HONUA_JOB_TOKEN").Value.Should().Be(capability);
         (await issuer.ValidateAsync(capability, job.OperationId, CancellationToken.None))!.Attempt.Should().Be(1);
         client.NextListJobsResult = [new AwsBatchJobState { JobId = "accepted-before-crash", Status = "RUNNING" }];
-        var reconciler = new ExecutionJobReconciler(jobs, [backend], progress, NullLogger<ExecutionJobReconciler>.Instance);
+        var reconciler = new ExecutionJobReconciler(jobs, [backend], progress, NullLogger<ExecutionJobReconciler>.Instance,
+            storeClock: jobs);
         await reconciler.ReconcileExecutionJobAsync(job.OperationId);
         var recovered = (await jobs.GetAsync(job.OperationId))!;
         recovered.Status.Should().Be(ExecutionJobStatus.Running);
@@ -63,7 +63,6 @@ public sealed class CustomCodeArtifactIngestorTests(RedisFixture fixture)
         recovered.Spec.Parameters["env.HONUA_JOB_TOKEN"].Should().Be(capability);
         (await issuer.ValidateAsync(capability, job.OperationId, CancellationToken.None))!.Attempt.Should().Be(recovered.AttemptCount);
         await issuer.RevokeAsync(capability, CancellationToken.None);
-        await jobs.TrySetAsync(recovered with { Status = ExecutionJobStatus.Cancelled, CompletedAt = DateTimeOffset.UtcNow }, TimeSpan.FromMinutes(1));
     }
 
     [IntegrationTheory]
@@ -71,8 +70,8 @@ public sealed class CustomCodeArtifactIngestorTests(RedisFixture fixture)
     [InlineData(false)]
     public async Task RetryGuard_RetainsChargedReceiptsOrRefusesRetry(bool allowed)
     {
-        await using var redis = await ConnectionMultiplexer.ConnectAsync(fixture.ConnectionString);
-        var jobs = new RedisExecutionJobStore(redis, NullLogger<RedisExecutionJobStore>.Instance);
+        await using var harness = await CreateHarnessAsync();
+        var jobs = harness.JobStore;
         var client = new StubAwsBatchJobClient { NextDescribeResult = new AwsBatchJobState { JobId = "failed-attempt", Status = "FAILED" } };
         var backend = new AwsBatchComputeBackend(client, NullLogger<AwsBatchComputeBackend>.Instance);
         var job = AwsBatchComputeBackendTests.CreateJob(providerOperationId: "failed-attempt", status: ExecutionJobStatus.Running) with
@@ -90,7 +89,7 @@ public sealed class CustomCodeArtifactIngestorTests(RedisFixture fixture)
             RefusalReason = "No reserved journal budget remains."
         });
         var reconciler = new ExecutionJobReconciler(jobs, [backend], Substitute.For<IUniversalProgressStore>(),
-            NullLogger<ExecutionJobReconciler>.Instance, retryGuards: [guard]);
+            NullLogger<ExecutionJobReconciler>.Instance, retryGuards: [guard], storeClock: jobs);
         await reconciler.ReconcileExecutionJobAsync(job.OperationId);
         var result = (await jobs.GetAsync(job.OperationId))!;
         result.ArtifactReferences.Should().Equal("charged-immutable-receipt");
@@ -99,7 +98,6 @@ public sealed class CustomCodeArtifactIngestorTests(RedisFixture fixture)
         {
             result.ErrorMessage.Should().Be("No reserved journal budget remains.");
         }
-        await jobs.TrySetAsync(result with { Status = ExecutionJobStatus.Cancelled }, TimeSpan.FromMinutes(1));
     }
 
     private sealed class InjectedDispatchCrashException : Exception
@@ -109,8 +107,8 @@ public sealed class CustomCodeArtifactIngestorTests(RedisFixture fixture)
     [IntegrationTest]
     public async Task ImmutableJournal_RetryProjectsOnceWithTrustedAttemptAndRejectsChangedBytes()
     {
-        await using var redis = await ConnectionMultiplexer.ConnectAsync(fixture.ConnectionString);
-        var logs = new RedisExecutionLogStore(redis, NullLogger<RedisExecutionLogStore>.Instance);
+        await using var harness = await CreateHarnessAsync();
+        var logs = harness.LogStore;
         var bytes = Encoding.UTF8.GetBytes("""
             {"v":1,"kind":"phase","seq":0,"attempt":"untrusted","correlation":"forged-corr","trace":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","phase":"execute"}
             {"v":1,"kind":"failure","seq":1,"attempt":"untrusted","correlation":"forged-corr","error":{"type":"ToolError","message":"LONG_FAILURE"}}
@@ -147,33 +145,28 @@ public sealed class CustomCodeArtifactIngestorTests(RedisFixture fixture)
         using var services = new ServiceCollection().AddSingleton(jobs).AddSingleton(storage)
             .AddSingleton<IExecutionLogStore>(logs).BuildServiceProvider();
         var ingestor = new CustomCodeArtifactIngestor(services);
-        var key = "controlplane:job:log:" + job.OperationId;
-        try
-        {
-            await ingestor.IngestAsync(job, artifact, CancellationToken.None);
-            await ingestor.IngestAsync(job, artifact, CancellationToken.None);
-            var tail = await logs.TailAsync(job.OperationId, 10);
-            tail.TotalCount.Should().Be(3);
-            tail.Items.Should().OnlyContain(entry =>
-                entry.Metadata![HarnessEvents.AttemptKey] == "3"
-                && entry.Metadata[JobEventIdentity.JobMetadataKey] == job.OperationId
-                && entry.Metadata[JobEventIdentity.CorrelationMetadataKey] == "corr-admitted"
-                && entry.Metadata[JobEventIdentity.TraceMetadataKey] == traceId);
-            tail.Items.Should().NotContain(entry =>
-                entry.Metadata!.Values.Contains("forged-corr") || entry.Metadata.Values.Contains("untrusted")
-                || entry.Metadata.Values.Contains("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
-            tail.Items[1].Metadata![HarnessEvents.KindKey].Should().Be("failure");
-            tail.Items[1].Metadata!["honua.log.truncated"].Should().Be("true");
-            tail.Items[^1].Metadata![HarnessEvents.KindKey].Should().Be("terminal");
-            tail.Items[^1].Metadata!["honua.event.status"].Should().Be("failed");
-            storage.DownloadAsync(artifact.ObjectKey, Arg.Any<CancellationToken>()).Returns(_ => new MemoryStream(new byte[bytes.Length]));
-            await Assert.ThrowsAsync<InvalidOperationException>(() => ingestor.IngestAsync(job, artifact, CancellationToken.None));
-            await Assert.ThrowsAsync<InvalidOperationException>(() => ingestor.IngestAsync(job, artifact with { Attempt = 2 }, CancellationToken.None));
-            (await logs.TailAsync(job.OperationId, 10)).TotalCount.Should().Be(3);
-        }
-        finally
-        {
-            await redis.GetDatabase().KeyDeleteAsync([key, "{" + key + "}:state"]);
-        }
+        await ingestor.IngestAsync(job, artifact, CancellationToken.None);
+        await ingestor.IngestAsync(job, artifact, CancellationToken.None);
+        var tail = await logs.TailAsync(job.OperationId, 10);
+        tail.TotalCount.Should().Be(3);
+        tail.Items.Should().OnlyContain(entry =>
+            entry.Metadata![HarnessEvents.AttemptKey] == "3"
+            && entry.Metadata[JobEventIdentity.JobMetadataKey] == job.OperationId
+            && entry.Metadata[JobEventIdentity.CorrelationMetadataKey] == "corr-admitted"
+            && entry.Metadata[JobEventIdentity.TraceMetadataKey] == traceId);
+        tail.Items.Should().NotContain(entry =>
+            entry.Metadata!.Values.Contains("forged-corr") || entry.Metadata.Values.Contains("untrusted")
+            || entry.Metadata.Values.Contains("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+        tail.Items[1].Metadata![HarnessEvents.KindKey].Should().Be("failure");
+        tail.Items[1].Metadata!["honua.log.truncated"].Should().Be("true");
+        tail.Items[^1].Metadata![HarnessEvents.KindKey].Should().Be("terminal");
+        tail.Items[^1].Metadata!["honua.event.status"].Should().Be("failed");
+        storage.DownloadAsync(artifact.ObjectKey, Arg.Any<CancellationToken>()).Returns(_ => new MemoryStream(new byte[bytes.Length]));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => ingestor.IngestAsync(job, artifact, CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => ingestor.IngestAsync(job, artifact with { Attempt = 2 }, CancellationToken.None));
+        (await logs.TailAsync(job.OperationId, 10)).TotalCount.Should().Be(3);
     }
+
+    private Task<PostgresJobSubstrateHarness> CreateHarnessAsync()
+        => PostgresJobSubstrateHarness.CreateAsync(database, nameof(CustomCodeArtifactIngestorTests));
 }
