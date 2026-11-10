@@ -11,10 +11,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Serve-path cache coverage for the MVT tile endpoint: <c>/tiles</c> requires authentication on
-/// this fixture, so every response is <c>private, no-store</c> whatever lifetime is configured.
-/// </summary>
+// /tiles requires authentication on this fixture, so every response is private, no-store
+// whatever lifetime is configured.
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.GetTile)]
 [Collection("Database")]
@@ -56,11 +54,8 @@ public class MvtTileCacheTtlTests : IClassFixture<WebAppFixture>
     }
 }
 
-/// <summary>
-/// Mirror of <see cref="MvtTileCacheTtlTests" /> running against a fixture whose
-/// <see cref="TileOptions" /> pins a per-tileset TTL override for the FeatureServer
-/// tileset identity under test. Verifies the override cannot make a credentialed tile storable.
-/// </summary>
+// A per-tileset lifetime override for the FeatureServer tileset must not make a credentialed
+// tile storable.
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.GetTile)]
 [Collection("Database")]

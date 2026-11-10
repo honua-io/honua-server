@@ -73,6 +73,23 @@ internal static class CoreEndpoints
             .Produces<string>(200, MediaTypes.Html)
             .Produces(404);
 
+        MapApiDefinitionEndpoints(endpoints);
+
+        _ = endpoints.MapGet(OgcFeaturesUtilities.GmlApplicationSchemaPath, HandleGetGmlApplicationSchema)
+            .WithDisplayName("OGC API Features GML Application Schema")
+            .WithName("OgcFeaturesGmlApplicationSchema")
+            .WithSummary("Get the GML application schema for OGC API Features GML responses")
+            .WithDescription("The schema declares Honua's feature member and property elements used by GML feature collection responses.")
+            .WithTags("OGC API Features")
+            .CacheOutput("OgcGmlApplicationSchema")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
+            .Produces<string>(200, "application/xml");
+
+        return endpoints;
+    }
+
+    private static void MapApiDefinitionEndpoints(IEndpointRouteBuilder endpoints)
+    {
         endpoints.MapGet("/openapi.json", HandleGetOpenApiSpec)
             .WithDisplayName("OGC API Features OpenAPI Specification")
             .WithName("OpenApiSpec")
@@ -97,18 +114,6 @@ internal static class CoreEndpoints
             .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces<object>(200, MediaTypes.OpenApi)
             .Produces(404);
-
-        _ = endpoints.MapGet(OgcFeaturesUtilities.GmlApplicationSchemaPath, HandleGetGmlApplicationSchema)
-            .WithDisplayName("OGC API Features GML Application Schema")
-            .WithName("OgcFeaturesGmlApplicationSchema")
-            .WithSummary("Get the GML application schema for OGC API Features GML responses")
-            .WithDescription("The schema declares Honua's feature member and property elements used by GML feature collection responses.")
-            .WithTags("OGC API Features")
-            .CacheOutput("OgcGmlApplicationSchema")
-            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
-            .Produces<string>(200, "application/xml");
-
-        return endpoints;
     }
 
     private static IResult HandleGetGmlApplicationSchema()

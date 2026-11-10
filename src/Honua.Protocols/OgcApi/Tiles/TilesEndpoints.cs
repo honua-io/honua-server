@@ -44,6 +44,13 @@ internal static partial class TilesEndpoints
 
     public static IEndpointRouteBuilder MapTilesEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        MapDatasetTileEndpoints(endpoints);
+        MapCollectionTileEndpoints(endpoints);
+        return endpoints;
+    }
+
+    private static void MapDatasetTileEndpoints(IEndpointRouteBuilder endpoints)
+    {
         endpoints.MapGet("/ogc/tiles/tiles", HandleGetDatasetTilesets)
             .WithDisplayName("OGC API Tiles Tilesets List")
             .WithName("OgcTilesTilesets")
@@ -74,7 +81,10 @@ internal static partial class TilesEndpoints
             .WithTags("OGC API Tiles")
             .CacheOutput("OgcTilesDatasetTile")
             .WithSharedCacheClass(ResponseCacheClass.Tile);
+    }
 
+    private static void MapCollectionTileEndpoints(IEndpointRouteBuilder endpoints)
+    {
         endpoints.MapGet("/ogc/tiles/collections/{collectionId}/tiles", HandleGetCollectionTilesets)
             .WithDisplayName("OGC API Tiles Collection Tilesets List")
             .WithName("OgcTilesCollectionTilesets")
@@ -105,8 +115,6 @@ internal static partial class TilesEndpoints
             .WithTags("OGC API Tiles")
             .CacheOutput("OgcTilesTile")
             .WithSharedCacheClass(ResponseCacheClass.Tile);
-
-        return endpoints;
     }
 
     private static async Task<IResult> HandleGetDatasetTilesets(
