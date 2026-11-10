@@ -98,10 +98,7 @@ internal static class OperationsServiceCollectionExtensions
         }
         else
         {
-            services.TryAddSingleton<IOperationInstanceStore>(sp =>
-                sp.GetService<IConnectionMultiplexer>() is { } redis
-                    ? new RedisOperationInstanceStore(redis)
-                    : new UnavailableOperationInstanceStore());
+            services.TryAddSingleton<IOperationInstanceStore, UnavailableOperationInstanceStore>();
             if (services.HasDurableProposalStore())
             {
                 services.AddHostedService<OperationRuntimeStartupValidator>();
