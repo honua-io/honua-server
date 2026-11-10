@@ -73,10 +73,10 @@ the only lifetime it has.
 | Editing (any method other than `GET` or `HEAD`) | `private, no-store` | Unchanged | Unchanged | Not configurable |
 | Errors (every 4xx and 5xx, and every GeoServices error envelope sent as 200) | `private, no-store` | Unchanged | Unchanged | Not configurable |
 
-Objects written to object storage: `public, max-age=31536000, immutable` only when the key is
-content-addressed; `public, max-age=60, s-maxage=300` when a public key is overwritten in place; and
-`private, no-store` for everything else, including exports and job outputs, which are handed out as
-presigned URLs and never pass through the CDN.
+Objects written to object storage carry `public, max-age=60, s-maxage=300` when the object is public
+and its key is overwritten in place, and `private, no-store` otherwise, including exports and job
+outputs, which are handed out as presigned URLs and never pass through the CDN. No stored object is
+both public and content-addressed today, so nothing is written as `immutable` yet.
 
 Three controls set a public lifetime, in increasing precedence: the product default above; a
 per-layer lifetime (or the per-tileset lifetime where one is configured); and the emergency setting,
@@ -119,9 +119,10 @@ report it in the response.
 
 ### 5. Rollouts
 
-While a rollout is in progress, metadata documents are sent with `s-maxage=0`, because two releases
-can describe the same service differently. Tiles and feature queries keep their lifetimes. When the
-operation completes or rolls back, `/*` is invalidated.
+A serving task has no cheap way to know that a rollout is in progress: the operation record is
+written by whichever task drives the control plane, and the other tasks do not observe it. The
+server therefore does not shorten lifetimes during a rollout. Metadata documents live 60 seconds at
+the CDN, and `/*` is invalidated when the operation completes or rolls back.
 
 ## Consequences
 

@@ -153,6 +153,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
                     ContentType = request.ContentType,
                     InputStream = request.Content
                 };
+                ApplyResponseHeaders(putRequest.Headers, request);
                 if (conditional)
                 {
                     if (expectedETag is null)
@@ -223,6 +224,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
                 ExpiresAt = expiresAt,
                 ContentHash = null,
                 ETag = etag,
+                CacheControl = StoredObjectCacheControl.For(request.CachePolicy),
                 Metadata = request.Metadata,
                 Provider = CloudStorageProvider.AwsS3
             };
@@ -732,6 +734,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
                 Key = objectKey,
                 ContentType = request.ContentType,
             };
+            ApplyResponseHeaders(initiate.Headers, request);
             foreach (var pair in metadata)
             {
                 initiate.Metadata[pair.Key] = pair.Value;
@@ -819,6 +822,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
             ContentType = request.ContentType,
             InputStream = empty,
         };
+        ApplyResponseHeaders(putRequest.Headers, request);
         foreach (var pair in metadata)
         {
             putRequest.Metadata[pair.Key] = pair.Value;
@@ -831,6 +835,16 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
 
         var response = await _client.PutObjectAsync(putRequest, cancellationToken).ConfigureAwait(false);
         return response.ETag;
+    }
+
+    // S3 replays these on every read of the object, whoever serves it.
+    private static void ApplyResponseHeaders(HeadersCollection headers, FileUploadRequest request)
+    {
+        headers.CacheControl = StoredObjectCacheControl.For(request.CachePolicy);
+        if (!string.IsNullOrEmpty(request.ContentEncoding))
+        {
+            headers.ContentEncoding = request.ContentEncoding;
+        }
     }
 
     private void ReportMultipartProgress(

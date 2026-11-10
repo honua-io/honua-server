@@ -27,7 +27,7 @@ internal sealed class FeatureMutationEventService(
     public bool OutboxEnabled => _outboxCapabilityProvider?.SupportsTransactionalOutbox == true;
 
     public Task InvalidateLayerAsync(string? serviceId, int layerId, CancellationToken cancellationToken)
-        => _outputCacheInvalidationService?.InvalidateLayerAsync(serviceId, layerId, cancellationToken)
+        => _outputCacheInvalidationService?.InvalidateEditedLayerAsync(serviceId, layerId, cancellationToken)
            ?? Task.CompletedTask;
 
     public Task InvalidateCollectionAsync(string? collectionId, CancellationToken cancellationToken)

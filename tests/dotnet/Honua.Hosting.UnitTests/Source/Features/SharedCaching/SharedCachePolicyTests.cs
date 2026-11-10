@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Tiles;
 using Honua.Infrastructure.SharedCaching;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -13,14 +14,14 @@ namespace Honua.Hosting.UnitTests.Features.SharedCaching;
 
 public sealed class SharedCachePolicyTests
 {
-    [Theory]
-    [InlineData(ResponseCacheClass.Tile, "public, max-age=60, s-maxage=300, stale-while-revalidate=60, stale-if-error=86400")]
-    [InlineData(ResponseCacheClass.FeatureQuery, "public, max-age=0, s-maxage=30, stale-while-revalidate=30, stale-if-error=86400")]
-    [InlineData(ResponseCacheClass.StaticMapImage, "public, max-age=0, s-maxage=60, stale-while-revalidate=30")]
-    [InlineData(ResponseCacheClass.StaticObject, "public, max-age=60, s-maxage=300")]
-    public void Apply_AnonymousGrantOnDeclaredRoute_WritesProductDefault(ResponseCacheClass cacheClass, string expected)
+    [UnitTheory]
+    [InlineData(nameof(ResponseCacheClass.Tile), "public, max-age=60, s-maxage=300, stale-while-revalidate=60, stale-if-error=86400")]
+    [InlineData(nameof(ResponseCacheClass.FeatureQuery), "public, max-age=0, s-maxage=30, stale-while-revalidate=30, stale-if-error=86400")]
+    [InlineData(nameof(ResponseCacheClass.StaticMapImage), "public, max-age=0, s-maxage=60, stale-while-revalidate=30")]
+    [InlineData(nameof(ResponseCacheClass.StaticObject), "public, max-age=60, s-maxage=300")]
+    public void Apply_AnonymousGrantOnDeclaredRoute_WritesProductDefault(string cacheClassName, string expected)
     {
-        var context = AnonymousGet(cacheClass);
+        var context = AnonymousGet(Enum.Parse<ResponseCacheClass>(cacheClassName));
         ResponseAccessVerdict.Record(context, AccessDecision.Allowed());
 
         SharedCacheResponse.Apply(context);
@@ -29,7 +30,7 @@ public sealed class SharedCachePolicyTests
         context.Response.Headers.CacheControl.ToString().Should().Be(expected);
     }
 
-    [Fact]
+    [UnitTest]
     public void Apply_MetadataDocumentWithoutGrant_IsSharedBecauseItListsOnlyWhatAnonymousCallersMayRead()
     {
         var context = AnonymousGet(ResponseCacheClass.MetadataDocument);
@@ -41,14 +42,14 @@ public sealed class SharedCachePolicyTests
         context.Response.Headers.Vary.ToString().Should().Contain("Accept-Language");
     }
 
-    [Theory]
-    [InlineData(ResponseCacheClass.Tile)]
-    [InlineData(ResponseCacheClass.FeatureQuery)]
-    [InlineData(ResponseCacheClass.StaticMapImage)]
-    [InlineData(ResponseCacheClass.StaticObject)]
-    public void Apply_AccessNeverDecided_IsNotShared(ResponseCacheClass cacheClass)
+    [UnitTheory]
+    [InlineData(nameof(ResponseCacheClass.Tile))]
+    [InlineData(nameof(ResponseCacheClass.FeatureQuery))]
+    [InlineData(nameof(ResponseCacheClass.StaticMapImage))]
+    [InlineData(nameof(ResponseCacheClass.StaticObject))]
+    public void Apply_AccessNeverDecided_IsNotShared(string cacheClassName)
     {
-        var context = AnonymousGet(cacheClass);
+        var context = AnonymousGet(Enum.Parse<ResponseCacheClass>(cacheClassName));
 
         SharedCacheResponse.Apply(context);
         SharedCacheGuard.Apply(context);
@@ -56,12 +57,12 @@ public sealed class SharedCachePolicyTests
         context.Response.Headers.CacheControl.ToString().Should().Be(SharedCacheGuard.NotShared);
     }
 
-    [Theory]
-    [InlineData(ResponseCacheClass.Tile)]
-    [InlineData(ResponseCacheClass.MetadataDocument)]
-    public void Apply_AccessDenied_IsNotSharedEvenWhenAnEarlierLayerWasGranted(ResponseCacheClass cacheClass)
+    [UnitTheory]
+    [InlineData(nameof(ResponseCacheClass.Tile))]
+    [InlineData(nameof(ResponseCacheClass.MetadataDocument))]
+    public void Apply_AccessDenied_IsNotSharedEvenWhenAnEarlierLayerWasGranted(string cacheClassName)
     {
-        var context = AnonymousGet(cacheClass);
+        var context = AnonymousGet(Enum.Parse<ResponseCacheClass>(cacheClassName));
         ResponseAccessVerdict.Record(context, AccessDecision.Allowed());
         ResponseAccessVerdict.Record(context, AccessDecision.RequiresAuth());
 
@@ -71,7 +72,7 @@ public sealed class SharedCachePolicyTests
         context.Response.Headers.CacheControl.ToString().Should().Be(SharedCacheGuard.NotShared);
     }
 
-    [Fact]
+    [UnitTest]
     public void Record_AuthenticatedCallerGranted_IsRestricted()
     {
         var context = AnonymousGet(ResponseCacheClass.Tile);
@@ -83,7 +84,7 @@ public sealed class SharedCachePolicyTests
         ResponseAccessVerdict.GrantedToAnonymous(context).Should().BeFalse();
     }
 
-    [Fact]
+    [UnitTest]
     public void Apply_HandlerForbadeStorage_KeepsTheRefusal()
     {
         var context = GrantedTile();
@@ -95,7 +96,7 @@ public sealed class SharedCachePolicyTests
         context.Response.Headers.CacheControl.ToString().Should().Be("no-store");
     }
 
-    [Fact]
+    [UnitTest]
     public void Apply_ETagFallbackAlreadyWritten_IsReplacedByThePublicPolicy()
     {
         var context = GrantedTile();
@@ -106,7 +107,7 @@ public sealed class SharedCachePolicyTests
         context.Response.Headers.CacheControl.ToString().Should().StartWith("public, max-age=60, s-maxage=300");
     }
 
-    [Fact]
+    [UnitTest]
     public void Apply_TilesetLifetimeConfigured_OverridesTheProductDefault()
     {
         var context = GrantedTile();
@@ -121,7 +122,7 @@ public sealed class SharedCachePolicyTests
         context.Response.Headers.CacheControl.ToString().Should().Be("public, max-age=90, s-maxage=90, stale-if-error=86400");
     }
 
-    [Fact]
+    [UnitTest]
     public void Apply_GlobalTileMaxAgeOnly_KeepsTheProductDefault()
     {
         var context = GrantedTile();
@@ -132,7 +133,7 @@ public sealed class SharedCachePolicyTests
         context.Response.Headers.CacheControl.ToString().Should().StartWith("public, max-age=60, s-maxage=300");
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(true, null)]
     [InlineData(false, "parcels/3")]
     public void Apply_EmergencyCoversTheLayer_ForcesFifteenSecondsAtTheCdnOverTheLayerLifetime(bool allPublicLayers, string? namedLayer)
@@ -152,7 +153,7 @@ public sealed class SharedCachePolicyTests
         context.Response.Headers.CacheControl.ToString().Should().Be("public, max-age=0, s-maxage=15, stale-if-error=86400");
     }
 
-    [Fact]
+    [UnitTest]
     public void Apply_EmergencyNamesAnotherLayer_LeavesThisLayerAlone()
     {
         var emergency = new SharedCacheEmergency();
@@ -165,7 +166,7 @@ public sealed class SharedCachePolicyTests
         context.Response.Headers.CacheControl.ToString().Should().StartWith("public, max-age=60, s-maxage=300");
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(StatusCodes.Status400BadRequest)]
     [InlineData(StatusCodes.Status401Unauthorized)]
     [InlineData(StatusCodes.Status403Forbidden)]
@@ -184,7 +185,7 @@ public sealed class SharedCachePolicyTests
         context.Response.Headers.CacheControl.ToString().Should().Be(SharedCacheGuard.NotShared);
     }
 
-    [Fact]
+    [UnitTest]
     public void Guard_NoCacheControlAtAll_WritesTheSafeDefault()
     {
         var context = new DefaultHttpContext();
@@ -195,7 +196,7 @@ public sealed class SharedCachePolicyTests
         context.Response.Headers.CacheControl.ToString().Should().Be(SharedCacheGuard.NotShared);
     }
 
-    [Fact]
+    [UnitTest]
     public void Guard_ResponseSetsACookie_IsNotShared()
     {
         var context = GrantedTile();
@@ -207,7 +208,7 @@ public sealed class SharedCachePolicyTests
         context.Response.Headers.CacheControl.ToString().Should().Be(SharedCacheGuard.NotShared);
     }
 
-    [Fact]
+    [UnitTest]
     public void Apply_SubjectNotDeclared_IsReadFromTheRoute()
     {
         var emergency = new SharedCacheEmergency();
@@ -221,20 +222,7 @@ public sealed class SharedCachePolicyTests
         context.Response.Headers.CacheControl.ToString().Should().StartWith("public, max-age=0, s-maxage=15");
     }
 
-    [Fact]
-    public void Apply_RolloutInProgress_StopsTheCdnHoldingMetadataButNotTiles()
-    {
-        var metadata = AnonymousGet(ResponseCacheClass.MetadataDocument, rolloutWindowOpen: true);
-        var tile = GrantedTile(rolloutWindowOpen: true);
-
-        SharedCacheResponse.Apply(metadata);
-        SharedCacheResponse.Apply(tile);
-
-        metadata.Response.Headers.CacheControl.ToString().Should().Be("public, max-age=30, s-maxage=0");
-        tile.Response.Headers.CacheControl.ToString().Should().StartWith("public, max-age=60, s-maxage=300");
-    }
-
-    [Theory]
+    [UnitTheory]
     [InlineData("X-Honua-Job-Id")]
     [InlineData("X-API-Key")]
     public void Apply_RequestCarriesACredentialHeader_WritesNothingPublic(string header)
@@ -248,27 +236,21 @@ public sealed class SharedCachePolicyTests
         context.Response.Headers.CacheControl.ToString().Should().Be(SharedCacheGuard.NotShared);
     }
 
-    private static DefaultHttpContext GrantedTile(SharedCacheOptions? options = null, bool rolloutWindowOpen = false)
+    private static DefaultHttpContext GrantedTile(SharedCacheOptions? options = null)
     {
-        var context = AnonymousGet(ResponseCacheClass.Tile, options, rolloutWindowOpen);
+        var context = AnonymousGet(ResponseCacheClass.Tile, options);
         ResponseAccessVerdict.Record(context, AccessDecision.Allowed());
         return context;
     }
 
     private static DefaultHttpContext AnonymousGet(
-        ResponseCacheClass cacheClass, SharedCacheOptions? options = null, bool rolloutWindowOpen = false)
+        ResponseCacheClass cacheClass, SharedCacheOptions? options = null)
     {
         var services = new ServiceCollection();
         services.AddOptions<SharedCacheOptions>().Configure(configured => configured.Emergency = (options ?? new SharedCacheOptions()).Emergency);
-        services.AddSingleton<IRolloutWindow>(new FixedRolloutWindow(rolloutWindowOpen));
         var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
         context.Request.Method = HttpMethods.Get;
         context.SetEndpoint(new Endpoint(null, new EndpointMetadataCollection(new SharedCacheClassMetadata(cacheClass)), "declared"));
         return context;
-    }
-
-    private sealed class FixedRolloutWindow(bool isOpen) : IRolloutWindow
-    {
-        public bool IsOpen => isOpen;
     }
 }

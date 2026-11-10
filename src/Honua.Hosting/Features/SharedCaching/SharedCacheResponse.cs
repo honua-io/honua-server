@@ -70,17 +70,14 @@ internal static class SharedCacheResponse
     private static string FormatCacheControl(HttpContext context, ResponseCacheClass cacheClass, SharedCacheOptions options)
     {
         var lifetime = ResolveLifetime(context, cacheClass, options);
-        var sharedMaxAge = DiffersBetweenReleases(cacheClass) && RolloutIsInProgress(context)
-            ? 0
-            : lifetime.SharedMaxAgeSeconds;
         var directives = new List<string>
         {
             "public",
             $"max-age={Seconds(lifetime.MaxAgeSeconds)}",
-            $"s-maxage={Seconds(sharedMaxAge)}",
+            $"s-maxage={Seconds(lifetime.SharedMaxAgeSeconds)}",
         };
 
-        if (lifetime.StaleWhileRevalidateSeconds > 0 && sharedMaxAge > 0)
+        if (lifetime.StaleWhileRevalidateSeconds > 0)
         {
             directives.Add($"stale-while-revalidate={Seconds(lifetime.StaleWhileRevalidateSeconds)}");
         }
@@ -104,13 +101,6 @@ internal static class SharedCacheResponse
             ? layerLifetime
             : options.DefaultFor(cacheClass);
     }
-
-    // Two releases can describe the same service differently while both take traffic.
-    private static bool DiffersBetweenReleases(ResponseCacheClass cacheClass)
-        => cacheClass is ResponseCacheClass.MetadataDocument;
-
-    private static bool RolloutIsInProgress(HttpContext context)
-        => context.RequestServices.GetService<IRolloutWindow>()?.IsOpen == true;
 
     private static string Seconds(int seconds)
         => Math.Max(0, seconds).ToString(CultureInfo.InvariantCulture);

@@ -845,6 +845,8 @@ builder.Services.Configure<Honua.Core.Features.Import.ObjectStore.ImportObjectSt
     builder.Configuration.GetSection(Honua.Core.Features.Import.ObjectStore.ImportObjectStoreOptions.SectionName));
 #if !HONUA_EXCLUDE_AWS
 builder.Services.AddAwsImportObjectStore();
+Honua.Cloud.Aws.Features.Cdn.CloudFrontCdnServiceCollectionExtensions.AddCloudFrontCdnInvalidation(
+    builder.Services, builder.Configuration);
 #endif
 
 // Configure file upload security limits

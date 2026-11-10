@@ -12,11 +12,8 @@ using Microsoft.Extensions.Options;
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
 /// <summary>
-/// Serve-path cache-TTL integration coverage for the MVT tile endpoint.
-/// Asserts the <c>Cache-Control: private, max-age=&lt;resolved&gt;</c> header is
-/// driven by <see cref="TilesetTtlResolver" /> — the global
-/// <see cref="TileOptions.CacheMaxAge" /> by default, and a per-tileset override
-/// when one is configured for the requested tileset identity.
+/// Serve-path cache coverage for the MVT tile endpoint: <c>/tiles</c> requires authentication on
+/// this fixture, so every response is <c>private, no-store</c> whatever lifetime is configured.
 /// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.GetTile)]
@@ -34,23 +31,20 @@ public class MvtTileCacheTtlTests : IClassFixture<WebAppFixture>
 
     [IntegrationTest]
     [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]
-    public async Task GetTile_NoPerTilesetOverride_UsesGlobalCacheMaxAge()
+    public async Task GetTile_NoPerTilesetOverride_IsNeverShared()
     {
-        // Default TileOptions.CacheMaxAge is 3600 (no per-tileset override configured).
         using var client = _fixture.CreateClient();
         var response = await client.GetAsync($"/tiles/{TestLayerId}/1/0/0.mvt");
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
         response.Headers.CacheControl.Should().NotBeNull();
-        // /tiles requires authentication, so the privacy policy requires private caching.
         response.Headers.CacheControl!.Private.Should().BeTrue();
-        response.Headers.CacheControl.MaxAge.Should().Be(TimeSpan.FromSeconds(3600));
-        response.Headers.Vary.Should().Contain("Authorization").And.Contain("X-API-Key");
+        response.Headers.CacheControl.NoStore.Should().BeTrue();
     }
 
     [IntegrationTest]
     [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]
-    public async Task GetTile_AuthenticatedRequest_UsesPrivateCacheWithGlobalTtl()
+    public async Task GetTile_AuthenticatedRequest_IsNeverShared()
     {
         using var client = _fixture.CreateAdminClient();
         var response = await client.GetAsync($"/tiles/{TestLayerId}/1/0/0.mvt");
@@ -58,15 +52,14 @@ public class MvtTileCacheTtlTests : IClassFixture<WebAppFixture>
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
         response.Headers.CacheControl.Should().NotBeNull();
         response.Headers.CacheControl!.Private.Should().BeTrue();
-        response.Headers.CacheControl.MaxAge.Should().Be(TimeSpan.FromSeconds(3600));
-        response.Headers.Vary.Should().Contain("Authorization").And.Contain("X-API-Key");
+        response.Headers.CacheControl.NoStore.Should().BeTrue();
     }
 }
 
 /// <summary>
 /// Mirror of <see cref="MvtTileCacheTtlTests" /> running against a fixture whose
 /// <see cref="TileOptions" /> pins a per-tileset TTL override for the FeatureServer
-/// tileset identity under test. Verifies the override wins over the global default.
+/// tileset identity under test. Verifies the override cannot make a credentialed tile storable.
 /// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.GetTile)]
@@ -115,7 +108,7 @@ public class MvtTileCacheTtlOverrideTests
 
     [IntegrationTest]
     [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]
-    public async Task GetTile_WithPerTilesetOverride_UsesOverrideTtl()
+    public async Task GetTile_WithPerTilesetOverride_IsStillNeverShared()
     {
         using var client = _fixture.CreateClient();
         var response = await client.GetAsync($"/tiles/{TestLayerId}/1/0/0.mvt");
@@ -123,7 +116,6 @@ public class MvtTileCacheTtlOverrideTests
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
         response.Headers.CacheControl.Should().NotBeNull();
         response.Headers.CacheControl!.Private.Should().BeTrue();
-        response.Headers.CacheControl.MaxAge.Should().Be(TimeSpan.FromSeconds(OverrideTtlSeconds));
-        response.Headers.Vary.Should().Contain("Authorization").And.Contain("X-API-Key");
+        response.Headers.CacheControl.NoStore.Should().BeTrue();
     }
 }

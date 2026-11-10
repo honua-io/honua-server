@@ -32,6 +32,10 @@ internal static class ControlPlaneReconcileRegistration
         services.AddSingleton<IWorkflowOperationTransitionListener>(sp =>
             new Honua.Infrastructure.Monitoring.ReleaseTimelineTransitionListener(
                 sp.GetRequiredService<Honua.Infrastructure.Monitoring.ReleaseTimelineBuffer>()));
+        services.AddSingleton<IWorkflowOperationTransitionListener>(sp =>
+            new Honua.ControlPlane.CdnInvalidationTransitionListener(
+                sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.ICdnInvalidator>(),
+                sp));
         services.AddSingleton<IWorkflowOperationStore>(sp => new Honua.Alerts.Ops.NotifyingWorkflowOperationStore(
             new Honua.ControlPlane.TransitionObservingWorkflowOperationStore(
                 sp.GetRequiredService<RedisWorkflowOperationStore>(),

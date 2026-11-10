@@ -8,6 +8,7 @@ using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.SharedCaching;
 using Honua.TestKit;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -52,13 +53,11 @@ public sealed partial class SharedCacheRouteTableTests : IDisposable
         => _eventModeHost = new TestWebApplicationFactory()
             .WithWebHostBuilder(builder => builder.UseSetting("ControlPlane:TriggerMode", "Event"));
 
-    [Fact]
-    [Trait("Category", "Architecture")]
+    [UnitTest]
     public void RouteTable_CoversTheEventModeHostAsWellAsTheDefaultHost()
         => Routes().Select(route => route.Pattern).Should().Contain(EventModeOnlyRoute);
 
-    [Fact]
-    [Trait("Category", "Architecture")]
+    [UnitTest]
     public void RoutesDeclaringAPublicCacheClass_AreAnonymousReadRoutesOutsideAdmin()
     {
         var declared = Routes().Where(route => route.CacheClass is not null).ToArray();
@@ -72,8 +71,7 @@ public sealed partial class SharedCacheRouteTableTests : IDisposable
             "only a read can be shared-cacheable");
     }
 
-    [Fact]
-    [Trait("Category", "Architecture")]
+    [UnitTest]
     public void EveryRoute_WithAnyCredential_IsNeverSharedCacheable()
     {
         var failures = new List<string>();
@@ -99,8 +97,7 @@ public sealed partial class SharedCacheRouteTableTests : IDisposable
         failures.Should().BeEmpty();
     }
 
-    [Fact]
-    [Trait("Category", "Architecture")]
+    [UnitTest]
     public void EveryRoute_AnonymousRequest_IsSharedCacheableOnlyAsAReadOnADeclaredRoute()
     {
         var failures = new List<string>();
@@ -127,8 +124,7 @@ public sealed partial class SharedCacheRouteTableTests : IDisposable
         sharedReads.Should().BeGreaterThan(0);
     }
 
-    [Fact]
-    [Trait("Category", "Architecture")]
+    [UnitTest]
     public void EveryRoute_AccessDeniedOrFailed_IsNeverSharedCacheable()
     {
         var failures = new List<string>();
@@ -154,8 +150,7 @@ public sealed partial class SharedCacheRouteTableTests : IDisposable
         failures.Should().BeEmpty();
     }
 
-    [Fact]
-    [Trait("Category", "Architecture")]
+    [UnitTest]
     public async Task EveryRoute_ThroughTheRealPipeline_SharesOnlyAnonymousReadsOfDeclaredRoutes()
     {
         using var client = _pollModeHost.CreateClient();
