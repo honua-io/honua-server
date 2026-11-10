@@ -167,6 +167,19 @@ name is retained for the source partition. Unpartitioned callers default to
 an independent full-solution format job; `CI Gate` requires it when build inputs
 are selected, without making test consumers wait for formatting.
 
+**Fast-test selection.** The four existing fast-test check names remain present.
+Before setup or compilation, each uses `compute-fast-test-selection.py` to read
+`compute-affected-projects.sh` at the PR merge checkout (`HEAD^1..HEAD`) and
+intersect its reverse-dependency closure with the group's existing test roots.
+Docs and SDK changes reaching no managed project skip all four builds and tests;
+a nonempty managed closure retains architecture checks as well as every affected
+group. Unknown projects, invalid roots, missing history, selector errors and
+non-PR events retain every group. Existing docs/generated-only classification
+and exact-head review admission still apply. A skipped test body completes its
+matrix row successfully, preserving the required aggregate's needs contract.
+Drafts instantiate only the Format matrix row; ready PRs retain both analyzer
+partitions and Format.
+
 **Governance and runtime proofs.** The independent PR Fast job retains the
 complete `Category=Architecture` governance set in `Honua.Server.Tests`, the real
 store-gated host and Testcontainers PostgreSQL, source architecture and the full
