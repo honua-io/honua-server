@@ -141,21 +141,21 @@ internal sealed class PublishedOperationTool : IMcpTool
             : McpToolAnnotationSets.Write(title, destructive, idempotent: !destructive);
 
         var determinismNote = IsRuntimeDynamic
-            ? " This operation reports live runtime status and is not cacheable."
+            ? " Reports live runtime status; not cacheable."
             : IsDeterministic
-            ? " This operation is deterministic (AI-free); identical inputs return an identical, param-keyed-cached result."
-            : " This operation is AI-assisted.";
+            ? " AI-free, deterministic: identical inputs yield identical, param-keyed-cached results."
+            : " AI-assisted.";
 
         return new McpToolDescriptor
         {
             Name = Name,
             Title = title,
             Description = _descriptor.Description
-                + " Published operations-toolset operation '" + _descriptor.OperationId
-                + "', governed by the operation policy decision point on every invocation"
+                + " Published operation '" + _descriptor.OperationId
+                + "'; policy decision point checked every invocation"
                 + " (allow / require-approval / dry-run-first / deny)."
                 + (RequiresProposalSubmission
-                    ? " This tool submits a proposal only, never executes the mutation. A separately authenticated authorized approver must approve the sealed proposal before execution."
+                    ? " Submits a proposal only; never mutates. Execution requires sealed-proposal approval by a separately authenticated authorized approver."
                     : string.Empty)
                 + determinismNote,
             InputSchema = _inputSchema,

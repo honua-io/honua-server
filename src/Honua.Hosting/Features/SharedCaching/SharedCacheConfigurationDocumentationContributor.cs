@@ -29,7 +29,6 @@ internal sealed class SharedCacheConfigurationDocumentationContributor(IOptionsM
                     .. Lifetime("Tile", "public tiles", (ProductDefaults.Tile, current.Tile)),
                     .. Lifetime("FeatureQuery", "public feature queries", (ProductDefaults.FeatureQuery, current.FeatureQuery)),
                     .. Lifetime("MetadataDocument", "capabilities and metadata documents", (ProductDefaults.MetadataDocument, current.MetadataDocument)),
-                    .. Lifetime("StaticMapImage", "static map images", (ProductDefaults.StaticMapImage, current.StaticMapImage)),
                     .. Lifetime("StaticObject", "stored objects served by the server", (ProductDefaults.StaticObject, current.StaticObject)),
                     .. current.Layers.SelectMany(layer => Lifetime($"Layers:{layer.Key}", $"layer {layer.Key}", (null, layer.Value))),
                     Property(

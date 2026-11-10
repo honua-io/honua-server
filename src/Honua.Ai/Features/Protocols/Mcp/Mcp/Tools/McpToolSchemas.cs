@@ -56,26 +56,26 @@ internal static class McpToolSchemas
           "properties": {
             "connectionId": {
               "type": "string",
-              "description": "Connection id from honua_admin_connections_list; inspect its tables with honua_admin_connection_tables_list."
+              "description": "Connection ID from honua_admin_connections_list."
             },
             "schema": {
               "type": "string",
               "minLength": 1,
-              "description": "Source schema from honua_admin_connection_tables_list for this connectionId."
+              "description": "Schema from honua_admin_connection_tables_list."
             },
             "table": {
               "type": "string",
               "minLength": 1,
-              "description": "Source table from honua_admin_connection_tables_list for this connectionId."
+              "description": "Table from honua_admin_connection_tables_list."
             },
             "layerName": {
               "type": "string",
               "minLength": 1,
-              "description": "Caller-supplied. Display name for the published layer."
+              "description": "Caller-supplied layer display name."
             },
             "serviceName": {
               "type": "string",
-              "description": "Target service name. Defaults to the canonical default service when omitted."
+              "description": "Target service; omitted: canonical default service."
             },
             "namespace": {
               "type": "string",
@@ -97,24 +97,24 @@ internal static class McpToolSchemas
             },
             "geometryColumn": {
               "type": "string",
-              "description": "Geometry column to publish when the table has more than one."
+              "description": "Geometry column to publish if multiple exist."
             },
             "geometryType": {
               "type": "string",
-              "description": "Geometry type override (for example Point, Polygon) when it cannot be inferred."
+              "description": "Geometry type override (e.g. Point, Polygon) if not inferable."
             },
             "srid": {
               "type": "integer",
-              "description": "Spatial reference identifier for the published layer."
+              "description": "Published layer spatial reference ID."
             },
             "primaryKey": {
               "type": "string",
-              "description": "Primary key column when the table has no detectable key."
+              "description": "Primary key column if none detected."
             },
             "fields": {
               "type": "array",
               "items": { "type": "string" },
-              "description": "Subset of attribute columns to publish. All columns are published when omitted."
+              "description": "Attribute columns to publish; omitted: all."
             }
           }
         }
@@ -136,33 +136,33 @@ internal static class McpToolSchemas
           "properties": {
             "sourceId": {
               "type": "string",
-              "description": "Completed analysis job id (from honua_execute_plan → honua://jobs/{id}) whose result artifact is promoted to a hosted layer."
+              "description": "Completed honua_execute_plan job ID (honua://jobs/{id}); promotes its result artifact to a hosted layer."
             },
             "artifactId": {
               "type": "string",
-              "description": "Selects which artifact in the job's result package to promote. Defaults to the single publishable FeatureLayer/Table artifact when the job produced exactly one."
+              "description": "Result-package artifact to promote; omitted: the sole publishable FeatureLayer/Table artifact."
             },
             "serviceName": {
               "type": "string",
-              "description": "Target service name for the published layer. Defaults to the canonical default service when omitted."
+              "description": "Target service; omitted: canonical default service."
             },
             "layerName": {
               "type": "string",
-              "description": "Display name for the published layer. Defaults to the artifact label when omitted."
+              "description": "Published layer display name; omitted: artifact label."
             },
             "targetKind": {
               "type": "string",
               "enum": ["published_service", "deployment"],
-              "description": "Promotion-surface target family. published_service (Analyze / Publish Data) is supported; deployment (Build App) is not yet materialized server-side. Defaults to published_service."
+              "description": "Target family: published_service (Analyze / Publish Data, default); deployment (Build App) is unsupported server-side."
             },
             "visibility": {
               "type": "string",
               "enum": ["workspace_shared", "public"],
-              "description": "Requested promotion visibility scope. Effective visibility is governed by the publish operator gate / RBAC."
+              "description": "Requested visibility; effective scope governed by publish operator gate / RBAC."
             },
             "routePrefix": {
               "type": "string",
-              "description": "Optional route prefix for a deployment target (Build App)."
+              "description": "Optional deployment (Build App) route prefix."
             }
           }
         }

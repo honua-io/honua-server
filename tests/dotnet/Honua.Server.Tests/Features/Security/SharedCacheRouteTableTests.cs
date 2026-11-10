@@ -72,6 +72,15 @@ public sealed partial class SharedCacheRouteTableTests : IDisposable
     }
 
     [UnitTest]
+    public void StaticMapRoutes_RenderArbitraryExtents_DeclareNoSharedClass()
+    {
+        var staticMaps = Routes().Where(route => route.Pattern.StartsWith("/static/", StringComparison.Ordinal)).ToArray();
+
+        staticMaps.Should().HaveCount(2);
+        staticMaps.Should().OnlyContain(route => route.CacheClass == null);
+    }
+
+    [UnitTest]
     public void EveryRoute_WithAnyCredential_IsNeverSharedCacheable()
     {
         var failures = new List<string>();
