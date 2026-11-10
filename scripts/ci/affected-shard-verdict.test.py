@@ -55,6 +55,7 @@ def decide(**overrides):
         result=fields.pop("select_result"), skip=fields.pop("select_skip"),
         reason=fields.pop("select_reason"), count=fields.pop("select_count"),
         shards=fields.pop("selected_shards", ["Reporting"]),
+        deferred=tuple(fields.pop("deferred", ())),
     )
     return verdict.decide(selection=selection, **fields)
 
@@ -253,6 +254,81 @@ class AffectedShardVerdictTests(unittest.TestCase):
                                  selected_shards=[], select_reason=reason, timings=[])
                 self.assertEqual(outcome["exit_code"], exit_code, (mode, reason))
                 self.assertFalse(outcome["receipt"]["test_pass"])
+
+    def test_all_deferred_selection_is_a_green_deferred_verdict_naming_the_shards(self) -> None:
+        for mode in ("report", "enforce"):
+            outcome = decide(mode=mode, select_skip="true", select_count="0", selected_shards=[],
+                             select_reason=verdict.DEFERRED_SKIP_REASON, timings=[],
+                             deferred=["WFS", "Security and Authorization"])
+            self.assertEqual(outcome["exit_code"], 0, mode)
+            self.assertEqual(outcome["receipt"]["verdict"], "deferred")
+            self.assertFalse(outcome["receipt"]["test_pass"])
+            self.assertFalse(outcome["receipt"]["shards_passed"])
+            self.assertIn("  - WFS", outcome["summary"])
+            self.assertIn("  - Security and Authorization", outcome["summary"])
+            self.assertIn("post-merge trunk run covers them", outcome["summary"])
+            self.assertTrue(any(
+                message.startswith("HONUA_AFFECTED_SHARD_DEFERRED ") for message in messages(outcome)
+            ))
+            self.assertFalse(any(
+                message.startswith("HONUA_AFFECTED_SHARD_GREEN ") for message in messages(outcome)
+            ))
+
+    def test_deferred_skip_without_names_or_with_selected_families_fails_closed(self) -> None:
+        for count, selected, deferred in (("0", [], []), ("1", [], ["WFS"]), ("0", ["Reporting"], ["WFS"])):
+            with self.subTest(count=count, selected=selected, deferred=deferred):
+                outcome = decide(mode="enforce", select_skip="true", select_count=count,
+                                 selected_shards=selected, select_reason=verdict.DEFERRED_SKIP_REASON,
+                                 timings=[], deferred=deferred)
+                self.assertEqual(outcome["exit_code"], 1)
+                self.assertEqual(outcome["receipt"]["verdict"], "untrusted_skip")
+
+    def test_partial_deferral_still_fails_on_a_red_or_missing_selected_shard(self) -> None:
+        red = decide(mode="enforce", deferred=["WFS"], timings=[timing("Reporting", "failed")])
+        self.assertEqual(red["exit_code"], 1)
+        self.assertEqual(red["receipt"]["verdict"], "red")
+        missing = decide(mode="enforce", deferred=["WFS"], shards_result="failure", timings=[])
+        self.assertEqual(missing["exit_code"], 1)
+        self.assertEqual(missing["receipt"]["verdict"], "no_receipts")
+        green = decide(mode="enforce", deferred=["WFS"], timings=[timing("Reporting")])
+        self.assertEqual(green["exit_code"], 0)
+        self.assertEqual(green["receipt"]["verdict"], "green")
+        self.assertIn("  - WFS", green["summary"])
+
+    def test_cli_rejects_a_malformed_deferred_list(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for value in ('{"WFS": 1}', '[1]', '[""]', 'not json'):
+                with self.subTest(value=value):
+                    completed = subprocess.run(
+                        [sys.executable, str(ROOT / "scripts/ci/affected-shard-verdict.py"),
+                         "--timings", str(root), "--receipt", str(root / "verdict.json")],
+                        check=False, capture_output=True, text=True,
+                        env={**os.environ, "MODE": "enforce", "SELECT_RESULT": "success",
+                             "SELECT_SKIP": "true", "SELECT_REASON": verdict.DEFERRED_SKIP_REASON,
+                             "SELECT_COUNT": "0", "SELECT_MATRIX": "[]", "SELECT_DEFERRED": value,
+                             "SHARDS_RESULT": "skipped", "GITHUB_STEP_SUMMARY": str(root / "s.md")},
+                    )
+                    self.assertEqual(completed.returncode, 1, completed.stdout)
+
+    def test_workflow_applies_the_time_budget_in_both_selector_calls(self) -> None:
+        import yaml
+
+        workflow = yaml.safe_load((ROOT / ".github/workflows/pr-gate.yml").read_text())
+        calls = [
+            step["run"]
+            for job in workflow["jobs"].values()
+            for step in job.get("steps", [])
+            if "compute-affected-shards.py" in step.get("run", "")
+        ]
+        self.assertEqual(len(calls), 2)
+        for call in calls:
+            self.assertIn("--time-budget", call)
+        select = workflow["jobs"]["affected-shards-select"]
+        self.assertIn("steps.select.outputs.deferred_to_trunk", select["outputs"]["deferred_to_trunk"])
+        report = next(step for step in workflow["jobs"]["affected-shards"]["steps"]
+                      if "affected-shard-verdict.py" in step.get("run", ""))
+        self.assertIn("outputs.deferred_to_trunk", report["env"]["SELECT_DEFERRED"])
 
     def test_selected_families_cannot_be_hidden_by_a_safe_skip_reason(self) -> None:
         outcome = decide(mode="enforce", select_skip="true", select_reason="docs_only", timings=[])

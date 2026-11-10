@@ -85,6 +85,14 @@ jq -e '
   and (.default_shards_when_no_match | type == "array" and length > 0)
   and (.shards | type == "array" and length > 0)
   and (
+    .pr_time_budget
+    | type == "object"
+    and (keys == ["max_shard_minutes", "max_total_minutes"])
+    and (.max_shard_minutes | type == "number" and . > 0)
+    and (.max_total_minutes | type == "number")
+    and (.max_total_minutes >= .max_shard_minutes)
+  )
+  and (
     [
       .shards[]
       | (

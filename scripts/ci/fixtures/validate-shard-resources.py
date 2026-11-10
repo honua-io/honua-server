@@ -80,7 +80,8 @@ class ResourceTests(unittest.TestCase):
         free = next(s for s in registry['shards'] if catalog[s.get('csproj') or module.MONOLITH]['role'] == 'unit'
                     and catalog[s.get('csproj') or module.MONOLITH]['resources'] == [])
         database = next(s for s in registry['shards'] if 'postgres' in catalog[s.get('csproj') or module.MONOLITH]['resources'])
-        result = {'skip': False, 'reason': 'targeted', 'shards': [free['name'], database['name']], 'cap': 6}
+        result = {'skip': False, 'reason': 'targeted', 'shards': [free['name'], database['name']], 'cap': 6,
+                  'deferred_to_trunk': []}
         expected = selection.matrix_include(result, registry)
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / 'github-output'

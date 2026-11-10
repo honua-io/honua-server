@@ -15,11 +15,12 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -60,15 +61,23 @@ def load_module():
 selector = load_module()
 
 
-def run_selector(changed_files: list[str], *, cap: int = 6) -> dict[str, Any]:
+def run_selector(
+    changed_files: list[str],
+    *,
+    cap: int = 6,
+    extra_args: Sequence[str] = (),
+    github_output: Path | None = None,
+) -> dict[str, Any]:
     """Drive the real CLI, so argument plumbing is covered too."""
-    argv = [sys.executable, str(SELECTOR), "--changed-files", "-", "--cap", str(cap)]
+    argv = [sys.executable, str(SELECTOR), "--changed-files", "-", "--cap", str(cap), *extra_args]
+    env = {**os.environ, "GITHUB_OUTPUT": str(github_output)} if github_output else None
     completed = subprocess.run(
         argv,
         input="\n".join(changed_files) + "\n",
         capture_output=True,
         text=True,
         cwd=str(REPO_ROOT),
+        env=env,
     )
     if completed.returncode != 0:
         raise FixtureError(f"selector exited {completed.returncode}: {completed.stderr[-800:]}")
@@ -82,6 +91,7 @@ def select_offline(
     descriptor: dict[str, Any],
     projects: list[str] | None = None,
     cap: int = 6,
+    time_budget: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Exercise the pure selection with a supplied router answer."""
     return selector.select(
@@ -91,6 +101,7 @@ def select_offline(
         affected_projects=projects,
         cap=cap,
         test_class_hits=selector.count_test_class_hits(REPO_ROOT, config, changed_files),
+        time_budget=time_budget,
     )
 
 
@@ -134,7 +145,7 @@ def unique_owned_prefix(config: dict[str, Any], shard: dict[str, Any]) -> str | 
 def runnable_method_index(classes: dict[str, dict[str, Any]]) -> dict[str, list[str]]:
     """`{class fqn: the methods a shard would actually run}` for the inventory.
 
-    Resolved once and shared. The ownership walk below is 71 shards x ~1400
+    Resolved once and shared. The ownership walk below is every shard x ~1400
     classes, and deriving tiers inside that loop re-reads every test source per
     shard -- the fixture went from 55s to over two minutes before this.
     """
@@ -191,20 +202,28 @@ def check_temporal_source_survives_the_cap(config: dict[str, Any]) -> None:
         "src/Honua.Server/Features/Security/Probe.cs",
     ]
     owner = "Server Features Packages and Temporal"
+    catch_all = "Server Features Miscellaneous"
 
     def require_owner(shards: dict[str, Any]) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "shards.json"
             path.write_text(json.dumps(shards))
-            result = select_offline(shards, changed, descriptor=router(shards, changed, config_path=path))
-        if len(result["shards"]) != 6 or result["candidate_count"] <= 6:
-            raise FixtureError("temporal cap probe must fill six slots and drop other candidates")
+            result = select_offline(
+                shards,
+                changed,
+                descriptor=router(shards, changed, config_path=path),
+                time_budget=selector.load_time_budget(shards),
+            )
+        if result["candidate_count"] <= len(result["shards"]):
+            raise FixtureError("temporal probe must leave some candidates unselected")
         if owner not in result["shards"]:
             raise FixtureError(f"changed temporal source lost its executing owner: {result['shards']}")
+        if catch_all in candidates(result) | {entry["name"] for entry in result["deferred_to_trunk"]}:
+            raise FixtureError(f"{catch_all!r} competes with {owner!r} for temporal source")
 
     require_owner(config)
     copied = copy.deepcopy(config)
-    parent = next(shard for shard in copied["shards"] if shard["name"] == "Server Features Miscellaneous")
+    parent = next(shard for shard in copied["shards"] if shard["name"] == catch_all)
     parent["paths"].append("src/Honua.Server/Features/Temporal/")
     try:
         require_owner(copied)
@@ -232,6 +251,71 @@ def check_cap_is_enforced(config: dict[str, Any]) -> None:
             )
         if len(result["dropped"]) != len(config["shards"]) - cap:
             raise FixtureError("dropped families were not reported")
+
+
+def check_time_budget_bounds_the_selection(config: dict[str, Any]) -> tuple[int, int]:
+    """Under the budget no selected shard is over the shard limit and the total fits.
+
+    Every candidate is accounted for exactly once: selected, dropped by the cap, or deferred to trunk.
+    """
+    budget = selector.load_time_budget(config)
+    probe = ["tests/dotnet/Honua.TestKit/AffectedShardsFixtureProbe.cs"]
+    descriptor = router(config, probe)
+    result = select_offline(config, probe, descriptor=descriptor, cap=6, time_budget=budget)
+    over_limit = [e["name"] for e in result["selected"] if e["dispatch_rank"] > budget["max_shard_minutes"]]
+    if over_limit:
+        raise FixtureError(f"the time budget selected shards over {budget['max_shard_minutes']} min: {over_limit}")
+    if result["projected_runner_minutes"] > budget["max_total_minutes"]:
+        raise FixtureError(f"the time budget selected {result['projected_runner_minutes']} runner-minutes")
+    deferred = [entry["name"] for entry in result["deferred_to_trunk"]]
+    accounted = result["shards"] + result["dropped"] + deferred
+    if sorted(accounted) != sorted(set(accounted)) or len(accounted) != result["candidate_count"]:
+        raise FixtureError("selected, dropped and deferred shards must partition the candidates")
+
+    near_limit = sorted(
+        (s for s in config["shards"] if s["dispatch_rank"] <= budget["max_shard_minutes"]),
+        key=lambda shard: -shard["dispatch_rank"],
+    )[:6]
+    if sum(s["dispatch_rank"] for s in near_limit) <= budget["max_total_minutes"]:
+        raise FixtureError("the six slowest in-budget shards fit the total budget; refresh this fixture")
+    targeted = {"run_all": False, "reason": "targeted", "shards": [s["name"] for s in near_limit]}
+    total = select_offline(config, [], descriptor=targeted, cap=6, time_budget=budget)
+    if total["projected_runner_minutes"] > budget["max_total_minutes"]:
+        raise FixtureError(f"the total budget let {total['projected_runner_minutes']} runner-minutes through")
+    if not any(entry["reason"] == "over_total_budget" for entry in total["deferred_to_trunk"]):
+        raise FixtureError("a selection past the total budget did not defer the overflow")
+    selectable = sum(s["dispatch_rank"] <= budget["max_shard_minutes"] for s in config["shards"])
+    return selectable, len(config["shards"]) - selectable
+
+
+def check_all_deferred_selection_skips_and_names_the_shards(config: dict[str, Any]) -> None:
+    """A diff owned only by over-budget shards skips with the deferred reason, through the CLI."""
+    budget = selector.load_time_budget(config)
+    slow = next(
+        shard
+        for shard in sorted(config["shards"], key=lambda s: -s["dispatch_rank"])
+        if shard["dispatch_rank"] > budget["max_shard_minutes"] and unique_owned_prefix(config, shard)
+    )
+    probe = [f"{unique_owned_prefix(config, slow)}AffectedShardsFixtureProbe.cs"]
+    offline = select_offline(config, probe, descriptor=router(config, probe), cap=6, time_budget=budget)
+    if offline["shards"] or offline["reason"] != selector.DEFERRED_SKIP_REASON:
+        raise FixtureError(f"selection ran over-budget shards {offline['shards']} for a diff owned by {slow['name']!r}")
+    with tempfile.TemporaryDirectory() as directory:
+        output = Path(directory) / "github-output"
+        result = run_selector(probe, extra_args=["--time-budget", "--github-output"], github_output=output)
+        outputs = dict(line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines())
+    if not result["skip"] or result["reason"] != selector.DEFERRED_SKIP_REASON or result["shards"]:
+        raise FixtureError(
+            f"a diff owned only by {slow['name']!r} ({slow['dispatch_rank']} min) did not skip as "
+            f"deferred: skip={result['skip']} reason={result['reason']} shards={result['shards']}"
+        )
+    deferred = [entry["name"] for entry in result["deferred_to_trunk"]]
+    if slow["name"] not in deferred:
+        raise FixtureError(f"the deferred receipt does not name {slow['name']!r}: {deferred}")
+    if json.loads(outputs.get("deferred_to_trunk", "[]")) != deferred:
+        raise FixtureError("the deferred_to_trunk step output does not match the receipt")
+    if slow["name"] not in selector.render_summary(result):
+        raise FixtureError("the step summary does not name the deferred shard")
 
 
 def check_largest_impact_first(config: dict[str, Any]) -> None:
@@ -262,7 +346,7 @@ def check_changed_test_file_selects_its_running_shard(config: dict[str, Any]) ->
     This is the signal that makes the cap usable on a run_all answer. Shard
     `paths` name individual test FILES for the protocol-split projects, so a
     diff that ADDS one is claimed by no routing entry at all and escalates --
-    and then only the filter tells the truth about which of the 71 families
+    and then only the filter tells the truth about which shard family
     executes the changed test. Proven against live test classes rather than
     synthetic paths, because the claim is about the real filter grammar.
     """
@@ -359,7 +443,7 @@ def check_non_runnable_tiers_are_not_credited(config: dict[str, Any]) -> int:
     Every shard runs `(<filter>)&Tier!=Slow&Tier!=Fast`
     (scripts/ci/run-server-test-shard.sh; both exclusions default on and
     pr-gate.yml overrides neither), so a class whose tests are all Fast or all
-    Slow is executed by none of the 71 families no matter which one's
+    Slow is executed by no shard family no matter which one's
     `FullyQualifiedName` filter claims it. Crediting it anyway would hand that
     shard `test_class_hits` -- the top-priority ranking term -- for tests it
     never runs, and under a capped run_all answer that spends a slot a
@@ -472,7 +556,7 @@ def check_advisory_shards_are_excluded(config: dict[str, Any]) -> None:
     mutated["shards"][0]["advisory"] = True
     name = mutated["shards"][0]["name"]
     descriptor = {"run_all": True, "reason": "infrastructure_change", "shards": [s["name"] for s in mutated["shards"]]}
-    result = select_offline(mutated, ["src/Honua.Core/Core/Models/Probe.cs"], descriptor=descriptor, cap=71)
+    result = select_offline(mutated, ["src/Honua.Core/Core/Models/Probe.cs"], descriptor=descriptor, cap=len(mutated["shards"]))
     if name in candidates(result):
         raise FixtureError(f"advisory shard {name!r} was selected")
 
@@ -682,6 +766,9 @@ def check_failure_injections(config: dict[str, Any]) -> None:
     def ignores_test_ownership(**kwargs):
         return original(**{**kwargs, "test_class_hits": None})
 
+    def ignores_the_time_budget(**kwargs):
+        return original(**{**kwargs, "time_budget": None})
+
     injections = (
         ("cap", ignores_the_cap, lambda: check_cap_is_enforced(config)),
         ("advisory", forgets_advisory, lambda: check_advisory_shards_are_excluded(config)),
@@ -696,6 +783,12 @@ def check_failure_injections(config: dict[str, Any]) -> None:
             ignores_test_ownership,
             lambda: check_changed_test_file_selects_its_running_shard(config),
         ),
+        ("time budget", ignores_the_time_budget, lambda: check_time_budget_bounds_the_selection(config)),
+        (
+            "all-deferred skip",
+            ignores_the_time_budget,
+            lambda: check_all_deferred_selection_skips_and_names_the_shards(config),
+        ),
     )
 
     for label, broken, check in injections:
@@ -708,6 +801,18 @@ def check_failure_injections(config: dict[str, Any]) -> None:
             selector.select = original
         raise FixtureError(f"the {label!r} check accepted a selector that breaks it")
     selector.select = original
+
+    for broken_budget in (None, {"max_shard_minutes": 10}, {"max_shard_minutes": 0, "max_total_minutes": 45},
+                          {"max_shard_minutes": True, "max_total_minutes": 45},
+                          {"max_shard_minutes": "10", "max_total_minutes": 45}):
+        mutated = {key: value for key, value in config.items() if key != selector.TIME_BUDGET_KEY}
+        if broken_budget is not None:
+            mutated[selector.TIME_BUDGET_KEY] = broken_budget
+        try:
+            selector.load_time_budget(mutated)
+        except selector.SelectionError:
+            continue
+        raise FixtureError(f"the time budget loader accepted {broken_budget!r}")
 
     # The product-code check runs ABOVE `select`, on has_product_code, so its
     # injection is the pre-fix admission test: the static prefixes alone.
@@ -797,6 +902,8 @@ def main() -> int:
     check_cap_is_enforced(config)
     check_temporal_source_survives_the_cap(config)
     check_largest_impact_first(config)
+    selectable, deferred = check_time_budget_bounds_the_selection(config)
+    check_all_deferred_selection_skips_and_names_the_shards(config)
     owned = check_changed_test_file_selects_its_running_shard(config)
     check_wps_and_h3_tests_select_both_owners(config)
     tiered = check_non_runnable_tiers_are_not_credited(config)
@@ -815,7 +922,7 @@ def main() -> int:
         f"tier exclusion proven on {tiered} non-runnable classes; "
         f"unrouted-test ownership via {unrouted}; "
         f"{roots} shard-owned roots outside src//tests-dotnet admitted; "
-        f"cap={selector.DEFAULT_CAP})"
+        f"cap={selector.DEFAULT_CAP}; time budget selects {selectable} and defers {deferred} shards)"
     )
     return 0
 

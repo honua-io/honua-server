@@ -72,7 +72,24 @@ delegated to machinery that already gates trunk.
       dispatches by. Front-loading the longest shard is what keeps six parallel
       shards near one shard of wall clock.
    5. Shard name, for determinism.
-5. **Truncate to six.** The dropped families are named in the receipt.
+5. **Spend the cap and the time budget.** PR Gate passes `--time-budget`, which
+   applies `pr_time_budget` from `.github/ci-shards.json`
+   (`max_shard_minutes: 10`, `max_total_minutes: 45`). Walking the ranking, a
+   shard whose `dispatch_rank` exceeds `max_shard_minutes` is deferred, a shard
+   that would push the selection past `max_total_minutes` runner-minutes is
+   deferred, and once six are selected the rest are dropped. Deferred families
+   are listed under `deferred_to_trunk` in the receipt, the step summary and the
+   `deferred_to_trunk` job output; the post-merge trunk run covers them.
+6. **All deferred is green, not skipped.** When every candidate is deferred the
+   selection skips with `affected_shards_deferred_to_trunk`, and
+   `scripts/ci/affected-shard-verdict.py` reports a green `deferred` verdict
+   that names the deferred families. It is not a test pass. A deferred skip that
+   names no family, or that also selected one, fails closed as `untrusted_skip`,
+   and a selected shard that fails or leaves no receipt still fails the context.
+
+`dispatch_rank` is the measured p50 job duration in minutes over green trunk
+full runs. Refresh it from measured runs whenever shards are split or merged:
+the time budget is only as accurate as these numbers.
 
 ### Why `test_class_hits` is the term that matters
 
@@ -110,7 +127,7 @@ Offline dry run over the 20 most recently merged pull requests
 | Wall-clock minutes per *running* PR (mean / median / max) | 20.8 / 19.2 / 26.9 |
 | Amortised over all 20 PRs | 26.9 runner-min, 6.2 wall-clock-min |
 
-Minutes are `dispatch_rank`, the observed shard duration ci.yml dispatches by;
+This window predates the time budget. Minutes are `dispatch_rank`, the observed shard duration ci.yml dispatches by;
 runner-minutes are the sum over selected shards and wall clock is the maximum,
 since the shards run as a parallel matrix. The lane runs beside the required
 `PR Gate / Build and tests` job (~18.7 min p50), and its selected executions contribute to the
