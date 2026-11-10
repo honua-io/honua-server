@@ -1153,7 +1153,7 @@ jobs:
     strategy:
       fail-fast: false
       # Bound trailing shard fanout so PR Gate can obtain runners. Full runs retain their budget.
-      max-parallel: ${{ inputs.selective_base && inputs.full_ci != true && 6 || 24 }}
+      max-parallel: ${{ inputs.selective_base && needs.changes.outputs.full_ci != 'true' && 6 || 24 }}
       matrix:
         include: ${{ fromJson(needs.targeted-shards.outputs.matrix_include) }}
     env:

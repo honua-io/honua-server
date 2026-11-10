@@ -17,7 +17,9 @@ SPEC.loader.exec_module(MODULE)
 class AffectedLaneTests(unittest.TestCase):
     def test_unknown_shared_and_empty_changes_fail_closed(self):
         for paths in [[], ['unknown-input'], ['Directory.Build.props'],
-                      ['src/Honua.Core/Core/Types.cs'], ['src/Honua.Hosting/Startup.cs']]:
+                      ['src/Honua.Core/Core/Types.cs'], ['src/Honua.Hosting/Startup.cs'],
+                      ['src/Honua.Server/Startup/JsonContextRegistration.cs'],
+                      ['src/Honua.Server/EndpointRegistry.cs']]:
             with self.subTest(paths=paths):
                 self.assertTrue(all(MODULE.select(paths).values()))
 
@@ -41,6 +43,11 @@ class AffectedLaneTests(unittest.TestCase):
         self.assertTrue(selected['browser'])
         self.assertTrue(selected['python'])
 
+    def test_shared_browser_harness_and_seed_changes_run_browser_suites(self):
+        for path in ['tests/shared/js-bootstrap.ts', 'tests/seed/browser-compat.yaml']:
+            with self.subTest(path=path):
+                self.assertTrue(MODULE.select([path])['browser'])
+
     def test_compatibility_prerequisites_still_run(self):
         for path in ['src/Honua.Server/Program.cs', 'src/Honua.Ai/Features/Grounding/Tool.cs']:
             self.assertTrue(MODULE.select([path])['postgres'])
@@ -59,6 +66,8 @@ class AffectedLaneTests(unittest.TestCase):
         self.assertIn('sort_by(-.dispatch_rank)', scripts)
         self.assertIn('build', jobs['server-tests']['needs'])
         self.assertIn('6 || 24', jobs['server-tests']['strategy']['max-parallel'])
+        self.assertIn("needs.changes.outputs.full_ci != 'true'",
+                      jobs['server-tests']['strategy']['max-parallel'])
         step = next(step for step in jobs['changes']['steps'] if step.get('id') == 'specialized')
         self.assertIn("trailing_selective == 'true'", step['env']['SELECTIVE'])
         self.assertIn("full_ci != 'true'", step['env']['SELECTIVE'])
