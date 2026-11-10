@@ -8,6 +8,7 @@ using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
@@ -22,6 +23,7 @@ internal static partial class FeatureServerEndpoints
             .WithDescription("Returns metadata for a FeatureServer service including all layers")
             .WithTags("FeatureServer")
             .CacheOutput("ServiceMetadata")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .WithETag()
             .Produces<FeatureServerResponse>(200, "application/json")
             .Produces(404);
@@ -49,6 +51,7 @@ internal static partial class FeatureServerEndpoints
             .WithDescription("Returns detailed layer metadata for a specific layer")
             .WithTags("FeatureServer")
             .CacheOutput("LayerMetadata")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .WithETag()
             .Produces<LayerResponse>(200, "application/json")
             .Produces(404)
@@ -72,6 +75,7 @@ internal static partial class FeatureServerEndpoints
             .WithSummary("Query features from a FeatureServer layer using GET")
             .WithDescription("Query features with WHERE clause, spatial filters, and pagination via GET parameters")
             .WithTags("FeatureServer")
+            .WithSharedCacheClass(ResponseCacheClass.FeatureQuery)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<QueryResponse>(200, "application/json")
             .Produces(StatusCodes.Status200OK, contentType: "application/geo+json")
@@ -255,6 +259,7 @@ internal static partial class FeatureServerEndpoints
             .WithDescription("Generates vector tiles using PostGIS ST_AsMVT with proper clipping and simplification")
             .WithTags("Tiles")
             .CacheOutput("MvtTile")
+            .WithSharedCacheClass(ResponseCacheClass.Tile)
         .Produces<byte[]>(200, "application/vnd.mapbox-vector-tile")
         .Produces(204)
         .Produces(400)
@@ -431,6 +436,7 @@ internal static partial class FeatureServerEndpoints
             .WithDescription("Returns deterministic min/max timestamps and selected temporal field metadata for a time-aware layer")
             .WithTags("FeatureServer")
             .CacheOutput("LayerMetadata")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .WithETag()
             .Produces<TemporalExtentResponse>(200, "application/json")
             .Produces(400)
@@ -553,7 +559,8 @@ internal static partial class FeatureServerEndpoints
             .WithSummary("Get MVT tile containing H3 hexagonal cell boundaries")
             .WithDescription("Generates vector tiles with H3 cell boundaries and feature counts, with resolution from zoom or query parameter")
             .WithTags("Tiles")
-            .CacheOutput("H3MvtTile");
+            .CacheOutput("H3MvtTile")
+            .WithSharedCacheClass(ResponseCacheClass.Tile);
 
         MapFeatureServerNotImplementedEndpoints(endpoints);
 

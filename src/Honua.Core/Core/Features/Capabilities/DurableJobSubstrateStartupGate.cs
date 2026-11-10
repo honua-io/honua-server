@@ -3,12 +3,6 @@
 
 namespace Honua.Core.Features.Capabilities;
 
-// Entitlement decides whether the durable job substrate is composed; durability attestation only decides what the server advertises.
-public sealed class DurableJobSubstrateEntitlement
-{
-    public const string CapabilityId = CapabilityUnavailableCodes.DurableJobsCapability;
-}
-
 public sealed class JobDurabilityOptions
 {
     public const string SectionName = "Jobs";
@@ -67,10 +61,10 @@ public sealed class DurableJobSubstrateNotAttestedException : Exception
 public static class DurableJobSubstrateRemediation
 {
     public const string NonDurableConsequence =
-        "The governed control plane and the durable job runner stay enabled (operations.proposals "
-        + "and jobs.runner are advertised); durability is an operator property of the Redis "
-        + "deployment, and the capability manifest publishes this outcome as "
-        + "limits.job.redisDurability.";
+        "Governed proposals stay enabled (operations.proposals is advertised); "
+        + "durability is an operator property of the Redis deployment, and the capability "
+        + "manifest publishes this outcome as limits.job.redisDurability. Jobs are stored in "
+        + "the system database and do not depend on it.";
 
     public static string For(DurableJobSubstrateCause cause)
         => cause switch
@@ -124,7 +118,7 @@ public static class DurableJobSubstrateStartupGate
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        if (!requireDurableStore || options.RedisDurabilityAttestation is not null)
+        if (!requireDurableStore || options.SystemDatabaseConfigured || options.RedisDurabilityAttestation is not null)
         {
             return;
         }
