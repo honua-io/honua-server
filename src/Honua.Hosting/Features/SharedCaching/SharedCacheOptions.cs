@@ -7,7 +7,6 @@ internal sealed class SharedCacheOptions
 {
     public const string SectionName = "SharedCache";
 
-    private const int OneYearSeconds = 31_536_000;
     private const int OneDaySeconds = 86_400;
 
     public SharedCacheLifetime Tile { get; set; } =
@@ -24,8 +23,6 @@ internal sealed class SharedCacheOptions
 
     public SharedCacheLifetime StaticObject { get; set; } =
         new() { MaxAgeSeconds = 60, SharedMaxAgeSeconds = 300 };
-
-    public int GenerationAddressedLifetimeSeconds { get; set; } = OneYearSeconds;
 
     // Lets the CDN keep serving the last good public tile or query while the origin is unreachable.
     public int StaleIfErrorSeconds { get; set; } = OneDaySeconds;
@@ -52,7 +49,8 @@ internal sealed class SharedCacheEmergency
 
     public List<string> Layers { get; set; } = [];
 
-    internal bool AppliesTo(string? layerKey)
+    // Layers are named "{serviceId}/{layerId}".
+    internal bool AppliesTo(SharedCacheSubject? subject)
         => AllPublicLayers
-           || (layerKey is not null && Layers.Contains(layerKey, StringComparer.OrdinalIgnoreCase));
+           || (subject?.LayerKey is { } layerKey && Layers.Contains(layerKey, StringComparer.OrdinalIgnoreCase));
 }

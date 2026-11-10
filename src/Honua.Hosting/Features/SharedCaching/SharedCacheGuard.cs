@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Infrastructure.Caching;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.SharedCaching;
 
@@ -44,24 +43,15 @@ internal static class SharedCacheGuard
     private static bool ResponseMayBeShared(HttpContext context)
         => SharedCacheResponse.DeclaredClass(context) is not null
            && RequestMayBeShared(context)
-           && IsCacheableStatus(context)
+           && IsCacheableStatus(context.Response.StatusCode)
            && !ResponseAccessVerdict.Restricted(context)
            && !BypassOutputCacheOnErrorEnvelopePolicy.TryGetErrorEnvelopeCode(context, out _)
-           && !context.Response.Headers.ContainsKey("Set-Cookie")
-           && (SharedCacheResponse.IsGenerationAddressed(context) || !RolloutWindowIsOpen(context));
+           && !context.Response.Headers.ContainsKey("Set-Cookie");
 
-    // An outage or a transient refusal is never cached. A missing tile at a generation address stays missing for that generation.
-    private static bool IsCacheableStatus(HttpContext context)
-        => context.Response.StatusCode switch
-        {
-            StatusCodes.Status200OK
-                or StatusCodes.Status204NoContent
-                or StatusCodes.Status206PartialContent
-                or StatusCodes.Status304NotModified => true,
-            StatusCodes.Status404NotFound => SharedCacheResponse.IsGenerationAddressed(context),
-            _ => false,
-        };
-
-    private static bool RolloutWindowIsOpen(HttpContext context)
-        => context.RequestServices.GetService<IRolloutWindow>()?.IsOpen == true;
+    // An outage or a transient refusal is never cached: the CDN would keep serving it.
+    private static bool IsCacheableStatus(int statusCode)
+        => statusCode is StatusCodes.Status200OK
+            or StatusCodes.Status204NoContent
+            or StatusCodes.Status206PartialContent
+            or StatusCodes.Status304NotModified;
 }

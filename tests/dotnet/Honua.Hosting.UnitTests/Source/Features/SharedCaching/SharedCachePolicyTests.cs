@@ -132,23 +132,10 @@ public sealed class SharedCachePolicyTests
         context.Response.Headers.CacheControl.ToString().Should().StartWith("public, max-age=60, s-maxage=300");
     }
 
-    [Fact]
-    public void Apply_GenerationAddressed_IsImmutableForOneYear()
-    {
-        var context = GrantedTile();
-        SharedCacheResponse.MarkGenerationAddressed(context);
-
-        SharedCacheResponse.Apply(context);
-        SharedCacheGuard.Apply(context);
-
-        context.Response.Headers.CacheControl.ToString()
-            .Should().Be("public, max-age=31536000, s-maxage=31536000, immutable, stale-if-error=86400");
-    }
-
     [Theory]
     [InlineData(true, null)]
     [InlineData(false, "parcels/3")]
-    public void Apply_EmergencyCoversTheLayer_ForcesFifteenSecondsAtTheCdnAndDropsImmutable(bool allPublicLayers, string? namedLayer)
+    public void Apply_EmergencyCoversTheLayer_ForcesFifteenSecondsAtTheCdnOverTheLayerLifetime(bool allPublicLayers, string? namedLayer)
     {
         var emergency = new SharedCacheEmergency { AllPublicLayers = allPublicLayers };
         if (namedLayer is not null)
@@ -157,9 +144,8 @@ public sealed class SharedCachePolicyTests
         }
 
         var context = GrantedTile(new SharedCacheOptions { Emergency = emergency });
-        SharedCacheResponse.UseLayer(context, "parcels/3");
+        SharedCacheResponse.UseSubject(context, new SharedCacheSubject("parcels", "3"));
         SharedCacheResponse.UseLifetime(context, SharedCacheLifetime.ForBrowserAndCdn(7200));
-        SharedCacheResponse.MarkGenerationAddressed(context);
 
         SharedCacheResponse.Apply(context);
 
@@ -172,7 +158,7 @@ public sealed class SharedCachePolicyTests
         var emergency = new SharedCacheEmergency();
         emergency.Layers.Add("roads/1");
         var context = GrantedTile(new SharedCacheOptions { Emergency = emergency });
-        SharedCacheResponse.UseLayer(context, "parcels/3");
+        SharedCacheResponse.UseSubject(context, new SharedCacheSubject("parcels", "3"));
 
         SharedCacheResponse.Apply(context);
 
@@ -199,35 +185,6 @@ public sealed class SharedCachePolicyTests
     }
 
     [Fact]
-    public void Guard_MissingTileAtGenerationAddress_StaysShared()
-    {
-        var context = GrantedTile();
-        SharedCacheResponse.MarkGenerationAddressed(context);
-        SharedCacheResponse.Apply(context);
-        context.Response.StatusCode = StatusCodes.Status404NotFound;
-
-        SharedCacheGuard.Apply(context);
-
-        context.Response.Headers.CacheControl.ToString().Should().Contain("immutable");
-    }
-
-    [Fact]
-    public void Guard_RolloutWindowOpen_SharesOnlyGenerationAddressedResponses()
-    {
-        var plain = GrantedTile(rolloutWindowOpen: true);
-        SharedCacheResponse.Apply(plain);
-        var generationAddressed = GrantedTile(rolloutWindowOpen: true);
-        SharedCacheResponse.MarkGenerationAddressed(generationAddressed);
-        SharedCacheResponse.Apply(generationAddressed);
-
-        SharedCacheGuard.Apply(plain);
-        SharedCacheGuard.Apply(generationAddressed);
-
-        plain.Response.Headers.CacheControl.ToString().Should().Be(SharedCacheGuard.NotShared);
-        generationAddressed.Response.Headers.CacheControl.ToString().Should().Contain("immutable");
-    }
-
-    [Fact]
     public void Guard_NoCacheControlAtAll_WritesTheSafeDefault()
     {
         var context = new DefaultHttpContext();
@@ -245,6 +202,47 @@ public sealed class SharedCachePolicyTests
         SharedCacheResponse.Apply(context);
         context.Response.Headers.SetCookie = "session=1";
 
+        SharedCacheGuard.Apply(context);
+
+        context.Response.Headers.CacheControl.ToString().Should().Be(SharedCacheGuard.NotShared);
+    }
+
+    [Fact]
+    public void Apply_SubjectNotDeclared_IsReadFromTheRoute()
+    {
+        var emergency = new SharedCacheEmergency();
+        emergency.Layers.Add("parcels/3");
+        var context = GrantedTile(new SharedCacheOptions { Emergency = emergency });
+        context.Request.RouteValues["serviceId"] = "parcels";
+        context.Request.RouteValues["layerId"] = "3";
+
+        SharedCacheResponse.Apply(context);
+
+        context.Response.Headers.CacheControl.ToString().Should().StartWith("public, max-age=0, s-maxage=15");
+    }
+
+    [Fact]
+    public void Apply_RolloutInProgress_StopsTheCdnHoldingMetadataButNotTiles()
+    {
+        var metadata = AnonymousGet(ResponseCacheClass.MetadataDocument, rolloutWindowOpen: true);
+        var tile = GrantedTile(rolloutWindowOpen: true);
+
+        SharedCacheResponse.Apply(metadata);
+        SharedCacheResponse.Apply(tile);
+
+        metadata.Response.Headers.CacheControl.ToString().Should().Be("public, max-age=30, s-maxage=0");
+        tile.Response.Headers.CacheControl.ToString().Should().StartWith("public, max-age=60, s-maxage=300");
+    }
+
+    [Theory]
+    [InlineData("X-Honua-Job-Id")]
+    [InlineData("X-API-Key")]
+    public void Apply_RequestCarriesACredentialHeader_WritesNothingPublic(string header)
+    {
+        var context = GrantedTile();
+        context.Request.Headers[header] = "credential";
+
+        SharedCacheResponse.Apply(context);
         SharedCacheGuard.Apply(context);
 
         context.Response.Headers.CacheControl.ToString().Should().Be(SharedCacheGuard.NotShared);

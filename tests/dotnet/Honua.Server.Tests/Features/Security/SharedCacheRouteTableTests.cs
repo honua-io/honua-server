@@ -9,7 +9,9 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.SharedCaching;
 using Honua.TestKit;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -33,13 +35,27 @@ public sealed partial class SharedCacheRouteTableTests : IDisposable
         ("token query parameter", context => context.Request.QueryString = new QueryString("?token=credential")),
         ("key query parameter", context => context.Request.QueryString = new QueryString("?key=credential")),
         ("admin session cookie", context => context.Request.Headers.Cookie = $"{AdminAuthSessionStore.AuthSessionCookieName}=credential"),
+        ("tenant header", context => context.Request.Headers["X-Honua-Tenant"] = "tenant-a"),
+        ("scoped job header", context => context.Request.Headers["X-Honua-Job-Id"] = "credential"),
         ("forwarded client certificate", context => context.Request.Headers["X-Forwarded-Client-Cert"] = "credential"),
         ("authenticated principal", context => context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user")], "Bearer"))),
         ("development bypass principal", context => context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("auth_type", "dev-bypass")], "dev-bypass"))),
         ("claims without authentication", context => context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("tenant", "a")]))),
     ];
 
-    private readonly TestWebApplicationFactory _factory = new();
+    private const string EventModeOnlyRoute = "/internal/control-plane/scheduled-tick";
+
+    private readonly TestWebApplicationFactory _pollModeHost = new();
+    private readonly WebApplicationFactory<Program> _eventModeHost;
+
+    public SharedCacheRouteTableTests()
+        => _eventModeHost = new TestWebApplicationFactory()
+            .WithWebHostBuilder(builder => builder.UseSetting("ControlPlane:TriggerMode", "Event"));
+
+    [Fact]
+    [Trait("Category", "Architecture")]
+    public void RouteTable_CoversTheEventModeHostAsWellAsTheDefaultHost()
+        => Routes().Select(route => route.Pattern).Should().Contain(EventModeOnlyRoute);
 
     [Fact]
     [Trait("Category", "Architecture")]
@@ -142,7 +158,7 @@ public sealed partial class SharedCacheRouteTableTests : IDisposable
     [Trait("Category", "Architecture")]
     public async Task EveryRoute_ThroughTheRealPipeline_SharesOnlyAnonymousReadsOfDeclaredRoutes()
     {
-        using var client = _factory.CreateClient();
+        using var client = _pollModeHost.CreateClient();
         var failures = new List<string>();
         foreach (var route in Routes())
         {
@@ -166,7 +182,11 @@ public sealed partial class SharedCacheRouteTableTests : IDisposable
         failures.Should().BeEmpty();
     }
 
-    public void Dispose() => _factory.Dispose();
+    public void Dispose()
+    {
+        _pollModeHost.Dispose();
+        _eventModeHost.Dispose();
+    }
 
     private static async Task<string?> SendAsync(HttpClient client, Route route, string method, bool withApiKey)
     {
@@ -216,22 +236,23 @@ public sealed partial class SharedCacheRouteTableTests : IDisposable
     private static string Describe(Route route) => $"{string.Join('|', route.Methods)} {route.Pattern}";
 
     private Route[] Routes()
+        => [.. RoutesOf(_pollModeHost).Concat(RoutesOf(_eventModeHost)).DistinctBy(Describe)];
+
+    private static IEnumerable<Route> RoutesOf(WebApplicationFactory<Program> host)
     {
-        using var _ = _factory.CreateClient();
-        return
-        [
-            .. _factory.Services.GetServices<EndpointDataSource>()
-                .SelectMany(source => source.Endpoints)
-                .OfType<RouteEndpoint>()
-                .Where(endpoint => !string.IsNullOrEmpty(endpoint.RoutePattern.RawText))
-                .Select(endpoint => new Route(
-                    endpoint,
-                    "/" + endpoint.RoutePattern.RawText!.TrimStart('/'),
-                    endpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods is { Count: > 0 } methods
-                        ? [.. methods]
-                        : [HttpMethods.Get, .. WriteMethods],
-                    endpoint.Metadata.GetMetadata<SharedCacheClassMetadata>()?.CacheClass)),
-        ];
+        using var _ = host.CreateClient();
+        return host.Services.GetServices<EndpointDataSource>()
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Where(endpoint => !string.IsNullOrEmpty(endpoint.RoutePattern.RawText))
+            .Select(endpoint => new Route(
+                endpoint,
+                "/" + endpoint.RoutePattern.RawText!.TrimStart('/'),
+                endpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods is { Count: > 0 } methods
+                    ? [.. methods]
+                    : [HttpMethods.Get, .. WriteMethods],
+                endpoint.Metadata.GetMetadata<SharedCacheClassMetadata>()?.CacheClass))
+            .ToArray();
     }
 
     [GeneratedRegex(@"\{\*{0,2}(?<name>[^{}:?=]+)(?<constraint>[^{}]*)\}")]

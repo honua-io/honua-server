@@ -16,9 +16,6 @@ internal static class SharedCacheExtensions
         return services;
     }
 
-    internal static IApplicationBuilder UseSharedCacheGuard(this IApplicationBuilder app)
-        => app.UseMiddleware<SharedCacheGuardMiddleware>();
-
     internal static TBuilder WithSharedCacheClass<TBuilder>(this TBuilder builder, ResponseCacheClass cacheClass)
         where TBuilder : IEndpointConventionBuilder
     {

@@ -1360,9 +1360,11 @@ if (activeDbConnectionTracker != null)
     EnhancedTelemetry.ConfigureActiveDbConnectionsProvider(activeDbConnectionTracker.GetActiveCount);
 }
 
-// First in the pipeline so its response-start callback runs last: a response that is not provably
-// public leaves as private, no-store, including every response short-circuited below.
-Honua.Infrastructure.SharedCaching.SharedCacheExtensions.UseSharedCacheGuard(app);
+// First in the pipeline so its response-start callback runs last, on every response including the
+// ones short-circuited below. Authentication decisions and authenticated data must not survive
+// credential changes in client caches, and a response that is not provably public leaves as
+// private, no-store.
+app.UseMiddleware<AuthenticationResponseCacheMiddleware>();
 
 app.UseGeoServicesPublicPaths();
 
@@ -1706,13 +1708,6 @@ app.UseGlobalExceptionHandling();
 // untouched. Runs after global exception handling so thrown exceptions keep their
 // existing protocol shaping and only status-only responses are re-shaped here.
 app.UseRestErrorEnvelope();
-
-// Authentication decisions and authenticated data must not survive credential changes
-// in client caches, including clients using non-standard credential headers. Registered
-// before every middleware below that can terminate a credential route (license expiry,
-// a disabled deployment capability, invalid input) so a short-circuited denial still
-// registers the OnStarting callback that applies the final cache policy (#4609 review).
-app.UseMiddleware<AuthenticationResponseCacheMiddleware>();
 
 // Paid deployments stop every data surface at expiry, including cached reads and exports.
 app.UseMiddleware<Honua.Infrastructure.Licensing.LicenseOperationMiddleware>();

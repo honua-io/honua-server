@@ -12,31 +12,29 @@ namespace Honua.Infrastructure.SharedCaching;
 // The only writer of a shared-cacheable Cache-Control. SharedCacheGuard removes it again when the response starts if the request turns out not to qualify.
 internal static class SharedCacheResponse
 {
+    private static readonly SharedCacheOptions ProductDefaults = new();
     private static readonly object LifetimeKey = new();
-    private static readonly object GenerationAddressedKey = new();
-    private static readonly object LayerKeyKey = new();
+    private static readonly object SubjectKey = new();
 
     internal static void UseLifetime(HttpContext context, SharedCacheLifetime lifetime)
         => context.Items[LifetimeKey] = lifetime;
 
+    internal static void UseSubject(HttpContext context, SharedCacheSubject subject)
+        => context.Items[SubjectKey] = subject;
+
+    internal static SharedCacheSubject? Subject(HttpContext context)
+        => context.Items.TryGetValue(SubjectKey, out var subject) && subject is SharedCacheSubject declared
+            ? declared
+            : SharedCacheSubject.FromRoute(context.Request.RouteValues);
+
     internal static void UseTileset(HttpContext context, TileOptions tileOptions, TilesetAddress tileset)
     {
-        UseLayer(context, tileset.LayerKey);
+        UseSubject(context, new SharedCacheSubject(tileset.ServiceId, tileset.LayerId));
         if (TilesetTtlResolver.ResolveTilesetTtl(tileOptions, tileset.TilesetKey) is { } tilesetTtl)
         {
             UseLifetime(context, SharedCacheLifetime.ForBrowserAndCdn(tilesetTtl));
         }
     }
-
-    // The key an operator names in SharedCache:Emergency:Layers, "{serviceId}/{layerId}".
-    internal static void UseLayer(HttpContext context, string layerKey)
-        => context.Items[LayerKeyKey] = layerKey;
-
-    internal static void MarkGenerationAddressed(HttpContext context)
-        => context.Items[GenerationAddressedKey] = true;
-
-    internal static bool IsGenerationAddressed(HttpContext context)
-        => context.Items.ContainsKey(GenerationAddressedKey);
 
     // Handlers that write the body themselves call this before the first write; the endpoint filter covers the rest.
     internal static void Apply(HttpContext context)
@@ -50,17 +48,17 @@ internal static class SharedCacheResponse
             return;
         }
 
-        var options = context.RequestServices.GetRequiredService<IOptionsMonitor<SharedCacheOptions>>().CurrentValue;
+        var options = context.RequestServices.GetService<IOptionsMonitor<SharedCacheOptions>>()?.CurrentValue ?? ProductDefaults;
         context.Response.Headers.CacheControl = FormatCacheControl(context, cacheClass, options);
         AddMissingVary(context.Response, VaryFor(cacheClass));
     }
 
+    internal static ResponseCacheClass? DeclaredClass(HttpContext context)
+        => context.GetEndpoint()?.Metadata.GetMetadata<SharedCacheClassMetadata>()?.CacheClass;
+
     // The ETag service's own default is private, must-revalidate: that is a fallback, not a refusal.
     private static bool HandlerForbadeStorage(HttpResponse response)
         => response.Headers.CacheControl.ToString().Contains("no-store", StringComparison.OrdinalIgnoreCase);
-
-    internal static ResponseCacheClass? DeclaredClass(HttpContext context)
-        => context.GetEndpoint()?.Metadata.GetMetadata<SharedCacheClassMetadata>()?.CacheClass;
 
     // A metadata document may list several resources and filters out what the caller cannot read, so it needs no single grant.
     private static bool AccessPermitsSharing(HttpContext context, ResponseCacheClass cacheClass)
@@ -68,22 +66,21 @@ internal static class SharedCacheResponse
             ? !ResponseAccessVerdict.Restricted(context)
             : ResponseAccessVerdict.GrantedToAnonymous(context);
 
+    // s-maxage is always written: the CDN's own minimum is 0, so the origin header is the only lifetime it has.
     private static string FormatCacheControl(HttpContext context, ResponseCacheClass cacheClass, SharedCacheOptions options)
     {
-        var emergency = options.Emergency.AppliesTo(LayerKey(context));
-        var lifetime = ResolveLifetime(context, cacheClass, options, emergency);
+        var lifetime = ResolveLifetime(context, cacheClass, options);
+        var sharedMaxAge = DiffersBetweenReleases(cacheClass) && RolloutIsInProgress(context)
+            ? 0
+            : lifetime.SharedMaxAgeSeconds;
         var directives = new List<string>
         {
             "public",
             $"max-age={Seconds(lifetime.MaxAgeSeconds)}",
-            $"s-maxage={Seconds(lifetime.SharedMaxAgeSeconds)}",
+            $"s-maxage={Seconds(sharedMaxAge)}",
         };
 
-        if (IsGenerationAddressed(context) && !emergency)
-        {
-            directives.Add("immutable");
-        }
-        else if (lifetime.StaleWhileRevalidateSeconds > 0)
+        if (lifetime.StaleWhileRevalidateSeconds > 0 && sharedMaxAge > 0)
         {
             directives.Add($"stale-while-revalidate={Seconds(lifetime.StaleWhileRevalidateSeconds)}");
         }
@@ -96,17 +93,11 @@ internal static class SharedCacheResponse
         return string.Join(", ", directives);
     }
 
-    private static SharedCacheLifetime ResolveLifetime(
-        HttpContext context, ResponseCacheClass cacheClass, SharedCacheOptions options, bool emergency)
+    private static SharedCacheLifetime ResolveLifetime(HttpContext context, ResponseCacheClass cacheClass, SharedCacheOptions options)
     {
-        if (emergency)
+        if (options.Emergency.AppliesTo(Subject(context)))
         {
             return SharedCacheEmergency.Lifetime;
-        }
-
-        if (IsGenerationAddressed(context))
-        {
-            return SharedCacheLifetime.ForBrowserAndCdn(options.GenerationAddressedLifetimeSeconds);
         }
 
         return context.Items.TryGetValue(LifetimeKey, out var declared) && declared is SharedCacheLifetime layerLifetime
@@ -114,8 +105,12 @@ internal static class SharedCacheResponse
             : options.DefaultFor(cacheClass);
     }
 
-    private static string? LayerKey(HttpContext context)
-        => context.Items.TryGetValue(LayerKeyKey, out var layerKey) ? layerKey as string : null;
+    // Two releases can describe the same service differently while both take traffic.
+    private static bool DiffersBetweenReleases(ResponseCacheClass cacheClass)
+        => cacheClass is ResponseCacheClass.MetadataDocument;
+
+    private static bool RolloutIsInProgress(HttpContext context)
+        => context.RequestServices.GetService<IRolloutWindow>()?.IsOpen == true;
 
     private static string Seconds(int seconds)
         => Math.Max(0, seconds).ToString(CultureInfo.InvariantCulture);
@@ -140,9 +135,24 @@ internal static class SharedCacheResponse
     };
 }
 
+// What a response is about. Lifetimes and the emergency setting are chosen by it today; a cache tag can be derived from it without touching a call site.
+internal sealed record SharedCacheSubject(string ServiceId, string? LayerId = null, string? StyleId = null)
+{
+    private static readonly string[] ServiceRouteValues = ["serviceId", "collectionId", "sceneId", "datasetId"];
+
+    internal string? LayerKey => LayerId is null ? null : $"{ServiceId}/{LayerId}";
+
+    // Most routes name their service and layer in the address, so a handler only declares a subject when the route does not.
+    internal static SharedCacheSubject? FromRoute(RouteValueDictionary routeValues)
+    {
+        var serviceId = ServiceRouteValues.Select(name => routeValues[name]?.ToString()).FirstOrDefault(value => value is not null);
+        return serviceId is null
+            ? null
+            : new SharedCacheSubject(serviceId, routeValues["layerId"]?.ToString(), routeValues["styleId"]?.ToString());
+    }
+}
+
 internal readonly record struct TilesetAddress(string ServiceId, string LayerId, string TileMatrixSetId)
 {
-    internal string LayerKey => $"{ServiceId}/{LayerId}";
-
     internal string TilesetKey => TilesetTtlResolver.BuildKey(ServiceId, LayerId, TileMatrixSetId);
 }
