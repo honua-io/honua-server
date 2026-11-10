@@ -25,6 +25,16 @@ PACKAGE_IMAGES = dict(server=SERVER, executor=EXECUTOR, worker=WORKER)
 
 
 class ComposeQuickstartTests(unittest.TestCase):
+    def test_package_explains_human_session_approval_instead_of_approver_api_keys(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            package(path, PACKAGE_IMAGES, '2026.1-rc.2')
+            readme = (path / 'README.md').read_text()
+            self.assertIn('interactive OIDC session', readme)
+            self.assertIn('requester may approve', readme)
+            self.assertNotIn('approver API keys', readme)
+            self.assertNotIn('Self approval is refused', readme)
+
     def test_materialization_timeout_is_forwarded_from_dotenv(self):
         for selected, expected in (('', '300'), ('900', '900')):
             with self.subTest(selected=selected), tempfile.TemporaryDirectory() as directory:

@@ -11,7 +11,9 @@ Certification is judged the way the resolver judges it
 (honua-release `certification/check_build_test.py::classify_full_matrix`):
 
 * the candidate runs are this repository's `ci.yml` runs on exactly that head sha whose event
-  is `schedule` or `workflow_dispatch`;
+  is `schedule` or `workflow_dispatch`, except post-merge affected runs (titled
+  `CI affected ...` by trunk-affected.yml): they verify a range selectively, never certify, and
+  must not supersede a full matrix on the same sha;
 * of those, only COMPLETED runs count, and the newest one (by `updated_at`, then run id)
   decides -- an older green full matrix does not survive a newer run that skipped lanes;
 * every certification lane must have a check-run from THAT run whose latest attempt is
@@ -50,6 +52,7 @@ LANES_VARIABLE = "CERTIFICATION_LANE_JOBS"
 # (certification/full-matrix-checks.yaml). merge_group and pull_request never certify.
 CERTIFYING_EVENTS = frozenset({"schedule", "workflow_dispatch"})
 REPORT_LIMIT = 10
+AFFECTED_RUN_TITLE_PREFIX = "CI affected "
 
 
 class SelectionError(RuntimeError):
@@ -204,6 +207,7 @@ def certify(github: GitHub, sha: str, workflow: str, lanes: Iterable[str]) -> tu
         run for run in github.runs(sha, workflow)
         if str(run.get("path", "")) == workflow and str(run.get("event", "")) in CERTIFYING_EVENTS
         and str(run.get("head_sha", "")) == sha
+        and not str(run.get("display_title", "")).startswith(AFFECTED_RUN_TITLE_PREFIX)
     ]
     completed = [run for run in candidates if run.get("status") == "completed"]
     if not completed:

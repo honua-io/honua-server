@@ -38,8 +38,8 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
     private const string TestOperatorBearerSigningKey = "operator-bearer-signing-key-at-least-32-bytes-long";
     private const string OperatorBearerIssuer = "honua-operator-bearer";
     private const string OperatorBearerAudience = "honua-admin-api";
-    private const string TestOidcIssuer = "https://auth.example.com";
-    private const string TestOidcAudience = "generic-client-id";
+    internal const string TestOidcIssuer = "https://auth.example.com";
+    internal const string TestOidcAudience = "generic-client-id";
     private static readonly RsaSecurityKey _oidcSigningKey = CreateOidcSigningKey();
     private static readonly SigningCredentials _oidcSigningCredentials = new(_oidcSigningKey, SecurityAlgorithms.RsaSha256);
 
@@ -455,9 +455,13 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
         }
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
     [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/token")]
-    public async Task RequestToken_WithoutPkceCookies_ReturnsBadRequest()
+    [InlineData("authorization_code")]
+    [InlineData("authorization_code ")]
+    [InlineData(" authorization_code")]
+    [InlineData("\tauthorization_code")]
+    public async Task RequestToken_WithoutPkceCookies_ReturnsBadRequest(string grantType)
     {
         using var stubFactory = new StubHttpClientFactory(
             "https://auth.example.com/.well-known/openid-configuration",
@@ -477,12 +481,16 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                 "/api/v1/admin/auth/providers/oidc/token",
                 new
                 {
-                    grantType = "authorization_code",
+                    grantType,
                     code = "code-123",
                     state = "state-123"
                 });
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            stubFactory.LastTokenFormValues.Should().BeEmpty();
+            response.Headers.TryGetValues("Set-Cookie", out var cookies);
+            (cookies ?? []).Should().NotContain(value => value.StartsWith(
+                AdminAuthSessionStore.AuthSessionCookieName + "=", StringComparison.Ordinal));
         }
         finally
         {
@@ -736,6 +744,7 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
             session.Should().NotBeNull();
             session!.IsAuthenticated.Should().BeTrue();
             session.ProviderKey.Should().Be("oidc");
+            await AssertInteractiveSessionOriginAsync(oidcFixture, tokenResponse);
             session.Claims.Should().Contain(c => c.Type == "name" && c.Value == "Test Admin");
             session.Claims.Should().Contain(c => c.Type == ClaimTypes.Role && c.Value == "admin");
 
@@ -748,6 +757,18 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
         {
             await oidcFixture.DisposeAsync();
         }
+    }
+
+    private static async Task AssertInteractiveSessionOriginAsync(WebAppFixture fixture, HttpResponseMessage response)
+    {
+        var cookiePrefix = AdminAuthSessionStore.AuthSessionCookieName + "=";
+        var issuedCookie = response.Headers.GetValues("Set-Cookie")
+            .Single(value => value.StartsWith(cookiePrefix, StringComparison.Ordinal));
+        var sessionId = issuedCookie.Split(';')[0][cookiePrefix.Length..];
+        var verifiedSession = await fixture.Services.GetRequiredService<AdminAuthSessionStore>()
+            .GetInteractiveSessionForApprovalAsync(sessionId, CancellationToken.None);
+        verifiedSession.Should().NotBeNull();
+        verifiedSession!.Origin.Should().Be(AdminAuthSessionOrigin.InteractiveOidc);
     }
 
     [IntegrationTest]
@@ -1111,7 +1132,7 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
         }
     }
 
-    private static StubHttpClientFactory CreateStubFactory()
+    internal static StubHttpClientFactory CreateStubFactory()
         => new(
             "https://auth.example.com/.well-known/openid-configuration",
             new StubOidcEndpoints(
@@ -1178,9 +1199,12 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
             });
     }
 
-    private static WebAppFixture CreateGenericOidcFixture(IHttpClientFactory httpClientFactory)
+    private static WebAppFixture CreateGenericOidcFixture(IHttpClientFactory httpClientFactory) =>
+        ConfigureGenericOidcFixture(CreateBaseFixture(), httpClientFactory);
+
+    internal static WebAppFixture ConfigureGenericOidcFixture(WebAppFixture fixture, IHttpClientFactory httpClientFactory)
     {
-        return CreateBaseFixture()
+        return fixture
             .ConfigureWebHost(builder =>
             {
                 builder.UseSetting("Oidc:Enabled", "true");
@@ -1201,13 +1225,13 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
             });
     }
 
-    private sealed record StubOidcEndpoints(
+    internal sealed record StubOidcEndpoints(
         string AuthorizationEndpoint,
         string TokenEndpoint,
         string LogoutEndpoint,
         string? JwksEndpoint = null);
 
-    private sealed class StubHttpClientFactory : IHttpClientFactory, IDisposable
+    internal sealed class StubHttpClientFactory : IHttpClientFactory, IDisposable
     {
         private readonly HttpClient _client;
         private readonly string _expectedDiscoveryUrl;
@@ -1228,15 +1252,17 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                 ?? new Uri(new Uri(expectedDiscoveryUrl), "/keys").ToString();
             _accessToken = accessToken ?? CreateAccessToken();
             _idToken = idToken ?? CreateIdToken("Test Admin", "admin");
-            _client = new HttpClient(new StubHttpMessageHandler(this))
+            _client = new HttpClient(CreateMessageHandler())
             {
                 BaseAddress = new Uri("https://stub.local")
             };
         }
 
         public Dictionary<string, string> LastTokenFormValues { get; } = new(StringComparer.Ordinal);
+        public string? IdTokenOverride { get; set; }
 
         public HttpClient CreateClient(string name) => _client;
+        public HttpMessageHandler CreateMessageHandler() => new StubHttpMessageHandler(this);
 
         public void Dispose()
         {
@@ -1287,7 +1313,8 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                         owner.LastTokenFormValues[pair.Key] = pair.Value.ToString();
                     }
 
-                    var idTokenJson = owner._idToken is null ? "null" : $"\"{owner._idToken}\"";
+                    var idToken = owner.IdTokenOverride ?? owner._idToken;
+                    var idTokenJson = idToken is null ? "null" : $"\"{idToken}\"";
                     var tokenJson = $$"""
                         {
                           "access_token": "{{owner._accessToken}}",
@@ -1333,14 +1360,22 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    private static string CreateIdToken(string name, params string[] roles)
+    private static string CreateIdToken(string name, params string[] roles) =>
+        CreateIdTokenForSubject("admin-user", name, roles);
+
+    internal static string CreateIdTokenForSubject(string subject, string name, params string[] roles) =>
+        CreateIdTokenForSubject(subject, name, roles, tenantId: null);
+
+    internal static string CreateIdTokenForSubject(
+        string subject, string name, IReadOnlyList<string> roles, string? tenantId)
     {
         var claims = new List<Claim>
         {
-            new("sub", "admin-user"),
+            new("sub", subject),
             new("name", name)
         };
 
+        if (tenantId is not null) claims.Add(new Claim("tenant_id", tenantId));
         claims.AddRange(roles.Select(static role => new Claim("roles", role)));
 
         var token = new JwtSecurityToken(
