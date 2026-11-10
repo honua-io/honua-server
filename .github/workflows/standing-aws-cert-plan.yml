@@ -29,8 +29,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: standing-aws-cert-plan
-  cancel-in-progress: false
+  group: ${{ github.event.pull_request.number && format('standing-aws-cert-plan-pr-{0}', github.event.pull_request.number) || 'standing-aws-cert-plan' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   controls:

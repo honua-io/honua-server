@@ -176,7 +176,7 @@ public sealed class OperationGatewayIdempotencyTests
         });
         var persisted = store.Single;
 
-        await sut.ApplyApprovedProposalAsync(routed.ProposalId!, "approver");
+        await sut.ApplyApprovedProposalAsync(routed.ProposalId!, new OperationProposalApprovalContext { ApprovedBy = "approver", TenantId = string.Empty });
 
         persisted.Plan.Summary.Should().Be("validated deploy plan");
         persisted.Plan.ExecutionPayload.Should().Be("validated-plan-payload");

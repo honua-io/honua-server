@@ -12,6 +12,11 @@ You'll have a geospatial file loaded into a PostGIS table, ready to publish, in 
 
 **Prerequisites:** A running server ([quickstart](../../get-started/quickstart.md)) and admin credentials ([authentication](../secure/authentication.md)).
 
+For the rc.2 keep-source behavior and its availability requirements, see
+[choose an import coordinate system](choose-import-coordinate-system.md).
+The explicit `targetSrid: 4326` example below requests WGS 84 storage; do not
+use it when your goal is to retain a projected source's coordinates.
+
 The admin import API accepts a single file per request, streams it into PostGIS, reprojects to your target SRID, and queues large uploads as background jobs automatically. Imports land as database tables — publish them as layers afterward (see [Publish layers](publish-layers.md)).
 
 > Prefer an SDK? The same endpoints are wrapped by `honua-sdk-js` and `honua-sdk-dotnet`. Also available in Honua Console — UI guide coming soon.

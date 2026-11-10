@@ -26,6 +26,22 @@ each of the newest candidates. Nothing is published. To image one specific sha, 
 workflow on trunk with `candidate_sha=<full sha>`. That sha must itself be
 certified.
 
+## Data-store variants
+
+Connection clients should read the authenticated capability manifest's
+`dataStores.installedProviders` before offering data-store providers. The list
+comes from runtime registrations, so disabled or excluded providers are absent.
+Do not infer availability from an image tag. A missing `dataStores` section means
+the server has not advertised its inventory.
+
+For a PostGIS-only deployment that needs additional stores, use the opt-in full
+image for the same server revision, identified by `dataStores.fullImageTagSuffix`
+(`-full`). Only use tags published for that revision. Variant publication is
+separate from capability discovery; the hint does not guarantee a full tag exists
+for an older revision. Enabling a provider may also require configuration and an
+experimental opt-in. Restart after changing provider configuration, then read the
+manifest again. File-format readers used by imports are independent of this list.
+
 ## One sha per image
 
 Image contents, `HONUA_GIT_SHA`, the `org.opencontainers.image.revision`

@@ -153,4 +153,8 @@ internal static partial class FeatureStreamLog
     [LoggerMessage(EventId = 5030, Level = LogLevel.Warning,
         Message = "Feature stream session {SessionId} ended: its read policies could not be refreshed.")]
     public static partial void SubscriberPolicyRefreshFailed(ILogger logger, Guid sessionId, Exception exception);
+
+    [LoggerMessage(EventId = 5031, Level = LogLevel.Debug,
+        Message = "Feature stream baseline guidance for layer {LayerId} is unknown because its bounded id probe was unavailable.")]
+    public static partial void BaselineGuidanceUnavailable(ILogger logger, int layerId, Exception exception);
 }

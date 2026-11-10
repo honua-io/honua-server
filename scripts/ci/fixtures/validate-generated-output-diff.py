@@ -263,10 +263,10 @@ class WorkflowCompletion(unittest.TestCase):
     def test_named_jobs_keep_completion_and_every_product_step_is_gated(self):
         import yaml
         gate = yaml.safe_load((ROOT / '.github/workflows/pr-gate.yml').read_text())
-        for job in ('format', 'pr-gate', 'pr-gate-tests', 'ci-router-validation', 'required'):
+        for job in ('format', 'fast-tests', 'pr-gate', 'ci-router-validation', 'required'):
             self.assertNotIn('if', gate['jobs'][job]) if job != 'required' else self.assertEqual(gate['jobs'][job]['if'], 'always()')
         self.assertEqual(gate['jobs']['required']['name'], 'PR Gate')
-        self.assertEqual(gate['jobs']['required']['needs'], ['pr-gate', 'pr-gate-tests', 'format', 'ci-router-validation', 'affected-shards'])
+        self.assertEqual(gate['jobs']['required']['needs'], ['pr-gate', 'fast-tests', 'format', 'ci-router-validation', 'affected-shards'])
         # Evaluate actual Actions expressions for the expensive steps. True and
         # false/absent classification must respectively skip and preserve them.
         for verdict in ('true', 'false', ''):
@@ -283,7 +283,7 @@ class WorkflowCompletion(unittest.TestCase):
                     condition = condition.replace(variable, repr(values[variable]))
                 condition = condition.replace('&&', ' and ').replace('||', ' or ')
                 return eval(condition, {'__builtins__': {}}, {})
-            for job in ('format', 'pr-gate', 'pr-gate-tests'):
+            for job in ('format', 'fast-tests', 'pr-gate'):
                 for step in gate['jobs'][job]['steps']:
                     if ('dotnet ' in step.get('run', '') or step.get('uses', '').startswith(('./.github/actions/', 'docker/'))
                             or 'scripts/ci/server-boot-smoke.sh' in step.get('run', '')):
@@ -314,7 +314,7 @@ class WorkflowCompletion(unittest.TestCase):
         import yaml
         gate = yaml.safe_load((ROOT / '.github/workflows/pr-gate.yml').read_text())
         aggregate = gate['jobs']['required']['steps'][0]['run']
-        keys = ('BUILD_AND_TEST_RESULT', 'TEST_RESULT', 'FORMAT_RESULT', 'CI_ROUTER_RESULT',
+        keys = ('BUILD_AND_TEST_RESULT', 'FAST_RESULT', 'FORMAT_RESULT', 'CI_ROUTER_RESULT',
                 'AFFECTED_SHARDS_RESULT')
         for key in keys:
             for result, expected in (('success', 0), ('failure', 1), ('skipped', 1), ('cancelled', 1)):

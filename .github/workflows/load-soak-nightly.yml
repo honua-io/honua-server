@@ -186,18 +186,8 @@ jobs:
 
       - name: Wait for readiness
         run: |
-          # Production cold start runs the PostGIS preflight check, database
-          # migrations, and high-frequency query preparation before /healthz/ready
-          # reports 200, so budget generously (90 iterations x 2s = 180s).
-          for i in {1..90}; do
-            if curl -sf "$BASE_URL/healthz/ready" >/dev/null; then
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "Server did not become ready in time."
-          cat artifacts/load-soak/server.log
-          exit 1
+          python3 scripts/ci/owned-server.py wait --pid "$(< artifacts/load-soak/server.pid)" \
+            --url "$BASE_URL/healthz/ready" --body Ready --timeout "${HONUA_SOAK_READY_SECONDS:-180}"
 
       # SEED AFTER THE SERVER HAS MIGRATED (#3812). tests/seed/server.yaml is the
       # migration-SKIPPING fixture: it creates the migration-owned core schema itself. Applying
@@ -265,10 +255,8 @@ jobs:
           for _ in {1..30}; do kill -0 "$(cat artifacts/load-soak/server.pid)" 2>/dev/null || break; sleep 1; done
           dotnet run --project src/Honua.Server -c Release --no-build --no-launch-profile >> artifacts/load-soak/server.log 2>&1 &
           echo $! > artifacts/load-soak/server.pid
-          for _ in {1..90}; do
-            if curl -sf "$BASE_URL/healthz/ready" >/dev/null; then break; fi
-            sleep 2
-          done
+          python3 scripts/ci/owned-server.py wait --pid "$(< artifacts/load-soak/server.pid)" \
+            --url "$BASE_URL/healthz/ready" --body Ready --timeout "${HONUA_SOAK_READY_SECONDS:-180}"
           # A load run against an empty catalogue measures 404s, not the server. Fail here instead.
           count="$(curl -fsS "$BASE_URL/rest/services/test/FeatureServer/0/query?f=json&where=1%3D1&returnCountOnly=true")"
           echo "seeded layer 0: $count"

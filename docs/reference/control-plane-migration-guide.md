@@ -35,6 +35,27 @@ When generating a client from the curated contract, select the response type tha
 matches the requested artifact set. See the [import and job reference](admin-api/imports-and-jobs.md)
 for the request fields and artifact selections.
 
+## Human approval of pending operations
+
+Approval now requires one authorized person in a live interactive OIDC session.
+The requester may approve their own proposal. An API key, ordinary bearer or
+agent token cannot approve, even when it has an admin or approve grant. Move
+approval clients to the private human review flow described in
+[authentication](../guides/secure/authentication.md#human-operation-approval).
+A client or model confirmation does not establish human approval.
+
+Regenerate clients from the Admin OpenAPI contract. Proposal details now include
+`version`, `initiation` and `requiresReproposal`. Read the exact proposal or
+coordinated-release gate review before deciding; the short-lived capability is
+bound to its session, target version and plan. Refresh and review again after a
+real change. Unchanged gate polling preserves the review.
+
+Drain old approval writers and workers during deployment. Pending legacy
+proposals need fresh proposals, and unpassed legacy coordinated-release gates
+need fresh human reviews. Already claimed legacy executions and submitted child
+operations retain their recorded authority and may drain. Deploy Server before
+the Console companion; automation can continue proposing and monitoring work.
+
 ## Migration Baseline
 
 Before regenerating or upgrading SDK artifacts:

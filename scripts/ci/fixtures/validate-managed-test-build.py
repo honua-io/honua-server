@@ -209,6 +209,16 @@ class ManagedBuildTests(unittest.TestCase):
             self.invoke('projects', '--matrix-file', str(matrix), '--output', str(output))
         self.assertEqual([self.a, self.b], json.loads(output.read_text()))
 
+    def test_pr_shards_excludes_independent_fast_projects(self):
+        matrix = self.root / 'matrix.json'
+        matrix.write_text(json.dumps({'include': [
+            {'shard_name': 'B', 'csproj': self.b},
+            {'shard_name': 'Advisory', 'csproj': self.a, 'advisory': True}]}))
+        output = self.root / 'selection.json'
+        with patch.object(managed, 'gate_projects', side_effect=AssertionError('Fast owns these projects')):
+            self.invoke('projects', '--lane', 'pr-shards', '--matrix-file', str(matrix), '--output', str(output))
+        self.assertEqual([self.b], json.loads(output.read_text()))
+
     def test_malformed_matrix_fails_closed(self):
         matrix = self.root / 'matrix.json'
         for value in ({}, {'unrelated': []}, [{'advisory': 'false', 'csproj': self.b}], [None], {'include': 'not-json'}):

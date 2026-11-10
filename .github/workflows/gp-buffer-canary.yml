@@ -15,7 +15,7 @@ permissions:
   actions: read
 concurrency:
   group: gp-geometry-buffer-canary-${{ github.event.pull_request.number || 'scheduled' }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   harness-checks:
     runs-on: ubuntu-latest

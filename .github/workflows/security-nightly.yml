@@ -49,7 +49,7 @@ env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 concurrency:
-  group: security-nightly-${{ github.ref }}-${{ inputs.existing_image || 'build' }}-${{ inputs.existing_image_platform || 'default' }}
+  group: security-nightly-${{ github.event.pull_request.number || github.ref }}-${{ inputs.existing_image || 'build' }}-${{ inputs.existing_image_platform || 'default' }}
   cancel-in-progress: true
 
 jobs:
@@ -252,7 +252,7 @@ jobs:
           severity: HIGH,CRITICAL
 
       - name: Upload filesystem SARIF to GitHub Code Scanning
-        uses: github/codeql-action/upload-sarif@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         if: always() && hashFiles('trivy-filesystem-results.sarif') != ''
         with:
           sarif_file: trivy-filesystem-results.sarif
@@ -324,7 +324,7 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Log in to GHCR for build cache
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -341,7 +341,7 @@ jobs:
           failure-threshold: error
 
       - name: Upload Hadolint SARIF to GitHub Code Scanning
-        uses: github/codeql-action/upload-sarif@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         if: always() && hashFiles(format('hadolint-results-{0}.sarif', matrix.variant)) != ''
         with:
           sarif_file: hadolint-results-${{ matrix.variant }}.sarif
@@ -395,7 +395,7 @@ jobs:
           trivyignores: ${{ matrix.trivyignore }}
 
       - name: Upload container Trivy SARIF to GitHub Code Scanning
-        uses: github/codeql-action/upload-sarif@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         if: always() && hashFiles(format('trivy-container-results-{0}.sarif', matrix.variant)) != ''
         with:
           sarif_file: trivy-container-results-${{ matrix.variant }}.sarif
@@ -521,20 +521,24 @@ jobs:
           # PostGIS preflight and migration/schema checks. Provision an empty
           # database on a dedicated network and let the hardened app perform
           # its normal migrations before testing the running container.
-          docker network create honua-runtime-net
+          RUNTIME_NETWORK="honua-runtime-${GITHUB_RUN_ID:-local}-$$"
+          RUNTIME_DB="$RUNTIME_NETWORK-db"
+          RUNTIME_NETWORK_ID="$(docker network create "$RUNTIME_NETWORK")"
+          echo "RUNTIME_NETWORK_ID=$RUNTIME_NETWORK_ID" >> "$GITHUB_ENV"
 
-          docker run -d \
-            --name honua-runtime-db \
-            --network honua-runtime-net \
+          RUNTIME_DB_ID="$(docker run -d \
+            --name "$RUNTIME_DB" \
+            --network "$RUNTIME_NETWORK" \
             -e POSTGRES_DB=honua \
             -e POSTGRES_USER=honua \
             -e POSTGRES_PASSWORD="$RUNTIME_DB_PASSWORD" \
-            postgis/postgis:16-3.4
+            postgis/postgis:16-3.4)"
+          echo "RUNTIME_DB_ID=$RUNTIME_DB_ID" >> "$GITHUB_ENV"
 
           echo "Waiting for PostGIS to accept connections..."
           ready=false
           for _ in $(seq 1 60); do
-            if docker exec honua-runtime-db pg_isready -U honua -d honua >/dev/null 2>&1; then
+            if docker exec "$RUNTIME_DB_ID" pg_isready -U honua -d honua >/dev/null 2>&1; then
               ready=true
               break
             fi
@@ -545,37 +549,29 @@ jobs:
           # loop's success and this check; the app container has its own connection retries + a sleep.
           if [ "$ready" != true ]; then
             echo "::error::PostGIS did not become ready in time"
-            docker logs honua-runtime-db || true
+            docker logs "$RUNTIME_DB_ID" || true
             exit 1
           fi
 
-          docker run -d \
-            --name honua-runtime-test \
-            --network honua-runtime-net \
+          SERVER_PORT="$(python3 scripts/ci/owned-server.py port --variable HONUA_SECURITY_SMOKE_PORT --ci-default 8080)"
+          SERVER_URL="http://127.0.0.1:$SERVER_PORT"
+          RUNTIME_APP_ID="$(docker run -d \
+            --network "$RUNTIME_NETWORK" \
             --read-only \
             --tmpfs /tmp \
             --cap-drop ALL \
             --security-opt no-new-privileges:true \
             -e HONUA_ADMIN_PASSWORD="Sec-Nightly-${{ github.run_id }}-${{ github.run_attempt }}-Aa1!" \
             -e Security__ConnectionEncryption__MasterKey="sec-nightly-master-key-${{ github.run_id }}-${{ github.run_attempt }}-padding0000" \
-            -e ConnectionStrings__DefaultConnection="Host=honua-runtime-db;Port=5432;Database=honua;Username=honua;Password=$RUNTIME_DB_PASSWORD" \
-            -p 8080:8080 \
-            ${{ env.IMAGE_NAME }}:${{ matrix.image_tag }}
+            -e ConnectionStrings__DefaultConnection="Host=$RUNTIME_DB;Port=5432;Database=honua;Username=honua;Password=$RUNTIME_DB_PASSWORD" \
+            -p "127.0.0.1:$SERVER_PORT:8080" \
+            ${{ env.IMAGE_NAME }}:${{ matrix.image_tag }})"
+          echo "RUNTIME_APP_ID=$RUNTIME_APP_ID" >> "$GITHUB_ENV"
+          echo "RUNTIME_SERVER_URL=$SERVER_URL" >> "$GITHUB_ENV"
 
-          ready=false
-          for _ in $(seq 1 120); do
-            if curl --fail --silent --max-time 2 http://localhost:8080/healthz/live >/dev/null; then
-              ready=true
-              break
-            fi
-            if [ "$(docker inspect --format '{{.State.Running}}' honua-runtime-test)" != true ]; then
-              break
-            fi
-            sleep 2
-          done
-          if [ "$ready" != true ]; then
-            echo "::error::Container did not become live after database migrations."
-            docker logs honua-runtime-test || true
+          if ! python3 scripts/ci/owned-server.py wait --container "$RUNTIME_APP_ID" --container-port 8080 \
+              --url "$SERVER_URL/healthz/live" --timeout 240; then
+            docker logs "$RUNTIME_APP_ID" || true
             exit 1
           fi
 
@@ -584,22 +580,22 @@ jobs:
         run: |
           set -euo pipefail
 
-          if ! docker ps --filter "name=^/honua-runtime-test$" --format '{{.Names}}' | grep -q '^honua-runtime-test$'; then
+          if [[ "$(docker inspect --format '{{.State.Running}}' "$RUNTIME_APP_ID")" != true ]]; then
             echo "Container exited before runtime checks."
-            docker logs honua-runtime-test || true
+            docker logs "$RUNTIME_APP_ID" || true
             exit 1
           fi
 
-          if ! docker exec honua-runtime-test sh -c 'touch /test-write' 2>/dev/null; then
+          if ! docker exec "$RUNTIME_APP_ID" sh -c 'touch /test-write' 2>/dev/null; then
             : # expected — read-only filesystem rejects the write
           else
             echo "::error::Container filesystem is writable; expected read-only."
             exit 1
           fi
 
-          if ! user="$(docker exec honua-runtime-test whoami 2>&1)"; then
+          if ! user="$(docker exec "$RUNTIME_APP_ID" whoami 2>&1)"; then
             echo "::error::Failed to query container user (container may have exited): $user"
-            docker logs honua-runtime-test || true
+            docker logs "$RUNTIME_APP_ID" || true
             exit 1
           fi
           if [ "$user" != "honua" ]; then
@@ -607,16 +603,16 @@ jobs:
             exit 1
           fi
 
-          curl -f http://localhost:8080/healthz/live
+          python3 scripts/ci/owned-server.py wait --container "$RUNTIME_APP_ID" --container-port 8080 \
+            --url "$RUNTIME_SERVER_URL/healthz/live" --timeout 5
 
       - name: Cleanup runtime test
         if: always()
         run: |
-          docker stop honua-runtime-test || true
-          docker rm honua-runtime-test || true
-          docker stop honua-runtime-db || true
-          docker rm honua-runtime-db || true
-          docker network rm honua-runtime-net || true
+          for container in "${RUNTIME_APP_ID:-}" "${RUNTIME_DB_ID:-}"; do
+            if [[ -n "$container" ]]; then docker rm --force "$container" || true; fi
+          done
+          if [[ -n "${RUNTIME_NETWORK_ID:-}" ]]; then docker network rm "$RUNTIME_NETWORK_ID" || true; fi
 
       - name: Generate container security summary
         if: always()

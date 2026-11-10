@@ -72,11 +72,11 @@ class ManagedWorkflowTests(unittest.TestCase):
         self.assertIn('needs: changes', formatter)
         self.assertIn('dotnet-restore-retry.sh Honua.sln', formatter)
         self.assertIn('dotnet format Honua.sln --verify-no-changes --no-restore', formatter)
-        self.assertIn('build, format, test-all', job('ci-gate'))
+        self.assertIn('build, runtime-proofs, format, test-all', job('ci-gate'))
 
     def test_changed_multiline_shell_blocks_parse(self):
         # Expressions are replaced only for bash syntax checking; no commands run.
-        for name in ['build', 'dotnet-foundation-family-tests', 'server-tests']:
+        for name in ['build', 'dotnet-foundation-family-tests', 'server-tests', 'runtime-proofs']:
             for match in re.finditer(r'        run: \|\n((?:          .*\n|\n)+)', job(name)):
                 shell = '\n'.join(line[10:] for line in match[1].splitlines())
                 shell = re.sub(r'\$\{\{.*?\}\}', 'fixture', shell)
@@ -99,9 +99,9 @@ class ManagedWorkflowTests(unittest.TestCase):
     def test_ci_gate_selected_skips_fail_and_docs_dependabot_skips_remain_valid(self):
         shell = self.gate_shell('ci-gate')
         base = dict(REQUIRE_MANAGED_BUILD='true', REQUIRE_FORMAT='true',
-                    BUILD_RESULT='success', FORMAT_RESULT='success')
+                    BUILD_RESULT='success', FORMAT_RESULT='success', RUNTIME_PROOFS_RESULT='success')
         self.assertEqual(0, self.execute_guard(shell, **base))
-        for lane in ['BUILD_RESULT', 'FORMAT_RESULT']:
+        for lane in ['BUILD_RESULT', 'FORMAT_RESULT', 'RUNTIME_PROOFS_RESULT']:
             for result in ['skipped', 'cancelled', 'failure']:
                 with self.subTest(lane=lane, result=result):
                     self.assertNotEqual(0, self.execute_guard(shell, **(base | {lane: result})))

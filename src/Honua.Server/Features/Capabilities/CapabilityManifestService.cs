@@ -152,6 +152,10 @@ internal sealed class CapabilityManifestService(
             Limits = BuildLimits(batchCapabilities),
             Policies = BuildPolicies(snapshot, callerCapabilities),
             DeploymentProfile = options.DeploymentProfile,
+            DataStores = request.Authenticated ? new CapabilityManifestDataStores
+            {
+                InstalledProviders = runtimeInventory.FeatureDataProviders.Order(StringComparer.Ordinal).ToArray()
+            } : null,
             Links = BuildLinks()
         };
 
