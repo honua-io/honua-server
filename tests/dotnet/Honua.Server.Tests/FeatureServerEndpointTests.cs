@@ -3420,6 +3420,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime, IClassFixture<F
         string value,
         bool onQueryString)
     {
+        await InitializeDefaultApplicationAsync();
         var name = $"noop-{Guid.NewGuid():N}";
 
         var response = await PostLayerApplyEditsFormAsync(name, control, value, onQueryString);
@@ -3455,6 +3456,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime, IClassFixture<F
         bool onQueryString,
         string expectedError)
     {
+        await InitializeDefaultApplicationAsync();
         var name = $"rejected-{Guid.NewGuid():N}";
 
         var response = await PostLayerApplyEditsFormAsync(name, control, value, onQueryString);
@@ -3593,6 +3595,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime, IClassFixture<F
         string value,
         string expectedError)
     {
+        await InitializeDefaultApplicationAsync();
         var edits = """
             [{"id":0,"adds":[{"attributes":{"name":"form controls"}}]}]
             """;
