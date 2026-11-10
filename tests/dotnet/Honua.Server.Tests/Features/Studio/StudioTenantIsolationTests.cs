@@ -75,6 +75,7 @@ public sealed class StudioTenantIsolationTests : IAsyncLifetime
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
+                builder.UseSetting("MultiTenancy:Enabled", "true");
                 builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
                 // Authentication must be decided by the presented credential only: the dev-auth
