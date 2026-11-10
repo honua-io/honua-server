@@ -3090,7 +3090,12 @@
         "Honua.Server.Tests.Features.Admin.LayerStyleEndpointsTests.GetLayerStyle_DeprecatedLayerIdAlias_EmitsDeprecationHeaders",
         "Honua.Server.Tests.Features.Admin.LayerStyleEndpointsTests.GetLayerStyle_ReturnsMapLibreAndDrawingInfo",
         "Honua.Server.Tests.Features.Admin.LayerStyleEndpointsTests.UnstyledLayer_ReadsAtVersionZero_AndFirstPutLandsAsRevisionOne",
-        "Honua.Server.Tests.Features.Admin.LayerStyleEndpointsTests.UpdateLayerStyle_WithMapLibreStyle_UpdatesAndReturnsStyle"
+        "Honua.Server.Tests.Features.Admin.LayerStyleEndpointsTests.UpdateLayerStyle_WithMapLibreStyle_UpdatesAndReturnsStyle",
+        "Honua.Server.Tests.Features.Styling.CatalogDefaultStyleTests.GetLayerStyleAsync_AlternateAssociation_DoesNotReplaceLayerFallback",
+        "Honua.Server.Tests.Features.Styling.CatalogDefaultStyleTests.GetLayerStyleAsync_CatalogDefault_ReadsCurrentStyleAndPreservesFallback",
+        "Honua.Server.Tests.Features.Styling.CatalogDefaultStyleTests.GetLayerStyleAsync_UnknownLayer_ReturnsNull",
+        "Honua.Server.Tests.Features.Styling.CatalogDefaultStyleTests.GetLayerStyle_SharedMigratedCatalogStyle_ProjectsOnlyRequestedSource",
+        "Honua.Server.Tests.Features.Styling.CatalogDefaultStyleTests.GetLayerStyle_UnsharedMultiSourceStyle_PreservesContext"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -6128,11 +6133,16 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.StreamingEndpoint_WhenPreviewDisabled_Returns404ExperimentalDisabled",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamConformanceEndpointsTests.Capabilities_AdvertiseTheConformanceContractAndTheImmutableRevision",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_BaselineProbeExceedsLookupBudget_ReportsUnknown",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_BaselineReaderUnavailable_ReportsUnknown",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_BaselineSize_ReportsOnlyProvenOverLimit",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_CommunityEdition_DisablesStreamingMetadata",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_ConnectionKindOrLifecycleUnrecognized_OmitsUnsupportedBinding",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_LargeFeatureCap_KeepsProbeBoundedAndUnknown",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_OmitsLayersTheCallerCannotAccess",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_OmitsLayersWhoseServicePolicyDenies",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_ProEdition_AdvertisesTransportsFiltersAndLayers",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_StreamingDisabled_DoesNotProbeBaseline",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_UnsupportedOwner_OmitsLayer",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Capabilities_AdvertisesSnapshotModeSequenceAndDeploymentRevision"
       ],
@@ -7438,6 +7448,7 @@
         "Honua.Server.Tests.Features.API.EndpointCoverageTests.OgcApi_GetLandingPage_ShouldReturnApiInfo",
         "Honua.Server.Tests.Features.Infrastructure.EmptyServerCatalogEndpointTests.GetOgcFeaturesLandingPage_FreshServer_Returns200WithValidLinks",
         "Honua.Server.Tests.Features.Ogc.OpenApiSpecNegotiationTests.GetLandingPage_WithOnlyZeroQualityAcceptHeader_ReturnsNotAcceptable",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.FolderProtocolEndpointTests.PublicEndpoint_FolderPublication_ResolvesAtBothMounts",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetLandingPage_IncludesDatasetMapLink",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetLandingPage_WithContentNegotiation_ReturnsCorrectFormat",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesHostHeaderTests.LandingPage_WithForgedHostHeader_DoesNotReflectAttackerHostInLinks",
@@ -8412,7 +8423,9 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_OgcRoute_GetFeatureInfo_WithWmsEnabledAndMapServerDisabled_ReturnsSeededFeature",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_OgcRoute_GetMap_InvalidLayer_ReturnsXmlServiceException",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_OgcRoute_GetMap_WithWmsEnabledAndMapServerDisabled_RendersStyledFeature",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms_GetLegendGraphic_OnOgcRoute_ReturnsPngLegend"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms_GetLegendGraphic_OnOgcRoute_ReturnsPngLegend",
+        "Honua.Server.Tests.Features.Styling.CatalogDefaultStyleTests.WmsGetMap_CatalogPromotionAndEdit_RendersCurrentStyle",
+        "Honua.Server.Tests.Features.Styling.CatalogDefaultStyleTests.WmsLegend_CatalogPromotionAndEdit_RendersCurrentStyle"
       ],
       "proof_ledger_surface": "wms-1.3",
       "maturity": "implemented",
@@ -8436,7 +8449,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsUnknownParameterTests.Wmts_GetTile_UnknownParameters_PreservesImageAndKnownParameterValidation",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.WmtsAdvertisedResourceTests.GetCapabilities_NativeAlias_AdvertisesReachablePublicResources",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.WmtsJsonFeatureInfoTests.GetFeatureInfo_Json_ReturnsNativeClientGeoJson",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.WmtsRuntimeAttributeFeatureInfoTests.GetFeatureInfo_ProviderRuntimeTypes_ReturnsTypedGeoJson"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.WmtsRuntimeAttributeFeatureInfoTests.GetFeatureInfo_ProviderRuntimeTypes_ReturnsTypedGeoJson",
+        "Honua.Server.Tests.Features.Styling.CatalogDefaultStyleTests.WmtsTile_CatalogPromotionAndEdit_RendersCurrentStyle"
       ],
       "proof_ledger_surface": "wmts-1.0",
       "maturity": "preview",
@@ -15030,7 +15044,8 @@
         "Honua.Server.Tests.Features.StaticMap.StaticMapEndpointTests.Bbox_LatitudeOutOfRange_ReturnsBadRequest",
         "Honua.Server.Tests.Features.StaticMap.StaticMapEndpointTests.Bbox_OutOfRangeCoordinates_ReturnsBadRequest",
         "Honua.Server.Tests.Features.StaticMap.StaticMapEndpointTests.Bbox_Png_ReturnsImage",
-        "Honua.Server.Tests.Features.StaticMap.StaticMapEndpointTests.Bbox_WithFilter_ReturnsImage"
+        "Honua.Server.Tests.Features.StaticMap.StaticMapEndpointTests.Bbox_WithFilter_ReturnsImage",
+        "Honua.Server.Tests.Features.Styling.CatalogDefaultStyleTests.StaticMap_CatalogPromotionAndEdit_RendersCurrentStyle"
       ],
       "proof_ledger_surface": "ogc-api-maps-and-static-rendering",
       "maturity": "implemented",
@@ -15262,6 +15277,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.ConfiguredProfile_ReportsAndEnforcesExactHttpSurface",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.FolderProtocolEndpointTests.PublicEndpoint_FolderPublication_ResolvesAtBothMounts",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_DescribeFeatureType_LayerWithGeometryTypeButNoGeometryField_IncludesGeometryElement",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_DescribeFeatureType_MapsEveryDeclaredAttributeTypeToConcreteXsdType",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_DescribeFeatureType_UnsupportedOutputFormat_ReturnsExceptionReport",
@@ -21458,7 +21474,8 @@
         "Honua.Server.Tests.Features.PrintingTools.PrintingToolsEndpointTests.Execute_PdfFormat_ReturnsPdfDocument",
         "Honua.Server.Tests.Features.PrintingTools.PrintingToolsEndpointTests.Execute_UnsupportedFormat_ReturnsBadRequest",
         "Honua.Server.Tests.Features.PrintingTools.PrintingToolsEndpointTests.Execute_WithJsonResponseFormat_ReturnsUrlInJson",
-        "Honua.Server.Tests.Features.PrintingTools.PrintingToolsEndpointTests.Execute_WktOnlySpatialReference_ReturnsBadRequest"
+        "Honua.Server.Tests.Features.PrintingTools.PrintingToolsEndpointTests.Execute_WktOnlySpatialReference_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Styling.CatalogDefaultStyleTests.Print_CatalogDefault_RendersCatalogColor"
       ],
       "proof_ledger_surface": "printing-tools",
       "maturity": "implemented",
@@ -25695,6 +25712,9 @@
         "Honua.Server.Tests.Features.Admin.LayerStyleEndpointsTests.UpdateLayerStyle_WithInvalidMapLibreColor_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.LayerStyleEndpointsTests.UpdateLayerStyle_WithInvalidMapLibreStyle_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.LayerStyleEndpointsTests.UpdateLayerStyle_WithMapLibreStyle_UpdatesAndReturnsStyle",
+        "Honua.Server.Tests.Features.Styling.CatalogDefaultStyleTests.SetDrawingInfo_CatalogDefault_ReleasesConnectionBeforeReread",
+        "Honua.Server.Tests.Features.Styling.CatalogDefaultStyleTests.UpdateStyle_CatalogRevisionDiffersFromLayerRow_ReturnsTheFollowingGetRevision",
+        "Honua.Server.Tests.Features.Styling.CatalogDefaultStyleTests.UpdateStyle_CatalogWriteFails_DoesNotReportSuccess",
         "Honua.Server.Tests.Features.Styling.StyleCatalogPhase2Tests.OneCatalogStyle_CanBeReferencedByManyLayers",
         "Honua.Server.Tests.Features.Styling.StyleCatalogPhase2Tests.UpdatingLayerStyle_PopulatesStyleResourceIdsWithTypeStyleResource"
       ],
@@ -26313,7 +26333,7 @@
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_StandaloneStyle_UpdatesCatalogStyle",
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_UnknownStyleId_Returns404",
         "Honua.Server.Tests.Features.Styling.OgcStylesDepthTests.PutStyle_UnsupportedContentType_Returns415",
-        "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_AssociatedCatalogStyle_UpdatesOnlyRequestedStyle",
+        "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_AssociatedCatalogDefault_UpdatesRenderedDefaultAndPreservesOtherStyle",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_LayerBoundCatalogStyle_NonObjectDrawingInfo_Returns400",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_LayerBoundCatalogStyle_WritesThroughToLayerStyle",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_StandaloneStyle_MapLibreRoundTripsToDrawingInfo",
