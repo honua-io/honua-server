@@ -27,6 +27,13 @@ inputs:
       to the full solution exactly like the lean gate.
     required: false
     default: 'true'
+  analyzer-partition:
+    description: >
+      Analyzer ownership: 'source' checks non-test projects, 'tests' checks test
+      projects, and 'all' preserves the complete pass. Split callers must require
+      both partitions. Dependencies still compile in each partition.
+    required: false
+    default: 'all'
   analyzer-build-timeout-minutes:
     description: 'Cap for the analyzer build step.'
     required: false
@@ -95,6 +102,7 @@ runs:
       if: inputs.analyzer-build == 'true' && steps.analyzer-build-scope.outputs.mode != 'none'
       shell: bash
       env:
+        ANALYZER_PARTITION: ${{ inputs.analyzer-partition }}
         GATE_BUILD_MODE: ${{ steps.analyzer-build-scope.outputs.mode }}
         GATE_BUILD_FILTER: ${{ steps.analyzer-build-scope.outputs.filter }}
       run: |
@@ -106,7 +114,7 @@ runs:
             --configuration Release \
             -graphBuild \
             /p:TreatWarningsAsErrors=true \
-            /p:RunAnalyzers=true \
+            /p:HonuaAnalyzerPartition="${ANALYZER_PARTITION}" \
             /p:EnforceCodeStyleInBuild=true \
             /p:GenerateDocumentationFile=true \
             /p:UseSharedCompilation=false
