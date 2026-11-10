@@ -17,6 +17,7 @@ public sealed partial class LayerPublishingIntegrationTests
     [InlineData(false, true)]
     [InlineData(true, true)]
     [Operation(Operations.Create)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     public async Task SnapshotPage_ProjectionFailureOutsideSelectedRows_DoesNotBlockFirstPage(
         bool geometryFailure, bool sourceAliasColumn)
     {
