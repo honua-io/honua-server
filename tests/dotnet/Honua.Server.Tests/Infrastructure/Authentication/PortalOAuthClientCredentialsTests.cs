@@ -496,7 +496,7 @@ public sealed class PortalOAuthClientCredentialsTests
     private static (PortalOAuthTokenService Service, PortalOAuthStore Store) CreateCodeExchangeService()
     {
         var memoryCache = new MemoryCache(new MemoryCacheOptions());
-        var issuer = new PortalTokenIssuer(memoryCache, NullLogger<PortalTokenIssuer>.Instance);
+        var issuer = new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<PortalTokenIssuer>.Instance);
         var store = new PortalOAuthStore(memoryCache, NullLogger<PortalOAuthStore>.Instance);
         var options = Options.Create(new PortalTokenAuthenticationOptions
         {
@@ -538,7 +538,7 @@ public sealed class PortalOAuthClientCredentialsTests
             PortalOAuthClientCredentialsFederationOptions? federationOptions = null)
     {
         var memoryCache = new MemoryCache(new MemoryCacheOptions());
-        var issuer = new PortalTokenIssuer(memoryCache, NullLogger<PortalTokenIssuer>.Instance);
+        var issuer = new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<PortalTokenIssuer>.Instance);
         var store = new PortalOAuthStore(memoryCache, NullLogger<PortalOAuthStore>.Instance);
         var apiKeyStore = new InMemoryAdminApiKeyStore();
 
@@ -634,7 +634,7 @@ public sealed class PortalOAuthClientCredentialsTests
             .AddSingleton<IAdminApiKeyStore>(apiKeyStore)
             .AddSingleton<IPortalTokenSourceValidator>(sp => new PortalTokenSourceValidator(memoryCache, options, sp))
             .BuildServiceProvider();
-        var issuer = new PortalTokenIssuer(memoryCache, NullLogger<PortalTokenIssuer>.Instance, serviceProvider: services);
+        var issuer = new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<PortalTokenIssuer>.Instance, serviceProvider: services);
         var store = new PortalOAuthStore(memoryCache, NullLogger<PortalOAuthStore>.Instance);
 
         var clientStore = new InMemoryOAuthClientStore();

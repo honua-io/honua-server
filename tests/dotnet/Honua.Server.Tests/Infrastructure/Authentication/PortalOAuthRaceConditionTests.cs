@@ -134,7 +134,7 @@ public sealed class PortalOAuthRaceConditionTests
     {
         var memoryCache = new MemoryCache(new MemoryCacheOptions());
         var store = new PortalOAuthStore(memoryCache, NullLogger<PortalOAuthStore>.Instance);
-        var realIssuer = new PortalTokenIssuer(memoryCache, NullLogger<PortalTokenIssuer>.Instance);
+        var realIssuer = new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<PortalTokenIssuer>.Instance);
         var service = BuildService(store, realIssuer, rotateRefreshTokens: true);
 
         // Seed a refresh token directly in the store.
@@ -247,7 +247,7 @@ public sealed class PortalOAuthRaceConditionTests
                 "https://app.example.com", CancellationToken.None));
 
         // Second attempt — healthy issuer.
-        var healthyIssuer = new PortalTokenIssuer(memoryCache, NullLogger<PortalTokenIssuer>.Instance);
+        var healthyIssuer = new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<PortalTokenIssuer>.Instance);
         var healthyService = BuildService(store, healthyIssuer, rotateRefreshTokens: true);
 
         var retryResult = await healthyService.ExchangeAsync(
@@ -269,7 +269,7 @@ public sealed class PortalOAuthRaceConditionTests
     {
         using var cache = new MemoryCache(new MemoryCacheOptions());
         var store = new PortalOAuthStore(cache, NullLogger<PortalOAuthStore>.Instance);
-        var issuer = new PortalTokenIssuer(cache, NullLogger<PortalTokenIssuer>.Instance);
+        var issuer = new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<PortalTokenIssuer>.Instance);
         var service = BuildService(store, issuer, rotate);
         var token = await store.CreateRefreshTokenAsync(new PortalOAuthRefreshToken
         {

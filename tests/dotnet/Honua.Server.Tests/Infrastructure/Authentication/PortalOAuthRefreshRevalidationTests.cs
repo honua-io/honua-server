@@ -169,8 +169,7 @@ public sealed class PortalOAuthRefreshRevalidationTests
         });
         var services = new ServiceCollection();
         services.AddSingleton<IPortalTokenSourceValidator>(new PortalTokenSourceValidator(memory, options, services.BuildServiceProvider()));
-        var issuer = new PortalTokenIssuer(
-            memory,
+        var issuer = new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(),
             NullLogger<PortalTokenIssuer>.Instance,
             serviceProvider: services.BuildServiceProvider());
         var service = new PortalOAuthTokenService(

@@ -133,9 +133,7 @@ public sealed class CustomCodeJobContractDriftTests
     [Operation(Operations.Create)]
     public async Task Coordinator_EmitsEveryCustomCodeInputAsEnvPassThrough()
     {
-        var issuer = new ScopedJobTokenIssuer(
-            new MemoryCache(new MemoryCacheOptions()),
-            NullLogger<ScopedJobTokenIssuer>.Instance);
+        var issuer = new ScopedJobTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<ScopedJobTokenIssuer>.Instance);
         var coordinator = new CustomCodeSubmitCoordinator(issuer);
 
         var options = new CustomCodeOptions
@@ -190,9 +188,7 @@ public sealed class CustomCodeJobContractDriftTests
     [Operation(Operations.Create)]
     public async Task Coordinator_OmitsEnvForUnsuppliedOptionalInput()
     {
-        var issuer = new ScopedJobTokenIssuer(
-            new MemoryCache(new MemoryCacheOptions()),
-            NullLogger<ScopedJobTokenIssuer>.Instance);
+        var issuer = new ScopedJobTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<ScopedJobTokenIssuer>.Instance);
         var coordinator = new CustomCodeSubmitCoordinator(issuer);
 
         var options = new CustomCodeOptions

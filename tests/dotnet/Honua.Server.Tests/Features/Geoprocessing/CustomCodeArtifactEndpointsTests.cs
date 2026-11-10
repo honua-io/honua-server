@@ -52,7 +52,7 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
 
     public CustomCodeArtifactEndpointsTests()
     {
-        _issuer = new ScopedJobTokenIssuer(_cache, NullLogger<ScopedJobTokenIssuer>.Instance);
+        _issuer = new ScopedJobTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<ScopedJobTokenIssuer>.Instance);
         var jobs = Substitute.For<IExecutionJobStore>();
         jobs.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(call => Task.FromResult(_records.GetValueOrDefault(call.ArgAt<string>(0))));

@@ -16,6 +16,7 @@ internal sealed class JobStoreRetentionScheduledTickHandler(JobStoreRetentionSwe
 
 internal sealed partial class JobStoreRetentionSweepService(
     JobStoreRetentionSweeper sweeper,
+    IEnumerable<IExpiredRowSweep> sharedStateStores,
     IOptions<JobStoreOptions> options,
     ILogger<JobStoreRetentionSweepService> logger) : BackgroundService
 {
@@ -45,6 +46,12 @@ internal sealed partial class JobStoreRetentionSweepService(
             {
                 LogSweepRemoved(logger, removed.Jobs, removed.LogStreams, removed.ResultPackages, removed.Leases);
             }
+
+            var sharedStateRows = await SweepSharedStateAsync(stoppingToken).ConfigureAwait(false);
+            if (sharedStateRows > 0)
+            {
+                LogSharedStateRemoved(logger, sharedStateRows);
+            }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -56,6 +63,27 @@ internal sealed partial class JobStoreRetentionSweepService(
             LogSweepFailed(logger, exception);
         }
     }
+
+    private async Task<long> SweepSharedStateAsync(CancellationToken cancellationToken)
+    {
+        var batchSize = Math.Max(1, options.Value.RetentionSweepBatchSize);
+        long removed = 0;
+        foreach (var store in sharedStateStores)
+        {
+            int removedInBatch;
+            do
+            {
+                removedInBatch = await store.DeleteExpiredAsync(batchSize, cancellationToken).ConfigureAwait(false);
+                removed += removedInBatch;
+            }
+            while (removedInBatch == batchSize);
+        }
+
+        return removed;
+    }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Retention sweep removed {Rows} expired shared state row(s).")]
+    private static partial void LogSharedStateRemoved(ILogger logger, long rows);
 
     [LoggerMessage(
         Level = LogLevel.Information,

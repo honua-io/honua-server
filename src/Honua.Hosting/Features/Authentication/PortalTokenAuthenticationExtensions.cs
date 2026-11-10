@@ -89,10 +89,10 @@ public static class PortalTokenAuthenticationExtensions
 
         if (!services.Any(d => d.ServiceType == typeof(IPortalTokenIssuer)))
         {
+            services.TryAddSingleton<Honua.Infrastructure.Security.ISecurityTokenStore, Honua.Infrastructure.Security.InMemorySecurityTokenStore>();
             services.AddSingleton<IPortalTokenIssuer>(sp => new PortalTokenIssuer(
-                sp.GetRequiredService<IMemoryCache>(),
+                sp.GetRequiredService<Honua.Infrastructure.Security.ISecurityTokenStore>(),
                 sp.GetRequiredService<ILogger<PortalTokenIssuer>>(),
-                sp.GetService<IDistributedCache>(),
                 sp));
         }
     }
@@ -102,6 +102,7 @@ public static class PortalTokenAuthenticationExtensions
     {
         if (!services.Any(d => d.ServiceType == typeof(IScopedJobTokenIssuer)))
         {
+            services.TryAddSingleton<Honua.Infrastructure.Security.ISecurityTokenStore, Honua.Infrastructure.Security.InMemorySecurityTokenStore>();
             services.AddSingleton<IScopedJobTokenIssuer, ScopedJobTokenIssuer>();
         }
     }
@@ -158,10 +159,7 @@ public static class PortalTokenAuthenticationExtensions
         // #1888). Singletons mirror the in-memory IAdminApiKeyStore pattern: no
         // parallel durable token store (ADR-0049). They are additive — the flag-gated
         // Increment-1 client_credentials path keeps working via the API-key fallback.
-        services.TryAddSingleton<IOAuthClientStore>(sp =>
-            sp.GetService<StackExchange.Redis.IConnectionMultiplexer>() is { } redis
-                ? new RedisOAuthClientStore(redis, sp.GetService<TimeProvider>())
-                : new InMemoryOAuthClientStore(sp.GetService<TimeProvider>()));
+        services.TryAddSingleton<IOAuthClientStore>(sp => new InMemoryOAuthClientStore(sp.GetService<TimeProvider>()));
         services.TryAddSingleton<IOAuthScopeCatalogue, InMemoryOAuthScopeCatalogue>();
 
         // Process-local defaults for non-Postgres providers. The server's Postgres
