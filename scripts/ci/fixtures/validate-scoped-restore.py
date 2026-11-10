@@ -60,7 +60,9 @@ class ScopedRestoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'scripts/ci').mkdir(parents=True)
-            for name in ['run-foundation-family.sh', 'dotnet-restore-retry.sh']:
+            for name in ['run-foundation-family.sh', 'dotnet-restore-retry.sh',
+                         'run-quarantine-filtered-tests.py', 'retry-failed-shard-tests.py',
+                         'flake_quarantine.py', 'shard_processes.py']:
                 shutil.copy2(ROOT / 'scripts/ci' / name, root / 'scripts/ci' / name)
             (root / 'Honua.sln').touch()
             fake = root / 'dotnet'
