@@ -113,7 +113,7 @@ the changed paths on stdin.
 |---|---|---|
 | `PR Gate / Build and tests` | The UTF-8 tracked-file guard (#3320); the terminal-error receipt, client-certification roster, review-first admission and base-image inventory checks; the admission receipt; the classifier's own fixtures; the Markdown command policy; installation-reference validation; and a public-image Docker proof only when artifact versions or executable installation procedures/harness change. | Disk cleanup, .NET setup, managed producer planning, compilation, managed artifact publication and source-built boot/migration smoke. |
 | `PR Gate / Tests and runtime proofs` | Checkout and the producer's explicit docs-only skip output. | .NET setup, artifact consumption, fallback builds, Fast tests, both architecture suites, MCP/governance checks, execution proofs, PDAL build, serving-image fixtures and proof uploads. |
-| `PR Gate / Format` | Checkout and classification. | .NET setup, restore, `dotnet format`. |
+| `PR Gate / Format` | Checkout and classification. | .NET setup, restore, `dotnet format` and the analyzer build. |
 | `PR Gate / Affected shards (select)` | Classification. The job publishes `skip=true` with `reason=docs_only`, so the aggregate reports `skipped`. | Selector validation and shard selection. |
 
 Outside `PR Gate`, `docs-link-gate.yml` keeps firing on `docs/**` and

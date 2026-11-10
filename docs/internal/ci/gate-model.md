@@ -107,7 +107,11 @@ diff base. At the default depth 1 those parent commits are absent, the scope
 computation force-fulls, and the optimization silently never fires.
 
 **Format scope.** The PR's existing independent format job retains its affected
-or full document selection and complete formatter restore context. Full CI runs
+or full document selection and complete formatter restore context. It also owns
+the analyzer pass: the managed producer builds with `/p:RunAnalyzers=false`
+(about a third of its compile), and the format job then builds the affected
+or full scope with analyzers, code style and documentation diagnostics as
+warnings-as-errors, so `PR Gate` still fails on every analyzer finding. Full CI runs
 an independent full-solution format job; `CI Gate` requires it when build inputs
 are selected, without making test consumers wait for formatting.
 

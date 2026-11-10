@@ -137,7 +137,8 @@ assert steps[0].startswith('    - name: Validate gate phase')
 assert steps[1].startswith('    - name: Pre-pull Testcontainers PostGIS image')
 assert TEXT.index('Regenerate projections') < TEXT.index('Run .NET Tests (Architecture Source)')
 assert "default: 'all'" in TEXT and 'all|build|test)' in TEXT
-assert TEXT.count('/p:RunAnalyzers=true') == 2
+assert TEXT.count('/p:RunAnalyzers="${run_analyzers}"') == 2
+assert '[[ "${GATE_RUN_FORMAT}" == "true" ]] || run_analyzers=false' in TEXT
 assert TEXT.count('/p:UseSharedCompilation=false') == 2
 assert '--projects-file "${PRODUCER_PROJECTS_FILE}"' in TEXT
 assert '--base-filter "${GATE_BUILD_FILTER}" --output "${GATE_BUILD_FILTER}"' in TEXT
@@ -208,6 +209,34 @@ require(
     "same --verify-no-changes/--no-restore contract as the full run",
     text=FORMAT_TEXT,
 )
+# Analyzer contract: a producer build without inline format skips analyzers,
+# so the format action must build the same scope with analyzers, code style and
+# documentation diagnostics as errors, and only the inline caller may opt out.
+require(
+    r"analyzer-build:.*?\n(?:.*\n)*?\s+default: 'true'",
+    "default the format action's analyzer build on",
+    text=FORMAT_TEXT,
+)
+require(
+    r"BUILD_SCOPE: \$\{\{ inputs\.format-scope \}\}\n(?:.*\n)*?\s+run: scripts/ci/compute-lean-gate-build-scope\.sh",
+    "scope the analyzer build with the shared build-scope script",
+    text=FORMAT_TEXT,
+)
+require(
+    r"dotnet build \"\$\{target\}\" \\\s+--no-restore \\\s+--configuration Release \\\s+-graphBuild \\\s+"
+    r"/p:TreatWarningsAsErrors=true \\\s+/p:RunAnalyzers=true \\\s+"
+    r"/p:EnforceCodeStyleInBuild=true \\\s+/p:GenerateDocumentationFile=true",
+    "build with analyzers, code style and documentation diagnostics as errors",
+    text=FORMAT_TEXT,
+)
+require(
+    r"uses: \./\.github/actions/format-check\n\s+with:\n\s+format-scope: \$\{\{ inputs\.format-scope \}\}\n(?:\s+#.*\n)*\s+analyzer-build: 'false'",
+    "skip the format action's analyzer build only for the inline caller whose build ran analyzers",
+)
+assert "analyzer-build" not in PR_GATE.read_text(encoding="utf-8"), (
+    "PR Gate's format job must keep the default analyzer build"
+)
+
 require(
     r"include list is missing or empty",
     "fail loudly when format scope says 'affected' without a non-empty "
