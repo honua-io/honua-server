@@ -41,10 +41,27 @@ class PrManagedBuildTests(unittest.TestCase):
         fast = job('fast-tests')
         self.assertNotIn('needs:', fast)
         self.assertIn('phase: all', fast)
-        self.assertIn('build-scope: affected', fast)
+        self.assertIn('build-scope: test-roots', fast)
+        self.assertIn("run-analyzers: 'false'", fast)
         self.assertIn('Await exact-head review', fast)
         self.assertIn('fast-tests', job('required'))
         self.assertNotIn('Lean gate (fast unit and architecture verification)', job('runtime-proofs', CI))
+
+    def test_every_verification_step_runs_in_one_fast_matrix_job(self):
+        import yaml
+        groups = yaml.safe_load(TEXT)['jobs']['fast-tests']['strategy']['matrix']['test-group']
+        action = yaml.safe_load((ROOT / '.github/actions/lean-gate/action.yml').read_text())
+        verification = [step for step in action['runs']['steps']
+                        if 'dotnet test ' in step.get('run', '') or 'gate-fast' in step.get('run', '')
+                        or step['name'].startswith('Regenerate projections')]
+        covered = set()
+        for step in verification:
+            owners = re.findall(r'"(\w[\w-]*)"', step['if'])
+            self.assertEqual(owners[0], 'all', step['name'])
+            self.assertEqual(len(owners), 2, step['name'])
+            self.assertIn(owners[1], groups, step['name'])
+            covered.add(owners[1])
+        self.assertEqual(covered, set(groups))
 
     def test_proof_handoff_and_diagnostics_remain_scoped(self):
         import yaml

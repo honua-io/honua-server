@@ -5,12 +5,12 @@ description: >
   truth for BOTH the per-PR verification job (.github/workflows/pr-gate.yml)
   and the `Merge Queue Gate` job (.github/workflows/ci.yml).
 
-  PR verification passes `build-scope: affected` and disables the in-action
-  format step because the workflow runs that same shared format action in a
-  parallel job. That job also owns the analyzer, code-style and documentation
-  diagnostics build, so this producer build skips analyzers when format is not
-  inline. `Merge Queue Gate` keeps both scopes full and runs format and
-  analyzers inline. Every test step and timeout remains identical for both callers.
+  PR verification runs this action in parallel jobs: a producer build and one
+  job per `test-group`, each compiling only what it needs with analyzers off.
+  The workflow's format matrix runs the shared format action and the analyzer,
+  code-style and documentation diagnostics build in parallel jobs of their own.
+  `Merge Queue Gate` keeps both scopes full and runs format and analyzers
+  inline. Every test step and timeout remains identical for both callers.
 
   Callers must run actions/checkout and ./.github/actions/setup-dotnet-ci first
   (and may reclaim runner disk); this action owns only the gate itself.
@@ -50,9 +50,18 @@ inputs:
       projects the later --no-build steps execute, and silently falls back to
       the full solution whenever a trustworthy diff base is unavailable or
       shared build infrastructure changed. Requires the caller to check out with
-      fetch-depth >= 2. See scripts/ci/compute-lean-gate-build-scope.sh.
+      fetch-depth >= 2. 'test-roots' compiles only the test group's root
+      projects, for a job whose compile coverage another job provides. See
+      scripts/ci/compute-lean-gate-build-scope.sh.
     required: false
     default: 'full'
+  test-group:
+    description: >
+      'all' (default) runs every verification step. 'architecture',
+      'unit-fast', 'server-fast' and 'server-governance' split the steps across
+      parallel jobs; 'producer' runs none and builds the host the producer boots.
+    required: false
+    default: 'all'
   format-scope:
     description: >
       'full' (default) runs `dotnet format Honua.sln --verify-no-changes` over
@@ -70,9 +79,14 @@ inputs:
   run-format:
     description: >
       Whether to run the shared format check inline. Defaults to true so every
-      caller retains format and analyzer coverage unless it explicitly supplies
-      an equivalent required job. 'false' also skips analyzers in the build:
-      the caller's separate format-check job runs the analyzer build.
+      caller retains format coverage unless it explicitly supplies an
+      equivalent required job.
+    required: false
+    default: 'true'
+  run-analyzers:
+    description: >
+      Whether the build runs analyzers as errors. Defaults to true; only a
+      caller with a required analyzer-build job of its own passes 'false'.
     required: false
     default: 'true'
   build-timeout-minutes:
@@ -116,8 +130,10 @@ runs:
       shell: bash
       env:
         GATE_PHASE: ${{ inputs.phase }}
+        GATE_TEST_GROUP: ${{ inputs.test-group }}
       run: |
         case "${GATE_PHASE}" in all|build|test) ;; *) echo "::error::Invalid gate phase"; exit 1 ;; esac
+        case "${GATE_TEST_GROUP}" in all|architecture|unit-fast|server-fast|server-governance|producer) ;; *) echo "::error::Invalid test group"; exit 1 ;; esac
 
     # Start before restore/build so a cold runner's PostGIS image download
     # overlaps useful gate work. The helper resolves the exact image from the
@@ -129,14 +145,17 @@ runs:
       run: scripts/ci/prepull-testcontainers-postgis.sh
 
     - name: Validate lean-gate command contract
+      if: contains(fromJSON('["all","architecture"]'), inputs.test-group)
       shell: bash
       run: python3 scripts/ci/fixtures/validate-lean-gate.py
 
     - name: Documentation Command Policy
+      if: contains(fromJSON('["all","architecture"]'), inputs.test-group)
       shell: pwsh
       run: scripts/ci/check-markdown-command-policy.ps1
 
     - name: Validate merge-train timeout policy
+      if: contains(fromJSON('["all","architecture"]'), inputs.test-group)
       shell: bash
       run: |
         scripts/ci/merge-train/fixtures/validate-timeout-retry.sh
@@ -150,6 +169,7 @@ runs:
     # (honua-server#3051). The dedicated openapi-drift.yml workflow runs the same
     # script plus its unit tests.
     - name: OpenAPI <-> EndpointRegistry drift
+      if: contains(fromJSON('["all","architecture"]'), inputs.test-group)
       shell: bash
       run: python3 scripts/ci/openapi-drift-check.py
 
@@ -175,6 +195,7 @@ runs:
       shell: bash
       env:
         BUILD_SCOPE: ${{ inputs.build-scope }}
+        GATE_TEST_GROUP: ${{ inputs.test-group }}
         GITHUB_EVENT_NAME: ${{ github.event_name }}
       run: scripts/ci/compute-lean-gate-build-scope.sh
 
@@ -206,7 +227,7 @@ runs:
         # Inline format loads Honua.sln even when --include limits diagnostics.
         # Keep its complete restore; separate format jobs restore independently.
         target=Honua.sln
-        if [[ "${GATE_RUN_FORMAT}" != "true" && "${GATE_BUILD_MODE}" == "affected" ]]; then
+        if [[ "${GATE_RUN_FORMAT}" != "true" && ( "${GATE_BUILD_MODE}" == "affected" || "${GATE_BUILD_MODE}" == "test-roots" ) ]]; then
           [[ -f "${GATE_BUILD_FILTER}" ]] || { echo "::error::Missing selected build filter"; exit 1; }
           target="${GATE_BUILD_FILTER}"
         fi
@@ -220,20 +241,16 @@ runs:
       env:
         GATE_BUILD_MODE: ${{ steps.producer-scope.outputs.mode }}
         GATE_BUILD_FILTER: ${{ steps.producer-scope.outputs.filter }}
-        GATE_RUN_FORMAT: ${{ inputs.run-format }}
+        GATE_RUN_ANALYZERS: ${{ inputs.run-analyzers }}
       run: |
-        # Analyzers cost about a third of the compile. Without inline format the
-        # caller's format-check job builds the same scope with them as errors.
-        run_analyzers=true
-        [[ "${GATE_RUN_FORMAT}" == "true" ]] || run_analyzers=false
-        if [[ "${GATE_BUILD_MODE}" == "affected" ]]; then
+        if [[ "${GATE_BUILD_MODE}" == "affected" || "${GATE_BUILD_MODE}" == "test-roots" ]]; then
           timeout "${{ inputs.build-timeout-minutes }}m" \
             dotnet build "${GATE_BUILD_FILTER}" \
               --no-restore \
               --configuration Release \
               -graphBuild \
               /p:TreatWarningsAsErrors=true \
-              /p:RunAnalyzers="${run_analyzers}" \
+              /p:RunAnalyzers="${GATE_RUN_ANALYZERS}" \
               /p:UseSharedCompilation=false
         else
           timeout "${{ inputs.build-timeout-minutes }}m" \
@@ -242,7 +259,7 @@ runs:
               --configuration Release \
               -graphBuild \
               /p:TreatWarningsAsErrors=true \
-              /p:RunAnalyzers="${run_analyzers}" \
+              /p:RunAnalyzers="${GATE_RUN_ANALYZERS}" \
               /p:UseSharedCompilation=false
         fi
 
@@ -289,7 +306,7 @@ runs:
     # Generator failures stay hard. Existing validators consume fresh projections,
     # so stale checked-in bytes cannot redden an otherwise valid PR.
     - name: Regenerate projections and report advisory drift
-      if: inputs.phase != 'build'
+      if: inputs.phase != 'build' && contains(fromJSON('["all","architecture"]'), inputs.test-group)
       shell: bash
       run: |
         python3 -m pip install -r scripts/ci/okf-requirements.txt
@@ -298,7 +315,7 @@ runs:
         bash scripts/ci/report-generated-file-drift.sh
 
     - name: Run .NET Tests (Architecture Source)
-      if: inputs.phase != 'build'
+      if: inputs.phase != 'build' && contains(fromJSON('["all","architecture"]'), inputs.test-group)
       shell: bash
       run: |
         timeout "${{ inputs.architecture-timeout-minutes }}m" \
@@ -316,7 +333,7 @@ runs:
     # service-free runner. Coverage-free on purpose (the Coverlet collector adds
     # ~20m of teardown on Honua.Server.dll and would destroy the "cheap" budget).
     - name: Run .NET Tests (Server Fast Tier)
-      if: inputs.phase != 'build'
+      if: inputs.phase != 'build' && contains(fromJSON('["all","server-fast"]'), inputs.test-group)
       shell: bash
       run: |
         timeout "${{ inputs.server-fast-timeout-minutes }}m" \
@@ -333,7 +350,7 @@ runs:
     # Migrated pure Fast cases retain the required smoke they had in Server.Tests.
     # Their catalogued projects were included in the one combined build above.
     - name: Run .NET Tests (Isolated Unit Fast Tier)
-      if: inputs.phase != 'build'
+      if: inputs.phase != 'build' && contains(fromJSON('["all","unit-fast"]'), inputs.test-group)
       shell: bash
       run: |
         timeout "${{ inputs.server-fast-timeout-minutes }}m" \
@@ -342,7 +359,7 @@ runs:
     # Keep all architecture and authored-input validators strict against the
     # freshly generated projections, including byte equality/reproducibility.
     - name: Run .NET Tests (Architecture)
-      if: inputs.phase != 'build'
+      if: inputs.phase != 'build' && contains(fromJSON('["all","architecture"]'), inputs.test-group)
       shell: bash
       run: |
         timeout "${{ inputs.architecture-timeout-minutes }}m" \
@@ -359,7 +376,7 @@ runs:
     # available from the full solution build, so this adds only a no-build test
     # invocation to the required gate (#3198).
     - name: Run .NET Tests (MCP Registry/Taxonomy Drift)
-      if: inputs.phase != 'build'
+      if: inputs.phase != 'build' && contains(fromJSON('["all","architecture"]'), inputs.test-group)
       shell: bash
       run: |
         timeout "${{ inputs.ai-governance-timeout-minutes }}m" \
@@ -377,12 +394,12 @@ runs:
     # PostGIS fixture. Keep this step on the required PR Gate path; the
     # pre-pull above only removes the cold image-fetch stall.
     - name: Await Testcontainers PostGIS pre-pull
-      if: inputs.phase != 'build' && inputs.prepull-postgis == 'true'
+      if: inputs.phase != 'build' && inputs.prepull-postgis == 'true' && contains(fromJSON('["all","server-governance"]'), inputs.test-group)
       shell: bash
       run: scripts/ci/prepull-testcontainers-postgis.sh --await
 
     - name: Run .NET Tests (Server Governance/Drift)
-      if: inputs.phase != 'build'
+      if: inputs.phase != 'build' && contains(fromJSON('["all","server-governance"]'), inputs.test-group)
       shell: bash
       run: |
         timeout "${{ inputs.governance-timeout-minutes }}m" \
