@@ -8,8 +8,9 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
+using Honua.StaleAttemptWorker;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
+using Npgsql;
 
 internal static class StaleAttemptWorkerProgram
 {
@@ -17,11 +18,11 @@ internal static class StaleAttemptWorkerProgram
     {
         if (args.Length != 8)
         {
-            Console.Error.WriteLine("Expected redis, operation, checkpoint, resume, rejected, receipt, postgres, schema.");
+            Console.Error.WriteLine("Expected job schema, operation, checkpoint, resume, rejected, receipt, postgres, sink schema.");
             return 2;
         }
 
-        var redisConnectionString = args[0];
+        var jobSchema = args[0];
         var operationId = args[1];
         var checkpointKey = args[2];
         var resumeKey = args[3];
@@ -30,13 +31,14 @@ internal static class StaleAttemptWorkerProgram
         var postgresConnectionString = args[6];
         var schema = args[7];
 
-        await using var redis = await ConnectionMultiplexer.ConnectAsync(redisConnectionString);
-        var database = redis.GetDatabase();
-        var jobStore = new RedisExecutionJobStore(redis, NullLogger<RedisExecutionJobStore>.Instance);
-        var logStore = new RedisExecutionLogStore(redis, NullLogger<RedisExecutionLogStore>.Instance);
-        var queue = new RedisJobQueue(redis, jobStore, NullLogger<RedisJobQueue>.Instance);
+        await using var dataSource = NpgsqlDataSource.Create(postgresConnectionString);
+        var database = new JobStoreDatabase(dataSource, jobSchema);
+        var storeOptions = Options.Create(new JobStoreOptions());
+        var jobStore = new PostgresExecutionJobStore(database, storeOptions, NullLogger<PostgresExecutionJobStore>.Instance);
+        var logStore = new PostgresExecutionLogStore(database, storeOptions, NullLogger<PostgresExecutionLogStore>.Instance);
+        var queue = new PostgresJobQueue(database, NullLogger<PostgresJobQueue>.Instance);
         var executor = new CheckpointingExecutor(
-            database, checkpointKey, resumeKey, rejectedKey, receiptKey, postgresConnectionString, schema);
+            new TestSignals(dataSource, jobSchema), checkpointKey, resumeKey, rejectedKey, receiptKey, postgresConnectionString, schema);
         var service = new JobExecutionService(
             queue, jobStore, [executor], new ExecutionJobCancellationTokens(), [], logStore,
             NullLogger<JobExecutionService>.Instance);
@@ -48,7 +50,7 @@ internal static class StaleAttemptWorkerProgram
 }
 
 internal sealed class CheckpointingExecutor(
-    IDatabase database,
+    TestSignals signals,
     string checkpointKey,
     string resumeKey,
     string rejectedKey,
@@ -69,19 +71,19 @@ internal sealed class CheckpointingExecutor(
         CancellationToken cancellationToken)
     {
         var workerId = job.ClaimedBy ?? "unknown-worker";
-        await database.HashIncrementAsync(receiptKey, $"invocations:{workerId}").ConfigureAwait(false);
-        await database.HashIncrementAsync(receiptKey, "executorInvocations").ConfigureAwait(false);
+        await signals.IncrementFieldAsync(receiptKey, $"invocations:{workerId}").ConfigureAwait(false);
+        await signals.IncrementFieldAsync(receiptKey, "executorInvocations").ConfigureAwait(false);
 
         if (job.AttemptCount == 1)
         {
-            await database.HashIncrementAsync(receiptKey, "executorCheckpointCount").ConfigureAwait(false);
-            await database.StringSetAsync(checkpointKey, $"{workerId}|attempt={job.AttemptCount}").ConfigureAwait(false);
-            while (!await database.KeyExistsAsync(resumeKey).ConfigureAwait(false))
+            await signals.IncrementFieldAsync(receiptKey, "executorCheckpointCount").ConfigureAwait(false);
+            await signals.SetAsync(checkpointKey, $"{workerId}|attempt={job.AttemptCount}").ConfigureAwait(false);
+            while (!await signals.ExistsAsync(resumeKey).ConfigureAwait(false))
             {
                 await Task.Delay(50, CancellationToken.None).ConfigureAwait(false);
             }
 
-            await database.StringSetAsync($"{checkpointKey}:resumed", "true").ConfigureAwait(false);
+            await signals.SetAsync($"{checkpointKey}:resumed", "true").ConfigureAwait(false);
         }
 
         try
@@ -100,7 +102,7 @@ internal sealed class CheckpointingExecutor(
         }
         catch (InvalidOperationException)
         {
-            await database.StringSetAsync(rejectedKey, $"{workerId}|attempt={job.AttemptCount}").ConfigureAwait(false);
+            await signals.SetAsync(rejectedKey, $"{workerId}|attempt={job.AttemptCount}").ConfigureAwait(false);
             throw;
         }
     }
