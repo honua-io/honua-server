@@ -61,7 +61,9 @@ run_fixture() {
   fi
   while (( $(jobs -pr | wc -l) >= ROUTER_WORKERS )); do wait -n || true; done
   ROUTER_COUNT=$((ROUTER_COUNT + 1))
-  local result="$ROUTER_RESULTS/$ROUTER_COUNT"
+  local result="$ROUTER_RESULTS/$ROUTER_COUNT" fixture_stdin
+  # Bash otherwise replaces a background command's inherited stdin with /dev/null.
+  exec {fixture_stdin}<&0
   (
     started=$SECONDS
     set +e
@@ -72,7 +74,8 @@ run_fixture() {
     # Keep successful logs too: the validator's evidence remains inspectable.
     cat "$result.log"
     exit 0
-  ) &
+  ) <&"$fixture_stdin" &
+  exec {fixture_stdin}<&-
 }
 
 router_fixtures_finish() {

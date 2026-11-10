@@ -34,6 +34,18 @@ router_fixtures_finish
         for expected in ['first-failed', 'second-failed', 'last-ran', '4 executed, 2 failed', 'fixture 0']:
             self.assertIn(expected, result.stdout)
 
+    def test_preserves_heredoc_stdin(self):
+        result = self.run_shell("""
+run_fixture stdin "$PYTHON_BIN" - <<'PYTHON'
+print('heredoc-executed')
+raise SystemExit(7)
+PYTHON
+router_fixtures_finish
+""")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('heredoc-executed', result.stdout)
+        self.assertIn('1 executed, 1 failed', result.stdout)
+
     def test_function_failure_is_not_hidden_by_wrapper(self):
         result = self.run_shell('''
 failing() { false; echo incorrectly-continued; }
