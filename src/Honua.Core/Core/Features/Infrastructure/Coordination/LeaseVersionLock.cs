@@ -34,8 +34,11 @@ public sealed class LeaseVersionLock(ILeaseStore leases) : IVersionLock
         public Handle(LeaseHolder holder, TimeSpan renewalInterval)
         {
             _holder = holder;
+            LockLostToken = holder.LeaseLostToken;
             _renewal = holder.MaintainAsync(renewalInterval, _released.Token);
         }
+
+        public CancellationToken LockLostToken { get; }
 
         public async ValueTask DisposeAsync()
         {
