@@ -60,6 +60,7 @@ jobs:
   # job timeout, so a slow step falls back to hosted instead of failing the job. Enforce mode stays hosted because the
   # review release reruns only failed jobs and would reuse a stale choice.
   runner-select:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: PR Gate / Runner select
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -97,6 +98,7 @@ jobs:
         run: scripts/ci/select-gate-runner.sh
 
   format:
+    if: always() && !cancelled() && (needs.runner-select.result == 'success' || github.event.pull_request.draft == true)
     name: PR Gate / ${{ matrix.check }}
     needs: runner-select
     runs-on: ${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}

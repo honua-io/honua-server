@@ -2,6 +2,7 @@
 """Exercise draft admission and cancellation in the actual PR workflows."""
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import unittest
@@ -106,7 +107,29 @@ class PullRequestLoadTests(unittest.TestCase):
         for key in ("affected-shards-select", "affected-shard", "affected-shards"):
             self.assertIn("!github.event.pull_request.draft", jobs[key]["if"])
         self.assertEqual(jobs["required"]["if"], "always()")
-        self.assertNotIn("draft", jobs["runner-select"].get("if", ""))
+        self.assertIn("!github.event.pull_request.draft", jobs["runner-select"].get("if", ""))
+
+    def test_required_aggregate_rejects_skipped_heavy_work(self):
+        required = workflow("pr-gate.yml")["jobs"]["required"]
+        self.assertEqual(required["needs"], [
+            "pr-gate", "fast-tests", "format", "ci-router-validation", "affected-shards",
+        ])
+        step = required["steps"][0]
+        results = {key: "success" for key in step["env"]}
+
+        def run(overrides):
+            return subprocess.run(["bash", "-c", step["run"]],
+                                  env={**os.environ, "GITHUB_EVENT_NAME": "pull_request",
+                                       **results, **overrides},
+                                  text=True, capture_output=True, timeout=10).returncode
+
+        self.assertEqual(run({}), 0)
+        for key in results:
+            for outcome in ("skipped", "failure", "cancelled", ""):
+                with self.subTest(dependency=key, outcome=outcome):
+                    self.assertNotEqual(run({key: outcome}), 0)
+        self.assertNotEqual(run({key: "skipped" for key in results
+                                 if key != "FORMAT_RESULT"}), 0)
 
     def test_optional_pr_jobs_refuse_drafts(self):
         for path in sorted(WORKFLOWS.glob("*.y*ml")):
