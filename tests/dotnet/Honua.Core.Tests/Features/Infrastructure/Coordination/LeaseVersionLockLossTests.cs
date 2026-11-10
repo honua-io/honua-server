@@ -68,8 +68,10 @@ public sealed class LeaseVersionLockLossTests
         }
     }
 
+    // The first acquisition succeeds; later ones fail as they would while another owner holds the lease.
     private sealed class ScriptedLeaseStore : ILeaseStore
     {
+        private int _acquireCount;
         private int _renewCount;
 
         public bool RenewResult { get; init; } = true;
@@ -79,7 +81,7 @@ public sealed class LeaseVersionLockLossTests
         public int RenewCount => Volatile.Read(ref _renewCount);
 
         public Task<bool> TryAcquireAsync(LeaseClaim claim, TimeSpan duration, CancellationToken cancellationToken = default)
-            => Task.FromResult(true);
+            => Task.FromResult(Interlocked.Increment(ref _acquireCount) == 1);
 
         public Task<bool> RenewAsync(LeaseClaim claim, TimeSpan duration, CancellationToken cancellationToken = default)
         {
