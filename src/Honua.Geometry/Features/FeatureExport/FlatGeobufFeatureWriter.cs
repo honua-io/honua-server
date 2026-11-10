@@ -36,14 +36,20 @@ internal static class FlatGeobufFeatureWriter
         FeatureQuery query,
         IEnumerable<MetadataV2Field> projectedFields,
         int? outputSrid,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? resolvedPrimaryIdName = null)
     {
+        var canonicalIdName = resolvedPrimaryIdName ?? FieldNames.ObjectId;
+        var hasSourceObjectId = resource.SchemaFields.Any(field =>
+            field.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) &&
+            !field.Name.Equals(canonicalIdName, StringComparison.OrdinalIgnoreCase));
+        var primaryIdName = hasSourceObjectId ? canonicalIdName : FieldNames.ObjectId;
         var fields = query.ExcludeAttributes ? [] : projectedFields
-            .Where(field => !field.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
+            .Where(field => !field.Name.Equals(primaryIdName, StringComparison.OrdinalIgnoreCase))
             .ToArray();
         var columns = new List<ColumnT>
         {
-            new() { Name = FieldNames.ObjectId, Type = ColumnType.Long, Nullable = false, PrimaryKey = !query.Distinct }
+            new() { Name = primaryIdName, Type = ColumnType.Long, Nullable = false, PrimaryKey = !query.Distinct }
         };
         columns.AddRange(fields.Select(field => new ColumnT
         {

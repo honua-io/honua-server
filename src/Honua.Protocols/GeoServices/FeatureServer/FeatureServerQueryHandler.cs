@@ -1886,10 +1886,9 @@ internal sealed partial class FeatureServerQueryHandler(
         return new DatumAreaEnvelope(west, south, east, north);
     }
 
+    // A declared objectid may be a source attribute with a separate storage key.
     private static bool ShouldUseInternalObjectIdsFastPath(MetadataV2Resource resource)
-        => GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource)?.Name.Equals(
-            FieldNames.ObjectId,
-            StringComparison.OrdinalIgnoreCase) != false;
+        => GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource) is null;
 
     private static bool TryCreateObjectIdsExpression(
         MetadataV2Resource resource,

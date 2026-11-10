@@ -53,6 +53,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private readonly bool _disableJitForSourceSpatialCounts;
     private readonly bool? _preferSerialSourceSpatialCounts;
     private readonly string _primaryKeyColumn;
+    private readonly string _primaryIdFieldName;
+    private readonly string _encodedPrimaryIdName;
+    private readonly bool _injectObjectId;
     private readonly string? _geometryColumn;
     private readonly int _storageSrid;
     private readonly string? _layerDiscriminatorColumn;
@@ -102,6 +105,15 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         _logger = logger ?? NullLogger.Instance;
         _qualifiedTableName = QuoteQualifiedTableName(_mapping);
         _primaryKeyColumn = ValidateAndQuoteIdentifier(_mapping.PrimaryKeyColumn);
+        // Storage keys follow the binding; a semantic public ID remains a source attribute.
+        _primaryIdFieldName = _resource.SchemaFields.FirstOrDefault(field =>
+            field.Name.Equals(_mapping.PrimaryKeyColumn, StringComparison.OrdinalIgnoreCase))?.Name
+            ?? _mapping.PrimaryKeyColumn;
+        var objectIdField = _resource.SchemaFields.FirstOrDefault(field =>
+            field.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase));
+        _injectObjectId = objectIdField is null || objectIdField.Name.Equals(_primaryIdFieldName, StringComparison.OrdinalIgnoreCase);
+        // Preserve the historical encoded column name unless a source attribute owns it.
+        _encodedPrimaryIdName = _injectObjectId ? FieldNames.ObjectId : _primaryIdFieldName;
         _geometryColumn = string.IsNullOrWhiteSpace(_mapping.GeometryColumn)
             ? null
             : ValidateAndQuoteIdentifier(_mapping.GeometryColumn!);
@@ -211,7 +223,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     {
         query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
         var sql = new SqlBuilder();
-        sql.Append(CultureInfo.InvariantCulture, $"SELECT {_primaryKeyColumn}::bigint FROM {BuildFeatureSource(query, sql)}");
+        var objectIdExpression = query.ReturnPublicObjectIds && !string.IsNullOrWhiteSpace(query.PublicIdAttributeName)
+            ? ResolveColumnExpression(query.PublicIdAttributeName, sql)
+            : _primaryKeyColumn;
+        sql.Append(CultureInfo.InvariantCulture, $"SELECT {objectIdExpression}::bigint FROM {BuildFeatureSource(query, sql)}");
         AppendFilter(sql, query);
         AppendOrderBy(sql, query);
         AppendPagination(sql, query);
@@ -620,7 +635,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             addParameter,
             distinctObjectIdExpression);
 
-    private static string BuildAttributesJsonbExpression(
+    private string BuildAttributesJsonbExpression(
         MetadataV2Field[] fields,
         string? attributesColumn,
         Func<object?, string> addParameter,
@@ -637,7 +652,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return $"({string.Join(" || ", chunks)})";
     }
 
-    private static string BuildAttributesExpressionChunk(
+    private string BuildAttributesExpressionChunk(
         IEnumerable<MetadataV2Field> fields,
         string? attributesColumn,
         Func<object?, string> addParameter,
@@ -662,7 +677,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             // number, not a string). Text-like types keep the text accessor (->>) so existing
             // string formatting is unchanged. DateTime values may also be epoch numbers.
             if (distinctObjectIdExpression is not null &&
-                (IsObjectIdField(field.Name) || field.SemanticRoles.Contains("id.primary")))
+                field.Name.Equals(_primaryIdFieldName, StringComparison.OrdinalIgnoreCase))
             {
                 parts.Add(distinctObjectIdExpression);
             }
@@ -1068,8 +1083,18 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private string ConvertSqlFilter(SqlFragment sqlFilter, SqlBuilder sql)
     {
+        // Join filters bind their key values as strings. Cast only operands of
+        // declared JSON numeric fields, leaving text predicates and values intact.
+        var typedSql = JsonNumericParameterPredicateRegex().Replace(sqlFilter.Sql, match =>
+        {
+            var fieldName = match.Groups["identifier"].Value.Replace("\"\"", "\"", StringComparison.Ordinal);
+            return IsJsonNumericField(fieldName)
+                ? match.Groups["prefix"].Value + SqlFilterParameterRegex().Replace(
+                    match.Groups["operand"].Value, parameter => parameter.Value + "::numeric")
+                : match.Value;
+        });
         var converted = SqlFilterParameterRegex().Replace(
-            sqlFilter.Sql,
+            typedSql,
             match =>
             {
                 var index = int.Parse(match.Groups["index"].Value, CultureInfo.InvariantCulture);
@@ -1092,7 +1117,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             match =>
             {
                 var identifier = match.Groups["identifier"].Value.Replace("\"\"", "\"", StringComparison.Ordinal);
-                return ResolveColumnExpression(identifier, sql);
+                return ResolveWhereColumnExpression(identifier, sql);
             });
     }
 
@@ -1165,15 +1190,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private MetadataV2FieldType? TryResolveFieldType(string fieldName)
     {
-        if (fieldName.Equals("objectid", StringComparison.OrdinalIgnoreCase) ||
-            fieldName.Equals("object_id", StringComparison.OrdinalIgnoreCase) ||
-            fieldName.Equals(_resource.FindPrimaryIdField()?.Name, StringComparison.OrdinalIgnoreCase))
-        {
-            return MetadataV2FieldType.BigInteger;
-        }
-
-        return _resource.SchemaFields.FirstOrDefault(candidate =>
-            candidate.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase))?.Type;
+        var field = _resource.SchemaFields.FirstOrDefault(candidate =>
+            candidate.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
+        return field?.Type ?? (IsObjectIdField(fieldName) ? MetadataV2FieldType.BigInteger : null);
     }
 
     private string BuildSpatialFilter(FeatureQuery query, SqlBuilder sql)
@@ -1428,7 +1447,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private bool IsJsonNumericField(string fieldName)
         => !string.IsNullOrWhiteSpace(_mapping.AttributesColumn)
-           && !IsObjectIdField(fieldName)
+           && !fieldName.Equals(_primaryIdFieldName, StringComparison.OrdinalIgnoreCase)
            && TryResolveFieldType(fieldName) is { } type
            && IsNumericFieldType(type);
 
@@ -1451,12 +1470,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private string ResolveColumnExpression(string fieldName, SqlBuilder sql)
     {
-        if (fieldName.Equals("objectid", StringComparison.OrdinalIgnoreCase) ||
-            fieldName.Equals("object_id", StringComparison.OrdinalIgnoreCase))
-        {
-            return _primaryKeyColumn;
-        }
-
         // OGC API Features uses the synthetic property name "geometry" in CQL2 filters
         // to refer to the primary geometry field regardless of the resource's actual
         // geometry field name (e.g. "shape", "geom", "wkb_geometry"). Map it here so
@@ -1485,7 +1498,17 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             candidate.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
         if (field == null)
         {
+            if (IsObjectIdField(fieldName))
+            {
+                return _primaryKeyColumn;
+            }
+
             throw new ArgumentException($"Field '{fieldName}' was not found on resource '{_resource.Metadata.Name}'.");
+        }
+
+        if (field.Name.Equals(_primaryIdFieldName, StringComparison.OrdinalIgnoreCase))
+        {
+            return _primaryKeyColumn;
         }
 
         if (field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
@@ -1558,15 +1581,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private MetadataV2Field ResolveFieldDefinition(string fieldName)
     {
-        if (fieldName.Equals("objectid", StringComparison.OrdinalIgnoreCase) ||
-            fieldName.Equals("object_id", StringComparison.OrdinalIgnoreCase))
-        {
-            return new MetadataV2Field { Name = fieldName, Type = MetadataV2FieldType.BigInteger };
-        }
-
         return _resource.SchemaFields.FirstOrDefault(candidate =>
                 candidate.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase))
-            ?? throw new ArgumentException($"Field '{fieldName}' was not found on resource '{_resource.Metadata.Name}'.");
+            ?? (IsObjectIdField(fieldName)
+                ? new MetadataV2Field { Name = fieldName, Type = MetadataV2FieldType.BigInteger }
+                : throw new ArgumentException($"Field '{fieldName}' was not found on resource '{_resource.Metadata.Name}'."));
     }
 
     private Feature ReadFeature(NpgsqlDataReader reader, bool textAttributes, NativeAttributeDecoder? nativeAttributes)
@@ -1591,7 +1610,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             }
 
             nativeAttributes?.ReadInto(reader, attributesDictionary);
-            attributesDictionary[FieldNames.ObjectId] = id;
+            if (_injectObjectId)
+            {
+                attributesDictionary[FieldNames.ObjectId] = id;
+            }
             var metadataEndOrdinal = nativeAttributes?.FirstOrdinal ?? reader.FieldCount;
             if (metadataEndOrdinal > 3)
             {
@@ -2158,6 +2180,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         @"\bNULLIF\(\s*(?:""attributes""|attributes)\s*->>\s*'(?<field>(?:''|[^'])+)'\s*,\s*''\s*\)\s*::\s*(?<cast>integer|bigint|real|double precision)(?![\w\[])",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex NumericAttributeCastRegex();
+
+    [GeneratedRegex(
+        @"(?<prefix>""(?<identifier>(?:[^""]|"""")+)""\s*(?:(?:NOT\s+)?IN\s*|(?:=|<>|!=|<=|>=|<|>)\s*))(?<operand>\(\s*@p\d+(?:\s*,\s*@p\d+)*\s*\)|@p\d+)(?![\w:])",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex JsonNumericParameterPredicateRegex();
 
     [GeneratedRegex(
         @"""(?<identifier>(?:[^""]|"""")+)""",

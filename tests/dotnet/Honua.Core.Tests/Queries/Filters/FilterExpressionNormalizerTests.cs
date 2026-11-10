@@ -88,6 +88,21 @@ public sealed class FilterExpressionNormalizerTests
             .Should().BeTrue();
     }
 
+    [UnitTest]
+    public void Normalize_SourceObjectIdString_PreservesBusinessIdentifier()
+    {
+        var expression = new BinaryExpression(new PropertyReference("objectid"), BinaryOperator.Equal,
+            new Literal("001899", LiteralType.Text));
+
+        var normalized = FilterExpressionNormalizer.Normalize(expression,
+            ResourceWithField("objectid", MetadataV2FieldType.String));
+
+        var literal = normalized.Should().BeOfType<BinaryExpression>().Subject.Right
+            .Should().BeOfType<Literal>().Subject;
+        literal.Type.Should().Be(LiteralType.Text);
+        literal.Value.Should().Be("001899");
+    }
+
     private static MetadataV2Resource ResourceWithField(string name, MetadataV2FieldType type)
         => new()
         {

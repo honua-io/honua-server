@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Text.Json;
 using Honua.Core.Features.AttributeRules;
 using Honua.Core.Features.Collaboration.FeatureLocks;
 using Honua.Core.Features.Edit;
@@ -342,6 +343,7 @@ internal sealed class FeatureServerEditsHandler(
                     lockScope,
                     retryStaleUpdate,
                     versionContext,
+                    snapshot.ResolveStorageBinding(publication),
                     cancellationToken);
                 editContext.GuardUpdateSnapshot = retryStaleUpdate;
                 await ApplyPluginEditPipelineAsync(serviceId, layerId, resource, editContext, cancellationToken)
@@ -527,6 +529,7 @@ internal sealed class FeatureServerEditsHandler(
         EditLockScope? lockScope,
         bool guardUpdateSnapshot,
         VersionContext? versionContext,
+        MetadataV2StorageBinding? storageBinding,
         CancellationToken cancellationToken)
     {
         var context = new EditOperationContext
@@ -548,7 +551,7 @@ internal sealed class FeatureServerEditsHandler(
             guardUpdateSnapshot,
             versionContext,
             cancellationToken);
-        await ProcessDeleteOperationsAsync(request, resource, storageLayerId, context, principal, versionContext, cancellationToken);
+        await ProcessDeleteOperationsAsync(request, resource, storageLayerId, context, principal, versionContext, cancellationToken, storageBinding);
 
         return context;
     }
@@ -829,7 +832,8 @@ internal sealed class FeatureServerEditsHandler(
         EditOperationContext context,
         EditPrincipal principal,
         VersionContext? versionContext,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        MetadataV2StorageBinding? storageBinding = null)
     {
         if (request.Deletes == null)
             return;
@@ -889,7 +893,8 @@ internal sealed class FeatureServerEditsHandler(
                 .Where(static precondition => precondition.ExpectedRowAbsent)
                 .Select(static precondition => precondition.ObjectId)
                 .ToHashSet();
-        var usesInternalObjectIds = ShouldUseInternalObjectIdFastPath(resource);
+        var usesInternalObjectIds = ShouldUseInternalObjectIdFastPath(resource) ||
+            HasConfirmedStorageObjectId(resource, storageBinding);
         var ownerSnapshots = await ReadOwnerSnapshotsAsync(
             resource,
             storageLayerId,
@@ -1673,10 +1678,19 @@ internal sealed class FeatureServerEditsHandler(
         return resolved;
     }
 
+    // A declared objectid may be a source attribute with a separate storage key.
     private static bool ShouldUseInternalObjectIdFastPath(MetadataV2Resource resource)
-        => GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource)?.Name.Equals(
-            FieldNames.ObjectId,
-            StringComparison.OrdinalIgnoreCase) != false;
+        => GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource) is null;
+
+    private static bool HasConfirmedStorageObjectId(
+        MetadataV2Resource resource, MetadataV2StorageBinding? storageBinding)
+        => storageBinding is { StorageType: MetadataV2StorageType.RelationalTable } &&
+            storageBinding.Options.TryGetValue("primaryKeyColumn", out var primaryKey) &&
+            primaryKey.ValueKind == JsonValueKind.String &&
+            string.Equals(
+                GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource)?.Name,
+                primaryKey.GetString(),
+                StringComparison.OrdinalIgnoreCase);
 
     internal async Task<Feature> BuildFeatureFromGeoServicesAsync(
         GeoServicesFeature feature,

@@ -493,7 +493,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
 
         var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
             "BuildAttributesJsonbExpression",
-            BindingFlags.NonPublic | BindingFlags.Static,
+            BindingFlags.NonPublic | BindingFlags.Instance,
             binder: null,
             types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>), typeof(string)],
             modifiers: null);
@@ -507,7 +507,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             return $"${parameters.Count}";
         }
 
-        var expression = (string)method!.Invoke(null, [fields, null, (Func<object?, string>)AddParameter, null])!;
+        var expression = (string)method!.Invoke(CreateReader(CreateResource()), [fields, null, (Func<object?, string>)AddParameter, null])!;
 
         expression.Split("jsonb_build_object", StringSplitOptions.None).Length.Should().Be(3);
         expression.Should().StartWith("(");
@@ -532,7 +532,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
 
         var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
             "BuildAttributesJsonbExpression",
-            BindingFlags.NonPublic | BindingFlags.Static,
+            BindingFlags.NonPublic | BindingFlags.Instance,
             binder: null,
             types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>), typeof(string)],
             modifiers: null);
@@ -546,7 +546,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             return $"${parameters.Count}";
         }
 
-        var expression = (string)method!.Invoke(null, [fields, "attributes", (Func<object?, string>)AddParameter, null])!;
+        var expression = (string)method!.Invoke(CreateReader(CreateResource()), [fields, "attributes", (Func<object?, string>)AddParameter, null])!;
 
         // Numeric/boolean fields use the jsonb-preserving accessor (->) so they
         // round-trip as JSON numbers/booleans, not strings.
@@ -578,7 +578,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
 
         var buildMethod = typeof(PostgresStorageMappedFeatureReader).GetMethod(
             "BuildAttributesJsonbExpression",
-            BindingFlags.NonPublic | BindingFlags.Static,
+            BindingFlags.NonPublic | BindingFlags.Instance,
             binder: null,
             types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>), typeof(string)],
             modifiers: null);
@@ -591,7 +591,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
 
         buildMethod.Should().NotBeNull();
         var expression = (string)buildMethod!.Invoke(
-            null,
+            reader,
             [new[] { field }, "attributes", (Func<object?, string>)AddParameter, null])!;
 
         expression.Should().Be("(jsonb_build_object($1::text, \"attributes\" ->> $1::text))");

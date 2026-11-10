@@ -92,6 +92,11 @@ A synchronous import returns the result inline; a completed background job retur
 
 `detectedSrid` confirms CRS auto-detection. The table is now discoverable via `GET /api/v1/admin/connections/{id}/tables` and ready to publish.
 
+## Source fields
+
+Source `objectid` attributes remain source attributes; the storage primary key
+and the published layer's primary identifier can be different fields.
+
 ## Per-format notes
 
 | Format | Extension | Notes |
