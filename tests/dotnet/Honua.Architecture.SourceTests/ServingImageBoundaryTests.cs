@@ -412,7 +412,9 @@ public sealed class ServingImageBoundaryTests
                 "release builds must share the same variant scope before appending their architecture");
         }
 
-        workflow.Should().Contain("http://localhost:8080/healthz/live");
+        workflow.Should().Contain("--variable HONUA_BOUNDARY_SMOKE_PORT --ci-default 8080");
+        workflow.Should().Contain("SERVER_URL=\"http://127.0.0.1:$SERVER_PORT\"");
+        workflow.Should().Contain("wait --container \"$CONTAINER\" --url \"$SERVER_URL/healthz/live\"");
         workflow.Should().Contain("pull_request:");
         workflow.Should().Contain("paths:");
         workflow.Should().Contain("vars.HONUA_SERVING_IMAGE_SKIP == 'true'");
@@ -435,7 +437,7 @@ public sealed class ServingImageBoundaryTests
                      "Honua.Db/Redshift",
                      "Honua.Db/Snowflake",
                      "Honua.Db/Databricks",
-                     "Honua.Protocols.SensorThings"
+                     "Honua.Protocols/SensorThings"
                  })
         {
             functionsDockerfile.Should().Contain($"COPY src/{project}/*.csproj src/{project}/");
@@ -585,8 +587,8 @@ public sealed class ServingImageBoundaryTests
 
         foreach (var project in new[]
                  {
-                     "Honua.Core.Abstractions",
-                     "Honua.Core",
+                     "Honua.Core/Abstractions",
+                     "Honua.Core/Core",
                      "Honua.Geometry",
                      "Honua.Hosting",
                      "Honua.ServiceDefaults",
