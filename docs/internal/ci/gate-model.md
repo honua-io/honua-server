@@ -539,3 +539,10 @@ unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
+
+### Geocoding response fixture lifetime
+
+`GeocodingEndpointTests` uses one class-lifetime Community application for
+request-derived default-provider responses. Each case owns its HTTP client.
+Request-capture, custom-provider and Enterprise configurations own separate
+applications. All cases run in the geocoding shard for PR and full trunk coverage.

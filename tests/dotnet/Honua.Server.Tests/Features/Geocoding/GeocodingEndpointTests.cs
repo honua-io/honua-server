@@ -32,8 +32,23 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Honua.Server.Tests.Features.Geocoding;
 
 [Protocol(TestProtocols.Geocoding)]
-public sealed class GeocodingEndpointTests
+public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTests.Fixture>
 {
+    private readonly Fixture _fixture;
+
+    public GeocodingEndpointTests(Fixture fixture)
+    {
+        _fixture = fixture;
+    }
+
+    /// <summary>Default provider responses depend only on each request, so response cases can share the application.</summary>
+    public sealed class Fixture : IDisposable
+    {
+        public WebApplicationFactory<Program> Application { get; } = CreateDefaultFactory();
+
+        public void Dispose() => Application.Dispose();
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
@@ -42,8 +57,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("POST /rest/services/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_ReturnsGeoServicesPayload()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=1600+Pennsylvania+Ave+NW&f=json");
         using var defaultResponse = await client.GetAsync("/rest/services/GeocodeServer/findAddressCandidates?singleLine=1600+Pennsylvania+Ave+NW&f=json");
@@ -134,8 +148,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_WithOutSr3857_ReprojectsLocations()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync(
             "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=1600+Pennsylvania+Ave+NW&outSR=3857&f=json");
@@ -163,8 +176,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_WithOutFields_ProjectsAttributes()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync(
             "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=1600+Pennsylvania+Ave+NW&outFields=match_addr&f=json");
@@ -183,8 +195,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_WithOutFieldsWildcard_ReturnsAllAttributes()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync(
             "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=1600+Pennsylvania+Ave+NW&outFields=*&f=json");
@@ -203,8 +214,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_WithEmptyOutFieldsToken_ReturnsBadRequest()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync(
             "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=1600+Pennsylvania+Ave+NW&outFields=Match_addr,,Provider&f=json");
@@ -248,8 +258,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
     public async Task ReverseGeocode_WithLocationSrAndOutSr3857_ReprojectsLocation()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         // Web Mercator coordinates (roughly -77.03655, 38.89768) declared via the
         // location's own spatialReference.
@@ -276,8 +285,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
     public async Task ReverseGeocode_Wgs84LocationWithOutSr3857_ReprojectsOutputToWebMercator()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         // Bare "lon,lat" defaults to the WGS84 input SR; outSR controls only the output.
         using var response = await client.GetAsync(
@@ -300,8 +308,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/GeocodeServer")]
     public async Task GeocodeServerMetadata_ExposesProviderCapabilities()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
         using var defaultResponse = await client.GetAsync("/rest/services/GeocodeServer?f=json");
@@ -331,8 +338,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("POST /rest/services/GeocodeServer")]
     public async Task GeocodeServerMetadata_Post_ReturnsSamePayloadAsGet()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var getResponse = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
         using var postContent = new FormUrlEncodedContent(new[]
@@ -401,8 +407,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/GeocodeServer/reverseGeocode")]
     public async Task ReverseGeocode_ReturnsGeoServicesPayload()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/reverseGeocode?location=-77.03655,38.89768&f=json");
         using var defaultResponse = await client.GetAsync("/rest/services/GeocodeServer/reverseGeocode?location=-77.03655,38.89768&f=json");
@@ -423,8 +428,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/suggest")]
     public async Task Suggest_WhenProviderSupports_ReturnsSuggestions()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/suggest?text=hon&f=json");
         using var defaultResponse = await client.GetAsync("/rest/services/GeocodeServer/suggest?text=hon&f=json");
@@ -444,8 +448,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/suggest")]
     public async Task Suggest_Post_WhenProviderSupports_ReturnsSuggestions()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -608,8 +611,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_WithEsriJsonOutSr_AcceptsSpatialReferenceObject()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         var outSr = Uri.EscapeDataString("""{"latestWkid":3857}""");
         using var response = await client.GetAsync(
@@ -778,8 +780,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_WithInvalidLocatorName_Returns404()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/NonexistentLocator/GeocodeServer/findAddressCandidates?singleLine=test&f=json");
 
@@ -791,8 +792,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_OversizedSingleLine_Returns400()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         var singleLine = new string('a', GeocodeQueryLimits.MaxQueryLength + 1);
         using var response = await client.GetAsync(
@@ -808,8 +808,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_Post_ReturnsGeoServicesPayload()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -832,8 +831,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
     public async Task ReverseGeocode_Post_ReturnsGeoServicesPayload()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -854,8 +852,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_PjsonFormat_ReturnsJson()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test&f=pjson");
 
@@ -868,8 +865,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_InvalidFormat_Returns400()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test&f=xml");
 
@@ -903,8 +899,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
     public async Task ReverseGeocode_MissingLocation_Returns400()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         // Missing location parameter
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/reverseGeocode?f=json");
@@ -917,8 +912,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task ForwardGeocode_ReturnsBadRequest_WhenExplicitProviderNotFound()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test&provider=nonexistent&f=json");
 
@@ -932,8 +926,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
     public async Task ReverseGeocode_ReturnsBadRequest_WhenExplicitProviderNotFound()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/reverseGeocode?location=-77.03,38.89&provider=nonexistent&f=json");
 
@@ -1076,8 +1069,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_WithInvalidSearchExtent_Returns400()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync(
             "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test&searchExtent=not-an-extent&f=json");
@@ -1129,8 +1121,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
     public async Task ReverseGeocode_WithInvalidDistance_Returns400()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync(
             "/rest/services/World/GeocodeServer/reverseGeocode?location=-77.03655,38.89768&distance=0&f=json");
@@ -1193,8 +1184,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/suggest")]
     public async Task Suggest_EmitsSelfIssuedMagicKey_NotProviderInternalId()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/suggest?text=1600&f=json");
 
@@ -1214,8 +1204,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/suggest")]
     public async Task Suggest_EmitsDeterministicMagicKey_AcrossRepeatedCalls()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var first = await client.GetAsync("/rest/services/World/GeocodeServer/suggest?text=1600&f=json");
         using var second = await client.GetAsync("/rest/services/World/GeocodeServer/suggest?text=1600&f=json");
@@ -1272,8 +1261,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_WithInvalidMagicKey_Returns400()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync(
             "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test&magicKey=tampered.token&f=json");
@@ -1317,8 +1305,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/suggest")]
     public async Task Suggest_WithCategory_NarrowsSuggestions()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/suggest?text=hon&category=POI&f=json");
 
@@ -1334,8 +1321,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
     public async Task GeocodeServerMetadata_AdvertisesSupportedCategories()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
 
@@ -1544,8 +1530,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_WithInvalidLocation_Returns400()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync(
             "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test&location=not-a-point&f=json");
@@ -1561,8 +1546,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_WithInvalidDistance_Returns400()
     {
-        using var factory = CreateDefaultFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         using var response = await client.GetAsync(
             "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test&location=-77.0,38.9&distance=-5&f=json");
