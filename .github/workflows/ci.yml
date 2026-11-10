@@ -4,7 +4,27 @@ on:
 permissions:
   contents: read
 jobs:
-  deliberate-failure:
+  ci-gate:
+    name: CI Gate
     runs-on: ubuntu-latest
     steps:
-      - run: echo 'Doctor trigger probe - deliberate failure'; exit 1
+      - run: echo 'Doctor callback probe - deliberate failure'; exit 1
+  doctor-notify:
+    name: Notify CI doctor of scratch failure
+    needs: ci-gate
+    if: ${{ always() && needs.ci-gate.result == 'failure' && github.ref == 'refs/heads/ci/doctor-trigger-probe' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              ...context.repo,
+              workflow_id: 'ci-doctor-triage.lock.yml',
+              ref: context.payload.repository.default_branch,
+              inputs: { source_run_id: String(context.runId) }
+            });
+            core.info(`Notified CI doctor triage of failed CI run ${context.runId}`);
