@@ -88,6 +88,6 @@ SharedCache__Emergency__Layers__1=roads/1
 
 ## Troubleshoot
 
-- **Everything is `private, no-store`.** The deployment resolves a tenant for the request, or a development bypass identity is active. Neither is shared.
+- **Everything is `private, no-store`.** The request carries a credential or names a tenant, or a development bypass identity is active. None of these is shared.
 - **A change is not visible through the CDN.** Check the admin response for `Honua-Cdn-Invalidation: failed`, and the task role's permission on the distribution.
 - **Edits made outside Honua are not visible.** Shorten the layer's lifetime, or invalidate the layer's cache after loading data.

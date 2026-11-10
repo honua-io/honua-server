@@ -12,12 +12,11 @@ internal static class RequestAnonymity
     // Set by the CDN on requests whose credential it cannot put in its cache key.
     private const string EdgeCacheBypassCookie = "honua_cache_bypass";
 
-    // A development-bypass identity counts as authenticated, and a tenant-scoped answer is not everyone's answer: when unsure, the response is not shared.
+    // A development-bypass identity counts as authenticated. A tenant is named by a claim or by the tenant header; a request with neither gets the default tenant, which is everyone's answer.
     internal static bool IsAnonymous(HttpContext context)
         => !BypassOutputCacheOnCredentialedRequestPolicy.CarriesCredential(context)
            && !ScopedJobAuthentication.HasCandidate(context)
            && !context.Request.Cookies.ContainsKey(EdgeCacheBypassCookie)
            && !context.User.Identities.Any(static identity => identity.IsAuthenticated || identity.Claims.Any())
-           && !context.Request.Headers.ContainsKey(TenantContextOptions.TenantHeaderName)
-           && TenantScopeHelpers.ResolveRequestTenantId(context) is null;
+           && !context.Request.Headers.ContainsKey(TenantContextOptions.TenantHeaderName);
 }

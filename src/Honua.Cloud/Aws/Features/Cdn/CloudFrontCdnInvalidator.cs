@@ -39,7 +39,8 @@ internal sealed partial class CloudFrontCdnInvalidator(
         }
 
         var submittedIds = string.Join(',', invalidationIds);
-        Log.InvalidationSubmitted(logger, distributionId, submittedIds, string.Join(' ', distinctPaths));
+        var submittedPaths = string.Join(' ', distinctPaths);
+        Log.InvalidationSubmitted(logger, distributionId, submittedIds, submittedPaths);
         return new CdnInvalidationResult(CdnInvalidationOutcome.Submitted, submittedIds);
     }
 

@@ -140,6 +140,6 @@ the CDN, and `/*` is invalidated when the operation completes or rolls back.
   carrier must reach the origin, and `Origin` and the negotiation headers must be in the cache key.
 - `TileOptions:CacheMaxAge` no longer sets the tile lifetime: its default of one hour would override
   the product default on every tile. A tileset entry under `TileOptions:TilesetLifecycle` still does.
-- A deployment that resolves tenants gets no shared caching.
+- A request that names a tenant is never shared, so tenant-scoped content is not cached by the CDN.
 - An anonymous caller that edits a public layer can read a feature query up to `s-maxage` old through
   the CDN.
