@@ -13,6 +13,10 @@ on:
 
 if: ${{ github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.head_repository.full_name == github.repository }}
 
+checkout:
+  fetch-depth: 0
+  fetch: ["*"]
+
 permissions:
   actions: read
   contents: read
@@ -35,6 +39,9 @@ concurrency:
   cancel-in-progress: true
 
 safe-outputs:
+  github-app:
+    client-id: ${{ secrets.BOT_APP_ID }}
+    private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
   push-to-pull-request-branch:
     target: "*"
     max: 1
@@ -71,6 +78,10 @@ A required workflow failed on honua-server. Find the cause and fix it, so nobody
 - Head SHA: ${{ github.event.workflow_run.head_sha }}
 - Look up the run's branch, event and pull request from the run id.
 
+## Code
+
+`$GITHUB_WORKSPACE` is a full clone of trunk with every branch already fetched as `origin/<branch>`. The sandbox has no network for git: never run `git fetch`, `git pull` or `git push`. Read a pull request's changes with `git log` and `git diff origin/trunk...origin/<branch>`; the GitHub tools withhold pull request file lists and diffs.
+
 ## Steps
 
 0. First check whether this head SHA was already handled: an open pull request comment or issue containing `ci-doctor: <head SHA>`, or a draft pull request titled `fix(ci):` naming it. If so, stop with no output.
@@ -78,8 +89,8 @@ A required workflow failed on honua-server. Find the cause and fix it, so nobody
 2. Decide the class: code or test failure, generated-file or format drift, budget check (descriptor, shard time), workflow/config, runner or network flake, external service.
 3. Runner, network or GitHub flake: change nothing; add one comment on the pull request (or nothing for trunk) saying it is a flake, so a rerun is enough, ending with the marker `ci-doctor: <head SHA>`.
 4. Pull request run (the branch has an open pull request in this repository):
-   - Check out the pull request head. Make the smallest change that fixes the failure, following AGENTS.md (clean-code rules, no history or ticket comments, tests stay meaningful: never delete, skip or weaken a test or a budget to go green).
-   - Push it to that pull request's branch with a commit message `fix(ci): <what>`.
+   - `git switch <branch>` (offline; it tracks `origin/<branch>`). If its HEAD is not the run's head SHA, stop with no output: a newer run covers the newer commit. Make the smallest change that fixes the failure, following AGENTS.md (clean-code rules, no history or ticket comments, tests stay meaningful: never delete, skip or weaken a test or a budget to go green).
+   - Commit only the files you changed, with the message `fix(ci): <what>`, and call `push_to_pull_request_branch` with that pull request's number. Format, clean-code and small test fixes are yours to make: push them rather than only suggesting them.
    - Add one short comment: the cause, the fix, and the log line that proves it, ending with the marker `ci-doctor: <head SHA>`.
    - If the fix is not clear, is larger than a few files, or touches security, authentication, approval, licensing or release logic: change nothing, add the `ci-stuck` label and a comment with the cause and the suggested fix.
 5. Trunk run (branch trunk, event schedule, push or workflow_dispatch):
