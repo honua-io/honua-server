@@ -245,14 +245,14 @@ public sealed class EnrichmentDatasetCatalogEndpointTests : IAsyncLifetime
 }
 
 /// <summary>
-/// Verifies discovery edition filtering (#2280): a Community caller does not see
-/// Pro-tier managed datasets.
+/// Verifies discovery edition filtering (#2280): a Pro caller does not see
+/// Enterprise-tier managed datasets.
 /// </summary>
 [Collection("Database")]
 [Protocol(ProtocolNames.DataEnrichment)]
 public sealed class EnrichmentDatasetCatalogEditionFilterTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Community);
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
     public Task InitializeAsync() => _fixture.InitializeAsync();
 
@@ -264,24 +264,24 @@ public sealed class EnrichmentDatasetCatalogEditionFilterTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ListEnrichmentDatasets)]
     [Endpoint("GET /api/enrich/datasets")]
-    public async Task List_CommunityEdition_HidesProDatasets()
+    public async Task List_ProEdition_HidesEnterpriseDatasets()
     {
         var admin = _fixture.CreateAdminClient();
         await admin.PostAsync("/api/enrich/datasets", JsonBody(new
         {
-            id = "pro-only",
-            title = "Pro Only",
+            id = "enterprise-only",
+            title = "Enterprise Only",
             category = "boundary",
             layerId = 1,
-            minimumEdition = "Pro",
+            minimumEdition = "Enterprise",
         }));
         await admin.PostAsync("/api/enrich/datasets", JsonBody(new
         {
-            id = "community-ok",
-            title = "Community OK",
+            id = "pro-ok",
+            title = "Pro OK",
             category = "boundary",
             layerId = 1,
-            minimumEdition = "Community",
+            minimumEdition = "Pro",
         }));
 
         var response = await _fixture.Client.GetAsync("/api/enrich/datasets");
@@ -293,7 +293,7 @@ public sealed class EnrichmentDatasetCatalogEditionFilterTests : IAsyncLifetime
             .Select(d => d.GetProperty("id").GetString())
             .ToArray();
 
-        ids.Should().Contain("community-ok");
-        ids.Should().NotContain("pro-only");
+        ids.Should().Contain("pro-ok");
+        ids.Should().NotContain("enterprise-only");
     }
 }
