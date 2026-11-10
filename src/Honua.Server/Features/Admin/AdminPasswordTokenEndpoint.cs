@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Security;
 using Honua.Server.Features.Admin.Models;
 
