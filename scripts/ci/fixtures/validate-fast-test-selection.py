@@ -37,7 +37,8 @@ class SelectionTests(unittest.TestCase):
         outputs = [members] + [value[0] for value in self.roots.values()]
         with patch.dict(os.environ, GITHUB_EVENT_NAME='pull_request'), \
                 patch.object(selection.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, 'unit-fast.csproj\n')) as affected, \
-                patch.object(selection.subprocess, 'check_output', side_effect=outputs) as roots:
+                patch.object(selection.subprocess, 'check_output', side_effect=outputs) as roots, \
+                patch.object(selection, 'safe_selection', return_value=None):
             self.assertEqual(['architecture', 'unit-fast'], selection.plan())
         self.assertEqual('HEAD^1', affected.call_args.kwargs['env']['BASE_REF'])
         self.assertIn('compute-affected-projects.sh', affected.call_args.args[0][1])
@@ -55,9 +56,35 @@ class SelectionTests(unittest.TestCase):
             with self.subTest(closure=closure, roots=roots), \
                     patch.dict(os.environ, GITHUB_EVENT_NAME='pull_request'), \
                     patch.object(selection.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, closure)), \
-                    patch.object(selection.subprocess, 'check_output', side_effect=[members, *roots]):
+                    patch.object(selection.subprocess, 'check_output', side_effect=[members, *roots]), \
+                    patch.object(selection, 'safe_selection', return_value=None):
                 with self.assertRaises(ValueError):
                     selection.plan()
+
+    def test_unmapped_inputs_require_positive_docs_proof(self):
+        for verdict, expected in [('docs_only=false', list(selection.GROUPS)), ('docs_only=true', [])]:
+            with patch.object(selection.subprocess, 'check_output', return_value='docs/internal/developer/metadata-catalog-endpoints.v1.json\0'), \
+                    patch.object(selection.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, verdict)):
+                self.assertEqual(expected, selection.safe_selection([], set()))
+
+    def test_mixed_governed_input_retains_all_groups(self):
+        changed = 'tests/dotnet/Honua.Core.Security.Tests/DataConnectionTests.cs\0certification/cite-protocol-requirements.v1.json\0'
+        members = {'tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj'}
+        with patch.object(selection.subprocess, 'check_output', return_value=changed), \
+                patch.object(selection, 'linked_inputs', return_value=False), \
+                patch.object(selection, 'docs_proven', return_value=False) as proof:
+            self.assertEqual(list(selection.GROUPS), selection.safe_selection(list(members), members))
+            proof.assert_called_once_with(['certification/cite-protocol-requirements.v1.json'])
+
+    def test_linked_sources_retain_every_group(self):
+        cases = ['tests/dotnet/Shared/ProtocolUnits/Ai/McpTaxonomyAlignmentTests.Shared.cs',
+                 'tests/dotnet/Honua.Server.Tests/Features/NlQuery/NlQueryTestResources.cs']
+        members = {'tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj'}
+        for changed in cases:
+            with self.subTest(changed=changed), \
+                    patch.object(selection.subprocess, 'check_output', return_value=changed + '\0'):
+                self.assertTrue(selection.linked_inputs([changed], members))
+                self.assertEqual(list(selection.GROUPS), selection.safe_selection(['known.csproj'], members))
 
     def test_errors_emit_all_groups(self):
         with tempfile.TemporaryDirectory() as directory:
