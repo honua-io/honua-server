@@ -214,7 +214,7 @@ internal static class McpWorkflowViewCatalog
         Description =
             "The bounded path an admin uses to connect or ingest data, publish a layer, set access, "
             + "style and render a map. Use the setup view for Studio authoring and publication. Select the folders view to organize folders or move services.",
-        Revision = "configure.v2",
+        Revision = "configure.v3",
         Stages =
         [
             new McpWorkflowViewStageDefinition
