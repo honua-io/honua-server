@@ -45,9 +45,11 @@ During these runs available host disk fell from 86 GiB to 28 GiB, then recovered
 to 80 GiB. Transport cleanup starts below 60 GiB and removes least-recently-used
 checkout outputs until 90 GiB is free, excluding the current and recently active
 checkouts. Queued checkouts have no active marker, so retention while waiting
-is not guaranteed. Cache eviction is a plausible confound; no per-eviction log
-was present to establish which outputs were removed. Some active markers
-outlived their local processes; a dead local PID does not establish that its
+is not guaranteed. A follow-up snapshot at 03:00:34 UTC found both measured
+worktrees missing their Core output assembly and generated global-usings file
+after successful runs; output retention had failed. No per-eviction log was
+present to attribute the deletion to a specific cleanup invocation. Some active
+markers outlived their local processes; a dead local PID does not establish that its
 remote child has exited. Marker cleanup must verify remote execution liveness
 before permitting eviction. Do not claim incremental reuse from output paths
 alone or remove marker protection based only on local process exit.
