@@ -1207,8 +1207,8 @@ jobs:
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
-      # Bound trailing shard fanout so PR Gate can obtain runners. Full runs retain their budget.
-      max-parallel: ${{ inputs.selective_base && needs.changes.outputs.full_ci != 'true' && 6 || 24 }}
+      # Keep the trailing budget even when routing expands to full coverage.
+      max-parallel: ${{ inputs.selective_base && 6 || 24 }}
       matrix:
         include: ${{ fromJson(needs.targeted-shards.outputs.matrix_include) }}
     env:
