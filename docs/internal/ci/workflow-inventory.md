@@ -611,7 +611,9 @@ Trailing `selective_base` dispatches use their verified base for the managed
 producer's affected project graph. An effective full-CI decision (including a
 router promotion or manual override) builds the whole solution. Consumers reuse the single producer's
 artifacts. Server shards retain descending measured `dispatch_rank` order and
-run at most six at once (full runs retain 24). Expensive AOT, Docker,
+run at most six at once for every `selective_base` dispatch, including router
+promotions and explicit full-coverage overrides. Full coverage still selects
+every shard; scheduled and non-selective full runs retain 24 concurrent shards. Expensive AOT, Docker,
 Postgres compatibility, browser, Python, MCP and quickstart lanes use
 `scripts/ci/affected-ci-lanes.py` to select their own inputs. Native, container
 and MCP checks conservatively include every runtime source or project change,
