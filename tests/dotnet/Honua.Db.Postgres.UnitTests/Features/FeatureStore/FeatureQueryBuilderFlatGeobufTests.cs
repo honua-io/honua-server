@@ -106,8 +106,13 @@ public sealed class FeatureQueryBuilderFlatGeobufTests
         };
         var feature = Feature.Create(1, null,
             ImmutableDictionary<string, object?>.Empty.Add("public_id", "public-1"));
-        var payload = FlatGeobufFeatureWriter.Write([feature], resource, new FeatureQuery(),
-            resource.SchemaFields, 4326, CancellationToken.None);
+        var payload = FlatGeobufFeatureWriter.Write([feature], new FlatGeobufFeatureWriter.ExportOptions
+        {
+            Resource = resource,
+            Query = new FeatureQuery(),
+            ProjectedFields = resource.SchemaFields,
+            OutputSrid = 4326
+        }, CancellationToken.None);
         var encoded = FlatGeobuf.NTS.FeatureCollectionConversions.Deserialize(payload).Should().ContainSingle().Subject;
         encoded.Attributes["objectid"].Should().Be(1L);
         encoded.Attributes["public_id"].Should().Be("public-1");

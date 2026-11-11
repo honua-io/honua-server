@@ -310,9 +310,12 @@ public sealed class EditOwnerSubjectTests
 
         await CreateHandler(reader).ProcessDeleteOperationsAsync(
             new ApplyEditsRequest { Deletes = [7L, 8L] },
-            OwnerEditResource(), storageLayerId: 7, context,
-            new EditPrincipal("subject-a", IsAuthenticated: true, IsAdmin: false),
-            branch, CancellationToken.None);
+            new FeatureServerEditsHandler.EditTarget
+            {
+                Resource = OwnerEditResource(), StorageLayerId = 7,
+                Principal = new EditPrincipal("subject-a", IsAuthenticated: true, IsAdmin: false),
+                VersionContext = branch
+            }, context, CancellationToken.None);
 
         context.DeleteIds.Should().ContainSingle().Which.Should().Be(7);
         context.DeleteResults![1].Should().NotBeNull();

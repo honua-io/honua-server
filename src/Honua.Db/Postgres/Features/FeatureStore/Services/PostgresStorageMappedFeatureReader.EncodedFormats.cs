@@ -34,8 +34,14 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFlatGeobufFe
     {
         query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
         var features = await ExecuteFeatureQueryAsync(query, probeLimit: false, cancellationToken).ConfigureAwait(false);
-        return FlatGeobufFeatureWriter.Write(features, _resource, query,
-            ResolveAttributeFields(query), query.OutputSrid ?? _storageSrid, cancellationToken, _primaryIdFieldName);
+        return FlatGeobufFeatureWriter.Write(features, new FlatGeobufFeatureWriter.ExportOptions
+        {
+            Resource = _resource,
+            Query = query,
+            ProjectedFields = ResolveAttributeFields(query),
+            OutputSrid = query.OutputSrid ?? _storageSrid,
+            ResolvedPrimaryIdName = _primaryIdFieldName
+        }, cancellationToken);
     }
 
     public async Task<byte[]?> QueryGeobufAsync(

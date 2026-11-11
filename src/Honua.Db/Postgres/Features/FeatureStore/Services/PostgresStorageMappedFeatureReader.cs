@@ -105,15 +105,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         _logger = logger ?? NullLogger.Instance;
         _qualifiedTableName = QuoteQualifiedTableName(_mapping);
         _primaryKeyColumn = ValidateAndQuoteIdentifier(_mapping.PrimaryKeyColumn);
-        // Storage keys follow the binding; a semantic public ID remains a source attribute.
-        _primaryIdFieldName = _resource.SchemaFields.FirstOrDefault(field =>
-            field.Name.Equals(_mapping.PrimaryKeyColumn, StringComparison.OrdinalIgnoreCase))?.Name
-            ?? _mapping.PrimaryKeyColumn;
-        var objectIdField = _resource.SchemaFields.FirstOrDefault(field =>
-            field.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase));
-        _injectObjectId = objectIdField is null || objectIdField.Name.Equals(_primaryIdFieldName, StringComparison.OrdinalIgnoreCase);
-        // Preserve the historical encoded column name unless a source attribute owns it.
-        _encodedPrimaryIdName = _injectObjectId ? FieldNames.ObjectId : _primaryIdFieldName;
+        (_primaryIdFieldName, _injectObjectId, _encodedPrimaryIdName) = ResolvePrimaryIdNames();
         _geometryColumn = string.IsNullOrWhiteSpace(_mapping.GeometryColumn)
             ? null
             : ValidateAndQuoteIdentifier(_mapping.GeometryColumn!);
@@ -127,6 +119,20 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             ? null
             : ValidateAndQuoteIdentifier(_mapping.LayerDiscriminatorColumn!);
         _layerDiscriminatorValue = _mapping.LayerDiscriminatorValue;
+    }
+
+    private (string PrimaryId, bool InjectObjectId, string EncodedPrimaryId) ResolvePrimaryIdNames()
+    {
+        // Storage keys follow the binding; a semantic public ID remains a source attribute.
+        var primaryIdFieldName = _resource.SchemaFields.FirstOrDefault(field =>
+            field.Name.Equals(_mapping.PrimaryKeyColumn, StringComparison.OrdinalIgnoreCase))?.Name
+            ?? _mapping.PrimaryKeyColumn;
+        var objectIdField = _resource.SchemaFields.FirstOrDefault(field =>
+            field.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase));
+        var injectObjectId = objectIdField is null || objectIdField.Name.Equals(primaryIdFieldName, StringComparison.OrdinalIgnoreCase);
+        // Preserve the historical encoded column name unless a source attribute owns it.
+        var encodedPrimaryIdName = injectObjectId ? FieldNames.ObjectId : primaryIdFieldName;
+        return (primaryIdFieldName, injectObjectId, encodedPrimaryIdName);
     }
 
     public async Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)

@@ -625,16 +625,7 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
             schemaFields.AddRange(additionalFields);
         }
 
-        if (semanticPrimaryId)
-        {
-            schemaFields[0] = new MetadataV2Field { Name = primaryKeyColumn, Type = MetadataV2FieldType.BigInteger };
-        }
-
-        if (legacyPrimaryIdLast)
-        {
-            schemaFields.RemoveAt(0);
-            schemaFields.Add(new MetadataV2Field { Name = primaryKeyColumn, Type = MetadataV2FieldType.BigInteger });
-        }
+        ConfigurePrimaryIdField(schemaFields, primaryKeyColumn, semanticPrimaryId, legacyPrimaryIdLast);
 
         var resource = new MetadataV2Resource
         {
@@ -672,6 +663,22 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
             connection: null,
             connectionEncryptionService: null,
             preferSerialBoundedSpatialReads: preferSerialPlan);
+    }
+
+    private static void ConfigurePrimaryIdField(
+        List<MetadataV2Field> schemaFields, string primaryKeyColumn, bool semanticPrimaryId, bool legacyPrimaryIdLast)
+    {
+        if (semanticPrimaryId)
+        {
+            schemaFields[0] = new MetadataV2Field { Name = primaryKeyColumn, Type = MetadataV2FieldType.BigInteger };
+        }
+
+        if (legacyPrimaryIdLast)
+        {
+            schemaFields.RemoveAt(0);
+            schemaFields.Add(new MetadataV2Field { Name = primaryKeyColumn, Type = MetadataV2FieldType.BigInteger });
+        }
+
     }
 
     private sealed class FixtureConnectionProvider : IAdoNetDatabaseConnectionProvider

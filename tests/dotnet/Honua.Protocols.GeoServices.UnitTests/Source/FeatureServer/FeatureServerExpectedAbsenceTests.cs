@@ -34,6 +34,46 @@ public sealed class FeatureServerExpectedAbsenceTests
     public async Task MissingDelete_OnlyDispatchesAbsenceGuardForConfirmedStorageIdentity(
         string? storageKey, bool expectedAbsent, bool shouldDispatch)
     {
+        var target = CreateTarget(storageKey);
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(0, []));
+        var filters = Substitute.For<IFilterExpressionService>();
+        filters.Translate(Arg.Any<FilterExpression?>(), Arg.Any<MetadataV2Resource>())
+            .Returns(FilterTranslationResult.Success(null, new SqlFragment("objectid = @p0", [11L])));
+        var handler = CreateHandler(reader, filters);
+        var context = new FeatureServerEditsHandler.EditOperationContext
+        {
+            DeleteResults = new EditResult?[1]
+        };
+
+        await handler.ProcessDeleteOperationsAsync(
+            new ApplyEditsRequest
+            {
+                Deletes = [11L],
+                Preconditions = expectedAbsent
+                    ? [new FeatureEditPrecondition { ObjectId = 11, ExpectedRowAbsent = true }]
+                    : []
+            },
+            target, context, CancellationToken.None);
+
+        context.HasValidationErrors.Should().Be(!shouldDispatch);
+        if (shouldDispatch)
+        {
+            context.DeleteIds.Should().Equal(11L);
+            context.DeleteFeatures.Should().ContainSingle().Which.Should().BeNull();
+        }
+        else
+        {
+            context.DeleteIds.Should().BeEmpty();
+            context.DeleteResults![0]!.Error!.Code.Should().Be(expectedAbsent
+                ? GeoServicesEditErrorCodes.UpdateConflict
+                : GeoServicesEditErrorCodes.DeleteNotFound);
+        }
+    }
+
+    private static FeatureServerEditsHandler.EditTarget CreateTarget(string? storageKey)
+    {
         var resource = new MetadataV2Resource
         {
             SchemaFields =
@@ -56,41 +96,10 @@ public sealed class FeatureServerExpectedAbsenceTests
                 ["primaryKeyColumn"] = keyDocument.RootElement.Clone()
             }
         };
-        var reader = Substitute.For<IFeatureReader>();
-        reader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(QueryResult<Feature>.Create(0, []));
-        var filters = Substitute.For<IFilterExpressionService>();
-        filters.Translate(Arg.Any<FilterExpression?>(), Arg.Any<MetadataV2Resource>())
-            .Returns(FilterTranslationResult.Success(null, new SqlFragment("objectid = @p0", [11L])));
-        var handler = CreateHandler(reader, filters);
-        var context = new FeatureServerEditsHandler.EditOperationContext
+        return new FeatureServerEditsHandler.EditTarget
         {
-            DeleteResults = new EditResult?[1]
+            Resource = resource, StorageLayerId = 7, StorageBinding = binding
         };
-
-        await handler.ProcessDeleteOperationsAsync(
-            new ApplyEditsRequest
-            {
-                Deletes = [11L],
-                Preconditions = expectedAbsent
-                    ? [new FeatureEditPrecondition { ObjectId = 11, ExpectedRowAbsent = true }]
-                    : []
-            },
-            resource, 7, context, EditPrincipal.Anonymous, null, CancellationToken.None, binding);
-
-        context.HasValidationErrors.Should().Be(!shouldDispatch);
-        if (shouldDispatch)
-        {
-            context.DeleteIds.Should().Equal(11L);
-            context.DeleteFeatures.Should().ContainSingle().Which.Should().BeNull();
-        }
-        else
-        {
-            context.DeleteIds.Should().BeEmpty();
-            context.DeleteResults![0]!.Error!.Code.Should().Be(expectedAbsent
-                ? GeoServicesEditErrorCodes.UpdateConflict
-                : GeoServicesEditErrorCodes.DeleteNotFound);
-        }
     }
 
     private static FeatureServerEditsHandler CreateHandler(IFeatureReader reader, IFilterExpressionService filters)

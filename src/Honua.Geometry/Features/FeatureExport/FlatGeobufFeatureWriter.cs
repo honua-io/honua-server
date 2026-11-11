@@ -30,15 +30,23 @@ internal static class FlatGeobufFeatureWriter
 {
     private const ushort IndexNodeSize = 16;
 
-    internal static byte[] Write(
-        IReadOnlyList<Feature> features,
-        MetadataV2Resource resource,
-        FeatureQuery query,
-        IEnumerable<MetadataV2Field> projectedFields,
-        int? outputSrid,
-        CancellationToken cancellationToken,
-        string? resolvedPrimaryIdName = null)
+    internal sealed class ExportOptions
     {
+        internal required MetadataV2Resource Resource { get; init; }
+        internal required FeatureQuery Query { get; init; }
+        internal required IEnumerable<MetadataV2Field> ProjectedFields { get; init; }
+        internal int? OutputSrid { get; init; }
+        internal string? ResolvedPrimaryIdName { get; init; }
+    }
+
+    internal static byte[] Write(
+        IReadOnlyList<Feature> features, ExportOptions options, CancellationToken cancellationToken)
+    {
+        var resource = options.Resource;
+        var query = options.Query;
+        var projectedFields = options.ProjectedFields;
+        var outputSrid = options.OutputSrid;
+        var resolvedPrimaryIdName = options.ResolvedPrimaryIdName;
         var canonicalIdName = resolvedPrimaryIdName ?? FieldNames.ObjectId;
         var hasSourceObjectId = resource.SchemaFields.Any(field =>
             field.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) &&
