@@ -616,6 +616,8 @@ fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
 
+Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. Missing envelopes from ordinary producers remain errors.
+
 ### WPS endpoint fixture lifetime
 
 `Wps20EndpointsTests` shares its default application and identically configured
@@ -626,8 +628,6 @@ accessed through their request-generated job IDs and reference tokens.
 All cases and assertions remain in the WFS 1–9 shard family on selected PR runs
 and twice-daily full trunk runs. This changes no runner count, required check
 name, required aggregate dependency, workflow, or shard definition.
-
-Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. Missing envelopes from ordinary producers remain errors.
 
 ### Governance capacity split
 
