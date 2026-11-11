@@ -551,7 +551,7 @@ public sealed class OperationSecretKeyRingProtectionTests
 }
 
 [CollectionDefinition("OperationSecretTemporaryDirectory", DisableParallelization = true)]
-public sealed class OperationSecretTemporaryDirectoryCollection;
+public sealed class OperationSecretTemporaryDirectoryTestGroup;
 
 [Collection("OperationSecretTemporaryDirectory")]
 public sealed class OperationSecretTemporaryDirectoryTests
