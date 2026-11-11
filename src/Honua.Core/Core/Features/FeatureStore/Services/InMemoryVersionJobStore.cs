@@ -8,9 +8,8 @@ using Honua.Core.Features.FeatureStore.Domain;
 namespace Honua.Core.Features.FeatureStore.Services;
 
 /// <summary>
-/// Single-node fallback <see cref="IVersionJobStore"/> (#1553) used when Redis is not configured. Keeps
-/// reconcile/post job records in process memory so the async job surface is pollable within one node.
-/// The Redis-backed implementation supersedes it for multi-replica and restart-durable deployments.
+/// Process-local <see cref="IVersionJobStore"/> (#1553) for tests that exercise the job runner without a
+/// system database. Every server host uses the PostgreSQL store.
 /// </summary>
 public sealed class InMemoryVersionJobStore : IVersionJobStore
 {

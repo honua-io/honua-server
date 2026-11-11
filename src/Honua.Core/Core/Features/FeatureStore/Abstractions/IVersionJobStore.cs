@@ -8,8 +8,7 @@ namespace Honua.Core.Features.FeatureStore.Abstractions;
 /// <summary>
 /// Durable store for asynchronous branch-version reconcile/post jobs (#1553). Persists each job's
 /// lifecycle state so the job is pollable across requests and across replicas, and so a worker can
-/// resume/idempotently re-run a job that was interrupted by a restart. The production implementation is
-/// Redis-backed; a single-node in-memory implementation is the fallback when Redis is not configured.
+/// resume/idempotently re-run a job that was interrupted by a restart.
 /// </summary>
 public interface IVersionJobStore
 {

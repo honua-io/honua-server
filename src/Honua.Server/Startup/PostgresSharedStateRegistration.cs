@@ -49,6 +49,7 @@ internal static class PostgresSharedStateRegistration
             provider.GetRequiredService<JobStoreDatabase>(),
             provider.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>()));
         services.TryAddSingleton<PostgresUniversalProgressStore>();
+        services.TryAddSingleton<PostgresVersionJobStore>();
         services.TryAddSingleton(provider => new PostgresTokenReplayStore(
             provider.GetRequiredService<NpgsqlDataSource>(),
             provider.GetRequiredService<JobStoreDatabase>()));
@@ -65,6 +66,7 @@ internal static class PostgresSharedStateRegistration
         services.AddRetentionSweep<PostgresOperationInstanceStore>();
         services.AddRetentionSweep<PostgresOperationSecretStore>();
         services.AddRetentionSweep<PostgresUniversalProgressStore>();
+        services.AddRetentionSweep<PostgresVersionJobStore>();
         services.AddRetentionSweep<PostgresSecurityTokenStore>();
         services.AddRetentionSweep<PostgresTokenReplayStore>();
         services.AddRetentionSweep<PostgresIdempotencyReservationStore>();
