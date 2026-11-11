@@ -12,28 +12,13 @@ internal static partial class ExportJobServiceLog
 
     [LoggerMessage(
         Level = LogLevel.Warning,
-        Message = "Failed to roll back persisted export request metadata for job {JobId} after the progress record could not be created.")]
-    public static partial void ProgressRollbackFailed(ILogger logger, string jobId, Exception exception);
+        Message = "Export job {JobId} was accepted but could not be queued; the reconciler's dispatch repair will queue it.")]
+    public static partial void EnqueueDeferredToDispatchRepair(ILogger logger, string jobId, Exception exception);
 
     [LoggerMessage(
         Level = LogLevel.Warning,
-        Message = "Failed to persist error status for export job {JobId} after a processing failure.")]
-    public static partial void FailedStatusPersistenceFailed(ILogger logger, string jobId, Exception exception);
-
-    [LoggerMessage(
-        Level = LogLevel.Warning,
-        Message = "Failed to persist missing-request status for export job {JobId}.")]
-    public static partial void MissingRequestStatusPersistenceFailed(ILogger logger, string jobId, Exception exception);
-
-    [LoggerMessage(
-        Level = LogLevel.Warning,
-        Message = "Skipping export recovery for job {JobId} because the Redis claim key could not be inspected.")]
-    public static partial void RecoveryClaimInspectionFailed(ILogger logger, string jobId, Exception exception);
-
-    [LoggerMessage(
-        Level = LogLevel.Warning,
-        Message = "Export job lease renewal was lost while processing a background export.")]
-    public static partial void LeaseRenewalLost(ILogger logger);
+        Message = "Failed to record the terminal status of export job {JobId} on its progress.")]
+    public static partial void TerminalProgressFailed(ILogger logger, string jobId, Exception exception);
 
     [LoggerMessage(
         Level = LogLevel.Warning,

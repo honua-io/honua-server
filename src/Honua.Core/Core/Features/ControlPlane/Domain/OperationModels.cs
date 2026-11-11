@@ -251,7 +251,13 @@ public enum ExecutionJobKind
     /// in batches on the shared execution-job queue and reports rows materialized plus the
     /// published layer id. Same queue and worker loop as <see cref="FileImport"/>.
     /// </summary>
-    LayerPublish
+    LayerPublish,
+
+    /// <summary>
+    /// Asynchronous admin layer export (CSV, Shapefile, GeoPackage) above the synchronous
+    /// threshold: the worker streams the layer, uploads the file and publishes its download URL.
+    /// </summary>
+    Export
 }
 
 /// <summary>

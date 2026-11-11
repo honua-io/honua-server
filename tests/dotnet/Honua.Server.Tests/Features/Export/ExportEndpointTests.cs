@@ -5,9 +5,10 @@ using System.IO.Compression;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using System.Threading.Channels;
 using FluentAssertions;
 using Honua.Core.Features.Capabilities;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -17,12 +18,11 @@ using Honua.Io.Export;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.Data.Sqlite;
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
 
@@ -392,22 +392,19 @@ public sealed class ExportEndpointTests : IAsyncLifetime
             .Do(_ => throw new InvalidOperationException("Simulated progress-store failure."));
 
         var cloudStorage = Substitute.For<ICloudFileStorage>();
-        var exportChannel = Channel.CreateUnbounded<string>();
-        var requestCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var jobStore = new InMemoryExecutionJobStore();
+        var jobQueue = Substitute.For<IJobQueue>();
 
         var fixture = new WebAppFixture()
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IFeatureReader>();
                 services.AddSingleton(featureReader);
-                services.RemoveAll<IUniversalProgressStore>();
-                services.AddSingleton(progressStore);
                 services.RemoveAll<ICloudFileStorage>();
                 services.AddSingleton(cloudStorage);
-                services.RemoveAll<IDistributedCache>();
-                services.AddSingleton<IDistributedCache>(requestCache);
-                services.RemoveAll<Channel<string>>();
-                services.AddSingleton(exportChannel);
+                services.RemoveAll<IExportJobService>();
+                services.AddSingleton<IExportJobService>(
+                    new ExportJobService(progressStore, NullLogger<ExportJobService>.Instance, jobStore, jobQueue));
             });
 
         await fixture.InitializeAsync();
@@ -417,7 +414,8 @@ public sealed class ExportEndpointTests : IAsyncLifetime
                 "/api/v1/admin/services/test/layers/0/export?format=csv");
 
             response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-            exportChannel.Reader.TryRead(out _).Should().BeFalse();
+            (await jobStore.QueryAsync(new ExecutionJobQuery())).Items.Should().BeEmpty();
+            await jobQueue.DidNotReceiveWithAnyArgs().EnqueueAsync(default!);
         }
         finally
         {
@@ -443,8 +441,6 @@ public sealed class ExportEndpointTests : IAsyncLifetime
             services.AddSingleton(tenant);
             services.RemoveAll<IExportJobService>();
             services.AddSingleton<IExportJobService>(jobs);
-            services.RemoveAll<IJobCancellationNotifier>();
-            services.AddSingleton(Substitute.For<IJobCancellationNotifier>());
             services.RemoveAll<ICloudFileStorage>();
             services.AddSingleton(Substitute.For<ICloudFileStorage>());
         });
@@ -475,16 +471,6 @@ public sealed class ExportEndpointTests : IAsyncLifetime
             Job = job;
             return Task.FromResult(job.JobId);
         }
-
-        public async IAsyncEnumerable<string> ReadQueuedJobIdsAsync(
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            await Task.CompletedTask;
-            yield break;
-        }
-
-        public Task ProcessQueuedJobAsync(string jobId, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
     }
 
     private static async IAsyncEnumerable<Feature> EmptyFeatureStream(

@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.FileImport.Abstractions;
@@ -108,27 +107,16 @@ internal static class ImportExportTileOperationsRegistration
         services.TryAddScoped<IMigrationRunCheckpointStore>(sp =>
             sp.GetRequiredService<InMemoryMigrationRunCheckpointStore>());
 
-        // Export background service with durable request persistence and a bounded scheduler.
-        services.AddSingleton(System.Threading.Channels.Channel.CreateBounded<string>(
-            new System.Threading.Channels.BoundedChannelOptions(4)
-            {
-                FullMode = System.Threading.Channels.BoundedChannelFullMode.Wait
-            }));
-        services.AddSingleton<IExportJobService>(sp =>
-            new ExportJobService(
-                sp.GetRequiredService<IUniversalProgressStore>(),
-                sp.GetService<IDistributedCache>(),
-                sp.GetRequiredService<System.Threading.Channels.Channel<string>>(),
-                sp.GetRequiredService<IServiceScopeFactory>(),
-                sp.GetRequiredService<ILogger<ExportJobService>>(),
-                sp.GetService<IConnectionMultiplexer>(),
-                licensePolicy: sp.GetRequiredService<ILicenseOperationPolicy>()));
-        services.AddSingleton<IJobCancellationNotifier>(sp =>
-            (ExportJobService)sp.GetRequiredService<IExportJobService>());
-        if (hostPollingLoops)
-        {
-            services.AddHostedService<ExportBackgroundService>();
-        }
+        // Exports above the synchronous threshold run as Export execution jobs.
+        services.AddSingleton<IExportJobService>(sp => new ExportJobService(
+            sp.GetRequiredService<IUniversalProgressStore>(),
+            sp.GetRequiredService<ILogger<ExportJobService>>(),
+            sp.GetService<IExecutionJobStore>(),
+            sp.GetService<IJobQueue>()));
+        services.TryAddEnumerable(
+            Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton<IJobExecutor, ExportJobExecutor>());
+        services.TryAddEnumerable(
+            Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton<IJobTerminalCallback, ExportJobTerminalCallback>());
 
         // Resumable generated tile-cache seed/warm generation checkpoint store (#2661). Durable
         // cross-request resume state must not live only on a serving pod's memory. The in-memory

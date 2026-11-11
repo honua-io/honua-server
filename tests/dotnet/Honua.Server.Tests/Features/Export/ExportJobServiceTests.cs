@@ -1,33 +1,24 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
 using System.Collections.Immutable;
-using System.Reflection;
-using System.Text.Json;
-using System.Threading.Channels;
 using FluentAssertions;
-using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Progress;
 using Honua.Io.Export;
-using Honua.Server.Startup;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Configuration;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using NSubstitute;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Export;
 
@@ -36,920 +27,106 @@ public sealed class ExportJobServiceTests
 {
     [UnitTest]
     [Operation(Operations.Export)]
-    public async Task ReadQueuedJobIdsAsync_WithRecoveredProcessingJob_RequeuesPersistedJob()
+    public async Task Start_CreatesAQueuedExportJobCarryingTheRequestAndSubmitter()
     {
-        var progressStore = new InMemoryUniversalProgressStore();
-        var requestCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
-        var channel = Channel.CreateUnbounded<string>();
-        using var services = new ServiceCollection().BuildServiceProvider();
-        var sut = new ExportJobService(
-            progressStore,
-            requestCache,
-            channel,
-            services.GetRequiredService<IServiceScopeFactory>(),
-            NullLogger<ExportJobService>.Instance);
-
-        var job = CreateJob("recover-export");
-        await requestCache.SetStringAsync(
-            "export:request:recover-export",
-            JsonSerializer.Serialize(
-                new ExportJobService.PersistedExportJobRequest { Job = job },
-                ExportJsonContext.Default.PersistedExportJobRequest));
-        await progressStore.SetProgressAsync(
-            job.JobId,
-            ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.LayerId, job.TotalFeatures) with
-            {
-                Status = OperationStatus.Processing,
-                CurrentPhase = "Exporting features"
-            });
-
-        await using var enumerator = sut.ReadQueuedJobIdsAsync().GetAsyncEnumerator();
-        var hasRecoveredJob = await enumerator.MoveNextAsync();
-
-        hasRecoveredJob.Should().BeTrue();
-        enumerator.Current.Should().Be(job.JobId);
-
-        var recoveredProgress = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
-        recoveredProgress.Should().NotBeNull();
-        recoveredProgress!.Status.Should().Be(OperationStatus.Queued);
-        recoveredProgress.CurrentPhase.Should().Be("Recovered for retry");
-    }
-
-    [UnitTest]
-    [Operation(Operations.Export)]
-    public async Task ReadQueuedJobIdsAsync_WhenRecoveredRequestIsMissing_MarksProgressFailed()
-    {
-        var progressStore = new InMemoryUniversalProgressStore();
-        var requestCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
-        var channel = Channel.CreateUnbounded<string>();
-        channel.Writer.Complete();
-        using var services = new ServiceCollection().BuildServiceProvider();
-        var sut = new ExportJobService(
-            progressStore,
-            requestCache,
-            channel,
-            services.GetRequiredService<IServiceScopeFactory>(),
-            NullLogger<ExportJobService>.Instance);
-
-        var job = CreateJob("missing-recovered-export");
-        await progressStore.SetProgressAsync(
-            job.JobId,
-            ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.LayerId, job.TotalFeatures));
-
-        await using var enumerator = sut.ReadQueuedJobIdsAsync().GetAsyncEnumerator();
-        var hasRecoveredJob = await enumerator.MoveNextAsync();
-
-        hasRecoveredJob.Should().BeFalse();
-
-        var recoveredProgress = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
-        recoveredProgress.Should().NotBeNull();
-        recoveredProgress!.Status.Should().Be(OperationStatus.Failed);
-        recoveredProgress.ErrorMessage.Should().Be("Export request metadata is no longer available.");
-    }
-
-    [UnitTest]
-    [Operation(Operations.Export)]
-    public async Task ReadQueuedJobIdsAsync_PeriodicallyRecoversProcessingJobsWithoutWorkerRestart()
-    {
-        var progressStore = new InMemoryUniversalProgressStore();
-        var requestCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
-        var channel = Channel.CreateUnbounded<string>();
-        using var services = new ServiceCollection().BuildServiceProvider();
-        var sut = new ExportJobService(
-            progressStore,
-            requestCache,
-            channel,
-            services.GetRequiredService<IServiceScopeFactory>(),
-            NullLogger<ExportJobService>.Instance,
-            recoveryPollInterval: TimeSpan.FromMilliseconds(25));
-
-        var job = CreateJob("periodic-recover-export");
-        await requestCache.SetStringAsync(
-            "export:request:periodic-recover-export",
-            JsonSerializer.Serialize(
-                new ExportJobService.PersistedExportJobRequest { Job = job },
-                ExportJsonContext.Default.PersistedExportJobRequest));
-        await progressStore.SetProgressAsync(
-            job.JobId,
-            ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.LayerId, job.TotalFeatures) with
-            {
-                Status = OperationStatus.Processing,
-                CurrentPhase = "Exporting features"
-            });
-
-        await using var enumerator = sut.ReadQueuedJobIdsAsync().GetAsyncEnumerator();
-        (await enumerator.MoveNextAsync()).Should().BeTrue();
-        enumerator.Current.Should().Be(job.JobId);
-
-        await progressStore.SetProgressAsync(
-            job.JobId,
-            ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.LayerId, job.TotalFeatures) with
-            {
-                Status = OperationStatus.Processing,
-                CurrentPhase = "Exporting features"
-            });
-
-        (await enumerator.MoveNextAsync()).Should().BeTrue();
-        enumerator.Current.Should().Be(job.JobId);
-
-        var recoveredProgress = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
-        recoveredProgress.Should().NotBeNull();
-        recoveredProgress!.Status.Should().Be(OperationStatus.Queued);
-        recoveredProgress.CurrentPhase.Should().Be("Recovered for retry");
-    }
-
-    [UnitTest]
-    [Operation(Operations.Export)]
-    public async Task RecoverQueuedJobIdsAsync_WithActiveRedisClaim_DoesNotRequeueProcessingJob()
-    {
-        var progressStore = new InMemoryUniversalProgressStore();
-        var requestCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
-        var channel = Channel.CreateUnbounded<string>();
-        using var services = new ServiceCollection().BuildServiceProvider();
-        var database = Substitute.For<IDatabase>();
-        database.StringGetAsync("export:job:claim:claimed-export", Arg.Any<CommandFlags>())
-            .Returns(new RedisValue("owner-1"));
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-        redis.GetDatabase().Returns(database);
-        var sut = new ExportJobService(
-            progressStore,
-            requestCache,
-            channel,
-            services.GetRequiredService<IServiceScopeFactory>(),
-            NullLogger<ExportJobService>.Instance,
-            redis);
-
-        var job = CreateJob("claimed-export");
-        await requestCache.SetStringAsync(
-            "export:request:claimed-export",
-            JsonSerializer.Serialize(
-                new ExportJobService.PersistedExportJobRequest { Job = job },
-                ExportJsonContext.Default.PersistedExportJobRequest));
-        await progressStore.SetProgressAsync(
-            job.JobId,
-            ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.LayerId, job.TotalFeatures) with
-            {
-                Status = OperationStatus.Processing,
-                CurrentPhase = "Exporting features"
-            });
-
-        var recoverQueuedJobIds = typeof(ExportJobService)
-            .GetMethod("RecoverQueuedJobIdsAsync", BindingFlags.Instance | BindingFlags.NonPublic)
-            ?? throw new InvalidOperationException("RecoverQueuedJobIdsAsync method was not found.");
-        var recoveryTask = (Task<IReadOnlyList<string>>)recoverQueuedJobIds.Invoke(sut, [CancellationToken.None])!;
-        var recoveredJobIds = await recoveryTask;
-
-        recoveredJobIds.Should().BeEmpty();
-
-        var progress = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
-        progress.Should().NotBeNull();
-        progress!.Status.Should().Be(OperationStatus.Processing);
-        progress.CurrentPhase.Should().Be("Exporting features");
-    }
-
-    [UnitTest]
-    [Operation(Operations.Export)]
-    public void ExportJob_DurableRoundTrip_PreservesSubmitterIdentity()
-    {
-        var submitter = new JobSecurityContext("subject-a", "tenant-a",
-            [new JobSecurityClaim("custom-role", "reader"), new JobSecurityClaim("region", "west")], "custom-role");
-        var request = new ExportJobService.PersistedExportJobRequest
-        {
-            Job = CreateJob("secured-export") with { Submitter = submitter }
-        };
-
-        var serialized = JsonSerializer.Serialize(request, ExportJsonContext.Default.PersistedExportJobRequest);
-        var restored = JsonSerializer.Deserialize(serialized, ExportJsonContext.Default.PersistedExportJobRequest);
-
-        restored!.Job.Submitter.Should().BeEquivalentTo(submitter);
-    }
-
-    [UnitTest]
-    [Operation(Operations.Export)]
-    public async Task ProcessQueuedJobAsync_LegacyRequestWithoutIdentity_FailsBeforeReadingFeatures()
-    {
-        var progressStore = new InMemoryUniversalProgressStore();
-        var requestCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
-        var streamingStore = Substitute.For<IStreamingFeatureStore>();
-        using var services = new ServiceCollection()
-            .AddSingleton(streamingStore)
-            .AddSingleton<ICrsRegistry>(new NullCrsRegistry())
-            .AddSingleton(Substitute.For<ICloudFileStorage>())
-            .BuildServiceProvider();
-        var sut = new ExportJobService(progressStore, requestCache, Channel.CreateUnbounded<string>(),
-            services.GetRequiredService<IServiceScopeFactory>(), NullLogger<ExportJobService>.Instance);
-        var job = CreateJob("legacy-export") with { Submitter = null };
-        await sut.StartAsync(job);
-
-        await sut.ProcessQueuedJobAsync(job.JobId);
-
-        (await progressStore.GetProgressAsync<ExportProgress>(job.JobId))!.Status.Should().Be(OperationStatus.Failed);
-        streamingStore.DidNotReceive().StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
-        JobSecurityScope.Current.Should().BeNull();
-    }
-
-    [UnitTest]
-    [Operation(Operations.Export)]
-    public async Task ProcessQueuedJobAsync_WhenJobCompletes_RemovesPersistedRequestAndCompletesProgress()
-    {
-        var progressStore = new InMemoryUniversalProgressStore();
-        var requestCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
-        var channel = Channel.CreateUnbounded<string>();
-
-        JobSecurityContext? observedSubmitter = null;
-        var streamingStore = Substitute.For<IStreamingFeatureStore>();
-        streamingStore
-            .StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(_ => ObserveSecurityContext());
-
-        var crsRegistry = new NullCrsRegistry();
-
-        var cloudStorage = Substitute.For<ICloudFileStorage>();
-        cloudStorage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
-            .Returns(UploadResult.CreateSuccess(new CloudFile
-            {
-                FileId = "file-1",
-                FileName = "export.csv",
-                StoragePath = "exports/export.csv",
-                ContentType = "text/csv",
-                SizeBytes = 32,
-                UploadedAt = DateTimeOffset.UtcNow,
-                Provider = CloudStorageProvider.AwsS3
-            }));
-        cloudStorage.GetPresignedUrlAsync("file-1", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns("https://example.test/export.csv");
-
-        using var services = new ServiceCollection()
-            .AddSingleton<IStreamingFeatureStore>(streamingStore)
-            .AddSingleton<ICrsRegistry>(crsRegistry)
-            .AddSingleton<ICloudFileStorage>(cloudStorage)
-            .BuildServiceProvider();
-
-        var sut = new ExportJobService(
-            progressStore,
-            requestCache,
-            channel,
-            services.GetRequiredService<IServiceScopeFactory>(),
-            NullLogger<ExportJobService>.Instance);
-
-        var job = CreateJob("complete-export");
-        await sut.StartAsync(job);
-
-        // A fresh worker must restore security from the durable request, without the
-        // submitting service's in-memory request or an ambient HTTP principal.
-        var recoveredWorker = new ExportJobService(progressStore, requestCache, Channel.CreateUnbounded<string>(),
-            services.GetRequiredService<IServiceScopeFactory>(), NullLogger<ExportJobService>.Instance);
-        await recoveredWorker.ProcessQueuedJobAsync(job.JobId);
-
-        var persistedRequest = await requestCache.GetStringAsync("export:request:complete-export");
-        persistedRequest.Should().BeNull();
-
-        var progress = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
-        progress.Should().NotBeNull();
-        progress!.Status.Should().Be(OperationStatus.Completed);
-        progress.DownloadUrl.Should().Be("https://example.test/export.csv");
-        observedSubmitter.Should().BeEquivalentTo(job.Submitter);
-        JobSecurityScope.Current.Should().BeNull();
-
-        async IAsyncEnumerable<Feature> ObserveSecurityContext()
-        {
-            await Task.Yield();
-            observedSubmitter = JobSecurityScope.Current?.Submitter;
-            await foreach (var feature in CreateFeatures())
-            {
-                yield return feature;
-            }
-        }
-    }
-
-    [UnitTest]
-    [Operation(Operations.Export)]
-    public async Task ProcessQueuedJobAsync_ShapefileNullRow_PreservesRowAndSurfacesWarningsAndActualCount()
-    {
-        var progressStore = new InMemoryUniversalProgressStore();
-        var requestCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
-        var channel = Channel.CreateUnbounded<string>();
-
-        var streamingStore = Substitute.For<IStreamingFeatureStore>();
-        streamingStore
-            .StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(CreateWarningFeatures());
-
-        var crsRegistry = new NullCrsRegistry();
-
-        await using var uploaded = new MemoryStream();
-        var cloudStorage = Substitute.For<ICloudFileStorage>();
-        cloudStorage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
-            .Returns(async call =>
-            {
-                await call.Arg<FileUploadRequest>().Content.CopyToAsync(uploaded);
-                return UploadResult.CreateSuccess(new CloudFile
-                {
-                    FileId = "file-1",
-                    FileName = "export.zip",
-                    StoragePath = "exports/export.zip",
-                    ContentType = "application/zip",
-                    SizeBytes = 32,
-                    UploadedAt = DateTimeOffset.UtcNow,
-                    Provider = CloudStorageProvider.AwsS3
-                });
-            });
-        cloudStorage.GetPresignedUrlAsync("file-1", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns("https://example.test/export.zip");
-
-        using var services = new ServiceCollection()
-            .AddSingleton<IStreamingFeatureStore>(streamingStore)
-            .AddSingleton<ICrsRegistry>(crsRegistry)
-            .AddSingleton<ICloudFileStorage>(cloudStorage)
-            .BuildServiceProvider();
-
-        var sut = new ExportJobService(
-            progressStore,
-            requestCache,
-            channel,
-            services.GetRequiredService<IServiceScopeFactory>(),
-            NullLogger<ExportJobService>.Instance);
-
-        var job = CreateJob("complete-export") with
-        {
-            Format = "shapefile",
-            GeometryType = ExportGeometryType.Point,
-            Fields = [new ExportField("name", ExportFieldType.String, true), new ExportField("descriptive_name", ExportFieldType.String, true)],
-            TotalFeatures = 99
-        };
-        await sut.StartAsync(job);
-
-        await sut.ProcessQueuedJobAsync(job.JobId);
-
-        var persistedRequest = await requestCache.GetStringAsync("export:request:complete-export");
-        persistedRequest.Should().BeNull();
-
-        var progress = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
-        progress.Should().NotBeNull();
-        progress!.Status.Should().Be(OperationStatus.Completed);
-        progress.DownloadUrl.Should().Be("https://example.test/export.zip");
-        progress.ProcessedFeatures.Should().Be(1);
-        progress.Warnings.Should().Contain(warning => warning.Contains("descriptive_name", StringComparison.Ordinal));
-        uploaded.Position = 0;
-        using var archive = new System.IO.Compression.ZipArchive(uploaded, System.IO.Compression.ZipArchiveMode.Read);
-        var warningEntry = archive.GetEntry("export-warnings.txt");
-        warningEntry.Should().NotBeNull();
-        using var warningReader = new StreamReader(warningEntry!.Open());
-        var warnings = await warningReader.ReadToEndAsync();
-        warnings.Should().Contain("descriptive_name");
-
-        static async Task<byte[]> ReadEntryAsync(System.IO.Compression.ZipArchive archive, string name)
-        {
-            var entry = archive.GetEntry(name);
-            entry.Should().NotBeNull();
-            using var bytes = new MemoryStream();
-            await using var source = entry!.Open();
-            await source.CopyToAsync(bytes);
-            return bytes.ToArray();
-        }
-        // Independently decode the shapefile records: one Null Shape occupies a 100-byte
-        // header, an 8-byte record header and a 4-byte shape type; SHX stores offset/length in words.
-        var shp = await ReadEntryAsync(archive, "export.shp");
-        shp.Should().HaveCount(112);
-        System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(shp.AsSpan(0, 4)).Should().Be(9994);
-        System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(shp.AsSpan(108, 4)).Should().Be(0);
-        var shx = await ReadEntryAsync(archive, "export.shx");
-        shx.Should().HaveCount(108);
-        System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(shx.AsSpan(100, 4)).Should().Be(50);
-        System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(shx.AsSpan(104, 4)).Should().Be(2);
-        var dbf = await ReadEntryAsync(archive, "export.dbf");
-        System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(dbf.AsSpan(4, 4)).Should().Be(1);
-        var rowOffset = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(dbf.AsSpan(8, 2));
-        rowOffset.Should().Be(97, "two field descriptors plus the fixed header and terminator");
-        dbf[rowOffset].Should().Be((byte)' ', "the preserved null-geometry row is not deleted");
-        var nameLength = dbf[32 + 16];
-        var detailLength = dbf[64 + 16];
-        System.Text.Encoding.UTF8.GetString(dbf, rowOffset + 1, nameLength).TrimEnd().Should().Be("Unlocated");
-        System.Text.Encoding.UTF8.GetString(dbf, rowOffset + 1 + nameLength, detailLength).TrimEnd().Should().Be("Retained detail");
-    }
-
-    [UnitTest]
-    [Operation(Operations.Export)]
-    public async Task ProcessQueuedJobAsync_RegisteredLicenseExpiresDuringUpload_FailsAndRemovesDownload()
-    {
-        using var expiry = new CancellationTokenSource();
-        var policy = Substitute.For<ILicenseOperationPolicy>();
-        policy.OperationCancellation.Returns(expiry.Token);
-        CancellationToken uploadToken = default;
-        var progressStore = new InMemoryUniversalProgressStore();
-        var requestCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
-
-        var streamingStore = Substitute.For<IStreamingFeatureStore>();
-        streamingStore
-            .StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(CreateWarningFeatures());
-
-        var crsRegistry = new NullCrsRegistry();
-
-        await using var uploaded = new MemoryStream();
-        var cloudStorage = Substitute.For<ICloudFileStorage>();
-        cloudStorage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
-            .Returns(async call =>
-            {
-                uploadToken = call.Arg<CancellationToken>();
-                await call.Arg<FileUploadRequest>().Content.CopyToAsync(uploaded);
-                expiry.Cancel();
-                return UploadResult.CreateSuccess(new CloudFile
-                {
-                    FileId = "file-1",
-                    FileName = "export.zip",
-                    StoragePath = "exports/export.zip",
-                    ContentType = "application/zip",
-                    SizeBytes = 32,
-                    UploadedAt = DateTimeOffset.UtcNow,
-                    Provider = CloudStorageProvider.AwsS3
-                });
-            });
-        cloudStorage.GetPresignedUrlAsync("file-1", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns("https://example.test/export.zip");
-
-        var registrations = new ServiceCollection();
-        registrations.AddLogging();
-        registrations.AddHonuaImportExportAndTileOperations(new ConfigurationBuilder().Build());
-        registrations.AddSingleton<IUniversalProgressStore>(progressStore);
-        registrations.AddSingleton<IDistributedCache>(requestCache);
-        registrations.AddSingleton<ILicenseOperationPolicy>(policy);
-        registrations.AddSingleton<IStreamingFeatureStore>(streamingStore);
-        registrations.AddSingleton<ICrsRegistry>(crsRegistry);
-        registrations.AddSingleton<ICloudFileStorage>(cloudStorage);
-        using var services = registrations.BuildServiceProvider();
-        var sut = services.GetRequiredService<IExportJobService>();
-
-        var job = CreateJob("complete-export") with
-        {
-            Format = "shapefile",
-            GeometryType = ExportGeometryType.Point,
-            Fields = [new ExportField("name", ExportFieldType.String, true), new ExportField("descriptive_name", ExportFieldType.String, true)],
-            TotalFeatures = 99
-        };
-        await sut.StartAsync(job);
-
-        await sut.ProcessQueuedJobAsync(job.JobId);
-
-        var persistedRequest = await requestCache.GetStringAsync("export:request:complete-export");
-        persistedRequest.Should().BeNull();
-
-        var progress = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
-        progress.Should().NotBeNull();
-        progress!.Status.Should().Be(OperationStatus.Failed);
-        progress.ErrorMessage.Should().Be("license expired");
-        progress.DownloadUrl.Should().BeNull();
-        progress.OutputSizeBytes.Should().Be(0);
-        uploadToken.IsCancellationRequested.Should().BeTrue();
-        await cloudStorage.Received(1).DeleteAsync("file-1", CancellationToken.None);
-    }
-
-    [UnitTest]
-    [Operation(Operations.Export)]
-    public async Task StartAsync_WhenProgressInitializationFails_RollsBackPersistedRequest()
-    {
-        var progressStore = new ThrowOnFirstSetProgressStore();
-        var requestCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
-        var channel = Channel.CreateUnbounded<string>();
-        using var services = new ServiceCollection().BuildServiceProvider();
-        var sut = new ExportJobService(
-            progressStore,
-            requestCache,
-            channel,
-            services.GetRequiredService<IServiceScopeFactory>(),
-            NullLogger<ExportJobService>.Instance);
-
-        var job = CreateJob("failed-start-export");
-
-        await FluentActions.Invoking(() => sut.StartAsync(job))
-            .Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("progress initialization failed");
-
-        (await requestCache.GetStringAsync("export:request:failed-start-export")).Should().BeNull();
-        (await progressStore.GetProgressAsync<ExportProgress>(job.JobId)).Should().BeNull();
-    }
-
-    [UnitTest]
-    [Operation(Operations.Export)]
-    public async Task ProcessQueuedJobAsync_WhenPersistedRequestIsMissing_MarksProgressFailed()
-    {
-        var progressStore = new InMemoryUniversalProgressStore();
-        var requestCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
-        var channel = Channel.CreateUnbounded<string>();
-        using var services = new ServiceCollection().BuildServiceProvider();
-
-        var startService = new ExportJobService(
-            progressStore,
-            requestCache,
-            channel,
-            services.GetRequiredService<IServiceScopeFactory>(),
-            NullLogger<ExportJobService>.Instance);
-
-        var job = CreateJob("missing-process-export");
-        await startService.StartAsync(job);
-        await requestCache.RemoveAsync("export:request:missing-process-export");
-
-        var processingService = new ExportJobService(
-            progressStore,
-            requestCache,
-            channel,
-            services.GetRequiredService<IServiceScopeFactory>(),
-            NullLogger<ExportJobService>.Instance);
-
-        await processingService.ProcessQueuedJobAsync(job.JobId);
-
-        var progress = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
-        progress.Should().NotBeNull();
-        progress!.Status.Should().Be(OperationStatus.Failed);
-        progress.ErrorMessage.Should().Be("Export request metadata is no longer available.");
-    }
-
-    [UnitTest]
-    [Operation(Operations.Export)]
-    public async Task ProcessQueuedJobAsync_WhenRequestLookupThrows_ReleasesRedisLease()
-    {
-        var progressStore = new InMemoryUniversalProgressStore();
-        var requestCache = new ThrowOnGetDistributedCache();
-        var channel = Channel.CreateUnbounded<string>();
-        using var services = new ServiceCollection().BuildServiceProvider();
-        var database = Substitute.For<IDatabase>();
-        database.LockTakeAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
-            .Returns(Task.FromResult(true));
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-
-        var startService = new ExportJobService(
-            progressStore,
-            requestCache,
-            channel,
-            services.GetRequiredService<IServiceScopeFactory>(),
-            NullLogger<ExportJobService>.Instance,
-            redis);
-
-        var job = CreateJob("lease-release-export");
-        await startService.StartAsync(job);
-
-        requestCache.ThrowOnGet = true;
-        var processingService = new ExportJobService(
-            progressStore,
-            requestCache,
-            channel,
-            services.GetRequiredService<IServiceScopeFactory>(),
-            NullLogger<ExportJobService>.Instance,
-            redis);
-
-        await FluentActions.Invoking(() => processingService.ProcessQueuedJobAsync(job.JobId))
-            .Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("request cache read failed");
-
-        database.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(IDatabase.LockReleaseAsync))
-            .Should().Be(1);
-    }
-
-    [UnitTest]
-    [Operation(Operations.Export)]
-    public async Task ProcessQueuedJobAsync_WhenLeaseIsLost_RequeuesJobAndPreservesRequest()
-    {
-        var progressStore = new InMemoryUniversalProgressStore();
-        var requestCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
-        var channel = Channel.CreateUnbounded<string>();
-
-        var streamingStore = Substitute.For<IStreamingFeatureStore>();
-        streamingStore
-            .StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo => CreateBlockingFeatures(callInfo.ArgAt<CancellationToken>(2)));
-
-        var cloudStorage = Substitute.For<ICloudFileStorage>();
-        var crsRegistry = new NullCrsRegistry();
-
-        using var services = new ServiceCollection()
-            .AddSingleton<IStreamingFeatureStore>(streamingStore)
-            .AddSingleton<ICrsRegistry>(crsRegistry)
-            .AddSingleton<ICloudFileStorage>(cloudStorage)
-            .BuildServiceProvider();
-
-        var database = Substitute.For<IDatabase>();
-        database.LockTakeAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
-            .Returns(Task.FromResult(true), Task.FromResult(false));
-        database.LockExtendAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
-            .Returns(Task.FromResult(false));
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-
-        var sut = new ExportJobService(
-            progressStore,
-            requestCache,
-            channel,
-            services.GetRequiredService<IServiceScopeFactory>(),
-            NullLogger<ExportJobService>.Instance,
-            redis);
-
-        var job = CreateJob("lease-lost-export");
-        await sut.StartAsync(job);
-        (await channel.Reader.ReadAsync()).Should().Be(job.JobId);
-
-        await sut.ProcessQueuedJobAsync(job.JobId);
-
-        var progress = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
-        progress.Should().NotBeNull();
-        progress!.Status.Should().Be(OperationStatus.Queued);
-        progress.CurrentPhase.Should().Be("Lease lost; awaiting retry");
-
-        var persistedRequest = await requestCache.GetStringAsync("export:request:lease-lost-export");
-        persistedRequest.Should().NotBeNullOrWhiteSpace();
-
-        (await channel.Reader.ReadAsync()).Should().Be(job.JobId);
-        cloudStorage.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(ICloudFileStorage.UploadAsync))
-            .Should().Be(0);
-    }
-
-    [Theory]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
-    [Trait("Category", "Unit")]
-    [Trait("Tier", "Fast")]
-    [Operation(Operations.Export)]
-    public async Task ProcessQueuedJobAsync_UserCancelsRunningExport_RemovesArtifactsAndRequest(bool afterUpload, bool remoteCancellation)
-    {
-        var progressStore = new InMemoryUniversalProgressStore();
-        var requestCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
-        var reachedPhase = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var releaseUpload = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        CancellationToken workerToken = default;
-        var streamingStore = Substitute.For<IStreamingFeatureStore>();
-        streamingStore.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(call => StreamUntilCancelled(call.ArgAt<CancellationToken>(2)));
-        async IAsyncEnumerable<Feature> StreamUntilCancelled(
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token)
-        {
-            workerToken = token;
-            yield return Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty.Add("name", "Partial"));
-            if (!afterUpload)
-            {
-                reachedPhase.TrySetResult();
-                await Task.Delay(Timeout.InfiniteTimeSpan, token);
-            }
-        }
-
-        var cloudStorage = Substitute.For<ICloudFileStorage>();
-        cloudStorage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
-            .Returns(async call =>
-            {
-                // A provider may finish its upload concurrently with the user's cancellation.
-                await call.Arg<FileUploadRequest>().Content.CopyToAsync(Stream.Null);
-                reachedPhase.TrySetResult();
-                await releaseUpload.Task;
-                return UploadResult.CreateSuccess(new CloudFile
-                {
-                    FileId = "cancelled-artifact",
-                    FileName = "export.csv",
-                    StoragePath = "exports/export.csv",
-                    ContentType = "text/csv",
-                    SizeBytes = 32,
-                    UploadedAt = DateTimeOffset.UtcNow,
-                    Provider = CloudStorageProvider.AwsS3
-                });
-            });
-        var registrations = new ServiceCollection();
-        registrations.AddLogging();
-        registrations.AddHonuaImportExportAndTileOperations(new ConfigurationBuilder().Build());
-        registrations.AddSingleton<IUniversalProgressStore>(progressStore);
-        registrations.AddSingleton<IDistributedCache>(requestCache);
-        registrations.AddSingleton<ILicenseOperationPolicy>(Substitute.For<ILicenseOperationPolicy>());
-        registrations.AddSingleton<IStreamingFeatureStore>(streamingStore);
-        registrations.AddSingleton<ICrsRegistry>(new NullCrsRegistry());
-        registrations.AddSingleton<ICloudFileStorage>(cloudStorage);
-        using var services = registrations.BuildServiceProvider();
-        var sut = services.GetRequiredService<IExportJobService>();
-        var job = CreateJob(Guid.NewGuid().ToString("N"));
-        await sut.StartAsync(job);
-        using var shutdown = new CancellationTokenSource();
-        var processing = sut.ProcessQueuedJobAsync(job.JobId, shutdown.Token);
-        try
-        {
-            await reachedPhase.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            Directory.Exists(Path.Join(Path.GetTempPath(), "honua-export", job.JobId)).Should().BeTrue();
-            if (remoteCancellation)
-            {
-                // The admin endpoint on another node has no local worker to notify and persists cancellation.
-                var active = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
-                await progressStore.SetProgressAsync(job.JobId,
-                    active!.WithCancellation(DateTimeOffset.UtcNow, "Cancelled by user"));
-            }
-            else
-            {
-                var notified = services.GetServices<IJobCancellationNotifier>().Count(notifier => notifier.Cancel(job.JobId));
-                notified.Should().Be(1, "the registered export worker must own user cancellation");
-            }
-        }
-        catch
-        {
-            // A failing regression assertion must still release the worker and its scratch files.
-            shutdown.Cancel();
-            releaseUpload.TrySetResult();
-            try
-            {
-                await processing.WaitAsync(TimeSpan.FromSeconds(10));
-            }
-            catch (OperationCanceledException)
-            {
-                // Host-style shutdown is expected when testing a missing cancellation notifier.
-            }
-            throw;
-        }
-        finally
-        {
-            releaseUpload.TrySetResult();
-        }
-
-        await processing.WaitAsync(TimeSpan.FromSeconds(10));
-        workerToken.IsCancellationRequested.Should().BeTrue();
-        var progress = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
-        progress!.Status.Should().Be(OperationStatus.Cancelled);
-        progress.DownloadUrl.Should().BeNull();
-        progress.OutputSizeBytes.Should().Be(0);
-        progress.CompletedAt.Should().NotBeNull();
-        (await requestCache.GetStringAsync($"export:request:{job.JobId}")).Should().BeNull();
-        Directory.Exists(Path.Join(Path.GetTempPath(), "honua-export", job.JobId)).Should().BeFalse();
-        if (afterUpload)
-        {
-            await cloudStorage.Received(1).DeleteAsync("cancelled-artifact", CancellationToken.None);
-        }
-        else
-        {
-            await cloudStorage.DidNotReceive().UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>());
-        }
-        services.GetServices<IJobCancellationNotifier>().Any(notifier => notifier.Cancel(job.JobId)).Should().BeFalse();
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    [Trait("Category", "Unit")]
-    [Trait("Tier", "Fast")]
-    [Operation(Operations.Export)]
-    public async Task ProcessQueuedJobAsync_RemoteRecoveryWinsCompletion_PreservesRequestForSuccessfulRetry(bool cleanupFails)
-    {
-        var progressStore = new InMemoryUniversalProgressStore();
-        var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
-        var store = Substitute.For<IStreamingFeatureStore>();
-        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(_ => CreateFeatures());
-        var job = CreateJob(Guid.NewGuid().ToString("N"));
-        var uploads = 0;
-        var storage = Substitute.For<ICloudFileStorage>();
-        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>()).Returns(async call =>
-        {
-            await call.Arg<FileUploadRequest>().Content.CopyToAsync(Stream.Null);
-            if (++uploads == 1)
-            {
-                var active = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
-                await progressStore.SetProgressAsync(job.JobId, active! with
-                {
-                    Status = OperationStatus.Queued,
-                    CurrentPhase = "Recovered on another node"
-                });
-            }
-            return UploadResult.CreateSuccess(new CloudFile
-            {
-                FileId = "retry-artifact",
-                FileName = "export.csv",
-                StoragePath = "exports/export.csv",
-                ContentType = "text/csv",
-                SizeBytes = 32,
-                UploadedAt = DateTimeOffset.UtcNow,
-                Provider = CloudStorageProvider.AwsS3
-            });
-        });
-        if (cleanupFails)
-        {
-            storage.DeleteAsync("retry-artifact", Arg.Any<CancellationToken>())
-                .Returns(Task.FromException<bool>(new IOException("Cloud cleanup unavailable")));
-        }
-        storage.GetPresignedUrlAsync("retry-artifact", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns("https://example.test/retry.csv");
-        using var services = new ServiceCollection().AddSingleton(store).AddSingleton(storage)
-            .AddSingleton<ICrsRegistry>(new NullCrsRegistry()).BuildServiceProvider();
-        var sut = new ExportJobService(progressStore, cache, Channel.CreateUnbounded<string>(),
-            services.GetRequiredService<IServiceScopeFactory>(), NullLogger<ExportJobService>.Instance);
-        await sut.StartAsync(job);
-        await sut.ProcessQueuedJobAsync(job.JobId);
+        var jobStore = new InMemoryExecutionJobStore();
+        var jobQueue = Substitute.For<IJobQueue>();
+        var progressStore = new ComparingInMemoryProgressStore();
+        var job = ExportJobTestData.CreateJob(Guid.NewGuid().ToString("N"));
+
+        await CreateService(progressStore, jobStore, jobQueue).StartAsync(job);
+
+        var record = await jobStore.GetAsync(job.JobId);
+        record.Should().NotBeNull();
+        record!.Status.Should().Be(ExecutionJobStatus.Queued);
+        record.Spec.Kind.Should().Be(ExecutionJobKind.Export);
+        record.Audit.SubmitterSecurityContext.Should().BeEquivalentTo(job.Submitter);
+        record.Spec.Parameters[ExportJobService.RequestParameter].Should().NotContain(
+            "subject-a",
+            "the submitter travels on the record's audit, not in the request parameter");
+        ExportJobService.TryReadRequest(record, out var request).Should().BeTrue();
+        request!.Should().BeEquivalentTo(job with { Submitter = null });
+        await jobQueue.Received(1).EnqueueAsync(job.JobId, Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>());
         (await progressStore.GetProgressAsync<ExportProgress>(job.JobId))!.Status.Should().Be(OperationStatus.Queued);
-        (await cache.GetStringAsync($"export:request:{job.JobId}")).Should().NotBeNullOrWhiteSpace();
-        await storage.Received(1).DeleteAsync("retry-artifact", CancellationToken.None);
-        Directory.Exists(Path.Join(Path.GetTempPath(), "honua-export", job.JobId)).Should().BeFalse();
-
-        await sut.ProcessQueuedJobAsync(job.JobId);
-        var completed = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
-        completed!.Status.Should().Be(OperationStatus.Completed);
-        completed.ProcessedFeatures.Should().Be(1);
-        completed.DownloadUrl.Should().Be("https://example.test/retry.csv");
-        uploads.Should().Be(2);
-        (await cache.GetStringAsync($"export:request:{job.JobId}")).Should().BeNull();
-        await storage.Received(1).DeleteAsync("retry-artifact", CancellationToken.None);
     }
 
     [UnitTest]
     [Operation(Operations.Export)]
-    public async Task ProcessQueuedJobAsync_CompletionWinsLateCancellation_PreservesCompletedArtifact()
+    public async Task Start_WithoutAJobStore_IsRefused()
     {
-        var progressStore = new InMemoryUniversalProgressStore();
-        var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
-        var store = Substitute.For<IStreamingFeatureStore>();
-        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(_ => CreateFeatures());
-        var job = CreateJob(Guid.NewGuid().ToString("N"));
-        var storage = Substitute.For<ICloudFileStorage>();
-        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>()).Returns(async call =>
-        {
-            await call.Arg<FileUploadRequest>().Content.CopyToAsync(Stream.Null);
-            return UploadResult.CreateSuccess(new CloudFile
-            {
-                FileId = "retry-artifact",
-                FileName = "export.csv",
-                StoragePath = "exports/export.csv",
-                ContentType = "text/csv",
-                SizeBytes = 32,
-                UploadedAt = DateTimeOffset.UtcNow,
-                Provider = CloudStorageProvider.AwsS3
-            });
-        });
-        storage.GetPresignedUrlAsync("retry-artifact", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns("https://example.test/retry.csv");
-        using var services = new ServiceCollection().AddSingleton(store).AddSingleton(storage)
-            .AddSingleton<ICrsRegistry>(new NullCrsRegistry()).BuildServiceProvider();
-        var sut = new ExportJobService(progressStore, cache, Channel.CreateUnbounded<string>(),
-            services.GetRequiredService<IServiceScopeFactory>(), NullLogger<ExportJobService>.Instance);
-        var notified = false;
-        progressStore.AfterUpdate = progress =>
-        {
-            if (progress.Status == OperationStatus.Completed) notified = sut.Cancel(job.JobId);
-        };
-        await sut.StartAsync(job);
-        await sut.ProcessQueuedJobAsync(job.JobId);
-        notified.Should().BeTrue();
-        var completed = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
-        completed!.Status.Should().Be(OperationStatus.Completed);
-        completed.ProcessedFeatures.Should().Be(1);
-        completed.DownloadUrl.Should().Be("https://example.test/retry.csv");
-        completed.OutputSizeBytes.Should().BeGreaterThan(0);
-        (await cache.GetStringAsync($"export:request:{job.JobId}")).Should().BeNull();
-        await storage.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
-        Directory.Exists(Path.Join(Path.GetTempPath(), "honua-export", job.JobId)).Should().BeFalse();
+        var progressStore = new ComparingInMemoryProgressStore();
+        var sut = new ExportJobService(progressStore, NullLogger<ExportJobService>.Instance);
+
+        var start = () => sut.StartAsync(ExportJobTestData.CreateJob("no-store"));
+
+        await start.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage(ExportJobService.DurableQueueUnavailableMessage);
+        (await progressStore.GetProgressAsync("no-store")).Should().BeNull();
     }
 
     [UnitTest]
     [Operation(Operations.Export)]
-    public async Task ProcessQueuedJobAsync_CsvArtifact_PreservesValuesNullsAndZmOrdinates()
+    public async Task Start_WhenProgressCannotBeWritten_CreatesNoJob()
     {
-        var progressStore = new InMemoryUniversalProgressStore();
-        var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
-        var store = Substitute.For<IStreamingFeatureStore>();
-        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(FixtureFeatures());
-        static async IAsyncEnumerable<Feature> FixtureFeatures()
-        {
-            // ISO WKB: little-endian PointZM (3001), followed by X/Y/Z/M doubles.
-            // Encoded independently from the export writer; expected ordinates below are fixture constants.
-            yield return Feature.Create(1, Convert.FromHexString("01B90B00000000000000B063C0000000000040354000000000000029400000000000001D40"),
-                ImmutableDictionary<string, object?>.Empty.Add("name", "Harbor").Add("depth", 12.5));
-            yield return Feature.Create(2, null,
-                ImmutableDictionary<string, object?>.Empty.Add("name", "Unlocated").Add("depth", null));
-            await Task.CompletedTask;
-        }
+        var jobStore = new InMemoryExecutionJobStore();
+        var jobQueue = Substitute.For<IJobQueue>();
+        var progressStore = Substitute.For<IUniversalProgressStore>();
+        progressStore
+            .SetProgressAsync(Arg.Any<string>(), Arg.Any<IOperationProgress>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("Simulated progress-store failure.")));
+        var job = ExportJobTestData.CreateJob("headless");
+
+        var start = () => CreateService(progressStore, jobStore, jobQueue).StartAsync(job);
+
+        await start.Should().ThrowAsync<InvalidOperationException>();
+        (await jobStore.GetAsync(job.JobId)).Should().BeNull();
+        await jobQueue.DidNotReceiveWithAnyArgs().EnqueueAsync(default!);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task Start_WhenEnqueueFails_KeepsTheAcceptedJobForDispatchRepair()
+    {
+        var jobStore = new InMemoryExecutionJobStore();
+        var jobQueue = Substitute.For<IJobQueue>();
+        jobQueue.EnqueueAsync(Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new TimeoutException("Simulated queue timeout.")));
+        var job = ExportJobTestData.CreateJob("deferred");
+
+        var jobId = await CreateService(new ComparingInMemoryProgressStore(), jobStore, jobQueue).StartAsync(job);
+
+        jobId.Should().Be(job.JobId);
+        (await jobStore.GetAsync(job.JobId))!.Status.Should().Be(ExecutionJobStatus.Queued);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task Execute_CsvArtifact_PreservesValuesNullsAndZmOrdinatesAndCompletesTheProgress()
+    {
         string? artifact = null;
         var storage = Substitute.For<ICloudFileStorage>();
         storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>()).Returns(async call =>
         {
             using var reader = new StreamReader(call.Arg<FileUploadRequest>().Content, leaveOpen: true);
             artifact = await reader.ReadToEndAsync();
-            return UploadResult.CreateSuccess(new CloudFile
-            {
-                FileId = "csv-proof",
-                FileName = "proof.csv",
-                StoragePath = "exports/proof.csv",
-                ContentType = "text/csv",
-                SizeBytes = artifact.Length,
-                UploadedAt = DateTimeOffset.UtcNow,
-                Provider = CloudStorageProvider.AwsS3
-            });
+            return ExportJobTestData.Uploaded("csv-proof", "text/csv");
         });
         storage.GetPresignedUrlAsync("csv-proof", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns("https://example.test/proof.csv");
-        using var services = new ServiceCollection().AddSingleton(store).AddSingleton(storage)
-            .AddSingleton<ICrsRegistry>(new NullCrsRegistry()).BuildServiceProvider();
-        var sut = new ExportJobService(progressStore, cache, Channel.CreateUnbounded<string>(),
-            services.GetRequiredService<IServiceScopeFactory>(), NullLogger<ExportJobService>.Instance);
-        var job = CreateJob(Guid.NewGuid().ToString("N")) with
+        var store = Substitute.For<IStreamingFeatureStore>();
+        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(FixtureFeatures());
+        var progressStore = new ComparingInMemoryProgressStore();
+        var job = ExportJobTestData.CreateJob(Guid.NewGuid().ToString("N")) with
         {
             Fields = [new ExportField("name", ExportFieldType.String, true), new ExportField("depth", ExportFieldType.Double, true)],
             TotalFeatures = 99,
             GeometryType = ExportGeometryType.Point
         };
-        await sut.StartAsync(job);
-        await sut.ProcessQueuedJobAsync(job.JobId);
+
+        var result = await ExecuteAsync(progressStore, store, storage, job);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
         artifact.Should().NotBeNull();
         var lines = artifact!.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
         lines.Should().HaveCount(3);
@@ -972,32 +149,232 @@ public sealed class ExportJobServiceTests
         progress.DownloadUrl.Should().Be("https://example.test/proof.csv");
         progress.Warnings.Should().BeEmpty();
         Directory.Exists(Path.Join(Path.GetTempPath(), "honua-export", job.JobId)).Should().BeFalse();
+
+        static async IAsyncEnumerable<Feature> FixtureFeatures()
+        {
+            // ISO WKB: little-endian PointZM (3001), followed by X/Y/Z/M doubles.
+            // Encoded independently from the export writer; expected ordinates below are fixture constants.
+            yield return Feature.Create(1, Convert.FromHexString("01B90B00000000000000B063C0000000000040354000000000000029400000000000001D40"),
+                ImmutableDictionary<string, object?>.Empty.Add("name", "Harbor").Add("depth", 12.5));
+            yield return Feature.Create(2, null,
+                ImmutableDictionary<string, object?>.Empty.Add("name", "Unlocated").Add("depth", null));
+            await Task.CompletedTask;
+        }
     }
 
-    private static async IAsyncEnumerable<Feature> CreateWarningFeatures()
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task Execute_ShapefileNullRow_PreservesRowAndSurfacesWarningsAndActualCount()
     {
-        yield return Feature.Create(1, geometry: null,
-            ImmutableDictionary<string, object?>.Empty.Add("name", "Unlocated").Add("descriptive_name", "Retained detail"));
-        await Task.CompletedTask;
+        await using var uploaded = new MemoryStream();
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>()).Returns(async call =>
+        {
+            await call.Arg<FileUploadRequest>().Content.CopyToAsync(uploaded);
+            return ExportJobTestData.Uploaded("file-1", "application/zip");
+        });
+        storage.GetPresignedUrlAsync("file-1", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns("https://example.test/export.zip");
+        var store = Substitute.For<IStreamingFeatureStore>();
+        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(WarningFeatures());
+        var progressStore = new ComparingInMemoryProgressStore();
+        var job = ExportJobTestData.CreateJob(Guid.NewGuid().ToString("N")) with
+        {
+            Format = "shapefile",
+            GeometryType = ExportGeometryType.Point,
+            Fields = [new ExportField("name", ExportFieldType.String, true), new ExportField("descriptive_name", ExportFieldType.String, true)],
+            TotalFeatures = 99
+        };
+
+        var result = await ExecuteAsync(progressStore, store, storage, job);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        var progress = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
+        progress!.Status.Should().Be(OperationStatus.Completed);
+        progress.DownloadUrl.Should().Be("https://example.test/export.zip");
+        progress.ProcessedFeatures.Should().Be(1);
+        progress.Warnings.Should().Contain(warning => warning.Contains("descriptive_name", StringComparison.Ordinal));
+        uploaded.Position = 0;
+        using var archive = new System.IO.Compression.ZipArchive(uploaded, System.IO.Compression.ZipArchiveMode.Read);
+        var warningEntry = archive.GetEntry("export-warnings.txt");
+        warningEntry.Should().NotBeNull();
+        using (var warningReader = new StreamReader(warningEntry!.Open()))
+        {
+            (await warningReader.ReadToEndAsync()).Should().Contain("descriptive_name");
+        }
+
+        // Independently decode the shapefile records: one Null Shape occupies a 100-byte
+        // header, an 8-byte record header and a 4-byte shape type; SHX stores offset/length in words.
+        var shp = await ReadEntryAsync(archive, "export.shp");
+        shp.Should().HaveCount(112);
+        System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(shp.AsSpan(0, 4)).Should().Be(9994);
+        System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(shp.AsSpan(108, 4)).Should().Be(0);
+        var shx = await ReadEntryAsync(archive, "export.shx");
+        shx.Should().HaveCount(108);
+        System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(shx.AsSpan(100, 4)).Should().Be(50);
+        System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(shx.AsSpan(104, 4)).Should().Be(2);
+        var dbf = await ReadEntryAsync(archive, "export.dbf");
+        System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(dbf.AsSpan(4, 4)).Should().Be(1);
+        var rowOffset = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(dbf.AsSpan(8, 2));
+        rowOffset.Should().Be(97, "two field descriptors plus the fixed header and terminator");
+        dbf[rowOffset].Should().Be((byte)' ', "the preserved null-geometry row is not deleted");
+        var nameLength = dbf[32 + 16];
+        var detailLength = dbf[64 + 16];
+        System.Text.Encoding.UTF8.GetString(dbf, rowOffset + 1, nameLength).TrimEnd().Should().Be("Unlocated");
+        System.Text.Encoding.UTF8.GetString(dbf, rowOffset + 1 + nameLength, detailLength).TrimEnd().Should().Be("Retained detail");
+
+        static async IAsyncEnumerable<Feature> WarningFeatures()
+        {
+            yield return Feature.Create(1, geometry: null,
+                ImmutableDictionary<string, object?>.Empty.Add("name", "Unlocated").Add("descriptive_name", "Retained detail"));
+            await Task.CompletedTask;
+        }
+
+        static async Task<byte[]> ReadEntryAsync(System.IO.Compression.ZipArchive zip, string name)
+        {
+            var entry = zip.GetEntry(name);
+            entry.Should().NotBeNull();
+            using var bytes = new MemoryStream();
+            await using var source = entry!.Open();
+            await source.CopyToAsync(bytes);
+            return bytes.ToArray();
+        }
     }
 
-    private static async IAsyncEnumerable<Feature> CreateFeatures()
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task Execute_CancelledWhileTheFileWasWritten_RetractsTheArtifact()
     {
-        yield return Feature.Create(
-            1,
-            geometry: null,
-            ImmutableDictionary<string, object?>.Empty.Add("name", "Test feature"));
-        await Task.CompletedTask;
+        var progressStore = new ComparingInMemoryProgressStore();
+        var job = ExportJobTestData.CreateJob(Guid.NewGuid().ToString("N"));
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>()).Returns(async _ =>
+        {
+            // An operator cancels on another node after the file was written.
+            var running = (await progressStore.GetProgressAsync<ExportProgress>(job.JobId))!;
+            await progressStore.SetProgressAsync(job.JobId, running.WithCancellation(DateTimeOffset.UtcNow, "Cancelled by user"));
+            return ExportJobTestData.Uploaded("late-file", "text/csv");
+        });
+        storage.GetPresignedUrlAsync("late-file", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns("https://example.test/late.csv");
+        var store = Substitute.For<IStreamingFeatureStore>();
+        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(ExportJobTestData.CreateFeatures());
+
+        var execute = () => ExecuteAsync(progressStore, store, storage, job);
+
+        await execute.Should().ThrowAsync<OperationCanceledException>();
+        await storage.Received(1).DeleteAsync("late-file", Arg.Any<CancellationToken>());
+        (await progressStore.GetProgressAsync<ExportProgress>(job.JobId))!.Status.Should().Be(OperationStatus.Cancelled);
     }
 
-    private static async IAsyncEnumerable<Feature> CreateBlockingFeatures(
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task Execute_WhenTheLayerCannotBeRead_FailsWithoutRetry()
     {
-        await Task.Delay(TimeSpan.FromMinutes(1), cancellationToken);
-        yield break;
+        var store = Substitute.For<IStreamingFeatureStore>();
+        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(_ => throw new InvalidOperationException("Simulated provider failure."));
+        var storage = Substitute.For<ICloudFileStorage>();
+
+        var result = await ExecuteAsync(
+            new ComparingInMemoryProgressStore(), store, storage, ExportJobTestData.CreateJob(Guid.NewGuid().ToString("N")));
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Be(ExportJobExecutor.ExportFailureMessage);
+        result.IsRetryable.Should().BeFalse();
+        await storage.DidNotReceive().UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>());
     }
 
-    private static ExportJob CreateJob(string jobId)
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task Execute_WithoutASubmitter_FailsBeforeReadingFeatures()
+    {
+        var store = Substitute.For<IStreamingFeatureStore>();
+        var job = ExportJobTestData.CreateJob("anonymous") with { Submitter = null };
+
+        var result = await ExecuteAsync(new ComparingInMemoryProgressStore(), store, Substitute.For<ICloudFileStorage>(), job);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.IsRetryable.Should().BeFalse();
+        store.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [UnitTheory]
+    [Operation(Operations.Export)]
+    [InlineData(ExecutionJobStatus.Failed, OperationStatus.Failed)]
+    [InlineData(ExecutionJobStatus.Cancelled, OperationStatus.Cancelled)]
+    public async Task TerminalCallback_JobEndedByTheWorker_ClosesTheExportProgress(
+        ExecutionJobStatus jobStatus,
+        OperationStatus expected)
+    {
+        var progressStore = new ComparingInMemoryProgressStore();
+        var running = ExportProgress.CreateInitial("export-1", "csv", "svc", 1, 10) with { Status = OperationStatus.Processing };
+        await progressStore.SetProgressAsync("export-1", running);
+        var now = DateTimeOffset.UtcNow;
+        var callback = new ExportJobTerminalCallback(progressStore, NullLogger<ExportJobTerminalCallback>.Instance);
+
+        await callback.OnTerminalAsync(new ExecutionJobRecord
+        {
+            OperationId = "export-1",
+            Status = jobStatus,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CompletedAt = now,
+            ErrorMessage = "license expired",
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Export,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "export:csv:svc:1"
+            }
+        }, CancellationToken.None);
+
+        var closed = (await progressStore.GetProgressAsync<ExportProgress>("export-1"))!;
+        closed.Status.Should().Be(expected);
+        closed.CompletedAt.Should().Be(now);
+        if (expected == OperationStatus.Failed)
+        {
+            closed.ErrorMessage.Should().Be("license expired");
+        }
+    }
+
+    private static ExportJobService CreateService(
+        IUniversalProgressStore progressStore,
+        IExecutionJobStore jobStore,
+        IJobQueue jobQueue)
+        => new(progressStore, NullLogger<ExportJobService>.Instance, jobStore, jobQueue);
+
+    // Submits through the service so the executor reads the request the way a worker does.
+    private static async Task<JobExecutionResult> ExecuteAsync(
+        IUniversalProgressStore progressStore,
+        IStreamingFeatureStore store,
+        ICloudFileStorage storage,
+        ExportJob job)
+    {
+        var jobStore = new InMemoryExecutionJobStore();
+        await CreateService(progressStore, jobStore, Substitute.For<IJobQueue>()).StartAsync(job);
+        using var services = new ServiceCollection()
+            .AddSingleton(store)
+            .AddSingleton(storage)
+            .AddSingleton<ICrsRegistry>(new ExportJobTestData.NullCrsRegistry())
+            .BuildServiceProvider();
+        var executor = new ExportJobExecutor(
+            progressStore,
+            services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<ExportJobExecutor>.Instance);
+        return await executor.ExecuteAsync(
+            (await jobStore.GetAsync(job.JobId))!,
+            Substitute.For<IJobExecutionContext>(),
+            CancellationToken.None);
+    }
+}
+
+internal static class ExportJobTestData
+{
+    public static ExportJob CreateJob(string jobId)
         => new(
             jobId,
             "svc",
@@ -1011,170 +388,28 @@ public sealed class ExportJobServiceTests
             ExportGeometryType.None,
             new JobSecurityContext("subject-a", "tenant-a", [new JobSecurityClaim("role", "reader")]));
 
-    private sealed class InMemoryUniversalProgressStore : IUniversalProgressStore
+    public static async IAsyncEnumerable<Feature> CreateFeatures()
     {
-        private readonly ConcurrentDictionary<string, IOperationProgress> _entries = new(StringComparer.Ordinal);
-        public Action<IOperationProgress>? AfterUpdate { get; set; }
-
-        public Task SetProgressAsync(
-            string operationId,
-            IOperationProgress progress,
-            TimeSpan? ttl = null,
-            CancellationToken cancellationToken = default)
-        {
-            _entries[operationId] = progress;
-            return Task.CompletedTask;
-        }
-
-        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(OperationProgressWrite write, OperationStatus expectedStatus, CancellationToken cancellationToken = default)
-        {
-            while (true)
-            {
-                if (!_entries.TryGetValue(write.OperationId, out var current))
-                {
-                    return Task.FromResult(ProgressCompareAndSetResult.NotFound);
-                }
-
-                if (current.Status != expectedStatus)
-                {
-                    return Task.FromResult(ProgressCompareAndSetResult.StatusMismatch(current));
-                }
-
-                if (_entries.TryUpdate(write.OperationId, write.Progress, current))
-                {
-                    AfterUpdate?.Invoke(write.Progress);
-                    return Task.FromResult(ProgressCompareAndSetResult.Updated);
-                }
-            }
-        }
-
-        public Task<TProgress?> GetProgressAsync<TProgress>(string operationId, CancellationToken cancellationToken = default)
-            where TProgress : class, IOperationProgress
-        {
-            if (_entries.TryGetValue(operationId, out var progress) && progress is TProgress typed)
-            {
-                return Task.FromResult<TProgress?>(typed);
-            }
-
-            return Task.FromResult<TProgress?>(null);
-        }
-
-        public Task<IOperationProgress?> GetProgressAsync(string operationId, CancellationToken cancellationToken = default)
-        {
-            _entries.TryGetValue(operationId, out var progress);
-            return Task.FromResult(progress);
-        }
-
-        public Task DeleteProgressAsync(string operationId, CancellationToken cancellationToken = default)
-        {
-            _entries.TryRemove(operationId, out _);
-            return Task.CompletedTask;
-        }
-
-        public Task<IReadOnlyList<string>> GetActiveOperationIdsAsync(OperationType? operationType = null, CancellationToken cancellationToken = default)
-        {
-            var ids = _entries
-                .Where(kvp => operationType == null || kvp.Value.Type == operationType.Value)
-                .Select(static kvp => kvp.Key)
-                .ToArray();
-            return Task.FromResult<IReadOnlyList<string>>(ids);
-        }
-
-        public Task<IReadOnlyList<TProgress>> GetActiveOperationsAsync<TProgress>(OperationType operationType, CancellationToken cancellationToken = default)
-            where TProgress : class, IOperationProgress
-        {
-            var operations = _entries.Values
-                .Where(progress => progress.Type == operationType)
-                .OfType<TProgress>()
-                .ToArray();
-            return Task.FromResult<IReadOnlyList<TProgress>>(operations);
-        }
+        yield return Feature.Create(
+            1,
+            geometry: null,
+            ImmutableDictionary<string, object?>.Empty.Add("name", "Test feature"));
+        await Task.CompletedTask;
     }
 
-    private sealed class ThrowOnFirstSetProgressStore : IUniversalProgressStore
-    {
-        private bool _hasThrown;
-
-        public Task SetProgressAsync(
-            string operationId,
-            IOperationProgress progress,
-            TimeSpan? ttl = null,
-            CancellationToken cancellationToken = default)
+    public static UploadResult Uploaded(string fileId, string contentType)
+        => UploadResult.CreateSuccess(new CloudFile
         {
-            if (!_hasThrown)
-            {
-                _hasThrown = true;
-                throw new InvalidOperationException("progress initialization failed");
-            }
+            FileId = fileId,
+            FileName = fileId,
+            StoragePath = $"exports/{fileId}",
+            ContentType = contentType,
+            SizeBytes = 32,
+            UploadedAt = DateTimeOffset.UtcNow,
+            Provider = CloudStorageProvider.AwsS3
+        });
 
-            return Task.CompletedTask;
-        }
-
-        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(OperationProgressWrite write, OperationStatus expectedStatus, CancellationToken cancellationToken = default)
-            => Task.FromResult(ProgressCompareAndSetResult.NotFound);
-
-        public Task<TProgress?> GetProgressAsync<TProgress>(string operationId, CancellationToken cancellationToken = default)
-            where TProgress : class, IOperationProgress
-            => Task.FromResult<TProgress?>(null);
-
-        public Task<IOperationProgress?> GetProgressAsync(string operationId, CancellationToken cancellationToken = default)
-            => Task.FromResult<IOperationProgress?>(null);
-
-        public Task DeleteProgressAsync(string operationId, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-
-        public Task<IReadOnlyList<string>> GetActiveOperationIdsAsync(OperationType? operationType = null, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
-
-        public Task<IReadOnlyList<TProgress>> GetActiveOperationsAsync<TProgress>(OperationType operationType, CancellationToken cancellationToken = default)
-            where TProgress : class, IOperationProgress
-            => Task.FromResult<IReadOnlyList<TProgress>>(Array.Empty<TProgress>());
-    }
-
-    private sealed class ThrowOnGetDistributedCache : IDistributedCache
-    {
-        private readonly MemoryDistributedCache _inner = new(Options.Create(new MemoryDistributedCacheOptions()));
-
-        public bool ThrowOnGet { get; set; }
-
-        public byte[]? Get(string key)
-        {
-            ThrowIfConfigured(key);
-            return _inner.Get(key);
-        }
-
-        public Task<byte[]?> GetAsync(string key, CancellationToken token = default)
-        {
-            ThrowIfConfigured(key);
-            return _inner.GetAsync(key, token);
-        }
-
-        public void Refresh(string key) => _inner.Refresh(key);
-
-        public Task RefreshAsync(string key, CancellationToken token = default)
-            => _inner.RefreshAsync(key, token);
-
-        public void Remove(string key) => _inner.Remove(key);
-
-        public Task RemoveAsync(string key, CancellationToken token = default)
-            => _inner.RemoveAsync(key, token);
-
-        public void Set(string key, byte[] value, DistributedCacheEntryOptions options)
-            => _inner.Set(key, value, options);
-
-        public Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default)
-            => _inner.SetAsync(key, value, options, token);
-
-        private void ThrowIfConfigured(string key)
-        {
-            if (ThrowOnGet && string.Equals(key, "export:request:lease-release-export", StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException("request cache read failed");
-            }
-        }
-    }
-
-    private sealed class NullCrsRegistry : ICrsRegistry
+    internal sealed class NullCrsRegistry : ICrsRegistry
     {
         public ValueTask<CrsDefinition?> ResolveAsync(string? crsIdentifier, CancellationToken cancellationToken = default)
             => ValueTask.FromResult<CrsDefinition?>(null);

@@ -14397,7 +14397,7 @@
             "$ref": "#/components/responses/NotFound"
           },
           "503": {
-            "description": "A large export was requested but the background export service, durable job storage, or cloud storage is not configured, or the export queue is full.",
+            "description": "A large export was requested but the background export service, durable job storage, or cloud storage is not configured.",
             "content": {
               "application/problem+json": {
                 "schema": {

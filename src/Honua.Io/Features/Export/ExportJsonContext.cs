@@ -14,7 +14,6 @@ namespace Honua.Io.Export;
 [JsonSerializable(typeof(ExportProgress))]
 [JsonSerializable(typeof(ExportAcceptedResponse))]
 [JsonSerializable(typeof(ExportJob))]
-[JsonSerializable(typeof(ExportJobService.PersistedExportJobRequest))]
 [JsonSerializable(typeof(ExportField[]))]
 [JsonSerializable(typeof(FeatureQuery))]
 [JsonSerializable(typeof(ExportGeometryType))]

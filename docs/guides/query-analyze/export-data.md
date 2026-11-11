@@ -47,7 +47,7 @@ Which formats are available depends on the surface: OGC API Features items serve
 
    Valid formats are `csv`, `shapefile`, and `gpkg`. Small exports stream back directly; large exports return `202 Accepted` with an `operationId` and a `statusUrl` (`/api/v1/admin/operations/{id}`) to poll — the async path requires cloud storage to be configured.
 
-   Background exports retain the submitting identity and resolved tenant. The worker applies current row and field policies for that identity when it reads the layer. Queued exports created before identity capture was supported fail safely after an upgrade; submit those exports again.
+   A background export is a job in the server's PostgreSQL database. It runs once, on whichever server claims it, and still runs if the server that accepted it stops. It retains the submitting identity and resolved tenant; the worker applies current row and field policies for that identity when it reads the layer. Exports queued before an upgrade to this release are not carried over; submit those exports again.
 
 ## Verify
 
