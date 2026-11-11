@@ -150,6 +150,8 @@ public sealed class VerticalSliceIsolationTests
             "Resilience",
             "Scene",
             "Security",
+            "SecurityState",    // PostgreSQL stores for security tokens, token replay and
+                                // idempotency reservations shared by every node; no endpoints.
             "SharedCaching",    // Hosting-resident shared-cache policy: the single Cache-Control
                                 // writer, the guard that strips it from requests that do not
                                 // qualify, and CDN invalidation, applied by every protocol

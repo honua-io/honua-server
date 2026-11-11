@@ -111,6 +111,7 @@ case "${mode}" in
     # See "Writer selection" in docs/internal/ci/server-test-binary-artifacts.md.
     writer="$(jq -r --arg project "${project}" --arg fallback "${DEFAULT_PROJECT}" '
       [ .[]
+        | select(.csprojs == null)
         | select((if ((.csproj // "") == "") then $fallback else .csproj end) == $project)
         | .shard_name ]
       | first

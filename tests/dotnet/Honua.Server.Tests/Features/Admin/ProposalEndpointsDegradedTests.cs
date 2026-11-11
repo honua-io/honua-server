@@ -48,24 +48,10 @@ public sealed class ProposalEndpointsDegradedTests : IAsyncLifetime
         await _fixture.DisposeAsync();
     }
 
-    /// <summary>
-    /// honua-server#3599: pins the composition-root gate itself, not just the HTTP projection of it.
-    /// </summary>
-    /// <remarks>
-    /// The wire tests below prove the refusal fires when the durable control plane is absent, but
-    /// they cannot distinguish "absent because <c>Program.cs</c> gated the registration" from
-    /// "absent because something else failed". The refusal is reached only through the handlers'
-    /// optional <c>[FromServices] IOperationProposalStore? = null</c> parameters, which treat both
-    /// an unregistered store and the fail-closed <see cref="UnavailableOperationProposalStore"/>
-    /// placeholder as absent. Registering <c>RedisOperationProposalStore</c> outside the
-    /// <c>if (connectedRedis != null)</c> gate would not make these routes return the typed
-    /// refusal — it would make DI activation throw on the unresolvable
-    /// <c>IConnectionMultiplexer</c> and hand the caller an unhandled <c>500</c> naming an internal
-    /// DI type, which is exactly the shape #3599 reported from a pinned candidate image. Since
-    /// 2026.1 rc.3 (J1/S1) the no-Redis branch registers the placeholder so the governed admin
-    /// tools still advertise; asserting that the resolved store is never a durable one fails the
-    /// moment the Redis registration moves back out of the gate.
-    /// </remarks>
+    // The handlers treat an unregistered proposal store and the fail-closed placeholder alike, so
+    // the wire tests cannot tell a host that composed no durable store from one whose store
+    // failed. Asserting the resolved store directly fails as soon as a durable store is registered
+    // for a host without a system database.
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/proposals")]
     public void Composition_WithoutRedis_RegistersNeitherDurableProposalStoreNorGateway()

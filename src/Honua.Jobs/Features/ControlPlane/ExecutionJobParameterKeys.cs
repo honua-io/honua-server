@@ -11,6 +11,8 @@ internal static class ExecutionJobParameterKeys
 
     public const string Queue = "honua.job.queue";
 
+    public const string OrchestrationRunId = "orchestration.runId";
+
     public const string ResourceRefs = "honua.job.resource_refs";
 
     public const string ParentId = "honua.job.parent_id";
