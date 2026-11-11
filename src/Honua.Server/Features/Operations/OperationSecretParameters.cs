@@ -33,14 +33,7 @@ internal static class OperationSecretParameters
 
             var operationInstanceId = context.OperationInstanceId
                 ?? throw new InvalidOperationException("Secret-bearing approval requires a canonical operation identity.");
-            references[pair.Key] = store.Store(
-                operationInstanceId,
-                request.OperationId,
-                context.PrincipalId,
-                context.TenantId,
-                pair.Key,
-                pair.Value,
-                ApprovalSecretTtl);
+            references[pair.Key] = store.Store(new OperationSecretBinding(operationInstanceId, request.OperationId, context.PrincipalId, context.TenantId), pair.Key, pair.Value, ApprovalSecretTtl);
         }
 
         return (parameters, references);
@@ -64,13 +57,8 @@ internal static class OperationSecretParameters
         var parameters = new Dictionary<string, string?>(request.Parameters, StringComparer.Ordinal);
         foreach (var pair in request.SecretParameters)
         {
-            var value = store.Consume(
-                pair.Value,
-                context.OperationInstanceId
-                    ?? throw new InvalidOperationException("Approved replay is missing its operation identity."),
-                request.OperationId,
-                context.PrincipalId,
-                context.TenantId);
+            var value = store.Consume(pair.Value, new OperationSecretBinding(context.OperationInstanceId
+                    ?? throw new InvalidOperationException("Approved replay is missing its operation identity."), request.OperationId, context.PrincipalId, context.TenantId));
             if (value is null)
             {
                 throw new InvalidOperationException(

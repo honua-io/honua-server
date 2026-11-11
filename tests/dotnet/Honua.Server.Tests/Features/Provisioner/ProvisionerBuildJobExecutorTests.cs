@@ -11,6 +11,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Provisioner;
 using Honua.Server.Features.Provisioner.BuildJobs;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -29,7 +30,7 @@ public sealed class ProvisionerBuildJobExecutorTests
     public void AddHonuaProvisionerBuildJobs_RegistersExecutorsForBothBuildKinds()
     {
         var services = new ServiceCollection();
-        services.AddSingleton<IUniversalProgressStore>(new InMemoryProgressStore());
+        services.AddSingleton<IUniversalProgressStore>(new AcceptingInMemoryProgressStore());
         services.AddLogging();
         services.AddHonuaProvisionerBuildJobs(
             new ConfigurationBuilder().AddInMemoryCollection().Build());
@@ -44,7 +45,7 @@ public sealed class ProvisionerBuildJobExecutorTests
     [UnitTest]
     public async Task ExecuteAsync_GeocoderBuild_CompletesAndPublishesArtifact()
     {
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var executor = ProvisionerBuildJobExecutor.ForGeocoder(
             progressStore, NullLogger<ProvisionerBuildJobExecutor>.Instance);
 
@@ -74,7 +75,7 @@ public sealed class ProvisionerBuildJobExecutorTests
     [UnitTest]
     public async Task ExecuteAsync_RouterBuild_InvalidSpec_FailsWithoutThrowing()
     {
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var executor = ProvisionerBuildJobExecutor.ForRouter(
             progressStore, NullLogger<ProvisionerBuildJobExecutor>.Instance);
 
@@ -134,42 +135,5 @@ public sealed class ProvisionerBuildJobExecutorTests
             PublishedArtifacts.Add(artifactReference);
             return Task.CompletedTask;
         }
-    }
-
-    private sealed class InMemoryProgressStore : IUniversalProgressStore
-    {
-        private readonly ConcurrentDictionary<string, IOperationProgress> _progress = new(StringComparer.Ordinal);
-
-        public Task SetProgressAsync(string operationId, IOperationProgress progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
-        {
-            _progress[operationId] = progress;
-            return Task.CompletedTask;
-        }
-
-        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(string operationId, IOperationProgress progress, OperationStatus expectedStatus, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
-        {
-            _progress[operationId] = progress;
-            return Task.FromResult(ProgressCompareAndSetResult.Updated);
-        }
-
-        public Task<TProgress?> GetProgressAsync<TProgress>(string operationId, CancellationToken cancellationToken = default)
-            where TProgress : class, IOperationProgress
-            => Task.FromResult(_progress.TryGetValue(operationId, out var p) ? p as TProgress : null);
-
-        public Task<IOperationProgress?> GetProgressAsync(string operationId, CancellationToken cancellationToken = default)
-            => Task.FromResult(_progress.TryGetValue(operationId, out var p) ? p : null);
-
-        public Task DeleteProgressAsync(string operationId, CancellationToken cancellationToken = default)
-        {
-            _progress.TryRemove(operationId, out _);
-            return Task.CompletedTask;
-        }
-
-        public Task<IReadOnlyList<string>> GetActiveOperationIdsAsync(OperationType? operationType = null, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<string>>(_progress.Keys.ToArray());
-
-        public Task<IReadOnlyList<TProgress>> GetActiveOperationsAsync<TProgress>(OperationType operationType, CancellationToken cancellationToken = default)
-            where TProgress : class, IOperationProgress
-            => Task.FromResult<IReadOnlyList<TProgress>>(_progress.Values.OfType<TProgress>().ToArray());
     }
 }

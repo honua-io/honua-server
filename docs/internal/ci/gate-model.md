@@ -643,3 +643,27 @@ RC image build, through `ogc-rc-conformance.yml`. The RC manifest waits for succ
 Optional integration flags
 do not bypass it. See the [workflow inventory](workflow-inventory.md#ogc-cite--conformance)
 for the complete dispatchers, source/image binding and separate certification policy.
+
+### Optional PR workflow input boundaries
+
+Capability Impact Comparison keeps its PR observation report, scoped to runtime
+source, .NET proving tests, compatibility baselines, capability data, the shard
+map and the selector/report tools. Unrelated prose and workflow edits no longer
+start it. It is currently disabled in repository settings; this filter makes
+re-enabling it safe. Capability Matrix Aggregation and OpenAPI Contract
+Governance already enumerate their generator/contract inputs and retain those
+filters. GeoArrow now also watches global.json and NuGet.config; GeoParquet
+retains its existing serializer/query/import/build-input boundary.
+
+Docs Link Gate retains its complete PR suite for documentation, skills, checker
+and manifest edits. Source/docker/eng-only edits instead run the link checker and
+its adversarial fixtures in the existing ci.yml CI Router Validation job on affected trunk
+runs and twice-daily full runs. That job already participates in CI Gate; no
+required check name or aggregate dependency changes. The runtime URL scan still
+runs and fails the trunk gate when a source/config link breaks.
+
+Derived Artifact Normalization watches .NET generator/proving-test code and
+client compatibility receipts instead of every test language, and GIS data
+instead of GIS prose. Runtime source, generator scripts, CITE status and all
+existing build/setup inputs remain covered. Its producer/consumer security
+boundary and deterministic replay are unchanged.

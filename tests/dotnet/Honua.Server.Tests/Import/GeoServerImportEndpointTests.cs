@@ -486,8 +486,8 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
             .Returns(call => underlying.GetProgressAsync(call.Arg<string>(), call.Arg<CancellationToken>()));
         store.SetProgressAsync(Arg.Any<string>(), Arg.Any<IOperationProgress>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(call => underlying.SetProgressAsync(call.Arg<string>(), call.Arg<IOperationProgress>(), call.Arg<TimeSpan?>(), call.Arg<CancellationToken>()));
-        store.TrySetProgressAsync(Arg.Any<string>(), Arg.Any<IOperationProgress>(), Arg.Any<OperationStatus>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(call => underlying.TrySetProgressAsync(call.Arg<string>(), call.Arg<IOperationProgress>(), call.Arg<OperationStatus>(), call.Arg<TimeSpan?>(), call.Arg<CancellationToken>()));
+        store.TrySetProgressAsync(new OperationProgressWrite(Arg.Any<string>(), Arg.Any<IOperationProgress>(), Arg.Any<TimeSpan?>()), Arg.Any<OperationStatus>(), Arg.Any<CancellationToken>())
+            .Returns(call => underlying.TrySetProgressAsync(new OperationProgressWrite(call.Arg<string>(), call.Arg<IOperationProgress>(), call.Arg<TimeSpan?>()), call.Arg<OperationStatus>(), call.Arg<CancellationToken>()));
         var importService = new TestGeoServerImportService(TimeSpan.Zero);
         var fixture = WithoutGeoServerWorker(new WebAppFixture()
             .WithTestLicense(HonuaEdition.Enterprise)

@@ -213,6 +213,7 @@ public sealed class LiveStreamAuthorizationTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddMemoryCache();
+        services.AddSingleton<Honua.Infrastructure.Security.ISecurityTokenStore, Honua.Infrastructure.Security.InMemorySecurityTokenStore>();
         services.AddSingleton<IPortalTokenIssuer, PortalTokenIssuer>();
         services.AddAuthentication(PortalTokenAuthenticationExtensions.PortalTokenScheme)
             .AddScheme<AuthenticationSchemeOptions, PortalTokenAuthenticationHandler>(PortalTokenAuthenticationExtensions.PortalTokenScheme, _ => { });
