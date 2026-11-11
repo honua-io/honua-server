@@ -724,6 +724,11 @@ shard routing. Application reuse is described in the
 ImageServer shard coverage includes the
 [mosaic integration isolation contract](gate-model.md#mosaic-integration-isolation-contract).
 
+### Durable GPServer fixtures
+
+See [Durable GPServer database lifetime](gate-model.md#durable-gpserver-database-lifetime)
+for shared infrastructure and per-case durable execution isolation.
+
 ## Automatic merge admission
 
 `auto-merge-ready.yml` reconciles same-repository trunk PRs using the repository-scoped

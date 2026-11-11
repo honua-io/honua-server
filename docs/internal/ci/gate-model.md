@@ -788,6 +788,14 @@ license configuration. It replaces the layer's rows in the process-global
 PostgreSQL infrastructure may span cases, so cases must not depend on a fresh
 container. This contract applies to PR shards and full trunk runs.
 
+### Durable GPServer database lifetime
+
+`GPServerDurableRuntimeTests` retains a `PostgresFixture` for the class to avoid
+repeating shared database initialization. Each case retains its application,
+isolated schema, execution store and worker lifetime. PostgreSQL job tables are
+cleared at each case start. Every durable-runtime assertion remains in its existing GPServer shard
+and in full trunk runs.
+
 ## Automatic merge admission
 
 [Automatic merge admission](workflow-inventory.md#automatic-merge-admission) uses

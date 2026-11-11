@@ -26,12 +26,10 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Verifies the GPServer adapter against the real durable execution substrate.
-/// </summary>
+// Hold a shared PostgreSQL reference so per-case job hosts skip repeated database initialization.
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.GPServer)]
-public sealed partial class GPServerDurableRuntimeTests
+public sealed partial class GPServerDurableRuntimeTests : IClassFixture<PostgresFixture>
 {
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
     private const string ServiceId = WebAppFixture.TestServiceId;
