@@ -63,9 +63,7 @@ public sealed partial class CapabilityManifestEndpointTests : IClassFixture<Capa
         _adminClient = fixture.Application.CreateAdminClient();
     }
 
-    /// <summary>
-    /// Owns the read-only default manifest application for this sequential test class.
-    /// </summary>
+    // The default manifest is immutable, so this sequential class can reuse its application.
     public sealed class Fixture : IAsyncLifetime
     {
         public WebAppFixture Application { get; } = CreateManifestFixture();
