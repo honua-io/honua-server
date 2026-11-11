@@ -8,7 +8,7 @@
     "catalogSourceRevision": "14d101ec17f4b7ccdc6106ee2cb5bd4d621d779f",
     "candidateBinding": "https://github.com/honua-io/honua-server/issues/3848",
     "layerReceiptEnforcement": "Full CI step 'Prove the layer execution cases ran, not skipped' reads back layer-execution-proof.trx and fails unless every evidence test these rows still call proven in the Category=LayerExecutionProof files reports its own Passed receipt: source.honua-layer, source.esri-featureserver and sink.honua-layer. dotnet test exits 0 on a filter that matches nothing and on a cleanly-skipping fixture, so the step count alone could not tell a real PostGIS run from no run at all.",
-    "catalogSourceContentDigest": "sha256:9592744c6fbd9eb2c32225e3d8fe84df4744f413027062f0ad4587a74886f15e",
+    "catalogSourceContentDigest": "sha256:be1888b40df37e12d31abd0985794767e44f17e097b5a65966deea471927a9b5",
     "importEpochSourceAudit": "https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/certification/gp-import-epoch-source-audit-20261028.md",
     "gpCorrectnessAudit": "https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/certification/gp-correctness-audit-20261016.md",
     "releaseBindingRegistrationAudit": "https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/certification/gp-release-binding-audit-20261015.md",
@@ -73,21 +73,21 @@
           "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryBufferJobExecutorIntegrationTests.cs",
           "test": "BufferProcess_CompletesAndReturnsBufferedGeometry",
           "assertion": "OGC submit/poll/results returns a decoded polygon with the expected buffered area.",
-          "bodyDigest": "sha256:73a6a1e359dda3d17a421d541547f545c3fb5a9b6ede26675b38cbc594f9e8e9"
+          "bodyDigest": "sha256:47cd6c8896581a16b979ae2c9159153c3756014467e63adf6db08960938f272c"
         },
         {
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/OgcProcessesExecutionProofTests.cs",
           "test": "Execute_FirstSliceVectorProcess_CompletesAndReturnsBufferGeometry",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/OgcProcessesExecutionProofTests.cs",
           "assertion": "Full CI submits and polls real buffer execution, checking inline result selection, input SRID, distance, non-origin center, every vertex radius, envelope, topology and analytical area bounds.",
-          "bodyDigest": "sha256:0ca871805865a542bbdfc3dd6e0f0b05c75108d26f3e2b349aadbe1fb97e6a45"
+          "bodyDigest": "sha256:10a7a9f51939136c4b6eb57dea56c47f68952acdaa9402d1abb2602450aa99c1"
         },
         {
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/OgcProcessesExecutionProofTests.cs",
           "test": "Execute_FirstSliceProcessWithValueOutputSelection_CompletesAndReturnsInlineBuffer",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/OgcProcessesExecutionProofTests.cs",
           "assertion": "Full CI submits and polls real buffer execution, checking inline result selection, input SRID, distance, non-origin center, every vertex radius, envelope, topology and analytical area bounds.",
-          "bodyDigest": "sha256:7fa9e88734273939e349e5cca5929abc44c94f6480ac718d4cf150955269fb68"
+          "bodyDigest": "sha256:f30131ab620817e5e49f6d8745c741e198c4bdce5859bbebf4b40c4d08a861b5"
         }
       ]
     },
@@ -578,7 +578,7 @@
           "test": "Execute_RasterSurfaceProcess_CompletesAndReturnsAnalyticalSlope",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof/plane-hole.tif",
           "assertion": "Full CI submits through OGC API with real Redis and the production job loop, polls to successful, and reads the result. Independent analytical slope values, all nodata/mask cells, CRS and affine ordinates are checked after native GDAL execution.",
-          "bodyDigest": "sha256:8324d1a33c559c81699db90bb4036b8766dbba015218f7c34efe47b974bd3093"
+          "bodyDigest": "sha256:afa97c21ffaa160d611325ffaef32aaf1e8401db18c7a86a4c882dfd9477565e"
         }
       ]
     },
@@ -1638,7 +1638,7 @@
           "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/RoutingAsyncWebToolTests.cs",
           "test": "SubmitJob_StockFeatureSet_CompletesWithNamedResultsAndInputIdentity",
           "assertion": "Both GPServer and NAServer submit through the real durable worker; named result assertions preserve input OBJECTID=0 and17, expected cost, declared SR and success result. IRoutingProvider is substituted, so this is adapter/runtime evidence only.",
-          "bodyDigest": "sha256:181500b4cbbb56e3e49ad9cbd00fdd7a4d371b7c80511ce05fb7a14427fef1f4"
+          "bodyDigest": "sha256:a6d5c3b3d08f5c6fc8ef096729b05836a123b65205105905073180122f6fab3d"
         },
         {
           "path": "tests/dotnet/Honua.Server.Tests/Routing/RoutingPgRoutingQueuedJobTests.cs",
@@ -1657,7 +1657,7 @@
           "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/RoutingAsyncWebToolTests.cs",
           "test": "SubmitJob_StockFeatureSet_CompletesWithNamedResultsAndInputIdentity",
           "assertion": "Both GPServer and NAServer submit through the real durable worker; named result assertions preserve input OBJECTID=0 and17, expected cost, declared SR and success result. IRoutingProvider is substituted, so this is adapter/runtime evidence only.",
-          "bodyDigest": "sha256:181500b4cbbb56e3e49ad9cbd00fdd7a4d371b7c80511ce05fb7a14427fef1f4"
+          "bodyDigest": "sha256:a6d5c3b3d08f5c6fc8ef096729b05836a123b65205105905073180122f6fab3d"
         },
         {
           "path": "tests/dotnet/Honua.Server.Tests/Routing/RoutingPgRoutingQueuedJobTests.cs",
@@ -1676,7 +1676,7 @@
           "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/RoutingAsyncWebToolTests.cs",
           "test": "SubmitJob_StockFeatureSet_CompletesWithNamedResultsAndInputIdentity",
           "assertion": "Both GPServer and NAServer submit through the real durable worker; named result assertions preserve input OBJECTID=0 and17, expected cost, declared SR and success result. IRoutingProvider is substituted, so this is adapter/runtime evidence only.",
-          "bodyDigest": "sha256:181500b4cbbb56e3e49ad9cbd00fdd7a4d371b7c80511ce05fb7a14427fef1f4"
+          "bodyDigest": "sha256:a6d5c3b3d08f5c6fc8ef096729b05836a123b65205105905073180122f6fab3d"
         },
         {
           "path": "tests/dotnet/Honua.Server.Tests/Routing/RoutingPgRoutingQueuedJobTests.cs",

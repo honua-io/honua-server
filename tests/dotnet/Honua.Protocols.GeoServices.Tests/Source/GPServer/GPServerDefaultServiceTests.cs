@@ -8,34 +8,26 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
-using Honua.Geoprocessing;
-using Honua.ControlPlane;
 using Honua.Server.Features.Geoprocessing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// End-to-end proof for honua-server#2349: the default/seeded GPServer service
-/// (<see cref="GeoprocessingServiceSeeder.ServiceName"/>) can be driven to a terminal
-/// job with results through the GPServer facade using the real geometry.buffer
-/// executor and the durable Redis runtime — i.e. GPServer is demonstrably usable out
-/// of the box once the default service is present. The seeder that materializes a
-/// service of exactly this shape is unit-tested in
-/// <c>GeoprocessingServiceSeederTests</c>.
-/// </summary>
-[Collection("Redis")]
+// End-to-end proof that the default/seeded GPServer service
+// (ServiceName) can be driven to a terminal
+// job with results through the GPServer facade using the real geometry.buffer
+// executor and the durable job runtime — i.e. GPServer is demonstrably usable out
+// of the box once the default service is present. The seeder that materializes a
+// service of exactly this shape is unit-tested in
+// GeoprocessingServiceSeederTests.
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.GPServer)]
-public sealed class GPServerDefaultServiceTests(RedisFixture redis)
+public sealed class GPServerDefaultServiceTests
 {
     // POINT(0 0) as base64 WKB — the same deterministic input the durable runtime
     // test uses for geometry.buffer.
@@ -55,7 +47,6 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
     public async Task DefaultGpService_DrivesRealExecutorToEsriFeatureSetResult(string taskName, bool disjoint)
     {
         var routeTask = taskName == "canonical-geojson" ? "Clip" : taskName;
-        await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
 
         // A graph containing a service of exactly the seeded shape (name, GPServer
         // protocol, anonymous access) and nothing else — this is what a fresh
@@ -70,65 +61,18 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
             .Build();
         var graphProvider = new TestMetadataV2GraphProvider(graph);
 
-        var fixture = new WebAppFixture()
-            .ConfigureWebHost(builder =>
-            {
-                builder.ConfigureAppConfiguration((_, configBuilder) =>
-                {
-                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
-                    {
-                        ["ConnectionStrings:redis"] = GPServerRedisTestConnection.For(redis)
-                    });
-                });
-            })
+        // The real geometry.buffer executor and worker run, so the seeded service is
+        // driven to a genuine terminal result, not a fixture stub.
+        var fixture = NoRedisJobHost.Create()
             .ConfigureServices(services =>
             {
-                // Use the seeded-shape GP service graph.
                 services.RemoveAll<IMetadataV2GraphProvider>();
                 services.RemoveAll<IMetadataV2GraphStore>();
                 services.AddSingleton<IMetadataV2GraphProvider>(graphProvider);
                 services.AddSingleton<IMetadataV2GraphStore>(graphProvider);
-
-                services.RemoveAll<IConnectionMultiplexer>();
-                services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(GPServerRedisTestConnection.For(redis)));
-
-                services.RemoveAll<IExecutionJobStore>();
-                services.AddSingleton<IExecutionJobStore>(sp =>
-                    new RedisExecutionJobStore(
-                        sp.GetRequiredService<IConnectionMultiplexer>(),
-                        sp.GetRequiredService<ILogger<RedisExecutionJobStore>>()));
-
-                services.RemoveAll<IGeoprocessingResultPackageStore>();
-                services.AddSingleton<IGeoprocessingResultPackageStore>(sp =>
-                    new RedisGeoprocessingResultPackageStore(
-                        sp.GetRequiredService<IConnectionMultiplexer>(),
-                        sp.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>(),
-                        sp.GetRequiredService<ILogger<RedisGeoprocessingResultPackageStore>>()));
-
-                services.RemoveAll<RedisJobQueue>();
-                services.RemoveAll<IJobQueue>();
-                services.RemoveAll<IQueueClaimReconciler>();
-                services.AddSingleton<RedisJobQueue>(sp =>
-                    new RedisJobQueue(
-                        sp.GetRequiredService<IConnectionMultiplexer>(),
-                        sp.GetRequiredService<IExecutionJobStore>(),
-                        sp.GetRequiredService<ILogger<RedisJobQueue>>()));
-                services.AddSingleton<IJobQueue>(sp => sp.GetRequiredService<RedisJobQueue>());
-                services.AddSingleton<IQueueClaimReconciler>(sp => sp.GetRequiredService<RedisJobQueue>());
-
-                services.RemoveAll<IExecutionLogStore>();
-                services.AddSingleton<IExecutionLogStore>(sp =>
-                    new RedisExecutionLogStore(
-                        sp.GetRequiredService<IConnectionMultiplexer>(),
-                        sp.GetRequiredService<ILogger<RedisExecutionLogStore>>()));
-
-                // Keep the REAL geometry.buffer executor (registered by AddGeoprocessing)
-                // and run the worker so the seeded service is driven to a genuine
-                // terminal result, not a fixture stub.
-                services.AddJobWorker();
             });
 
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();
@@ -263,20 +207,6 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
-        }
-    }
-
-    private static async Task DeleteControlPlaneKeysAsync(string redisConnectionString)
-    {
-        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redisConnectionString);
-        var database = multiplexer.GetDatabase();
-        var endpoints = multiplexer.GetEndPoints();
-        var server = multiplexer.GetServer(endpoints[0]);
-        var keys = server.Keys(pattern: "controlplane:*").ToArray();
-        if (keys.Length > 0)
-        {
-            await database.KeyDeleteAsync(keys);
         }
     }
 }

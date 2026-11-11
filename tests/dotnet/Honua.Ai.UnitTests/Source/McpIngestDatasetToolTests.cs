@@ -478,7 +478,21 @@ public sealed class McpIngestDatasetToolTests
             """{"format":"csv","data":"a\nb\n","datasetName":"d","addressColumn":"a"}""");
         var noEntitlement = AssertToolFailed(withoutEntitlement);
         noEntitlement.GetProperty("code").GetString().Should().Be("failed_precondition");
-        noEntitlement.GetProperty("message").GetString().Should().Contain(IngestDatasetTool.GeocodeEntitlementKey);
+        noEntitlement.GetProperty("message").GetString().Should()
+            .Contain("'addressColumn'").And
+            .Contain("Enterprise").And
+            .Contain(IngestDatasetTool.GeocodeEntitlementKey).And
+            .Contain("longitudeColumn");
+    }
+
+    [UnitTest]
+    public void Describe_StatesTheEditionThatAddressColumnRequires()
+    {
+        var descriptor = new IngestDatasetTool(NullLogger<IngestDatasetTool>.Instance).Describe();
+
+        descriptor.Description.Should().Contain("addressColumn requires the Enterprise edition");
+        FeatureCatalog.All.Single(feature => feature.Key == IngestDatasetTool.GeocodeEntitlementKey)
+            .MinimumEdition.Should().Be(HonuaEdition.Enterprise, "the description and refusal name this edition");
     }
 
     [UnitTest]

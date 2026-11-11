@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -21,6 +22,63 @@ namespace Honua.Server.Tests.Import;
 public sealed class FileImportJobExecutorCleanupTests
 {
     private const long SixGiB = 6L * 1024 * 1024 * 1024;
+
+    [UnitTest]
+    public async Task ExecuteAsync_CompletedTickBeforeResult_RemainsProcessingUntilReceiptExists()
+    {
+        var progress = new MemoryProgress();
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var importer = new ScriptedImporter(async (_, token) =>
+        {
+            await release.Task.WaitAsync(token);
+            return ImportResult.CreateSuccess("roads", SupportedFileFormat.GeoPackage, 3,
+                physicalTableName: "imp_roads", schema: "imports");
+        }, sink => sink!.Report(ImportProgress.CreateInitial("tick", "roads", SupportedFileFormat.GeoPackage) with
+        {
+            Status = ImportStatus.Completed,
+            FeaturesProcessed = 3
+        }));
+        var execution = ExecuteAsync(new RecordingStorage(), importer, SixGiB, progress);
+        try
+        {
+            using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            while (progress.Last is not ImportProgress { FeaturesProcessed: 3 })
+            {
+                await Task.Delay(10, budget.Token);
+            }
+
+            ((ImportProgress)progress.Last).Status.Should().Be(ImportStatus.Processing);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await execution;
+        }
+
+        var receipt = (ImportProgress)progress.Last!;
+        receipt.Schema.Should().Be("imports");
+        receipt.PhysicalTableName.Should().Be("imp_roads");
+    }
+
+    [UnitTest]
+    public async Task SuccessfulImport_PreservesPhysicalTableReceipt()
+    {
+        var progress = new MemoryProgress();
+        var importer = new ScriptedImporter((_, _) => Task.FromResult(ImportResult.CreateSuccess(
+            "roads", SupportedFileFormat.GeoPackage, 3, physicalTableName: "imp_roads_123", schema: "imports")));
+
+        var result = await ExecuteAsync(new RecordingStorage(), importer, SixGiB, progress: progress);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        var terminal = progress.Last.Should().BeOfType<ImportProgress>().Subject;
+        terminal.Status.Should().Be(ImportStatus.Completed);
+        terminal.FeaturesProcessed.Should().Be(3);
+        var receipt = JsonSerializer.SerializeToElement(terminal, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        receipt.TryGetProperty("schema", out var schema).Should().BeTrue();
+        schema.GetString().Should().Be("imports");
+        receipt.TryGetProperty("physicalTableName", out var table).Should().BeTrue();
+        table.GetString().Should().Be("imp_roads_123");
+    }
 
     [UnitTest]
     public async Task StagedCopy_IsDeletedAfterSuccess()
@@ -76,6 +134,7 @@ public sealed class FileImportJobExecutorCleanupTests
         RecordingStorage storage,
         ScriptedImporter importer,
         long fileSize,
+        MemoryProgress? progress = null,
         CancellationToken cancellationToken = default)
     {
         var request = new ImportRequest
@@ -108,13 +167,14 @@ public sealed class FileImportJobExecutorCleanupTests
         storage.Scope = scope;
         var executor = new FileImportJobExecutor(
             new SingleScopeFactory(scope),
-            new MemoryProgress(),
+            progress ?? new MemoryProgress(),
             NullLogger<FileImportJobExecutor>.Instance);
         return executor.ExecuteAsync(job, new RecordingContext("job-1"), cancellationToken);
     }
 
     private sealed class ScriptedImporter(
-        Func<ImportRequest, CancellationToken, Task<ImportResult>> run) : IFileImportService
+        Func<ImportRequest, CancellationToken, Task<ImportResult>> run,
+        Action<IProgress<ImportProgress>?>? report = null) : IFileImportService
     {
         public ImportLimits Limits { get; } = new();
 
@@ -129,7 +189,10 @@ public sealed class FileImportJobExecutorCleanupTests
             ImportRequest request,
             IProgress<ImportProgress>? progress,
             CancellationToken cancellationToken = default)
-            => run(request, cancellationToken);
+        {
+            report?.Invoke(progress);
+            return run(request, cancellationToken);
+        }
 
         public Task<FilePreview> PreviewFileAsync(Stream fileStream, string fileName, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
@@ -151,27 +214,27 @@ public sealed class FileImportJobExecutorCleanupTests
 
     private sealed class MemoryProgress : IUniversalProgressStore
     {
+        public IOperationProgress? Last { get; private set; }
+
         public Task SetProgressAsync(
             string operationId,
             IOperationProgress progress,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
+        {
+            Last = progress;
+            return Task.CompletedTask;
+        }
 
-        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(
-            string operationId,
-            IOperationProgress progress,
-            OperationStatus expectedStatus,
-            TimeSpan? ttl = null,
-            CancellationToken cancellationToken = default)
+        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(OperationProgressWrite write, OperationStatus expectedStatus, CancellationToken cancellationToken = default)
             => Task.FromResult(ProgressCompareAndSetResult.Updated);
 
         public Task<TProgress?> GetProgressAsync<TProgress>(string operationId, CancellationToken cancellationToken = default)
             where TProgress : class, IOperationProgress
-            => Task.FromResult<TProgress?>(null);
+            => Task.FromResult(Last as TProgress);
 
         public Task<IOperationProgress?> GetProgressAsync(string operationId, CancellationToken cancellationToken = default)
-            => Task.FromResult<IOperationProgress?>(null);
+            => Task.FromResult(Last);
 
         public Task DeleteProgressAsync(string operationId, CancellationToken cancellationToken = default)
             => Task.CompletedTask;

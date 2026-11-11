@@ -60,6 +60,30 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         }
     }
 
+    [IntegrationTheory]
+    [InlineData("enabled = 1", true)]
+    [InlineData("enabled = 0", false)]
+    [InlineData("1 = enabled", true)]
+    [InlineData("enabled IN (0, 1)", true)]
+    [InlineData("enabled = true", true)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_BooleanFieldWithNumericLiteral_ReturnsMatchingFeature(string predicate, bool value)
+    {
+        _fixture.UpdateV2ResourceSchemaField(WebAppFixture.TestLayerId,
+            new MetadataV2Field { Name = "enabled", Type = MetadataV2FieldType.Boolean, Nullable = true });
+        var id = await InsertFlatGeobufProbeAsync(value ? "{\"enabled\":true}" : "{\"enabled\":false}");
+        var where = Uri.EscapeDataString($"objectid = {id} AND ({predicate})");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=json&where={where}&outFields=enabled");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse(document.RootElement.GetRawText());
+        var feature = document.RootElement.GetProperty("features").EnumerateArray().Should().ContainSingle().Subject;
+        feature.GetProperty("attributes").GetProperty("enabled").GetInt32().Should().Be(value ? 1 : 0);
+    }
+
     [UnitTest]
     [Operation(Operations.Security)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]

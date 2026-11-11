@@ -25,7 +25,7 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
 [Protocol(TestProtocols.Mcp)]
-public sealed class McpPublishedCatalogReadbackTests
+public sealed partial class McpPublishedCatalogReadbackTests
 {
     private const string ServiceName = "roads";
     private const string ServiceUri = "honua://published-services/roads";

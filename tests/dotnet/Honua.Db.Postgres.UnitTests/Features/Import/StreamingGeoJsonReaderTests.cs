@@ -14,6 +14,31 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 public sealed class StreamingGeoJsonReaderTests
 {
     [Theory]
+    [InlineData("created_at")]
+    [InlineData("CREATED_AT")]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task ValidateAsync_SourceCreatedAt_RejectsReservedCollisionAndRewinds(string field)
+    {
+        var json = $$$"""
+            {"type":"FeatureCollection","features":[
+              {"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},
+               "properties":{"{{{field}}}":"2026-10-30T00:00:00.000Z","due_at":"2026-11-02T00:00:00.000Z"}}]}
+            """;
+        await using var stream = new FragmentedStream(Encoding.UTF8.GetBytes(json), 7);
+
+        var result = await new StreamingGeoJsonReader().ValidateAsync(stream);
+
+        result.IsValid.Should().BeFalse();
+        result.Issues.Should().ContainSingle(issue =>
+            issue.Code == ImportValidationErrorCodes.ReservedAttributeName &&
+            issue.Field == "properties." + field &&
+            issue.Message.Contains("reserved", StringComparison.OrdinalIgnoreCase) &&
+            issue.Message.Contains("rename", StringComparison.OrdinalIgnoreCase));
+        stream.Position.Should().Be(0);
+    }
+
+    [Theory]
     [InlineData(1, false)]
     [InlineData(7, false)]
     [InlineData(127, false)]

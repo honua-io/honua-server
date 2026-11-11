@@ -85,6 +85,10 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0078](0078-3d-scene-architecture.md) | 3D Scene Architecture — Canonical 3D Tiles, I3S Projection, and Runtime Resolution | Accepted | 2026-08 |
 | [0079](0079-protocol-route-scoping.md) | A protocol's route is scoped by its own addressable unit | Accepted | 2026-09 |
 | [0080](0080-fair-core-license.md) | Adopt the Fair Core License (FCL-1.0-ALv2) | Accepted | 2026-10 |
+| [0081](0081-postgres-job-substrate.md) | PostgreSQL is the durable job substrate | Proposed | 2026-11 |
+| [0082](0082-postgres-control-plane-state.md) | PostgreSQL holds all shared state; Redis is removed | Proposed | 2026-11 |
+| [0083](0083-cdn-is-the-shared-cache.md) | The CDN is the shared cache | Proposed | 2026-11 |
+| [0085](0085-postgres-realtime-event-log.md) | Cross-node realtime runs on a PostgreSQL event log behind one fan-out provider | Proposed | 2026-11 |
 
 ## Template
 

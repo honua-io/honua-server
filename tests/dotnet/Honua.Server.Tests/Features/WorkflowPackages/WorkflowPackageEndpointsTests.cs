@@ -36,7 +36,7 @@ namespace Honua.Server.Tests.Features.WorkflowPackages;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ProcessExecution)]
-public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
+public sealed partial class WorkflowPackageEndpointsTests : IAsyncLifetime
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -834,14 +834,9 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
             return Task.CompletedTask;
         }
 
-        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(
-            string operationId,
-            IOperationProgress progress,
-            OperationStatus expectedStatus,
-            TimeSpan? ttl = null,
-            CancellationToken cancellationToken = default)
+        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(OperationProgressWrite write, OperationStatus expectedStatus, CancellationToken cancellationToken = default)
         {
-            if (!_progress.TryGetValue(operationId, out var current))
+            if (!_progress.TryGetValue(write.OperationId, out var current))
             {
                 return Task.FromResult(ProgressCompareAndSetResult.NotFound);
             }
@@ -851,7 +846,7 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
                 return Task.FromResult(ProgressCompareAndSetResult.StatusMismatch(current));
             }
 
-            _progress[operationId] = progress;
+            _progress[write.OperationId] = write.Progress;
             return Task.FromResult(ProgressCompareAndSetResult.Updated);
         }
 

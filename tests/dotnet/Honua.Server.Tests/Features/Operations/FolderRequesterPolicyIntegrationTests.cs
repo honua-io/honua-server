@@ -68,7 +68,7 @@ public sealed partial class FolderOperationIntegrationTests
         using var body = JsonDocument.Parse(payload);
         body.RootElement.GetProperty("data").GetProperty("status").GetString().Should().Be("Denied", payload);
         body.RootElement.GetProperty("data").GetProperty("reason").GetString().Should().Be("The requester does not have access to every affected service.");
-        (await _proposals.ListActiveAsync()).Should().OnlyContain(proposal => activeBefore.Contains(proposal.ProposalId),
+        (await _proposals.ListActiveAsync()).Select(proposal => proposal.ProposalId).Should().BeSubsetOf(activeBefore,
             "submission must check every affected facet before accepting an approval proposal");
         (await SnapshotAsync()).Etag.Should().Be(restricted.Etag);
     }
@@ -194,6 +194,7 @@ public sealed partial class FolderOperationIntegrationTests
     [InlineData("inactive")]
     [InlineData("removed")]
     [InlineData("entitlement")]
+    [InlineData("oidc-entitlement")]
     [InlineData("gateway-unavailable")]
     [InlineData("endpoint-unavailable")]
     public async Task FolderCreate_RequesterPolicyChangesOrBecomesUnavailable_PreservesRefusalReason(string change)
@@ -230,6 +231,7 @@ public sealed partial class FolderOperationIntegrationTests
             if (change == "gateway-unavailable") _memberships.ReadsBeforeOutage = 0;
             else if (change == "endpoint-unavailable") _memberships.ReadsBeforeOutage = 1;
             else if (change == "entitlement") _licensing.Current = new TestLicenseEntitlementService(HonuaEdition.Pro);
+            else if (change == "oidc-entitlement") _licensing.Current = new TestLicenseEntitlementService(HonuaEdition.Community);
             else _memberships.Current = change switch
             {
                 "roles" => new PrincipalMembership(true, ["viewer"]),

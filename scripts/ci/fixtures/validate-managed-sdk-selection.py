@@ -127,7 +127,8 @@ class ManagedSdkSelectionTests(unittest.TestCase):
 
     def test_all_managed_consumers_use_their_actual_producer_sdk(self):
         for workflow, producer, output, consumers in (
-            ('pr-gate.yml', 'pr-gate', 'managed-sdk-version', ('affected-shard',)),
+            ('pr-gate.yml', 'pr-gate', 'managed-sdk-version', ()),
+            ('pr-gate.yml', 'server-test-producer', 'managed-sdk-version', ()),
             ('ci.yml', 'build', 'managed_sdk_version', ('dotnet-foundation-family-tests', 'server-tests', 'runtime-proofs')),
         ):
             source = (ROOT / '.github/workflows' / workflow).read_text(encoding='utf-8')
@@ -138,6 +139,16 @@ class ManagedSdkSelectionTests(unittest.TestCase):
                 body = job(source, consumer)
                 self.assertIn('artifact-sdk-version: ${{ needs.' + producer + '.outputs.' + output + ' }}', body)
                 self.assertLess(body.index('artifact-sdk-version:'), body.index('mode: consume'))
+        source = (ROOT / '.github/workflows/pr-gate.yml').read_text(encoding='utf-8')
+        consumer = job(source, 'affected-shard')
+        for label, output in (('artifact-sdk-version', 'managed-sdk-version'),
+                              ('producer-attempt', 'producer-attempt')):
+            self.assertIn(
+                label + ": ${{ steps.consumer-plan.outputs.producer == 'server' && "
+                + 'needs.server-test-producer.outputs.' + output
+                + ' || needs.pr-gate.outputs.' + output + ' }}', consumer)
+        self.assertLess(consumer.index('id: consumer-plan'), consumer.index('artifact-sdk-version:'))
+        self.assertLess(consumer.index('artifact-sdk-version:'), consumer.index('mode: consume'))
         self.assertIn('value: ${{ steps.sdk-identity.outputs.version }}', ACTION)
         self.assertNotIn('HONUA_SERVER_TEST_ARTIFACT_DOTNET_SDK', ACTION)
 

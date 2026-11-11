@@ -71,8 +71,8 @@ public sealed class AdminSessionCrossSiteGuardTests
         string? secFetchSite = null,
         string? origin = null)
     {
-        using var memoryCache = new MemoryCache(new MemoryCacheOptions());
-        var store = new AdminAuthSessionStore(memoryCache, NullLogger<AdminAuthSessionStore>.Instance);
+        var store = new AdminAuthSessionStore(
+            new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<AdminAuthSessionStore>.Instance);
         var sessionId = await store.CreateAuthenticatedSessionAsync(
             "saml",
             "opaque-token",

@@ -119,6 +119,8 @@ public static class ImportValidationErrorCodes
 
     public const string GeometryTooLarge = "import.geometry_too_large";
 
+    public const string ReservedAttributeName = "import.reserved_attribute_name";
+
     public const string InvalidGeoJson = "import.geojson_invalid";
 
     public const string GeoJsonValidationTooLarge = "import.geojson_validation_too_large";

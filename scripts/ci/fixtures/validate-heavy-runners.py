@@ -19,7 +19,7 @@ HEAVY_JOBS = {
 HOSTED_JOBS = {
     "pr-template-check", "pr-readiness", "changes", "targeted-shards",
     "ci-router-validation", "dotnet-foundation-tests", "js-typecheck", "test-all",
-    "merge-queue-gate", "ci-gate",
+    "merge-queue-gate", "ci-gate", "doctor-notify",
 }
 PINNED_JOBS = {
     "worker-gdal-tests", "python-integration-tests", "js-integration-tests",
@@ -52,7 +52,7 @@ class HeavyRunnerContractTests(unittest.TestCase):
         self.assertEqual(set(self.jobs), HEAVY_JOBS | HOSTED_JOBS | PINNED_JOBS)
 
 
-PR_GATE_SELECTED_JOBS = {"format", "fast-tests", "pr-gate"}
+PR_GATE_SELECTED_JOBS = {"format", "fast-tests", "pr-gate", "server-test-producer"}
 SELECTED_RUNNER = "${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}"
 SELECT_SCRIPT = ROOT / "scripts/ci/select-gate-runner.sh"
 AWS_STUB = """#!/usr/bin/env bash

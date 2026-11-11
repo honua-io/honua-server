@@ -33,9 +33,9 @@ Outcomes and exit status:
   0  compatible                    prior served the N schema (ready, read, write)
   0  expected-refusal              prior refused with the typed code, every refused
                                    script is contract / reader-incompatible, and
-                                   each such script this change adds carries
-                                   `-- honua:compatibility-review` and is named in
-                                   the rollback-boundary docs
+                                   each such script has an exact name/hash match
+                                   in the founder-owned release boundary (or is a
+                                   frozen historical contracting migration)
   3  prior-lacks-reader-declarations
                                    KNOWN-BLOCKED, not a pass: the prior image
                                    predates schema 135 (#6478), so it refuses every
@@ -47,7 +47,7 @@ Outcomes and exit status:
                                    write succeeding there proves nothing about
                                    rollback safety
   1  anything else: reader-incompatible-regression, expected-refusal-missing,
-     expected-refusal-undocumented, refusal-untyped, serve-check-failed,
+     release-boundary-violation, refusal-untyped, serve-check-failed,
      prior-changed-journal, candidate-migration-failed, prior-unresolved,
      infrastructure-error
 
@@ -65,6 +65,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import hashlib
 import json
 import os
 import re
@@ -94,12 +95,11 @@ READER_GUARD_SOURCES = (
 RELEASE_REPO = "honua-io/honua-release"
 RELEASE_MANIFEST_ASSET = "finalized-manifest.yaml"
 NIGHTLY_SCAFFOLD = "ghcr.io/honua-io/honua-server:nightly-aot"
-ROLLBACK_DOC = "docs/guides/deploy/upgrade-and-rollback.md"
+RELEASE_BOUNDARY = "eng/schema/schema-release-boundary.v1.json"
 SEED_SQL = "tests/seed/base-schema.sql"
 SEED_SERVICE = "test_service"
 SEED_LAYER = 0
 ADMIN_KEY = "n1-reader-compat-admin-1a"
-COMPATIBILITY_REVIEW = re.compile(r"^[ \t]*--[ \t]*honua:compatibility-review\b", re.IGNORECASE | re.MULTILINE)
 READER_INCOMPATIBLE = re.compile(r"^[ \t]*--[ \t]*honua:reader-incompatible\b", re.IGNORECASE | re.MULTILINE)
 # The paths whose change can move what an older reader sees or how it checks it.
 APPLIES_PATTERNS = (
@@ -114,6 +114,7 @@ APPLIES_PATTERNS = (
     "src/Honua.Server/Startup/ServerCoreSchemaMigrations.cs",
     "eng/schema/schema-reader-baseline.v1.json",
     "eng/schema/schema-migration-hashes.v1.json",
+    RELEASE_BOUNDARY,
     SEED_SQL,
     "scripts/ci/n1-reader-compat.py",
     "scripts/ci/n1-reader-compat.test.py",
@@ -168,31 +169,41 @@ def basename_of(journal_name: str) -> str:
 class Evidence:
     journal_delta: list[str]
     classifications: dict[str, str]
-    pr_added: set[str]
     prior_has_reader_declarations: bool
     refusal: dict | None
     ready: bool
     serve_ok: bool
     script_text: dict[str, str] = field(default_factory=dict)
-    rollback_doc: str = ""
     prior_has_reader_guard: bool = True
     journal_changed: bool = False
+    boundary_hashes: dict[str, str] = field(default_factory=dict)
+    baseline_hashes: dict[str, str] = field(default_factory=dict)
 
 
-def documented(script: str, evidence: Evidence) -> list[str]:
-    """Problems with an added reader-incompatible script's review trail (empty = fine)."""
+def boundary_violations(evidence: Evidence) -> list[str]:
     problems = []
-    text = evidence.script_text.get(script, "")
-    if not COMPATIBILITY_REVIEW.search(text):
-        problems.append(f"{script} lacks a `-- honua:compatibility-review` annotation")
-    stem = script[:-4] if script.endswith(".sql") else script
-    if stem not in evidence.rollback_doc:
-        problems.append(f"{script} is not named in the rollback-boundary note in {ROLLBACK_DOC}")
+    for script in sorted(set(evidence.classifications) | set(evidence.script_text)):
+        text = evidence.script_text.get(script, "")
+        incompatible = READER_INCOMPATIBLE.search(text)
+        contracting = evidence.classifications.get(script) in ("contract", "reader-incompatible")
+        if not incompatible and not contracting:
+            continue
+        digest = hashlib.sha256(text.replace("\r\n", "\n").encode("utf-8")).hexdigest().upper()
+        if evidence.boundary_hashes.get(script) == digest:
+            continue
+        if not incompatible and evidence.classifications.get(script) == "contract" and evidence.baseline_hashes.get(script) == digest:
+            continue
+        rule = "honua:reader-incompatible" if incompatible else evidence.classifications[script]
+        problems.append(f"{script}: {rule} requires an exact name and SHA-256 match in {RELEASE_BOUNDARY}; "
+                        "migrations from rc.2 must remain expand-only")
     return problems
 
 
 def classify(evidence: Evidence) -> tuple[str, str]:
     """Map the observed evidence to (outcome, explanation)."""
+    problems = boundary_violations(evidence)
+    if problems:
+        return ("release-boundary-violation", "; ".join(problems))
     if evidence.journal_changed:
         # The prior applied migrations of its own. A serve check against that
         # mutated journal is not N-1 evidence, including when the prior is unguarded.
@@ -228,9 +239,6 @@ def classify(evidence: Evidence) -> tuple[str, str]:
 
     refused = {basename_of(name) for name in evidence.refusal["scripts"]}
     if refused and refused <= breaking:
-        problems = [p for script in sorted(refused & evidence.pr_added) for p in documented(script, evidence)]
-        if problems:
-            return ("expected-refusal-undocumented", "; ".join(problems))
         return ("expected-refusal",
                 "the prior image refused with the typed code, only on declared contract / "
                 f"reader-incompatible scripts: {', '.join(sorted(refused))}")
@@ -242,9 +250,8 @@ def classify(evidence: Evidence) -> tuple[str, str]:
     unexpected = sorted(refused - breaking)
     return ("reader-incompatible-regression",
             "the prior image refused expand-classified scripts it should verify: "
-            f"{', '.join(unexpected)}. Either the scripts are not rollback-safe (mark them "
-            "`-- honua:reader-incompatible reason=...`, add `-- honua:compatibility-review` and a "
-            f"rollback-boundary note in {ROLLBACK_DOC}) or the declaration/verification is broken.")
+            f"{', '.join(unexpected)}. Make the scripts backward-compatible before shipping "
+            "or fix the declaration/verification.")
 
 
 def exit_code_for(outcome: str) -> int:
@@ -640,23 +647,25 @@ def execute(args: argparse.Namespace, receipt: dict, output: Path) -> Evidence:
         receipt["journal_rows"] = len(journal)
         receipt["journal_delta"] = delta
         classifications: dict[str, str] = {}
+        declared: dict = {}
         has_table = psql(pg, "SELECT to_regclass('public.schema_version_reader_compatibility') IS NOT NULL;") == "t"
         receipt["candidate_writes_declarations"] = has_table
         if has_table:
             rows = psql(pg, "SELECT script_name || '|' || classification || '|' || min_reader_schema "
                             "FROM public.schema_version_reader_compatibility ORDER BY script_name;")
-            declared = {}
             for row in rows.splitlines():
                 name, classification, floor = row.split("|")
                 declared[basename_of(name)] = {"classification": classification, "min_reader_schema": int(floor)}
             receipt["declarations"] = {name: declared[name] for name in delta if name in declared}
             classifications = {name: declared[name]["classification"] for name in delta if name in declared}
         script_text = {}
-        for name in delta:
+        for name in candidate_scripts:
             path = candidate_scripts.get(name)
-            text = (REPO_ROOT / path).read_text(encoding="utf-8") if path else ""
+            text = (REPO_ROOT / path).read_bytes().decode("utf-8-sig").replace("\r\n", "\n") if path else ""
             script_text[name] = text
-            if name not in classifications:
+            if name in declared:
+                classifications[name] = declared[name]["classification"]
+            elif name not in classifications:
                 classifications[name] = "reader-incompatible" if READER_INCOMPATIBLE.search(text) else "undeclared"
         receipt["classifications"] = classifications
         seed = (REPO_ROOT / SEED_SQL).read_text(encoding="utf-8")
@@ -676,13 +685,14 @@ def execute(args: argparse.Namespace, receipt: dict, output: Path) -> Evidence:
         journal_after = [line for line in psql(pg, "SELECT scriptname FROM public.schema_versions ORDER BY schemaversionsid;").splitlines() if line]
         journal_changed = journal_after != journal
         receipt["journal_unchanged_by_prior"] = not journal_changed
-        doc_path = REPO_ROOT / ROLLBACK_DOC
-        return Evidence(journal_delta=delta, classifications=classifications, pr_added=pr_added,
+        return Evidence(journal_delta=delta, classifications=classifications,
                         prior_has_reader_declarations=prior["has_reader_declarations"],
                         prior_has_reader_guard=prior["has_reader_guard"], refusal=refusal,
                         ready=ready, serve_ok=serve_ok, script_text=script_text,
-                        rollback_doc=doc_path.read_text(encoding="utf-8") if doc_path.exists() else "",
-                        journal_changed=journal_changed)
+                        journal_changed=journal_changed,
+                        boundary_hashes=json.loads((REPO_ROOT / RELEASE_BOUNDARY).read_text())["migrations"],
+                        baseline_hashes={Path(path).name: digest for path, digest in json.loads(
+                            (REPO_ROOT / "eng/schema/schema-reader-baseline.v1.json").read_text()).items()})
     finally:
         if receipt.get("prior_started"):
             (output / "prior.log").write_text(container_logs(server), encoding="utf-8")
