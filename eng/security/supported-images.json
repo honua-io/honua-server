@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "description": "Release images Honua still supports. security-nightly.yml rescans every entry by digest each night. The release-security-assets workflow adds an entry when a release is published; remove an entry when its release leaves support.",
+  "unsupportedReleases": [
+    "honua-2026.1",
+    "2026.1-rc.1"
+  ],
+  "images": []
+}
