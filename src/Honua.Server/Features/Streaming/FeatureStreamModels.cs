@@ -354,12 +354,6 @@ internal sealed record StreamTemporalFilter(
     DateTimeOffset? Start,
     DateTimeOffset? End);
 
-internal readonly record struct ClusterBroadcastBacklogSnapshot(
-    bool Configured,
-    bool Enabled,
-    int BacklogDepth,
-    long Dropped);
-
 internal sealed record FeatureStreamSessionInfo(
     Guid SessionId,
     DateTimeOffset ConnectedAt,

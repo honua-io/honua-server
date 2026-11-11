@@ -536,20 +536,6 @@
       "source": "src/Honua.Server/Features/Streaming/FeatureStreamMetrics.cs"
     },
     {
-      "instrument": "honua.streaming.cluster_broadcast_backlog",
-      "kind": "ObservableGauge",
-      "unit": null,
-      "series": ["honua_streaming_cluster_broadcast_backlog"],
-      "source": "src/Honua.Server/Features/Streaming/FeatureStreamMetrics.cs"
-    },
-    {
-      "instrument": "honua.streaming.cluster_broadcast_dropped_total",
-      "kind": "Counter",
-      "unit": null,
-      "series": ["honua_streaming_cluster_broadcast_dropped_total"],
-      "source": "src/Honua.Server/Features/Streaming/FeatureStreamMetrics.cs"
-    },
-    {
       "instrument": "honua.streaming.heartbeats_sent_total",
       "kind": "Counter",
       "unit": null,

@@ -29,7 +29,7 @@ internal static partial class FeatureStreamEndpoints
     public static void MapFeatureStreamEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var streamGroup = endpoints.MapGroup("/api/v{version:apiVersion}/streaming")
-            // Opt-in Experimental: streams work on a single node, and delivery across several nodes needs an optional Redis add-on.
+            // Opt-in Experimental: a stream delivers live only the changes committed through its own node.
             .WithCapabilityGate("realtime.feature-streams")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)

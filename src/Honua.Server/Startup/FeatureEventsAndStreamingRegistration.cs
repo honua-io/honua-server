@@ -67,7 +67,6 @@ internal static partial class FeatureEventsAndStreamingRegistration
                 sp.GetRequiredService<IOptions<FeatureStreamOptions>>(),
                 sp.GetRequiredService<ILogger<FeatureStreamSessionManager>>(),
                 sp.GetRequiredService<FeatureStreamMetrics>(),
-                sp.GetService<IConnectionMultiplexer>(),
                 routabilityGuard: sp.GetRequiredService<FeatureStreamRoutabilityGuard>(),
                 serviceScopeFactory: sp.GetRequiredService<IServiceScopeFactory>()));
         services.AddSingleton(System.Threading.Channels.Channel.CreateUnbounded<PendingFeatureChangeSignal>());

@@ -80,7 +80,6 @@ internal sealed partial class FeatureStreamPublisher(
         // Enrichment data (geometry envelope + properties) is carried on the message
         // for subscription filter evaluation during broadcast — no I/O in the hot path.
         var envelope = ToEnvelope(persisted);
-        // Broadcast() returns the local delivery count only; cross-node fan-out is handled separately.
         var delivered = _sessionManager.Broadcast(
             FeatureStreamMessage.Data(envelope, persisted.GeometryEnvelope, persisted.PropertiesJson));
 

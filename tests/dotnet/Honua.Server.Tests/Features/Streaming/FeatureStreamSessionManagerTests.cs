@@ -12,8 +12,6 @@ using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using NSubstitute;
-using StackExchange.Redis;
 using Honua.Server.Tests.Infrastructure.Telemetry;
 
 namespace Honua.Server.Tests.Features.Streaming;
@@ -1150,50 +1148,6 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     }
 
     [UnitTest]
-    public void Broadcast_WithRedisSubscription_FanOutsToOtherManagers()
-    {
-        var subscriber = Substitute.For<ISubscriber>();
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        var handlers = new List<Action<RedisChannel, RedisValue>>();
-
-        redis.GetSubscriber().Returns(subscriber);
-        subscriber.Subscribe(Arg.Any<RedisChannel>(), Arg.Do<Action<RedisChannel, RedisValue>>(handler => handlers.Add(handler)));
-        subscriber.Publish(Arg.Any<RedisChannel>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
-            .Returns(callInfo =>
-            {
-                var channel = callInfo.Arg<RedisChannel>();
-                var value = callInfo.Arg<RedisValue>();
-                foreach (var handler in handlers)
-                {
-                    handler(channel, value);
-                }
-
-                return handlers.Count;
-            });
-
-        var options = Options.Create(new FeatureStreamOptions
-        {
-            HeartbeatInterval = TimeSpan.FromSeconds(30),
-            MaxBufferPerConnection = 4,
-            ReplayBatchSize = 100
-        });
-
-        using var localManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, TestTelemetry.CreateFeatureStreamMetrics(), redis);
-        using var remoteManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, TestTelemetry.CreateFeatureStreamMetrics(), redis);
-        using var localSession = localManager.CreateSession("WebSocket", "local");
-        using var remoteSession = remoteManager.CreateSession("WebSocket", "remote");
-
-        var localDelivered = localManager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 42)));
-
-        Assert.True(localSession.Reader.TryRead(out var localMessage));
-        Assert.True(remoteSession.Reader.TryRead(out var remoteMessage));
-        Assert.Equal(1, localDelivered);
-        Assert.Equal(42, localMessage.Envelope.Cursor);
-        Assert.Equal(localMessage.Envelope.Cursor, remoteMessage.Envelope.Cursor);
-        Assert.Equal(localMessage.Envelope.ServiceId, remoteMessage.Envelope.ServiceId);
-    }
-
-    [UnitTest]
     public void Broadcast_DuplicateEventId_QueuesBothFramesAndWriterDedupsAtSendTime()
     {
         // Broadcast no longer dedups same-eventId duplicates at queue time
@@ -1227,66 +1181,6 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     }
 
     [UnitTest]
-    public async Task ClusterBroadcast_MetadataRefreshYield_PreservesMessageOrder()
-    {
-        var subscriber = Substitute.For<ISubscriber>();
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        var handlers = new List<Action<RedisChannel, RedisValue>>();
-        redis.GetSubscriber().Returns(subscriber);
-        subscriber.Subscribe(
-            Arg.Any<RedisChannel>(),
-            Arg.Do<Action<RedisChannel, RedisValue>>(handler => handlers.Add(handler)));
-        subscriber.Publish(Arg.Any<RedisChannel>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
-            .Returns(callInfo =>
-            {
-                var channel = callInfo.Arg<RedisChannel>();
-                var value = callInfo.Arg<RedisValue>();
-                foreach (var handler in handlers)
-                {
-                    handler(channel, value);
-                }
-
-                return handlers.Count;
-            });
-
-        var options = Options.Create(new FeatureStreamOptions
-        {
-            HeartbeatInterval = TimeSpan.FromSeconds(30),
-            MaxBufferPerConnection = 4,
-            ReplayBatchSize = 100,
-        });
-        var metadataSnapshot = await new TestMetadataV2GraphProvider(
-            new TestMetadataV2GraphBuilder().Build()).GetCurrentAsync();
-        var metadataProvider = new BlockingMetadataV2GraphProvider(metadataSnapshot);
-        using var metadataServices = new ServiceCollection()
-            .AddScoped<IMetadataV2GraphProvider>(_ => metadataProvider)
-            .BuildServiceProvider();
-        using var localManager = new FeatureStreamSessionManager(
-            options,
-            NullLogger<FeatureStreamSessionManager>.Instance,
-            TestTelemetry.CreateFeatureStreamMetrics(),
-            redis);
-        using var remoteManager = new FeatureStreamSessionManager(
-            options,
-            NullLogger<FeatureStreamSessionManager>.Instance,
-            TestTelemetry.CreateFeatureStreamMetrics(),
-            redis,
-            new FeatureStreamRoutabilityGuard(),
-            metadataServices.GetRequiredService<IServiceScopeFactory>());
-        using var remoteSession = remoteManager.CreateSession("WebSocket", "ordered-remote");
-
-        localManager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 201)));
-        await metadataProvider.FirstReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        localManager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 202)));
-        metadataProvider.AllowFirstReadToComplete.TrySetResult();
-
-        var first = await remoteSession.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
-        var second = await remoteSession.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal(201L, first.Envelope.Cursor);
-        Assert.Equal(202L, second.Envelope.Cursor);
-    }
-
-    [UnitTest]
     public void Broadcast_AllowsOutOfOrderLowerCursorWithDifferentEventId()
     {
         using var session = _manager.CreateSession("WebSocket", null);
@@ -1300,119 +1194,6 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         Assert.Equal(21L, secondMessage.Envelope.Cursor);
     }
 
-    [UnitTest]
-    public void Broadcast_RecoversClusterSubscriptionAfterInitialFailure()
-    {
-        var subscriber = Substitute.For<ISubscriber>();
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        var handlers = new List<Action<RedisChannel, RedisValue>>();
-        var subscribeAttempts = 0;
-
-        redis.GetSubscriber().Returns(subscriber);
-        subscriber.When(x => x.Subscribe(Arg.Any<RedisChannel>(), Arg.Any<Action<RedisChannel, RedisValue>>()))
-            .Do(callInfo =>
-            {
-                subscribeAttempts++;
-                if (subscribeAttempts == 1)
-                {
-                    throw new InvalidOperationException("subscribe failed");
-                }
-
-                handlers.Add((Action<RedisChannel, RedisValue>)callInfo.Args()[1]);
-            });
-        subscriber.Publish(Arg.Any<RedisChannel>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
-            .Returns(callInfo =>
-            {
-                var channel = callInfo.Arg<RedisChannel>();
-                var value = callInfo.Arg<RedisValue>();
-                foreach (var handler in handlers)
-                {
-                    handler(channel, value);
-                }
-
-                return handlers.Count;
-            });
-
-        var options = Options.Create(new FeatureStreamOptions
-        {
-            HeartbeatInterval = TimeSpan.FromSeconds(30),
-            MaxBufferPerConnection = 4,
-            ReplayBatchSize = 100
-        });
-
-        using var localManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, TestTelemetry.CreateFeatureStreamMetrics(), redis);
-        using var remoteManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, TestTelemetry.CreateFeatureStreamMetrics(), redis);
-        using var localSession = localManager.CreateSession("WebSocket", "local");
-        using var remoteSession = remoteManager.CreateSession("WebSocket", "remote");
-
-        var delivered = localManager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 91)));
-
-        Assert.Equal(1, delivered);
-        Assert.True(localSession.Reader.TryRead(out var localMessage));
-        Assert.True(remoteSession.Reader.TryRead(out var remoteMessage));
-        Assert.Equal(91L, localMessage.Envelope.Cursor);
-        Assert.Equal(localMessage.Envelope.Cursor, remoteMessage.Envelope.Cursor);
-        Assert.Equal(3, subscribeAttempts);
-    }
-
-    [UnitTest]
-    public void Broadcast_QueuesClusterPayloadWhenRedisPublishFails_ThenFlushesOnNextBroadcast()
-    {
-        var subscriber = Substitute.For<ISubscriber>();
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        var handlers = new List<Action<RedisChannel, RedisValue>>();
-        var publishAttempts = 0;
-
-        redis.GetSubscriber().Returns(subscriber);
-        subscriber.Subscribe(Arg.Any<RedisChannel>(), Arg.Do<Action<RedisChannel, RedisValue>>(handler => handlers.Add(handler)));
-        subscriber.Publish(Arg.Any<RedisChannel>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
-            .Returns(callInfo =>
-            {
-                publishAttempts++;
-                if (publishAttempts == 1)
-                {
-                    throw new InvalidOperationException("publish failed");
-                }
-
-                var channel = callInfo.Arg<RedisChannel>();
-                var value = callInfo.Arg<RedisValue>();
-                foreach (var handler in handlers)
-                {
-                    handler(channel, value);
-                }
-
-                return handlers.Count;
-            });
-
-        var options = Options.Create(new FeatureStreamOptions
-        {
-            HeartbeatInterval = TimeSpan.FromSeconds(30),
-            MaxBufferPerConnection = 4,
-            ReplayBatchSize = 100
-        });
-
-        using var localManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, TestTelemetry.CreateFeatureStreamMetrics(), redis);
-        using var remoteManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, TestTelemetry.CreateFeatureStreamMetrics(), redis);
-        using var localSession = localManager.CreateSession("WebSocket", "local");
-        using var remoteSession = remoteManager.CreateSession("WebSocket", "remote");
-
-        localManager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 101)));
-        localManager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 102)));
-
-        Assert.True(localSession.Reader.TryRead(out var firstLocal));
-        Assert.True(localSession.Reader.TryRead(out var secondLocal));
-        Assert.Equal(101L, firstLocal.Envelope.Cursor);
-        Assert.Equal(102L, secondLocal.Envelope.Cursor);
-
-        Assert.True(remoteSession.Reader.TryRead(out var firstRemote));
-        Assert.True(remoteSession.Reader.TryRead(out var secondRemote));
-        Assert.Equal(101L, firstRemote.Envelope.Cursor);
-        Assert.Equal(102L, secondRemote.Envelope.Cursor);
-    }
-
-    // Regression for review finding "Queued WebSocket frames survive subscription
-    // removal or replacement". Each TryAddSubscription allocates a new generation;
-    // the writer drain rejects queued frames whose generation is no longer current.
     [UnitTest]
     public void TryAddSubscription_AllocatesMonotonicGenerationsPerSession()
     {

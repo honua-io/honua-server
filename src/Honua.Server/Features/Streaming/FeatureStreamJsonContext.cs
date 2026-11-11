@@ -27,7 +27,6 @@ namespace Honua.Server.Features.Streaming;
 [JsonSerializable(typeof(FeatureStreamCapabilitiesResponse))]
 [JsonSerializable(typeof(FeatureStreamLayerCapability))]
 [JsonSerializable(typeof(FeatureStreamLayerCapability[]))]
-[JsonSerializable(typeof(FeatureStreamBroadcastMessage))]
 [JsonSerializable(typeof(ApiResponse<FeatureStreamStatusResponse>))]
 [JsonSerializable(typeof(ApiResponse<FeatureStreamCapabilitiesResponse>))]
 [JsonSerializable(typeof(FeatureStreamStatusResponse))]
