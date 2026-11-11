@@ -88,6 +88,7 @@ class Vex(unittest.TestCase):
                  dict(STATEMENT, impactStatement="not used"), dict(STATEMENT, evidence=""),
                  dict(STATEMENT, packages=["pkg:deb/ubuntu/libicu74"]),
                  dict(STATEMENT, packages=["pkg:deb/ubuntu/passwd@1:4.13"]),
+                 dict(STATEMENT, packages=["pkg:deb/ubuntu/passwd@1%3A4.13"]),
                  dict(STATEMENT, vulnerability="CVE-BAD")]
         for case in cases:
             with self.assertRaises(ValueError, msg=case):

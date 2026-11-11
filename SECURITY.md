@@ -68,7 +68,7 @@ Known vulnerabilities in the packages inside published Honua images (operating-s
 
 - Every finding ends in one of two states: fixed (a base image, package or dependency update), or recorded as not affected with the reason in [`eng/security/vex-statements.json`](eng/security/vex-statements.json). A finding with no upstream fix stays open and is fixed in the first release after the fix ships.
 - A not-affected decision names the exact package version, an OpenVEX justification, an impact statement and the evidence. A new package version voids it, so the finding returns for review.
-- Each release publishes an OpenVEX document generated from that file, alongside its SBOM and build provenance. Every Trivy scan in CI applies the same decisions and lists the findings they suppress.
+- Each release publishes an OpenVEX document generated from that file, alongside its SBOM and build provenance. The image vulnerability gates (`ci.yml`, `release-bundle.yml`), the nightly scans and the release-asset scan apply the same decisions and list the findings they suppress.
 - Every supported release image is rescanned by digest every night (`.github/workflows/security-nightly.yml`, inventory in [`eng/security/supported-images.json`](eng/security/supported-images.json)). Fixable high and critical findings in a supported release are filed in a private tracker. Public issues never carry exploit detail.
 
 ## Operational Security Baseline

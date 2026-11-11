@@ -3,8 +3,8 @@ name: Release Security Assets
 # Run once per published release image, after the release is cut. It produces the
 # security assets that ship beside the release (OpenVEX, SPDX SBOM, Trivy verdict with
 # VEX applied, and the attestation-free manifest reference used for registry copies that
-# must not carry attestation layers), then registers the digest in
-# eng/security/supported-images.json so security-nightly.yml rescans it every night.
+# must not carry attestation layers), then prepares the change that registers the digest
+# in eng/security/supported-images.json so security-nightly.yml rescans it every night.
 # See docs/internal/security/security-patch-releases.md.
 
 on:
@@ -28,7 +28,7 @@ on:
         required: true
         type: string
       register:
-        description: 'Push a branch that adds the digest to eng/security/supported-images.json'
+        description: 'Prepare the eng/security/supported-images.json change for this digest'
         type: boolean
         default: true
 
@@ -109,7 +109,7 @@ jobs:
       - name: Generate SBOM (SPDX JSON)
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
-          image: ${{ inputs.image }}
+          image: ${{ env.PLATFORM_REF }}
           format: spdx-json
           output-file: ${{ steps.names.outputs.asset_name }}.spdx.json
           upload-artifact: false
@@ -157,7 +157,7 @@ jobs:
           retention-days: 90
 
   register:
-    name: Register the digest for nightly rescans
+    name: Prepare the inventory registration
     needs: assets
     if: inputs.register
     runs-on: ubuntu-latest
@@ -165,54 +165,38 @@ jobs:
     permissions:
       contents: read
     env:
-      HAS_APP: ${{ secrets.HONUA_RELEASE_APP_ID != '' && secrets.HONUA_RELEASE_APP_PRIVATE_KEY != '' }}
       RELEASE: ${{ inputs.release }}
       IMAGE: ${{ inputs.image }}
       PLATFORM: ${{ inputs.platform }}
       REVISION: ${{ inputs.source_revision }}
-      BRANCH: security/supported-images-${{ needs.assets.outputs.asset_name }}
     steps:
-      # GitHub Actions may not open pull requests in this repository, so the release app
-      # pushes a branch and the release owner opens the pull request from it.
-      - name: Mint the release app token
-        id: app
-        if: env.HAS_APP == 'true'
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          app-id: ${{ secrets.HONUA_RELEASE_APP_ID }}
-          private-key: ${{ secrets.HONUA_RELEASE_APP_PRIVATE_KEY }}
+      # Workflows here hold no push or merge authority (validate-single-merge-authority.sh),
+      # so this job prepares the change and the release owner commits it in a pull request.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          token: ${{ steps.app.outputs.token || github.token }}
-          persist-credentials: ${{ env.HAS_APP == 'true' }}
       - name: Add the digest to the supported inventory
         run: |
           set -euo pipefail
           python3 scripts/security/release_images.py inventory-add --release "$RELEASE" \
             --image "$IMAGE" --platform "$PLATFORM" --revision "$REVISION"
           python3 scripts/security/release_images.py inventory-validate
-      - name: Push the registration branch
-        if: env.HAS_APP == 'true'
-        run: |
-          set -euo pipefail
-          if git diff --quiet -- eng/security/supported-images.json; then
-            echo "::notice::$IMAGE ($PLATFORM) is already registered."
-            exit 0
-          fi
-          git config user.name 'honua-release[bot]'
-          git config user.email 'honua-release[bot]@users.noreply.github.com'
-          git switch -c "$BRANCH"
-          git commit -m "chore(security): register $RELEASE $PLATFORM image for nightly rescans" \
-            -- eng/security/supported-images.json
-          git push origin "$BRANCH"
-          echo "Open a pull request from \`$BRANCH\`: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/trunk...$BRANCH" >> "$GITHUB_STEP_SUMMARY"
-      - name: Hand the inventory change to the release owner
-        if: env.HAS_APP != 'true'
-        run: |
+          git diff -- eng/security/supported-images.json > supported-images.patch
           {
-            echo "The release app secrets are not available, so no branch was pushed."
-            echo "Commit this change to eng/security/supported-images.json in a pull request:"
-            echo '```'
-            echo "python3 scripts/security/release_images.py inventory-add --release '$RELEASE' --image '$IMAGE' --platform '$PLATFORM' --revision '$REVISION'"
-            echo '```'
+            echo "## Register ${RELEASE} ${PLATFORM} for nightly rescans"
+            if [ -s supported-images.patch ]; then
+              echo "Commit this change in a pull request (artifact \`supported-images-${{ needs.assets.outputs.asset_name }}\` holds the patch), or run:"
+              echo '```'
+              echo "python3 scripts/security/release_images.py inventory-add --release '$RELEASE' --image '$IMAGE' --platform '$PLATFORM' --revision '$REVISION'"
+              echo '```'
+            else
+              echo "Already registered; nothing to commit."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the inventory change
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: supported-images-${{ needs.assets.outputs.asset_name }}
+          path: |
+            supported-images.patch
+            eng/security/supported-images.json
+          if-no-files-found: error
+          retention-days: 90

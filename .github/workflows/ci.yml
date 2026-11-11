@@ -3047,10 +3047,18 @@ jobs:
       # we reuse honua-server:test that the build-push step `load: true`'d
       # into the docker daemon). Fail full CI on any HIGH/CRITICAL CVE that
       # already has a fix available upstream.
+      # Apply the committed not-affected decisions (eng/security/vex-statements.json); the
+      # gate output lists every finding they suppress.
+      - name: Generate OpenVEX for the vulnerability gate
+        run: python3 scripts/security/release_images.py vex-generate --name ci-image-gate --output ci-image-gate.openvex.json
+
       - name: Trivy image scan (full CI, HIGH/CRITICAL, fixed only)
         id: trivy_image
         timeout-minutes: 5
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_VEX: ci-image-gate.openvex.json
+          TRIVY_SHOW_SUPPRESSED: 'true'
         with:
           scan-type: image
           image-ref: honua-server:test

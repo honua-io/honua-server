@@ -9,10 +9,10 @@ ECS on Fargate is the deployment target this covers; Lambda images are out of sc
 
 | Control | Where | What it does |
 | --- | --- | --- |
-| Build gate | `deploy-platform-images.yml`, `release-bundle.yml`, `ci.yml` | Fails an image build on a HIGH/CRITICAL finding that has a fix. |
+| Build gate | `release-bundle.yml`, `ci.yml` | Fails an image build on a HIGH/CRITICAL finding that has a fix, with the committed VEX decisions applied. (`deploy-platform-images.yml` reports to Code Scanning but does not fail.) |
 | Trunk nightly | `security-nightly.yml` `container-security-scan` | Builds and scans trunk images with the committed VEX decisions applied; uploads SARIF of every severity to Code Scanning. |
 | Release rescan | `security-nightly.yml` `supported-release-*` jobs | Rescans every digest in `eng/security/supported-images.json` each night with the release VEX applied, uploads SARIF (category `trivy-release-<key>`), and files fixable HIGH/CRITICAL findings. |
-| Release assets | `release-security-assets.yml` (dispatch) | Produces the OpenVEX document, SPDX SBOM, Trivy verdict and attestation-free manifest reference for one release image, and pushes a branch registering the digest. |
+| Release assets | `release-security-assets.yml` (dispatch) | Produces the OpenVEX document, SPDX SBOM, Trivy verdict and attestation-free manifest reference for one release image, and the inventory change that registers its digest. |
 | Dependency updates | Dependabot (NuGet, Actions, Docker) | Weekly update pull requests. |
 
 ### Where findings go
@@ -27,6 +27,11 @@ The release rescan never writes advisory ids, package names or digests into a pu
 - **Fallback.** Without both values the job opens a single public issue, *Security maintenance:
   a supported release image needs a patch release*, with counts only. A maintainer files the
   detail in the private tracker by hand from the run's `release-image-security-*` artifacts.
+
+Scan evidence itself is not confidential: the images are public, anyone can scan them, and in
+this public repository the run artifacts, logs and Code Scanning SARIF are visible to any
+signed-in user. What stays private is triage: exploitability analysis, mitigations and any
+exploit detail, which live only in the private tracker and in draft security advisories.
 
 The report job fails the nightly while any supported image needs a patch, so the red run is
 also a signal.
@@ -62,7 +67,11 @@ Each entry in `eng/security/vex-statements.json` names:
 `python3 scripts/security/release_images.py vex-validate` and
 `scripts/security/test-release-images.py` enforce the shape. Because purls carry exact
 versions, a package update voids the decision and the finding comes back for review. Never
-use `.trivyignore` for image findings: ignore entries hide findings, VEX documents them.
+add image findings to `.trivyignore`: ignore entries hide findings, VEX documents them. The
+one remaining entry, CVE-2025-6965 (bundled SQLite in `SQLitePCLRaw.lib.e_sqlite3`, no
+upstream fix, kept in step with the NuGet audit suppression), applies only to the trunk JIT
+scan; the release rescan and gates do not use it and report it as an unfixed finding. Move it
+to a VEX decision once its runtime reachability is established, or remove it when a fix ships.
 
 Do not mark a shell or command-line package (`dash`, `bash`, `tar`, `coreutils`,
 `util-linux`) as not in the execute path: the migration backup hook
@@ -75,14 +84,17 @@ After a release image is published (release candidate or GA), for each published
 1. Dispatch **Release Security Assets** on `trunk` with the release id, the image by digest
    (`ghcr.io/honua-io/honua-server@sha256:...`), its platform and source revision. The run fails
    if the image has a fixable HIGH/CRITICAL finding.
-2. Attach the run's `release-security-assets-<release>-<arch>` files to the release in
-   `honua-io/honua-release`, next to the SBOM and provenance:
+2. Attach the files from the run's `release-security-assets-honua-server-<release>-<arch>`
+   artifact to the release in `honua-io/honua-release`, next to the SBOM and provenance:
    `gh release upload <tag> -R honua-io/honua-release honua-server-<release>-<arch>.{openvex,spdx}.json`.
-3. Open a pull request from the pushed `security/supported-images-<release>-<arch>` branch
-   (Actions may not open pull requests in this repository) and merge it. From the next night
-   the digest is rescanned.
-4. When a release leaves support, remove its entries from `eng/security/supported-images.json`.
-   Releases listed in `unsupportedReleases` (everything before 2026.1-rc.2) are refused.
+3. Commit the inventory change from the run's `supported-images-honua-server-<release>-<arch>`
+   artifact (or the `inventory-add` command in the run summary) in a pull request and merge it.
+   Workflows in this repository hold no push or merge authority, so this step is manual. Do
+   both platforms of a release in one pull request. From the next night the digest is rescanned.
+4. When a release leaves support, remove its entries from `eng/security/supported-images.json`
+   and dismiss the open alerts of its Code Scanning category (`trivy-release-<key>`), which
+   stops uploading and would otherwise never close. Releases listed in `unsupportedReleases`
+   (everything before 2026.1-rc.2) are refused.
 
 ### Attestation-free copies for the Marketplace registry
 
@@ -120,8 +132,8 @@ security fix is a trunk change followed by a new release.
    id (`2026.1.1`, or the next `-rc.N` before GA) and promote it on a green verdict. Publish
    it in `honua-io/honua-release` as for any release.
 4. **Security assets.** Run *Release security assets* above for the new digests. In the same
-   registration pull request, remove the superseded release's digests: the patch release
-   replaces it as the supported image of that line.
+   registration pull request, remove the superseded release's digests (and dismiss its
+   `trivy-release-<key>` alerts): the patch release replaces it as the supported image of that line.
 5. **Publish the advisory.** Set affected versions (release ids) and the patched version, link
    the release notes, and publish. The release notes list the new server (and worker) image
    digests and say whether rollback is safe.
@@ -140,7 +152,7 @@ The oldest is 2026-08-22. Every advisory id is triaged:
 | CVE-2026-118773, CVE-2026-118764 | glob 10.5.0, minimatch 9.0.9 (managed-test-artifacts action lockfile) | Fixed: glob 14.0.2 through a scoped override (pulls minimatch 11), fast-xml-parser 5.12.0; Trivy fs reports no findings. |
 | CVE-2021-31879 | wget (JIT) | Fixed earlier: wget left the runtime image in #6798. The alert belongs to a retired analysis category that no longer uploads; dismissed with that reason. |
 | CVE-2025-5222 | libicu74 (AOT) | Not affected (VEX): `vulnerable_code_not_present`; genrb is not installed and no shipped ICU library has the code. |
-| CVE-2024-56433 | passwd, login (AOT) | Not affected (VEX): `inline_mitigations_already_exist`; accounts are created only at build, runtime is non-root with setuid bits removed and a read-only root. |
+| CVE-2024-56433 | passwd, login (AOT) | Not affected (VEX): `inline_mitigations_already_exist`; the only account is a system account created at build, and the image runs as UID 1001 with every setuid/setgid bit removed. |
 | CVE-2026-102473, CVE-2026-102474 | dash | Open, no Ubuntu fix. `/bin/sh` is reachable through the backup hook, so not marked unaffected. |
 | CVE-2026-18477, CVE-2026-18508 | tar | Open, no Ubuntu fix; the backup hook can run arbitrary operator commands. |
 | CVE-2026-76642 | util-linux family | Open, no Ubuntu fix. |

@@ -21,7 +21,7 @@ import json
 from pathlib import Path
 import re
 import sys
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 ROOT = Path(__file__).resolve().parents[2]
 INVENTORY = ROOT / "eng/security/supported-images.json"
@@ -171,7 +171,7 @@ def validate_vex_source(source):
             _require(isinstance(purl, str) and PURL_PATTERN.fullmatch(purl),
                      f"{vulnerability}: package must be a versioned purl, got {purl!r}")
             version = purl.split("@", 1)[1].split("?", 1)[0]
-            _require(":" not in version,
+            _require(":" not in unquote(version),
                      f"{vulnerability}: put a Debian epoch in the epoch= qualifier, not the version ({purl})")
             key = (vulnerability, purl)
             _require(key not in seen, f"Duplicate VEX decision: {vulnerability} {purl}")

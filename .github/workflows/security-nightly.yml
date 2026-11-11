@@ -14,6 +14,8 @@ on:
       - 'scripts/ci/check-nuget-vulnerabilities.py'
       - 'scripts/ci/check-nuget-vulnerabilities.test.py'
       - '.github/workflows/security-nightly.yml'
+      - 'eng/security/**'
+      - 'scripts/security/**'
   workflow_dispatch:
     inputs:
       include_transitive:
@@ -248,7 +250,6 @@ jobs:
           scan-ref: .
           format: sarif
           output: trivy-filesystem-results.sarif
-          severity: HIGH,CRITICAL
 
       - name: Upload filesystem SARIF to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
@@ -398,7 +399,6 @@ jobs:
           image-ref: ${{ env.IMAGE_NAME }}:${{ matrix.image_tag }}
           format: sarif
           output: trivy-container-results-${{ matrix.variant }}.sarif
-          severity: HIGH,CRITICAL
           trivyignores: ${{ matrix.trivyignore }}
 
       - name: Upload container Trivy SARIF to GitHub Code Scanning
@@ -672,10 +672,29 @@ jobs:
             trunk.openvex.json
           retention-days: 30
 
+  # The inventory and VEX decisions are data that every image scan depends on: check them
+  # on the pull request that changes them, not first in the nightly.
+  security-data-check:
+    if: github.event_name == 'pull_request'
+    name: Supported images and VEX decisions are valid
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate inventory, VEX source and scan controls
+        run: |
+          set -euo pipefail
+          python3 scripts/security/test-existing-image-scan.py
+          python3 scripts/security/test-release-images.py
+          python3 scripts/security/release_images.py inventory-validate
+          python3 scripts/security/release_images.py vex-validate
+
   # Supported release images are rescanned by digest every night, not only trunk: a new
   # advisory against a shipped package must reach the release owner even when trunk is clean.
   # The inventory is eng/security/supported-images.json, which release-security-assets.yml
-  # extends when a release is published.
+  # prepares an entry for when a release is published.
   supported-release-inventory:
     if: github.event_name != 'pull_request' && inputs.existing_image == ''
     name: Supported release image inventory
@@ -797,7 +816,7 @@ jobs:
 
   supported-release-image-report:
     needs: [supported-release-inventory, supported-release-image-scan]
-    if: always() && needs.supported-release-inventory.result == 'success' && needs.supported-release-inventory.outputs.count != '0'
+    if: ${{ !cancelled() && needs.supported-release-inventory.result == 'success' && needs.supported-release-inventory.outputs.count != '0' }}
     name: Report release image findings
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -806,8 +825,9 @@ jobs:
       issues: write
     env:
       # Findings with package and advisory detail go only to the private security tracker.
-      # Both are optional: without them the public fallback issue carries counts only.
-      SECURITY_FINDINGS_TOKEN: ${{ secrets.SECURITY_FINDINGS_TOKEN }}
+      # Both are optional: without them the public fallback issue carries counts only. The
+      # token itself reaches only the github-script step that files the issues.
+      HAS_FINDINGS_BRIDGE: ${{ secrets.SECURITY_FINDINGS_TOKEN != '' && vars.SECURITY_FINDINGS_REPO != '' }}
       SECURITY_FINDINGS_REPO: ${{ vars.SECURITY_FINDINGS_REPO }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -831,7 +851,7 @@ jobs:
             jq -r '"- Images scanned: \(.scannedImages)\n- Scans missing: \(.missingScans)\n- Images needing a patch release: \(.imagesNeedingPatch)\n- Findings documented as not affected (VEX): \(.vexSuppressedFindings)"' release-public.json
           } >> "$GITHUB_STEP_SUMMARY"
       - name: File findings in the private security tracker
-        if: steps.report.outputs.needing_patch != '0' && env.SECURITY_FINDINGS_TOKEN != '' && env.SECURITY_FINDINGS_REPO != ''
+        if: steps.report.outputs.needing_patch != '0' && env.HAS_FINDINGS_BRIDGE == 'true'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ secrets.SECURITY_FINDINGS_TOKEN }}
@@ -844,6 +864,7 @@ jobs:
             for (const f of findings) {
               const title = `[release image] ${f.release} ${f.platform}: ${f.VulnerabilityID} in ${f.PkgName}`;
               if (open.some(issue => issue.title === title)) continue;
+              open.push({ title });
               const body = [
                 `Release: ${f.release}`, `Image: ${f.image}`, `Platform: ${f.platform}`,
                 `Advisory: ${f.VulnerabilityID} (${f.Severity})`,
@@ -855,7 +876,7 @@ jobs:
               await github.rest.issues.create({ owner, repo, title, body });
             }
       - name: Open a public maintenance issue without finding detail
-        if: steps.report.outputs.needing_patch != '0' && (env.SECURITY_FINDINGS_TOKEN == '' || env.SECURITY_FINDINGS_REPO == '')
+        if: steps.report.outputs.needing_patch != '0' && env.HAS_FINDINGS_BRIDGE != 'true'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
