@@ -457,7 +457,18 @@ used by ADR-0082's `TwoNodeTests`.
     replaces every task while a client stays subscribed and loses nothing.
 
 ## 13. Work breakdown
-Epic and child issues are in honua-io/honua-server under `release/2026.1-rc.3`. The order is: log
-and provider, then features, then authorization, then collaboration, observations, admin, alerts,
-MCP and jobs (these can run in parallel), then the acceptance and scale suite, then the tier
-decision.
+Epic honua-io/honua-server#7339, release `2026.1-rc.3`. Order: #7340 and #7341 first; then #7342;
+then #7343; then #7344, #7345, #7346 and #7347 in parallel, with #7348 alongside; #7349 last.
+
+| Issue | Scope | Sections |
+|---|---|---|
+| #7340 | Event log tables, append function, retention | 3, 5 |
+| #7341 | Fan-out provider interface, in-process and PostgreSQL providers, listener | 4, 6 |
+| #7342 | Feature streams from `feature_changes`; delete the in-memory store and retry queue | 2, 9 |
+| #7343 | Per-subscriber authorization and event-driven revocation | 8 |
+| #7344 | Map collaboration across tasks | 5.4, 9.2 |
+| #7345 | SensorThings observation stream with resume | 3, 9 |
+| #7346 | Admin live view over SSE; remove the SignalR hub | 9.3 |
+| #7347 | Alerts, MCP notifications, job and layer feeds | 3, 9 |
+| #7348 | Drain, heartbeats, backpressure, metrics | 6.3, 7, 11 |
+| #7349 | Two-task acceptance, scale run, live CDN check | 10, 12 |
