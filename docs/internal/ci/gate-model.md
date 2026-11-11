@@ -754,3 +754,14 @@ Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
 revocation: a human or drain lane owns any manually armed dependency PR.
 If mergeability becomes clean between the live query and enable mutation, only
 GitHub's specific clean-status response ends neutrally; other API errors fail.
+
+### WPS endpoint fixture lifetime
+
+`Wps20EndpointsTests` shares its default application and identically configured
+conformance-echo application for the lifetime of the sequential test class.
+Each application seeds its database once. Tests with service substitutes or
+custom host configuration retain isolated applications; echo results are
+accessed through their request-generated job IDs and reference tokens.
+All cases and assertions remain in the WFS 1–9 shard family on selected PR runs
+and twice-daily full trunk runs. This changes no runner count, required check
+name, required aggregate dependency, workflow, or shard definition.
