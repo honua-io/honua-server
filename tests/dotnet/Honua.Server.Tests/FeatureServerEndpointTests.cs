@@ -260,7 +260,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime, IClassFixture<F
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;
 
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    private readonly WebAppFixture _fixture = CreateApplication();
 
     private readonly WebAppFixture _readOnlyApplication;
     private bool _defaultInitialized;
@@ -277,21 +277,24 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime, IClassFixture<F
     private async Task InitializeDefaultApplicationAsync()
     {
         _defaultInitialized = true;
-        await _fixture.InitializeAsync();
-        _fixture.EnableV2ServiceEditingCapabilities(TestServiceId, ["Create", "Update", "Delete"]);
+        await InitializeApplicationAsync(_fixture);
+    }
+
+    private static WebAppFixture CreateApplication() => new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+
+    private static async Task InitializeApplicationAsync(WebAppFixture application)
+    {
+        await application.InitializeAsync();
+        application.EnableV2ServiceEditingCapabilities(TestServiceId, ["Create", "Update", "Delete"]);
     }
 
     // Cases that edit features, change metadata, or expand the seed dataset need separate
     // applications and schemas; immutable metadata and query seeds can share this application.
     public sealed class ReadOnlyFixture : IAsyncLifetime
     {
-        public WebAppFixture Application { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+        public WebAppFixture Application { get; } = CreateApplication();
 
-        public async Task InitializeAsync()
-        {
-            await Application.InitializeAsync();
-            Application.EnableV2ServiceEditingCapabilities(TestServiceId, ["Create", "Update", "Delete"]);
-        }
+        public Task InitializeAsync() => InitializeApplicationAsync(Application);
 
         public Task DisposeAsync() => Application.DisposeAsync();
     }
