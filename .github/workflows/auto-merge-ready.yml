@@ -1,0 +1,93 @@
+name: auto-merge ready pull requests
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened, synchronize, labeled, unlabeled, converted_to_draft, edited]
+
+permissions: {}
+
+concurrency:
+  group: auto-merge-ready-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  enable:
+    name: Enable ruleset-governed auto-merge
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login != 'dependabot[bot]'
+      && (github.event.pull_request.base.ref == 'trunk' || github.event.action == 'edited')
+      && (!github.event.pull_request.draft || github.event.action == 'converted_to_draft')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Create repository-scoped bot token
+        id: bot
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
+      - name: Enable auto-merge for the live pull request
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          github-token: ${{ steps.bot.outputs.token }}
+          script: |
+            const { repository: { pullRequest: pr } } = await github.graphql(`
+              query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    id state isDraft baseRefName mergeStateStatus headRepository { nameWithOwner }
+                    labels(first: 100) { nodes { name } pageInfo { hasNextPage } }
+                    commits { totalCount }
+                    autoMergeRequest { mergeMethod }
+                  }
+                }
+              }`, { ...context.repo, number: context.issue.number });
+            const eligible = pr && pr.state === 'OPEN' && !pr.isDraft && pr.baseRefName === 'trunk'
+              && pr.headRepository?.nameWithOwner === `${context.repo.owner}/${context.repo.repo}`
+              && !pr.labels.pageInfo.hasNextPage
+              && !pr.labels.nodes.some(label => ['hold', 'train:hold', 'train:escalated'].includes(label.name));
+            const mergeMethod = pr?.commits.totalCount > 1 ? 'MERGE' : 'SQUASH';
+            if (pr?.autoMergeRequest && (!eligible || pr.autoMergeRequest.mergeMethod !== mergeMethod)) {
+              await github.graphql(`
+                mutation($pullRequestId: ID!) {
+                  disablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId }) {
+                    pullRequest { number }
+                  }
+                }`, { pullRequestId: pr.id });
+            } else if (pr?.autoMergeRequest) {
+              core.notice('Auto-merge already uses the live commit-count method.');
+              return;
+            }
+            if (!eligible) {
+              core.notice('Auto-merge disabled or unchanged: live pull request is ineligible.');
+              return;
+            }
+            if (['CLEAN', 'UNSTABLE', 'HAS_HOOKS'].includes(pr.mergeStateStatus)) {
+              core.notice('PR is already mergeable; auto-merge cannot be armed. Existing merge authority handles it.');
+              return;
+            }
+            try {
+              await github.graphql(`
+                mutation($pullRequestId: ID!, $mergeMethod: PullRequestMergeMethod!) {
+                  enablePullRequestAutoMerge(input: {
+                    pullRequestId: $pullRequestId, mergeMethod: $mergeMethod
+                  }) { pullRequest { number } }
+                }`, { pullRequestId: pr.id, mergeMethod });
+            } catch (error) {
+              const messages = error.errors?.map(item => item.message) ?? [];
+              if (!messages.length || !messages.every(message => message === 'Pull request is in clean status')) {
+                throw error;
+              }
+              core.notice('PR became mergeable before auto-merge could be armed; existing merge authority handles it.');
+              return;
+            }
+            await core.summary.addHeading('Auto-merge enabled')
+              .addRaw(`${mergeMethod}: repository rulesets and required checks decide when this PR merges.`)
+              .write();
