@@ -102,16 +102,13 @@ internal static class ObservabilityServiceCollectionExtensions
         services.AddScoped<IMcpJobDiagnosticsReader, McpJobDiagnosticsReader>();
         services.AddScoped<IMcpPlatformOpsReader, McpPlatformOpsReader>();
 
-        // Persisted ops-health rollup store + per-replica sampler (#2553). The store itself is registered by
-        // the Postgres provider; the sampler and history service resolve it as optional so non-Postgres
-        // deployments still expose the (empty) history surface and the realtime flush seam. The flush signal
-        // is the in-process seam the realtime broadcast layer (#2554) subscribes to.
+        // The rollup store is registered by the Postgres provider; the sampler and history service resolve it
+        // as optional so non-Postgres deployments still expose the (empty) history surface.
         services.AddOptions<OpsHealthRollupOptions>()
             .Bind(configuration.GetSection(OpsHealthRollupOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
         services.TryAddSingleton(TimeProvider.System);
-        services.AddSingleton<OpsHealthFlushSignal>();
         services.AddScoped<IOpsHealthHistoryService, OpsHealthHistoryService>();
         // The sampler reads and writes the Postgres rollup store on an interval. An event-handler
         // Lambda is frozen between invocations and releases its pool when the request ends, so the

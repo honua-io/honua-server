@@ -17,7 +17,6 @@ internal sealed partial class OpsHealthRollupSampler : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IOptions<OpsHealthRollupOptions> _options;
     private readonly TimeProvider _timeProvider;
-    private readonly OpsHealthFlushSignal _flushSignal;
     private readonly ILogger<OpsHealthRollupSampler> _logger;
 
     private DateTimeOffset _nextMaintenanceUtc = DateTimeOffset.MinValue;
@@ -26,13 +25,11 @@ internal sealed partial class OpsHealthRollupSampler : BackgroundService
         IServiceScopeFactory scopeFactory,
         IOptions<OpsHealthRollupOptions> options,
         TimeProvider timeProvider,
-        OpsHealthFlushSignal flushSignal,
         ILogger<OpsHealthRollupSampler> logger)
     {
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _flushSignal = flushSignal ?? throw new ArgumentNullException(nameof(flushSignal));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -79,18 +76,15 @@ internal sealed partial class OpsHealthRollupSampler : BackgroundService
         {
             await using var scope = _scopeFactory.CreateAsyncScope();
             var provider = scope.ServiceProvider;
-            var snapshotService = provider.GetRequiredService<IOpsHealthSnapshotService>();
             var store = provider.GetService<IOpsHealthRollupStore>();
-
-            // The cluster-aggregated snapshot (same DTO as GET ops-health) drives the realtime seam.
-            var snapshot = await snapshotService.GetAsync(cancellationToken).ConfigureAwait(false);
-
-            if (store is not null)
+            if (store is null)
             {
-                await PersistAsync(store, snapshot, cancellationToken).ConfigureAwait(false);
+                return;
             }
 
-            RaiseFlushed(snapshot);
+            var snapshot = await provider.GetRequiredService<IOpsHealthSnapshotService>()
+                .GetAsync(cancellationToken).ConfigureAwait(false);
+            await PersistAsync(store, snapshot, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -166,25 +160,8 @@ internal sealed partial class OpsHealthRollupSampler : BackgroundService
         }
     }
 
-    private void RaiseFlushed(OpsHealthSnapshotResponse snapshot)
-    {
-        try
-        {
-            _flushSignal.Raise(snapshot);
-        }
-        // Intentionally generic: this signals best-effort realtime subscribers after a
-        // flush. A misbehaving subscriber must not break the background sampler loop.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            FlushSubscriberFailed(_logger, ex);
-        }
-    }
-
     [LoggerMessage(EventId = 7460, Level = LogLevel.Warning, Message = "Ops-health rollup flush failed; degrading to snapshot-only for this interval.")]
     private static partial void FlushFailed(ILogger logger, Exception exception);
-
-    [LoggerMessage(EventId = 7461, Level = LogLevel.Warning, Message = "Ops-health rollup flush subscriber threw.")]
-    private static partial void FlushSubscriberFailed(ILogger logger, Exception exception);
 
     [LoggerMessage(EventId = 7462, Level = LogLevel.Debug, Message = "Ops-health rollup maintenance pruned {PrunedRows} rows.")]
     private static partial void MaintenanceCompleted(ILogger logger, int prunedRows);

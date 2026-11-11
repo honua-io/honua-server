@@ -1106,7 +1106,7 @@ builder.Services.AddAdminAccessOperations();
 Honua.Ai.Protocols.Mcp.McpServiceCollectionExtensions.AddMcpPublishedOperationTools(
     builder.Services, builder.Configuration);
 #endif
-builder.Services.AddAdminRealtime(builder.Configuration);
+builder.Services.AddAdminRealtime();
 if (!isTestEnvironment)
 {
     builder.Services.AddOrchestrationBackgroundServices(builder.Configuration);
