@@ -406,18 +406,12 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// A host that can hold a governed publication proposal: the durable proposal store and
-    /// operation gateway are registered only on a Redis-connected, cache-entitled host, as on the
-    /// released image.
-    /// </summary>
+    // A host that can hold a governed publication proposal: the durable proposal store and
+    // operation gateway are composed on a host with a system database, as on the released image.
     private sealed class PublishingHost : IAsyncDisposable
     {
-        private readonly RedisFixture _redis;
-
-        private PublishingHost(RedisFixture redis, WebAppFixture fixture)
+        private PublishingHost(WebAppFixture fixture)
         {
-            _redis = redis;
             Fixture = fixture;
             Client = fixture.CreateAdminClient();
         }
@@ -428,14 +422,9 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
 
         public static async Task<PublishingHost> StartAsync(bool readOnlyScope = false)
         {
-            var redis = new RedisFixture();
-            await redis.InitializeAsync();
             var fixture = new WebAppFixture()
-                .ConfigureWebHost(builder =>
-                {
-                    builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
-                    builder.UseSetting("Licensing:DevGrantEdition", "Pro");
-                })
+                .WithProductionJobSubstrate()
+                .ConfigureWebHost(builder => builder.UseSetting("Licensing:DevGrantEdition", "Pro"))
                 .ConfigureServices(services =>
                 {
                     services.RemoveAll<IStudioPackageStore>();
@@ -453,14 +442,13 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
                     }
                 });
             await fixture.InitializeAsync();
-            return new PublishingHost(redis, fixture);
+            return new PublishingHost(fixture);
         }
 
         public async ValueTask DisposeAsync()
         {
             Client.Dispose();
             await Fixture.DisposeAsync();
-            await _redis.DisposeAsync();
         }
     }
 }

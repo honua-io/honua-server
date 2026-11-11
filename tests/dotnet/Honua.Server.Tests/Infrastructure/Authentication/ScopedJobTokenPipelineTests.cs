@@ -102,5 +102,5 @@ public sealed class ScopedJobTokenPipelineTests
     }
 
     private static ScopedJobTokenIssuer CreateIssuer()
-        => new(new MemoryCache(new MemoryCacheOptions()), NullLogger<ScopedJobTokenIssuer>.Instance);
+        => new(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<ScopedJobTokenIssuer>.Instance);
 }

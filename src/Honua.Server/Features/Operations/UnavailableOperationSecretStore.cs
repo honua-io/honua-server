@@ -14,21 +14,9 @@ internal sealed class UnavailableOperationSecretStore : IOperationSecretStore
     private static InvalidOperationException Unavailable()
         => new("The operation secret channel is unavailable.");
 
-    public OperationSecretReference Store(
-        string operationInstanceId,
-        string operationId,
-        string? principalId,
-        string? tenantId,
-        string name,
-        string value,
-        TimeSpan? ttl = null)
+    public OperationSecretReference Store(OperationSecretBinding binding, string name, string value, TimeSpan? ttl = null)
         => throw Unavailable();
 
-    public string? Consume(
-        OperationSecretReference reference,
-        string operationInstanceId,
-        string operationId,
-        string? principalId,
-        string? tenantId)
+    public string? Consume(OperationSecretReference reference, OperationSecretBinding binding)
         => null;
 }

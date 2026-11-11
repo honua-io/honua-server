@@ -327,8 +327,16 @@ if text.count(CALL) != 4:
 for label, body in (("format", fmt), ("fast-tests", fast), ("pr-gate", gate), ("affected-shards-select", select)):
     if body.count(CALL) != 1 or "id: docs-only" not in body:
         problems.append(f"{label} must classify once, as step id docs-only")
-if fmt.count(GATED) != 3:
-    problems.append(f"format must gate Setup .NET, Restore and Format Check on the verdict ({fmt.count(GATED)})")
+FORMAT_GATED = (
+    "if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' "
+    "|| github.event.pull_request.draft == true || github.run_attempt > 1) "
+    "&& steps.docs-only.outputs.docs_only != 'true' "
+    "&& steps.generated-only.outputs.generated_only != 'true'"
+)
+for name in ("Setup .NET", "Restore", "Format Check"):
+    block = fmt.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
+    if FORMAT_GATED not in block:
+        problems.append(f"format step {name} must obey draft admission and both diff verdicts")
 for name in ("Free disk space", "Setup .NET", "Plan managed test producer", "Lean gate (managed build producer)", "Publish pristine managed test outputs"):
     block = gate.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
     if GATED not in block:

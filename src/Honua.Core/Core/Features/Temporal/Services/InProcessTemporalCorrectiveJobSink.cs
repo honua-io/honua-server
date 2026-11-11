@@ -144,14 +144,14 @@ public sealed partial class InProcessTemporalCorrectiveJobSink : ITemporalCorrec
         try
         {
             var result = await _progressStore
-                .TrySetProgressAsync(jobId, progress, expectedStatus, ProgressTtl, CancellationToken.None)
+                .TrySetProgressAsync(new OperationProgressWrite(jobId, progress, ProgressTtl), expectedStatus, CancellationToken.None)
                 .ConfigureAwait(false);
 
             if (result.Outcome == ProgressCompareAndSetOutcome.StatusMismatch &&
                 result.CurrentProgress is { Status: OperationStatus.Queued or OperationStatus.Processing } observed)
             {
                 result = await _progressStore
-                    .TrySetProgressAsync(jobId, progress, observed.Status, ProgressTtl, CancellationToken.None)
+                    .TrySetProgressAsync(new OperationProgressWrite(jobId, progress, ProgressTtl), observed.Status, CancellationToken.None)
                     .ConfigureAwait(false);
             }
 
