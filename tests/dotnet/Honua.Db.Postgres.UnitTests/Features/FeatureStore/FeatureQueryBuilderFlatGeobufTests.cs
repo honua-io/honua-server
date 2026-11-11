@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureExport;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
@@ -90,6 +91,31 @@ public sealed class FeatureQueryBuilderFlatGeobufTests
 
         build.Should().Throw<ArgumentException>()
             .WithMessage("*cannot be represented as a PostgreSQL binary projection alias*");
+    }
+
+    [Fact]
+    public void WriteFlatGeobuf_NativeStorage_PreservesSemanticStringId()
+    {
+        var resource = new MetadataV2Resource
+        {
+            SchemaFields =
+            [
+                Field("objectid", MetadataV2FieldType.BigInteger),
+                Field("public_id", MetadataV2FieldType.String, semanticRoles: ["id.primary"])
+            ]
+        };
+        var feature = Feature.Create(1, null,
+            ImmutableDictionary<string, object?>.Empty.Add("public_id", "public-1"));
+        var payload = FlatGeobufFeatureWriter.Write([feature], new FlatGeobufFeatureWriter.ExportOptions
+        {
+            Resource = resource,
+            Query = new FeatureQuery(),
+            ProjectedFields = resource.SchemaFields,
+            OutputSrid = 4326
+        }, CancellationToken.None);
+        var encoded = FlatGeobuf.NTS.FeatureCollectionConversions.Deserialize(payload).Should().ContainSingle().Subject;
+        encoded.Attributes["objectid"].Should().Be(1L);
+        encoded.Attributes["public_id"].Should().Be("public-1");
     }
 
     private static MetadataV2Resource CreateResource(params MetadataV2Field[] additionalFields)

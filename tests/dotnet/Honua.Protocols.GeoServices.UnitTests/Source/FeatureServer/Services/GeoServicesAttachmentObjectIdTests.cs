@@ -87,14 +87,14 @@ public sealed class GeoServicesAttachmentObjectIdTests
     }
 
     [UnitTest]
-    public async Task ResolveAsync_StorageObjectId_UsesGetAsync()
+    public async Task ResolveAsync_SyntheticObjectId_UsesGetAsync()
     {
         var stored = Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty);
         var reader = Substitute.For<IFeatureReader>();
         reader.GetAsync(3, 7, Arg.Any<CancellationToken>()).Returns(Task.FromResult<Feature?>(stored));
 
         var feature = await GeoServicesFeatureObjectIdResolver.ResolveAsync(
-            reader, SuccessFilters(), StorageObjectIdLayer(), 3, 7, CancellationToken.None);
+            reader, SuccessFilters(), SyntheticObjectIdLayer(), 3, 7, CancellationToken.None);
 
         feature!.Value.Id.Should().Be(7);
         await reader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
@@ -117,12 +117,12 @@ public sealed class GeoServicesAttachmentObjectIdTests
     }
 
     [UnitTest]
-    public async Task ResolveStorageIdsAsync_StorageObjectId_IsIdentityAndDoesNotQuery()
+    public async Task ResolveStorageIdsAsync_SyntheticObjectId_IsIdentityAndDoesNotQuery()
     {
         var reader = Substitute.For<IFeatureReader>();
 
         var resolved = await GeoServicesFeatureObjectIdResolver.ResolveStorageIdsAsync(
-            reader, SuccessFilters(), StorageObjectIdLayer(), 3, [7L], CancellationToken.None);
+            reader, SuccessFilters(), SyntheticObjectIdLayer(), 3, [7L], CancellationToken.None);
 
         resolved[7].Should().Be(7);
         await reader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
@@ -217,6 +217,30 @@ public sealed class GeoServicesAttachmentObjectIdTests
         ok.Value.AttachmentGroups[0].ParentObjectId.Should().Be(7);
     }
 
+    [UnitTest]
+    public async Task ResolveAsync_LegacySourceObjectId_ResolvesPublicIdBeforeStorageRead()
+    {
+        var stored = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty.Add("objectid", 1899L));
+        var reader = Substitute.For<IFeatureReader>();
+        reader.GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<Feature?>(new InvalidOperationException("source id used as storage id")));
+        reader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(QueryResult<Feature>.Create(1, ImmutableArray.Create(stored))));
+        var resource = new MetadataV2Resource
+        {
+            SchemaFields =
+            [
+                new() { Name = "objectid", Type = MetadataV2FieldType.BigInteger },
+                new() { Name = "id", Type = MetadataV2FieldType.BigInteger }
+            ]
+        };
+        var filters = SuccessFilters();
+        var feature = await GeoServicesFeatureObjectIdResolver.ResolveAsync(reader, filters, resource, 3, 1899, CancellationToken.None);
+        feature!.Value.Id.Should().Be(1);
+        var ids = await GeoServicesFeatureObjectIdResolver.ResolveStorageIdsAsync(reader, filters, resource, 3, [1899L], CancellationToken.None);
+        ids[1899].Should().Be(1);
+    }
+
     private static MetadataV2Resource CustomObjectIdLayer()
         => new()
         {
@@ -231,13 +255,10 @@ public sealed class GeoServicesAttachmentObjectIdTests
             ]
         };
 
-    private static MetadataV2Resource StorageObjectIdLayer()
+    private static MetadataV2Resource SyntheticObjectIdLayer()
         => new()
         {
-            SchemaFields =
-            [
-                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger }
-            ]
+            SchemaFields = []
         };
 
     private static IFilterExpressionService SuccessFilters()

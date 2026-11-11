@@ -34,9 +34,9 @@ public sealed record ImportLimits
 
     public ValidationMode GeometryValidityMode { get; init; } = ValidationMode.Repair;
 
-    public int MaxVertices { get; init; } = 10000;
+    public int MaxVertices { get; init; } = 100_000;
 
-    public int MaxRings { get; init; } = 100;
+    public int MaxRings { get; init; } = 1_000;
 
     public long MaxWkbSize { get; init; } = FileSizeConstants.OneMB;
 
