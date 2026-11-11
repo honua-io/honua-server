@@ -54,4 +54,3 @@ src/Honua.Server/Features/Admin/NetworkTopologyEditAdminEndpoints.cs::TryResolve
 src/Honua.Server/Features/ControlPlane/ExecutionJobBackstopSweepService.cs::ExecuteAsync(CancellationToken)|src/Honua.Server/Features/ControlPlane/WorkflowOperationBackstopSweepService.cs::ExecuteAsync(CancellationToken)
 src/Honua.Server/Features/Operations/PlannedProposalReconciler.cs::ExecuteAsync(CancellationToken)|src/Honua.Server/Features/Operations/QueuedOperationReconciler.cs::ExecuteAsync(CancellationToken)
 src/Honua.Server/Features/Orchestration/WorkflowEventTriggerBackgroundService.cs::ExecuteAsync(CancellationToken)|src/Honua.Server/Features/Orchestration/WorkflowSchedulerBackgroundService.cs::ExecuteAsync(CancellationToken)
-src/Honua.Server/Features/Protocols/Elevation/ElevationEndpoints.cs::ValidateDatasetAsync(HttpContext,string,CancellationToken)|src/Honua.Server/Features/Protocols/Terrain/TerrainEndpoints.cs::ValidateDatasetAsync(HttpContext,string,CancellationToken)

@@ -2,12 +2,17 @@
 // Reuse the pinned gh-aw accountant (including detection), never estimate missing usage as zero.
 const path = require('path');
 
+// Runs before the $25/day caps took effect were billed under the old default cap and must not
+// consume the new envelope.
+const BUDGET_POLICY_START = '2026-11-10T21:00:00Z';
+
 async function main({ github, context, core, accounting, name, phase, threshold, maxCredits, apiBudget }) {
   core.setOutput('eligible', 'false');
   const budget = apiBudget || require(path.join(process.env.RUNNER_TEMP, 'gh-aw/actions/daily_aic_api_budget.cjs')).createAPIBudget();
   const artifactClient = await accounting.getArtifactClient(undefined, budget.request);
   const token = process.env.GH_TOKEN;
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const rollingStart = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const since = rollingStart > BUDGET_POLICY_START ? rollingStart : BUDGET_POLICY_START;
   const totals = { triage: 0, fix: 0 };
   const counts = { triage: 0, fix: 0 };
   let triageEvents = 0;
@@ -63,4 +68,4 @@ async function main({ github, context, core, accounting, name, phase, threshold,
 function maxFixCredits(name) {
   return { 'ci-doctor': 150, 'pr-review-doctor': 120, 'pr-sync-doctor': 100 }[name];
 }
-module.exports = { main, maxFixCredits };
+module.exports = { main, maxFixCredits, BUDGET_POLICY_START };
