@@ -694,3 +694,12 @@ repeating container bootstrap without sharing job state or changing assertions.
 request-derived default-provider responses. Each case owns its HTTP client.
 Request-capture, custom-provider and Enterprise configurations own separate
 applications. Full trunk runs include every case; PR routing selects affected geocoding shards.
+
+### Spec endpoint application lifetime
+
+`SpecEndpointsTests` retains one application for validation, planning, and
+rejected requests, with a fresh client per case. Successful applies, cache tests,
+and license variants own their hosts and state. The class fixture disposes the
+shared application after its last case. All cases and assertions run in their
+existing PR and trunk shard selections; runner counts, required check names,
+and aggregate dependencies are unchanged.
