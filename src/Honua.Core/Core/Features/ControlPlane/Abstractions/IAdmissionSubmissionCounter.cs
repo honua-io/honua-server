@@ -8,12 +8,12 @@ namespace Honua.Core.Features.ControlPlane.Abstractions;
 public readonly record struct AdmissionSubmissionWindow(
     ExecutionJobKind Kind,
     string RatePrincipal,
-    DateTimeOffset Since,
+    TimeSpan Window,
     int CountCap);
 
-// Counts the jobs a rate principal created since the window start, stopping at the cap. The count is
-// exact across nodes only while the caller holds the shared submission lease, because the lease keeps
-// every node's count-then-create sequence from interleaving.
+// Counts the jobs a rate principal created within the window before the store's current time, stopping
+// at the cap. The count is exact across nodes only while the caller holds the shared submission lease,
+// because the lease keeps every node's count-then-create sequence from interleaving.
 public interface IAdmissionSubmissionCounter
 {
     Task<int> CountAsync(AdmissionSubmissionWindow window, CancellationToken cancellationToken = default);

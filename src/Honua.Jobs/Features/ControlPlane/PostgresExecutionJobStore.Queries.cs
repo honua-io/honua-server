@@ -141,7 +141,7 @@ internal sealed partial class PostgresExecutionJobStore
                     $"""
                     SELECT count(*)::int FROM (
                         SELECT 1 FROM {_jobs}
-                        WHERE kind = @kind AND lookup_keys @> @rate_key AND created_at > @since
+                        WHERE kind = @kind AND lookup_keys @> @rate_key AND created_at > now() - @window
                         LIMIT @cap) AS charged
                     """,
                     connection);
@@ -150,7 +150,7 @@ internal sealed partial class PostgresExecutionJobStore
                 {
                     Value = new[] { ExecutionJobRow.LookupKey(ExecutionJobLookupDimensions.AdmissionRate, window.RatePrincipal) }
                 });
-                command.Parameters.Add(ExecutionJobRow.Timestamp("since", window.Since));
+                command.Parameters.Add(new NpgsqlParameter("window", NpgsqlDbType.Interval) { Value = window.Window });
                 command.Parameters.Add(new NpgsqlParameter("cap", NpgsqlDbType.Integer) { Value = window.CountCap });
                 return (int)(await command.ExecuteScalarAsync(token).ConfigureAwait(false))!;
             },

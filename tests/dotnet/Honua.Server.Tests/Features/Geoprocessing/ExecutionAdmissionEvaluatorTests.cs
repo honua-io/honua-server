@@ -310,8 +310,8 @@ public sealed class ExecutionAdmissionEvaluatorTests
     public async Task Evaluate_ActiveJobReadTimesOutOnce_RetriesAndAdmits()
     {
         // A store command timeout is not a connection failure, so the connection's own retry
-        // policy never covers it. Before the retry a single timed-out read escaped the evaluator
-        // and failed the submission outright.
+        // policy never covers it; the evaluator retries the read once instead of failing the
+        // submission.
         var calls = 0;
         _jobStore
             .ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
@@ -439,7 +439,7 @@ public sealed class ExecutionAdmissionEvaluatorTests
         decision.Outcome.Should().Be(ExecutionAdmissionOutcome.Admitted);
         decision.Snapshot.SubmissionsInWindow.Should().Be(3);
         await submissions.Received(1).CountAsync(
-            new AdmissionSubmissionWindow(ExecutionJobKind.Geoprocessing, Principal, _time.GetUtcNow().AddSeconds(-45), CountCap: 3),
+            new AdmissionSubmissionWindow(ExecutionJobKind.Geoprocessing, Principal, TimeSpan.FromSeconds(45), CountCap: 3),
             Arg.Any<CancellationToken>());
     }
 

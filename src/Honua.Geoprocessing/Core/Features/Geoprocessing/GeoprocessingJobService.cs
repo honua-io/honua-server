@@ -827,7 +827,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var effectiveProtocolMetadata = protocolMetadata?.ContainsKey(GpProcessReleaseAdmission.ProcessParam) == true
             ? protocolMetadata
             : ResolveEffectiveProtocolControls(protocolMetadata, workload);
-        var now = DateTimeOffset.UtcNow;
 
         async Task<bool> ConfirmKeyedReplayAsync(CancellationToken replayToken)
         {
@@ -1025,13 +1024,16 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     };
                 }
 
+                // Stamped inside the admission window: the next submission's rate window counts this
+                // job from its creation time, so time spent before admission must not shorten it.
+                var createdAt = DateTimeOffset.UtcNow;
                 jobRecord = new ExecutionJobRecord
                 {
                     OperationId = jobId,
                     Status = ExecutionJobStatus.Queued,
                     Priority = priority,
-                    CreatedAt = now,
-                    UpdatedAt = now,
+                    CreatedAt = createdAt,
+                    UpdatedAt = createdAt,
                     CurrentPhase = "Queued",
                     // Carry the submitting request's correlation ID and trace context across the
                     // queue boundary so the worker's execution span links back to it (#5474).

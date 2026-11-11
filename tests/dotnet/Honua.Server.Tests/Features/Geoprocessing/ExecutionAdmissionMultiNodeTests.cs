@@ -268,7 +268,7 @@ public sealed class ExecutionAdmissionMultiNodeTests
         var chargedWindow = new AdmissionSubmissionWindow(
             ExecutionJobKind.Geoprocessing,
             RatePrincipal("tenant-r", "rate-user"),
-            DateTimeOffset.UtcNow.AddSeconds(-limits.RateWindowSeconds),
+            TimeSpan.FromSeconds(limits.RateWindowSeconds),
             CountCap: int.MaxValue);
         (await _observerStore.CountAsync(chargedWindow)).Should().Be(rateLimit);
     }

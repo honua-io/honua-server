@@ -4847,6 +4847,42 @@ public sealed partial class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WhenAdmitted_StampsCreatedAtAfterAdmission()
+    {
+        // The next submission's rate window counts this job from CreatedAt, so time spent before
+        // admission (lease waits, raster resolution) must not age the job before it exists.
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var admittedAt = DateTimeOffset.MinValue;
+        var admission = Substitute.For<IExecutionAdmissionEvaluator>();
+        admission.EvaluateAsync(Arg.Any<ExecutionAdmissionRequest>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(50));
+                admittedAt = DateTimeOffset.UtcNow;
+                return ExecutionAdmissionDecision.Admitted(new ExecutionAdmissionSnapshot());
+            });
+
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            admissionEvaluator: admission);
+
+        var job = await sut.SubmitJobAsync(CreateValidPlan(), null, CreateTenantPrincipal("tenant-42"));
+
+        job.CreatedAt.Should().BeOnOrAfter(admittedAt);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WhenAdmitted_PersistsCostWeightInSpecParameters()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())

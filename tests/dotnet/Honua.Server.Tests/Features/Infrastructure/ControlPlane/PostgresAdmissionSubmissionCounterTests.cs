@@ -32,7 +32,7 @@ public sealed class PostgresAdmissionSubmissionCounterTests(DatabaseFixtureAdapt
             Job("tenant:tenant-a:bob", ExecutionJobKind.Geoprocessing, now),
             Job(ratePrincipal: null, ExecutionJobKind.Geoprocessing, now));
 
-        var counted = await harness.JobStore.CountAsync(AliceWindow(now, countCap: 100));
+        var counted = await harness.JobStore.CountAsync(AliceWindow(countCap: 100));
 
         counted.Should().Be(2);
     }
@@ -46,7 +46,7 @@ public sealed class PostgresAdmissionSubmissionCounterTests(DatabaseFixtureAdapt
             .Select(second => Job(Alice, ExecutionJobKind.Geoprocessing, now.AddSeconds(-second)))
             .ToArray());
 
-        var counted = await harness.JobStore.CountAsync(AliceWindow(now, countCap: 3));
+        var counted = await harness.JobStore.CountAsync(AliceWindow(countCap: 3));
 
         counted.Should().Be(3);
     }
@@ -54,8 +54,8 @@ public sealed class PostgresAdmissionSubmissionCounterTests(DatabaseFixtureAdapt
     private Task<PostgresJobSubstrateHarness> CreateHarnessAsync()
         => PostgresJobSubstrateHarness.CreateAsync(database, nameof(PostgresAdmissionSubmissionCounterTests));
 
-    private static AdmissionSubmissionWindow AliceWindow(DateTimeOffset now, int countCap)
-        => new(ExecutionJobKind.Geoprocessing, Alice, now - _window, countCap);
+    private static AdmissionSubmissionWindow AliceWindow(int countCap)
+        => new(ExecutionJobKind.Geoprocessing, Alice, _window, countCap);
 
     private static async Task SeedAsync(PostgresJobSubstrateHarness harness, params ExecutionJobRecord[] jobs)
     {

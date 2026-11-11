@@ -396,7 +396,7 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
             try
             {
                 var charged = await _submissions.CountAsync(
-                    new AdmissionSubmissionWindow(request.JobKind, request.PrincipalId!, now - window, options.MaxSubmissionsPerWindow),
+                    new AdmissionSubmissionWindow(request.JobKind, request.PrincipalId!, window, options.MaxSubmissionsPerWindow),
                     cancellationToken).ConfigureAwait(false);
                 return charged >= options.MaxSubmissionsPerWindow ? (false, charged, false) : (true, charged + 1, false);
             }
