@@ -136,7 +136,7 @@ internal static class McpToolSchemas
           "properties": {
             "sourceId": {
               "type": "string",
-              "description": "Completed honua_execute_plan job ID (honua://jobs/{id}); promotes its result artifact to a hosted layer."
+              "description": "Completed job ID from honua_execute_plan (honua://jobs/{id}); promotes its result artifact to a hosted layer."
             },
             "artifactId": {
               "type": "string",
