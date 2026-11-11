@@ -831,10 +831,8 @@ public sealed class TileCacheJobExecutorPublishTests
     internal static TileCacheJobRunner CreateSutForSeed(ServiceProvider serviceProvider)
         => CreateSut(serviceProvider);
 
-    /// <summary>
-    /// Runs a tile operation the way the job worker does: the request travels as TileCache job
-    /// parameters on the local backend and <see cref="TileCacheJobExecutor"/> executes it.
-    /// </summary>
+    // Runs a tile operation the way the job worker does: the request travels as TileCache job
+    // parameters on the local backend and TileCacheJobExecutor executes it.
     internal sealed class TileCacheJobRunner(ServiceProvider serviceProvider)
     {
         private readonly InMemoryUniversalProgressStore _progressStore = new();

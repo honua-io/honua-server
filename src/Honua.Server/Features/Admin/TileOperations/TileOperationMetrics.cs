@@ -1,7 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.Admin.TileOperations;
@@ -20,7 +22,7 @@ internal static class TileOperationMetrics
     public static readonly UpDownCounter<long> QueueDepth = HonuaTelemetry.Meter.CreateUpDownCounter<long>(
         "honua.tile.jobs.queue_depth",
         unit: null,
-        "Number of tile jobs waiting in queue.");
+        "Number of tile jobs submitted and not yet ended, summed across nodes.");
 
     public static readonly Counter<long> JobCount = HonuaTelemetry.Meter.CreateCounter<long>(
         "honua.tile.jobs.total",
@@ -71,6 +73,11 @@ internal static class TileOperationMetrics
         "honua.tile.cache.bytes_released",
         unit: null,
         "Bytes released from the generated tile cache by bounded expire/delete jobs.");
+
+    public static void RecordJobEnded(ExecutionJobRecord job)
+        => QueueDepth.Add(
+            -1,
+            new TagList { { "operation", job.Spec.Parameters.GetValueOrDefault(TileCacheJobParameterKeys.Operation) ?? "unknown" } });
 
     // Generated tile-cache serve-path hit/miss counters (honua.tile.cache.hits / .misses) are
     // owned by GeoServicesCloudTileCache, the single place every generated-cache read passes

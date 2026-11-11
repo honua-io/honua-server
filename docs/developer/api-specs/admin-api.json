@@ -20076,9 +20076,9 @@
           "503": {
             "description": "This host has no system database job store, so no tile operation is accepted.",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }

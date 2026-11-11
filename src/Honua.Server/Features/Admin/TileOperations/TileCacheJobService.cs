@@ -54,87 +54,21 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
     public async Task<string> SubmitAsync(TileOperationSubmission submission, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(submission);
-        var request = TileCacheExecutionSpecBuilder.NormalizeRequest(submission.Request);
         var jobStore = _jobStore ?? throw new InvalidOperationException(JobStoreUnavailableMessage);
         var jobQueue = _jobQueue ?? throw new InvalidOperationException(JobStoreUnavailableMessage);
-
-        var options = _options.CurrentValue;
-        var jobId = $"tile-{Guid.NewGuid():N}";
-
-        // The first submission names the resumable generation; a retry forwards it unchanged so the
-        // new job resumes the same generation instead of starting a fresh full-grid pass.
-        if (string.IsNullOrWhiteSpace(request.GenerationId))
+        var request = TileCacheExecutionSpecBuilder.NormalizeRequest(submission.Request);
+        var jobRecord = await CreateRecordAsync(submission with { Request = request }, cancellationToken).ConfigureAwait(false);
+        if (!await jobStore.TryCreateAsync(jobRecord, cancellationToken: cancellationToken).ConfigureAwait(false))
         {
-            request = request with { GenerationId = jobId };
+            throw new InvalidOperationException($"Failed to create tile-cache execution job '{jobRecord.OperationId}'.");
         }
 
-        var now = DateTimeOffset.UtcNow;
-        var spec = TileCacheExecutionSpecBuilder.Build(request, submission.SchemaName, submission.TenantScope, options);
-        var targetLayerIds = await ResolveTargetLayerIdsAsync(request, cancellationToken).ConfigureAwait(false);
-
-        var jobRecord = new ExecutionJobRecord
-        {
-            OperationId = jobId,
-            Status = ExecutionJobStatus.Queued,
-            CreatedAt = now,
-            UpdatedAt = now,
-            CurrentPhase = "Queued",
-            Audit = new OperationAuditInfo { RequestedBy = submission.RequestedBy },
-            // Replica safety (issue #2661): serialize concurrent generations of the same
-            // (service, gridset, style) window under an exclusive lease so two backend workers
-            // never seed/expire/delete the same key window at once.
-            Concurrency = new OperationConcurrencyPolicy
-            {
-                PartitionKey = TileCacheExecutionSpecBuilder.BuildPartitionKey(request, targetLayerIds),
-                RequiresExclusiveLease = true
-            },
-            Spec = spec
-        };
-
-        var created = await jobStore.TryCreateAsync(jobRecord, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-        if (!created)
-        {
-            throw new InvalidOperationException($"Failed to create tile-cache execution job '{jobId}'.");
-        }
-
-        // Seed the tile-shaped progress so GET /admin/tile-operations/jobs/{id} reflects
-        // the submission immediately, before the worker claims it.
-        var progress = TileOperationProgress.CreateInitial(
-            jobId,
-            request.Operation,
-            request.ServiceId,
-            request.LayerId,
-            request.TileMatrixSetId);
-        await _progressStore.SetProgressAsync(jobId, progress, ProgressRetention, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (string.Equals(spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
-        {
-            await EnqueueAsync(jobQueue, jobId, cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            try
-            {
-                await SubmitToRemoteBackendAsync(jobStore, jobRecord, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception) when (!cancellationToken.IsCancellationRequested)
-            {
-                await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
-                    jobStore,
-                    jobId,
-                    progressStore: _progressStore,
-                    progressRetention: ProgressRetention,
-                    failureMessage: "Tile-cache submission failed.",
-                    cancellationToken: CancellationToken.None).ConfigureAwait(false);
-                throw;
-            }
-        }
+        await SeedProgressAsync(jobRecord.OperationId, request, cancellationToken).ConfigureAwait(false);
+        await DispatchAsync(jobStore, jobQueue, jobRecord, cancellationToken).ConfigureAwait(false);
 
         TileOperationMetrics.QueueDepth.Add(1, new TagList { { "operation", request.Operation } });
-        Log.JobSubmitted(_logger, jobId, request.Operation, spec.Backend);
-        return jobId;
+        Log.JobSubmitted(_logger, jobRecord.OperationId, request.Operation, jobRecord.Spec.Backend);
+        return jobRecord.OperationId;
     }
 
     public Task<TileOperationProgress?> GetAsync(string jobId, CancellationToken cancellationToken = default)
@@ -168,18 +102,8 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
 
     public async Task<bool> CancelAsync(string jobId, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(jobId) || _jobStore == null)
-        {
-            return false;
-        }
-
-        var job = await _jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if (job == null)
-        {
-            return false;
-        }
-
-        if (IsTerminal(job.Status))
+        var job = await GetJobAsync(jobId, cancellationToken).ConfigureAwait(false);
+        if (job == null || ExecutionJobCancellationHelper.IsTerminal(job.Status))
         {
             return false;
         }
@@ -191,47 +115,24 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             return false;
         }
 
-        var observation = await backend.CancelAsync(job, cancellationToken).ConfigureAwait(false);
-
-        // Durably record the cancellation request so the reconciler and worker honour it,
-        // and bridge the tile-shaped progress for the admin status API.
-        var cancelling = job with
+        var cancelled = string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
+            ? await CancelLocalAsync(_jobStore!, backend, job, cancellationToken).ConfigureAwait(false)
+            : await CancelRemoteAsync(_jobStore!, backend, job, cancellationToken).ConfigureAwait(false);
+        if (!cancelled)
         {
-            CancellationRequestedAt = DateTimeOffset.UtcNow,
-            UpdatedAt = DateTimeOffset.UtcNow,
-            Status = observation.Status,
-            CurrentPhase = observation.Message ?? "Cancellation requested"
-        };
-        await _jobStore.TrySetAsync(cancelling, cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        var progress = await _progressStore.GetProgressAsync<TileOperationProgress>(jobId, cancellationToken)
-            .ConfigureAwait(false);
-        if (progress != null && progress.Status is OperationStatus.Queued or OperationStatus.Processing)
-        {
-            var cancelled = (TileOperationProgress)progress.WithCancellation(DateTimeOffset.UtcNow, "Cancellation requested");
-            await _progressStore.SetProgressAsync(jobId, cancelled, ProgressRetention, cancellationToken)
-                .ConfigureAwait(false);
+            return false;
         }
 
+        await CloseProgressAsync(jobId, cancellationToken).ConfigureAwait(false);
         Log.JobCancellationRequested(_logger, jobId, job.Spec.Backend);
         return true;
     }
 
+    // Only an ended job is retried: a retry resumes the same generation, which a running job still owns.
     public async Task<string?> RetryAsync(string jobId, string? requestedBy, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(jobId) || _jobStore == null)
-        {
-            return null;
-        }
-
-        var progress = await _progressStore.GetProgressAsync<TileOperationProgress>(jobId, cancellationToken).ConfigureAwait(false);
-        if (progress == null || progress.Status is not (OperationStatus.Failed or OperationStatus.Cancelled))
-        {
-            return null;
-        }
-
-        var job = await _jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if (job is null
+        var job = await GetJobAsync(jobId, cancellationToken).ConfigureAwait(false);
+        if (job is not { Status: ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled }
             || job.Spec.Kind != ExecutionJobKind.TileCache
             || !TileCacheExecutionSpecBuilder.TryParse(job.Spec.Parameters, out var request, out var schemaName, out var tenantScope, out _))
         {
@@ -240,6 +141,139 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
 
         return await SubmitAsync(new TileOperationSubmission(request, requestedBy, schemaName, tenantScope), cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    private async Task<ExecutionJobRecord?> GetJobAsync(string jobId, CancellationToken cancellationToken)
+        => string.IsNullOrWhiteSpace(jobId) || _jobStore == null
+            ? null
+            : await _jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+
+    private async Task<ExecutionJobRecord> CreateRecordAsync(TileOperationSubmission submission, CancellationToken cancellationToken)
+    {
+        var request = submission.Request;
+        var jobId = $"tile-{Guid.NewGuid():N}";
+
+        // The first submission names the resumable generation; a retry forwards it unchanged so the
+        // new job resumes the same generation instead of starting a fresh full-grid pass.
+        if (string.IsNullOrWhiteSpace(request.GenerationId))
+        {
+            request = request with { GenerationId = jobId };
+        }
+
+        var targetLayerIds = await ResolveTargetLayerIdsAsync(request, cancellationToken).ConfigureAwait(false);
+        var now = DateTimeOffset.UtcNow;
+        return new ExecutionJobRecord
+        {
+            OperationId = jobId,
+            Status = ExecutionJobStatus.Queued,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CurrentPhase = "Queued",
+            Audit = new OperationAuditInfo { RequestedBy = submission.RequestedBy },
+            // Concurrent generations of one (service, gridset, style) window run one at a time, so two
+            // workers never seed, expire or delete the same key window at once.
+            Concurrency = new OperationConcurrencyPolicy
+            {
+                PartitionKey = TileCacheExecutionSpecBuilder.BuildPartitionKey(request, targetLayerIds),
+                RequiresExclusiveLease = true
+            },
+            Spec = TileCacheExecutionSpecBuilder.Build(request, submission.SchemaName, submission.TenantScope, _options.CurrentValue)
+        };
+    }
+
+    // GET /admin/tile-operations/jobs/{id} answers from this progress before a worker claims the job.
+    private Task SeedProgressAsync(string jobId, TileOperationStartRequest request, CancellationToken cancellationToken)
+        => _progressStore.SetProgressAsync(
+            jobId,
+            TileOperationProgress.CreateInitial(jobId, request.Operation, request.ServiceId, request.LayerId, request.TileMatrixSetId),
+            ProgressRetention,
+            cancellationToken);
+
+    private async Task DispatchAsync(
+        IExecutionJobStore jobStore,
+        IJobQueue jobQueue,
+        ExecutionJobRecord job,
+        CancellationToken cancellationToken)
+    {
+        if (string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
+        {
+            await EnqueueAsync(jobQueue, job.OperationId, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            await SubmitToRemoteBackendAsync(jobStore, job, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
+                jobStore,
+                job.OperationId,
+                progressStore: _progressStore,
+                progressRetention: ProgressRetention,
+                failureMessage: "Tile-cache submission failed.",
+                cancellationToken: CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    // A queued job ends here; a claimed job keeps running until its worker sees the request.
+    private static async Task<bool> CancelLocalAsync(
+        IExecutionJobStore jobStore,
+        IBatchComputeBackend backend,
+        ExecutionJobRecord job,
+        CancellationToken cancellationToken)
+    {
+        var outcome = await ExecutionJobCancellationHelper.TryApplyAsync(
+            jobStore, job.OperationId, job, "Cancelled", cancellationToken: cancellationToken).ConfigureAwait(false);
+        // Ending a queued job here fires no terminal callback, so it leaves the outstanding count here.
+        if (outcome.State == ExecutionJobCancellationState.Cancelled && job.ClaimedBy == null)
+        {
+            TileOperationMetrics.RecordJobEnded(job);
+        }
+
+        if (outcome.State is not (ExecutionJobCancellationState.Cancelled or ExecutionJobCancellationState.CancellationRequested))
+        {
+            return false;
+        }
+
+        await backend.CancelAsync(outcome.Job ?? job, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    private static async Task<bool> CancelRemoteAsync(
+        IExecutionJobStore jobStore,
+        IBatchComputeBackend backend,
+        ExecutionJobRecord job,
+        CancellationToken cancellationToken)
+    {
+        var stamp = await ExecutionJobCancellationHelper.TryStampRemoteCancelRequestedAtAsync(
+            jobStore, job, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (stamp.Outcome is not (RemoteCancelStampOutcome.Stamped or RemoteCancelStampOutcome.AlreadyStamped))
+        {
+            return false;
+        }
+
+        var observation = await backend.CancelAsync(stamp.Job!, cancellationToken).ConfigureAwait(false);
+        var applied = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
+            jobStore, stamp.Job!, observation, cancellationToken).ConfigureAwait(false);
+        return applied.Outcome == BackendCancelApplyOutcome.Applied;
+    }
+
+    private async Task CloseProgressAsync(string jobId, CancellationToken cancellationToken)
+    {
+        var progress = await _progressStore.GetProgressAsync<TileOperationProgress>(jobId, cancellationToken)
+            .ConfigureAwait(false);
+        if (progress is { Status: OperationStatus.Queued or OperationStatus.Processing })
+        {
+            var cancelled = progress.WithCancellation(DateTimeOffset.UtcNow, "Cancellation requested");
+            await _progressStore.TrySetProgressAsync(
+                    new OperationProgressWrite(jobId, cancelled, ProgressRetention),
+                    progress.Status,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
     }
 
     // The record is durable, so the operation is accepted: the next reconciliation sweep queues a
@@ -289,11 +323,6 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             graphProvider,
             cancellationToken).ConfigureAwait(false);
     }
-
-    private static bool IsTerminal(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded
-            or ExecutionJobStatus.Failed
-            or ExecutionJobStatus.Cancelled;
 
     private static partial class Log
     {

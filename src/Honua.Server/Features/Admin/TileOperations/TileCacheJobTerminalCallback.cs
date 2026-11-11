@@ -9,8 +9,9 @@ using Honua.Infrastructure.Progress;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
-// The executor reports its own outcome; this closes the tile progress when the worker ends the job
-// without it (license expiry, timeout, operator cancellation, retries exhausted after a lost node).
+// Every ended tile job leaves the outstanding count here. The executor reports its own outcome; this
+// closes the tile progress when the worker ends the job without it (license expiry, timeout, operator
+// cancellation, retries exhausted after a lost node).
 internal sealed partial class TileCacheJobTerminalCallback(
     IUniversalProgressStore progressStore,
     ILogger<TileCacheJobTerminalCallback> logger) : IJobTerminalCallback
@@ -19,8 +20,13 @@ internal sealed partial class TileCacheJobTerminalCallback(
 
     public async ValueTask OnTerminalAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
     {
-        if (job.Spec.Kind != ExecutionJobKind.TileCache
-            || job.Status is not (ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled))
+        if (job.Spec.Kind != ExecutionJobKind.TileCache)
+        {
+            return;
+        }
+
+        TileOperationMetrics.RecordJobEnded(job);
+        if (job.Status is not (ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled))
         {
             return;
         }

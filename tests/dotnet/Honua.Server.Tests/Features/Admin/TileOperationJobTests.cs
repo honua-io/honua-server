@@ -21,12 +21,8 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Every tile operation is a TileCache execution job (issue #1697, honua-server#7354). Exercises
-/// submission against the <see cref="LocalBatchComputeBackend"/> (durable record + queue enqueue)
-/// and a remote stub backend (provider submission), cancellation through the backend, retry, and
-/// the terminal projection onto the tile progress.
-/// </summary>
+// Every tile operation is a TileCache execution job: submission on the local and a remote backend,
+// cancellation, retry, and the terminal projection onto the tile progress.
 public sealed class TileOperationJobTests
 {
     private const string Admin = "admin-a";
@@ -98,6 +94,39 @@ public sealed class TileOperationJobTests
     }
 
     [UnitTest]
+    public async Task Cancel_WhileAHeartbeatMovesTheRecord_StillRecordsTheCancellationRequest()
+    {
+        var jobStore = new InMemoryExecutionJobStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
+        var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
+        var service = CreateService(jobStore, progressStore, [backend], new TileCacheBatchOptions(), Substitute.For<IJobQueue>());
+        var jobId = await service.SubmitAsync(new TileOperationSubmission(SeedRequest(), Admin));
+        await MarkRunningAsync(jobStore, progressStore, jobId);
+        jobStore.MoveRecordOnNextWrite = true;
+
+        var cancelled = await service.CancelAsync(jobId);
+
+        cancelled.Should().BeTrue();
+        (await jobStore.GetAsync(jobId))!.CancellationRequestedAt.Should().NotBeNull(
+            "a reported cancellation must be durable so the worker running the job stops");
+    }
+
+    [UnitTest]
+    public async Task Retry_WhileTheJobStillRuns_ReturnsNull()
+    {
+        var jobStore = new InMemoryExecutionJobStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
+        var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
+        var service = CreateService(jobStore, progressStore, [backend], new TileCacheBatchOptions(), Substitute.For<IJobQueue>());
+        var jobId = await service.SubmitAsync(new TileOperationSubmission(SeedRequest(), Admin));
+        await MarkRunningAsync(jobStore, progressStore, jobId);
+        var progress = (await service.GetAsync(jobId))!;
+        await progressStore.SetProgressAsync(jobId, progress.WithCancellation(DateTimeOffset.UtcNow, "Cancellation requested"));
+
+        (await service.RetryAsync(jobId, "admin-b")).Should().BeNull("the original job is still running on its generation");
+    }
+
+    [UnitTest]
     public async Task Start_WithoutAJobQueue_IsRefused()
     {
         var jobStore = new InMemoryExecutionJobStore();
@@ -147,6 +176,7 @@ public sealed class TileOperationJobTests
         var failedJobId = await service.SubmitAsync(new TileOperationSubmission(SeedRequest(), Admin, "tenant_a", "public"));
         var failed = (await service.GetAsync(failedJobId))! with { Status = OperationStatus.Failed };
         await progressStore.SetProgressAsync(failedJobId, failed);
+        await jobStore.SetAsync((await jobStore.GetAsync(failedJobId))! with { Status = ExecutionJobStatus.Failed });
 
         var retryJobId = await service.RetryAsync(failedJobId, "admin-b");
 
@@ -397,7 +427,7 @@ public sealed class TileOperationJobTests
 
         // Promote to Running so cancellation is meaningful (not a pre-pickup queued cancel).
         var queued = await jobStore.GetAsync(jobId);
-        await jobStore.SetAsync(queued! with { Status = ExecutionJobStatus.Running });
+        await jobStore.SetAsync(queued! with { Status = ExecutionJobStatus.Running, ClaimedBy = "worker-a" });
 
         var cancelled = await service.CancelAsync(jobId);
 
@@ -436,6 +466,17 @@ public sealed class TileOperationJobTests
         var service = CreateService(jobStore, progressStore, [localBackend], options, Substitute.For<IJobQueue>());
 
         (await service.CancelAsync("tile-does-not-exist")).Should().BeFalse();
+    }
+
+    private static async Task MarkRunningAsync(
+        InMemoryExecutionJobStore jobStore,
+        AcceptingInMemoryProgressStore progressStore,
+        string jobId)
+    {
+        var record = (await jobStore.GetAsync(jobId))!;
+        await jobStore.SetAsync(record with { Status = ExecutionJobStatus.Running, ClaimedBy = "worker-b", AttemptCount = 1 });
+        var progress = (await progressStore.GetProgressAsync<TileOperationProgress>(jobId))!;
+        await progressStore.SetProgressAsync(jobId, progress with { Status = OperationStatus.Processing });
     }
 
     // ----- Test doubles -----------------------------------------------------
@@ -485,8 +526,18 @@ public sealed class TileOperationJobTests
             return Task.CompletedTask;
         }
 
+        // Simulates a worker heartbeat landing between the caller's read and its write.
+        public bool MoveRecordOnNextWrite { get; set; }
+
         public Task<bool> TrySetAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
         {
+            if (MoveRecordOnNextWrite)
+            {
+                MoveRecordOnNextWrite = false;
+                _records[job.OperationId] = _records[job.OperationId] with { LastHeartbeatAt = DateTimeOffset.UtcNow };
+                return Task.FromResult(false);
+            }
+
             _records[job.OperationId] = job;
             return Task.FromResult(true);
         }
