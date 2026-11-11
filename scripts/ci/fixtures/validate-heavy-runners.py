@@ -19,7 +19,7 @@ HEAVY_JOBS = {
 HOSTED_JOBS = {
     "pr-template-check", "pr-readiness", "changes", "targeted-shards",
     "ci-router-validation", "dotnet-foundation-tests", "js-typecheck", "test-all",
-    "merge-queue-gate", "ci-gate",
+    "merge-queue-gate", "ci-gate", "doctor-notify",
 }
 PINNED_JOBS = {
     "worker-gdal-tests", "python-integration-tests", "js-integration-tests",

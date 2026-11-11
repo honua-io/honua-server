@@ -91,7 +91,7 @@ def validate(
 ) -> str:
     """Check the normalization security contract and return the declared mode."""
 
-    producer_document = validate_permissions(producer, {"actions", "contents", "packages"}, "untrusted producer")
+    producer_document = validate_permissions(producer, {"actions", "contents", "packages", "pull-requests"}, "untrusted producer")
     consumer_document = validate_permissions(consumer, {"actions", "contents", "pull-requests"}, "consumer GITHUB_TOKEN")
     validate_checkout_credentials(producer_document)
     validate_checkout_credentials(consumer_document)

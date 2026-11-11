@@ -11,7 +11,7 @@ namespace Honua.ControlPlane;
 // The backstop re-drives a stale execution job, and a race with a real event is a no-op because the reconciler is leased.
 internal sealed partial class ExecutionJobBackstopSweepService(
     IExecutionJobStore jobStore,
-    IOperationReconcileDispatcher dispatcher,
+    IExecutionJobReconciler reconciler,
     IOptions<ControlPlaneTriggerOptions> options,
     ILogger<ExecutionJobBackstopSweepService> logger) : BackgroundService
 {
@@ -74,9 +74,7 @@ internal sealed partial class ExecutionJobBackstopSweepService(
             try
             {
                 Log.BackstopReconciling(logger, job.OperationId, (int)(DateTimeOffset.UtcNow - job.UpdatedAt).TotalSeconds);
-                await dispatcher
-                    .ReconcileOnceAsync(new OperationRef(OperationKind.ExecutionJob, job.OperationId), cancellationToken)
-                    .ConfigureAwait(false);
+                await reconciler.ReconcileExecutionJobAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
             }
             // Intentional catch-all: this is a per-job reconcile inside the sweep;
             // one stale job's failure must not stop the rest of the sweep from

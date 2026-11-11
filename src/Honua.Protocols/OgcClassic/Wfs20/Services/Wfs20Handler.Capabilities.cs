@@ -60,6 +60,9 @@ internal sealed partial class Wfs20Handler
             var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var metadata = snapshot.Graph.Metadata;
             var wfsUrl = BaseUrlResolver.PreserveToken(context.Request, $"{baseUrl}/wfs");
+            var builtTypes = ShouldIncludeCapabilitiesSection(requestedSections, "FeatureTypeList")
+                ? await BuildFeatureTypesAsync(featureTypes, cancellationToken).ConfigureAwait(false)
+                : [];
 
             var capabilities = new WfsCapabilities
             {
@@ -73,11 +76,8 @@ internal sealed partial class Wfs20Handler
                 OperationsMetadata = ShouldIncludeCapabilitiesSection(requestedSections, "OperationsMetadata")
                     ? BuildOperationsMetadata(wfsUrl)
                     : null,
-                FeatureTypeList = ShouldIncludeCapabilitiesSection(requestedSections, "FeatureTypeList")
-                    ? new FeatureTypeList
-                    {
-                        FeatureTypes = await BuildFeatureTypesAsync(featureTypes, cancellationToken).ConfigureAwait(false)
-                    }
+                FeatureTypeList = builtTypes.Length > 0
+                    ? new FeatureTypeList { FeatureTypes = builtTypes }
                     : null,
                 FilterCapabilities = ShouldIncludeCapabilitiesSection(requestedSections, "Filter_Capabilities")
                     ? BuildFilterCapabilities()
@@ -377,7 +377,10 @@ internal sealed partial class Wfs20Handler
             await throttler.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                return await BuildFeatureTypeAsync(featureType, cancellationToken).ConfigureAwait(false);
+                return await CapabilitiesLayerBuilder.TryBuildAsync(
+                    () => BuildFeatureTypeAsync(featureType, cancellationToken),
+                    featureType.Publication.Metadata.Id,
+                    _logger).ConfigureAwait(false);
             }
             finally
             {
@@ -385,7 +388,8 @@ internal sealed partial class Wfs20Handler
             }
         });
 
-        return await Task.WhenAll(tasks).ConfigureAwait(false);
+        var built = await Task.WhenAll(tasks).ConfigureAwait(false);
+        return built.OfType<FeatureType>().ToArray();
     }
 
 

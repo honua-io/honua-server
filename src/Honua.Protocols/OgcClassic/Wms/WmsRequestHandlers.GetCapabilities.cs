@@ -135,7 +135,7 @@ internal static partial class WmsRequestHandlers
 
         var logger = context.RequestServices
             .GetRequiredService<ILoggerFactory>()
-            .CreateLogger("Honua.Protocols.Ogc.Classic.Wms.WmsRequestHandlers");
+            .CreateLogger(LoggerCategory);
 
         // Fan out DB aggregate queries concurrently; each is a MIN/MAX scan on one table.
         // Resolve each layer defensively: a single layer whose temporal column cannot be
@@ -366,10 +366,16 @@ internal static partial class WmsRequestHandlers
             context.Request,
             GeoServicesServiceUrls.RequestedProtocol(context, "WMS"));
         var wmsUrlPrefix = $"{wmsEndpoint}{(wmsEndpoint.Contains('?') ? '&' : '?')}";
-        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var coordinateTransformService = context.RequestServices.GetService<ICoordinateTransformService>();
+
         var serviceTitle = service.Metadata.Title ?? service.EffectivePublicName;
         var serviceAbstract = service.Metadata.Description ?? "Honua WMS service";
+        var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger(LoggerCategory);
+        var preparedLayers = (await Task.WhenAll(accessibleLayers.Select(layer =>
+            CapabilitiesLayerBuilder.TryBuildAsync(
+                () => PrepareWmsCapabilitiesLayerAsync(context, layer),
+                layer.Publication.Metadata.Id,
+                logger))).ConfigureAwait(false)).OfType<PreparedWmsCapabilitiesLayer>().ToArray();
 
         var sb = new StringBuilder(8192);
         sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
@@ -467,7 +473,7 @@ internal static partial class WmsRequestHandlers
         sb.AppendLine("    <Layer>");
         sb.Append("      <Title>").Append(EscapeXml(serviceTitle)).AppendLine("</Title>");
         sb.Append("      <Abstract>").Append(EscapeXml(service.Metadata.Description ?? "Honua WMS root layer")).AppendLine("</Abstract>");
-        var layerCrs = accessibleLayers.Select(layer => GetWmsCapabilitiesCrs(layer.Resource.Spatial?.SupportedCrs, isWms111)).ToArray();
+        var layerCrs = preparedLayers.Select(prepared => GetWmsCapabilitiesCrs(prepared.Layer.Resource.Spatial?.SupportedCrs, isWms111)).ToArray();
         var commonCrs = layerCrs.Length == 0
             ? GetWmsCapabilitiesCrs(null, isWms111)
             : layerCrs.Skip(1).Aggregate(layerCrs[0], (common, next) => common.Intersect(next, StringComparer.Ordinal).ToArray());
@@ -477,27 +483,12 @@ internal static partial class WmsRequestHandlers
         // An empty SRS denotes no common inherited CRS in WMS 1.1.1.
         if (isWms111 && commonCrs.Length == 0)
             sb.AppendLine("      <SRS />");
-        // Root-layer bbox: union of per-resource CRS84 bboxes when V2 carries any,
-        // otherwise fall back to world bounds. WMS clients rely on the root layer carrying
-        // *some* extent to
-        // bootstrap zoom-to-layer behavior, so the world fallback preserves that
-        // contract until graphs carry per-resource bboxes.
-        var rootExtent = await TryComputeRootWgs84ExtentAsync(
-            accessibleLayers,
-            coordinateTransformService,
-            cancellationToken).ConfigureAwait(false) ?? WorldWgs84Extent;
+        var rootExtent = ComputeRootWgs84Extent(preparedLayers) ?? WorldWgs84Extent;
         await AppendWmsGeographicBoundsAsync(sb, new(rootExtent, "      ", isWms111, []), context).ConfigureAwait(false);
 
-        // Pre-fetch temporal extent ranges for all time-aware layers concurrently so the
-        // per-layer capabilities loop does not issue a sequential DB round-trip per layer.
-        var temporalRanges = await PrefetchTemporalRangesAsync(
-            context, accessibleLayers, cancellationToken).ConfigureAwait(false);
-
-        var legendDimensions = await PrefetchLegendDimensionsAsync(
-            context, accessibleLayers, cancellationToken).ConfigureAwait(false);
-
-        foreach (var layer in accessibleLayers)
+        foreach (var prepared in preparedLayers)
         {
+            var layer = prepared.Layer;
             var layerName = GetWmsLayerDisplayName(layer);
             var layerMetadata = layer.Resource.Metadata;
             var resourceTitle = layerMetadata.Title ?? layerMetadata.Name ?? layerName;
@@ -513,15 +504,14 @@ internal static partial class WmsRequestHandlers
                 sb.Append("        <").Append(crsElementName).Append('>').Append(EscapeXml(crs))
                     .Append("</").Append(crsElementName).AppendLine(">");
 
-            var layerExtent = await TryGetLayerWgs84ExtentAsync(
-                layer.Resource, coordinateTransformService, cancellationToken).ConfigureAwait(false) ?? rootExtent;
+            var layerExtent = prepared.Extent ?? rootExtent;
             await AppendWmsGeographicBoundsAsync(sb, new(layerExtent, "        ", isWms111, crsNames), context).ConfigureAwait(false);
 
             // Preserve the CITE fixture dimensions (elevation on cite:Lakes and
             // time on cite:Autos) alongside the dynamic dimensions advertised by
             // the canonical resource metadata.
             AppendWmsCiteDimensions(sb, layer, "        ", isWms111);
-            AppendWmsTemporalDimension(sb, layer, "        ", isWms111, temporalRanges);
+            AppendWmsTemporalDimension(sb, layer, "        ", isWms111, prepared.TemporalRanges);
 
             var metadataLink = layer.Resource.Metadata.Links.FirstOrDefault(link =>
                 string.Equals(link.Rel, "metadata", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(link.Href));
@@ -535,7 +525,7 @@ internal static partial class WmsRequestHandlers
             sb.AppendLine("        <Style>");
             sb.AppendLine("          <Name>default</Name>");
             sb.AppendLine("          <Title>Default style</Title>");
-            if (legendDimensions.TryGetValue(layer.StorageLayerId, out var legendSize))
+            if (prepared.LegendDimensions.TryGetValue(layer.StorageLayerId, out var legendSize))
             {
                 var legendHref =
                     $"{wmsUrlPrefix}SERVICE=WMS&VERSION={(isWms111 ? Wms111Version : Wms13Version)}"
@@ -620,16 +610,29 @@ internal static partial class WmsRequestHandlers
             Math.Max(transformed.Value.MinLat, transformed.Value.MaxLat));
     }
 
-    private static async Task<Wgs84Extent?> TryComputeRootWgs84ExtentAsync(
-        IReadOnlyList<WmsLayer> layers,
-        ICoordinateTransformService? coordinateTransformService,
-        CancellationToken cancellationToken)
+    private sealed record PreparedWmsCapabilitiesLayer(
+        WmsLayer Layer,
+        Wgs84Extent? Extent,
+        Dictionary<int, MetadataV2TemporalRange> TemporalRanges,
+        Dictionary<int, (int Width, int Height)> LegendDimensions);
+
+    private static async Task<PreparedWmsCapabilitiesLayer> PrepareWmsCapabilitiesLayerAsync(
+        HttpContext context, WmsLayer layer)
+    {
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        var extent = await TryGetLayerWgs84ExtentAsync(layer.Resource,
+            context.RequestServices.GetService<ICoordinateTransformService>(), cancellationToken).ConfigureAwait(false);
+        var temporalRanges = await PrefetchTemporalRangesAsync(context, [layer], cancellationToken).ConfigureAwait(false);
+        var legendDimensions = await PrefetchLegendDimensionsAsync(context, [layer], cancellationToken).ConfigureAwait(false);
+        return new(layer, extent, temporalRanges, legendDimensions);
+    }
+
+    private static Wgs84Extent? ComputeRootWgs84Extent(IEnumerable<PreparedWmsCapabilitiesLayer> layers)
     {
         Wgs84Extent? aggregate = null;
         foreach (var layer in layers)
         {
-            var extent = await TryGetLayerWgs84ExtentAsync(layer.Resource, coordinateTransformService, cancellationToken)
-                .ConfigureAwait(false);
+            var extent = layer.Extent;
             if (extent is null)
             {
                 continue;

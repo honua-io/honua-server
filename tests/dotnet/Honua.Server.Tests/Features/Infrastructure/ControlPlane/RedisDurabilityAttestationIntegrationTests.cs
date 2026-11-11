@@ -5,17 +5,13 @@ using System.Diagnostics;
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.Capabilities;
-using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Core.Features.Geoprocessing.Domain;
-using Honua.Geoprocessing;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
@@ -23,60 +19,43 @@ using Testcontainers.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Executes the Redis durability attestation and durable-job registration seams against real
-/// Redis containers. The recovery case intentionally kills the container process abruptly so
-/// graceful shutdown cannot stand in for AOF recovery evidence.
-/// <para>
-/// honua-server#4502 changed what a REJECTED attestation means: the durable job substrate is
-/// still composed (every consumer of <see cref="IExecutionJobStore"/> is registered
-/// unconditionally, so composing it out aborted startup at DI validation). The owner ruling of
-/// 2026-10-10 went further: the attestation is INFORMATION. A connected Redis is classified
-/// <see cref="DurableJobSubstrateCause.Available"/> whatever the attestation says, the outcome is
-/// published as <see cref="DurableJobSubstrateOptions.RedisDurabilityStatus"/>, and the Redis
-/// health check stays Healthy and carries the outcome as data. The non-attested cases below
-/// therefore assert <em>composed and advertised, outcome published</em>; the attestation itself
-/// is unchanged.
-/// </para>
-/// </summary>
+// Executes the Redis durability attestation against real Redis containers, for the control plane
+// that is stored in Redis: operation proposals. The attestation is information. Its outcome is
+// published as RedisDurabilityStatus and on the Redis
+// health check, the proposal store serves whatever the outcome, and only
+// Jobs:RequireDurableStore turns a non-attested outcome into a startup refusal. The
+// recovery case kills the container process abruptly so graceful shutdown cannot stand in for
+// AOF recovery evidence.
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.TestInfrastructure)]
 public sealed class RedisDurabilityAttestationIntegrationTests
 {
     [IntegrationTest]
-    public async Task NonPersistentRedis_IsRejectedButStillComposesJobSubstrate()
+    public async Task NonPersistentRedis_IsRejectedAndStillServesProposals()
     {
         await using var redis = await StartRedisAsync(appendOnly: false, evictionPolicy: "noeviction");
         var inspection = await RedisDurabilityAttestor.InspectAsync(redis.Multiplexer);
 
         inspection.Accepted.Should().BeFalse();
         inspection.FailureCause.Should().Be(DurableJobSubstrateCause.RedisPersistenceDisabled, inspection.FailureDetail);
-
-        using var provider = ComposeJobServices(redis.Multiplexer, inspection.Attestation);
-        AssertDegradedButComposed(provider);
-
-        // The store and queue ARE composed (#4502) and, since the 2026-10-10 owner ruling, the
-        // runtime is ADVERTISED: the attestation outcome is published, never classified.
-        AssertAdvertisedWithOutcome(inspection, RedisDurabilityStatuses.NotDurable);
+        AssertPublishedAsInformation(inspection, RedisDurabilityStatuses.NotDurable);
+        await AssertProposalStoreServesAsync(redis.Multiplexer);
     }
 
     [IntegrationTest]
-    public async Task EvictingRedis_IsRejectedButStillComposesJobSubstrate()
+    public async Task EvictingRedis_IsRejectedAndStillServesProposals()
     {
         await using var redis = await StartRedisAsync(appendOnly: true, evictionPolicy: "allkeys-lru");
         var inspection = await RedisDurabilityAttestor.InspectAsync(redis.Multiplexer);
 
         inspection.Accepted.Should().BeFalse();
         inspection.FailureCause.Should().Be(DurableJobSubstrateCause.RedisEvictionPolicyUnsafe, inspection.FailureDetail);
-
-        using var provider = ComposeJobServices(redis.Multiplexer, inspection.Attestation);
-        AssertDegradedButComposed(provider);
-
-        AssertAdvertisedWithOutcome(inspection, RedisDurabilityStatuses.NotDurable);
+        AssertPublishedAsInformation(inspection, RedisDurabilityStatuses.NotDurable);
+        await AssertProposalStoreServesAsync(redis.Multiplexer);
     }
 
     [IntegrationTest]
-    public async Task UnsafeFsyncRedis_IsRejectedButStillComposesJobSubstrate()
+    public async Task UnsafeFsyncRedis_IsRejectedAndStillServesProposals()
     {
         await using var redis = await StartRedisAsync(
             appendOnly: true,
@@ -86,14 +65,13 @@ public sealed class RedisDurabilityAttestationIntegrationTests
 
         inspection.Accepted.Should().BeFalse();
         inspection.FailureCause.Should().Be(DurableJobSubstrateCause.RedisWritePolicyUnsafe, inspection.FailureDetail);
-
-        using var provider = ComposeJobServices(redis.Multiplexer, inspection.Attestation);
-        AssertDegradedButComposed(provider);
-        AssertAdvertisedWithOutcome(inspection, RedisDurabilityStatuses.NotDurable);
+        AssertPublishedAsInformation(inspection, RedisDurabilityStatuses.NotDurable);
+        await AssertProposalStoreServesAsync(redis.Multiplexer);
     }
 
+    // The managed-Redis shape: AWS ElastiCache and MemoryDB block CONFIG.
     [IntegrationTest]
-    public async Task RedisWithoutPolicyReadPermission_IsRejectedButStillComposesJobSubstrate()
+    public async Task RedisWithoutPolicyReadPermission_IsUnverifiedAndStillServesProposals()
     {
         await using var redis = await StartRedisAsync(
             appendOnly: true,
@@ -103,57 +81,20 @@ public sealed class RedisDurabilityAttestationIntegrationTests
 
         inspection.Accepted.Should().BeFalse();
         inspection.FailureCause.Should().Be(DurableJobSubstrateCause.RedisAttestationUnavailable, inspection.FailureDetail);
-
-        using var provider = ComposeJobServices(redis.Multiplexer, inspection.Attestation);
-        AssertDegradedButComposed(provider);
-
-        // The managed-Redis shape (AWS ElastiCache / MemoryDB block CONFIG): unverified, not
-        // rejected, and the runtime is advertised.
-        AssertAdvertisedWithOutcome(inspection, RedisDurabilityStatuses.Unverified);
+        AssertPublishedAsInformation(inspection, RedisDurabilityStatuses.Unverified);
+        await AssertProposalStoreServesAsync(redis.Multiplexer);
     }
 
-    /// <summary>
-    /// The end-to-end contract against the exact substrate the honua-release Slice-1 candidate
-    /// harness runs — a stock <c>redis:7-alpine</c> with <c>appendonly no</c>. The composed store
-    /// must actually serve job records, the health check must stay HEALTHY and carry the
-    /// durability outcome with its typed cause and guidance as data (owner ruling 2026-10-10:
-    /// durability is information), and the runtime must be advertised.
-    /// </summary>
     [IntegrationTest]
-    public async Task NonPersistentRedis_ServesJobsAndReportsDurabilityAsInformation()
+    public async Task NonPersistentRedis_HealthCheckStaysHealthyAndReportsDurabilityAsInformation()
     {
         await using var redis = await StartRedisAsync(appendOnly: false, evictionPolicy: "noeviction");
         var inspection = await RedisDurabilityAttestor.InspectAsync(redis.Multiplexer);
         inspection.Accepted.Should().BeFalse();
         inspection.FailureCause.Should().Be(DurableJobSubstrateCause.RedisPersistenceDisabled, inspection.FailureDetail);
+        using var cacheProvider = BuildRedisCache(redis.ConnectionString);
+        var healthCheck = CreateHealthCheck(redis.Multiplexer, cacheProvider, Published(inspection));
 
-        var substrate = Options.Create(new DurableJobSubstrateOptions
-        {
-            RedisConfigured = true,
-            RedisEntitled = true,
-            RedisDurabilityFailure = inspection.FailureCause
-        });
-
-        // 1. The composed store is not a placeholder — it round-trips a real job record.
-        using var provider = ComposeJobServices(redis.Multiplexer, inspection.Attestation);
-        var jobStore = provider.GetRequiredService<IExecutionJobStore>();
-        var queue = provider.GetRequiredService<IJobQueue>();
-        var operationId = $"degraded-{Guid.NewGuid():N}";
-
-        (await jobStore.TryCreateAsync(CreateJob(operationId))).Should().BeTrue();
-        await queue.EnqueueAsync(operationId);
-        (await jobStore.GetAsync(operationId))!.Status.Should().Be(ExecutionJobStatus.Queued);
-
-        // 2. The health check stays HEALTHY and carries the outcome, the cause, the consequence
-        //    and the guidance as data.
-        var cacheServices = new ServiceCollection();
-        cacheServices.AddStackExchangeRedisCache(options => options.Configuration = redis.ConnectionString);
-        using var cacheProvider = cacheServices.BuildServiceProvider();
-        var healthCheck = new Honua.Server.Features.HealthCheck.RedisHealthCheck(
-            redis.Multiplexer,
-            cacheProvider.GetRequiredService<IDistributedCache>(),
-            NullLogger<Honua.Server.Features.HealthCheck.RedisHealthCheck>.Instance,
-            substrate);
         var health = await healthCheck.CheckHealthAsync(new HealthCheckContext());
 
         health.Status.Should().Be(HealthStatus.Healthy);
@@ -163,50 +104,23 @@ public sealed class RedisDurabilityAttestationIntegrationTests
         health.Data["remediation"].Should().Be(
             DurableJobSubstrateRemediation.For(DurableJobSubstrateCause.RedisPersistenceDisabled));
         health.Data["consequence"].Should().Be(DurableJobSubstrateRemediation.NonDurableConsequence);
-
-        // 3. The runtime is ADVERTISED (owner ruling 2026-10-10); the outcome is published.
-        substrate.Value.Classify(jobStorePresent: true, jobQueuePresent: true)
-            .Should().Be(DurableJobSubstrateCause.Available);
-        substrate.Value.RedisDurabilityStatus.Should().Be(RedisDurabilityStatuses.NotDurable);
     }
 
-    /// <summary>
-    /// A startup-time durability rejection must not MASK a later Redis outage. The health check
-    /// runs its ping and cache write/read/delete probes first and only reports the durability
-    /// degradation once connectivity is proven; otherwise an operator whose Redis has AOF off
-    /// would keep reading "durability is not attested" while the actual failure is that Redis is
-    /// unreachable (honua-server#4502 review).
-    /// </summary>
+    // The health check proves connectivity before it reports the durability outcome, so an
+    // operator whose Redis has AOF off is told about an outage and not about durability.
     [IntegrationTest]
     public async Task RejectedDurability_WithUnreachableRedis_ReportsTheOutageNotTheDurabilityVerdict()
     {
         await using var redis = await StartRedisAsync(appendOnly: false, evictionPolicy: "noeviction");
         var inspection = await RedisDurabilityAttestor.InspectAsync(redis.Multiplexer);
         inspection.Accepted.Should().BeFalse();
+        using var cacheProvider = BuildRedisCache(redis.ConnectionString);
+        var healthCheck = CreateHealthCheck(redis.Multiplexer, cacheProvider, Published(inspection));
 
-        var substrate = Options.Create(new DurableJobSubstrateOptions
-        {
-            RedisConfigured = true,
-            RedisEntitled = true,
-            RedisDurabilityFailure = inspection.FailureCause
-        });
-
-        var cacheServices = new ServiceCollection();
-        cacheServices.AddStackExchangeRedisCache(options => options.Configuration = redis.ConnectionString);
-        using var cacheProvider = cacheServices.BuildServiceProvider();
-        var healthCheck = new Honua.Server.Features.HealthCheck.RedisHealthCheck(
-            redis.Multiplexer,
-            cacheProvider.GetRequiredService<IDistributedCache>(),
-            NullLogger<Honua.Server.Features.HealthCheck.RedisHealthCheck>.Instance,
-            substrate);
-
-        // While Redis serves, the durability outcome is reported as information on a healthy check.
         var serving = await healthCheck.CheckHealthAsync(new HealthCheckContext());
         serving.Status.Should().Be(HealthStatus.Healthy);
         serving.Data["durability"].Should().Be(RedisDurabilityStatuses.NotDurable);
 
-        // Take Redis away. The same startup-time rejection is still on the options, but the
-        // reported condition must now be the outage.
         await redis.Container.StopAsync();
 
         var outage = await healthCheck.CheckHealthAsync(new HealthCheckContext());
@@ -217,7 +131,7 @@ public sealed class RedisDurabilityAttestationIntegrationTests
     }
 
     [IntegrationTest]
-    public async Task AcceptedRedis_SurvivesAbruptKillAndRestart_WithAllDurableRecordsIntact()
+    public async Task AcceptedRedis_SurvivesAbruptKillAndRestart_WithProposalsIntact()
     {
         await using var redis = await StartRedisAsync(appendOnly: true, evictionPolicy: "noeviction");
         var inspection = await RedisDurabilityAttestor.InspectAsync(redis.Multiplexer);
@@ -229,20 +143,14 @@ public sealed class RedisDurabilityAttestationIntegrationTests
         inspection.Attestation.Endpoint.ToLowerInvariant().Should().NotContain("password");
         inspection.Attestation.ObservedAt.Should().BeBefore(DateTimeOffset.UtcNow);
 
-        var cacheServices = new ServiceCollection();
-        cacheServices.AddStackExchangeRedisCache(options => options.Configuration = redis.ConnectionString);
-        using var cacheProvider = cacheServices.BuildServiceProvider();
-        var healthCheck = new Honua.Server.Features.HealthCheck.RedisHealthCheck(
-            redis.Multiplexer,
-            cacheProvider.GetRequiredService<IDistributedCache>(),
-            NullLogger<Honua.Server.Features.HealthCheck.RedisHealthCheck>.Instance,
-            Options.Create(new DurableJobSubstrateOptions
-            {
-                RedisConfigured = true,
-                RedisEntitled = true,
-                RedisDurabilityAttestation = inspection.Attestation
-            }));
-        var health = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+        var published = Published(inspection);
+        published.RedisDurabilityStatus.Should().Be(RedisDurabilityStatuses.Attested);
+        var requireDurableStore = () => DurableJobSubstrateStartupGate.EnsureSatisfied(published, requireDurableStore: true);
+        requireDurableStore.Should().NotThrow();
+
+        using var cacheProvider = BuildRedisCache(redis.ConnectionString);
+        var health = await CreateHealthCheck(redis.Multiplexer, cacheProvider, published)
+            .CheckHealthAsync(new HealthCheckContext());
         health.Status.Should().Be(HealthStatus.Healthy);
         health.Data["durability"].Should().Be(RedisDurabilityStatuses.Attested);
         health.Data["durabilityEndpoint"].Should().Be(inspection.Attestation.Endpoint);
@@ -251,205 +159,99 @@ public sealed class RedisDurabilityAttestationIntegrationTests
         health.Data["evictionPolicy"].Should().Be(inspection.Attestation.EvictionPolicy);
         health.Data["durabilityObservedAt"].Should().Be(inspection.Attestation.ObservedAt);
 
-        new DurableJobSubstrateOptions
+        var proposals = new RedisOperationProposalStore(redis.Multiplexer, NullLogger<RedisOperationProposalStore>.Instance);
+        var awaitingApproval = CreateAwaitingApprovalProposal();
+        var rejected = CreateAwaitingApprovalProposal();
+        (await proposals.TryCreateAsync(awaitingApproval)).Should().BeTrue();
+        (await proposals.TryCreateAsync(rejected)).Should().BeTrue();
+        (await proposals.TrySetAsync((await proposals.GetAsync(rejected.ProposalId))! with
         {
-            RedisConfigured = true,
-            RedisEntitled = true,
-            RedisDurabilityAttestation = inspection.Attestation
-        }.Classify(true, true).Should().Be(DurableJobSubstrateCause.Available);
+            Status = OperationProposalStatus.Rejected,
+            ResolvedBy = "approver",
+        })).Should().BeTrue();
+        var awaitingApprovalBeforeKill = (await proposals.GetAsync(awaitingApproval.ProposalId))!;
+        var rejectedBeforeKill = (await proposals.GetAsync(rejected.ProposalId))!;
 
-        using var provider = ComposeJobServices(redis.Multiplexer, inspection.Attestation);
-        var jobStore = provider.GetRequiredService<IExecutionJobStore>();
-        var queue = provider.GetRequiredService<IJobQueue>();
-        var logStore = provider.GetRequiredService<IExecutionLogStore>();
-        var resultStore = provider.GetRequiredService<IGeoprocessingResultPackageStore>();
-        var database = redis.Multiplexer.GetDatabase();
-
-        var queuedId = $"durability-queued-{Guid.NewGuid():N}";
-        var claimedId = $"durability-claimed-{Guid.NewGuid():N}";
-        var runningId = $"durability-running-{Guid.NewGuid():N}";
-        var terminalId = $"durability-terminal-{Guid.NewGuid():N}";
-
-        await jobStore.TryCreateAsync(CreateJob(claimedId));
-        await queue.EnqueueAsync(claimedId);
-        (await queue.TryClaimAsync("durability-worker")).Should().Be(claimedId);
-
-        await jobStore.TryCreateAsync(CreateJob(runningId));
-        await queue.EnqueueAsync(runningId);
-        (await queue.TryClaimAsync("durability-worker")).Should().Be(runningId);
-        var running = (await jobStore.GetAsync(runningId))!;
-        await jobStore.SetAsync(running with
-        {
-            Status = ExecutionJobStatus.Running,
-            CurrentPhase = "Running",
-            LastHeartbeatAt = DateTimeOffset.UtcNow,
-            UpdatedAt = DateTimeOffset.UtcNow
-        });
-
-        await jobStore.TryCreateAsync(CreateJob(queuedId));
-        await queue.EnqueueAsync(queuedId);
-
-        var terminal = CreateJob(terminalId) with
-        {
-            Status = ExecutionJobStatus.Succeeded,
-            CurrentPhase = "Completed",
-            CompletedAt = DateTimeOffset.UtcNow,
-            ArtifactReferences = [$"artifact:{terminalId}"]
-        };
-        await jobStore.TryCreateAsync(terminal);
-        await logStore.AppendAsync(terminalId, new ExecutionLogEntry
-        {
-            Timestamp = DateTimeOffset.UtcNow,
-            Level = ExecutionLogLevel.Info,
-            Message = "terminal record persisted",
-            Phase = "Completed"
-        });
-        var package = new AnalysisResultPackage
-        {
-            ResultPackageId = $"package-{terminalId}",
-            Status = GeoprocessingWorkflowStatus.Completed,
-            Summary = new ResultSummary { Title = "durability recovery" },
-            Artifacts =
-            [
-                new ArtifactRef
-                {
-                    ArtifactId = $"artifact:{terminalId}",
-                    Kind = ArtifactKind.File,
-                    Label = "durable result",
-                    Uri = $"s3://results/{terminalId}.json",
-                    ContentType = "application/json"
-                }
-            ],
-            MapPackageId = $"map-package:{terminalId}",
-            AppPackageId = $"app-package:{terminalId}",
-            Provenance = new ProvenanceRecord
-            {
-                Sources = [],
-                ProcessDefinitions = ["integration.durability"],
-                ExecutedAt = DateTimeOffset.UtcNow
-            }
-        };
-        await resultStore.SetAsync(terminalId, package);
-
-        await database.PingAsync();
+        await redis.Multiplexer.GetDatabase().PingAsync();
         await KillContainerAsync(redis.Container);
         await redis.Container.StartAsync();
         await WaitForRedisAsync(redis.Multiplexer);
 
-        (await jobStore.GetAsync(queuedId))!.Status.Should().Be(ExecutionJobStatus.Queued);
-        (await jobStore.GetAsync(claimedId))!.Status.Should().Be(ExecutionJobStatus.Provisioning);
-        (await jobStore.GetAsync(runningId))!.Status.Should().Be(ExecutionJobStatus.Running);
-        (await jobStore.GetAsync(terminalId))!.Status.Should().Be(ExecutionJobStatus.Succeeded);
-
-        (await logStore.GetLogsAsync(terminalId)).Should().ContainSingle(entry =>
-            entry.Message == "terminal record persisted");
-        (await resultStore.GetAsync(terminalId)).Should().BeEquivalentTo(package);
-
-        (await jobStore.GetAsync(terminalId))!.ArtifactReferences
-            .Should().ContainSingle($"artifact:{terminalId}");
-
-        var pending = await database.SortedSetRangeByRankAsync("controlplane:jobqueue:pending");
-        pending.Should().Contain((RedisValue)queuedId);
-        pending.Should().NotContain((RedisValue)claimedId);
-        pending.Should().NotContain((RedisValue)runningId);
-
-        var claimed = await database.SortedSetRangeByRankAsync("controlplane:jobqueue:claimed");
-        claimed.Should().Contain((RedisValue)claimedId);
-        claimed.Should().Contain((RedisValue)runningId);
-        claimed.Should().NotContain((RedisValue)terminalId);
-
-        var active = await database.SetMembersAsync("controlplane:job:active");
-        active.Should().Contain((RedisValue)queuedId);
-        active.Should().Contain((RedisValue)claimedId);
-        active.Should().Contain((RedisValue)runningId);
-        active.Should().NotContain((RedisValue)terminalId);
-
-        var createdIndex = await database.SortedSetRangeByRankAsync("controlplane:job:index:created:all");
-        createdIndex.Should().Contain((RedisValue)queuedId);
-        createdIndex.Should().Contain((RedisValue)claimedId);
-        createdIndex.Should().Contain((RedisValue)runningId);
-        createdIndex.Should().Contain((RedisValue)terminalId);
-
-        (await queue.GetQueueDepthAsync()).Should().Be(1);
+        (await proposals.GetAsync(awaitingApproval.ProposalId)).Should().BeEquivalentTo(awaitingApprovalBeforeKill);
+        (await proposals.GetAsync(rejected.ProposalId)).Should().BeEquivalentTo(rejectedBeforeKill);
+        rejectedBeforeKill.Status.Should().Be(OperationProposalStatus.Rejected);
+        var active = (await proposals.ListActiveAsync()).Select(proposal => proposal.ProposalId).ToArray();
+        active.Should().Contain(awaitingApproval.ProposalId);
+        active.Should().NotContain(rejected.ProposalId);
     }
 
-    private static void AssertAdvertisedWithOutcome(
+    private static DurableJobSubstrateOptions Published(RedisDurabilityAttestationResult inspection) => new()
+    {
+        RedisConfigured = true,
+        RedisEntitled = true,
+        RedisDurabilityAttestation = inspection.Attestation,
+        RedisDurabilityFailure = inspection.FailureCause,
+        RedisDurabilityDetail = inspection.FailureDetail,
+    };
+
+    private static void AssertPublishedAsInformation(
         RedisDurabilityAttestationResult inspection,
         string expectedStatus)
     {
-        var options = new DurableJobSubstrateOptions
-        {
-            RedisConfigured = true,
-            RedisEntitled = true,
-            RedisDurabilityAttestation = inspection.Attestation,
-            RedisDurabilityFailure = inspection.FailureCause,
-            RedisDurabilityDetail = inspection.FailureDetail,
-        };
+        var options = Published(inspection);
 
-        options.Classify(jobStorePresent: true, jobQueuePresent: true).Should().Be(
-            DurableJobSubstrateCause.Available,
-            "a connected Redis enables the runtime whatever the attestation said (owner ruling 2026-10-10)");
         options.RedisDurabilityStatus.Should().Be(expectedStatus);
-        var gate = () => DurableJobSubstrateStartupGate.EnsureSatisfied(options, requireDurableStore: false, inspection.FailureDetail);
-        gate.Should().NotThrow();
+        var defaultPolicy = () => DurableJobSubstrateStartupGate.EnsureSatisfied(
+            options, requireDurableStore: false, inspection.FailureDetail);
+        defaultPolicy.Should().NotThrow();
+        var requireDurableStore = () => DurableJobSubstrateStartupGate.EnsureSatisfied(
+            options, requireDurableStore: true, inspection.FailureDetail);
+        requireDurableStore.Should().Throw<DurableJobSubstrateNotAttestedException>()
+            .Which.Cause.Should().Be(inspection.FailureCause);
     }
 
-    /// <summary>
-    /// The #4502 contract for a rejected attestation: the Redis-backed job substrate is fully
-    /// composed and usable (and, since the 2026-10-10 owner ruling, advertised).
-    /// </summary>
-    private static void AssertDegradedButComposed(ServiceProvider provider)
+    private static async Task AssertProposalStoreServesAsync(IConnectionMultiplexer redis)
     {
-        provider.GetService<IExecutionJobStore>().Should().NotBeNull(
-            "every consumer of IExecutionJobStore stays registered when Redis is connected, so "
-            + "composing the store out aborts startup at DI validation (honua-server#4502)");
-        provider.GetService<IJobQueue>().Should().NotBeNull();
-        provider.GetService<IExecutionLogStore>().Should().NotBeNull();
-        provider.GetService<IGeoprocessingResultPackageStore>().Should().NotBeNull();
+        var proposals = new RedisOperationProposalStore(redis, NullLogger<RedisOperationProposalStore>.Instance);
+        var proposal = CreateAwaitingApprovalProposal();
+
+        (await proposals.TryCreateAsync(proposal)).Should().BeTrue();
+
+        (await proposals.GetAsync(proposal.ProposalId))!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+        (await proposals.ListActiveAsync()).Should().Contain(active => active.ProposalId == proposal.ProposalId);
     }
 
-    private static ServiceProvider ComposeJobServices(
-        IConnectionMultiplexer redis,
-        RedisDurabilityAttestation? attestation)
+    private static OperationProposal CreateAwaitingApprovalProposal()
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new OperationProposal
+        {
+            ProposalId = $"durability-{Guid.NewGuid():N}",
+            Kind = OperationClass.Deploy,
+            Status = OperationProposalStatus.AwaitingApproval,
+            RequestedBy = "requester",
+            Plan = new OperationProposalPlan { Summary = "durability" },
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+    }
+
+    private static ServiceProvider BuildRedisCache(string connectionString)
     {
         var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSingleton(redis);
-
-        // Entitlement and durability attestation are separate gates (honua-server#4502). These
-        // cases all model an ENTITLED deployment whose Redis does or does not attest, so the
-        // marker the composition root publishes for 'caching.redis' is always present here; the
-        // unentitled case is covered by DurableJobSubstrateRegistrationTests.
-        services.AddSingleton(new DurableJobSubstrateEntitlement());
-
-        if (attestation is not null)
-        {
-            services.AddSingleton(attestation);
-        }
-
-        services.AddGeoprocessing(new ConfigurationBuilder().Build());
-        services.AddJobOrchestration();
+        services.AddStackExchangeRedisCache(options => options.Configuration = connectionString);
         return services.BuildServiceProvider();
     }
 
-    private static ExecutionJobRecord CreateJob(string operationId)
-    {
-        var now = DateTimeOffset.UtcNow;
-        return new ExecutionJobRecord
-        {
-            OperationId = operationId,
-            Status = ExecutionJobStatus.Queued,
-            CreatedAt = now,
-            UpdatedAt = now,
-            Spec = new ExecutionJobSpec
-            {
-                Kind = ExecutionJobKind.Geoprocessing,
-                TargetKind = BatchComputeTargetKind.LocalProcess,
-                Backend = "integration",
-                WorkloadName = "durability"
-            }
-        };
-    }
+    private static Honua.Server.Features.HealthCheck.RedisHealthCheck CreateHealthCheck(
+        IConnectionMultiplexer redis,
+        ServiceProvider cacheProvider,
+        DurableJobSubstrateOptions published)
+        => new(
+            redis,
+            cacheProvider.GetRequiredService<IDistributedCache>(),
+            NullLogger<Honua.Server.Features.HealthCheck.RedisHealthCheck>.Instance,
+            Options.Create(published));
 
     private static async Task<RedisTestContainer> StartRedisAsync(
         bool appendOnly,

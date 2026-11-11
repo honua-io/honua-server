@@ -19,6 +19,18 @@ namespace Honua.Ai.Protocols.Mcp.Studio;
 /// </summary>
 internal static class StudioMcpSchemas
 {
+    public static readonly JsonElement ListItemsArgumentSchema = Parse("""
+        {"type":"object","additionalProperties":false,"properties":{
+        "q":{"type":"string","maxLength":200},"cursor":{"type":"string","maxLength":2000},
+        "limit":{"type":"integer","minimum":1,"maximum":100,"default":25}}}
+        """);
+
+    public static readonly JsonElement ListVersionsArgumentSchema = Parse("""
+        {"type":"object","required":["itemId"],"additionalProperties":false,"properties":{
+        "itemId":{"type":"string","format":"uuid"},"beforeVersionNumber":{"type":"integer","minimum":1},
+        "limit":{"type":"integer","minimum":1,"maximum":100,"default":25}}}
+        """);
+
     public static readonly JsonElement SaveVersionArgumentSchema = Parse("""
         {"type":"object","required":["draftId","generation"],"additionalProperties":false,"properties":{
           "draftId":{"type":"string","format":"uuid"},"generation":{"type":"integer","minimum":1},
@@ -166,8 +178,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "interaction"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Map/app/dashboard draft id." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation for optimistic concurrency." },
             "interaction": {{InteractionInputSchemaJson}}
           }
         }
@@ -179,8 +191,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "interactionId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Map/app/dashboard draft id." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation for optimistic concurrency." },
             "interactionId": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "\\S", "description": "Id of the interaction to remove. Removing an unknown id is an error, not a no-op." }
           }
         }
@@ -211,8 +223,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "control"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Map/app/dashboard draft id." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation for optimistic concurrency." },
             "control": {{ControlInputSchemaJson}}
           }
         }
@@ -224,8 +236,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "controlId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Map/app/dashboard draft id." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation for optimistic concurrency." },
             "controlId": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxControlIdLength}}, "pattern": "\\S", "description": "Id of the control to remove. Removing an unknown id is an error, not a no-op." },
             "cascadeInteractions": { "type": "boolean", "default": false, "description": "When true, interactions whose on.ref or do.ref is 'control:{controlId}' are removed with the control. When false (default), the call fails while any interaction still references it, so the document never retains a dangling binding." }
           }
@@ -272,7 +284,7 @@ internal static class StudioMcpSchemas
           "additionalProperties": false,
           "properties": {
             "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency). A mismatch surfaces a failed_precondition error; re-fetch with honua_studio_get_draft and retry." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation for optimistic concurrency. A mismatch surfaces a failed_precondition error; re-fetch with honua_studio_get_draft and retry." },
             "packageKey": {{PackageKeyPropertyJson}},
             "schemaVersion": { "type": "string", "minLength": 1, "maxLength": 50, "description": "Envelope schema version for the family." },
             "format": { "type": "string", "maxLength": 100, "description": "Family-specific package format." },
@@ -289,8 +301,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "layer"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Map/app/dashboard draft id." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation for optimistic concurrency." },
             "layer": {{LayerInputSchemaJson}},
             "beforeId": { "type": "string", "maxLength": 200, "description": "Optional layer id before which to insert the new layer; appended when omitted or unmatched." }
           }
@@ -303,8 +315,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "layerId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Map/app/dashboard draft id." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation for optimistic concurrency." },
             "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Id of the layer to remove." }
           }
         }
@@ -316,8 +328,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "layerId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Map/app/dashboard draft id." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation for optimistic concurrency." },
             "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Id of the layer to style." },
             "styleRef": { "type": ["string", "null"], "maxLength": 200, "description": "Style reference (catalog styleId or inline style key). Omit or set null to clear the binding." },
             "styleBody": { "type": "object", "description": "Inline paint/layout overrides keyed by layerId or '<layerId>__outline'. Not with styleRef." }
@@ -331,8 +343,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "mapSpec"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Map/app/dashboard draft id." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation for optimistic concurrency." },
             "mapSpec": { "type": "object", "description": "Edited MapLibre v8 style; only layers, name, metadata, transition, light, lights and fog may change." }
           }
         }
@@ -344,8 +356,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "layerId", "visible"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Map/app/dashboard draft id." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation for optimistic concurrency." },
             "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Id of the layer to show or hide." },
             "visible": { "type": "boolean", "description": "Whether the layer is visible in the composition." }
           }
@@ -358,8 +370,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "view"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Map/app/dashboard draft id." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation for optimistic concurrency." },
             "view": {{ViewInputSchemaJson}}
           }
         }
@@ -371,8 +383,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "widget"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Map/app/dashboard draft id." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation for optimistic concurrency." },
             "widget": {{WidgetInputSchemaJson}}
           }
         }
@@ -384,8 +396,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "widgetId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Map/app/dashboard draft id." },
+            "generation": { "type": "integer", "minimum": 1, "description": "Current generation for optimistic concurrency." },
             "widgetId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Id of the widget to remove." }
           }
         }
@@ -401,7 +413,7 @@ internal static class StudioMcpSchemas
             "versionId": { "type": "string", "format": "uuid", "description": "Exact immutable saved version id." },
             "contentHash": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Exact content hash returned when the version was saved." },
             "route": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Requested target route key." },
-            "visibility": { "type": "string", "minLength": 1, "maxLength": 100, "description": "Requested visibility target." },
+            "visibility": { "type": "string", "enum": ["personal", "team", "organization", "public"], "description": "personal: owner only; team and organization: signed-in callers in the item tenant; public: anonymous readers. Team uses the same tenant audience as organization." },
             "note": { "type": "string", "maxLength": 2000, "description": "Human-readable rationale recorded for reviewer context." }
           }
         }

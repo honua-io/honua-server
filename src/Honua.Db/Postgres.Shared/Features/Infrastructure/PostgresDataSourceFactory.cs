@@ -53,50 +53,84 @@ internal static class PostgresDataSourceFactory
         limits.StatementTimeout = ReadTimeSpan(section, nameof(ConnectionLimits.StatementTimeout), limits.StatementTimeout);
         limits.IdleInTransactionTimeout = ReadTimeSpan(section, nameof(ConnectionLimits.IdleInTransactionTimeout), limits.IdleInTransactionTimeout);
 
-        // A Lambda instance is frozen between invocations, so Npgsql never prunes below
-        // MinPoolSize. The long-lived defaults (min 20, max 200, idle 600s) clamp the floor
-        // up to the cap (honua-iac sets only the cap; the 4 KB environment budget has no room
-        // for the floor). Every warm API instance then holds its whole pool, and a host that
-        // sets nothing inherits 200 per pool. One Lambda invocation serves one request, so an
-        // unset cap is a small ceiling. Leave an explicit operator value alone.
         if (ControlPlaneEventHandlerHost.IsLambda(configuration))
         {
-            if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.MaxConnectionPoolSize)]))
-            {
-                limits.MaxConnectionPoolSize = LambdaUnsetMaxConnectionPoolSize;
-            }
+            ApplyLambdaDefaults(limits, section);
+        }
 
-            if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.MaxConcurrentQueries)]))
-            {
-                limits.MaxConcurrentQueries = LambdaUnsetMaxConnectionPoolSize;
-            }
-
-            if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.MinConnectionPoolSize)]))
-            {
-                limits.MinConnectionPoolSize = 0;
-            }
-
-            if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.ConnectionIdleLifetimeSeconds)]))
-            {
-                limits.ConnectionIdleLifetimeSeconds = Math.Max(
-                    LambdaIdleConnectionLifetimeSeconds,
-                    limits.ConnectionPruningIntervalSeconds);
-            }
-
-            // Idle pruning cannot keep a pooled connection inside the RDS Proxy idle-client
-            // timeout: it is sample-based (it closes only after the idle lifetime has fully
-            // elapsed) and its timer does not run while the sandbox is frozen. The proxy then
-            // closes the client socket first, and the next request that borrows it fails with
-            // EndOfStreamException (honua-server#6764: S10 publish answered 500). Npgsql checks
-            // Connection Lifetime against the wall clock at checkout, so it holds across freezes.
-            if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.ConnectionLifetimeSeconds)]))
-            {
-                limits.ConnectionLifetimeSeconds = LambdaConnectionLifetimeSeconds;
-            }
+        if (!string.IsNullOrWhiteSpace(configuration[ExecutionWorkerOperationIdVariable]))
+        {
+            ApplyExecutionWorkerDefaults(limits, section);
         }
 
         return limits;
     }
+
+    // A Lambda instance is frozen between invocations, so Npgsql never prunes below
+    // MinPoolSize. The long-lived defaults (min 20, max 200, idle 600s) clamp the floor
+    // up to the cap (honua-iac sets only the cap; the 4 KB environment budget has no room
+    // for the floor). Every warm API instance then holds its whole pool, and a host that
+    // sets nothing inherits 200 per pool. One Lambda invocation serves one request, so an
+    // unset cap is a small ceiling. Leave an explicit operator value alone.
+    private static void ApplyLambdaDefaults(ConnectionLimits limits, IConfigurationSection section)
+    {
+        if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.MaxConnectionPoolSize)]))
+        {
+            limits.MaxConnectionPoolSize = LambdaUnsetMaxConnectionPoolSize;
+        }
+
+        if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.MaxConcurrentQueries)]))
+        {
+            limits.MaxConcurrentQueries = LambdaUnsetMaxConnectionPoolSize;
+        }
+
+        if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.MinConnectionPoolSize)]))
+        {
+            limits.MinConnectionPoolSize = 0;
+        }
+
+        if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.ConnectionIdleLifetimeSeconds)]))
+        {
+            limits.ConnectionIdleLifetimeSeconds = Math.Max(
+                LambdaIdleConnectionLifetimeSeconds,
+                limits.ConnectionPruningIntervalSeconds);
+        }
+
+        // Idle pruning cannot keep a pooled connection inside the RDS Proxy idle-client
+        // timeout: it is sample-based (it closes only after the idle lifetime has fully
+        // elapsed) and its timer does not run while the sandbox is frozen. The proxy then
+        // closes the client socket first, and the next request that borrows it fails with
+        // EndOfStreamException. Npgsql checks Connection Lifetime against the wall clock at
+        // checkout, so it holds across freezes.
+        if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.ConnectionLifetimeSeconds)]))
+        {
+            limits.ConnectionLifetimeSeconds = LambdaConnectionLifetimeSeconds;
+        }
+    }
+
+    // A single-job execution worker runs one job and exits, so the serving host's defaults
+    // (min 20, max 200) would hold twenty connections per launched job.
+    private static void ApplyExecutionWorkerDefaults(ConnectionLimits limits, IConfigurationSection section)
+    {
+        if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.MaxConnectionPoolSize)]))
+        {
+            limits.MaxConnectionPoolSize = ExecutionWorkerUnsetMaxConnectionPoolSize;
+        }
+
+        if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.MaxConcurrentQueries)]))
+        {
+            limits.MaxConcurrentQueries = Math.Min(limits.MaxConcurrentQueries, limits.MaxConnectionPoolSize);
+        }
+
+        if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.MinConnectionPoolSize)]))
+        {
+            limits.MinConnectionPoolSize = 0;
+        }
+    }
+
+    internal const string ExecutionWorkerOperationIdVariable = "HONUA_OPERATION_ID";
+
+    internal const int ExecutionWorkerUnsetMaxConnectionPoolSize = 8;
 
     internal const int LambdaIdleConnectionLifetimeSeconds = 60;
 

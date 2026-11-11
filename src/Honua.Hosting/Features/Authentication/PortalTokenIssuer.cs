@@ -64,6 +64,7 @@ internal sealed partial class PortalTokenIssuer(
             TenantId = request.TenantId,
             Roles = request.Roles.ToArray(),
             RolesRequireClaimsMappingEntitlement = request.RolesRequireClaimsMappingEntitlement,
+            RolesDependOnlyOnRoleClaimSelection = request.RolesDependOnlyOnRoleClaimSelection,
             RolesWithoutClaimsMapping = request.RolesWithoutClaimsMapping?.ToArray(),
             TenantRequiresClaimsMappingEntitlement = request.TenantRequiresClaimsMappingEntitlement,
             ClientType = request.ClientType,
@@ -148,6 +149,7 @@ internal sealed partial class PortalTokenIssuer(
             TenantId = presented.TenantId,
             Roles = presented.Roles,
             RolesRequireClaimsMappingEntitlement = presented.RolesRequireClaimsMappingEntitlement,
+            RolesDependOnlyOnRoleClaimSelection = presented.RolesDependOnlyOnRoleClaimSelection,
             RolesWithoutClaimsMapping = presented.RolesWithoutClaimsMapping,
             TenantRequiresClaimsMappingEntitlement = presented.TenantRequiresClaimsMappingEntitlement,
             ClientType = clientType,
@@ -357,7 +359,7 @@ internal sealed partial class PortalTokenIssuer(
         };
     }
 
-    // Roles produced under claims mapping, and roles whose provenance is unknown, are re-checked against the live entitlement on every restore.
+    // Roles produced under entitlement-gated mapping, and roles whose provenance is unknown, are re-checked against the live entitlement on every restore.
     private string[] ResolveRoles(PortalTokenRecord record)
     {
         // false — this issuer stamped it and the roles owe nothing to claims mapping.
@@ -370,8 +372,11 @@ internal sealed partial class PortalTokenIssuer(
         // unknown) both require the live entitlement. Treating null as "not mapping-derived"
         // would let a pre-upgrade token keep its custom-mapped roles forever
         // (honua-server#2997 review).
+        var requiredEntitlement = record.RolesDependOnlyOnRoleClaimSelection
+            ? FeatureCatalog.OidcAuthenticationKey
+            : FeatureCatalog.OidcClaimsMappingKey;
         var mappingEntitled = _serviceProvider is not null
-            && LicenseGate.IsEntitlementActive(_serviceProvider, FeatureCatalog.OidcClaimsMappingKey);
+            && LicenseGate.IsEntitlementActive(_serviceProvider, requiredEntitlement);
         return mappingEntitled
             ? record.Roles
             : record.RolesWithoutClaimsMapping ?? [];
@@ -606,6 +611,9 @@ internal sealed class PortalTokenRecord
 
     // This flag is nullable because a missing value means unknown provenance and fails closed; a default false would let mapped roles outlive the entitlement.
     public bool? RolesRequireClaimsMappingEntitlement { get; init; }
+
+    // A missing value revalidates against identity.claims-mapping, the stricter of the two entitlements.
+    public bool RolesDependOnlyOnRoleClaimSelection { get; init; }
 
     // Null fallback roles mean unknown and stay fail-closed; an empty array is a known empty fallback.
     public string[]? RolesWithoutClaimsMapping { get; init; }

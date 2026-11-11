@@ -97,12 +97,10 @@ public class MvtTileEndpointTests : IClassFixture<WebAppFixture>
         // Assert
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
 
-        // Check for cache control headers if response is OK
-        if (response.StatusCode == HttpStatusCode.OK)
-        {
-            response.Headers.Should().ContainKey("Cache-Control");
-            response.Headers.CacheControl?.MaxAge.Should().BeGreaterThan(TimeSpan.Zero);
-        }
+        // /tiles requires authentication on this fixture, so the tile is never stored by any cache.
+        response.Headers.CacheControl.Should().NotBeNull();
+        response.Headers.CacheControl!.Private.Should().BeTrue();
+        response.Headers.CacheControl.NoStore.Should().BeTrue();
     }
 
     [IntegrationTest]
