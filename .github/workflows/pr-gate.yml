@@ -18,7 +18,7 @@ name: PR Gate
 # immutable base policy decides, and a miss keeps these steps enabled.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches: [trunk]
   workflow_dispatch:
 
@@ -61,6 +61,7 @@ jobs:
   # job timeout, so a slow step falls back to hosted instead of failing the job. Enforce mode stays hosted because the
   # review release reruns only failed jobs and would reuse a stale choice.
   runner-select:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: PR Gate / Runner select
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -98,6 +99,7 @@ jobs:
         run: scripts/ci/select-gate-runner.sh
 
   format:
+    if: always() && !cancelled() && (needs.runner-select.result == 'success' || github.event.pull_request.draft == true)
     name: PR Gate / ${{ matrix.check }}
     needs: runner-select
     runs-on: ${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}
@@ -672,7 +674,7 @@ jobs:
     # pull_request only: the selection diffs against HEAD^1, and only the
     # refs/pull/N/merge ref has the base-branch tip as its first parent. The
     # same reasoning scopes scripts/ci/compute-lean-gate-build-scope.sh.
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -770,7 +772,8 @@ jobs:
     # short-circuited here, before the strategy is expanded, rather than by the
     # selector emitting a sentinel entry.
     if: >-
-      github.event_name == 'pull_request'
+      !github.event.pull_request.draft
+      && github.event_name == 'pull_request'
       && needs.affected-shards-select.outputs.skip != 'true'
       && needs.affected-shards-select.outputs.matrix_include != '[]'
     needs: [affected-shards-select, pr-gate, server-test-producer]
@@ -887,7 +890,7 @@ jobs:
   affected-shards:
     # Enforce measured execution receipts before the required gate can succeed.
     name: PR Gate / Affected shards
-    if: always() && github.event_name == 'pull_request'
+    if: always() && github.event_name == 'pull_request' && !github.event.pull_request.draft
     needs: [affected-shards-select, affected-shard, server-test-producer]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -938,6 +941,7 @@ jobs:
           retention-days: 7
 
   ci-router-validation:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     # ci.yml's `CI Router Validation` job (scripts/ci/validate-ci-router.sh,
     # scripts/ci/validate-single-merge-authority.sh) is trunk-only: ci.yml has
     # no `pull_request` trigger (see pr-gate.yml's header). A PR that touches
@@ -975,6 +979,7 @@ jobs:
           bash scripts/ci/validate-single-merge-authority.sh
 
   n1-reader-compatibility:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     # N-1 image compatibility as a per-PR property of every migration change
     # (#6477). The first upgrade-lane finding -- the prior image refusing
     # `schema_reader_incompatible` after `helm rollback` across expand-only
