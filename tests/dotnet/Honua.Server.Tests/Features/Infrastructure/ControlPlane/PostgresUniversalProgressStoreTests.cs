@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -112,6 +113,28 @@ public sealed class PostgresUniversalProgressStoreTests(DatabaseFixtureAdapter d
         (await store.GetActiveOperationsAsync<ExportProgress>(OperationType.Export)).Should().ContainSingle();
         (await store.GetProgressAsync(expired.JobId)).Should().BeNull();
         (await store.DeleteExpiredAsync(batchSize: 100, CancellationToken.None)).Should().Be(1);
+    }
+
+    [IntegrationTest]
+    public async Task QuarantineProgressAsync_LegacyExportPayload_LeavesListingsButStaysInvalidForStatusReads()
+    {
+        await using var harness = await CreateHarnessAsync();
+        IUniversalProgressStore store = harness.CreateProgressStore();
+        var healthy = Export(OperationStatus.Queued);
+        var legacy = Export(OperationStatus.Queued);
+        await store.SetProgressAsync(healthy.JobId, healthy);
+        await store.SetProgressAsync(legacy.JobId, legacy);
+        await harness.ExecuteAsync(
+            $"UPDATE {harness.Table("operation_progress")} SET payload = regexp_replace(payload, '\"serviceLayerIndex\"', '\"layerId\"', 'gi') WHERE operation_id = @id",
+            new NpgsqlParameter("id", legacy.JobId));
+
+        await store.QuarantineProgressAsync(legacy.JobId, OperationType.Export);
+
+        (await store.GetActiveOperationIdsAsync(OperationType.Export)).Should().Equal(healthy.JobId);
+        (await store.GetActiveOperationIdsAsync()).Should().Equal(healthy.JobId);
+        (await store.GetActiveOperationsAsync<ExportProgress>(OperationType.Export)).Should().ContainSingle();
+        var read = () => store.GetProgressAsync(legacy.JobId);
+        await read.Should().ThrowAsync<InvalidPersistedExportProgressException>();
     }
 
     private Task<ControlPlaneStateHarness> CreateHarnessAsync()
