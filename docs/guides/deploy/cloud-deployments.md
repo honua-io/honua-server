@@ -136,6 +136,8 @@ excluded until it is re-established on a live Fargate task (honua-release#98).
 
   The limit is two hops because the ALB appends the private address of the CloudFront VPC origin interface after the viewer address CloudFront wrote; both of those addresses come from the VPC, so the server resolves the viewer and ignores any addresses the viewer sent itself.
 
+  Do not forward the viewer's `X-Forwarded-Host` in the origin request policy: neither CloudFront nor the ALB overwrites it, and the server applies it from a trusted hop. Set `Public__BaseUrl` (and `HostValidation__AllowedHosts__<n>` if you list hosts) to the distribution's host.
+
   Do not set `ASPNETCORE_FORWARDEDHEADERS_ENABLED`: it trusts forwarded headers from every peer and reads the ALB's `X-Forwarded-Proto`.
 - Canary rollouts: provision a stable and a canary ECS service on two ALB target groups, then drive weighted traffic shifts through Honua's deploy API (backend `honua-aws-ecs-alb`) with an automatic telemetry gate — see [Upgrade and roll back](upgrade-and-rollback.md).
 
@@ -265,7 +267,7 @@ A Lambda API function runs as many execution environments, and an MCP client's r
 
 ### Background file imports run on AWS Batch
 
-A Lambda instance is frozen as soon as it returns a response, so the API function never runs a background file import itself. With Redis on and the GP Batch workload configured (`ControlPlane__ExecutionWorkloads__0__*`, `Backend=honua-aws-batch`), the API stages the upload in file storage and submits a `FileImport` execution job to that same Batch queue and job definition. The job definition runs the generic server image. The batch backend starts it with `HONUA_OPERATION_ID` and `HONUA_JOB_KIND=FileImport`, so it runs in the execution-worker profile: it downloads the staged file, imports it, and exits. `GET /api/v1/admin/import/jobs/{jobId}` reports `runner: batch` and the Batch job id as `instanceId`. A dedicated `Kind=FileImport` workload takes precedence over the GP workload when one is configured. Imports larger than about 6 GiB ask for a larger job-definition tier through `batch.ephemeral_gib`.
+A Lambda instance is frozen as soon as it returns a response, so the API function never runs a background file import itself. With Redis on and the GP Batch workload configured (`ControlPlane__ExecutionWorkloads__0__*`, `Backend=honua-aws-batch` and `TargetKind=AwsBatch`; index 0 defaults to `KubernetesJob`, and the server refuses to start when the two disagree), the API stages the upload in file storage and submits a `FileImport` execution job to that same Batch queue and job definition. The job definition runs the generic server image. The batch backend starts it with `HONUA_OPERATION_ID` and `HONUA_JOB_KIND=FileImport`, so it runs in the execution-worker profile: it downloads the staged file, imports it, and exits. `GET /api/v1/admin/import/jobs/{jobId}` reports `runner: batch` and the Batch job id as `instanceId`. A dedicated `Kind=FileImport` workload takes precedence over the GP workload when one is configured. Imports larger than about 6 GiB ask for a larger job-definition tier through `batch.ephemeral_gib`.
 
 A batch worker cannot read the API instance's local disk, so this path needs shared file storage on both the API function and the Batch job definition:
 

@@ -474,7 +474,7 @@ public sealed class ConfigurationDocumentationService
                 BuildProperty("ForwardedHeaders:KnownNetworks", "ForwardedHeaders__KnownNetworks__0", "string",
                     "Trusted proxy networks (CIDR) for forwarded headers", null),
                 BuildProperty("ForwardedHeaders:ProtoHeaderName", "ForwardedHeaders__ProtoHeaderName", "string",
-                    "Header carrying the client scheme (default X-Forwarded-Proto)", null)
+                    "Header carrying the client scheme", "X-Forwarded-Proto")
             ]
         };
     }
