@@ -54,6 +54,13 @@ class HeavyRunnerContractTests(unittest.TestCase):
 
 PR_GATE_SELECTED_JOBS = {"format", "fast-tests", "pr-gate", "server-test-producer"}
 SELECTED_RUNNER = "${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}"
+PR_GATE_LIGHT_JOBS = {"affected-shards-select", "affected-shards", "ci-router-validation", "required"}
+LIGHT_RUNNER = (
+    "${{ vars.HONUA_LIGHT_RUNNER"
+    " && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)"
+    " && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository)"
+    " && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}"
+)
 READY_ONLY = "github.event_name != 'pull_request' || !github.event.pull_request.draft"
 DRAFT_FORMAT_ADMISSION = ("always() && !cancelled() && (needs.runner-select.result == 'success' "
                           "|| github.event.pull_request.draft == true)")
@@ -83,8 +90,13 @@ class PrGateRunnerRoutingTests(unittest.TestCase):
                 self.assertEqual(job["needs"], "runner-select")
                 self.assertEqual(job.get("if"), DRAFT_FORMAT_ADMISSION if name == "format" else None)
 
+    def test_light_jobs_use_the_fork_guarded_light_pool_with_hosted_fallback(self):
+        for name in PR_GATE_LIGHT_JOBS:
+            with self.subTest(job=name):
+                self.assertEqual(self.jobs[name]["runs-on"], LIGHT_RUNNER)
+
     def test_selection_and_every_other_job_stay_hosted(self):
-        for name in set(self.jobs) - PR_GATE_SELECTED_JOBS:
+        for name in set(self.jobs) - PR_GATE_SELECTED_JOBS - PR_GATE_LIGHT_JOBS:
             with self.subTest(job=name):
                 self.assertEqual(self.jobs[name]["runs-on"], "ubuntu-latest")
 
