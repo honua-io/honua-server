@@ -651,6 +651,15 @@ Review revalidation shares `.github/scripts/revalidate-exact-head-review.cjs` ac
 
 Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. Missing envelopes from ordinary producers remain errors.
 
+### Spec endpoint application lifetime
+
+`SpecEndpointsTests` retains one application for validation, planning, and
+rejected requests, with a fresh client per case. Successful applies, cache tests,
+and license variants own their hosts and state. The class fixture disposes the
+shared application after its last case. All cases and assertions run in their
+existing PR and trunk shard selections; runner counts, required check names,
+and aggregate dependencies are unchanged.
+
 ### Authorization shard coverage
 
 The authorization matrix selects the live `AdminAuthorizationTests` class.
