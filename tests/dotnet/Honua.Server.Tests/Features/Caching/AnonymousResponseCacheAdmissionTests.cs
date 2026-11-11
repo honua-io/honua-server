@@ -20,11 +20,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Caching;
 
-/// <summary>
-/// HTTP admission checks for the opt-in query response cache. The host disables the
-/// development auth bypass so the caller principal stays empty, and opts into response
-/// caching on the process-local cache.
-/// </summary>
+// The host disables the development auth bypass so the caller principal stays empty.
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Query)]
