@@ -44,7 +44,8 @@ def pr_admissions():
                 yield path.name, definition.get("concurrency", job.get("concurrency", {}))
 
 
-def evaluate(condition, event, needs=None, cancelled=False, env=None, steps=None):
+def evaluate(condition, event, context=None):
+    context = context or {}
     expression = condition.removeprefix("${{").removesuffix("}}").strip()
     expression = expression.replace("needs.runner-select", 'needs["runner-select"]')
     for step_id in ("docs-only", "generated-only"):
@@ -53,8 +54,9 @@ def evaluate(condition, event, needs=None, cancelled=False, env=None, steps=None
 process.stdout.write(JSON.stringify(new Function('github', 'needs', 'always', 'cancelled', 'inputs', 'vars', 'fromJSON', 'env', 'steps', `return (${expression});`)(github, needs, () => true, () => cancelled, {server_image: '', existing_image: ''}, {GP_CANARY_URL: ''}, JSON.parse, env, steps)));
 """
     result = subprocess.run(["node", "-e", probe], input=json.dumps({
-        "expression": expression, "github": event, "needs": needs or {}, "cancelled": cancelled,
-        "env": env or {}, "steps": steps or {},
+        "expression": expression, "github": event, "needs": context.get("needs", {}),
+        "cancelled": context.get("cancelled", False),
+        "env": context.get("env", {}), "steps": context.get("steps", {}),
     }), text=True, capture_output=True, check=True, timeout=10)
     return json.loads(result.stdout)
 
@@ -141,12 +143,12 @@ class PullRequestLoadTests(unittest.TestCase):
         condition = workflow("pr-gate.yml")["jobs"]["format"]["if"]
         event = {"event_name": "pull_request", "event": {"pull_request": {"draft": True}}}
         needs = {"runner-select": {"result": "skipped"}}
-        self.assertTrue(evaluate(condition, event, needs))
-        self.assertFalse(evaluate(condition, event, needs, cancelled=True))
+        self.assertTrue(evaluate(condition, event, {"needs": needs}))
+        self.assertFalse(evaluate(condition, event, {"needs": needs, "cancelled": True}))
         event["event"]["pull_request"]["draft"] = False
-        self.assertFalse(evaluate(condition, event, needs))
+        self.assertFalse(evaluate(condition, event, {"needs": needs}))
         needs["runner-select"]["result"] = "success"
-        self.assertTrue(evaluate(condition, event, needs))
+        self.assertTrue(evaluate(condition, event, {"needs": needs}))
 
     def test_draft_format_matrix_excludes_analyzers(self):
         include = workflow("pr-gate.yml")["jobs"]["format"]["strategy"]["matrix"]["include"]
@@ -184,7 +186,7 @@ class PullRequestLoadTests(unittest.TestCase):
                 with self.subTest(step=name or "checkout", draft=draft, attempt=attempt):
                     review_wait = not draft and attempt == 1
                     self.assertEqual(
-                        evaluate(step.get("if", "true"), event, env=env, steps=steps),
+                        evaluate(step.get("if", "true"), event, {"env": env, "steps": steps}),
                         review_wait if name == "Await exact-head review" else not review_wait,
                     )
 
