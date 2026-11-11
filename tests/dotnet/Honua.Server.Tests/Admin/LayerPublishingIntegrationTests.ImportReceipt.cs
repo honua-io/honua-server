@@ -32,7 +32,7 @@ public sealed partial class LayerPublishingIntegrationTests
         _importedTableName = table.GetString();
         _importedTableSchema.Should().NotBeNullOrWhiteSpace();
         _importedTableName.Should().NotBeNullOrWhiteSpace();
-        connectionId.GetString().Should().NotBeNullOrWhiteSpace();
+        connectionId.GetString().Should().Be(_connectionId.ToString());
         var published = await PublishLayerAsync(new PublishLayerRequest
         {
             Schema = _importedTableSchema!,
@@ -60,11 +60,11 @@ public sealed partial class LayerPublishingIntegrationTests
         await InstallImportFunctionsAsync();
         await DeleteSecureConnectionAsync();
         _connectionCreated = false;
-        var connection = new Npgsql.NpgsqlConnectionStringBuilder(_fixture.Postgres.ConnectionString)
-        {
-            SearchPath = $"{_fixture.CurrentSchema},public"
-        };
-        await CreateSecureConnectionAsync(connection.ConnectionString);
+        // The fixture already registers its catalog connection. A second registration
+        // of the same database would deliberately make connection discovery ambiguous.
+        var fixtureConnectionId = await _fixture.GetTestSecureConnectionIdAsync();
+        fixtureConnectionId.Should().HaveValue();
+        _connectionId = fixtureConnectionId!.Value;
         using var upload = new MultipartFormDataContent();
         upload.Add(new StringContent("""
             {"type":"FeatureCollection","features":[

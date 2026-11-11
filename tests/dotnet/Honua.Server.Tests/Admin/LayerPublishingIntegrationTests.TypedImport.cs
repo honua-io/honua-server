@@ -369,7 +369,11 @@ public sealed partial class LayerPublishingIntegrationTests
 
     private static void AssertRetainedImportDocument(JsonElement attributes, string name, long population)
     {
-        var source = attributes.GetProperty("properties");
+        var retained = attributes.GetProperty("properties");
+        using var document = JsonDocument.Parse(retained.ValueKind == JsonValueKind.String
+            ? retained.GetString()!
+            : retained.GetRawText());
+        var source = document.RootElement;
         source.GetProperty("name").GetString().Should().Be(name == "Alpha" ? "Original Alpha" : name);
         source.GetProperty("population").GetInt64().Should().Be(population);
     }
