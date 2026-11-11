@@ -704,8 +704,8 @@ GitHub's specific clean-status response ends neutrally; other API errors fail.
 
 ### Layer publishing shared application fixture
 
-`LayerPublishingIntegrationTests` reuses its customized application host for the class.
-Each case still reseeds the database, restores the metadata graph with a fresh revision,
-and creates and cleans up its own source tables and secure connection. The missing-SRID
-case also clears its cache override and temporary index. Test names, assertions, shard
-filters, timeouts, required checks, and aggregate dependencies remain unchanged.
+`LayerPublishingIntegrationTests` shares one customized host and feature schema across
+its cases. Each case uses distinct layer, table, service, and secure-connection identities
+and cleans up its publications and source tables. Fixture setup ensures seed rows exist
+and restores the metadata graph with a new revision; it does not reset changed SQL rows.
+The missing-SRID simulation creates and removes its expression index under the schema lock.

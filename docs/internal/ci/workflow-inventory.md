@@ -686,8 +686,7 @@ GitHub's specific clean-status response ends neutrally; other API errors fail.
 
 ### Layer publishing shared application fixture
 
-`LayerPublishingIntegrationTests` reuses its customized application host for the class.
-Each case still reseeds the database, restores the metadata graph with a fresh revision,
-and creates and cleans up its own source tables and secure connection. The missing-SRID
-case also clears its cache override and temporary index. Test names, assertions, shard
-filters, timeouts, required checks, and aggregate dependencies remain unchanged.
+The `Server Features Admin Layer Publishing` shard runs the original
+`LayerPublishingIntegrationTests` test identities, including tenant-boundary coverage.
+Its class fixture reuses the application host; the shard retains its existing selector
+and timeout, and the admin runtime partition retains its existing assignment.

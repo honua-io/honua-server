@@ -29,7 +29,7 @@ public sealed partial class LayerPublishingIntegrationTests
         private long _revision;
 
         public WebAppFixture Host { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
-        public int? MissingSridLayerId { get; set; }
+        private int? MissingSridLayerId { get; set; }
 
         public PublishingFixture()
         {
@@ -71,24 +71,38 @@ public sealed partial class LayerPublishingIntegrationTests
 
         public async Task ResetAsync()
         {
+            await ClearMissingSridAsync();
             await ServerTestData.SeedAsync(Host.Postgres, Host.CurrentSchema!);
             await ServerTestData.EnsureFixtureAttachmentsAsync(Host.Postgres, "honua");
             using var scope = Host.Services.CreateScope();
             var provider = scope.ServiceProvider.GetRequiredService<TestMetadataV2GraphProvider>();
             var current = provider.GetCurrentForSchema(Host.CurrentSchema);
-            var baseline = await provider.GetCurrentAsync();
+            var baseline = provider.GetCurrentForSchema(string.Empty);
+            // ETags contain the revision, so a reused host must never repeat it.
             _revision = Math.Max(_revision, Math.Max(current.Graph.Revision, baseline.Graph.Revision)) + 1;
-            var cache = scope.ServiceProvider.GetRequiredService<IFeatureCacheManager>();
-            foreach (var publication in current.Graph.Publications.Concat(baseline.Graph.Publications))
-            {
-                if (publication.LayerIndex is { } layerId)
-                {
-                    cache.InvalidateLayerCache(layerId);
-                }
-            }
-            var graph = _initialGraph with { Revision = _revision };
+            SetGraph(_initialGraph with { Revision = _revision });
+        }
+
+        public void SetGraph(MetadataV2Graph graph)
+        {
+            using var scope = Host.Services.CreateScope();
+            var provider = scope.ServiceProvider.GetRequiredService<TestMetadataV2GraphProvider>();
             provider.SetGraph(graph, schema: Host.CurrentSchema);
+            // Admin publication can initialize either partition. Keep request-schema
+            // and baseline views aligned when a test changes the graph directly.
             provider.SetGraph(graph, schema: string.Empty);
+        }
+
+        public async Task SimulateMissingCatalogSridAsync(int layerId)
+        {
+            // Model a missing catalog SRID without altering the shared catalog's NOT NULL
+            // constraint. The stored row and transform expression index still require a
+            // valid SRID even for an attribute-only UPDATE.
+            MissingSridLayerId = layerId;
+            await Host.Postgres.ExecuteDdlUnderLockAsync($"""
+                CREATE INDEX "idx_srid_{layerId}" ON "{Host.CurrentSchema}".features
+                    USING gist (ST_Transform(geometry, 3857)) WHERE layer_id = {layerId};
+                """);
         }
 
         public async Task ClearMissingSridAsync()
@@ -99,9 +113,7 @@ public sealed partial class LayerPublishingIntegrationTests
             }
 
             MissingSridLayerId = null;
-            using var scope = Host.Services.CreateScope();
-            scope.ServiceProvider.GetRequiredService<IFeatureCacheManager>().InvalidateLayerCache(layerId);
-            await Host.Postgres.ExecuteAsync($"DROP INDEX IF EXISTS \"{Host.CurrentSchema}\".\"idx_srid_{layerId}\";");
+            await Host.Postgres.ExecuteDdlUnderLockAsync($"DROP INDEX IF EXISTS \"{Host.CurrentSchema}\".\"idx_srid_{layerId}\";");
         }
 
         public Task DisposeAsync() => Host.DisposeAsync();

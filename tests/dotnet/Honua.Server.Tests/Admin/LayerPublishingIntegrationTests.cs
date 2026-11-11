@@ -88,7 +88,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         await DeleteSecureConnectionAsync();
         await DropPostGisTableAsync();
         await DropImportedTableAsync();
-        _client.Dispose();
+        _client?.Dispose();
         await _publishingFixture.ClearMissingSridAsync();
     }
 
@@ -1642,19 +1642,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         });
         _layerId = publishedLayer.LayerId;
 
-        // Model a missing catalog SRID without altering the shared catalog's NOT NULL
-        // constraint. The stored row and transform expression index still require a
-        // valid SRID even for an attribute-only UPDATE.
-        _publishingFixture.MissingSridLayerId = _layerId;
-        await using (var connection = await _fixture.Postgres.GetConnectionAsync())
-        {
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"""
-                CREATE INDEX "idx_srid_{_layerId}" ON "{_fixture.CurrentSchema}".features
-                    USING gist (ST_Transform(geometry, 3857)) WHERE layer_id = {_layerId};
-                """;
-            await command.ExecuteNonQueryAsync();
-        }
+        await _publishingFixture.SimulateMissingCatalogSridAsync(_layerId);
         using (var scope = _fixture.Services.CreateScope())
         {
             var cache = scope.ServiceProvider.GetRequiredService<IFeatureCacheManager>();
@@ -3233,13 +3221,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
 
     private Task SaveMetadataGraphAsync(MetadataV2Graph graph)
     {
-        using var scope = _fixture.Services.CreateScope();
-        var provider = scope.ServiceProvider.GetRequiredService<TestMetadataV2GraphProvider>();
-        provider.SetGraph(graph, schema: _fixture.CurrentSchema);
-        // This fixture owns an isolated provider, while its admin publish transaction may
-        // have initialized either the request-schema partition or the private baseline.
-        // Keep both views aligned when this test mutates the graph outside an HTTP request.
-        provider.SetGraph(graph, schema: string.Empty);
+        _publishingFixture.SetGraph(graph);
         return Task.CompletedTask;
     }
 
