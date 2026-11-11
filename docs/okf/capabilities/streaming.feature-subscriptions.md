@@ -16,9 +16,9 @@ Subscribe to WebSocket and SSE feature-change streams with filters and replay cu
 | Capability key | `streaming.feature-subscriptions` |
 | Category | Streaming |
 | Edition | Pro |
-| Surface maturity | 3 implemented, 2 preview |
+| Surface maturity | 5 experimental |
 | Registry entries | 5 |
-| Proving tests | 122 |
+| Proving tests | 127 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

@@ -363,10 +363,6 @@ public sealed class DataEnrichmentSyncLimitTests : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// Verifies the data-enrichment endpoints are gated by the Pro entitlement. Runs as
-/// Community edition so both routes return HTTP 402.
-/// </summary>
 [Collection("Database")]
 [Protocol(ProtocolNames.DataEnrichment)]
 public sealed class DataEnrichmentEditionGateTests : IAsyncLifetime
@@ -397,4 +393,67 @@ public sealed class DataEnrichmentEditionGateTests : IAsyncLifetime
         var response = await _fixture.Client.PostAsync("/api/enrich", requestContent);
         response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
     }
+
+    [IntegrationTest]
+    [Operation(Operations.ListEnrichmentDatasets)]
+    [Endpoint("GET /api/enrich/datasets")]
+    public async Task ListDatasets_CommunityEdition_ReturnsPaymentRequired()
+    {
+        var response = await _fixture.Client.GetAsync("/api/enrich/datasets");
+        response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetEnrichmentDataset)]
+    [Endpoint("GET /api/enrich/datasets/{id}")]
+    public async Task GetDataset_CommunityEdition_ReturnsPaymentRequired()
+    {
+        var response = await _fixture.Client.GetAsync("/api/enrich/datasets/any");
+        response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.RegisterEnrichmentDataset)]
+    [Endpoint("POST /api/enrich/datasets")]
+    public async Task RegisterDataset_CommunityEdition_ReturnsPaymentRequired()
+    {
+        using var admin = _fixture.CreateAdminClient();
+        using var body = DatasetBody();
+        var response = await admin.PostAsync("/api/enrich/datasets", body);
+        response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.UpdateEnrichmentDataset)]
+    [Endpoint("PUT /api/enrich/datasets/{id}")]
+    public async Task UpdateDataset_CommunityEdition_ReturnsPaymentRequired()
+    {
+        using var admin = _fixture.CreateAdminClient();
+        using var body = DatasetBody();
+        var response = await admin.PutAsync("/api/enrich/datasets/community-ok", body);
+        response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.DeregisterEnrichmentDataset)]
+    [Endpoint("DELETE /api/enrich/datasets/{id}")]
+    public async Task DeregisterDataset_CommunityEdition_ReturnsPaymentRequired()
+    {
+        using var admin = _fixture.CreateAdminClient();
+        var response = await admin.DeleteAsync("/api/enrich/datasets/community-ok");
+        response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+    }
+
+    private static StringContent DatasetBody()
+        => new(
+            JsonSerializer.Serialize(new
+            {
+                id = "community-ok",
+                title = "Community OK",
+                category = "boundary",
+                layerId = 1,
+                minimumEdition = "Community",
+            }),
+            Encoding.UTF8,
+            "application/json");
 }

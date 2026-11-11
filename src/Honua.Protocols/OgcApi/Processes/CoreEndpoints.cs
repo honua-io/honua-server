@@ -6,6 +6,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Mvc;
+using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Protocols.Ogc.Api.Processes;
 
@@ -41,6 +42,7 @@ internal static class CoreEndpoints
             .WithName("OgcProcessesLandingPage")
             .WithSummary("OGC API Processes landing page")
             .CacheOutput("OgcLandingPage")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces<LandingPage>()
             .Produces<string>(StatusCodes.Status200OK, MediaTypes.Html)
             .ExcludeFromDescription();
@@ -50,6 +52,7 @@ internal static class CoreEndpoints
             .WithName("OgcProcessesConformance")
             .WithSummary("OGC API Processes conformance declaration")
             .CacheOutput("OgcConformance")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces<ConformanceDeclaration>()
             .Produces<string>(StatusCodes.Status200OK, MediaTypes.Html)
             .ExcludeFromDescription();
@@ -60,6 +63,7 @@ internal static class CoreEndpoints
             .WithSummary("Get OpenAPI 3.0 specification for OGC API Processes")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .CacheOutput("OgcOpenApi")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces<object>(StatusCodes.Status200OK, MediaTypes.OpenApi)
             .Produces(StatusCodes.Status404NotFound);
     }

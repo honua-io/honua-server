@@ -40,6 +40,7 @@ using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Extensions.DependencyInjection;
+using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
@@ -651,7 +652,7 @@ internal sealed partial class FeatureServerQueryHandler(
             // materialized formatter that carries the echo.
             var requestedOutSrAlias = await ResolveRequestedWebMercatorAliasAsync(validatedParams, outputSrid, cancellationToken).ConfigureAwait(false);
 
-            if (canCache && ResponseCacheUtilities.ShouldBypassAdHocSpatialResponseCache(query, validatedParams.Where))
+            if (SharedCacheResponse.ExcludeIfAdHocSpatial(context, query, validatedParams.Where))
             {
                 canCache = false;
             }
