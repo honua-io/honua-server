@@ -183,7 +183,7 @@ jobs:
           {
             echo "## Register ${RELEASE} ${PLATFORM} for nightly rescans"
             if [ -s supported-images.patch ]; then
-              echo "Commit this change in a pull request (artifact \`supported-images-${{ needs.assets.outputs.asset_name }}\` holds the patch), or run:"
+              echo "Run this on trunk and commit the result in a pull request (one command per platform; the artifact patch is for reference):"
               echo '```'
               echo "python3 scripts/security/release_images.py inventory-add --release '$RELEASE' --image '$IMAGE' --platform '$PLATFORM' --revision '$REVISION'"
               echo '```'
@@ -195,8 +195,6 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: supported-images-${{ needs.assets.outputs.asset_name }}
-          path: |
-            supported-images.patch
-            eng/security/supported-images.json
+          path: supported-images.patch
           if-no-files-found: error
           retention-days: 90

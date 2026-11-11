@@ -22,8 +22,8 @@
       ],
       "status": "not_affected",
       "justification": "inline_mitigations_already_exist",
-      "impactStatement": "The issue concerns the default subordinate-ID ranges that useradd assigns to new accounts. Honua images create their only account at build time as a system account, which gets no subordinate-ID range, and run as the unprivileged UID 1001 with every setuid and setgid bit removed. No process in the container can create accounts or change /etc/subuid, and no setuid helper exists to use subordinate ranges.",
-      "evidence": "Dockerfile and docker/Dockerfile.aot: useradd --system at build, USER 1001:1001, find / -perm /6000 -exec chmod a-s; /etc/passwd and /etc/subuid are root-owned and not writable by UID 1001. These are properties of the image, independent of deployment settings.",
+      "impactStatement": "The issue concerns the default subordinate-ID ranges that useradd assigns to new accounts. Honua adds one account at build time, as a system account with no subordinate-ID range; the base image's accounts and their /etc/subuid entries are fixed at build. The image runs as the unprivileged UID 1001 with every setuid and setgid bit removed and ships no newuidmap or newgidmap, so no process in the container can create accounts, change /etc/subuid, or use subordinate ranges.",
+      "evidence": "Dockerfile and docker/Dockerfile.aot: useradd --system at build, USER 1001:1001, find / -perm /6000 -exec chmod a-s. In the runtime-deps 10.0.15 base, /etc/passwd and /etc/subuid are root-owned 0644 (entries: ubuntu, app) and newuidmap/newgidmap are absent. These are properties of the image, independent of deployment settings.",
       "reviewedAt": "2026-11-11"
     }
   ]

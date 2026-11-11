@@ -69,8 +69,10 @@ Each entry in `eng/security/vex-statements.json` names:
 versions, a package update voids the decision and the finding comes back for review. Never
 add image findings to `.trivyignore`: ignore entries hide findings, VEX documents them. The
 one remaining entry, CVE-2025-6965 (bundled SQLite in `SQLitePCLRaw.lib.e_sqlite3`, no
-upstream fix, kept in step with the NuGet audit suppression), applies only to the trunk JIT
-scan; the release rescan and gates do not use it and report it as an unfixed finding. Move it
+upstream fix, kept in step with the NuGet audit suppression), is read by the trunk JIT scan
+and by the `ci.yml` image gate (Trivy's default ignore file). The release rescan, the
+release-asset scan and the `release-bundle.yml` gate use an empty ignore file and report it
+as an unfixed finding. Move it
 to a VEX decision once its runtime reachability is established, or remove it when a fix ships.
 
 Do not mark a shell or command-line package (`dash`, `bash`, `tar`, `coreutils`,
@@ -87,10 +89,13 @@ After a release image is published (release candidate or GA), for each published
 2. Attach the files from the run's `release-security-assets-honua-server-<release>-<arch>`
    artifact to the release in `honua-io/honua-release`, next to the SBOM and provenance:
    `gh release upload <tag> -R honua-io/honua-release honua-server-<release>-<arch>.{openvex,spdx}.json`.
-3. Commit the inventory change from the run's `supported-images-honua-server-<release>-<arch>`
-   artifact (or the `inventory-add` command in the run summary) in a pull request and merge it.
-   Workflows in this repository hold no push or merge authority, so this step is manual. Do
-   both platforms of a release in one pull request. From the next night the digest is rescanned.
+3. Register the digests in one pull request: run the `inventory-add` command from each run's
+   summary, one per platform (the command is idempotent and the entries apply in sequence),
+   then commit `eng/security/supported-images.json`. The run's
+   `supported-images-honua-server-<release>-<arch>` artifact holds that run's patch for
+   reference only: each patch is made against trunk, so do not apply both, and never copy a
+   run's whole `supported-images.json` over the file. Workflows in this repository hold no
+   push or merge authority, so this step is manual. From the next night the digests are rescanned.
 4. When a release leaves support, remove its entries from `eng/security/supported-images.json`
    and dismiss the open alerts of its Code Scanning category (`trivy-release-<key>`), which
    stops uploading and would otherwise never close. Releases listed in `unsupportedReleases`
@@ -152,7 +157,7 @@ The oldest is 2026-08-22. Every advisory id is triaged:
 | CVE-2026-118773, CVE-2026-118764 | glob 10.5.0, minimatch 9.0.9 (managed-test-artifacts action lockfile) | Fixed: glob 14.0.2 through a scoped override (pulls minimatch 11), fast-xml-parser 5.12.0; Trivy fs reports no findings. |
 | CVE-2021-31879 | wget (JIT) | Fixed earlier: wget left the runtime image in #6798. The alert belongs to a retired analysis category that no longer uploads; dismissed with that reason. |
 | CVE-2025-5222 | libicu74 (AOT) | Not affected (VEX): `vulnerable_code_not_present`; genrb is not installed and no shipped ICU library has the code. |
-| CVE-2024-56433 | passwd, login (AOT) | Not affected (VEX): `inline_mitigations_already_exist`; the only account is a system account created at build, and the image runs as UID 1001 with every setuid/setgid bit removed. |
+| CVE-2024-56433 | passwd, login (AOT) | Not affected (VEX): `inline_mitigations_already_exist`; accounts are fixed at build, the image runs as UID 1001 with every setuid/setgid bit removed, and no newuidmap/newgidmap ships. |
 | CVE-2026-102473, CVE-2026-102474 | dash | Open, no Ubuntu fix. `/bin/sh` is reachable through the backup hook, so not marked unaffected. |
 | CVE-2026-18477, CVE-2026-18508 | tar | Open, no Ubuntu fix; the backup hook can run arbitrary operator commands. |
 | CVE-2026-76642 | util-linux family | Open, no Ubuntu fix. |
