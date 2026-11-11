@@ -106,7 +106,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(github.event.pull_request.draft && '[{"check":"Format","format":"true","analyzer-build":"false","analyzer-partition":"all"}]' || '[{"check":"Format","format":"true","analyzer-build":"false","analyzer-partition":"all"},{"check":"Analyzers","format":"false","analyzer-build":"true","analyzer-partition":"source"},{"check":"Analyzers (tests)","format":"false","analyzer-build":"true","analyzer-partition":"tests"}]') }}
+        include: ${{ fromJSON(github.event.pull_request.draft && '[{"check":"Format","format":"true","analyzer-build":"false","analyzer-partition":"all"}]' || '[{"check":"Format","format":"true","analyzer-build":"false","analyzer-partition":"all"},{"check":"Analyzers","format":"false","analyzer-build":"true","analyzer-partition":"source"},{"check":"Analyzers (tests)","format":"false","analyzer-build":"true","analyzer-partition":"tests","analyzer-test-partition":"other"},{"check":"Analyzers (server tests)","format":"false","analyzer-build":"true","analyzer-partition":"tests","analyzer-test-partition":"server"}]') }}
     steps:
       # `rerun-failed-jobs` only releases jobs that failed attempt 1. Make this
       # independent path an admission failure too, otherwise a skipped-success
@@ -157,6 +157,7 @@ jobs:
           format: ${{ matrix.format }}
           analyzer-build: ${{ matrix.analyzer-build }}
           analyzer-partition: ${{ matrix.analyzer-partition }}
+          analyzer-test-partition: ${{ matrix.analyzer-test-partition || 'all' }}
 
   fast-tests:
     name: PR Gate / Fast and architecture (${{ matrix.test-group }})

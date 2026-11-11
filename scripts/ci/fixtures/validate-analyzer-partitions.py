@@ -5,9 +5,12 @@ from pathlib import Path
 import importlib.util
 import subprocess
 import tempfile
+import sys
 
 
 TARGETS = Path(__file__).resolve().parents[3] / "Directory.Build.targets"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 spec = importlib.util.spec_from_file_location("analyzer_source_filter", TARGETS.parent / "scripts/ci/analyzer-source-filter.py")
 source_filter = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(source_filter)

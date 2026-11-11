@@ -160,6 +160,7 @@ run_fixture scripts/ci/validate-server-test-prebuild.sh scripts/ci/validate-serv
 
 echo "Validating managed build producer and consumer contracts..."
 if [[ -n "${PYTHON_BIN}" ]]; then
+  run_fixture scripts/ci/fixtures/validate-analyzer-test-filter.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-analyzer-test-filter.py
   run_fixture scripts/ci/fixtures/validate-partition-managed-producer.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-partition-managed-producer.py
   run_fixture scripts/ci/fixtures/validate-fast-test-selection.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-fast-test-selection.py
   run_fixture scripts/ci/fixtures/validate-scoped-restore.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-scoped-restore.py
