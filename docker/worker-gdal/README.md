@@ -19,7 +19,7 @@ development and compatibility testing; it is not a production distribution.
 - Pins the ASP.NET Core runtime to 10.0.14 and checks the resolved GDAL, PDAL,
   .NET, and native link closure while assembling the image.
 - Runs the **same** durable job-execution loop (`JobExecutionService` /
-  `JobReconciliationService` / `RedisJobQueue`) that the serving image hosts —
+  `JobReconciliationService` / `PostgresJobQueue`) that the serving image hosts —
   it does **not** fork a parallel runtime. The entrypoint is
   `Honua.Worker.Gdal.dll`, a headless .NET Generic Host.
 - Registers **only native-profile executors** (`GdalDispatchJobExecutor`). Each
@@ -53,7 +53,7 @@ ADR-0038 reserves `ExecutionJobSpec.RuntimeProfile`; the claim-fence stream
    opt in can therefore never claim a `native` job.
 2. `JobExecutionService` aggregates its executors' accepted profiles and passes
    the union to `IJobQueue.TryClaimAsync(..., acceptedRuntimeProfiles, ...)`.
-3. `RedisJobQueue` honors the filter: a job is claimable iff its **effective**
+3. `PostgresJobQueue` honors the filter: a job is claimable iff its **effective**
    runtime profile is in the worker's accepted set, where a job whose
    `RuntimeProfile` is `null`/empty is normalized to the managed/default profile
    (`RuntimeProfiles.Normalize`). A `native` job is claimable only by a worker
@@ -76,11 +76,12 @@ the filter ensures the *right* worker is the only candidate.
 DOCKER_BUILDKIT=1 docker build -f docker/worker-gdal/Dockerfile -t honua-worker-etl .
 ```
 
-Run alongside the serving image, pointed at the same Redis + PostgreSQL:
+Run alongside the serving image, pointed at the same system PostgreSQL database
+(the worker claims jobs from it and needs no Redis):
 
 ```sh
 docker run --rm \
-  -e ConnectionStrings__redis="redis-host:6379" \
+  -e ConnectionStrings__DefaultConnection="Host=postgres-host;Database=honua;Username=honua_user;Password=..." \
   honua-worker-etl
 ```
 

@@ -56,6 +56,7 @@ on:
 permissions:
   contents: read
   packages: read
+  issues: read
 
 env:
   DOTNET_VERSION: '10.0.x'
@@ -162,6 +163,7 @@ jobs:
                 shard_name: .name,
                 suffix: .artifact_suffix,
                 csproj: (.csproj // ""),
+                csprojs: (.csprojs // null),
                 filter: .filter,
                 max_cpu_count: (.max_cpu_count // ""),
                 exclude_slow: "true",
@@ -251,23 +253,30 @@ jobs:
       - name: Restore
         env:
           SHARD_CSPROJ: ${{ matrix.csproj }}
+          HONUA_SERVER_TEST_CSPROJS: ${{ toJSON(matrix.csprojs) }}
         run: |
           csproj="${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}"
-          scripts/ci/dotnet-restore-retry.sh "${csproj}"
+          while IFS= read -r project; do
+            scripts/ci/dotnet-restore-retry.sh "${project}"
+          done < <(jq -r --arg fallback "${csproj}" '(. // [$fallback])[]' <<< "${HONUA_SERVER_TEST_CSPROJS}")
 
       - name: Build shard test project
         timeout-minutes: 25
         env:
           SHARD_CSPROJ: ${{ matrix.csproj }}
+          HONUA_SERVER_TEST_CSPROJS: ${{ toJSON(matrix.csprojs) }}
         run: |
           csproj="${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}"
-          dotnet build "${csproj}" --no-restore --configuration Release
+          while IFS= read -r project; do
+            dotnet build "${project}" --no-restore --configuration Release
+          done < <(jq -r --arg fallback "${csproj}" '(. // [$fallback])[]' <<< "${HONUA_SERVER_TEST_CSPROJS}")
 
       - name: Re-run selection ${{ needs.plan.outputs.iterations }}x
         env:
           ITERATIONS: ${{ needs.plan.outputs.iterations }}
           SHARD_SUFFIX: ${{ matrix.suffix }}
           SHARD_CSPROJ: ${{ matrix.csproj }}
+          HONUA_SERVER_TEST_CSPROJS: ${{ toJSON(matrix.csprojs) }}
           HONUA_SERVER_TEST_SHARD_NAME: ${{ matrix.shard_name }}
           HONUA_SERVER_TEST_FILTER: ${{ matrix.filter }}
           HONUA_SERVER_TEST_TIMEOUT_MINUTES: ${{ matrix.test_timeout_minutes }}
@@ -276,6 +285,8 @@ jobs:
           HONUA_SERVER_TEST_EXCLUDE_FAST: ${{ matrix.exclude_fast }}
           HONUA_SERVER_TEST_RESULTS_DIR: ./artifacts/test-results
           HONUA_SERVER_TEST_CONFIGURATION: Release
+          HONUA_SERVER_TEST_RETRY_FAILED: 'false'
+          HONUA_TEST_QUARANTINE_OBSERVE: 'true'
         run: |
           set -uo pipefail
           export HONUA_SERVER_TEST_CSPROJ="${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}"
@@ -331,6 +342,85 @@ jobs:
             artifacts/test-results/flake-*.trx
             artifacts/test-results/flake-*.log
             artifacts/test-results/flake-*.timing.json
+            artifacts/test-results/flake-*/**
+          if-no-files-found: warn
+          retention-days: 30
+
+  quarantine-plan:
+    name: Validate active flaky-test quarantine
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.quarantine.outputs.matrix }}
+      count: ${{ steps.quarantine.outputs.count }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: quarantine
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/quarantine-issues.py snapshot --output quarantine.json
+          matrix="$(python3 scripts/ci/validate-flake-quarantine.py quarantine.json)"
+          echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
+          echo "count=$(jq '.include | length' <<<"${matrix}")" >> "${GITHUB_OUTPUT}"
+
+  quarantined-tests:
+    name: Quarantined tests / ${{ matrix.suffix }}
+    needs: quarantine-plan
+    if: needs.quarantine-plan.outputs.count != '0'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.quarantine-plan.outputs.matrix) }}
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Restore and build quarantined project
+        timeout-minutes: 25
+        env:
+          TEST_PROJECT: ${{ matrix.project }}
+        run: |
+          scripts/ci/dotnet-restore-retry.sh "${TEST_PROJECT}"
+          dotnet build "${TEST_PROJECT}" --no-restore --configuration Release
+      - name: Observe quarantined tests without retry or exclusion
+        env:
+          HONUA_SERVER_TEST_CSPROJ: ${{ matrix.project }}
+          HONUA_SERVER_TEST_SHARD_NAME: quarantined-${{ matrix.suffix }}
+          HONUA_SERVER_TEST_LOG_NAME: quarantined-${{ matrix.suffix }}
+          HONUA_SERVER_TEST_FILTER: ${{ matrix.filter }}
+          HONUA_SERVER_TEST_TIMEOUT_MINUTES: '45'
+          HONUA_SERVER_TEST_EXCLUDE_SLOW: 'false'
+          HONUA_SERVER_TEST_EXCLUDE_FAST: 'false'
+          HONUA_SERVER_TEST_RETRY_FAILED: 'false'
+          HONUA_TEST_QUARANTINE_OBSERVE: 'true'
+          HONUA_TEST_DB_URL: Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: scripts/ci/run-server-test-shard.sh
+      - name: Retain quarantined test evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: quarantined-tests-${{ matrix.suffix }}
+          path: artifacts/test-results/
           if-no-files-found: warn
           retention-days: 30
 

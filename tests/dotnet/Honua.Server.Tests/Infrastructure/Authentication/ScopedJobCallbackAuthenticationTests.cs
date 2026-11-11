@@ -189,7 +189,7 @@ public sealed class ScopedJobCallbackAuthenticationTests
     public async Task ClaimsTransformations_CannotReplaceFrozenScopeWithOwnerOrDefaultAdminRoles()
     {
         using var cache = new MemoryCache(new MemoryCacheOptions());
-        var issuer = new ScopedJobTokenIssuer(cache, NullLogger<ScopedJobTokenIssuer>.Instance);
+        var issuer = new ScopedJobTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<ScopedJobTokenIssuer>.Instance);
         var token = await issuer.IssueAsync(Request(JobResourceAccess.Read), CancellationToken.None);
         var validation = await issuer.ValidateAsync(token.Token, JobId, CancellationToken.None);
         var principal = validation!.Principal;
@@ -214,7 +214,7 @@ public sealed class ScopedJobCallbackAuthenticationTests
     public async Task FrozenTenant_IgnoresOidcClaimMappingAndAnonymousDefault(string? tenantId)
     {
         using var cache = new MemoryCache(new MemoryCacheOptions());
-        var issuer = new ScopedJobTokenIssuer(cache, NullLogger<ScopedJobTokenIssuer>.Instance);
+        var issuer = new ScopedJobTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<ScopedJobTokenIssuer>.Instance);
         var token = await issuer.IssueAsync(Request(JobResourceAccess.Read) with { TenantId = tenantId }, CancellationToken.None);
         var validation = await issuer.ValidateAsync(token.Token, JobId, CancellationToken.None);
         var tenant = new RequestTenantContext();
@@ -255,7 +255,7 @@ public sealed class ScopedJobCallbackAuthenticationTests
 
         private CallbackFixture()
         {
-            Issuer = new ScopedJobTokenIssuer(_cache, NullLogger<ScopedJobTokenIssuer>.Instance);
+            Issuer = new ScopedJobTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<ScopedJobTokenIssuer>.Instance);
             var jobs = Substitute.For<IExecutionJobStore>();
             jobs.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(call => StoreUnavailable
                 ? Task.FromException<ExecutionJobRecord?>(new InvalidOperationException("Store unavailable"))

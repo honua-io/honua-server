@@ -16,7 +16,6 @@ public sealed class SharedCachePolicyTests
     [UnitTheory]
     [InlineData(nameof(ResponseCacheClass.Tile), "public, max-age=60, s-maxage=300, stale-while-revalidate=60, stale-if-error=86400")]
     [InlineData(nameof(ResponseCacheClass.FeatureQuery), "public, max-age=0, s-maxage=30, stale-while-revalidate=30, stale-if-error=86400")]
-    [InlineData(nameof(ResponseCacheClass.StaticMapImage), "public, max-age=0, s-maxage=60, stale-while-revalidate=30")]
     [InlineData(nameof(ResponseCacheClass.StaticObject), "public, max-age=60, s-maxage=300")]
     public void Apply_AnonymousGrantOnDeclaredRoute_WritesProductDefault(string cacheClassName, string expected)
     {

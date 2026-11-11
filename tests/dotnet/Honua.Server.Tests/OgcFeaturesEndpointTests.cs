@@ -10,6 +10,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests;
 
@@ -20,7 +21,8 @@ namespace Honua.Server.Tests;
 [Collection("Database.CoreEndpoints")]
 public sealed class OgcFeaturesEndpointTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture()
+        .ConfigureWebHost(builder => builder.UseSetting("HONUA_DEV_AUTH", "false"));
 
     public async Task InitializeAsync()
     {
@@ -134,7 +136,10 @@ public sealed class OgcFeaturesEndpointTests : IAsyncLifetime
 
         response.Be200Ok();
         response.Headers.Should().ContainKey("Cache-Control");
+        response.Headers.CacheControl?.Public.Should().BeTrue();
+        response.Headers.CacheControl?.NoStore.Should().BeFalse();
         response.Headers.CacheControl?.MaxAge.Should().BeGreaterThan(TimeSpan.Zero);
+        response.Headers.CacheControl?.SharedMaxAge.Should().BeGreaterThan(TimeSpan.Zero);
     }
 
     [IntegrationTest]
@@ -148,7 +153,30 @@ public sealed class OgcFeaturesEndpointTests : IAsyncLifetime
 
         response.Be200Ok();
         response.Headers.Should().ContainKey("Cache-Control");
+        response.Headers.CacheControl?.Public.Should().BeTrue();
+        response.Headers.CacheControl?.NoStore.Should().BeFalse();
         response.Headers.CacheControl?.MaxAge.Should().BeGreaterThan(TimeSpan.Zero);
+        response.Headers.CacheControl?.SharedMaxAge.Should().BeGreaterThan(TimeSpan.Zero);
+    }
+
+    [IntegrationTheory]
+    [InlineData("/ogc/features")]
+    [InlineData("/ogc/features/conformance")]
+    [Operation(Operations.Cache)]
+    [Endpoint("GET /ogc/features")]
+    [Endpoint("GET /ogc/features/conformance")]
+    public async Task GetMetadata_WithCredentials_DoesNotPermitStorage(string path)
+    {
+        using var client = _fixture.CreateAdminClient();
+
+        var response = await client.GetAsync(path);
+
+        response.Be200Ok();
+        response.Headers.CacheControl!.Private.Should().BeTrue();
+        response.Headers.CacheControl.NoStore.Should().BeTrue();
+        response.Headers.CacheControl.Public.Should().BeFalse();
+        response.Headers.CacheControl.MaxAge.Should().BeNull();
+        response.Headers.CacheControl.SharedMaxAge.Should().BeNull();
     }
 
     [IntegrationTest]

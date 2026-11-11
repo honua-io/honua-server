@@ -7,6 +7,10 @@ import argparse
 import json
 from collections import Counter
 from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shard_projects import shard_projects
 
 CONTRACT = "honua.server-test-prebuild-plan/v1"
 DEFAULT_PROJECT = "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
@@ -75,10 +79,8 @@ def build_plan(config: dict, shard_config: dict, registry: dict, descriptor: dic
     selected = []
     for name in selected_names:
         raw = shards_by_name[name]
-        project = raw.get("csproj") or DEFAULT_PROJECT
-        if not isinstance(project, str) or not project.endswith(".csproj"):
-            raise ValueError(f"selected shard {name} has an invalid project")
-        selected.append({"identity": name, "project": project, "filter": raw.get("filter")})
+        for project in shard_projects(raw):
+            selected.append({"identity": name, "project": project, "filter": raw.get("filter")})
 
     registry_projects = registry_by_project(registry)
     counts = Counter(item["project"] for item in selected)

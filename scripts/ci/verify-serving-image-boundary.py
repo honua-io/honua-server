@@ -346,7 +346,7 @@ def verify_serving_image(image: str) -> list[str]:
     return sorted(set(violations))
 
 
-def _smoke_worker_entrypoint(image: str, redis_connection: str) -> list[str]:
+def _smoke_worker_entrypoint(image: str, database_connection: str) -> list[str]:
     """Start the image's real entrypoint and wait for the durable worker loop."""
     container_name = f"honua-worker-boundary-{uuid.uuid4().hex[:12]}"
     started = subprocess.run(
@@ -359,7 +359,7 @@ def _smoke_worker_entrypoint(image: str, redis_connection: str) -> list[str]:
             "--network",
             "host",
             "--env",
-            f"ConnectionStrings__redis={redis_connection}",
+            f"ConnectionStrings__DefaultConnection={database_connection}",
             image,
         ],
         text=True,
@@ -407,7 +407,7 @@ def _smoke_worker_entrypoint(image: str, redis_connection: str) -> list[str]:
         )
 
 
-def verify_worker_image(image: str, redis_connection: str | None = None) -> list[str]:
+def verify_worker_image(image: str, database_connection: str | None = None) -> list[str]:
     inspect = _docker("image", "inspect", image, capture=True)
     metadata = json.loads(inspect.stdout)[0]
     config = metadata.get("Config", {})
@@ -451,8 +451,8 @@ dotnet --list-runtimes | grep -F 'Microsoft.NETCore.App {EXPECTED_WORKER_LABELS[
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
         violations.append(f"GDAL worker capability probe failed: {detail or 'unknown error'}")
-    if redis_connection:
-        violations.extend(_smoke_worker_entrypoint(image, redis_connection))
+    if database_connection:
+        violations.extend(_smoke_worker_entrypoint(image, database_connection))
     return violations
 
 
@@ -474,9 +474,9 @@ def main() -> int:
     group.add_argument("--rootfs-tar", metavar="PATH")
     parser.add_argument("--entrypoint", default="/app/Honua.Server")
     parser.add_argument(
-        "--worker-redis",
-        metavar="HOST:PORT",
-        help="Redis endpoint used to smoke the worker image's real entrypoint",
+        "--worker-database",
+        metavar="CONNECTION_STRING",
+        help="System PostgreSQL connection string used to smoke the worker image's real entrypoint",
     )
     parser.add_argument("--require-attestations", action="store_true",
                         help="Require digest-bound registry SBOM and provenance (needs skopeo)")
@@ -489,8 +489,8 @@ def main() -> int:
     if args.attestation_report and not args.require_attestations:
         parser.error("--attestation-report requires --require-attestations")
 
-    if args.worker_redis and not args.worker_image:
-        parser.error("--worker-redis requires --worker-image")
+    if args.worker_database and not args.worker_image:
+        parser.error("--worker-database requires --worker-image")
 
     if args.serving_image:
         records = []
@@ -511,13 +511,13 @@ def main() -> int:
         )
     if args.worker_image:
         success = f"Worker image {args.worker_image} exposes the required native tools and drivers."
-        if args.worker_redis:
+        if args.worker_database:
             success = (
                 f"Worker image {args.worker_image} exposes the required native tools "
                 "and starts its worker loop."
             )
         return _write_result(
-            verify_worker_image(args.worker_image, args.worker_redis),
+            verify_worker_image(args.worker_image, args.worker_database),
             success,
         )
 
