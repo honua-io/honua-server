@@ -59,8 +59,7 @@ internal sealed class SamlAssertionValidator(
 
     private readonly SamlAuthenticationOptions _options = options.Value;
     private readonly ISamlAssertionReplayCache _replay = replayCache
-        ?? new SamlAssertionReplayCache(new Microsoft.Extensions.Caching.Memory.MemoryCache(
-            new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()));
+        ?? new SamlAssertionReplayCache(new Honua.Infrastructure.Security.InMemoryTokenReplayStore());
 
     public SamlValidationResult Validate(string responseXml)
     {

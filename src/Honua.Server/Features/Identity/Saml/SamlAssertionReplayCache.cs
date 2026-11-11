@@ -1,26 +1,21 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Microsoft.Extensions.Caching.Memory;
-using StackExchange.Redis;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Server.Features.Identity.Saml;
 
 internal interface ISamlAssertionReplayCache
 {
-    // A repeated, empty, or unrecordable assertion id is rejected, and node-local memory is not a substitute for Redis.
+    // A repeated, empty, or unrecordable assertion id is rejected.
     bool TryRemember(string id, DateTimeOffset notOnOrAfter);
 }
 
-// When Redis is configured the assertion is accepted only after this node records it, and a disconnect or timeout rejects it.
-internal sealed class SamlAssertionReplayCache(IMemoryCache memoryCache, IConnectionMultiplexer? redis = null)
-    : ISamlAssertionReplayCache
+// The assertion is accepted only after the shared replay store records it; a store failure rejects it.
+internal sealed class SamlAssertionReplayCache(ITokenReplayStore replays) : ISamlAssertionReplayCache
 {
     private const string KeyPrefix = "saml:replay:";
-    private static readonly object _memoryLock = new();
-
-    private readonly IMemoryCache _memoryCache = memoryCache;
-    private readonly IConnectionMultiplexer? _redis = redis;
+    private const string Marker = "saml";
 
     public bool TryRemember(string id, DateTimeOffset notOnOrAfter)
     {
@@ -29,48 +24,16 @@ internal sealed class SamlAssertionReplayCache(IMemoryCache memoryCache, IConnec
             return false;
         }
 
-        var expiresAt = notOnOrAfter > DateTimeOffset.UtcNow
-            ? notOnOrAfter
-            : DateTimeOffset.UtcNow.AddMinutes(5);
-        var key = KeyPrefix + id.Trim();
-
-        if (_redis is not null)
+        var lifetime = notOnOrAfter > DateTimeOffset.UtcNow
+            ? notOnOrAfter - DateTimeOffset.UtcNow
+            : TimeSpan.FromMinutes(5);
+        try
         {
-            // A configured Redis store is the only authority for this claim. Accepting from
-            // this node's memory would let another node replay the same assertion.
-            if (!_redis.IsConnected)
-            {
-                return false;
-            }
-
-            try
-            {
-                return _redis.GetDatabase().StringSet(
-                    key,
-                    "1",
-                    expiresAt - DateTimeOffset.UtcNow,
-                    when: When.NotExists);
-            }
-            catch (Exception ex) when (ex is RedisException or TimeoutException && ex is not OperationCanceledException)
-            {
-                return false;
-            }
+            return replays.TryRegister(new TokenReplayRegistrationRequest(KeyPrefix + id.Trim(), Marker, lifetime));
         }
-
-        return RememberInMemory(key, expiresAt);
-    }
-
-    private bool RememberInMemory(string key, DateTimeOffset expiresAt)
-    {
-        lock (_memoryLock)
+        catch (Exception storeFailure) when (storeFailure is not OutOfMemoryException and not OperationCanceledException)
         {
-            if (_memoryCache.TryGetValue(key, out _))
-            {
-                return false;
-            }
-
-            _memoryCache.Set(key, (byte)1, expiresAt);
-            return true;
+            return false;
         }
     }
 }

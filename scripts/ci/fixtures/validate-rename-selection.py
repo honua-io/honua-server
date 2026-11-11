@@ -48,8 +48,8 @@ class RenameSelectionTests(unittest.TestCase):
                 ['bash', str(ROOT / 'scripts/ci/honua-server-targeted-tests.sh'), '--stdin'],
                 input='\n'.join(hosted_paths), text=True))
             self.assertFalse(descriptor['run_all'])
-            self.assertIn('Protocols Stac Units', descriptor['shards'])
-            self.assertIn('Protocols Scene Units', descriptor['shards'])
+            self.assertIn('Protocol Units', descriptor['shards'])
+            self.assertIn('Protocol Units', descriptor['shards'])
             self.assertIsNone(hosted.git_changed_files(root, 'absent-base', 'HEAD'))
 
 

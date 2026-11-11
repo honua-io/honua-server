@@ -1,0 +1,85 @@
+name: Trunk signal watchdog
+
+# Fails loudly when trunk CI stops producing results. The CI doctor only reacts to runs that fail;
+# a trunk whose runs are all cancelled or stuck in the queue produces no failure event at all.
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: trunk-signal-watchdog
+  cancel-in-progress: true
+
+jobs:
+  watch:
+    name: Trunk signal watchdog
+    if: github.repository == 'honua-io/honua-server'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      issues: write
+    steps:
+      - name: Check that trunk CI is producing results
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          MAX_HOURS_WITHOUT_RESULT: "2"
+          MAX_MINUTES_QUEUED: "45"
+          MAX_HOURS_WITHOUT_SCHEDULE: "14"
+          ISSUE_TITLE: "Trunk CI signal is stale"
+        with:
+          script: |
+            const repo = context.repo;
+            const now = Date.now();
+            const maxResultAgeMs = Number(process.env.MAX_HOURS_WITHOUT_RESULT) * 3600 * 1000;
+            const maxQueuedMs = Number(process.env.MAX_MINUTES_QUEUED) * 60 * 1000;
+            const { data } = await github.rest.actions.listWorkflowRuns({
+              ...repo, workflow_id: 'ci.yml', branch: 'trunk', per_page: 50,
+            });
+            const runs = data.workflow_runs;
+            const finished = runs.filter(run => run.status === 'completed' && ['success', 'failure'].includes(run.conclusion));
+            const lastResult = finished.sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))[0];
+            const stuck = runs.filter(run => run.status === 'queued' && now - Date.parse(run.updated_at) > maxQueuedMs);
+            const { data: scheduled } = await github.rest.actions.listWorkflowRuns({
+              ...repo, workflow_id: 'ci.yml', branch: 'trunk', event: 'schedule', per_page: 10,
+            });
+            const maxScheduleAgeMs = Number(process.env.MAX_HOURS_WITHOUT_SCHEDULE) * 3600 * 1000;
+            const recentScheduledStart = scheduled.workflow_runs.some(run => {
+              const started = Date.parse(run.run_started_at);
+              return run.status !== 'queued' && Number.isFinite(started) && started <= now && now - started <= maxScheduleAgeMs;
+            });
+            const problems = [];
+            if (!recentScheduledStart) {
+              problems.push(`No scheduled full CI run started in the last ${process.env.MAX_HOURS_WITHOUT_SCHEDULE} h.`);
+            }
+            if (!lastResult) {
+              problems.push('No trunk CI run in the last 50 reached success or failure.');
+            } else if (runs.some(run => run.status !== 'completed') && now - Date.parse(lastResult.updated_at) > maxResultAgeMs) {
+              problems.push(`The last trunk CI result (${lastResult.conclusion}, ${lastResult.html_url}) finished at ${lastResult.updated_at}, more than ${process.env.MAX_HOURS_WITHOUT_RESULT} h ago.`);
+            }
+            for (const run of stuck) {
+              problems.push(`Run ${run.html_url} (${run.display_title}) has been queued since ${run.updated_at}.`);
+            }
+            const cancelled = runs.slice(0, 10).filter(run => run.conclusion === 'cancelled').length;
+            if (cancelled >= 6) problems.push(`${cancelled} of the last 10 trunk CI runs were cancelled.`);
+
+            const { data: open } = await github.rest.issues.listForRepo({ ...repo, state: 'open', labels: 'trunk-signal', per_page: 10 });
+            const existing = open.find(issue => issue.title === process.env.ISSUE_TITLE);
+            if (problems.length === 0) {
+              core.info(`Trunk CI signal is fresh: last result ${lastResult.conclusion} at ${lastResult.updated_at}.`);
+              if (existing) {
+                await github.rest.issues.createComment({ ...repo, issue_number: existing.number, body: `Recovered: trunk CI produced a result (${lastResult.conclusion}) at ${lastResult.updated_at}. ${lastResult.html_url}` });
+                await github.rest.issues.update({ ...repo, issue_number: existing.number, state: 'closed' });
+              }
+              return;
+            }
+            const body = ['Trunk CI has stopped producing usable results, so a red or green trunk cannot be trusted:', '', ...problems.map(p => `- ${p}`), '', 'Owner: the CI lane. Check runner queue, affected-run size and cancellations.'].join('\n');
+            if (existing) {
+              await github.rest.issues.createComment({ ...repo, issue_number: existing.number, body });
+            } else {
+              await github.rest.issues.create({ ...repo, title: process.env.ISSUE_TITLE, labels: ['trunk-signal'], body });
+            }
+            core.setFailed(problems.join(' '));

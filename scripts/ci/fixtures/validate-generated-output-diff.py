@@ -36,7 +36,7 @@ class GeneratedOutputAdmission(unittest.TestCase):
         self.env = patch.dict(os.environ, GITHUB_EVENT_NAME='pull_request')
         self.env.start()
         self.git('init', '-b', 'trunk')
-        for name in ('generated-files.sh', 'generated-output-diff.py'):
+        for name in ('generated-files.sh', 'generated-output-diff.py', 'classify-generated-output.sh'):
             target = self.repo / 'scripts/ci' / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(ROOT / 'scripts/ci' / name, target)
@@ -272,6 +272,7 @@ class WorkflowCompletion(unittest.TestCase):
         for verdict in ('true', 'false', ''):
             values = {'env.REVIEW_FIRST_MODE': 'observe', 'github.event_name': 'pull_request',
                       'github.run_attempt': 1, 'steps.docs-only.outputs.docs_only': 'false',
+                      'steps.fast-selection.outputs[matrix.test-group]': 'true',
                       'steps.generated-only.outputs.generated_only': verdict,
                       'needs.pr-gate.outputs.docs_only': 'false',
                       'needs.pr-gate.outputs.generated_only': verdict,
@@ -303,7 +304,8 @@ class WorkflowCompletion(unittest.TestCase):
         normal = yaml.safe_load((ROOT / '.github/workflows/normalize-derived-artifacts.yml').read_text())
         self.assertEqual(
             normal['jobs']['produce']['if'],
-            "needs.generate.result == 'success' && needs.generate.outputs.generated_only != 'true'")
+            "needs.generate.result == 'success' && needs.generate.outputs.superseded != 'true' "
+            "&& needs.generate.outputs.generated_only != 'true'")
         consumer = yaml.safe_load((ROOT / '.github/workflows/normalize-derived-artifacts-consumer.yml').read_text())
         steps = consumer['jobs']['validate']['steps']
         resolve = next(s for s in steps if s.get('id') == 'artifact')

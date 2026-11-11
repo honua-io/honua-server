@@ -389,16 +389,24 @@ internal static class ServiceCollectionExtensions
         // The read surface is the cached path; the write surface (IMetadataV2GraphStore) stays the
         // raw store so read-modify-write publish paths always load a fresh persisted snapshot.
         // Cache-miss loads are shared across callers and outlive a cancelled initiator, so they
-        // resolve the store from their own scope instead of the initiating request's. Without a
-        // cross-node invalidation channel on Lambda, each request revalidates the cached snapshot's
-        // ETag against the current-pointer row (honua-server#6762).
-        var revalidateOnLambda = Honua.Core.Features.ControlPlane.Abstractions.ControlPlaneEventHandlerHost.IsLambda(configuration);
+        // resolve the store from their own scope instead of the initiating request's. Another node's
+        // publish is seen by comparing the snapshot's ETag with the current-pointer row: at most once
+        // per interval per node for reads, and always for work that requires the current revision.
+        services.TryAddSingleton(static serviceProvider => new MetadataV2GraphRevisionProbeSchedule(
+            serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System));
         services.AddScoped<IMetadataV2GraphProvider>(serviceProvider =>
         {
             var store = serviceProvider.GetRequiredService<IMetadataV2GraphStore>();
             var cache = serviceProvider.GetRequiredService<MetadataV2GraphSnapshotCache>();
-            var revisionProbe = ShouldRevalidateMetadataGraphOnRead(serviceProvider, cache, revalidateOnLambda)
-                ? store as IMetadataV2GraphRevisionProbe
+            var revisionProbe = store is IMetadataV2GraphRevisionProbe databaseProbe
+                ? new IntervalMetadataV2GraphRevisionProbe(
+                    databaseProbe,
+                    serviceProvider.GetRequiredService<MetadataV2GraphRevisionProbeSchedule>(),
+                    new MetadataV2GraphRevalidation(
+                        TimeSpan.FromSeconds(
+                            (serviceProvider.GetService<IOptions<CacheOptions>>()?.Value ?? new CacheOptions())
+                            .MetadataGraphRevalidationSeconds),
+                        serviceProvider.GetService<IMetadataGraphFreshnessRequirement>()?.RequireCurrentRevision ?? true))
                 : null;
             return new CachingMetadataV2GraphProvider(
                 store,
@@ -664,14 +672,12 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<ICrsRegistry, PostgresCrsRegistry>();
         services.AddScoped<ICoordinateTransformService, PostGisCoordinateTransformService>();
 
-        // Register CRS warmup service with leader election for distributed deployments
+        // One node warms the CRS cache, elected on a lease row when the host has a system database.
         services.AddSingleton<IDistributedLeaderElection>(serviceProvider =>
-        {
-            // Use the no-op implementation here; distributed leader election is only enabled
-            // when the Server composition root supplies a real coordinator.
-            return new Honua.Db.Postgres.Features.Infrastructure.Coordination.NoOpDistributedLeaderElection(
-                "honua:leader:crs-warmup");
-        });
+            serviceProvider.GetService<Honua.Core.Features.Infrastructure.Coordination.ILeaseStore>() is { } leases
+                ? new Honua.Core.Features.Infrastructure.Coordination.LeaseLeaderElection(
+                    leases, "crs-warmup", Honua.Core.Features.Infrastructure.Coordination.LeaseLeaderElection.DefaultLeaseDuration)
+                : new Honua.Db.Postgres.Features.Infrastructure.Coordination.NoOpDistributedLeaderElection("crs-warmup"));
 
         services.AddSingleton<PostgresCrsWarmupService>(serviceProvider =>
             new PostgresCrsWarmupService(
@@ -1153,23 +1159,4 @@ internal static class ServiceCollectionExtensions
             : defaultValue;
     }
 
-    /// <summary>
-    /// Whether the Metadata v2 read path revalidates its cached snapshot per request.
-    /// <c>Cache:MetadataGraphRevalidateOnRead</c> wins when set; otherwise it is on for Lambda when
-    /// the invalidator is the in-process cache itself, i.e. no Redis broadcast is composed.
-    /// </summary>
-    internal static bool ShouldRevalidateMetadataGraphOnRead(
-        IServiceProvider serviceProvider,
-        MetadataV2GraphSnapshotCache cache,
-        bool isLambda)
-    {
-        var configured = serviceProvider.GetService<IOptions<CacheOptions>>()?.Value.MetadataGraphRevalidateOnRead;
-        if (configured is { } explicitSetting)
-        {
-            return explicitSetting;
-        }
-
-        return isLambda
-            && ReferenceEquals(serviceProvider.GetService<IMetadataV2GraphCacheInvalidator>(), cache);
-    }
 }

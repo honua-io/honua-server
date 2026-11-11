@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { handled, ciEligibility, reviewEligibility, syncEligibility } = require('./doctor-eligibility.cjs');
-const { main: budgetCheck } = require('./doctor-budget.cjs');
+const { main: budgetCheck, BUDGET_POLICY_START } = require('./doctor-budget.cjs');
 const repo = { owner: 'honua-io', repo: 'honua-server' };
 const pr = { number: 12, state: 'open', draft: false, head: { sha: 'abc', ref: 'fix/example', repo: { full_name: 'honua-io/honua-server' } } };
 function fake() {
@@ -77,10 +77,10 @@ test('resolved and outdated review threads are deterministic skips', async () =>
   g.graphql = async () => ({ repository: { pullRequest: { reviewThreads: { pageInfo: {}, nodes: [{ isResolved: true }, { isResolved: false, isOutdated: true }] } } } });
   assert.equal((await reviewEligibility(g, { repo, payload: { pull_request: pr } })).decision, 'not-actionable');
 });
-async function checkBudget({ triage = [], fix = [], credits = {}, threshold = 1300, summaries = [] }) {
+async function checkBudget({ triage = [], fix = [], credits = {}, threshold = 1300, summaries = [], queries = [] }) {
   const outputs = {};
   const summary = { addHeading() { return this; }, addRaw(text) { summaries.push(text); return this; }, async write() {} };
-  await budgetCheck({ github: { rest: { actions: { listWorkflowRuns: 'runs' } }, paginate: async (_, args) => args.workflow_id.includes('triage') ? triage : fix }, context: { repo, runId: 99 }, core: { setOutput: (k, v) => { outputs[k] = v; }, info() {}, summary }, accounting: { getArtifactClient: async () => ({}), getRunAIC: async (_, id) => credits[id] }, name: 'ci-doctor', phase: 'triage', threshold, maxCredits: 15, apiBudget: {} });
+  await budgetCheck({ github: { rest: { actions: { listWorkflowRuns: 'runs' } }, paginate: async (_, args) => { queries.push(args.created); return args.workflow_id.includes('triage') ? triage : fix; } }, context: { repo, runId: 99 }, core: { setOutput: (k, v) => { outputs[k] = v; }, info() {}, summary }, accounting: { getArtifactClient: async () => ({}), getRunAIC: async (_, id) => credits[id] }, name: 'ci-doctor', phase: 'triage', threshold, maxCredits: 15, apiBudget: {} });
   return outputs.eligible;
 }
 test('triage and fix spend share a single daily envelope', async () => {
@@ -93,7 +93,7 @@ test('in-flight work reserves budget and unknown usage fails closed', async () =
   await assert.rejects(checkBudget({ fix: [{ id: 2, status: 'completed' }] }), /Unknown doctor usage/);
 });
 
-test('legacy fix spend counts against the cap without inflating new triage conversion', async () => {
+test('fix spend before the first triage event does not inflate triage conversion', async () => {
   const summaries = [];
   await checkBudget({ triage: [{ id: 1, status: 'completed', created_at: '2026-11-10T12:00:00Z' }],
     fix: [{ id: 2, status: 'completed', created_at: '2026-11-10T11:00:00Z' }],
@@ -140,4 +140,11 @@ test('CI dispatch cannot bypass head serialization with a mismatched head input'
     context.payload.inputs = { head_sha };
     assert.equal((await ciEligibility(g, context)).reason, 'Dispatch head does not match source run');
   }
+});
+
+test('spend from before the current caps is outside the budget window', async () => {
+  const queries = [];
+  await checkBudget({ queries });
+  const windowStart = queries[0].replace('>=', '');
+  assert.ok(windowStart >= BUDGET_POLICY_START, `window ${windowStart} starts before the policy`);
 });

@@ -37,6 +37,19 @@ public sealed class CdnInvalidationTransitionListenerTests
     }
 
     [UnitTest]
+    public async Task OnTransitionAsync_PromotedThenRolledBack_InvalidatesForEach()
+    {
+        Returns(new CdnInvalidationResult(CdnInvalidationOutcome.Submitted));
+        var listener = Listener();
+
+        await listener.OnTransitionAsync(Transition(WorkflowOperationStatus.Succeeded, WorkflowOperationTransitionKind.Promoted));
+        await listener.OnTransitionAsync(Transition(WorkflowOperationStatus.RolledBack, WorkflowOperationTransitionKind.RolledBack));
+        await listener.OnTransitionAsync(Transition(WorkflowOperationStatus.RolledBack, WorkflowOperationTransitionKind.RolledBack));
+
+        await _invalidator.Received(2).InvalidateAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task OnTransitionAsync_RollbackOnlyRequested_DoesNotInvalidateYet()
     {
         await Listener().OnTransitionAsync(
