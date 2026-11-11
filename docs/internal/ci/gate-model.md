@@ -544,5 +544,7 @@ twice-daily full matrix are preserved.
 
 `GeoservicesCatalogGeocodeServerTests` shares one restricted-feature application
 for read-only discovery and folder authorization cases, with a fresh client per
-case. Locator configurations, startup failures and graph collision mutations keep
-separate applications. All assertions and theory rows remain in their existing shard.
+case. Collision catalogs seed their graph once per locator-availability and authorization
+configuration, sharing only between read-only mount-prefix variants. These graphs remain
+separate from the unmodified catalog. Other locator configurations and startup failures
+keep separate applications. All assertions and theory rows remain in their existing shard.

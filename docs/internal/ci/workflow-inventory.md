@@ -570,5 +570,6 @@ paid-run counts and the share of triage events reaching a paid Opus run. Determi
 skips use zero model credits. The combined envelopes are 2500 credits ($25) per day;
 triage and fix do not each receive a separate allowance.
 
-Catalog geocode discovery tests reuse the immutable restricted-feature host under
+Catalog geocode discovery tests reuse the immutable restricted-feature host and four
+separately seeded collision configurations across mount-prefix variants under
 the [catalog geocode isolation contract](gate-model.md#catalog-geocode-discovery-state-isolation).

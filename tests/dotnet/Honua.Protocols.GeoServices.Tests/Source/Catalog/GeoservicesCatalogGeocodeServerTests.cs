@@ -27,24 +27,56 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
 
 [Protocol(TestProtocols.GeoservicesCatalog)]
-public sealed class GeoservicesCatalogGeocodeServerTests : IClassFixture<GeoservicesCatalogGeocodeServerTests.RestrictedFeatureFixture>
+public sealed class GeoservicesCatalogGeocodeServerTests : IClassFixture<GeoservicesCatalogGeocodeServerTests.CatalogFixture>
 {
-    private readonly RestrictedFeatureFixture _fixture;
+    private readonly CatalogFixture _fixture;
 
-    public GeoservicesCatalogGeocodeServerTests(RestrictedFeatureFixture fixture)
+    public GeoservicesCatalogGeocodeServerTests(CatalogFixture fixture)
     {
         _fixture = fixture;
     }
 
     /// <summary>
-    /// Shares the immutable restricted catalog across read-only discovery and authorization cases.
-    /// Collision cases mutate the graph and keep their own applications.
+    /// Shares read-only catalogs after seeding each configuration once. Collision graphs remain
+    /// isolated from the unmodified restricted catalog and from other locator/authorization settings.
     /// </summary>
-    public sealed class RestrictedFeatureFixture : IDisposable
+    public sealed class CatalogFixture : IDisposable
     {
+        private readonly Dictionary<(bool Configured, bool RestrictedFeatures), WebApplicationFactory<Program>>
+            _collisionApplications = [];
+
         public WebApplicationFactory<Program> Application { get; } = CreateFactory(restrictedFeatures: true);
 
-        public void Dispose() => Application.Dispose();
+        public async Task<WebApplicationFactory<Program>> GetCollisionApplicationAsync(bool configured, bool restrictedFeatures)
+        {
+            var configuration = (configured, restrictedFeatures);
+            if (_collisionApplications.TryGetValue(configuration, out var application))
+            {
+                return application;
+            }
+
+            application = CreateFactory("World", configured: configured, restrictedFeatures: restrictedFeatures);
+            try
+            {
+                await ConfigurePublicServiceCollisionAsync(application);
+                _collisionApplications.Add(configuration, application);
+                return application;
+            }
+            catch
+            {
+                application.Dispose();
+                throw;
+            }
+        }
+
+        public void Dispose()
+        {
+            Application.Dispose();
+            foreach (var application in _collisionApplications.Values)
+            {
+                application.Dispose();
+            }
+        }
     }
 
     [IntegrationTheory]
@@ -265,9 +297,8 @@ public sealed class GeoservicesCatalogGeocodeServerTests : IClassFixture<Geoserv
     [Endpoint("GET /rest/services/{folderName}")]
     public async Task ParentDirectory_PublicLocatorCollidesWithGraphService_PreservesStandalonePrecedence(string mount, bool restrictedFeatures)
     {
-        using var factory = CreateFactory("World", restrictedFeatures: restrictedFeatures);
+        var factory = await _fixture.GetCollisionApplicationAsync(configured: true, restrictedFeatures: restrictedFeatures);
         using var client = factory.CreateClient();
-        await ConfigurePublicServiceCollisionAsync(factory);
 
         using var response = await client.GetAsync($"{mount}/rest/services/World?f=json");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -288,9 +319,8 @@ public sealed class GeoservicesCatalogGeocodeServerTests : IClassFixture<Geoserv
     [Endpoint("GET /rest/services/{folderName}")]
     public async Task ParentDirectory_UnavailableLocatorCollidesWithGraphService_UsesGraphVisibility(string mount, bool restrictedFeatures)
     {
-        using var factory = CreateFactory("World", configured: false, restrictedFeatures: restrictedFeatures);
+        var factory = await _fixture.GetCollisionApplicationAsync(configured: false, restrictedFeatures: restrictedFeatures);
         using var client = factory.CreateClient();
-        await ConfigurePublicServiceCollisionAsync(factory);
 
         using var response = await client.GetAsync($"{mount}/rest/services/World?f=json");
         if (restrictedFeatures)
