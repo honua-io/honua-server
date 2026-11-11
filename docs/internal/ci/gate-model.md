@@ -724,6 +724,23 @@ instead of GIS prose. Runtime source, generator scripts, CITE status and all
 existing build/setup inputs remain covered. Its producer/consumer security
 boundary and deterministic replay are unchanged.
 
+## Server test fixture lifetimes
+
+Class-scoped test applications and database infrastructure that shorten server
+test shards without changing what they run.
+
+### OData RBAC denial fixture lifetime
+
+`ODataServiceRbacTests` shares one authorization-denial application for the
+lifetime of the sequential test class. Only cases that expect a request to be
+rejected before any write use it, and each creates its own HTTP client with its
+own role headers. Successful edits and cases with custom policies still build
+and dispose their own application within the case.
+All cases and assertions remain in the Security and Authorization 5 shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
 ## Trailing affected CI selection
 
 Trailing affected CI refreshes its completed-ancestor base when the selection job starts,
