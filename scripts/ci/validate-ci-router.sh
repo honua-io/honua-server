@@ -229,6 +229,7 @@ scripts/ci/fixtures/validate-pre-pr-routing.sh
 if [[ -n "${PYTHON_BIN}" ]]; then
   echo "Checking local FAST dependency closure and changed-contract guards..."
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-pre-pr-closure.py
+"${PYTHON_BIN}" scripts/ci/fixtures/validate-push-ready-pr.py
 fi
 
 # The PR Gate docs-only exit decides which required-gate steps skip, so its

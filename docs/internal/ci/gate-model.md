@@ -640,3 +640,19 @@ projects: when selected, each restores and builds by its own project path before
 managed outputs are published. Restore and build failures remain gating, with
 the same warnings, analyzers and graph-build settings as the solution build.
 Unknown projects outside the solution still fail planning; test selection is unchanged.
+
+## Publishing review batches
+
+Lane publishers can run `python3 scripts/ci/push-ready-pr.py` from a clean
+topic worktree with GitHub CLI authentication and the build-host `pre-pr` tool
+on PATH. It validates the final batch through `pre-pr`, then pushes once to
+`origin`. It refuses an already-active PR Gate on the remote PR head, an
+unreadable API result, or a head/state change during validation. Exit 75 means
+keep working locally and retry after completion or resolving the reported
+change; it does not poll, cancel a run, or reuse results from another SHA.
+
+This is an explicit publishing tool; it does not install hooks or intercept
+plain `git push`. The final API-check/push race remains possible. Git's normal
+fast-forward protection remains enabled. All doctors already defer their own
+pushes while a current-head PR Gate is active, and the sync doctor refreshes
+behind PRs only for affected-project overlap or conflicts.

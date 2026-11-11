@@ -641,3 +641,22 @@ projects: when selected, each restores and builds by its own project path before
 managed outputs are published. Restore and build failures remain gating, with
 the same warnings, analyzers and graph-build settings as the solution build.
 Unknown projects outside the solution still fail planning; test selection is unchanged.
+
+## Lane publication and cancellation budget
+
+`python3 scripts/ci/push-ready-pr.py` is an opt-in lane publication command,
+not another workflow. It batches local review fixes behind a live-head PR Gate
+completion and invokes the build-host `pre-pr` before a single normal push.
+Its race, failure and pagination fixtures run in CI Router Validation. See
+[publication policy](gate-model.md#publishing-review-batches). Required check
+names, aggregate dependencies and concurrency semantics are unchanged.
+
+A 2026-11-10 snapshot since 11:30 Pacific contained 53 PR Gate runs, 21
+cancelled (39.6%). Each cancellation completed 2–247 seconds after a successor
+on its branch started: 18 followed lane-authored non-merge pushes, one a
+lane-authored trunk merge, one a bot-authored trunk merge, and one a same-SHA
+replacement run. These are timing/author-based cause inferences, not an API
+provided cancellation reason. The same-SHA replacement has a new run ID; it
+is not counted as a proven rerun attempt. The largest observed source is
+lane publication, so this tool targets it without relaxing SHA-bound gates.
+No after-change savings are claimed before adoption and real-run evidence.
