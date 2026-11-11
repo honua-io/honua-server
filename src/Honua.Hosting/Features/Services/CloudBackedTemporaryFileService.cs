@@ -193,7 +193,7 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!quotaLease.LeaseLostToken.IsCancellationRequested
-            && await quotaLease.TryAcquireOrExtendAsync().ConfigureAwait(false))
+            && await quotaLease.TryAcquireOrExtendAsync(cancellationToken).ConfigureAwait(false))
         {
             return;
         }
