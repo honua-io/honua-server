@@ -272,16 +272,11 @@ internal sealed class FakeProgressStore : IUniversalProgressStore
         return Task.CompletedTask;
     }
 
-    public Task<ProgressCompareAndSetResult> TrySetProgressAsync(
-        string operationId,
-        IOperationProgress progress,
-        OperationStatus expectedStatus,
-        TimeSpan? ttl = null,
-        CancellationToken cancellationToken = default)
+    public Task<ProgressCompareAndSetResult> TrySetProgressAsync(OperationProgressWrite write, OperationStatus expectedStatus, CancellationToken cancellationToken = default)
     {
         while (true)
         {
-            if (!_progress.TryGetValue(operationId, out var current))
+            if (!_progress.TryGetValue(write.OperationId, out var current))
             {
                 return Task.FromResult(ProgressCompareAndSetResult.NotFound);
             }
@@ -291,7 +286,7 @@ internal sealed class FakeProgressStore : IUniversalProgressStore
                 return Task.FromResult(ProgressCompareAndSetResult.StatusMismatch(current));
             }
 
-            if (_progress.TryUpdate(operationId, progress, current))
+            if (_progress.TryUpdate(write.OperationId, write.Progress, current))
             {
                 return Task.FromResult(ProgressCompareAndSetResult.Updated);
             }
@@ -426,6 +421,8 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
     /// cascade-cancel warning behavior can be exercised.
     /// </summary>
     public Exception? NextCancelJobFailure { get; set; }
+
+    public ExecutionJobStatus CancellationStatus { get; set; } = ExecutionJobStatus.Cancelled;
 
     /// <summary>
     /// When set, <see cref="GetJobResultsAsync"/> raises this exception on the next call
@@ -637,7 +634,7 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
             var now = DateTimeOffset.UtcNow;
             _jobs[jobId] = job with
             {
-                Status = ExecutionJobStatus.Cancelled,
+                Status = CancellationStatus,
                 CompletedAt = now,
                 UpdatedAt = now
             };

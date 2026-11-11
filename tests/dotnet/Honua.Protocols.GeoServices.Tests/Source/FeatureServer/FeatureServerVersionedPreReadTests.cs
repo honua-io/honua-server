@@ -117,12 +117,12 @@ public sealed class FeatureServerVersionedPreReadTests
 
         await handler.ProcessDeleteOperationsAsync(
             new ApplyEditsRequest { Deletes = [11L] },
-            Resource(),
-            storageLayerId: 7,
-            context,
-            EditPrincipal.Anonymous,
-            Branch,
-            CancellationToken.None);
+            new FeatureServerEditsHandler.EditTarget
+            {
+                Resource = Resource(),
+                StorageLayerId = 7,
+                VersionContext = Branch
+            }, context, CancellationToken.None);
 
         var deleted = context.DeleteFeatures.Should().ContainSingle().Subject;
         deleted.HasValue.Should().BeTrue();

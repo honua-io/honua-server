@@ -51,6 +51,12 @@ public sealed record ImportProgress : IOperationProgress, ICancellableOperationP
 
     public required string TableName { get; init; }
 
+    public string? Schema { get; init; }
+
+    public string? PhysicalTableName { get; init; }
+
+    public string? ConnectionId { get; init; }
+
     public string? FileName { get; init; }
 
     public string SourceKind { get; init; } = "file";
@@ -106,6 +112,9 @@ public sealed record ImportProgress : IOperationProgress, ICancellableOperationP
         => this with
         {
             Status = ImportStatus.Cancelled,
+            Schema = null,
+            PhysicalTableName = null,
+            ConnectionId = null,
             CompletedAt = completedAt,
             CurrentPhase = currentPhase
         };

@@ -110,8 +110,7 @@ public sealed class OidcPortalCredentialVerifierTests
             expires: bridgedExpiry);
         var verified = await verifier.VerifyAsync("ada", token, CancellationToken.None);
 
-        var issuer = new PortalTokenIssuer(
-            new MemoryCache(new MemoryCacheOptions()),
+        var issuer = new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(),
             NullLogger<PortalTokenIssuer>.Instance,
             serviceProvider: EnterpriseEntitledServices());
         var issuance = await issuer.IssueAsync(
@@ -207,8 +206,7 @@ public sealed class OidcPortalCredentialVerifierTests
         verified.RolesWithoutClaimsMapping.Should().BeNull();
         verified.TenantRequiresClaimsMappingEntitlement.Should().BeFalse();
 
-        var issuer = new PortalTokenIssuer(
-            new MemoryCache(new MemoryCacheOptions()),
+        var issuer = new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(),
             NullLogger<PortalTokenIssuer>.Instance,
             serviceProvider: services);
         var issuance = await issuer.IssueAsync(

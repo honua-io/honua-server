@@ -2,14 +2,12 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text;
+using Honua.Infrastructure.Security;
 using Honua.Server.Features.Identity.Saml;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using NSubstitute;
-using NSubstitute.ExceptionExtensions;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Identity;
 
@@ -314,106 +312,34 @@ public sealed class SamlAssertionValidatorTests
     }
 
     [UnitTest]
-    public void ReplayCache_RedisTimeout_RejectsInsteadOfAcceptingLocally()
+    public void ReplayCache_StoreUnavailable_RejectsTheAssertion()
     {
-        var database = Substitute.For<IDatabase>();
-        database.StringSet(
-                Arg.Any<RedisKey>(),
-                Arg.Any<RedisValue>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<When>())
-            .Throws(new TimeoutException("redis timeout"));
-        var multiplexer = ConnectedMultiplexer(database);
-        var cache = new SamlAssertionReplayCache(new MemoryCache(new MemoryCacheOptions()), multiplexer);
+        var replays = Substitute.For<ITokenReplayStore>();
+        replays.TryRegister(default).ReturnsForAnyArgs(_ => throw new TimeoutException("database timeout"));
+        var cache = new SamlAssertionReplayCache(replays);
 
         Assert.False(cache.TryRemember("assertion-1", DateTimeOffset.UtcNow.AddMinutes(5)));
         Assert.False(cache.TryRemember("assertion-1", DateTimeOffset.UtcNow.AddMinutes(5)));
-        database.Received(2).StringSet(
-            Arg.Any<RedisKey>(),
-            Arg.Any<RedisValue>(),
-            Arg.Any<TimeSpan?>(),
-            Arg.Any<When>());
     }
 
     [UnitTest]
-    public void ReplayCache_RedisDisconnected_RejectsWithoutRecordingLocally()
+    public void ReplayCache_SecondPresentation_IsRejected()
     {
-        var database = Substitute.For<IDatabase>();
-        var multiplexer = Substitute.For<IConnectionMultiplexer>();
-        multiplexer.IsConnected.Returns(false);
-        multiplexer.GetDatabase().Returns(database);
-        var cache = new SamlAssertionReplayCache(new MemoryCache(new MemoryCacheOptions()), multiplexer);
-
-        Assert.False(cache.TryRemember("assertion-1", DateTimeOffset.UtcNow.AddMinutes(5)));
-        database.DidNotReceive().StringSet(
-            Arg.Any<RedisKey>(),
-            Arg.Any<RedisValue>(),
-            Arg.Any<TimeSpan?>(),
-            Arg.Any<When>());
-    }
-
-    [UnitTest]
-    public void ReplayCache_WithoutRedis_RemembersOnThisNode()
-    {
-        var cache = new SamlAssertionReplayCache(new MemoryCache(new MemoryCacheOptions()));
+        var cache = new SamlAssertionReplayCache(new InMemoryTokenReplayStore());
 
         Assert.True(cache.TryRemember("assertion-1", DateTimeOffset.UtcNow.AddMinutes(5)));
         Assert.False(cache.TryRemember("assertion-1", DateTimeOffset.UtcNow.AddMinutes(5)));
     }
 
     [UnitTest]
-    public async Task ReplayCache_ConcurrentLocalFirstUse_OnlyOneClaimSucceeds()
+    public async Task ReplayCache_ConcurrentFirstUse_OnlyOneClaimSucceeds()
     {
-        using var memory = new ConcurrentMissMemoryCache();
-        var firstCache = new SamlAssertionReplayCache(memory);
-        var secondCache = new SamlAssertionReplayCache(memory);
+        var replays = new InMemoryTokenReplayStore();
         var expiry = DateTimeOffset.UtcNow.AddMinutes(5);
-        var first = Task.Factory.StartNew(() => firstCache.TryRemember("concurrent-assertion", expiry),
-            CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-        Assert.True(memory.FirstMiss.Wait(TimeSpan.FromSeconds(5)));
-        var second = Task.Factory.StartNew(() => secondCache.TryRemember("concurrent-assertion", expiry),
-            CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
-        var results = await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(10));
+        var results = await Task.WhenAll(Enumerable.Range(0, 16).Select(_ => Task.Run(() =>
+            new SamlAssertionReplayCache(replays).TryRemember("concurrent-assertion", expiry))));
 
         Assert.Single(results, accepted => accepted);
-        Assert.False(firstCache.TryRemember("concurrent-assertion", expiry));
-    }
-
-    private sealed class ConcurrentMissMemoryCache : IMemoryCache
-    {
-        private readonly MemoryCache _inner = new(new MemoryCacheOptions());
-        private readonly CountdownEvent _misses = new(2);
-        public ManualResetEventSlim FirstMiss { get; } = new();
-
-        public bool TryGetValue(object key, out object? value)
-        {
-            var found = _inner.TryGetValue(key, out value);
-            if (!found)
-            {
-                _misses.Signal();
-                FirstMiss.Set();
-                _misses.Wait(TimeSpan.FromSeconds(1));
-            }
-            return found;
-        }
-
-        public ICacheEntry CreateEntry(object key) => _inner.CreateEntry(key);
-        public void Remove(object key) => _inner.Remove(key);
-        public void Dispose()
-        {
-            _inner.Dispose();
-            _misses.Dispose();
-            FirstMiss.Dispose();
-        }
-    }
-
-    private static IConnectionMultiplexer ConnectedMultiplexer(IDatabase database)
-    {
-        var multiplexer = Substitute.For<IConnectionMultiplexer>();
-        multiplexer.IsConnected.Returns(true);
-        multiplexer.GetDatabase().Returns(database);
-        multiplexer.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(database);
-        return multiplexer;
     }
 }

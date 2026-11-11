@@ -87,7 +87,7 @@ internal sealed partial class FeatureServerQueryExecutor
     {
         try
         {
-            return await reader.QueryObjectIdsAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+            return await reader.QueryObjectIdsAsync(layerId, query with { ReturnPublicObjectIds = true }, cancellationToken).ConfigureAwait(false);
         }
         catch (ArgumentException ex)
         {

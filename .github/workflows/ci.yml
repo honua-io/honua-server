@@ -26,7 +26,7 @@ on:
         type: boolean
         default: false
       selective_base:
-        description: 'Trailing-verification mode: full SHA of a trunk ancestor (typically the latest completed CI head). The run diffs selective_base...HEAD and gates only the shards/lanes that diff touches. Empty = full lane. Overridden by full_ci=true.'
+        description: 'Trailing-verification mode: full SHA of a trunk ancestor (typically the latest completed CI head). The base refreshes when execution starts; selections above 30 shards use the newest merge. Gates only affected shards/lanes. Empty = full lane. Overridden by full_ci=true.'
         required: false
         type: string
         default: ''
@@ -297,6 +297,9 @@ jobs:
 
   changes:
     name: Detect Non-Test Changes
+    permissions:
+      contents: read
+      actions: read
     # Skips on merge_group: the lean merge-queue gate does not consult the
     # change-detection / shard-routing graph (it always runs build + format +
     # fast smoke). Skipping `changes` cascades a skip to every heavy job that
@@ -314,6 +317,7 @@ jobs:
       full_ci: ${{ steps.filter.outputs.full_ci }}
       postgres_matrix: ${{ steps.filter.outputs.postgres_matrix }}
       specialized_lanes: ${{ steps.specialized.outputs.lanes }}
+      selective_base: ${{ steps.diff.outputs.base }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -324,6 +328,7 @@ jobs:
         env:
           SELECTIVE_BASE: ${{ inputs.selective_base }}
           FULL_CI_INPUT: ${{ inputs.full_ci }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           # Fetch the base branch with FULL history (NOT --depth=1). The filter below
           # uses a three-dot range (base...head) that needs a merge-base; a shallow
@@ -344,8 +349,7 @@ jobs:
             # the full trunk range below.
             git fetch --no-tags origin trunk
             if git cat-file -e "${SELECTIVE_BASE}^{commit}" 2>/dev/null; then
-              echo "range=${SELECTIVE_BASE}...${{ github.sha }}" >> "$GITHUB_OUTPUT"
-              echo "trailing_selective=true" >> "$GITHUB_OUTPUT"
+              python3 scripts/ci/resolve-trailing-base.py "${SELECTIVE_BASE}" "${GITHUB_SHA}"
             else
               echo "::warning::selective_base ${SELECTIVE_BASE} not found in history; forcing full CI."
               echo "range=origin/trunk...${{ github.sha }}" >> "$GITHUB_OUTPUT"
@@ -569,7 +573,7 @@ jobs:
       - name: Compute shard descriptor and matrix include
         id: compute
         env:
-          TRAILING_SELECTIVE_BASE: ${{ inputs.selective_base }}
+          TRAILING_SELECTIVE_BASE: ${{ needs.changes.outputs.selective_base || inputs.selective_base }}
         run: |
           set -euo pipefail
           all_shards_json=$(jq -c '[.shards[].name]' .github/ci-shards.json)
@@ -690,6 +694,12 @@ jobs:
       - name: Validate Kubernetes operator guide contract
         run: scripts/ci/check-kubernetes-guide.sh
 
+      # Source/config URL checks run after merge after the routing and recovery guards.
+      - name: Verify runtime documentation links and anchors
+        run: |
+          python3 scripts/ci/check-doc-links.test.py
+          python3 scripts/ci/check-doc-links.py
+
   build:
     name: Build & Format Check
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
@@ -734,7 +744,7 @@ jobs:
         # trunk to itself and unnecessarily rebuilding the entire solution.
         env:
           FULL_CI: ${{ needs.changes.outputs.full_ci }}
-          BASE_REF: ${{ github.event.pull_request.base.sha || inputs.selective_base || 'origin/trunk' }}
+          BASE_REF: ${{ github.event.pull_request.base.sha || needs.changes.outputs.selective_base || inputs.selective_base || 'origin/trunk' }}
           HEAD_REF: ${{ github.event.pull_request.head.sha || 'HEAD' }}
         run: |
           if [[ "${FULL_CI}" == true ]]; then
@@ -1201,8 +1211,8 @@ jobs:
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
-      # Bound trailing shard fanout so PR Gate can obtain runners. Full runs retain their budget.
-      max-parallel: ${{ inputs.selective_base && needs.changes.outputs.full_ci != 'true' && 6 || 24 }}
+      # Keep the trailing budget even when routing expands to full coverage.
+      max-parallel: ${{ inputs.selective_base && 6 || 24 }}
       matrix:
         include: ${{ fromJson(needs.targeted-shards.outputs.matrix_include) }}
     env:

@@ -12,6 +12,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Services;
+using Honua.TestKit.Extensions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -44,7 +45,7 @@ public sealed class StudioPublicationProposalOwnerPollTests : IAsyncLifetime
     private const string SigningKey = "studio-proposal-owner-test-signing-key-at-least-32-characters";
     private const string Tenant = "tenant-a";
 
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
     private readonly RedisFixture _redis = new();
 
     public async Task InitializeAsync()
