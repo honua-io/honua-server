@@ -622,6 +622,14 @@ twice-daily full matrix are preserved.
 
 Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. Missing envelopes from ordinary producers remain errors.
 
+### Authorization shard coverage
+
+The authorization matrix selects the live `AdminAuthorizationTests` class.
+The remaining authorization shard owns every other method in the original parent
+filter. Retired Redis endpoint selectors are removed; the coverage guard still
+rejects dead positive clauses, and the partition fixture verifies complete,
+disjoint method ownership with unchanged source triggers and budgets.
+
 ### Governance capacity split
 
 The former `Server Features Admin Governance and Sharing` shard timed out at
@@ -677,3 +685,18 @@ case. Collision catalogs seed their graph once per locator-availability and auth
 configuration, sharing only between read-only mount-prefix variants. These graphs remain
 separate from the unmodified catalog. Other locator configurations and startup failures
 keep separate applications. All assertions and theory rows remain in their existing shard.
+
+## Automatic merge admission
+
+[Automatic merge admission](workflow-inventory.md#automatic-merge-admission) uses
+the bot App to enable GitHub auto-merge. Repository rulesets and required checks decide when a PR merges.
+The workflow does not override protections. Exact-head review admission must be
+configured as a required check to be enforced by GitHub auto-merge.
+
+The event-driven auto-merge workflow skips Dependabot PRs before minting App credentials. Already mergeable PRs remain with the existing merge authority because GitHub cannot arm deferred auto-merge for them.
+
+Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
+`edited`. Dependabot PRs skip this workflow entirely, including hold-label
+revocation: a human or drain lane owns any manually armed dependency PR.
+If mergeability becomes clean between the live query and enable mutation, only
+GitHub's specific clean-status response ends neutrally; other API errors fail.
