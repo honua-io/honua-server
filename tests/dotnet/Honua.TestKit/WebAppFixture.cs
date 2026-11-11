@@ -478,33 +478,44 @@ public sealed class WebAppFixture : IAsyncLifetime
 
         if (_useSharedServer)
         {
-            if (!_hasSharedReference)
-            {
-                return;
-            }
-            try
-            {
-                if (_serviceOverrideScopeId is not null)
-                {
-                    Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin.Factory.Services
-                        .GetRequiredService<ScopedServiceOverrideRegistry>()
-                        .Remove(_serviceOverrideScopeId);
-                    _serviceOverrideScopeId = null;
-                }
-                if (_currentSchema is not null)
-                {
-                    await Postgres.DropSchemaAsync(_currentSchema);
-                }
-            }
-            finally
-            {
-                Client?.Dispose();
-                _hasSharedReference = false;
-                await Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin.ReleaseAsync();
-            }
+            await DisposeSharedServerAsync();
+        }
+        else
+        {
+            await DisposePrivateServerAsync();
+        }
+    }
+
+    private async Task DisposeSharedServerAsync()
+    {
+        if (!_hasSharedReference)
+        {
             return;
         }
+        try
+        {
+            if (_serviceOverrideScopeId is not null)
+            {
+                Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin.Factory.Services
+                    .GetRequiredService<ScopedServiceOverrideRegistry>()
+                    .Remove(_serviceOverrideScopeId);
+                _serviceOverrideScopeId = null;
+            }
+            if (_currentSchema is not null)
+            {
+                await Postgres.DropSchemaAsync(_currentSchema);
+            }
+        }
+        finally
+        {
+            Client?.Dispose();
+            _hasSharedReference = false;
+            await Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin.ReleaseAsync();
+        }
+    }
 
+    private async Task DisposePrivateServerAsync()
+    {
         try
         {
             if (_currentSchema is not null && _postgres is not null)

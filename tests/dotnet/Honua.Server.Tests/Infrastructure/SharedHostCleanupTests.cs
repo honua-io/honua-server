@@ -22,27 +22,35 @@ public sealed class SharedHostCleanupGroup
 [Operation(Operations.TestInfrastructure)]
 public sealed partial class SharedHostCleanupTests
 {
-    [IntegrationTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task EnsureInitializedAsync_StartupFails_ReleasesResourcesAndAllowsRetry(bool cleanupFails)
+    [IntegrationTest]
+    public Task EnsureInitializedAsync_StartupFails_ReleasesResourcesAndAllowsRetry() =>
+        AssertFailedStartupReleasesResourcesAsync(new StartupFailureFactory());
+
+    [IntegrationTest]
+    public Task EnsureInitializedAsync_StartupAndDisposalFail_ReleasesResourcesAndAllowsRetry() =>
+        AssertFailedStartupReleasesResourcesAsync(new StartupAndDisposalFailureFactory());
+
+    private static async Task AssertFailedStartupReleasesResourcesAsync(StartupFailureFactory failedFactory)
     {
         await using var postgresAnchor = new AsyncDisposalScope(new PostgresFixture());
         await postgresAnchor.Fixture.InitializeAsync();
         var referencesBefore = PostgresReferenceCount();
-        var failure = new InvalidOperationException("Controlled startup failure");
-        var failedFactory = new FailingFactory(failure, cleanupFails);
 
         var observed = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             WebAppFixtureSharedBootstrapMixin.EnsureInitializedAsync(
                 WebAppFixture.SharedAdminPassword, (_, _) => failedFactory));
 
-        Assert.Same(failure, observed);
+        Assert.Same(failedFactory.Failure, observed);
         Assert.True(failedFactory.Disposed);
         Assert.Equal(referencesBefore, PostgresReferenceCount());
         Assert.Throws<InvalidOperationException>(() => WebAppFixtureSharedBootstrapMixin.Factory);
         Assert.Throws<InvalidOperationException>(() => WebAppFixtureSharedBootstrapMixin.Postgres);
 
+        await AssertRetryUsesSharedProviderAsync(referencesBefore);
+    }
+
+    private static async Task AssertRetryUsesSharedProviderAsync(int referencesBefore)
+    {
         var acquired = 0;
         try
         {
@@ -103,20 +111,26 @@ public sealed partial class SharedHostCleanupTests
         return (int)state.GetType().GetProperty("SharedRefCount")!.GetValue(state)!;
     }
 
-    private sealed class FailingFactory(Exception failure, bool cleanupFails) : WebApplicationFactory<Program>
+    private class StartupFailureFactory : WebApplicationFactory<Program>
     {
+        public InvalidOperationException Failure { get; } = new("Controlled startup failure");
         public bool Disposed { get; private set; }
 
-        protected override void ConfigureWebHost(IWebHostBuilder builder) => throw failure;
+        protected override void ConfigureWebHost(IWebHostBuilder builder) => throw Failure;
 
         public override async ValueTask DisposeAsync()
         {
             Disposed = true;
             await base.DisposeAsync();
-            if (cleanupFails)
-            {
-                throw new InvalidOperationException("Controlled cleanup failure");
-            }
+        }
+    }
+
+    private sealed class StartupAndDisposalFailureFactory : StartupFailureFactory
+    {
+        public override async ValueTask DisposeAsync()
+        {
+            await base.DisposeAsync();
+            throw new InvalidOperationException("Controlled cleanup failure");
         }
     }
 

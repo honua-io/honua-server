@@ -17,66 +17,92 @@ public sealed partial class SharedHostCleanupTests
         await using var anchor = new AsyncDisposalScope(new PostgresFixture());
         await anchor.Fixture.InitializeAsync();
         var referencesBefore = PostgresReferenceCount();
-        var startupEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var finishStartup = new ManualResetEventSlim();
-        var acquired = 0;
-        var factoriesBuilt = 0;
+        using var startup = new ControlledStartup();
         Task[] waiters = [];
-        var timeout = TimeSpan.FromSeconds(30);
-        WebApplicationFactory<Program> BuildGatedFactory(string connection, string password)
-        {
-            Interlocked.Increment(ref factoriesBuilt);
-            return WebAppFixtureSharedBootstrapMixin.BuildSharedFactory(connection, password)
-                .WithWebHostBuilder(builder => builder.ConfigureServices(_ =>
-                {
-                    startupEntered.TrySetResult();
-                    if (!finishStartup.Wait(timeout))
-                    {
-                        throw new TimeoutException("Controlled startup was not released.");
-                    }
-                }));
-        }
-        var owner = Task.Run(async () =>
-        {
-            await WebAppFixtureSharedBootstrapMixin.EnsureInitializedAsync(
-                WebAppFixture.SharedAdminPassword, BuildGatedFactory);
-            Interlocked.Increment(ref acquired);
-            return WebAppFixtureSharedBootstrapMixin.Factory.Services;
-        });
+        var owner = Task.Run(startup.AcquireOwnerAsync);
         try
         {
-            await startupEntered.Task.WaitAsync(timeout);
+            await startup.WaitUntilEnteredAsync();
             waiters = Enumerable.Range(0, 3).Select(_ =>
-                WebAppFixtureSharedBootstrapMixin.EnsureInitializedAsync(WebAppFixture.SharedAdminPassword, BuildGatedFactory)).ToArray();
+                startup.AcquireWaiterAsync()).ToArray();
             Assert.All(waiters, waiter => Assert.False(waiter.IsCompleted));
-            finishStartup.Set();
-            var provider = await owner.WaitAsync(timeout);
+            await startup.AssertSharedProvidersAsync(owner, waiters);
+            Assert.Equal(referencesBefore + 1, PostgresReferenceCount());
+        }
+        finally
+        {
+            await startup.ReleaseReferencesAsync(owner, waiters);
+        }
+        Assert.Equal(referencesBefore, PostgresReferenceCount());
+    }
+
+    private sealed class ControlledStartup : IDisposable
+    {
+        private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
+        private readonly TaskCompletionSource _entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly ManualResetEventSlim _finish = new();
+        private int _acquired;
+        private int _factoriesBuilt;
+
+        public Task WaitUntilEnteredAsync() => _entered.Task.WaitAsync(Timeout);
+
+        public async Task<IServiceProvider> AcquireOwnerAsync()
+        {
+            await AcquireWaiterAsync();
+            Interlocked.Increment(ref _acquired);
+            return WebAppFixtureSharedBootstrapMixin.Factory.Services;
+        }
+
+        public Task AcquireWaiterAsync() => WebAppFixtureSharedBootstrapMixin.EnsureInitializedAsync(
+            WebAppFixture.SharedAdminPassword, BuildGatedFactory);
+
+        public async Task AssertSharedProvidersAsync(Task<IServiceProvider> owner, Task[] waiters)
+        {
+            _finish.Set();
+            var provider = await owner.WaitAsync(Timeout);
             var providers = await Task.WhenAll(waiters.Select(async waiter =>
             {
                 await waiter;
                 return WebAppFixtureSharedBootstrapMixin.Factory.Services;
             }));
             Assert.All(providers, candidate => Assert.Same(provider, candidate));
-            Assert.Equal(1, factoriesBuilt);
-            Assert.Equal(referencesBefore + 1, PostgresReferenceCount());
+            Assert.Equal(1, _factoriesBuilt);
         }
-        finally
+
+        public async Task ReleaseReferencesAsync(Task<IServiceProvider> owner, Task[] waiters)
         {
-            finishStartup.Set();
+            _finish.Set();
             try
             {
-                await owner.WaitAsync(timeout);
-                await Task.WhenAll(waiters).WaitAsync(timeout);
+                await owner.WaitAsync(Timeout);
+                await Task.WhenAll(waiters).WaitAsync(Timeout);
             }
             finally
             {
-                acquired += waiters.Count(waiter => waiter.IsCompletedSuccessfully);
-                for (var index = 0; index < acquired; index++)
+                _acquired += waiters.Count(waiter => waiter.IsCompletedSuccessfully);
+                for (var index = 0; index < _acquired; index++)
                 {
                     await WebAppFixtureSharedBootstrapMixin.ReleaseAsync();
                 }
             }
         }
-        Assert.Equal(referencesBefore, PostgresReferenceCount());
+
+        public void Dispose() => _finish.Dispose();
+
+        private WebApplicationFactory<Program> BuildGatedFactory(string connection, string password)
+        {
+            Interlocked.Increment(ref _factoriesBuilt);
+            return WebAppFixtureSharedBootstrapMixin.BuildSharedFactory(connection, password)
+                .WithWebHostBuilder(builder => builder.ConfigureServices(_ => WaitForRelease()));
+        }
+
+        private void WaitForRelease()
+        {
+            _entered.TrySetResult();
+            if (!_finish.Wait(Timeout))
+            {
+                throw new TimeoutException("Controlled startup was not released.");
+            }
+        }
     }
 }
