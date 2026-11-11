@@ -61,7 +61,7 @@ jobs:
             --jq '[.workflow_runs[] | select(.conclusion == "success" or .conclusion == "failure")] | sort_by(.updated_at) | reverse | .[].head_sha' </dev/null)"
           green_heads="$(gh api \
             "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?branch=trunk&status=success&per_page=100" \
-            --jq '.workflow_runs | sort_by(.updated_at) | reverse | .[].head_sha' </dev/null)"
+            --jq '[.workflow_runs[] | select((.display_title // "") | startswith("CI affected ") | not)] | sort_by(.updated_at) | reverse | .[].head_sha' </dev/null)"
 
           echo "head=${trunk_tip}" >> "$GITHUB_OUTPUT"
           echo "completed_base=$(latest_ancestor "${completed_heads}")" >> "$GITHUB_OUTPUT"

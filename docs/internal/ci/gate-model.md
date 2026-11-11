@@ -61,7 +61,8 @@ Stage 3 details:
   Cancelled runs cannot advance the base. With no eligible ancestor, dispatch
   a full matrix. A failed base bounds execution; it does not certify trunk.
 - The dispatch summary separately lists the culprit range from the latest
-  green ancestor (searched among the newest 100 successful runs). It passes
+  full green ancestor (searched among the newest 100 successful runs,
+  excluding affected titles that cannot clear earlier failures). It passes
   that ancestor as `investigation_base` to `ci.yml` for the CI doctor; missing
   green history is reported as unknown. Failures
   remain owned by the CI doctor; twice-daily full runs retain complete coverage.

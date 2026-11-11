@@ -128,6 +128,14 @@ class CompletedBaseExecutionTests(unittest.TestCase):
         self.assertEqual(outputs["last_green"], self.heads[0])
         self.assertEqual(outputs["head"], self.heads[2])
 
+    def test_successful_selective_run_cannot_hide_an_earlier_failure(self):
+        full_green = self.run_record(0, "success", "2026-11-10T12:00:00Z")
+        selective_green = self.run_record(1, "success", "2026-11-10T14:00:00Z")
+        selective_green["display_title"] = "CI affected failed..unrelated"
+        outputs = self.resolve([selective_green], [selective_green, full_green])
+        self.assertEqual(outputs["completed_base"], self.heads[1])
+        self.assertEqual(outputs["last_green"], self.heads[0])
+
     def test_newest_completion_time_wins_over_api_creation_order(self):
         outputs = self.resolve([self.run_record(0, "success", "2026-11-10T12:00:00Z"),
                                 self.run_record(1, "success", "2026-11-10T13:00:00Z")], [])
