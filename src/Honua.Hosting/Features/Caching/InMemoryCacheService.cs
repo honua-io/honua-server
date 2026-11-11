@@ -335,9 +335,8 @@ internal sealed partial class InMemoryCacheService : ICacheService, ICacheHealth
             }
 
             entry.Retired = true;
+            _keyLocks.TryRemove(new KeyValuePair<string, KeyLockEntry>(key, entry));
         }
-
-        _keyLocks.TryRemove(new KeyValuePair<string, KeyLockEntry>(key, entry));
     }
 
     private bool ExceedsQueryResponseEntryCap(string prefixedKey, byte[] data)

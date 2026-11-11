@@ -1,14 +1,12 @@
 ---
 type: runbook
 title: "Scale and tune performance"
-description: "You'll size the database admission limits, add Redis-backed caching, scale Honua horizontally, and tune outbound HTTP resilience."
-resource: "honua://capability/caching.redis"
-resources:
-  - "honua://capability/caching.output-cache"
+description: "You'll size the database admission limits, size the per-replica cache, scale Honua horizontally, and tune outbound HTTP resilience."
+resource: "honua://capability/caching.output-cache"
 ---
 # Scale and tune performance
 
-You'll size the database admission limits, add Redis-backed caching, scale Honua horizontally, and tune outbound HTTP resilience.
+You'll size the database admission limits, size the per-replica cache, scale Honua horizontally, and tune outbound HTTP resilience.
 
 **Prerequisites:** A running deployment and access to its environment variables. Confirm effective values at runtime with `GET /api/v1/admin/config` (admin auth).
 
