@@ -45,7 +45,7 @@ jobs:
         run: |
           python3 scripts/ci/collect-impact-routing-runs.test.py
           python3 scripts/ci/audit-impact-routing-evidence.test.py
-          node scripts/ci/trusted-pr-workflow-run.test.js
+          node --test scripts/ci/trusted-pr-workflow-run.test.js scripts/ci/trusted-pr-workflow-run-draft-admission.test.js
 
   audit:
     name: Audit trusted impact-routing observations

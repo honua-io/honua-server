@@ -101,7 +101,7 @@ jobs:
   release-context:
     name: Classify release ref
     needs: workflow-contract-tests
-    if: github.event_name == 'workflow_dispatch'
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -241,7 +241,7 @@ jobs:
   integration:
     name: Integration & conformance evidence
     needs: rc-image
-    if: github.event.inputs.run_integration != 'false'
+    if: ${{ github.event.inputs.run_integration != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -288,7 +288,7 @@ jobs:
   sdk-cut:
     name: SDK cut (dry-run) & compat evidence
     needs: rc-image
-    if: github.event.inputs.run_sdk != 'false'
+    if: ${{ github.event.inputs.run_sdk != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -359,9 +359,7 @@ jobs:
     needs: [release-context, rc-image, integration, sdk-cut, realtime-preview-qualification]
     # Off-trunk runs deliberately stop at the unambiguous test image/evidence channel.
     # No candidate manifest is produced for the downstream release validator to accept.
-    if: >-
-      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
-      && (always() && needs.release-context.outputs.candidate == 'true' && needs.rc-image.result == 'success' && needs.realtime-preview-qualification.result == 'success')
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) && always() && needs.release-context.outputs.candidate == 'true' && needs.rc-image.result == 'success' && needs.realtime-preview-qualification.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
@@ -433,7 +431,7 @@ jobs:
   promote:
     name: Promote (publish SDKs + retag image)
     needs: [release-context, rc-image, aggregate]
-    if: needs.release-context.outputs.candidate == 'true' && github.event.inputs.promote == 'true' && needs.aggregate.outputs.verdict == 'pass'
+    if: ${{ needs.release-context.outputs.candidate == 'true' && github.event.inputs.promote == 'true' && needs.aggregate.outputs.verdict == 'pass' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: release-promote

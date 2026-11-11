@@ -209,7 +209,7 @@ jobs:
         run: |
           python3 policy/scripts/ci/native-image-impact.py \
             --policy policy/.github/native-image-impact.json validate
-          node --test policy/scripts/ci/trusted-pr-workflow-run.test.js
+          node --test policy/scripts/ci/trusted-pr-workflow-run.test.js policy/scripts/ci/trusted-pr-workflow-run-draft-admission.test.js
           python3 -m unittest discover \
             -s policy/tests/python/unit \
             -p 'test_native_image_impact.py' \
