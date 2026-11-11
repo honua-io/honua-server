@@ -93,8 +93,7 @@ After a release image is published (release candidate or GA), for each published
    summary, one per platform (the command is idempotent and the entries apply in sequence),
    then commit `eng/security/supported-images.json`. The run's
    `supported-images-honua-server-<release>-<arch>` artifact holds that run's patch for
-   reference only: each patch is made against trunk, so do not apply both, and never copy a
-   run's whole `supported-images.json` over the file. Workflows in this repository hold no
+   reference only: each patch is made against trunk, so do not apply both. Workflows in this repository hold no
    push or merge authority, so this step is manual. From the next night the digests are rescanned.
 4. When a release leaves support, remove its entries from `eng/security/supported-images.json`
    and dismiss the open alerts of its Code Scanning category (`trivy-release-<key>`), which

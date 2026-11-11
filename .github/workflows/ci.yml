@@ -3089,7 +3089,7 @@ jobs:
         if: failure() && (steps.trivy_image.outcome == 'failure' || steps.trivy_fs.outcome == 'failure')
         run: |
           echo "::error title=Trivy full CI gate failed::One or more HIGH/CRITICAL CVEs with available fixes were detected."
-          echo "::notice::To resolve: review the Trivy output above, then bump the affected dependency / base image to a fixed version. If an image CVE does not affect Honua, record a not_affected decision with evidence in eng/security/vex-statements.json (see docs/internal/security/security-patch-releases.md); .trivyignore is only for repository filesystem findings."
+          echo "::notice::To resolve: review the Trivy output above, then bump the affected dependency / base image to a fixed version. If an image CVE does not affect Honua, record a not_affected decision with evidence in eng/security/vex-statements.json (see docs/internal/security/security-patch-releases.md); do not add new image findings to .trivyignore."
           exit 1
 
       - name: Run Docker container

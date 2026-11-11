@@ -4,8 +4,8 @@ on:
   schedule:
     # One nightly security lane for dependency, filesystem, and container scans.
     - cron: '0 2 * * *'
-  # Pull requests run only the NuGet vulnerability gate and, for eng/security or
-  # scripts/security changes, the security data check; every other job is nightly/dispatch.
+  # Pull requests run only the NuGet vulnerability gate and the security data check;
+  # every other job is nightly/dispatch.
   pull_request:
     paths:
       - 'Directory.Packages.props'
