@@ -12,6 +12,7 @@ const {
   parseRunId,
   recordObservationSkip,
   resolveForObservation,
+  resolvePrGateForObservation,
   resolveTrustedPullRequestWorkflowRun,
 } = require('./trusted-pr-workflow-run');
 
@@ -645,3 +646,127 @@ test('misconfiguration in the recheck still throws rather than recording a skip'
     assert.deepEqual(fsModule.readdirSync(temporary), []);
   });
 });
+
+function draftAdmissionFixtures(conclusion, overrides = {}) {
+  const fixture = fixtures({
+    run: { conclusion: 'failure' },
+    job: { conclusion: 'failure' },
+    checkRun: { conclusion: 'failure' },
+    pullRequest: { draft: overrides.draft ?? false },
+  });
+  const heavyJob = {
+    run_id: 123, run_attempt: 2, workflow_name: 'PR Gate',
+    name: 'PR Gate / Build and tests', head_sha: HEAD,
+    status: 'completed', conclusion,
+    ...overrides.job,
+  };
+  const method = Symbol('exact-attempt-jobs');
+  fixture.github.rest.actions.listJobsForWorkflowRunAttempt = method;
+  const paginate = fixture.github.paginate;
+  fixture.github.paginate = async (requested, input) => {
+    if (requested !== method) return paginate(requested, input);
+    assert.equal(input.run_id, 123);
+    assert.equal(input.attempt_number, 2);
+    assert.equal(input.per_page, 100);
+    return overrides.jobs ?? [heavyJob];
+  };
+  return fixture;
+}
+
+for (const draft of [true, false]) {
+  test(`draft admission is skipped even when current PR draft=${draft}`, async () => {
+    const { github } = draftAdmissionFixtures('skipped', { draft });
+    const core = recordingCore();
+    const result = await resolvePrGateForObservation({
+      ...options(github, { runConclusion: 'failure' }), core, label: 'impact',
+    });
+    assert.equal(result, null);
+    assert.equal(core.outputs.skip_code, 'source-run-draft-admission');
+  });
+}
+
+for (const conclusion of ['success', 'failure', 'cancelled']) {
+  test(`heavy ${conclusion} remains observable despite current draft status`, async () => {
+    const { github } = draftAdmissionFixtures(conclusion, { draft: true });
+    const core = recordingCore();
+    const result = await resolvePrGateForObservation({
+      ...options(github, { runConclusion: 'failure' }), core, label: 'impact',
+    });
+    assert.equal(result.pullRequestNumber, 42);
+    assert.equal(core.outputs.skip, 'false');
+  });
+}
+
+for (const [name, overrides] of [
+  ['missing', { jobs: [] }],
+  ['wrong attempt', { job: { run_attempt: 3 } }],
+  ['wrong head', { job: { head_sha: POLICY } }],
+  ['unfinished', { job: { status: 'in_progress' } }],
+  ['unknown conclusion', { job: { conclusion: null } }],
+]) {
+  test(`draft admission rejects ${name} job evidence`, async () => {
+    const { github } = draftAdmissionFixtures('skipped', overrides);
+    await assert.rejects(resolvePrGateForObservation({
+      ...options(github, { runConclusion: 'failure' }),
+      core: recordingCore(), label: 'impact',
+    }), /canonical heavy job/);
+  });
+}
+
+test('draft admission rejects duplicate heavy jobs', async () => {
+  const { github } = draftAdmissionFixtures('skipped');
+  const paginate = github.paginate;
+  github.paginate = async (method, input) => {
+    const jobs = await paginate(method, input);
+    return method === github.rest.actions.listJobsForWorkflowRunAttempt ? [...jobs, ...jobs] : jobs;
+  };
+  await assert.rejects(resolvePrGateForObservation({
+    ...options(github, { runConclusion: 'failure' }), core: recordingCore(), label: 'impact',
+  }), /canonical heavy job/);
+});
+
+function observerCollectScript(workflow, stepName) {
+  const yaml = fsModule.readFileSync(pathModule.join(__dirname, '../../.github/workflows', workflow), 'utf8');
+  const step = yaml.slice(yaml.indexOf(`name: ${stepName}`));
+  assert.ok(step.length < yaml.length, 'observer collect step exists');
+  const lines = step.slice(step.indexOf('script: |\n') + 'script: |\n'.length).split('\n');
+  const indent = lines[0].match(/^ +/)[0].length;
+  const body = [];
+  for (const line of lines) {
+    if (line.trim() && (line.match(/^ */)[0].length < indent)) break;
+    body.push(line.slice(indent));
+  }
+  return body.join('\n');
+}
+
+for (const [workflow, stepName] of [
+  ['pr-gate-impact-observe.yml', 'Collect exact change metadata from trusted policy'],
+  ['native-image-impact-observe.yml', 'Resolve canonical exact-head PR Gate subject'],
+]) {
+  for (const draft of [true, false]) {
+    test(`${workflow} excludes exact-attempt draft admission when current draft=${draft}`, async () => {
+      const { github } = draftAdmissionFixtures('skipped', { draft });
+      github.rest.repos = { get: async () => ({ data: { default_branch: 'trunk', id: 1 } }) };
+      const core = recordingCore();
+      const files = {};
+      const fakeRequire = (name) => {
+        if (name === 'fs') return { writeFileSync: (file, body) => { files[file] = body; } };
+        if (name === './policy/scripts/ci/trusted-pr-workflow-run') return require('./trusted-pr-workflow-run');
+        return require(name);
+      };
+      const vm = require('node:vm');
+      const script = `(async () => { ${observerCollectScript(workflow, stepName)} })()`;
+      await vm.runInNewContext(script, {
+        require: fakeRequire, github, core,
+        context: { repo: { owner: 'honua-io', repo: 'honua-server' }, ref: 'refs/heads/trunk', sha: POLICY },
+        process: { env: { RUNNER_TEMP: '/tmp/observer', SOURCE_RUN_ID: '123',
+          SOURCE_RUN_ATTEMPT: '2', SOURCE_RUN_CONCLUSION: 'failure' } },
+      });
+      assert.equal(core.outputs.skip_code, 'source-run-draft-admission');
+      assert.deepEqual(Object.keys(files), ['/tmp/observer/observation-skipped.json']);
+      const marker = JSON.parse(files['/tmp/observer/observation-skipped.json']);
+      assert.equal(marker.source_run_attempt, '2');
+      assert.equal(marker.code, 'source-run-draft-admission');
+    });
+  }
+}

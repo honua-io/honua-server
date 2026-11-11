@@ -70,7 +70,7 @@ jobs:
             const fs = require('fs');
             const path = require('path');
             const {
-              resolveForObservation,
+              resolvePrGateForObservation,
             } = require('./policy/scripts/ci/trusted-pr-workflow-run');
             const runnerTemp = process.env.RUNNER_TEMP;
             if (!runnerTemp) throw new Error('RUNNER_TEMP is unavailable');
@@ -79,10 +79,9 @@ jobs:
             if (context.ref !== trustedRef || !/^[0-9a-f]{40}$/.test(context.sha || '')) {
               throw new Error(`observer must execute from trusted default branch ${trustedRef}`);
             }
-            // Observation only. resolveForObservation downgrades ONLY a
-            // superseded source (cancelled run, moved head, closed PR) to a
-            // recorded skip; misconfiguration and API drift still throw.
-            const resolved = await resolveForObservation({
+            // Observe admitted heavy gates; exact-attempt draft skips stay outside
+            // the promotion evidence window. Trust and API drift still throw.
+            const resolved = await resolvePrGateForObservation({
               github,
               core,
               fs,

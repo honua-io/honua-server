@@ -298,6 +298,35 @@ async function resolveForObservation({ core, label, markerPath, fs, ...options }
   return null;
 }
 
+async function resolvePrGateForObservation(options) {
+  const resolved = await resolveForObservation(options);
+  if (!resolved) return null;
+  const { github, owner, repo } = options;
+  const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRunAttempt, {
+    owner, repo, run_id: resolved.run.id,
+    attempt_number: resolved.run.run_attempt, per_page: 100,
+  });
+  const heavyJobs = jobs.filter((job) =>
+    job.name === 'PR Gate / Build and tests' &&
+    job.run_id === resolved.run.id &&
+    job.run_attempt === resolved.run.run_attempt &&
+    job.workflow_name === 'PR Gate' &&
+    job.head_sha === resolved.run.head_sha &&
+    job.status === 'completed' && TERMINAL_CONCLUSIONS.has(job.conclusion),
+  );
+  if (heavyJobs.length !== 1) {
+    throw new Error('source attempt does not identify exactly one canonical heavy job');
+  }
+  if (heavyJobs[0].conclusion !== 'skipped') return resolved;
+  recordObservationSkip({
+    ...options,
+    code: 'source-run-draft-admission',
+    reason: 'the exact source attempt did not admit the heavy PR gate',
+    source: options,
+  });
+  return null;
+}
+
 /**
  * Record one observation skip: the resolver's superseded-source class above, or
  * an observer-local one (a draft pull request, a candidate that moved mid-run).
@@ -336,5 +365,6 @@ module.exports = {
   parseRunId,
   recordObservationSkip,
   resolveForObservation,
+  resolvePrGateForObservation,
   resolveTrustedPullRequestWorkflowRun,
 };
