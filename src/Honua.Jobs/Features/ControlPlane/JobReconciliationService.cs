@@ -23,10 +23,17 @@ internal sealed partial class JobReconciliationService(
     ExecutionJobCancellationTokens cancellationTokens,
     IEnumerable<IJobTerminalCallback> terminalCallbacks,
     IExecutionLogStore? logStore,
-    ILogger<JobReconciliationService> logger) : BackgroundService
+    ILogger<JobReconciliationService> logger,
+    IJobStoreClock? storeClock = null,
+    IReconcilableJobSource? reconcilableJobs = null) : BackgroundService
 {
+    private readonly IJobStoreClock _storeClock = storeClock ?? NodeJobStoreClock.Instance;
+    private readonly IReconcilableJobSource _reconcilableJobs = reconcilableJobs ?? new ActiveJobsReconcilableJobSource(jobStore);
+    private long? _lastStoreInterruptionTimestamp;
+
     private static readonly TimeSpan SweepInterval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan StaleClaimThreshold = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan StoreStallThreshold = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan LogRetention = TimeSpan.FromDays(7);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -65,8 +72,35 @@ internal sealed partial class JobReconciliationService(
 
     internal async Task SweepActiveJobsAsync(CancellationToken cancellationToken)
     {
-        var activeJobs = await jobStore.ListActiveAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
-        var now = DateTimeOffset.UtcNow;
+        try
+        {
+            await SweepCandidatesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException && !cancellationToken.IsCancellationRequested)
+        {
+            _lastStoreInterruptionTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
+            throw;
+        }
+    }
+
+    // After a store outage every stored heartbeat is older than the outage, whether or not its
+    // worker is alive. Workers get one heartbeat timeout of uninterrupted store access to beat
+    // again before a heartbeat is treated as expired. A read that stalls counts as an outage: the
+    // store retries through a short one and then answers as if nothing happened.
+    private bool WorkersHadTimeToHeartbeatSinceLastStoreInterruption(ExecutionJobRecord job)
+        => _lastStoreInterruptionTimestamp is not { } interruptedAt
+            || System.Diagnostics.Stopwatch.GetElapsedTime(interruptedAt) >= (job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default).Timeout;
+
+    private async Task SweepCandidatesAsync(CancellationToken cancellationToken)
+    {
+        var readsStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+        var activeJobs = await _reconcilableJobs.ListExpiryAndDispatchCandidatesAsync(cancellationToken).ConfigureAwait(false);
+        var now = await _storeClock.GetUtcNowAsync(cancellationToken).ConfigureAwait(false);
+        if (System.Diagnostics.Stopwatch.GetElapsedTime(readsStarted) > StoreStallThreshold)
+        {
+            _lastStoreInterruptionTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
+        }
+
         var reconciled = 0;
 
         foreach (var job in activeJobs)
@@ -112,7 +146,9 @@ internal sealed partial class JobReconciliationService(
                 continue;
             }
 
-            if (ShouldExpireHeartbeat(job, now) && await HandleHeartbeatExpiryAsync(job, now, cancellationToken).ConfigureAwait(false))
+            if (ShouldExpireHeartbeat(job, now)
+                && WorkersHadTimeToHeartbeatSinceLastStoreInterruption(job)
+                && await HandleHeartbeatExpiryAsync(job, now, cancellationToken).ConfigureAwait(false))
             {
                 reconciled++;
             }
@@ -123,8 +159,7 @@ internal sealed partial class JobReconciliationService(
             Log.ReconciliationSweepCompleted(logger, reconciled, activeJobs.Count);
         }
 
-        // Reconcile orphaned claims where the queue move succeeded but the
-        // subsequent store update failed.
+        // Repair queued jobs the queue cannot deliver.
         await claimReconciler.ReconcileStaleClaimsAsync(StaleClaimThreshold, cancellationToken)
             .ConfigureAwait(false);
     }
@@ -185,7 +220,7 @@ internal sealed partial class JobReconciliationService(
         // Re-validate heartbeat expiry against the fresh record. A heartbeat
         // landing between the sweep snapshot and this handler means the worker
         // is still alive — skip the transition to avoid duplicate execution.
-        var freshNow = DateTimeOffset.UtcNow;
+        var freshNow = await _storeClock.GetUtcNowAsync(cancellationToken).ConfigureAwait(false);
         if (!ShouldExpireHeartbeat(current!, freshNow))
         {
             Log.ReconciliationSkippedHeartbeatRefreshed(logger, snapshot.OperationId);
@@ -220,7 +255,7 @@ internal sealed partial class JobReconciliationService(
             // The cancellation read above also observes concurrent heartbeat writes.
             // Validate that exact CAS version: an earlier expiry check cannot authorize
             // recovery of a worker that has since reported it is alive.
-            if (!ShouldExpireHeartbeat(preRetry, DateTimeOffset.UtcNow))
+            if (!ShouldExpireHeartbeat(preRetry, await _storeClock.GetUtcNowAsync(cancellationToken).ConfigureAwait(false)))
             {
                 Log.ReconciliationSkippedHeartbeatRefreshed(logger, snapshot.OperationId);
                 return false;
@@ -280,7 +315,7 @@ internal sealed partial class JobReconciliationService(
             // The cancellation read above also observes concurrent heartbeat writes.
             // Validate that exact CAS version: an earlier expiry check cannot authorize
             // recovery of a worker that has since reported it is alive.
-            if (!ShouldExpireHeartbeat(preFail, DateTimeOffset.UtcNow))
+            if (!ShouldExpireHeartbeat(preFail, await _storeClock.GetUtcNowAsync(cancellationToken).ConfigureAwait(false)))
             {
                 Log.ReconciliationSkippedHeartbeatRefreshed(logger, snapshot.OperationId);
                 return false;
@@ -354,7 +389,7 @@ internal sealed partial class JobReconciliationService(
         // reclaimed job (possibly by the same worker) will have a fresh ClaimedAt
         // that resets the timeout window — skip the transition to avoid failing
         // a new attempt that has not actually timed out.
-        var freshNow = DateTimeOffset.UtcNow;
+        var freshNow = await _storeClock.GetUtcNowAsync(cancellationToken).ConfigureAwait(false);
         if (!ShouldExpireTimeout(current!, freshNow))
         {
             Log.ReconciliationSkippedTimeoutRefreshed(logger, snapshot.OperationId);

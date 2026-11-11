@@ -36,17 +36,20 @@ internal static class DataEnrichmentRequestHandlers
     private const string LoggerCategory = "Honua.Server.Features.DataEnrichment";
     private const string ProtocolName = "DataEnrichment";
 
-    // Enrichment compute is a curated facade over spatial join, so it shares the
-    // spatial-join entitlement rather than introducing a separate SKU line.
+    // Enrichment compute is a curated facade over spatial join, so every enrichment route shares
+    // the spatial-join entitlement rather than introducing a separate SKU line.
     private const string EnrichmentEntitlementKey = "analytics.spatial-join";
+
+    internal static IResult? RequireEnrichmentEntitlement(HttpContext context)
+        => LicenseGate.RequireEntitlement(
+            context,
+            EnrichmentEntitlementKey,
+            "Data enrichment",
+            context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger(LoggerCategory));
 
     public static IResult HandleCatalogGet(HttpContext context)
     {
-        var logger = context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger(LoggerCategory);
-
-        var editionError = LicenseGate.RequireEntitlement(
-            context, EnrichmentEntitlementKey, "Data enrichment", logger);
-        if (editionError != null)
+        if (RequireEnrichmentEntitlement(context) is { } editionError)
         {
             return editionError;
         }
@@ -70,6 +73,11 @@ internal static class DataEnrichmentRequestHandlers
 
     public static async Task<IResult> HandleDatasetsGet(HttpContext context)
     {
+        if (RequireEnrichmentEntitlement(context) is { } editionError)
+        {
+            return editionError;
+        }
+
         var catalog = context.RequestServices.GetRequiredService<EnrichmentDatasetCatalogService>();
         var edition = ResolveEdition(context);
 
@@ -80,6 +88,11 @@ internal static class DataEnrichmentRequestHandlers
 
     public static async Task<IResult> HandleDatasetGet(string id, HttpContext context)
     {
+        if (RequireEnrichmentEntitlement(context) is { } editionError)
+        {
+            return editionError;
+        }
+
         var catalog = context.RequestServices.GetRequiredService<EnrichmentDatasetCatalogService>();
         var edition = ResolveEdition(context);
 
@@ -97,14 +110,12 @@ internal static class DataEnrichmentRequestHandlers
 
     public static async Task<IResult> HandleEnrichPost(HttpContext context)
     {
-        var logger = context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger(LoggerCategory);
-
-        var editionError = LicenseGate.RequireEntitlement(
-            context, EnrichmentEntitlementKey, "Data enrichment", logger);
-        if (editionError != null)
+        if (RequireEnrichmentEntitlement(context) is { } editionError)
         {
             return editionError;
         }
+
+        var logger = context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger(LoggerCategory);
 
         var cancellationToken = context.RequestAborted;
 

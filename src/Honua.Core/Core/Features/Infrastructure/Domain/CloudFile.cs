@@ -25,6 +25,8 @@ public sealed record CloudFile
 
     public string? ETag { get; init; }
 
+    public string? CacheControl { get; init; }
+
     public ImmutableDictionary<string, string> Metadata { get; init; } = ImmutableDictionary<string, string>.Empty;
 
     public required CloudStorageProvider Provider { get; init; }

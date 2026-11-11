@@ -98,6 +98,8 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_list_capabilities",
         "honua_studio_save_version",
         "honua_studio_get_version",
+        "honua_studio_list_items",
+        "honua_studio_list_versions",
         "honua_studio_reopen_version",
         "honua_studio_create_draft",
         "honua_studio_get_draft",
@@ -410,6 +412,8 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_list_capabilities",
         "honua_studio_get_draft",
         "honua_studio_get_version",
+        "honua_studio_list_items",
+        "honua_studio_list_versions",
         "honua_studio_validate_draft",
         "honua_studio_preview_draft",
     };
