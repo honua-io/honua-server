@@ -17,6 +17,25 @@ namespace Honua.Server.Tests.Infrastructure;
 public sealed class TestHostEnvironmentScopeTests
 {
     [Fact]
+    public async Task WebAppFixture_DisposeBeforeInitialization_Completes()
+    {
+        var fixture = new WebAppFixture();
+
+        await fixture.Invoking(f => f.DisposeAsync()).Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public void WebAppFixture_ClientBeforeInitialization_ThrowsClearError()
+    {
+        var fixture = new WebAppFixture();
+
+        var accessClient = () => fixture.Client;
+
+        accessClient.Should().Throw<InvalidOperationException>()
+            .WithMessage("Client not initialized.");
+    }
+
+    [Fact]
     public void TestWebApplicationFactory_ExposesParameterlessClassFixtureConstructor()
     {
         var publicConstructors = typeof(TestWebApplicationFactory).GetConstructors();

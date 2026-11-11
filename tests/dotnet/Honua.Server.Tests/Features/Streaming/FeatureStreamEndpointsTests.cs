@@ -47,13 +47,19 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
         .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro));
     private HttpClient _client = null!;
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    private async Task InitializeDefaultApplicationAsync()
     {
         await _fixture.InitializeAsync();
         _client = _fixture.CreateAdminClient();
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        _client?.Dispose();
+        await _fixture.DisposeAsync();
+    }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
@@ -296,6 +302,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_Connect_AcceptsAndReceivesMessages()
     {
+        await InitializeDefaultApplicationAsync();
         var wsClient = _fixture.CreateWebSocketClient();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
@@ -321,6 +328,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_SubscribeThenUnsubscribe_ReturnsStatusFrames()
     {
+        await InitializeDefaultApplicationAsync();
         var wsClient = _fixture.CreateWebSocketClient();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
@@ -518,6 +526,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_TwoSubscriptionsMatchingSameEvent_DeliversBothFrames()
     {
+        await InitializeDefaultApplicationAsync();
         var wsClient = _fixture.CreateWebSocketClient();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
 
@@ -590,6 +599,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_QueuedFrames_AfterUnsubscribe_AreNotDelivered()
     {
+        await InitializeDefaultApplicationAsync();
         var wsClient = _fixture.CreateWebSocketClient();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
 
@@ -709,6 +719,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_SubscribeWithReservedDefaultId_ReturnsErrorAndStaysOpen()
     {
+        await InitializeDefaultApplicationAsync();
         var wsClient = _fixture.CreateWebSocketClient();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
@@ -759,6 +770,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_UnsubscribeReservedDefaultId_ReturnsErrorAndPreservesPolling()
     {
+        await InitializeDefaultApplicationAsync();
         var wsClient = _fixture.CreateWebSocketClient();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
@@ -802,6 +814,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_DefaultSubscription_DoesNotDuplicateStaleQueuedFrameAfterReplay()
     {
+        await InitializeDefaultApplicationAsync();
         var wsClient = _fixture.CreateWebSocketClient();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
 
@@ -1030,6 +1043,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_LiveSendsToControlSubscription_AdvanceDurablePollWatermark()
     {
+        await InitializeDefaultApplicationAsync();
         var wsClient = _fixture.CreateWebSocketClient();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
@@ -1271,6 +1285,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithoutUpgradeOrSseHeader_Returns400()
     {
+        await InitializeDefaultApplicationAsync();
         var response = await _client.GetAsync("/api/v1/streaming/features");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -1339,6 +1354,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithLegacyLayerIdsParam_AndUnknownLayer_ReturnsBadRequest()
     {
+        await InitializeDefaultApplicationAsync();
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             "/api/v1/streaming/features?layerIds=99999");
@@ -1357,6 +1373,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithLayersParam_AndUnknownLayer_ReturnsBadRequest()
     {
+        await InitializeDefaultApplicationAsync();
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             "/api/v1/streaming/features?layers=99999");
@@ -1381,6 +1398,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithEmptyLayersParam_ReturnsBadRequest()
     {
+        await InitializeDefaultApplicationAsync();
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             "/api/v1/streaming/features?layers=,");
@@ -1397,6 +1415,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithEmptyLegacyLayerIdsParam_ReturnsBadRequest()
     {
+        await InitializeDefaultApplicationAsync();
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             "/api/v1/streaming/features?layerIds=,%20,");
@@ -1452,6 +1471,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithUnsupportedFunctionFilter_ReturnsBadRequest()
     {
+        await InitializeDefaultApplicationAsync();
         var encodedFilter = Uri.EscapeDataString("UPPER(name) = 'ALICE'");
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
@@ -1469,6 +1489,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithUnsupportedFilterLanguage_ReturnsBadRequest()
     {
+        await InitializeDefaultApplicationAsync();
         var encodedFilter = Uri.EscapeDataString("name = 'alpha'");
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
@@ -1486,6 +1507,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithBboxWithoutSingleLayer_ReturnsBadRequest()
     {
+        await InitializeDefaultApplicationAsync();
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             "/api/v1/streaming/features?bbox=-122.5,37.5,-122.0,38.0");
@@ -1531,6 +1553,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithUnsupportedPolygonFilter_ReturnsBadRequest()
     {
+        await InitializeDefaultApplicationAsync();
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             "/api/v1/streaming/features?layers=0&intersects=1");
@@ -1610,6 +1633,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_Connect_ReturnsEventStreamContentType()
     {
+        await InitializeDefaultApplicationAsync();
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/streaming/features");
         request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
 
@@ -1625,6 +1649,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_Connect_ReceivesStatusEvent()
     {
+        await InitializeDefaultApplicationAsync();
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/streaming/features?layers=0");
         request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
 
@@ -1646,6 +1671,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_ReplayEnvelope_IncludesFullSdkContractFields()
     {
+        await InitializeDefaultApplicationAsync();
         var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
         var eventStore = _fixture.GetService<IFeatureChangeEventStore>();
         const string serviceId = "test";
@@ -1714,6 +1740,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features/capabilities")]
     public async Task Capabilities_ProEdition_AdvertisesTransportsFiltersAndLayers()
     {
+        await InitializeDefaultApplicationAsync();
         using var response = await _client.GetAsync("/api/v1/streaming/features/capabilities");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -2076,6 +2103,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_FreshConnect_DeliversFirstLiveEvent()
     {
+        await InitializeDefaultApplicationAsync();
         var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
         var uniqueId = Guid.NewGuid().ToString("N")[..8];
         const string serviceId = "test";
@@ -2147,6 +2175,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Heartbeat_BroadcastsToConnectedSessions()
     {
+        await InitializeDefaultApplicationAsync();
         var sessionManager = _fixture.GetService<FeatureStreamSessionManager>();
         using var session = sessionManager.CreateSession("WebSocket", "hb-test");
 
@@ -2163,6 +2192,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task SlowConsumer_BufferOverflow_DisconnectsSession()
     {
+        await InitializeDefaultApplicationAsync();
         var sessionManager = _fixture.GetService<FeatureStreamSessionManager>();
         using var session = sessionManager.CreateSession("WebSocket", "slow-test");
         sessionManager.MarkDrainStarted(session.SessionId);
@@ -2186,6 +2216,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Reconnect_WithCursor_ReplaysMissedEvents()
     {
+        await InitializeDefaultApplicationAsync();
         var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
         var eventStore = _fixture.GetService<IFeatureChangeEventStore>();
         var uniqueId = Guid.NewGuid().ToString("N")[..8];
@@ -2286,6 +2317,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Reconnect_WithLiveEventsPublishedDuringReplay_DeliversAll()
     {
+        await InitializeDefaultApplicationAsync();
         var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
         var eventStore = _fixture.GetService<IFeatureChangeEventStore>();
         var uniqueId = Guid.NewGuid().ToString("N")[..8];
@@ -2395,6 +2427,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/streaming/features/sessions")]
     public async Task ListSessions_WhenNone_ReturnsEmptyList()
     {
+        await InitializeDefaultApplicationAsync();
         var response = await _client.GetAsync("/api/v1/admin/streaming/features/sessions");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -2415,6 +2448,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/streaming/features/sessions")]
     public async Task ListSessions_AfterConnect_ReturnsSessionInfo()
     {
+        await InitializeDefaultApplicationAsync();
         var sessionManager = _fixture.GetService<FeatureStreamSessionManager>();
         using var session = sessionManager.CreateSession("WebSocket", "admin-vis-test");
 
@@ -2440,6 +2474,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/streaming/features/sessions")]
     public async Task ListSessions_WithFilter_ReturnsSessionFilterInfo()
     {
+        await InitializeDefaultApplicationAsync();
         var sessionManager = _fixture.GetService<FeatureStreamSessionManager>();
         var filter = new StreamSubscriptionFilter(serviceId: "svc-admin-filter", layerIds: [1, 3]);
         using var session = sessionManager.CreateSession("SSE", "filtered-admin-vis-test", filter);
@@ -2469,6 +2504,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("DELETE /api/v1/admin/streaming/features/sessions/{sessionId}")]
     public async Task DisconnectSession_ExistingId_ReturnsSuccess()
     {
+        await InitializeDefaultApplicationAsync();
         var sessionManager = _fixture.GetService<FeatureStreamSessionManager>();
         var session = sessionManager.CreateSession("SSE", "disconnect-test");
 
@@ -2488,6 +2524,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("DELETE /api/v1/admin/streaming/features/sessions/{sessionId}")]
     public async Task DisconnectSession_UnknownId_Returns404()
     {
+        await InitializeDefaultApplicationAsync();
         var response = await _client.DeleteAsync(
             $"/api/v1/admin/streaming/features/sessions/{Guid.NewGuid()}");
 

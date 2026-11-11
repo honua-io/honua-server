@@ -105,7 +105,9 @@ public sealed class WebAppFixture : IAsyncLifetime
     public const string DevelopmentBypassActorId = "00000000-0000-0000-0000-000000000001";
     private static readonly TimeSpan _defaultTestClientTimeout = TimeSpan.FromMinutes(5);
 
-    public HttpClient Client { get; private set; } = null!;
+    private HttpClient? _client;
+
+    public HttpClient Client => _client ?? throw new InvalidOperationException("Client not initialized.");
 
     public PostgresFixture Postgres => _useSharedServer
         ? Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin.Postgres
@@ -238,7 +240,7 @@ public sealed class WebAppFixture : IAsyncLifetime
             _factory.UseKestrel(0);
         }
 
-        Client = CreateClient();
+        _client = CreateClient();
         _serviceScope = _factory.Services.CreateScope();
 
         ApplyCurrentSchemaHeader(Client);
@@ -456,7 +458,7 @@ public sealed class WebAppFixture : IAsyncLifetime
 
         await SeedSchemaAsync(_currentSchema);
 
-        Client = CreateAdminClient();
+        _client = CreateAdminClient();
         _serviceScope = Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin.Factory.Services.CreateScope();
 
         ApplySeedSpecificMetadataV2Graph();
@@ -484,7 +486,7 @@ public sealed class WebAppFixture : IAsyncLifetime
                 await Postgres.DropSchemaAsync(_currentSchema);
             }
 
-            Client.Dispose();
+            _client?.Dispose();
 
             // Audit-A2: ref-counted teardown of the shared factory + Postgres lives on
             // WebAppFixtureSharedBootstrapMixin.
@@ -498,7 +500,7 @@ public sealed class WebAppFixture : IAsyncLifetime
         }
 
         // Null when initialization failed: disposing must not hide that failure.
-        Client?.Dispose();
+        _client?.Dispose();
         if (_factory is not null)
         {
             await _factory.DisposeAsync();
