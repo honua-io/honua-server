@@ -616,6 +616,8 @@ fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
 
+Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. Missing envelopes from ordinary producers remain errors.
+
 ### Capability manifest endpoint fixture lifetime
 
 `CapabilityManifestEndpointTests` seeds and starts its read-only default application
@@ -624,8 +626,6 @@ scenarios with different licensing, tenant, registry, authentication or service
 configuration keep their own applications. Every existing case and assertion still
 runs in its selected PR shard and full trunk runs. Runner counts, required check
 names, aggregate dependencies, workflows and shard selection are unchanged.
-
-Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. Missing envelopes from ordinary producers remain errors.
 
 ### Governance capacity split
 
