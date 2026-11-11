@@ -34,15 +34,12 @@ Limits__Tiles__TileTimeout=00:00:30
 TileOptions__CacheMaxAge=3600
 ```
 
-3. Add Redis caching. With Redis configured, metadata and output caches are shared across replicas; without it each replica uses its own in-memory cache. `Cache__EnableFallback` controls fallback during a configured backend outage; it does not disable the normal no-Redis cache.
+3. Size the per-replica cache. Each replica caches metadata and output in its own memory; the CDN is the shared cache.
 
 ```bash
-ConnectionStrings__Redis=redis.example.com:6379
 Cache__Enabled=true
 Cache__DefaultTtlSeconds=300
-Cache__EnableFallback=true
-Cache__FallbackMaxEntries=5000
-Cache__KeyPrefix=honua:prod:
+Cache__MaxEntries=50000
 ```
 
 4. Scale horizontally. Honua is stateless — add replicas behind the load balancer; no session affinity is needed. Lower the per-replica pool size as you add replicas to respect the sizing rule in step 1.
@@ -56,12 +53,10 @@ kubectl -n honua scale deployment/honua-server --replicas=4
 | Layer | Surface | Notes |
 |---|---|---|
 | Edge / CDN | Tiles, public read endpoints | Recommended in production; honor `TileOptions__CacheMaxAge` |
-| Redis (shared) | Service/layer metadata, output cache | Set `ConnectionStrings__Redis`; shared across replicas |
-| In-memory (no Redis configured) | Same surfaces, per replica | Automatic; entries retain their configured TTL |
-| In-memory outage fallback | Same surfaces, per replica | Controlled by `Cache__EnableFallback` and `Cache__FallbackMaxEntries` |
+| In-memory | Service/layer metadata, output cache, per replica | Automatic; entries retain their configured TTL; bounded by `Cache__MaxEntries` |
 | Npgsql prepared statements | Query plans | Internal; inspect via `GET /api/v1/admin/performance/database/query-cache/statistics` |
 
-The default no-Redis `MemoryDistributedCache` index expires with its latest tracked payload deadline. Subsequent writes remove expired membership instead of renewing it for another 30 days. A bounded background sweep also reclaims visited idle indexes and checks older index formats without removing renewed values. Updates from service instances sharing the same local cache backend are serialized together, including maintenance and renewals. The local cache cannot enumerate previously unvisited schema scopes: legacy indexes are checked when their scope is next used, and otherwise retain their existing expiry. Use Redis for shared cache behavior across replicas.
+Each replica's in-memory cache drops entries at their TTL and evicts entries once it holds `Cache__MaxEntries`. An invalidation clears the cache of the replica that made the change; other replicas serve their copy until it expires.
 
 ## What needs Redis when multi-node
 

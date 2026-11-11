@@ -74,7 +74,6 @@ services:
       Security__ConnectionEncryption__Salt: "${HONUA_SCALE_TEST_ENCRYPTION_SALT:?Set HONUA_SCALE_TEST_ENCRYPTION_SALT to a base64 salt you choose}"
       # Caching configuration
       Cache__Enabled: "true"
-      Cache__EnableFallback: "true"
       Cache__KeyPrefix: "honua:"
       Cache__DefaultTtlSeconds: "300"
       # Performance settings for scale testing
@@ -131,7 +130,6 @@ services:
       Security__ConnectionEncryption__MasterKey: "${HONUA_SCALE_TEST_ENCRYPTION_KEY:?Set HONUA_SCALE_TEST_ENCRYPTION_KEY to at least 32 characters}"
       Security__ConnectionEncryption__Salt: "${HONUA_SCALE_TEST_ENCRYPTION_SALT:?Set HONUA_SCALE_TEST_ENCRYPTION_SALT to a base64 salt you choose}"
       Cache__Enabled: "true"
-      Cache__EnableFallback: "true"
       Cache__KeyPrefix: "honua:"
       Cache__DefaultTtlSeconds: "300"
       Limits__Query__MaxRecordCount: "10000"

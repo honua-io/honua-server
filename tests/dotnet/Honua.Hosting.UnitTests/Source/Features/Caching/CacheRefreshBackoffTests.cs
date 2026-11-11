@@ -26,11 +26,10 @@ public sealed class CacheRefreshBackoffTests
     {
         var clock = new CleanupTimeProvider();
         using var service = CreateService(clock);
-        var coordinator = (ICacheRefreshCoordinator)service;
         var backoff = GetBackoff(service);
         for (var index = 0; index < 100; index++)
         {
-            Assert.True(coordinator.TryEnqueueRefresh($"failed-{index}", _ => timeout
+            Assert.True(service.TryEnqueueRefresh($"failed-{index}", _ => timeout
                 ? Task.FromException(new OperationCanceledException())
                 : Task.FromException(new InvalidOperationException("Expected refresh failure"))));
         }
@@ -38,15 +37,15 @@ public sealed class CacheRefreshBackoffTests
         await service.StartAsync(CancellationToken.None);
         try
         {
-            await WaitUntilAsync(() => coordinator.FailureCount == 100 && coordinator.QueueDepth == 0);
+            await WaitUntilAsync(() => service.FailureCount == 100 && service.QueueDepth == 0);
             Assert.Equal(100, backoff.Count);
-            Assert.False(coordinator.TryEnqueueRefresh("failed-0", _ => Task.CompletedTask));
+            Assert.False(service.TryEnqueueRefresh("failed-0", _ => Task.CompletedTask));
 
             clock.Advance(TimeSpan.FromSeconds(1));
 
             Assert.Equal(0, backoff.Count);
-            Assert.True(coordinator.TryEnqueueRefresh("failed-0", _ => Task.CompletedTask));
-            await WaitUntilAsync(() => coordinator.SuccessCount == 1 && coordinator.QueueDepth == 0);
+            Assert.True(service.TryEnqueueRefresh("failed-0", _ => Task.CompletedTask));
+            await WaitUntilAsync(() => service.SuccessCount == 1 && service.QueueDepth == 0);
         }
         finally
         {
@@ -61,27 +60,26 @@ public sealed class CacheRefreshBackoffTests
     {
         var clock = new CleanupTimeProvider();
         using var service = CreateService(clock);
-        var coordinator = (ICacheRefreshCoordinator)service;
         await service.StartAsync(CancellationToken.None);
         try
         {
-            Assert.True(coordinator.TryEnqueueRefresh("old", _ => Task.FromException(new InvalidOperationException())));
-            await WaitUntilAsync(() => coordinator.FailureCount == 1 && coordinator.QueueDepth == 0);
+            Assert.True(service.TryEnqueueRefresh("old", _ => Task.FromException(new InvalidOperationException())));
+            await WaitUntilAsync(() => service.FailureCount == 1 && service.QueueDepth == 0);
             clock.Advance(TimeSpan.FromMilliseconds(500));
-            Assert.True(coordinator.TryEnqueueRefresh("recent", _ => Task.FromException(new InvalidOperationException())));
-            await WaitUntilAsync(() => coordinator.FailureCount == 2 && coordinator.QueueDepth == 0);
-            Assert.True(coordinator.TryEnqueueRefresh("unrelated", _ => Task.CompletedTask));
-            await WaitUntilAsync(() => coordinator.SuccessCount == 1 && coordinator.QueueDepth == 0);
+            Assert.True(service.TryEnqueueRefresh("recent", _ => Task.FromException(new InvalidOperationException())));
+            await WaitUntilAsync(() => service.FailureCount == 2 && service.QueueDepth == 0);
+            Assert.True(service.TryEnqueueRefresh("unrelated", _ => Task.CompletedTask));
+            await WaitUntilAsync(() => service.SuccessCount == 1 && service.QueueDepth == 0);
 
             clock.Advance(TimeSpan.FromMilliseconds(500));
 
             Assert.Equal(1, GetBackoff(service).Count);
-            Assert.False(coordinator.TryEnqueueRefresh("recent", _ => Task.CompletedTask));
+            Assert.False(service.TryEnqueueRefresh("recent", _ => Task.CompletedTask));
             clock.Advance(TimeSpan.FromMilliseconds(500) - TimeSpan.FromTicks(1));
-            Assert.False(coordinator.TryEnqueueRefresh("recent", _ => Task.CompletedTask));
+            Assert.False(service.TryEnqueueRefresh("recent", _ => Task.CompletedTask));
             clock.Advance(TimeSpan.FromTicks(1));
-            Assert.True(coordinator.TryEnqueueRefresh("recent", _ => Task.CompletedTask));
-            await WaitUntilAsync(() => coordinator.SuccessCount == 2 && coordinator.QueueDepth == 0);
+            Assert.True(service.TryEnqueueRefresh("recent", _ => Task.CompletedTask));
+            await WaitUntilAsync(() => service.SuccessCount == 2 && service.QueueDepth == 0);
             Assert.Equal(0, GetBackoff(service).Count);
         }
         finally
@@ -96,16 +94,15 @@ public sealed class CacheRefreshBackoffTests
     {
         var clock = new CleanupTimeProvider();
         using var service = CreateService(clock);
-        var coordinator = (ICacheRefreshCoordinator)service;
         await service.StartAsync(CancellationToken.None);
         try
         {
-            Assert.True(coordinator.TryEnqueueRefresh("invalidated", _ => Task.FromException(new InvalidOperationException())));
-            await WaitUntilAsync(() => coordinator.FailureCount == 1 && coordinator.QueueDepth == 0);
-            coordinator.NotifyInvalidation("invalidated");
+            Assert.True(service.TryEnqueueRefresh("invalidated", _ => Task.FromException(new InvalidOperationException())));
+            await WaitUntilAsync(() => service.FailureCount == 1 && service.QueueDepth == 0);
+            service.NotifyInvalidation("invalidated");
             Assert.Equal(0, GetBackoff(service).Count);
-            Assert.True(coordinator.TryEnqueueRefresh("invalidated", _ => Task.CompletedTask));
-            await WaitUntilAsync(() => coordinator.SuccessCount == 1 && coordinator.QueueDepth == 0);
+            Assert.True(service.TryEnqueueRefresh("invalidated", _ => Task.CompletedTask));
+            await WaitUntilAsync(() => service.SuccessCount == 1 && service.QueueDepth == 0);
         }
         finally
         {
@@ -151,10 +148,9 @@ public sealed class CacheRefreshBackoffTests
     {
         var clock = new CleanupTimeProvider();
         using var service = CreateService(clock);
-        var coordinator = (ICacheRefreshCoordinator)service;
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        Assert.True(coordinator.TryEnqueueRefresh("late-failure", async _ =>
+        Assert.True(service.TryEnqueueRefresh("late-failure", async _ =>
         {
             entered.SetResult();
             await release.Task;
@@ -167,7 +163,7 @@ public sealed class CacheRefreshBackoffTests
             await service.StopAsync(CancellationToken.None);
             Assert.Equal(0, clock.ActiveTimers);
             release.SetResult();
-            await WaitUntilAsync(() => coordinator.FailureCount == 1 && coordinator.QueueDepth == 0);
+            await WaitUntilAsync(() => service.FailureCount == 1 && service.QueueDepth == 0);
             Assert.Equal(0, GetBackoff(service).Count);
         }
         finally

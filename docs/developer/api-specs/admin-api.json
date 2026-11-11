@@ -39772,18 +39772,11 @@
           "cacheEnabled": {
             "type": "boolean"
           },
-          "fallbackEnabled": {
-            "type": "boolean"
-          },
           "keyPrefix": {
             "type": "string",
             "nullable": true
           },
           "defaultTtlSeconds": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "retryIntervalSeconds": {
             "type": "integer",
             "format": "int32"
           },

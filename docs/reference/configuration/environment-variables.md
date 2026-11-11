@@ -140,14 +140,12 @@ After a successful upload, `<LicensePath>.uploaded` takes precedence at startup.
 | `Cache__QueryTtlSeconds` | `30` | TTL for cached query responses. |
 | `Cache__NegativeTtlSeconds` | `30` (shipped config) | TTL for negative (missing layer/service) entries. |
 | `Cache__JitterPercentage` | `0.2` | TTL jitter to avoid cache stampedes. |
-| `Cache__EnableFallback` | `true` | Use in-memory fallback when Redis is unavailable. |
-| `Cache__FallbackMaxEntries` | `1000` | Max entries in the in-memory fallback cache. |
+| `Cache__MaxEntries` | `10000` | Max entries in each node's in-memory cache. |
 | `Cache__ResponseCachingEnabled` | `false` | Cache exact public, non-spatial protocol responses (FeatureServer query, OGC API Features items, OData) separately from metadata. Off by default. Admission requires an empty principal. Cookies, a connection client certificate, and the forwarded client-certificate header count as credentials. The key includes the license fingerprint. Request or response `Cache-Control: no-cache` or `no-store` skips storage when those headers are already written. Ad hoc spatial reads and any non-default `gdbVersion` stay uncached. |
-| `Cache__ResponseCachingAllowInMemoryFallback` | `false` | Allow exact response caching while the cache is process-local (distributed memory or the in-memory fallback). Off by default. Set this only on a single server instance. |
+| `Cache__ResponseCachingAllowInMemoryFallback` | `false` | Allow exact response caching. The cache is per node, so with several tasks another node can serve a response up to its lifetime after an edit. Off by default. Set this only on a single server instance. |
 | `Cache__ResponseCacheMaxEntryBytes` | `1048576` | Skip storing a query response whose payload is larger than this many bytes. |
 | `Cache__ResponseCacheMaxBytes` | `67108864` | Skip storing a query response that would push this process over this total payload budget. |
-| `Cache__RetryIntervalSeconds` | `30` | Redis reconnect interval after a failure. |
-| `Cache__KeyPrefix` | `honua:` | Key prefix for shared Redis instances. |
+| `Cache__KeyPrefix` | `honua:` | Prefix for cache keys. |
 
 ## MCP sessions
 

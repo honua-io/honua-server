@@ -79,10 +79,8 @@ internal static class CacheOperationsEndpoints
                 IsHealthy = isHealthy,
                 IsUsingFallback = healthChecker.IsUsingFallback,
                 CacheEnabled = options.Enabled,
-                FallbackEnabled = options.EnableFallback,
                 KeyPrefix = options.KeyPrefix,
                 DefaultTtlSeconds = options.DefaultTtlSeconds,
-                RetryIntervalSeconds = options.RetryIntervalSeconds,
                 RedisServerInfo = redisInfo,
                 MetricsEndpoint = "/api/v1/admin/operations/cache/statistics",
                 GeneratedAt = DateTimeOffset.UtcNow
