@@ -7,6 +7,7 @@ using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Server.Startup;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
@@ -31,8 +32,8 @@ public sealed class ControlPlaneLambdaEventTargetsTests
     public void Registration_IsIdempotent()
     {
         var services = new ServiceCollection()
-            .AddHonuaControlPlaneLambdaEventTargets()
-            .AddHonuaControlPlaneLambdaEventTargets();
+            .AddHonuaControlPlaneLambdaEventTargets(EmptyConfiguration())
+            .AddHonuaControlPlaneLambdaEventTargets(EmptyConfiguration());
 
         services.Count(descriptor => descriptor.ServiceType == typeof(IControlPlaneLambdaEventTargets)).Should().Be(1);
         services.Count(descriptor => descriptor.ServiceType == typeof(IScheduledTickDispatcher)).Should().Be(1);
@@ -109,7 +110,7 @@ public sealed class ControlPlaneLambdaEventTargetsTests
         var services = new ServiceCollection().AddOptions();
         // Only the descriptor matters: the targets ask the catalog whether the graph is composed.
         services.AddSingleton<ControlPlaneEventHandler>(_ => throw new InvalidOperationException("not resolved by this test"));
-        services.AddHonuaControlPlaneLambdaEventTargets();
+        services.AddHonuaControlPlaneLambdaEventTargets(EmptyConfiguration());
         using var provider = services.BuildServiceProvider();
         var targets = provider.GetRequiredService<IControlPlaneLambdaEventTargets>();
 
@@ -135,8 +136,10 @@ public sealed class ControlPlaneLambdaEventTargetsTests
             services.AddSingleton<IScheduledTickHandler>(handler);
         }
 
-        return services.AddHonuaControlPlaneLambdaEventTargets().BuildServiceProvider();
+        return services.AddHonuaControlPlaneLambdaEventTargets(EmptyConfiguration()).BuildServiceProvider();
     }
+
+    private static IConfiguration EmptyConfiguration() => new ConfigurationBuilder().Build();
 
     private sealed class CountingTickHandler(ScheduledTickKind kind) : IScheduledTickHandler
     {

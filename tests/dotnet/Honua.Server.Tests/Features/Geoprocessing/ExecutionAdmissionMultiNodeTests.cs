@@ -6,8 +6,6 @@ using System.Globalization;
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.ControlPlane;
-using Honua.Core.Features.Authorization.Abstractions;
-using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
@@ -15,6 +13,8 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Security;
+using Honua.Server.Tests.Infrastructure;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -26,24 +26,20 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Multi-node execution-admission proofs (#3853). Every test composes two or more independent
-/// "server nodes" — each with its own Redis connection, durable job store, admission evaluator,
-/// admission coordinator, and job service, sharing nothing in-process — against one real Redis,
-/// the substrate that holds the durable job records and their active-set index in production.
-/// Submissions are released together from a barrier across nodes, and an independent observer
-/// samples the durable active set throughout, so the assertions are on what any node could see
-/// at any observation point rather than on a single evaluator's arithmetic.
-/// </summary>
-/// <remarks>
-/// Each test writes its request ledger (node, tenant, principal, timestamp, idempotency key,
-/// limits, outcome, dimension, Retry-After, job id) and the maximum observed global, partition,
-/// and cost values to the test output. The expected values are derived from the configured
-/// limits, never from a snapshot of current output.
-/// </remarks>
+// Multi-node execution-admission proofs. Every test composes two or more independent
+// "server nodes" — each with its own Redis connection, job store instance, admission evaluator,
+// admission coordinator, and job service, sharing nothing in-process — against the PostgreSQL
+// job tables that hold the durable job records and one real Redis that holds the admission lease.
+// Submissions are released together from a barrier across nodes, and an independent observer
+// samples the durable active set throughout, so the assertions are on what any node could see
+// at any observation point rather than on a single evaluator's arithmetic.
+// Each test writes its request ledger (node, tenant, principal, timestamp, idempotency key,
+// limits, outcome, dimension, Retry-After, job id) and the maximum observed global, partition,
+// and cost values to the test output. The expected values are derived from the configured
+// limits, never from a snapshot of current output.
 [Protocol(TestProtocols.GPServer)]
 public sealed class ExecutionAdmissionMultiNodeTests
-    : IClassFixture<ExecutionAdmissionMultiNodeTests.RedisServer>, IAsyncLifetime
+    : IClassFixture<ExecutionAdmissionMultiNodeTests.RedisServer>, IClassFixture<DatabaseFixtureAdapter>, IAsyncLifetime
 {
     private const int RetryAfterSeconds = 7;
     private const string DefaultPartition = "(default)";
@@ -52,14 +48,17 @@ public sealed class ExecutionAdmissionMultiNodeTests
         new StaticOptionsMonitor<GeoprocessingExecutorOptions>(new GeoprocessingExecutorOptions());
 
     private readonly RedisServer _redis;
+    private readonly DatabaseFixtureAdapter _database;
     private readonly ITestOutputHelper _output;
     private readonly List<Node> _nodes = [];
     private ConnectionMultiplexer _observer = null!;
-    private RedisExecutionJobStore _observerStore = null!;
+    private PostgresJobSubstrateHarness _jobs = null!;
+    private PostgresExecutionJobStore _observerStore = null!;
 
-    public ExecutionAdmissionMultiNodeTests(RedisServer redis, ITestOutputHelper output)
+    public ExecutionAdmissionMultiNodeTests(RedisServer redis, DatabaseFixtureAdapter database, ITestOutputHelper output)
     {
         _redis = redis;
+        _database = database;
         _output = output;
     }
 
@@ -73,7 +72,8 @@ public sealed class ExecutionAdmissionMultiNodeTests
             await _observer.GetServer(endpoint).FlushDatabaseAsync();
         }
 
-        _observerStore = new RedisExecutionJobStore(_observer, NullLogger<RedisExecutionJobStore>.Instance);
+        _jobs = await PostgresJobSubstrateHarness.CreateAsync(_database, nameof(ExecutionAdmissionMultiNodeTests));
+        _observerStore = _jobs.JobStore;
     }
 
     public async Task DisposeAsync()
@@ -84,6 +84,7 @@ public sealed class ExecutionAdmissionMultiNodeTests
         }
 
         await _observer.DisposeAsync();
+        await _jobs.DisposeAsync();
     }
 
     // -----------------------------------------------------------------------
@@ -540,32 +541,17 @@ public sealed class ExecutionAdmissionMultiNodeTests
         Func<IExecutionJobStore, IExecutionJobStore>? wrapStore = null)
     {
         var multiplexer = await ConnectionMultiplexer.ConnectAsync(_redis.ConnectionString);
-        IExecutionJobStore store = new RedisExecutionJobStore(multiplexer, NullLogger<RedisExecutionJobStore>.Instance);
+        IExecutionJobStore store = _jobs.CreateNodeJobStore();
         if (wrapStore is not null)
         {
             store = wrapStore(store);
         }
 
-        var monitor = new StaticOptionsMonitor<ExecutionAdmissionOptions>(limits);
-        var evaluator = new ExecutionAdmissionEvaluator(
-            monitor,
-            TimeProvider.System,
-            NullLogger<ExecutionAdmissionEvaluator>.Instance,
+        var admission = AdmissionNodeComposition.Compose(
+            multiplexer,
             store,
-            multiplexer);
-        var coordinator = new ExecutionAdmissionCoordinator(
-            monitor,
-            NullLogger<ExecutionAdmissionCoordinator>.Instance,
-            sharedLease ? multiplexer : null);
-
-        var authorization = Substitute.For<IOperatorAuthorizationEvaluator>();
-        authorization
-            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(AccessDecision.Allowed()));
-        var approval = Substitute.For<IOperatorApprovalEvaluator>();
-        approval
-            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
-            .Returns(ApprovalRequirement.NotRequired());
+            new StaticOptionsMonitor<ExecutionAdmissionOptions>(limits),
+            sharedLease);
 
         var enqueued = new ConcurrentQueue<string>();
         var queue = Substitute.For<IJobQueue>();
@@ -577,15 +563,15 @@ public sealed class ExecutionAdmissionMultiNodeTests
         var service = new GeoprocessingJobService(
             progress,
             [Substitute.For<IJobCancellationNotifier>()],
-            authorization,
-            approval,
+            admission.OperatorAuthorization,
+            admission.OperatorApproval,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
             ExecutorOptions,
             store,
             queue,
-            admissionEvaluator: evaluator,
-            admissionCoordinator: coordinator);
+            admissionEvaluator: admission.Evaluator,
+            admissionCoordinator: admission.Coordinator);
 
         var node = new Node(name, multiplexer, service, enqueued);
         _nodes.Add(node);
@@ -864,66 +850,6 @@ public sealed class ExecutionAdmissionMultiNodeTests
 
             await Task.WhenAny(_allArrived.Task, Task.Delay(timeout));
         }
-    }
-
-    private sealed class InterceptingJobStore(IExecutionJobStore inner) : IExecutionJobStore
-    {
-        public Func<Task>? BeforeCreate { get; init; }
-
-        public Func<Task>? AfterListActive { get; init; }
-
-        public async Task<bool> TryCreateAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
-        {
-            if (BeforeCreate is not null)
-            {
-                await BeforeCreate();
-            }
-
-            return await inner.TryCreateAsync(job, ttl, cancellationToken);
-        }
-
-        public async Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(
-            ExecutionJobKind? kind = null, int? limit = null, CancellationToken cancellationToken = default)
-        {
-            var active = await inner.ListActiveAsync(kind, limit, cancellationToken);
-            if (AfterListActive is not null)
-            {
-                await AfterListActive();
-            }
-
-            return active;
-        }
-
-        public Task<ExecutionJobRecord?> GetAsync(string operationId, CancellationToken cancellationToken = default)
-            => inner.GetAsync(operationId, cancellationToken);
-
-        public Task SetAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
-            => inner.SetAsync(job, ttl, cancellationToken);
-
-        public Task<bool> TrySetAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
-            => inner.TrySetAsync(job, ttl, cancellationToken);
-
-        public Task<bool> TrySetIfLeaseOwnedAsync(
-            ExecutionJobRecord job,
-            string leaseOperationId,
-            string leaseOwnerId,
-            TimeSpan? ttl = null,
-            CancellationToken cancellationToken = default)
-            => inner.TrySetIfLeaseOwnedAsync(job, leaseOperationId, leaseOwnerId, ttl, cancellationToken);
-
-        public Task<ExecutionJobPage> QueryAsync(ExecutionJobQuery query, CancellationToken cancellationToken = default)
-            => inner.QueryAsync(query, cancellationToken);
-
-        public Task<bool> TryAcquireLeaseAsync(
-            string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
-            => inner.TryAcquireLeaseAsync(operationId, ownerId, leaseDuration, cancellationToken);
-
-        public Task<bool> RenewLeaseAsync(
-            string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
-            => inner.RenewLeaseAsync(operationId, ownerId, leaseDuration, cancellationToken);
-
-        public Task ReleaseLeaseAsync(string operationId, string ownerId, CancellationToken cancellationToken = default)
-            => inner.ReleaseLeaseAsync(operationId, ownerId, cancellationToken);
     }
 
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>

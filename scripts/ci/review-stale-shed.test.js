@@ -433,3 +433,60 @@ test('normalization consumer sheds moved, draft, or closed subjects before artif
     assert.equal(outputs.superseded, 'true');
   }
 });
+
+// A ready transition can race the successful producer's workflow_run event at
+// the same SHA. Historical admission, rather than the current draft flag,
+// determines whether an envelope could have been produced.
+const runNormalizationHandoff = async ({ skipped = true, total = 2, attempt = 1 } = {}) => {
+  const outputs = {};
+  const calls = [];
+  const summary = { addRaw() { return this; }, async write() {} };
+  const jobs = [
+    { name: 'Generate bounded normalization projections', conclusion: 'success', steps: [
+      { name: 'Record superseded normalization admission', conclusion: skipped ? 'success' : 'skipped' },
+    ] },
+    { name: 'Produce data-only normalization envelope', conclusion: 'skipped' },
+  ];
+  const repository = { full_name: 'honua-io/honua-server' };
+  await vm.runInNewContext(`(async () => {${NORMALIZATION_CONSUMER}})()`, {
+    require: name => name === './scripts/ci/normalization-mutation'
+      ? { inspectNormalizationTarget: async () => ({ writable: true }) } : require(name),
+    context: { repo: { owner: 'honua-io', repo: 'honua-server' }, payload: { workflow_run: {
+      id: 9, run_attempt: attempt, name: 'Derived Artifact Normalization',
+      path: '.github/workflows/normalize-derived-artifacts.yml', event: 'pull_request',
+      conclusion: 'success', repository, head_sha: 'old',
+      pull_requests: [{ number: 7, base: { sha: 'base' } }],
+    } } },
+    github: { rest: {
+      pulls: { async get() { return { data: {
+        state: 'open', draft: false, head: { sha: 'old', repo: repository },
+        base: { sha: 'base', ref: 'trunk', repo: repository },
+      } }; } },
+      actions: {
+        async listJobsForWorkflowRunAttempt(args) {
+          assert.equal(args.run_id, 9);
+          assert.equal(args.attempt_number, attempt);
+          calls.push('jobs');
+          return { data: { total_count: total, jobs } };
+        },
+        async listWorkflowRunArtifacts() {
+          calls.push('artifacts');
+          return { data: { total_count: 0, artifacts: [] } };
+        },
+      },
+    } },
+    core: { notice() {}, summary, setOutput(key, value) { outputs[key] = value; } },
+  });
+  return { outputs, calls };
+};
+
+test('normalization consumer preserves skipped draft admission after same-SHA ready transition', async () => {
+  const result = await runNormalizationHandoff({ attempt: 2 });
+  assert.equal(result.outputs.superseded, 'true');
+  assert.deepEqual(result.calls, ['jobs']);
+});
+
+test('normalization consumer still rejects missing artifacts without historical skip proof', async () => {
+  await assert.rejects(runNormalizationHandoff({ skipped: false }), /Expected one non-expired/);
+  await assert.rejects(runNormalizationHandoff({ total: 101 }), /bounded page/);
+});

@@ -71,6 +71,12 @@ jobs:
               await core.summary.addRaw('Superseded normalization subject; no projections produced.\n').write();
             }
 
+      # The consumer verifies this historical admission through the Actions API,
+      # even if this exact head becomes ready again before workflow_run arrives.
+      - name: Record superseded normalization admission
+        if: steps.live.outputs.superseded == 'true'
+        run: echo 'Normalization skipped before executing contributor code.'
+
       - if: steps.live.outputs.superseded != 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

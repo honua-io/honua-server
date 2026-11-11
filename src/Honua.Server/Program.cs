@@ -341,18 +341,6 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
         connectedRedis = ConnectionMultiplexer.Connect(redisOptions);
         builder.Services.TryAddSingleton<IConnectionMultiplexer>(connectedRedis);
 
-        // The durable job substrate is composed only when it is ENTITLED (honua-server#4502).
-        // The multiplexer above is registered regardless, because requiresDurableDistributedEvents
-        // connects infrastructure Redis for distributed events in every non-Development/Test
-        // deployment — so it is not evidence of a jobs entitlement, and AddGeoprocessing keys the
-        // IExecutionJobStore registration on THIS marker instead. Deliberately independent of the
-        // durability attestation registered below: durability decides what is advertised,
-        // entitlement decides what exists.
-        if (redisCacheEntitled)
-        {
-            builder.Services.TryAddSingleton(new DurableJobSubstrateEntitlement());
-        }
-
         if (!connectedRedis.IsConnected)
         {
             if (requireRedisAtStartup)
@@ -494,12 +482,12 @@ if (connectedRedis is not null &&
     }
 }
 
-// The ONE sanctioned way the durability attestation may stop this process, and only when the
-// operator opted in with Jobs:RequireDurableStore=true (honua-server#4502). Otherwise the
-// attestation is information and a connected Redis composes the full control plane.
+// Jobs:RequireDurableStore=true is satisfied by the system database, which holds the job store.
+// Only a host with no system database can still be stopped here.
 DurableJobSubstrateStartupGate.EnsureSatisfied(
     new DurableJobSubstrateOptions
     {
+        SystemDatabaseConfigured = !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection")),
         RedisConfigured = !string.IsNullOrWhiteSpace(redisConnectionString),
         RedisEntitled = redisCacheEntitled,
         RedisDurabilityAttestation = redisDurabilityAttestation,
@@ -692,13 +680,11 @@ builder.Services.AddHonuaBatchAndDeployBackends();
 builder.Services.AddHonuaSelfHostedRollingProxy(builder.Configuration);
 // ---- End extracted block
 
-// Gated on the ENTITLED substrate, not merely a connected multiplexer (honua-server#4502): the
-// members of this block take IExecutionJobStore as a required dependency, and AddGeoprocessing
-// composes that store only when the entitlement marker is present. Keying the two on different
-// facts is precisely what made a non-AOF Redis abort ServiceProvider validation with 31
-// unresolved-service failures; an unentitled deployment with connected infrastructure Redis was
-// the second trigger of the same defect.
-if (connectedRedis != null && redisCacheEntitled)
+// The workflow, proposal and release members of this block are stored in Redis and also take the
+// job store, which exists only on a host with a system database. A Test host registers its data
+// source after this point, from the test fixture.
+var hostHasSystemDatabase = !registerProviderInfrastructure || builder.Services.HasSystemDataSource();
+if (connectedRedis != null && redisCacheEntitled && hostHasSystemDatabase)
 {
     builder.Services.AddHonuaControlPlaneReconcilers(builder.Configuration);
 
@@ -724,7 +710,6 @@ if (connectedRedis != null && redisCacheEntitled)
         if (controlPlaneTriggerMode == Honua.ControlPlane.ControlPlaneTriggerMode.Poll)
         {
             builder.Services.AddHostedService<DeployWorkflowReconcilerBackgroundService>();
-            builder.Services.AddHostedService<ExecutionJobReconcilerBackgroundService>();
             builder.Services.AddHostedService<Honua.ControlPlane.MetadataReleaseReconcilerBackgroundService>();
             builder.Services.AddHostedService<Honua.ControlPlane.CoordinatedReleaseReconcilerBackgroundService>();
         }
@@ -736,21 +721,14 @@ if (connectedRedis != null && redisCacheEntitled)
         // hosts keep them.
         if (!Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.IsEventHandlerProfile(builder.Configuration))
         {
-            // The backstop sweeps ship in BOTH modes so a dropped/missed event (or, under poll, a wedged
-            // loop) self-heals. They are low-frequency and are a no-op when the active operations are
-            // fresh. The execution-job backstop covers Batch jobs; the workflow backstop covers the
-            // deploy/metadata/coordinated operations and walks any wedged staged release forward.
-            builder.Services.AddHostedService<Honua.ControlPlane.ExecutionJobBackstopSweepService>();
+            // The workflow backstop ships in BOTH modes so a dropped/missed event (or, under poll, a
+            // wedged loop) self-heals. It covers the deploy/metadata/coordinated operations and walks
+            // any wedged staged release forward.
             builder.Services.AddHostedService<Honua.ControlPlane.WorkflowOperationBackstopSweepService>();
-
-            // GP-plane observability spine (#2463): sample the execution-job store on a low-frequency
-            // loop and publish per-(status, backend) queue depth for the honua.execution.queue.depth
-            // gauge. Runs in both trigger modes since it only reads state to emit telemetry.
-            builder.Services.AddHostedService<Honua.ControlPlane.ExecutionQueueDepthCollectorBackgroundService>();
 
             // Graduated ops-findings autonomy (#2557): a leased singleton evaluator that can
             // route auto-safe remediation findings back through the operation gateway. It is
-            // only hosted when Redis/job-store coordination is active; no-Redis hosts stay inert.
+            // only hosted with the Redis-backed operation gateway; no-Redis hosts stay inert.
             builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.OpsFindingsAutonomyEvaluationService>();
         }
     }
@@ -810,7 +788,7 @@ else
 // HONUA_CONTROL_PLANE_LAMBDA_HANDLER is set, Redis or not, so what it resolves is registered on
 // every host. On a Redis-off cell the Redis-independent ticks run and the rest refuse with a typed
 // 503 (missingDependency=redis) instead of a 500 (honua-release run 38242272260).
-builder.Services.AddHonuaControlPlaneLambdaEventTargets();
+builder.Services.AddHonuaControlPlaneLambdaEventTargets(builder.Configuration);
 
 // Pending-approval notification channel (#1695): emitted from the gateway/store
 // boundary, not per-endpoint. Safe to register regardless of Redis availability.
@@ -1137,6 +1115,15 @@ if (!isTestEnvironment)
     builder.Services.AddOrchestrationBackgroundServices(builder.Configuration);
 }
 
+if (builder.Services.HasExecutionJobStore())
+{
+    builder.Services.AddExecutionJobReconciliation();
+    if (!isTestEnvironment)
+    {
+        builder.Services.AddExecutionJobReconciliationLoops(builder.Configuration);
+    }
+}
+
 var offlineSyncEnabled = CapabilityFlagOptions.IsExperimentalEnabled(builder.Configuration, "sync.offline");
 #if !HONUA_EXCLUDE_GEOSERVICES
 if (offlineSyncEnabled)
@@ -1187,18 +1174,19 @@ if (replicaProvider != DataProviderNames.DuckDb &&
             versionLock: sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IVersionLock>()));
 }
 
-// Branch-versioning durable lock + async job runtime (#1553). The Redis-backed version lock serializes
-// reconcile/post/resolve per (service, version) across replicas; the Redis-backed job store makes the
-// async reconcile/post job pollable and restart-durable. Both degrade to single-node in-process/in-memory
-// fallbacks when Redis is not configured. The job runner wraps the synchronous reconcile/post engine in a
-// durable, pollable job and is provider-agnostic (it adapts to the registered IVersionManager). These are
-// registered for every provider so the version-management endpoints can resolve them uniformly; for
-// non-Postgres providers the NoOp version manager rejects reconcile/post, so the lock/store/runner stay
-// inert.
+// The version lock serializes reconcile, post and resolve per (service, version) across nodes on a
+// lease row in the system database. A host with no system database has one node, so an in-process
+// lock is enough. The async job store below still uses Redis when it is configured.
+if (builder.Services.TryAddPostgresExecutionJobStore(builder.Configuration))
+{
+    builder.Services.TryAddSingleton<Honua.Core.Features.Infrastructure.Coordination.ILeaseStore,
+        Honua.Server.Features.Infrastructure.Coordination.PostgresLeaseStore>();
+}
+
 builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionLock>(sp =>
-    new Honua.Infrastructure.Coordination.RedisVersionLock(
-        sp.GetService<StackExchange.Redis.IConnectionMultiplexer>(),
-        sp.GetRequiredService<ILogger<Honua.Infrastructure.Coordination.RedisVersionLock>>()));
+    sp.GetService<Honua.Core.Features.Infrastructure.Coordination.ILeaseStore>() is { } leases
+        ? new Honua.Core.Features.Infrastructure.Coordination.LeaseVersionLock(leases)
+        : new Honua.Core.Features.FeatureStore.Services.InProcessVersionLock());
 builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionJobStore>(sp =>
     new Honua.Infrastructure.Coordination.RedisVersionJobStore(
         sp.GetService<StackExchange.Redis.IConnectionMultiplexer>(),

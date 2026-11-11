@@ -6,45 +6,27 @@ using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// At-most-once claim evidence for the control-plane job queue against a real Redis
-/// (honua-server#4403).
-/// </summary>
-/// <remarks>
-/// <para>
-/// Before this file the repository had no test in which two workers ever contended for
-/// the same job: every claim contest was sequential or stubbed, so the losing branch of
-/// <c>RedisJobQueue.AtomicClaimScript</c> had no coverage and "at most one worker owns a
-/// job" rested on reading the Lua by eye. The mock-level companions in
-/// <see cref="RedisJobQueueTests"/> pin the loser's *behaviour* deterministically; this
-/// file proves the *atomicity* that behaviour depends on, under genuine
-/// <see cref="Task.WhenAll(System.Collections.Generic.IEnumerable{Task})"/> contention
-/// against the real server-side script execution.
-/// </para>
-/// <para>
-/// It also carries the crash-recovery receipt asked for by #4403 acceptance criteria 4
-/// and 5: an executor with a counted, observable side effect, a heartbeat that lapses
-/// naturally (rather than a test hand-writing an old <c>LastHeartbeatAt</c>), and an
-/// assertion that the recovered attempt produces exactly one terminal notification and
-/// one artifact even though the stale worker later returns a success of its own.
-/// </para>
-/// </remarks>
-[Collection(RedisFixture.CollectionName)]
+// At-most-once claim evidence for the control-plane job queue against a real PostgreSQL.
+// Proves the atomicity of the claim statement under genuine
+// Task.WhenAll(System.Collections.Generic.IEnumerable{Task}) contention against
+// the real server-side row locking.
+// It also carries the crash-recovery receipt: an executor with a counted, observable side
+// effect, a heartbeat that lapses naturally (rather than a test writing an old
+// last_heartbeat_at), and an assertion that the recovered attempt produces exactly one
+// terminal notification and one artifact even though the stale worker later returns a success
+// of its own.
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.TestInfrastructure)]
-public sealed class JobClaimContentionRedisTests(RedisFixture redis)
+public sealed class PostgresJobClaimContentionTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
-    private const string ClaimedSetKey = "controlplane:jobqueue:claimed";
-    private const string QueueKey = "controlplane:jobqueue:pending";
-
     /// <summary>
     /// The invariant the durable queue exists to provide: one queued job, many workers
     /// racing for it, exactly one owner. The winner's record must show exactly one
@@ -54,7 +36,7 @@ public sealed class JobClaimContentionRedisTests(RedisFixture redis)
     [IntegrationTest]
     public async Task TryClaimAsync_EightWorkersRaceOneJob_ExactlyOneWinsWithOneAttempt()
     {
-        await using var harness = await JobQueueRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await CreateHarnessAsync();
         var operationId = $"race-single-{Guid.NewGuid():N}";
 
         (await harness.JobStore.TryCreateAsync(CreateQueuedJob(operationId))).Should().BeTrue();
@@ -63,7 +45,7 @@ public sealed class JobClaimContentionRedisTests(RedisFixture redis)
         const int workerCount = 8;
         using var start = new SemaphoreSlim(0, workerCount);
         // Park every racer on the same barrier first, then release them together, so their
-        // ZREMs genuinely interleave instead of being serialized by task start-up order.
+        // claims genuinely interleave instead of being serialized by task start-up order.
         var racers = Enumerable.Range(0, workerCount).Select(async index =>
         {
             var workerId = $"worker-{index}";
@@ -83,20 +65,19 @@ public sealed class JobClaimContentionRedisTests(RedisFixture redis)
         stored.ClaimedBy.Should().NotBeNullOrEmpty();
         stored.AttemptCount.Should().Be(1, "a losing claim must not bump the winner's attempt count");
 
-        // The job moved from pending to claimed atomically: it must be in exactly one set.
-        (await harness.Database.SortedSetScoreAsync(QueueKey, operationId)).Should().BeNull();
-        (await harness.Database.SortedSetScoreAsync(ClaimedSetKey, operationId)).Should().NotBeNull();
+        // The claim is held, not pending: the job is still a queue member and is not claimable.
+        (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
+        (await harness.IsInQueueAsync(operationId)).Should().BeTrue();
+        (await harness.Queue.TryClaimAsync("worker-late")).Should().BeNull();
     }
 
-    /// <summary>
-    /// The same invariant at queue scale: many workers draining a contested queue must
-    /// partition it, never duplicate it. This is the case that catches a claim script
-    /// that is atomic for a single ZREM but loses its guarantee across a batch scan.
-    /// </summary>
+    // The same invariant at queue scale: many workers draining a contested queue must
+    // partition it, never duplicate it. This is the case that catches a claim that is
+    // atomic for one row but loses its guarantee when workers skip each other's locked rows.
     [IntegrationTest]
     public async Task TryClaimAsync_WorkersDrainContestedQueue_EveryJobIsClaimedExactlyOnce()
     {
-        await using var harness = await JobQueueRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await CreateHarnessAsync();
 
         const int jobCount = 24;
         const int workerCount = 6;
@@ -147,34 +128,26 @@ public sealed class JobClaimContentionRedisTests(RedisFixture redis)
         (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
     }
 
-    /// <summary>
-    /// End-to-end worker-loss recovery with a counted side effect (#4403 criteria 4 and 5).
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// The heartbeat lapses <em>naturally</em> under a <see cref="JobHeartbeatPolicy"/> that
-    /// honours its own contract (<see cref="JobHeartbeatPolicy.Timeout"/> greater than
-    /// <see cref="JobHeartbeatPolicy.Interval"/>), so a merely slow worker would never be
-    /// declared abandoned here. Worker loss is simulated the way it actually presents to the
-    /// control plane: the lost worker's link to the durable store is severed, so its heartbeat
-    /// pump keeps running locally but its beats stop landing — exactly what the reconciler sees
-    /// when a pod is killed or partitioned away from Redis. No test code backdates
-    /// <c>LastHeartbeatAt</c>; the expiry the reconciler acts on is the one the worker's own
-    /// silence produced, and the test asserts the stored beat never advanced.
-    /// </para>
-    /// <para>
-    /// The side effect is counted: the executor appends one ledger entry per invocation.
-    /// After recovery the ledger must hold exactly two entries under two distinct owners —
-    /// proving the recovered attempt genuinely re-ran an executor rather than being a bare
-    /// re-claim — while the terminal notification and the published artifact must each
-    /// appear exactly once, even though the stale first worker afterwards returns a success
-    /// of its own and tries to publish and finalize it.
-    /// </para>
-    /// </remarks>
+    // End-to-end worker-loss recovery with a counted side effect.
+    // The heartbeat lapses naturally under a JobHeartbeatPolicy that
+    // honours its own contract (Timeout greater than
+    // Interval), so a merely slow worker would never be
+    // declared abandoned here. Worker loss is simulated the way it actually presents to the
+    // control plane: the lost worker's link to the durable store is severed, so its heartbeat
+    // pump keeps running locally but its beats stop landing — exactly what the reconciler sees
+    // when a pod is killed or partitioned away from the database. No test code backdates
+    // LastHeartbeatAt; the expiry the reconciler acts on is the one the worker's own
+    // silence produced, and the test asserts the stored beat never advanced.
+    // The side effect is counted: the executor appends one ledger entry per invocation.
+    // After recovery the ledger must hold exactly two entries under two distinct owners —
+    // proving the recovered attempt genuinely re-ran an executor rather than being a bare
+    // re-claim — while the terminal notification and the published artifact must each
+    // appear exactly once, even though the stale first worker afterwards returns a success
+    // of its own and tries to publish and finalize it.
     [IntegrationTest]
     public async Task WorkerLoss_NaturalHeartbeatLapse_ReExecutesOnceAndSuppressesTheStaleWorkersTerminal()
     {
-        await using var harness = await JobQueueRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await CreateHarnessAsync();
         var operationId = $"crash-recovery-{Guid.NewGuid():N}";
 
         var executor = new LedgerExecutor();
@@ -206,7 +179,7 @@ public sealed class JobClaimContentionRedisTests(RedisFixture redis)
 
         // The lost worker writes through a store whose link is severed for heartbeat traffic:
         // its pump runs and its beats are lost in flight, while every state-changing write it
-        // attempts still reaches Redis and must be fenced by production code on its merits.
+        // attempts still reaches the database and must be fenced by production code on its merits.
         var lostWorkerStore = new HeartbeatSeveringJobStore(harness.JobStore);
         var lostWorker = harness.CreateWorker(executor, terminals, lostWorkerStore);
         await lostWorker.StartAsync(CancellationToken.None);
@@ -295,7 +268,7 @@ public sealed class JobClaimContentionRedisTests(RedisFixture redis)
             executor.Invocations.Select(invocation => invocation.Owner).Should().OnlyHaveUniqueItems();
 
             (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
-            (await harness.Database.SortedSetScoreAsync(ClaimedSetKey, operationId)).Should().BeNull();
+            (await harness.IsInQueueAsync(operationId)).Should().BeFalse();
         }
         finally
         {
@@ -329,7 +302,7 @@ public sealed class JobClaimContentionRedisTests(RedisFixture redis)
             {
                 Kind = ExecutionJobKind.Geoprocessing,
                 TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "integration-test",
+                Backend = LocalBatchComputeBackend.BackendId,
                 WorkloadName = "job-claim-contention"
             }
         };
@@ -403,20 +376,16 @@ public sealed class JobClaimContentionRedisTests(RedisFixture redis)
             => _completions.GetOrAdd(attempt, _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
     }
 
-    /// <summary>
-    /// Models the loss of a worker the way the control plane actually experiences it: the
-    /// worker's heartbeats stop reaching the durable store, while the worker itself keeps
-    /// running.
-    /// </summary>
-    /// <remarks>
-    /// Only heartbeat-shaped writes are dropped — a write that leaves status, ownership,
-    /// attempt count, phase and artifact set unchanged and merely advances
-    /// <see cref="ExecutionJobRecord.LastHeartbeatAt"/>, which is exactly the shape of
-    /// <c>JobExecutionContext.RunHeartbeatPumpAsync</c>'s update. Every state-changing write the
-    /// lost worker attempts (its Running transition, its late artifact publication, its terminal
-    /// finalize) still reaches Redis, so the stale worker is fenced by production code rather
-    /// than muted by the test. Reads are never suppressed.
-    /// </remarks>
+    // Models the loss of a worker the way the control plane actually experiences it: the
+    // worker's heartbeats stop reaching the durable store, while the worker itself keeps
+    // running.
+    // Only heartbeat-shaped writes are dropped — a write that leaves status, ownership,
+    // attempt count, phase and artifact set unchanged and merely advances
+    // LastHeartbeatAt, which is exactly the shape of
+    // JobExecutionContext.RunHeartbeatPumpAsync's update. Every state-changing write the
+    // lost worker attempts (its Running transition, its late artifact publication, its terminal
+    // finalize) still reaches the database, so the stale worker is fenced by production code rather
+    // than muted by the test. Reads are never suppressed.
     private sealed class HeartbeatSeveringJobStore(IExecutionJobStore inner) : IExecutionJobStore
     {
         public Task<bool> TryCreateAsync(
@@ -452,8 +421,7 @@ public sealed class JobClaimContentionRedisTests(RedisFixture redis)
 
         public async Task<bool> TrySetIfLeaseOwnedAsync(
             ExecutionJobRecord job,
-            string leaseOperationId,
-            string leaseOwnerId,
+            OwnedJobLease lease,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default)
         {
@@ -463,7 +431,7 @@ public sealed class JobClaimContentionRedisTests(RedisFixture redis)
             }
 
             return await inner
-                .TrySetIfLeaseOwnedAsync(job, leaseOperationId, leaseOwnerId, ttl, cancellationToken)
+                .TrySetIfLeaseOwnedAsync(job, lease, ttl, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -515,113 +483,6 @@ public sealed class JobClaimContentionRedisTests(RedisFixture redis)
         }
     }
 
-    private sealed class JobQueueRedisHarness : IAsyncDisposable
-    {
-        private readonly ConnectionMultiplexer _multiplexer;
-        private readonly IServer _server;
-
-        private JobQueueRedisHarness(ConnectionMultiplexer multiplexer, IServer server)
-        {
-            _multiplexer = multiplexer;
-            _server = server;
-            Database = multiplexer.GetDatabase();
-            JobStore = new RedisExecutionJobStore(multiplexer, NullLogger<RedisExecutionJobStore>.Instance);
-            LogStore = new RedisExecutionLogStore(multiplexer, NullLogger<RedisExecutionLogStore>.Instance);
-            Queue = new RedisJobQueue(multiplexer, JobStore, NullLogger<RedisJobQueue>.Instance);
-        }
-
-        public IDatabase Database { get; }
-
-        public RedisExecutionJobStore JobStore { get; }
-
-        public RedisExecutionLogStore LogStore { get; }
-
-        public RedisJobQueue Queue { get; }
-
-        public static async Task<JobQueueRedisHarness> CreateAsync(string connectionString)
-        {
-            var multiplexer = await ConnectionMultiplexer.ConnectAsync(connectionString);
-            var endpoints = multiplexer.GetEndPoints();
-            if (endpoints.Length == 0)
-            {
-                throw new InvalidOperationException("Redis connection string did not provide any endpoints.");
-            }
-
-            var harness = new JobQueueRedisHarness(multiplexer, multiplexer.GetServer(endpoints[0]));
-            await harness.CleanupAsync();
-            return harness;
-        }
-
-        public JobExecutionService CreateWorker(
-            IJobExecutor executor,
-            IJobTerminalCallback terminalCallback,
-            IExecutionJobStore? jobStore = null)
-            => new(
-                Queue,
-                jobStore ?? JobStore,
-                [executor],
-                new ExecutionJobCancellationTokens(),
-                [terminalCallback],
-                LogStore,
-                NullLogger<JobExecutionService>.Instance);
-
-        public async Task RunReconciliationSweepAsync(CancellationToken cancellationToken)
-        {
-            var service = new JobReconciliationService(
-                JobStore,
-                Queue,
-                Queue,
-                new ExecutionJobCancellationTokens(),
-                Array.Empty<IJobTerminalCallback>(),
-                LogStore,
-                NullLogger<JobReconciliationService>.Instance);
-
-            var method = typeof(JobReconciliationService).GetMethod(
-                "SweepActiveJobsAsync",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
-                ?? throw new InvalidOperationException("SweepActiveJobsAsync was not found on JobReconciliationService.");
-
-            await (Task)method.Invoke(service, [cancellationToken])!;
-        }
-
-        public async Task<ExecutionJobRecord> WaitForJobAsync(
-            string operationId,
-            Func<ExecutionJobRecord, bool> predicate,
-            TimeSpan timeout)
-        {
-            var deadline = DateTimeOffset.UtcNow.Add(timeout);
-            ExecutionJobRecord? last = null;
-            while (DateTimeOffset.UtcNow < deadline)
-            {
-                last = await JobStore.GetAsync(operationId);
-                if (last != null && predicate(last))
-                {
-                    return last;
-                }
-
-                await Task.Delay(TimeSpan.FromMilliseconds(100));
-            }
-
-            throw new TimeoutException(
-                $"Timed out waiting for job '{operationId}'. Last observed: " +
-                (last == null ? "<deleted>" : $"{last.Status}/attempt {last.AttemptCount}/owner {last.ClaimedBy}"));
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await CleanupAsync();
-            await _multiplexer.DisposeAsync();
-        }
-
-        private async Task CleanupAsync()
-        {
-            var keys = _server.Keys(pattern: "controlplane:*").ToArray();
-            if (keys.Length == 0)
-            {
-                return;
-            }
-
-            await Database.KeyDeleteAsync(keys);
-        }
-    }
+    private Task<PostgresJobSubstrateHarness> CreateHarnessAsync()
+        => PostgresJobSubstrateHarness.CreateAsync(database, nameof(PostgresJobClaimContentionTests));
 }
