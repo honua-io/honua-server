@@ -741,6 +741,19 @@ selected PR runs and twice-daily full trunk runs. This changes no runner count,
 required check name, required aggregate dependency, workflow, or shard
 definition.
 
+### GeoServices geocode catalog fixture lifetime
+
+`GeoservicesCatalogGeocodeServerTests` shares one seeded catalog host with
+restricted features for the lifetime of the sequential test class, used by the
+read-only mount-prefix cases. Public-service collision graphs are built once per
+distinct configuration and kept apart from the unmodified catalog. Cases with
+other locator or authorization settings still create their own application
+within the case.
+All cases and assertions remain in the GeoServices Catalog and ImageServer
+Support shard on selected PR runs and twice-daily full trunk runs. This changes
+no runner count, required check name, required aggregate dependency, workflow,
+or shard definition.
+
 ## Trailing affected CI selection
 
 Trailing affected CI refreshes its completed-ancestor base when the selection job starts,
