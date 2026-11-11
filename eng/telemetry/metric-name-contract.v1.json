@@ -606,27 +606,6 @@
       "source": "src/Honua.Server/Features/Admin/TileOperations/TileOperationMetrics.cs"
     },
     {
-      "instrument": "honua.tile.cache.bytes_released",
-      "kind": "Counter",
-      "unit": null,
-      "series": ["honua_tile_cache_bytes_released_total"],
-      "source": "src/Honua.Server/Features/Admin/TileOperations/TileOperationMetrics.cs"
-    },
-    {
-      "instrument": "honua.tile.cache.deleted",
-      "kind": "Counter",
-      "unit": null,
-      "series": ["honua_tile_cache_deleted_total"],
-      "source": "src/Honua.Server/Features/Admin/TileOperations/TileOperationMetrics.cs"
-    },
-    {
-      "instrument": "honua.tile.cache.expired",
-      "kind": "Counter",
-      "unit": null,
-      "series": ["honua_tile_cache_expired_total"],
-      "source": "src/Honua.Server/Features/Admin/TileOperations/TileOperationMetrics.cs"
-    },
-    {
       "instrument": "honua.tile.cache.failed",
       "kind": "Counter",
       "unit": null,

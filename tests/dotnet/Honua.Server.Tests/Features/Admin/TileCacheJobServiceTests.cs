@@ -120,8 +120,7 @@ public sealed class TileCacheJobServiceTests
 
         var jobId = await service.SubmitAsync(
             SeedRequest(),
-            schemaName: null,
-            tenantScope: "public");
+            schemaName: null);
 
         jobId.Should().StartWith("tile-");
         var record = await jobStore.GetAsync(jobId);
@@ -129,7 +128,6 @@ public sealed class TileCacheJobServiceTests
         record!.Status.Should().Be(ExecutionJobStatus.Queued);
         record.Spec.Kind.Should().Be(ExecutionJobKind.TileCache);
         record.Spec.Backend.Should().Be(LocalBatchComputeBackend.BackendId);
-        record.Spec.Parameters[TileCacheJobParameterKeys.TenantScope].Should().Be("public");
 
         await jobQueue.Received(1).EnqueueAsync(jobId, Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>());
 

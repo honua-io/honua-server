@@ -126,69 +126,6 @@ public sealed class TileOperationsEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Accepted, HttpStatusCode.BadRequest);
     }
 
-    [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/tile-operations/evict")]
-    public async Task Evict_WhenEvictionDisabled_ReturnsOkAndReportsDisabled()
-    {
-        var response = await _client.PostAsJsonAsync("/api/v1/admin/tile-operations/evict", new { });
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-
-        // The default test profile has no Redis tile-key index and eviction off, so the sweep is a
-        // no-op that reports it is disabled with zero work done.
-        GetPropertyCaseInsensitive(json.RootElement, "enabled").GetBoolean().Should().BeFalse();
-        GetPropertyCaseInsensitive(json.RootElement, "scanned").GetInt32().Should().Be(0);
-        GetPropertyCaseInsensitive(json.RootElement, "evicted").GetInt32().Should().Be(0);
-        GetPropertyCaseInsensitive(json.RootElement, "message").GetString().Should().NotBeNullOrWhiteSpace();
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/tile-operations/cache/inventory")]
-    public async Task CacheInventory_WhenNoIndex_ReturnsEmptyInventory()
-    {
-        var response = await _client.GetAsync("/api/v1/admin/tile-operations/cache/inventory");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-
-        // The default test profile has no Redis tile-key index, so nothing is tracked and the
-        // inventory reports it is disabled with zero entries and no per-zoom coverage.
-        GetPropertyCaseInsensitive(json.RootElement, "enabled").GetBoolean().Should().BeFalse();
-        GetPropertyCaseInsensitive(json.RootElement, "entryCount").GetInt32().Should().Be(0);
-        GetPropertyCaseInsensitive(json.RootElement, "totalBytes").GetInt64().Should().Be(0);
-        GetPropertyCaseInsensitive(json.RootElement, "perZoom").ValueKind.Should().Be(JsonValueKind.Array);
-    }
-
-    [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
-    public async Task StartJob_WhenDeleteRequestWithoutTarget_Returns400()
-    {
-        var response = await _client.PostAsJsonAsync("/api/v1/admin/tile-operations/jobs", new
-        {
-            operation = "delete"
-        });
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
-
-    [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
-    public async Task StartJob_WhenExpireRequest_ReturnsAccepted()
-    {
-        var response = await _client.PostAsJsonAsync("/api/v1/admin/tile-operations/jobs", new
-        {
-            operation = "expire",
-            layerId = WebAppFixture.TestLayerId,
-            minZoom = 0,
-            maxZoom = 2
-        });
-
-        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        GetPropertyCaseInsensitive(json.RootElement, "jobId").GetString().Should().NotBeNullOrWhiteSpace();
-    }
-
     private async Task<string> StartInvalidateJobAsync()
     {
         var response = await _client.PostAsJsonAsync("/api/v1/admin/tile-operations/jobs", new

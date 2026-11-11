@@ -112,14 +112,6 @@ internal static class TileCacheExecutionSpecBuilder
         out TileOperationStartRequest request,
         out string? schemaName,
         out string error)
-        => TryParse(parameters, out request, out schemaName, out _, out error);
-
-    public static bool TryParse(
-        IReadOnlyDictionary<string, string> parameters,
-        out TileOperationStartRequest request,
-        out string? schemaName,
-        out string? tenantScope,
-        out string error)
     {
         ArgumentNullException.ThrowIfNull(parameters);
 

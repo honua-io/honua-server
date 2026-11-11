@@ -483,12 +483,6 @@
       "path": "/compliance/residency/evaluate"
     },
     {
-      "operationId": "evictTileCache",
-      "catalogOperationId": null,
-      "method": "POST",
-      "path": "/tile-operations/evict"
-    },
-    {
       "operationId": "exportComplianceReport",
       "catalogOperationId": null,
       "method": "GET",
@@ -1321,12 +1315,6 @@
       "catalogOperationId": "admin.tenant.get",
       "method": "GET",
       "path": "/tenants/{tenantId}"
-    },
-    {
-      "operationId": "getTileCacheInventory",
-      "catalogOperationId": null,
-      "method": "GET",
-      "path": "/tile-operations/cache/inventory"
     },
     {
       "operationId": "getTileOperationJob",

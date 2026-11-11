@@ -48,7 +48,6 @@ public sealed class TileCacheExecutionSpecBuilderTests
         var spec = TileCacheExecutionSpecBuilder.Build(
             request,
             "tenant-schema",
-            "tenant-default",
             options);
 
         spec.Kind.Should().Be(ExecutionJobKind.TileCache);
@@ -66,7 +65,6 @@ public sealed class TileCacheExecutionSpecBuilderTests
         spec.Parameters[TileCacheJobParameterKeys.TileMatrixSetId].Should().Be("WebMercatorQuad");
         spec.Parameters[TileCacheJobParameterKeys.MaxTiles].Should().Be("25000");
         spec.Parameters[TileCacheJobParameterKeys.SchemaName].Should().Be("tenant-schema");
-        spec.Parameters[TileCacheJobParameterKeys.TenantScope].Should().Be("tenant-default");
         spec.Parameters[TileCacheJobParameterKeys.Bbox].Should().Be("-10,-20,30,40");
         spec.Parameters["batch.job_definition_arn"].Should().Be("arn:jd:1");
         spec.Parameters["batch.job_queue_arn"].Should().Be("arn:jq:1");
@@ -88,19 +86,17 @@ public sealed class TileCacheExecutionSpecBuilderTests
         };
 
         var options = new TileCacheBatchOptions { Enabled = true, Backend = "local" };
-        var spec = TileCacheExecutionSpecBuilder.Build(request, "schema-x", "tenant-x", options);
+        var spec = TileCacheExecutionSpecBuilder.Build(request, "schema-x", options);
 
         var parsed = TileCacheExecutionSpecBuilder.TryParse(
             spec.Parameters,
             out var decoded,
             out var schemaName,
-            out var tenantScope,
             out var error);
 
         parsed.Should().BeTrue();
         error.Should().BeEmpty();
         schemaName.Should().Be("schema-x");
-        tenantScope.Should().Be("tenant-x");
         decoded.Operation.Should().Be("publish");
         decoded.ServiceId.Should().Be("svc-9");
         decoded.LayerId.Should().Be(7);
