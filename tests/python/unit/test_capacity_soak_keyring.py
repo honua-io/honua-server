@@ -87,7 +87,7 @@ def test_no_key_ring_material_is_committed():
 
 def test_the_production_requirement_is_not_relaxed_for_the_soak():
     source = KEY_RING_RESOLVER.read_text(encoding="utf-8")
-    assert "is required when the durable operation secret channel is enabled" in source
+    assert "is required outside Development and Test whenever a database is configured" in source
     assert "must reference a certificate with a private key" in source
     environment = _honua_service()["environment"]
     assert environment["ASPNETCORE_ENVIRONMENT"] == "Production"
