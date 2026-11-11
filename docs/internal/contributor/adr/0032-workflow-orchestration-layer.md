@@ -45,7 +45,7 @@ Workflow state is fully described by transport-neutral records in
 | Type | Role |
 |------|------|
 | `WorkflowDefinition` | Declarative DAG specification (steps, trigger, metadata) |
-| `WorkflowStepDefinition` | One step: plan, `DependsOn`, `InputBindings`, `RetryPolicy`, `FailurePolicy`, optional `TimeoutSeconds` |
+| `WorkflowStepDefinition` | One step: plan, `DependsOn`, `FailureDependsOn`, `InputBindings`, `RetryPolicy`, `FailurePolicy`, optional `TimeoutSeconds`, `Condition`, `ForEach` |
 | `StepInputBinding` | Artifact-to-input wiring (`SourceStepId`, `SourceArtifactSelector`, `TargetInputKey`) |
 | `StepRetryPolicy` | Exponential backoff (`MaxAttempts`, `InitialDelaySeconds`, `BackoffMultiplier`, `MaxDelaySeconds`) |
 | `WorkflowTrigger` | `Manual` or `Cron` (5-field expression + IANA time zone + `Enabled`) |
@@ -121,6 +121,42 @@ opaque-string-dict contract remains unchanged.
   a subsequent tick. Already-terminal child jobs are swallowed; transient
   failures are recorded as run warnings. The run stays in the active
   reconcile set until every step reaches a terminal state.
+
+### Package execution settings
+
+Package nodes and orchestration steps share typed retry, failure, timeout,
+condition and static fan-out settings. Compilation and persistence retain all
+settings, and package hashes include them. Packages without execution settings
+keep their existing hashes. Editor metadata does not configure execution.
+
+A Failure edge becomes an explicit dependency in `FailureDependsOn`. A handler
+runs only after every failure source is `Failed`. A terminal source with any
+other status skips the handler, including a source whose failure policy is `Skip`. Retries finish before failure routing.
+Failure edges carry control flow, not artifact bindings. Handling a failure does
+not clear the source failure or change the run's failure status. Ordinary
+dependencies keep their success, skip and cancellation behavior.
+
+Timeouts include queued time and apply per attempt. The reconciler requests
+cancellation at the first tick observing an active child past its deadline.
+The step remains active until the child's terminal state is observed, including
+after a restart. Cancellation failures are retried; a new attempt cannot start
+while the timed-out child remains active. Once cancellation completes, the
+normal retry and failure policies apply. A child that succeeds while cancellation
+is in flight retains its success and artifacts without retrying. Acknowledged
+cancellation is not requested again while waiting for a terminal child state.
+
+Existing scheduled publications retain their stored definitions. Disable the
+old publication and create a replacement Schedule publication with a new ID to
+adopt the corrected Failure-edge routing. In-flight runs keep their legacy routing;
+delete the old publication only after those runs finish. Graphs that mix Failure
+with Data or Control edges between the same pair of nodes must be edited before
+creating the replacement.
+
+Direct Job and ProcessEndpoint targets cannot honor these orchestration
+settings, so publication rejects them with a Schedule-target diagnostic.
+Validation also rejects invalid policy values, missing condition dependencies,
+nested iteration, aggregate iteration artifact bindings and cycles through
+failure edges.
 
 ### Scheduler
 
