@@ -26,6 +26,9 @@ import psycopg
 from testcontainers.postgres import PostgresContainer
 
 
+MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "src/Honua.Server/Migrations"
+
+
 class PostGISFixture:
     """
     Manages a PostGIS container for integration tests.
@@ -37,6 +40,10 @@ class PostGISFixture:
     # PostGIS image matching the C# test suite
     IMAGE = "postgis/postgis:18-3.6"
     DATABASE = "honua_test"
+    JOB_STORE_MIGRATIONS = (
+        "147_CreateJobSubstrate.sql",
+        "150_CreateOAuthClientsAndOperationProgress.sql",
+    )
     USERNAME = "test"
     PASSWORD = "test"
     EXTERNAL_DB_ENV = "HONUA_TEST_DB_URL"
@@ -302,6 +309,12 @@ class PostGISFixture:
         """Create a test data builder for the given schema."""
         return TestDataBuilder(self, schema)
 
+    def _create_job_stores(self, conn: psycopg.Connection) -> None:
+        """Create the GP job tables; the Python server skips migrations."""
+        for migration_name in self.JOB_STORE_MIGRATIONS:
+            migration_sql = (MIGRATIONS_DIR / migration_name).read_text()
+            conn.execute(migration_sql.replace("$HonuaSchema$", "honua"))
+
     def seed_test_catalog(
         self,
         service_name: str = "test_service",
@@ -314,21 +327,7 @@ class PostGISFixture:
             try:
                 conn.execute("CREATE SCHEMA IF NOT EXISTS honua;")
 
-                # Migrations are disabled for the Python server, but GP requests use
-                # the PostgreSQL job and operation-progress stores.
-                migration_dir = (
-                    Path(__file__).resolve().parents[3]
-                    / "src/Honua.Server/Migrations"
-                )
-                for migration_name in (
-                    "147_CreateJobSubstrate.sql",
-                    "150_CreateOAuthClientsAndOperationProgress.sql",
-                ):
-                    conn.execute(
-                        (migration_dir / migration_name)
-                        .read_text()
-                        .replace("$HonuaSchema$", "honua")
-                    )
+                self._create_job_stores(conn)
 
                 # The Python server intentionally skips DbUp migrations, but the metadata-v2
                 # store still uses the public journal as its schema-floor receipt. Record the
