@@ -745,6 +745,22 @@ All cases and assertions remain in the WFS Endpoints shard on selected PR runs
 and twice-daily full trunk runs. This changes no runner count, required check
 name, required aggregate dependency, workflow, or shard definition.
 
+### Cross-protocol permission matrix fixture lifetime
+
+CrossProtocolPermissionMatrixTests starts one application for the whole class,
+configured with the wildcard query grant, and shares it across the ten
+read-denial cases for FeatureServer, OData, OData batch, OGC API Features and
+OGC API Tiles. Each of those cases creates its own HttpClient with its own user
+and role headers, so no login state or cookies are shared between cases. Every
+write case, every ApplyEdits parity case (FeatureServer and gRPC-write), and the
+layer-scoped grant cases still start their own application, because their grants
+or edits differ per test. The shared application is disposed when the class
+finishes, or when a shard finishes its share of the class.
+All cases and assertions remain in the Security and Authorization 1 and Security
+and Authorization 7 shards on selected PR runs and twice-daily full trunk runs.
+This changes no runner count, required check name, required aggregate
+dependency, workflow, or shard definition.
+
 ## Trailing affected CI selection
 
 Trailing affected CI refreshes its completed-ancestor base when the selection job starts,
