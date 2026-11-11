@@ -31,11 +31,18 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
 
 [Collection("Database.GeoServicesCatalog")]
 [Protocol(TestProtocols.GeoservicesCatalog)]
-public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixture>
+public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixture>,
+    IClassFixture<GeoservicesCatalogEndpointTests.SoapRasterFixture>
 {
     private readonly WebAppFixture _fixture;
 
-    public GeoservicesCatalogEndpointTests(WebAppFixture fixture) => _fixture = fixture;
+    private readonly SoapRasterFixture _soapRasterFixture;
+
+    public GeoservicesCatalogEndpointTests(WebAppFixture fixture, SoapRasterFixture soapRasterFixture)
+    {
+        _fixture = fixture;
+        _soapRasterFixture = soapRasterFixture;
+    }
 
     [IntegrationTheory]
     [InlineData("GET")]
@@ -340,73 +347,61 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
     [Endpoint("POST /services/{serviceName}/ImageServer")]
     public async Task PostSoapCatalog_GetServiceDescriptions_AdvertisesImageServer()
     {
-        var rasterStore = CreateSoapRasterStore();
+        var fixture = await _soapRasterFixture.GetAsync();
+        const string soapRequest = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+              <soap:Body>
+                <GetServiceDescriptions xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
+              </soap:Body>
+            </soap:Envelope>
+            """;
+        using var content = new StringContent(soapRequest, Encoding.UTF8, "text/xml");
 
-        var fixture = new WebAppFixture()
-            .ConfigureServices(services => services.AddSingleton(rasterStore));
+        var response = await fixture.Client.PostAsync("/services", content);
 
-        await fixture.InitializeAsync();
-        try
-        {
-            const string soapRequest = """
-                <?xml version="1.0" encoding="utf-8"?>
-                <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-                  <soap:Body>
-                    <GetServiceDescriptions xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
-                  </soap:Body>
-                </soap:Envelope>
-                """;
-            using var content = new StringContent(soapRequest, Encoding.UTF8, "text/xml");
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
 
-            var response = await fixture.Client.PostAsync("/services", content);
+        var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
+        payload.Descendants()
+            .Should().ContainSingle(element => element.Name.LocalName == "ServiceDescriptions");
+        var description = payload.Descendants()
+            .Where(element => element.Name.LocalName == "ServiceDescription")
+            .First(element => element.Elements().Any(child =>
+                child.Name.LocalName == "Name" && child.Value == "test"));
+        description.Elements()
+            .Single(element => element.Name.LocalName == "Name")
+            .Value.Should().Be("test");
+        description.Elements()
+            .Single(element => element.Name.LocalName == "Type")
+            .Value.Should().Be("ImageServer");
+        description.Elements()
+            .Single(element => element.Name.LocalName == "Url")
+            .Value.Should().EndWith("/services/test/ImageServer");
+        description.Attribute(XName.Get("type", "http://www.w3.org/2001/XMLSchema-instance"))?
+            .Value.Should().Be("tns:ServiceDescription");
 
-            response.Be200Ok();
-            response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
-
-            var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
-            payload.Descendants()
-                .Should().ContainSingle(element => element.Name.LocalName == "ServiceDescriptions");
-            var description = payload.Descendants()
-                .Where(element => element.Name.LocalName == "ServiceDescription")
-                .First(element => element.Elements().Any(child =>
-                    child.Name.LocalName == "Name" && child.Value == "test"));
-            description.Elements()
-                .Single(element => element.Name.LocalName == "Name")
-                .Value.Should().Be("test");
-            description.Elements()
-                .Single(element => element.Name.LocalName == "Type")
-                .Value.Should().Be("ImageServer");
-            description.Elements()
-                .Single(element => element.Name.LocalName == "Url")
-                .Value.Should().EndWith("/services/test/ImageServer");
-            description.Attribute(XName.Get("type", "http://www.w3.org/2001/XMLSchema-instance"))?
-                .Value.Should().Be("tns:ServiceDescription");
-
-            var advertisedUrl = description.Elements()
-                .Single(element => element.Name.LocalName == "Url")
-                .Value;
-            const string serviceRequest = """
-                <?xml version="1.0" encoding="utf-8"?>
-                <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-                  <soap:Body>
-                    <GetVersion xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
-                  </soap:Body>
-                </soap:Envelope>
-                """;
-            using var serviceContent = new StringContent(serviceRequest, Encoding.UTF8, "text/xml");
-            var serviceResponse = await fixture.Client.PostAsync(new Uri(advertisedUrl).PathAndQuery, serviceContent);
-            serviceResponse.Be200Ok();
-            var servicePayload = XDocument.Parse(await serviceResponse.Content.ReadAsStringAsync());
-            servicePayload.Descendants()
-                .Single(element => element.Name.LocalName == "GetVersionResponse")
-                .Descendants()
-                .Single(element => element.Name.LocalName == "Result")
-                .Value.Should().Be("10.8");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        var advertisedUrl = description.Elements()
+            .Single(element => element.Name.LocalName == "Url")
+            .Value;
+        const string serviceRequest = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+              <soap:Body>
+                <GetVersion xmlns="http://www.esri.com/schemas/ArcGIS/10.8" />
+              </soap:Body>
+            </soap:Envelope>
+            """;
+        using var serviceContent = new StringContent(serviceRequest, Encoding.UTF8, "text/xml");
+        var serviceResponse = await fixture.Client.PostAsync(new Uri(advertisedUrl).PathAndQuery, serviceContent);
+        serviceResponse.Be200Ok();
+        var servicePayload = XDocument.Parse(await serviceResponse.Content.ReadAsStringAsync());
+        servicePayload.Descendants()
+            .Single(element => element.Name.LocalName == "GetVersionResponse")
+            .Descendants()
+            .Single(element => element.Name.LocalName == "Result")
+            .Value.Should().Be("10.8");
     }
 
     [IntegrationTest]
@@ -539,30 +534,21 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_GeoServicesPro37LegacyNamespace_EchoesNegotiatedNamespace()
     {
-        var rasterStore = CreateSoapRasterStore();
-        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
-        await fixture.InitializeAsync();
-        try
-        {
-            const string operation =
-                "<GetVersion xmlns=\"http://www.esri.com/schemas/ArcGIS/9.0\" />";
-            using var response = await PostSoapOperationAsync(
-                fixture.Client,
-                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
-                operation);
+        var fixture = await _soapRasterFixture.GetAsync();
+        const string operation =
+            "<GetVersion xmlns=\"http://www.esri.com/schemas/ArcGIS/9.0\" />";
+        using var response = await PostSoapOperationAsync(
+            fixture.Client,
+            $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+            operation);
 
-            response.Be200Ok();
-            var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
-            XNamespace legacyGeoServices = "http://www.esri.com/schemas/ArcGIS/9.0";
-            payload.Descendants().Should().ContainSingle(
-                element => element.Name == legacyGeoServices + "GetVersionResponse");
-            payload.Descendants().Should().ContainSingle(
-                element => element.Name == XNamespace.None + "Result" && element.Value == "10.8");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.Be200Ok();
+        var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
+        XNamespace legacyGeoServices = "http://www.esri.com/schemas/ArcGIS/9.0";
+        payload.Descendants().Should().ContainSingle(
+            element => element.Name == legacyGeoServices + "GetVersionResponse");
+        payload.Descendants().Should().ContainSingle(
+            element => element.Name == XNamespace.None + "Result" && element.Value == "10.8");
     }
 
     [IntegrationTest]
@@ -1176,116 +1162,107 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_MetadataFieldsAndVersion_AreGeoServicesShaped()
     {
-        var rasterStore = CreateSoapRasterStore();
-        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
-        await fixture.InitializeAsync();
-        try
+        var fixture = await _soapRasterFixture.GetAsync();
+        using var metadata = await PostSoapAsync(
+            fixture.Client,
+            $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+            "GetServiceInfo");
+        metadata.Be200Ok();
+        var metadataXml = XDocument.Parse(await metadata.Content.ReadAsStringAsync());
+        var result = metadataXml.Descendants().Single(element => element.Name.LocalName == "Result");
+        XNamespace arcGis = "http://www.esri.com/schemas/ArcGIS/10.8";
+        result.Name.Should().Be(XNamespace.None + "Result");
+        metadataXml.Descendants().Should().ContainSingle(
+            element => element.Name == arcGis + "GetServiceInfoResponse");
+        result.Descendants().Should().OnlyContain(element => element.Name.Namespace == XNamespace.None);
+        result.Attribute(XName.Get("type", "http://www.w3.org/2001/XMLSchema-instance"))?
+            .Value.Should().Be("tns:ImageServiceInfo");
+        result.Elements().Single(element => element.Name.LocalName == "Name")
+            .Value.Should().Be(WebAppFixture.TestServiceId);
+        result.Elements().Single(element => element.Name.LocalName == "BandCount")
+            .Value.Should().Be("3");
+        foreach (var (name, expected) in new[]
+                 {
+                     ("MinValues", 0d),
+                     ("MaxValues", 200d),
+                     ("MeanValues", 100d),
+                     ("StdvValues", 25d),
+                 })
         {
-            using var metadata = await PostSoapAsync(
-                fixture.Client,
-                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
-                "GetServiceInfo");
-            metadata.Be200Ok();
-            var metadataXml = XDocument.Parse(await metadata.Content.ReadAsStringAsync());
-            var result = metadataXml.Descendants().Single(element => element.Name.LocalName == "Result");
-            XNamespace arcGis = "http://www.esri.com/schemas/ArcGIS/10.8";
-            result.Name.Should().Be(XNamespace.None + "Result");
-            metadataXml.Descendants().Should().ContainSingle(
-                element => element.Name == arcGis + "GetServiceInfoResponse");
-            result.Descendants().Should().OnlyContain(element => element.Name.Namespace == XNamespace.None);
-            result.Attribute(XName.Get("type", "http://www.w3.org/2001/XMLSchema-instance"))?
-                .Value.Should().Be("tns:ImageServiceInfo");
-            result.Elements().Single(element => element.Name.LocalName == "Name")
-                .Value.Should().Be(WebAppFixture.TestServiceId);
-            result.Elements().Single(element => element.Name.LocalName == "BandCount")
-                .Value.Should().Be("3");
-            foreach (var (name, expected) in new[]
-                     {
-                         ("MinValues", 0d),
-                         ("MaxValues", 200d),
-                         ("MeanValues", 100d),
-                         ("StdvValues", 25d),
-                     })
-            {
-                var values = result.Elements().Single(element => element.Name.LocalName == name);
-                values.Attribute(XName.Get("type", "http://www.w3.org/2001/XMLSchema-instance"))?
-                    .Value.Should().Be("tns:ArrayOfDouble");
-                values.Elements().Should().HaveCount(3)
-                    .And.OnlyContain(element =>
-                        element.Name.LocalName == "Double" && element.Value == expected.ToString(CultureInfo.InvariantCulture));
-            }
-            result.Elements().Single(element => element.Name.LocalName == "AllowedCompressions")
-                .Value.Should().Be("None");
-            result.Elements().Single(element => element.Name.LocalName == "AllowedMosaicMethods")
-                .Value.Should().Be("None,NorthWest,LockRaster,ByAttribute,Nadir,Seamline");
-            result.Elements().Single(element => element.Name.LocalName == "DefaultMosaicMethod")
-                .Value.Should().Be("esriMosaicAttribute");
-            result.Elements().Single(element => element.Name.LocalName == "SupportBSQ")
-                .Value.Should().Be("true");
-            result.Descendants().Single(element => element.Name.LocalName == "WKID")
-                .Value.Should().Be("4326");
-
-            using var fields = await PostSoapAsync(
-                fixture.Client,
-                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
-                "GetFields");
-            fields.Be200Ok();
-            var fieldsXml = XDocument.Parse(await fields.Content.ReadAsStringAsync());
-            fieldsXml.Descendants().Where(element => element.Name.LocalName == "Name")
-                .Select(element => element.Value)
-                .Should().Contain(["OBJECTID", "Shape", "Name"]);
-
-            using var version = await PostSoapAsync(
-                fixture.Client,
-                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
-                "GetVersion");
-            version.Be200Ok();
-            var versionXml = XDocument.Parse(await version.Content.ReadAsStringAsync());
-            versionXml.Descendants().Single(element => element.Name.LocalName == "Result")
-                .Value.Should().Be("10.8");
-
-            using var fixedScale = await PostSoapAsync(
-                fixture.Client,
-                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
-                "IsFixedScaleImage");
-            fixedScale.Be200Ok();
-            var fixedScaleXml = XDocument.Parse(await fixedScale.Content.ReadAsStringAsync());
-            fixedScaleXml.Descendants()
-                .Should().ContainSingle(element => element.Name.LocalName == "IsFixedScaleImageResponse");
-            fixedScaleXml.Descendants()
-                .Should().NotContain(element => element.Name.LocalName == "IsFixedScaleMapResponse");
-
-            foreach (var operation in new[]
-                     {
-                         "GetKeyProperties", "GetKeyPropertiesX", "GetMetadata", "GetMultidimensionalInfo"
-                     })
-            {
-                using var companion = await PostSoapAsync(
-                    fixture.Client,
-                    $"/services/{WebAppFixture.TestServiceId}/ImageServer",
-                    operation);
-                companion.Be200Ok();
-                var companionXml = XDocument.Parse(await companion.Content.ReadAsStringAsync());
-                companionXml.Descendants().Should().Contain(element => element.Name.LocalName == "Result");
-            }
-
-            using var extensionDefinition = await PostSoapOperationAsync(
-                fixture.Client,
-                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
-                """
-                <ExecuteAISRequest xmlns="http://www.esri.com/schemas/ArcGIS/10.8">
-                  <AISRequest><Name>GetProperty</Name><Arguments><String>ClientXADef</String></Arguments></AISRequest>
-                </ExecuteAISRequest>
-                """);
-            extensionDefinition.Be200Ok();
-            var extensionXml = XDocument.Parse(await extensionDefinition.Content.ReadAsStringAsync());
-            extensionXml.Descendants().Single(element => element.Name.LocalName == "Result")
-                .Value.Should().Contain("<XADef><ImageServer>");
+            var values = result.Elements().Single(element => element.Name.LocalName == name);
+            values.Attribute(XName.Get("type", "http://www.w3.org/2001/XMLSchema-instance"))?
+                .Value.Should().Be("tns:ArrayOfDouble");
+            values.Elements().Should().HaveCount(3)
+                .And.OnlyContain(element =>
+                    element.Name.LocalName == "Double" && element.Value == expected.ToString(CultureInfo.InvariantCulture));
         }
-        finally
+        result.Elements().Single(element => element.Name.LocalName == "AllowedCompressions")
+            .Value.Should().Be("None");
+        result.Elements().Single(element => element.Name.LocalName == "AllowedMosaicMethods")
+            .Value.Should().Be("None,NorthWest,LockRaster,ByAttribute,Nadir,Seamline");
+        result.Elements().Single(element => element.Name.LocalName == "DefaultMosaicMethod")
+            .Value.Should().Be("esriMosaicAttribute");
+        result.Elements().Single(element => element.Name.LocalName == "SupportBSQ")
+            .Value.Should().Be("true");
+        result.Descendants().Single(element => element.Name.LocalName == "WKID")
+            .Value.Should().Be("4326");
+
+        using var fields = await PostSoapAsync(
+            fixture.Client,
+            $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+            "GetFields");
+        fields.Be200Ok();
+        var fieldsXml = XDocument.Parse(await fields.Content.ReadAsStringAsync());
+        fieldsXml.Descendants().Where(element => element.Name.LocalName == "Name")
+            .Select(element => element.Value)
+            .Should().Contain(["OBJECTID", "Shape", "Name"]);
+
+        using var version = await PostSoapAsync(
+            fixture.Client,
+            $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+            "GetVersion");
+        version.Be200Ok();
+        var versionXml = XDocument.Parse(await version.Content.ReadAsStringAsync());
+        versionXml.Descendants().Single(element => element.Name.LocalName == "Result")
+            .Value.Should().Be("10.8");
+
+        using var fixedScale = await PostSoapAsync(
+            fixture.Client,
+            $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+            "IsFixedScaleImage");
+        fixedScale.Be200Ok();
+        var fixedScaleXml = XDocument.Parse(await fixedScale.Content.ReadAsStringAsync());
+        fixedScaleXml.Descendants()
+            .Should().ContainSingle(element => element.Name.LocalName == "IsFixedScaleImageResponse");
+        fixedScaleXml.Descendants()
+            .Should().NotContain(element => element.Name.LocalName == "IsFixedScaleMapResponse");
+
+        foreach (var operation in new[]
+                 {
+                     "GetKeyProperties", "GetKeyPropertiesX", "GetMetadata", "GetMultidimensionalInfo"
+                 })
         {
-            await fixture.DisposeAsync();
+            using var companion = await PostSoapAsync(
+                fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                operation);
+            companion.Be200Ok();
+            var companionXml = XDocument.Parse(await companion.Content.ReadAsStringAsync());
+            companionXml.Descendants().Should().Contain(element => element.Name.LocalName == "Result");
         }
+
+        using var extensionDefinition = await PostSoapOperationAsync(
+            fixture.Client,
+            $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+            """
+            <ExecuteAISRequest xmlns="http://www.esri.com/schemas/ArcGIS/10.8">
+              <AISRequest><Name>GetProperty</Name><Arguments><String>ClientXADef</String></Arguments></AISRequest>
+            </ExecuteAISRequest>
+            """);
+        extensionDefinition.Be200Ok();
+        var extensionXml = XDocument.Parse(await extensionDefinition.Content.ReadAsStringAsync());
+        extensionXml.Descendants().Single(element => element.Name.LocalName == "Result")
+            .Value.Should().Contain("<XADef><ImageServer>");
     }
 
     [IntegrationTest]
