@@ -195,6 +195,19 @@ Unpartitioned callers default to
 an independent full-solution format job; `CI Gate` requires it when build inputs
 are selected, without making test consumers wait for formatting.
 
+**Fast-test selection.** The four existing fast-test check names remain present.
+Before setup or compilation, each uses `compute-fast-test-selection.py` to read
+`compute-affected-projects.sh` at the PR merge checkout (`HEAD^1..HEAD`) and
+intersect its reverse-dependency closure with the group's existing test roots.
+Empty closures skip all four builds and tests only after positive governed-docs proof;
+a nonempty managed closure retains architecture and Server governance checks as well as every affected
+group. Unknown projects, invalid roots, missing history, selector errors and
+non-PR events retain every group. Existing docs/generated-only classification
+and exact-head review admission still apply. A skipped test body completes its
+matrix row successfully, preserving the required aggregate's needs contract.
+Drafts instantiate only the Format matrix row; ready PRs retain all analyzer
+partitions and Format.
+
 **Governance and runtime proofs.** The independent PR Fast job retains the
 complete `Category=Architecture` governance set in `Honua.Server.Tests`, the real
 store-gated host and Testcontainers PostgreSQL, source architecture and the full
@@ -448,6 +461,11 @@ git. `validate-single-merge-authority.sh` cannot see runtime API calls, so this
 allowlist is the control, and `scripts/ci/claude-review-lane.test.js` asserts it.
 The workflow's own `GITHUB_TOKEN` stays read-only.
 
+Both reviewer invocations admit only `dependabot[bot]`, `github-actions[bot]`,
+and `honua-io-bot` as automation actors. Bot-triggered runs still pass the same
+trusted default-branch and exact-head resolver; the fallback uses the same actor
+allowlist as the primary review.
+
 **It only ever posts comments — never a review verdict.** A
 `CHANGES_REQUESTED` is identity-scoped and is cleared only by a *newer positive
 from the same identity*; an optional reviewer that later stops running (secret
@@ -611,6 +629,17 @@ fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
 
+### Router validator execution
+
+`validate-ci-router.sh` runs independent fixtures in a bounded pool (four workers by default; `HONUA_ROUTER_WORKERS=1..8`), records each fixture duration and collects every exit code before returning failure. A failed or missing result cannot produce success. The routing assertions retain their exact cases and shard ownership checks. Cancellation sends TERM to owned worker groups, escalates to KILL after a bounded grace period, and reaps workers before deleting results.
+
+`--changed-only` is a local feedback mode: stdin routing cases skip only when their complete input closure (router, shard map, jq wrapper and validator infrastructure) is unchanged against the merge base with `origin/trunk`. Staged, unstaged, renamed and untracked inputs count. Unknown base or an ambiguous path runs everything; undeclared fixture input closures also run. CI and GitHub Actions ignore the optimization and always run every fixture.
+
+The PR managed producer compiles `Honua.Server.Tests` in a parallel, review-admitted job. The main producer excludes that project and the full-coverage architecture collector, whose imported references pull Server.Tests into its graph. The independent architecture path and analyzer jobs retain collector compilation and verification. The shared import-aware project parser rejects any other reverse dependency on Server.Tests. Each producer publishes only the assemblies consumed by selected shards. The final required context directly requires the parallel producer on both pull-request and manual events; the PR-only affected-shards aggregate also checks it for an empty shard matrix. Only the affected-shard matrix cancels sibling shards after a failure; fast-test and analyzer matrices retain every result.
+Fast-test selection retains every group for linked cross-project inputs and for empty closures unless the governed docs classifier positively proves the diff safe.
+
+Review revalidation shares `.github/scripts/revalidate-exact-head-review.cjs` across producer, fast-test and aggregate jobs. The aggregate checks out code only for enforced attempt-2 review validation. Generated-output classification shares `scripts/ci/classify-generated-output.sh`; executable skip policy still comes from the immutable PR base, and uncertainty preserves all checks.
+
 Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. Missing envelopes from ordinary producers remain errors.
 
 ### Authorization shard coverage
@@ -643,6 +672,24 @@ projects: when selected, each restores and builds by its own project path before
 managed outputs are published. Restore and build failures remain gating, with
 the same warnings, analyzers and graph-build settings as the solution build.
 Unknown projects outside the solution still fail planning; test selection is unchanged.
+
+### Stage 0 evidence and cross-phase reuse
+
+The local build-host transport evicts idle checkout outputs before queued
+outputs under disk pressure. The existing free-space thresholds and active-run
+protections remain; queued outputs may still be evicted as a fallback.
+
+[Stage 0 reuse assessment](stage-zero-reuse.md) records live queue/build timings,
+the five-run cache observation, and the protected issuer requirements for any
+future gate skip. Local receipts do not currently skip hosted tests. Compiled
+output caching remains opt-in; no cross-phase promotion is authorized by the
+observational sample.
+
+Each affected shard selects the SDK and workflow-attempt identity exported by its own managed producer. A shard spanning both producers rebuilds its projects locally instead of combining independently resolved SDK outputs. Fast-test selection reads imported build documents through the shared project parser; unresolved imports or linked inputs retain all four groups.
+
+### Test analyzer compilation roots
+
+The ready-PR format matrix retains `PR Gate / Analyzers (tests)` and adds `PR Gate / Analyzers (server tests)`. The latter compiles Honua.Server.Tests; the former compiles every other selected solution root. The server root is also retained when an affected root imports or transitively references it. Forward dependencies still compile. The `server-tests` and `other-tests` diagnostic partitions assign Server.Tests exclusively to the server job and all other test diagnostics to the other job, including when the collector imports Server.Tests. Warnings remain errors. A partition with no roots skips restore and build explicitly. The required format matrix waits for both jobs; drafts retain Format only. This separates the measured 14.9-minute test-analyzer path; the new timing must be measured on a hosted gate run.
 
 ### Optional PR workflow input boundaries
 

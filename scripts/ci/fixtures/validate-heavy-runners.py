@@ -52,7 +52,7 @@ class HeavyRunnerContractTests(unittest.TestCase):
         self.assertEqual(set(self.jobs), HEAVY_JOBS | HOSTED_JOBS | PINNED_JOBS)
 
 
-PR_GATE_SELECTED_JOBS = {"format", "fast-tests", "pr-gate"}
+PR_GATE_SELECTED_JOBS = {"format", "fast-tests", "pr-gate", "server-test-producer"}
 SELECTED_RUNNER = "${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}"
 SELECT_SCRIPT = ROOT / "scripts/ci/select-gate-runner.sh"
 AWS_STUB = """#!/usr/bin/env bash
