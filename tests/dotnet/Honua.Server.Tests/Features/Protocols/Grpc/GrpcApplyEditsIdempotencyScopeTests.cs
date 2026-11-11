@@ -27,7 +27,7 @@ public sealed class GrpcApplyEditsIdempotencyScopeTests
         var editor = new ClaimsPrincipal(new ClaimsIdentity(
             [new Claim("sub", "editor"), new Claim("iss", "https://issuer-a.example")], "Bearer"));
 
-        GrpcApplyEditsReceipts.CreateScope(Request(editor, tenantId), "svc", 3, "client-key")
+        GrpcApplyEditsReceipts.CreateScope(Request(editor, tenantId), new GrpcApplyEditsReceipts.ScopeKey("svc", 3, "client-key"))
             .Should().Be(expectedScope);
     }
 
@@ -36,7 +36,7 @@ public sealed class GrpcApplyEditsIdempotencyScopeTests
     {
         var anonymous = new ClaimsPrincipal(new ClaimsIdentity());
 
-        GrpcApplyEditsReceipts.CreateScope(Request(anonymous, "tenant-a"), "svc", 3, "client-key")
+        GrpcApplyEditsReceipts.CreateScope(Request(anonymous, "tenant-a"), new GrpcApplyEditsReceipts.ScopeKey("svc", 3, "client-key"))
             .Should().Be("f85b3f4d706b64671c45adbae398014ad103501e5466ded0358a95adeb302e1c");
     }
 

@@ -38,11 +38,9 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
-/// <summary>
-/// Keyed gRPC ApplyEdits retries: a stored result is replayed only to the same
-/// issuer-qualified actor in the same effective tenant, and a keyed edit commits at most
-/// once across nodes because the receipt committed with the edit decides the winner.
-/// </summary>
+// Keyed gRPC ApplyEdits retries: a stored result is replayed only to the same
+// issuer-qualified actor in the same effective tenant, and a keyed edit commits at most
+// once across nodes because the receipt committed with the edit decides the winner.
 [Protocol(TestProtocols.Grpc)]
 [Operation(Operations.ApplyEdits)]
 public sealed class GrpcApplyEditsIdempotencyTests
@@ -464,7 +462,7 @@ public sealed class GrpcApplyEditsIdempotencyTests
         return request;
     }
 
-    /// <summary>One server node: a real <see cref="HonuaFeatureService"/> with its own in-process state.</summary>
+    // One server node: a real HonuaFeatureService with its own in-process state.
     internal sealed class ServiceHarness
     {
         private static long _nextObjectId = 1000;

@@ -323,7 +323,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             // A stored result is replayed only within the same service, layer, effective
             // tenant and scheme/issuer-qualified actor.
             var scope = GrpcApplyEditsReceipts.CreateScope(
-                context.GetHttpContext(), request.ServiceId, request.LayerId, idempotencyKey)
+                context.GetHttpContext(),
+                new GrpcApplyEditsReceipts.ScopeKey(request.ServiceId, request.LayerId, idempotencyKey))
                 ?? throw new RpcException(new Status(
                     StatusCode.FailedPrecondition,
                     IdempotencyCaller.UnbindableCallerMessage));
@@ -431,37 +432,15 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             throw;
         }
 
-        // Another node's receipt already owned this scope, so this attempt was rolled back.
-        // Replay the receipt that committed, and publish no change events for this one.
-        if (keyedApplication?.SupersededByExistingReceipt == true)
-        {
-            return await ReplayCommittedReceiptAsync(keyedEdit!).ConfigureAwait(false);
-        }
-
-        // A concurrent duplicate on another node can fail this attempt on the rows themselves
-        // before its receipt insert is reached. If that duplicate committed, replay its receipt.
-        if (keyedApplication?.RolledBackByConcurrentWrite == true
-            && (await keyedEdit!.ReadCommittedAsync(context.CancellationToken).ConfigureAwait(false)).Response is { } winner)
-        {
-            return winner;
-        }
-
         var response = GrpcConversionHelpers.ToProtoApplyEditsResponse(result);
 
-        // Record the result on this node before any later step can fail, so a retry here
-        // replays it. An unknown commit is not a clean failure: keep the key from running
-        // again. A database receipt from the same transaction is stronger and is replayed.
-        if (keyedEdit is not null)
-        {
-            if (!IsAmbiguousCommit(result))
-            {
-                keyedEdit.Complete(response);
-            }
-            else if (await ReadCommittedOrRetainAmbiguousAsync(keyedEdit, context.CancellationToken)
+        // A receipt committed under this key replaces this attempt's result, and no change
+        // events are published for an attempt that did not commit.
+        if (keyedEdit is not null
+            && await RecordKeyedOutcomeAsync(keyedEdit, keyedApplication!.Value, response, context.CancellationToken)
                 .ConfigureAwait(false) is { } committed)
-            {
-                return committed;
-            }
+        {
+            return committed;
         }
 
         await PublishFeatureChangeEventsAsync(
@@ -550,6 +529,54 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             return singleLine.Length <= maxLength ? singleLine : singleLine[..maxLength];
         }
     }
+
+    // Records this attempt on this node before any later step can fail, so a retry here
+    // replays it, and returns the committed receipt to replay instead when one owns the key.
+    private static async Task<Proto.ApplyEditsResponse?> RecordKeyedOutcomeAsync(
+        GrpcApplyEditsReceipts.Entry keyedEdit,
+        FeatureEditApplication application,
+        Proto.ApplyEditsResponse response,
+        CancellationToken cancellationToken)
+    {
+        // Another node's receipt already owned this scope, so this attempt was rolled back.
+        if (application.SupersededByExistingReceipt)
+        {
+            return await ReplayCommittedReceiptAsync(keyedEdit).ConfigureAwait(false);
+        }
+
+        // An unknown commit is not a clean failure: keep the key from running again unless
+        // the receipt from that same transaction is readable.
+        if (IsAmbiguousCommit(application.Result))
+        {
+            return await ReadCommittedOrRetainAmbiguousAsync(keyedEdit, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (application.ReceiptDurable || !CommittedNothing(application.Result))
+        {
+            keyedEdit.Complete(response);
+            return null;
+        }
+
+        // This attempt changed nothing and left no receipt. A same-key duplicate on another
+        // node can fail it on the rows themselves, by a conflict, a deadlock or a stale
+        // precondition, and commit first. If it did, its receipt is the outcome of this key.
+        var committed = await keyedEdit.ReadCommittedAsync(cancellationToken).ConfigureAwait(false);
+        if (committed.OutcomeUnknown)
+        {
+            keyedEdit.RetainAmbiguous();
+            throw OutcomeMayHaveCommitted();
+        }
+
+        if (committed.Response is null)
+        {
+            keyedEdit.CompleteUncommitted(response);
+        }
+
+        return committed.Response;
+    }
+
+    private static bool CommittedNothing(FeatureEditResult result)
+        => result.WasRolledBack || result.CreatedCount + result.UpdatedCount + result.DeletedCount == 0;
 
     private static async Task<Proto.ApplyEditsResponse> ReplayCommittedReceiptAsync(GrpcApplyEditsReceipts.Entry keyedEdit)
         => await ReadCommittedOrRetainAmbiguousAsync(keyedEdit, CancellationToken.None).ConfigureAwait(false)

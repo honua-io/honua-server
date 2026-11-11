@@ -44,10 +44,6 @@ public readonly record struct FeatureEditApplication
     /// rolled back. The caller must replay the stored receipt instead of <see cref="Result"/>.
     /// </summary>
     public bool SupersededByExistingReceipt { get; init; }
-
-    // The edit rolled back after a serialization failure, deadlock or unique conflict, so a
-    // concurrent writer of the same scope may have committed a receipt the caller should replay.
-    public bool RolledBackByConcurrentWrite { get; init; }
 }
 
 /// <summary>

@@ -5,6 +5,7 @@ using System.Data;
 using System.Data.Common;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Db.Postgres.Features.FeatureStore;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
@@ -14,15 +15,14 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
+using NSubstitute;
 using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
-/// <summary>
-/// Two server nodes with no shared memory over one PostgreSQL database: the receipt row
-/// written in the edit transaction decides which keyed applyEdits commits, and the other
-/// node replays that receipt.
-/// </summary>
+// Two server nodes with no shared memory over one PostgreSQL database: the receipt row
+// written in the edit transaction decides which keyed applyEdits commits, and the other
+// node replays that receipt.
 [Collection("Database.CoreFeatureStore")]
 [Protocol(TestProtocols.Grpc)]
 [Operation(Operations.ApplyEdits)]
@@ -99,14 +99,87 @@ public sealed class GrpcApplyEditsCrossNodeIdempotencyTests(DatabaseFixtureAdapt
         (await FeatureCountAsync()).Should().Be(1, "the keyed edit must commit exactly once across nodes");
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task ApplyEdits_SameKeyFailingItsPreconditionAfterTheOtherNodeCommitted_ReplaysTheCommittedReceipt()
+    {
+        var target = await SeedFeatureAsync();
+        var user = GrpcApplyEditsIdempotencyTests.Subject("editor", issuer: "https://issuer-a.example");
+        var staleTokenRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstCommitted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var nodeA = Node();
+        var nodeB = MaskedReadNode(async () =>
+        {
+            staleTokenRead.TrySetResult();
+            await firstCommitted.Task.ConfigureAwait(false);
+        });
+
+        // Node B reads the row's state token, node A commits the same key, and B's update then
+        // fails its precondition and rolls back before it reaches its receipt insert.
+        var racing = nodeB.Service.ApplyEdits(UpdateRequest([target]), nodeB.Context(user, tenantId: null));
+        await staleTokenRead.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        var original = await nodeA.Service.ApplyEdits(UpdateRequest([target]), nodeA.Context(user, tenantId: null));
+        firstCommitted.SetResult();
+        var replayed = await racing.WaitAsync(TimeSpan.FromSeconds(30));
+        var retry = await nodeB.Service.ApplyEdits(UpdateRequest([target]), nodeB.Context(user, tenantId: null));
+
+        original.UpdateResults.Should().ContainSingle().Which.Success.Should().BeTrue();
+        replayed.Should().Be(original, "the edit committed under this key on the other node");
+        retry.Should().Be(original);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task ApplyEdits_RetryOnTheNodeThatFailed_ReplaysTheReceiptTheOtherNodeCommittedLater()
+    {
+        var target = await SeedFeatureAsync();
+        var user = GrpcApplyEditsIdempotencyTests.Subject("editor", issuer: "https://issuer-a.example");
+        var nodeA = Node();
+        var nodeB = MaskedReadNode(() => database.ExecuteAsync(
+            $$"""UPDATE features SET attributes = '{"name": "changed elsewhere"}' WHERE objectid = {{target}}""",
+            _schema));
+
+        // Node B fails while no receipt exists for the key, then node A commits the same key.
+        var failed = await nodeB.Service.ApplyEdits(UpdateRequest([target]), nodeB.Context(user, tenantId: null));
+        var committed = await nodeA.Service.ApplyEdits(UpdateRequest([target]), nodeA.Context(user, tenantId: null));
+        var retry = await nodeB.Service.ApplyEdits(UpdateRequest([target]), nodeB.Context(user, tenantId: null));
+
+        failed.UpdateResults.Should().ContainSingle().Which.Success.Should().BeFalse();
+        committed.UpdateResults.Should().ContainSingle().Which.Success.Should().BeTrue();
+        retry.Should().Be(committed, "a failure this node remembers must not hide the committed receipt");
+    }
+
     private GrpcApplyEditsIdempotencyTests.ServiceHarness Node(IAdoNetDatabaseConnectionProvider? connections = null)
     {
         var featureStore = FeatureStore(connections ?? Connections());
-        return new(
-            new GrpcApplyEditsReceipts(new PostgresFeatureEditIdempotencyReceipts(database.DataSource, _schema)),
-            featureStore,
-            featureStore);
+        return new(Receipts(), featureStore, featureStore);
     }
+
+    // Reads carry the row's state token as a masked read does, so the update is guarded by a
+    // precondition. The first read then waits for the caller before the edit continues.
+    private GrpcApplyEditsIdempotencyTests.ServiceHarness MaskedReadNode(Func<Task> afterFirstRead)
+    {
+        var featureStore = FeatureStore(Connections());
+        var firstRead = 0;
+        var reader = Substitute.For<IFeatureReader>();
+        reader
+            .GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                var feature = await featureStore.GetAsync(
+                    call.ArgAt<int>(0), call.ArgAt<long>(1), call.ArgAt<CancellationToken>(2));
+                if (Interlocked.Exchange(ref firstRead, 1) == 0)
+                {
+                    await afterFirstRead();
+                }
+
+                return feature is { } read ? read with { ReadStateToken = FeatureStateToken.Compute(read) } : null;
+            });
+        return new(Receipts(), reader, featureStore);
+    }
+
+    private GrpcApplyEditsReceipts Receipts()
+        => new(new PostgresFeatureEditIdempotencyReceipts(database.DataSource, _schema));
 
     private TestDatabaseConnectionProvider Connections() => new(database.DataSource, () => _schema);
 

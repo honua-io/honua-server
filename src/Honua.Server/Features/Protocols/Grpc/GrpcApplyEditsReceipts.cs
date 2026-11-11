@@ -47,6 +47,8 @@ internal sealed class GrpcApplyEditsReceipts : IDisposable
 
     internal readonly record struct LocalResultLimits(TimeSpan ResponseWindow, long BudgetBytes);
 
+    public readonly record struct ScopeKey(string? ServiceId, int LayerId, string ClientKey);
+
     // An undecodable payload must not be executed again.
     internal readonly record struct DurableEditReceipt(Proto.ApplyEditsResponse? Response, bool OutcomeUnknown);
 
@@ -95,7 +97,7 @@ internal sealed class GrpcApplyEditsReceipts : IDisposable
     }
 
     // An identity that cannot be bound to a durable actor gets no retry scope.
-    public static string? CreateScope(HttpContext? httpContext, string? serviceId, int layerId, string clientKey)
+    public static string? CreateScope(HttpContext? httpContext, ScopeKey key)
     {
         if (IdempotencyCaller.Resolve(httpContext) is not { } caller)
         {
@@ -103,11 +105,11 @@ internal sealed class GrpcApplyEditsReceipts : IDisposable
         }
 
         var canonicalScope = new StringBuilder("grpc-apply-edits/v2");
-        AppendComponent(canonicalScope, serviceId ?? string.Empty);
-        AppendComponent(canonicalScope, layerId.ToString(CultureInfo.InvariantCulture));
+        AppendComponent(canonicalScope, key.ServiceId ?? string.Empty);
+        AppendComponent(canonicalScope, key.LayerId.ToString(CultureInfo.InvariantCulture));
         AppendComponent(canonicalScope, caller.Tenant);
         AppendComponent(canonicalScope, caller.Actor);
-        AppendComponent(canonicalScope, clientKey);
+        AppendComponent(canonicalScope, key.ClientKey);
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalScope.ToString())));
     }
 
@@ -116,17 +118,23 @@ internal sealed class GrpcApplyEditsReceipts : IDisposable
         var gate = await AcquireGateAsync(scope, cancellationToken).ConfigureAwait(false);
         try
         {
-            // A result this node stored wins over a database read. A committed database
-            // receipt wins over this node's ambiguous marker.
+            // A result this node committed wins over a database read. A committed database
+            // receipt wins over this node's ambiguous marker and over a failure that
+            // committed nothing, since another node may have committed the key since.
             if (_localResponses.TryGetValue(scope, out object? cached) && cached is Proto.ApplyEditsResponse local)
             {
                 return new Entry(this, scope, gate, new DurableEditReceipt(local.Clone(), OutcomeUnknown: false));
             }
 
             var durable = await ReadDurableAsync(scope, cancellationToken).ConfigureAwait(false);
-            if (durable.Response is null && cached is AmbiguousLocal)
+            if (durable is { Response: null, OutcomeUnknown: false })
             {
-                durable = new DurableEditReceipt(Response: null, OutcomeUnknown: true);
+                durable = cached switch
+                {
+                    AmbiguousLocal => new DurableEditReceipt(Response: null, OutcomeUnknown: true),
+                    UncommittedLocal failure => new DurableEditReceipt(failure.Response.Clone(), OutcomeUnknown: false),
+                    _ => durable,
+                };
             }
 
             return new Entry(this, scope, gate, durable);
@@ -211,6 +219,8 @@ internal sealed class GrpcApplyEditsReceipts : IDisposable
         public static readonly AmbiguousLocal Instance = new();
     }
 
+    private sealed record UncommittedLocal(Proto.ApplyEditsResponse Response);
+
     internal sealed class KeyGate() : SemaphoreSlim(1, 1)
     {
         public int References { get; set; }
@@ -246,6 +256,14 @@ internal sealed class GrpcApplyEditsReceipts : IDisposable
         {
             var copy = response.Clone();
             _receipts.StoreLocal(Scope, copy, copy.CalculateSize());
+        }
+
+        // A result that committed nothing and left no receipt is replayed only while no
+        // other node has committed a receipt for the key.
+        public void CompleteUncommitted(Proto.ApplyEditsResponse response)
+        {
+            var copy = response.Clone();
+            _receipts.StoreLocal(Scope, new UncommittedLocal(copy), copy.CalculateSize());
         }
 
         public void RetainAmbiguous() => _receipts.StoreLocal(Scope, AmbiguousLocal.Instance, size: 0);
