@@ -302,22 +302,25 @@ async function resolvePrGateForObservation(options) {
   const resolved = await resolveForObservation(options);
   if (!resolved) return null;
   const { github, owner, repo } = options;
-  const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRunAttempt, {
-    owner, repo, run_id: resolved.run.id,
-    attempt_number: resolved.run.run_attempt, per_page: 100,
+  // A partial rerun keeps the heavy job's earlier outcome without re-executing
+  // it, so the evidence is the latest heavy attempt at or before the source.
+  const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+    owner, repo, run_id: resolved.run.id, filter: 'all', per_page: 100,
   });
   const heavyJobs = jobs.filter((job) =>
     job.name === 'PR Gate / Build and tests' &&
     job.run_id === resolved.run.id &&
-    job.run_attempt === resolved.run.run_attempt &&
+    job.run_attempt <= resolved.run.run_attempt &&
     job.workflow_name === 'PR Gate' &&
     job.head_sha === resolved.run.head_sha &&
     job.status === 'completed' && TERMINAL_CONCLUSIONS.has(job.conclusion),
   );
-  if (heavyJobs.length !== 1) {
-    throw new Error('source attempt does not identify exactly one canonical heavy job');
+  const latestAttempt = Math.max(...heavyJobs.map((job) => job.run_attempt));
+  const latestHeavyJobs = heavyJobs.filter((job) => job.run_attempt === latestAttempt);
+  if (latestHeavyJobs.length !== 1) {
+    throw new Error('source run does not identify exactly one canonical heavy job');
   }
-  if (heavyJobs[0].conclusion !== 'skipped') return resolved;
+  if (latestHeavyJobs[0].conclusion !== 'skipped') return resolved;
   recordObservationSkip({
     ...options,
     code: 'source-run-draft-admission',

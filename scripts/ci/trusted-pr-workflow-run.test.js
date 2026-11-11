@@ -660,13 +660,11 @@ function draftAdmissionFixtures(conclusion, overrides = {}) {
     status: 'completed', conclusion,
     ...overrides.job,
   };
-  const method = Symbol('exact-attempt-jobs');
-  fixture.github.rest.actions.listJobsForWorkflowRunAttempt = method;
   const paginate = fixture.github.paginate;
   fixture.github.paginate = async (requested, input) => {
-    if (requested !== method) return paginate(requested, input);
+    if (input.filter !== 'all') return paginate(requested, input);
+    assert.equal(requested, fixture.github.rest.actions.listJobsForWorkflowRun);
     assert.equal(input.run_id, 123);
-    assert.equal(input.attempt_number, 2);
     assert.equal(input.per_page, 100);
     return overrides.jobs ?? [heavyJob];
   };
@@ -713,13 +711,39 @@ for (const [name, overrides] of [
   });
 }
 
-test('draft admission rejects duplicate heavy jobs', async () => {
-  const { github } = draftAdmissionFixtures('skipped');
-  const paginate = github.paginate;
-  github.paginate = async (method, input) => {
-    const jobs = await paginate(method, input);
-    return method === github.rest.actions.listJobsForWorkflowRunAttempt ? [...jobs, ...jobs] : jobs;
+function heavyAttempt(runAttempt, conclusion) {
+  return {
+    run_id: 123, run_attempt: runAttempt, workflow_name: 'PR Gate',
+    name: 'PR Gate / Build and tests', head_sha: HEAD, status: 'completed', conclusion,
   };
+}
+
+test('partial rerun observes the heavy outcome retained from an earlier attempt', async () => {
+  const { github } = draftAdmissionFixtures('success', { jobs: [heavyAttempt(1, 'success')] });
+  const core = recordingCore();
+  const result = await resolvePrGateForObservation({
+    ...options(github, { runConclusion: 'failure' }), core, label: 'impact',
+  });
+  assert.equal(result.pullRequestNumber, 42);
+  assert.equal(core.outputs.skip, 'false');
+});
+
+test('the latest heavy attempt at or before the source decides draft admission', async () => {
+  const { github } = draftAdmissionFixtures('skipped', {
+    jobs: [heavyAttempt(1, 'failure'), heavyAttempt(2, 'skipped'), heavyAttempt(3, 'success')],
+  });
+  const core = recordingCore();
+  const result = await resolvePrGateForObservation({
+    ...options(github, { runConclusion: 'failure' }), core, label: 'impact',
+  });
+  assert.equal(result, null);
+  assert.equal(core.outputs.skip_code, 'source-run-draft-admission');
+});
+
+test('draft admission rejects duplicate heavy jobs', async () => {
+  const { github } = draftAdmissionFixtures('skipped', {
+    jobs: [heavyAttempt(1, 'success'), heavyAttempt(2, 'skipped'), heavyAttempt(2, 'skipped')],
+  });
   await assert.rejects(resolvePrGateForObservation({
     ...options(github, { runConclusion: 'failure' }), core: recordingCore(), label: 'impact',
   }), /canonical heavy job/);
