@@ -12666,6 +12666,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.RenderedRasterBaselineTests.Wms_GetMap_Transparent_MatchesCommittedBaseline",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsAuthorizationProofTests.Wms_GetFeatureInfo_WithoutReadRole_ReturnsAccessDeniedAndNoAttributes",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsAuthorizationProofTests.Wms_GetMap_WithoutReadRole_ReturnsAccessDeniedAndNoImagery",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsCapabilitiesExtentFailureTests.GetCapabilities_StyleReadFails_OmitsOnlyFailedLayer",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms111_GetCapabilities_LegendDimensionsMatchAdvertisedImage",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms111_GetLegendGraphic_ReturnsPngLegend",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms_GetCapabilities_AdvertisesLegendUrlForLegendCapableLayer",
