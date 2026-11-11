@@ -993,12 +993,6 @@
       "path": "/services/{serviceName}/layers/{layerId}/share/traffic"
     },
     {
-      "operationId": "getLicenseCapacityState",
-      "catalogOperationId": null,
-      "method": "GET",
-      "path": "/license/capacity"
-    },
-    {
       "operationId": "getLicenseEntitlements",
       "catalogOperationId": null,
       "method": "GET",
@@ -2167,12 +2161,6 @@
       "catalogOperationId": "admin.layer.set-enabled",
       "method": "PUT",
       "path": "/connections/{id}/layers/{layerId}/enabled"
-    },
-    {
-      "operationId": "setLicenseCapacitySurgeMode",
-      "catalogOperationId": null,
-      "method": "POST",
-      "path": "/license/capacity/surge"
     },
     {
       "operationId": "setOpsAutonomyPolicy",

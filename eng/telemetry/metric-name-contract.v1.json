@@ -319,20 +319,6 @@
       "source": "src/Honua.ServiceDefaults/LambdaTelemetry.cs"
     },
     {
-      "instrument": "honua.license.capacity.registration_refusals",
-      "kind": "Counter",
-      "unit": "{registration}",
-      "series": ["honua_license_capacity_registration_refusals_total"],
-      "source": "src/Honua.Hosting/Features/Licensing/LicenseCapacityMeter.cs"
-    },
-    {
-      "instrument": "honua.license.capacity.surge_mode_changes",
-      "kind": "Counter",
-      "unit": "{change}",
-      "series": ["honua_license_capacity_surge_mode_changes_total"],
-      "source": "src/Honua.Hosting/Features/Licensing/LicenseCapacityMeter.cs"
-    },
-    {
       "instrument": "honua.mcp.boundary.rejection",
       "kind": "Counter",
       "unit": "{rejection}",
