@@ -1,7 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
@@ -36,7 +36,8 @@ public sealed class UniversalImportJobServiceTests
         var progressStore = new ComparingInMemoryProgressStore();
         var importService = new FakeFileImportService(
             (_, _, _) => Task.FromResult(ImportResult.CreateSuccess(
-                "widgets", SupportedFileFormat.GeoJson, featureCount: 3, warnings: ["1 feature repaired."])));
+                "widgets", SupportedFileFormat.GeoJson, featureCount: 3, warnings: ["1 feature repaired."],
+                physicalTableName: "imp_widgets_123", schema: "imports")));
         using var jobService = CreateService(importService, progressStore);
 
         using var stream = new MemoryStream([0x01]);
@@ -51,6 +52,55 @@ public sealed class UniversalImportJobServiceTests
         progress.Warnings.Should().Equal("1 feature repaired.");
         progress.CurrentPhase.Should().Be("Import completed");
         progress.CompletedAt.Should().NotBeNull();
+        var receipt = JsonSerializer.SerializeToElement(progress, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        receipt.TryGetProperty("schema", out var schema).Should().BeTrue();
+        schema.GetString().Should().Be("imports");
+        receipt.TryGetProperty("physicalTableName", out var table).Should().BeTrue();
+        table.GetString().Should().Be("imp_widgets_123");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Import)]
+    public async Task QueueImportAsync_CompletedTickBeforeResult_RemainsProcessingUntilReceiptExists()
+    {
+        var store = new ComparingInMemoryProgressStore();
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var importer = new FakeFileImportService(async (_, progress, token) =>
+        {
+            progress!.Report(ImportProgress.CreateInitial("tick", "widgets", SupportedFileFormat.GeoJson) with
+            {
+                Status = ImportStatus.Completed,
+                FeaturesProcessed = 3
+            });
+            await release.Task.WaitAsync(token);
+            return ImportResult.CreateSuccess("widgets", SupportedFileFormat.GeoJson, 3,
+                physicalTableName: "imp_widgets", schema: "imports");
+        });
+        using var service = CreateService(importer, store);
+        using var stream = new MemoryStream([1]);
+        var id = await service.QueueImportAsync(new ImportRequest
+        {
+            FileStream = stream, FileName = "widgets.geojson", TableName = "widgets"
+        }, 1);
+        try
+        {
+            using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            ImportProgress? observed;
+            do
+            {
+                await Task.Delay(10, budget.Token);
+                observed = await service.GetProgressAsync(id);
+            } while (observed?.FeaturesProcessed != 3);
+            observed.Status.Should().Be(ImportStatus.Processing);
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+
+        var receipt = await WaitForTerminalProgressAsync(service, id);
+        receipt.Schema.Should().Be("imports");
+        receipt.PhysicalTableName.Should().Be("imp_widgets");
     }
 
     [UnitTest]
@@ -76,6 +126,7 @@ public sealed class UniversalImportJobServiceTests
         // provider/schema internals (see SafeImportFailureMessage in UniversalImportJobService).
         progress.ErrorMessage.Should().Be("Import failed.");
         progress.CurrentPhase.Should().Be("Import failed");
+        AssertNoPublicationReceipt(progress);
     }
 
     [UnitTest]
@@ -131,6 +182,7 @@ public sealed class UniversalImportJobServiceTests
         // Wait for the background job to actually reach the importer before cancelling, so the
         // cancellation exercises the "running" path rather than racing QueueImportAsync itself.
         await WaitForStatusAsync(jobService, jobId, ImportStatus.Processing);
+        AssertNoPublicationReceipt((await jobService.GetProgressAsync(jobId))!);
 
         var cancelled = await jobService.CancelJobAsync(jobId);
         cancelled.Should().BeTrue();
@@ -141,6 +193,7 @@ public sealed class UniversalImportJobServiceTests
         var progress = await WaitForTerminalProgressAsync(jobService, jobId);
         progress.Status.Should().Be(ImportStatus.Cancelled);
         progress.CurrentPhase.Should().Be("Cancelled");
+        AssertNoPublicationReceipt(progress);
     }
 
     [UnitTest]
@@ -185,6 +238,18 @@ public sealed class UniversalImportJobServiceTests
         using var jobService = CreateService(importService, progressStore);
 
         (await jobService.CancelJobAsync("no-such-job")).Should().BeFalse();
+    }
+
+    private static void AssertNoPublicationReceipt(ImportProgress progress)
+    {
+        var receipt = JsonSerializer.SerializeToElement(progress, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        foreach (var name in new[] { "schema", "physicalTableName", "connectionId" })
+        {
+            if (receipt.TryGetProperty(name, out var value))
+            {
+                value.ValueKind.Should().Be(JsonValueKind.Null, $"{progress.Status} jobs cannot be published from a completion receipt");
+            }
+        }
     }
 
     private static UniversalImportJobService CreateService(
@@ -258,4 +323,5 @@ public sealed class UniversalImportJobServiceTests
         public Task<FilePreview> PreviewFileAsync(Stream fileStream, string fileName, CancellationToken cancellationToken = default)
             => Task.FromResult(new FilePreview { Format = SupportedFileFormat.GeoJson, TotalFeatureCount = 0 });
     }
+
 }

@@ -52,6 +52,14 @@ Optional form fields: `sourceSrid` (when CRS auto-detection fails), `targetSchem
 
 Run `GET /api/v1/admin/import/jobs/{jobId}`, substituting the `jobId` returned by the upload.
 
+Wait for the completed status before publishing. The completed receipt carries
+`schema`, `physicalTableName`, and `featuresProcessed`. Use the physical identifiers
+in the publish request; `tableName` is the requested logical name. `connectionId`
+identifies the unique active registered connection matching the import database.
+If no unique match exists, it is null and `warnings` explains that a matching
+connection must be registered or selected before publishing. Queued, processing,
+failed and cancelled jobs do not expose a usable publication receipt.
+
 Cancel with `POST /api/v1/admin/import/jobs/{jobId}/cancel`; list active jobs with `GET /api/v1/admin/import/jobs`.
 
 #### Where background imports run
@@ -84,7 +92,7 @@ The server downloads the object directly; redirecting URLs are rejected. `POST /
 
 ## Verify
 
-A synchronous import returns the result inline; a completed background job returns it from the job-status endpoint:
+A synchronous import returns the result inline:
 
 ```json
 {"success": true, "tableName": "parcels", "featureCount": 1250, "format": "GeoJson", "detectedSrid": 4326, "warnings": [], …}
