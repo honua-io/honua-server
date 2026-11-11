@@ -34,7 +34,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 /// </summary>
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.GPServer)]
-public sealed class GPServerEndpointTests : IAsyncLifetime
+public sealed class GPServerEndpointTests : IAsyncLifetime, IClassFixture<PostgresFixture>
 {
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
 
@@ -48,23 +48,24 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     private readonly InMemoryExecutionJobStore _jobStore = new();
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
+    private bool _defaultInitialized;
 
-    public GPServerEndpointTests()
+    public GPServerEndpointTests(PostgresFixture _)
     {
         _fixture = new WebAppFixture()
             .ReplaceService<IExecutionJobStore>(_jobStore);
     }
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    private async Task InitializeDefaultApplicationAsync()
     {
+        _defaultInitialized = true;
         await _fixture.InitializeAsync();
         _client = _fixture.Client;
     }
 
-    public async Task DisposeAsync()
-    {
-        await _fixture.DisposeAsync();
-    }
+    public Task DisposeAsync() => _defaultInitialized ? _fixture.DisposeAsync() : Task.CompletedTask;
 
     [IntegrationTheory]
     [InlineData("env:workspace", "scratch")]
@@ -113,6 +114,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer")]
     public async Task ServiceInfo_ReturnsGPServerMetadata()
     {
+        await InitializeDefaultApplicationAsync();
         var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -142,6 +144,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
     public async Task TaskInfo_NonJobTask_ReturnsNotFound()
     {
+        await InitializeDefaultApplicationAsync();
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/source.geojson");
 
@@ -156,6 +159,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer")]
     public async Task ServiceInfo_Post_ReturnsGPServerMetadata()
     {
+        await InitializeDefaultApplicationAsync();
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json"
@@ -176,6 +180,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer")]
     public async Task ServiceInfo_PostWithUnsupportedFormat_ReturnsBadRequest()
     {
+        await InitializeDefaultApplicationAsync();
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "html"
@@ -192,6 +197,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer")]
     public async Task ServiceInfo_PostWithUnsupportedContentType_ReturnsUnsupportedMediaType()
     {
+        await InitializeDefaultApplicationAsync();
         using var requestContent = new StringContent("""{"f":"json"}""", Encoding.UTF8, "text/plain");
         var response = await _client.PostAsync(
             $"/rest/services/{ServiceId}/GPServer",
@@ -205,6 +211,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer")]
     public async Task ServiceInfo_WithUnsupportedFormat_ReturnsBadRequest()
     {
+        await InitializeDefaultApplicationAsync();
         var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer?f=html");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
@@ -249,6 +256,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
     public async Task TaskInfo_KnownTask_ReturnsTaskMetadata()
     {
+        await InitializeDefaultApplicationAsync();
         var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/geometry.buffer");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -286,6 +294,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
     public async Task TaskInfo_KnownTask_EveryParameterIncludesDefaultValueKey()
     {
+        await InitializeDefaultApplicationAsync();
         // Regression (#1775): a missing defaultValue key makes
         // arcgis.geoprocessing.import_toolbox() raise KeyError('defaultValue').
         // Esri always emits the key (null when unset) on every parameter.
@@ -317,6 +326,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     public async Task TaskInfo_ScalarDefault_HasItsDeclaredJsonType(
         string taskName, string parameterName, string dataType, JsonValueKind expectedKind, string expectedJson)
     {
+        await InitializeDefaultApplicationAsync();
         // Regression (#4634): Esri's Python SDK writes non-string defaults into
         // generated code with str(), so a "false" string became an unbound name.
         using var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/{taskName}");
@@ -337,6 +347,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}")]
     public async Task TaskInfo_Post_KnownTask_ReturnsTaskMetadata()
     {
+        await InitializeDefaultApplicationAsync();
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json"
@@ -354,6 +365,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}")]
     public async Task TaskInfo_PostWithUnsupportedFormat_ReturnsBadRequest()
     {
+        await InitializeDefaultApplicationAsync();
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "html"
@@ -370,6 +382,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
     public async Task TaskInfo_UnknownTask_ReturnsNotFound()
     {
+        await InitializeDefaultApplicationAsync();
         var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/BufferAnalysis");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
@@ -532,6 +545,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
     public async Task ExecutePost_AsyncOnlyTask_Returns400WithCapabilityMessage()
     {
+        await InitializeDefaultApplicationAsync();
         // analytics.cluster-managed is an asynchronous job in the canonical catalog,
         // so the synchronous /execute path must direct callers to submitJob rather
         // than try to run a long-running task inline.
@@ -713,6 +727,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithUnsupportedOrConflictingContext_Returns400()
     {
+        await InitializeDefaultApplicationAsync();
         // #4030: a context property Honua cannot apply is rejected by name rather than
         // silently ignored, and a context SR that disagrees with env:* is ambiguous.
         var cases = new (Dictionary<string, string> Extra, string Expected)[]
@@ -827,6 +842,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
     public async Task ExecutePost_ProtocolOnlyTask_Returns400WithCapabilityMessage()
     {
+        await InitializeDefaultApplicationAsync();
         // analytics.cluster is protocol-only and cannot use either GPServer
         // execution route, so the response must not prescribe submitJob as a remedy.
         // (conversion.geometry-format was this exemplar until #3936 gave it a real
@@ -853,6 +869,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
     public async Task TaskInfo_ParameterWithAllowedValues_PopulatesChoiceList()
     {
+        await InitializeDefaultApplicationAsync();
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/analytics.cluster-managed");
 
@@ -875,6 +892,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_UnknownTask_ReturnsNotFound()
     {
+        await InitializeDefaultApplicationAsync();
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
@@ -894,6 +912,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_ChoiceValueInNonCatalogCasing_RemainsExecutable()
     {
+        await InitializeDefaultApplicationAsync();
         // Esri's GP framework matches value lists case-insensitively, so the
         // adapter accepts 'Detection'. Before #3053 it then passed the caller's
         // spelling through verbatim and the ordinally-comparing canonical plan
@@ -931,6 +950,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         string? extraName,
         string? extraValue)
     {
+        await InitializeDefaultApplicationAsync();
         // #4033: the Esri input translator used to add a derived 'srid' input whenever an esriGeometry or
         // FeatureSet was translated. These three tasks declare no 'srid' parameter, so canonical plan
         // validation rejected every such submission as UNKNOWN_PARAMETER. The spatial reference travels
@@ -971,6 +991,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_ChoiceValueOutsideTheAllowedList_ReturnsBadRequestNamingTheAcceptedValues()
     {
+        await InitializeDefaultApplicationAsync();
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
@@ -998,6 +1019,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
     {
+        await InitializeDefaultApplicationAsync();
         using var requestContent = new StringContent("""{"f":"json"}""", Encoding.UTF8, "text/plain");
         var response = await _client.PostAsync(
             $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob",
@@ -1011,6 +1033,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJobGet_UnknownTask_ReturnsNotFound()
     {
+        await InitializeDefaultApplicationAsync();
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/submitJob?f=json&input=test");
 
@@ -1257,6 +1280,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
     public async Task JobStatus_WithInvalidJobId_Returns404()
     {
+        await InitializeDefaultApplicationAsync();
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/jobs/nonexistent-job-id?f=json");
 
@@ -1272,6 +1296,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}")]
     public async Task JobResult_WithInvalidJobId_ReturnsError()
     {
+        await InitializeDefaultApplicationAsync();
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/jobs/nonexistent/results/Output?f=json");
 
@@ -1461,6 +1486,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
     public async Task CancelJob_WithInvalidJobId_ReturnsError()
     {
+        await InitializeDefaultApplicationAsync();
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/jobs/nonexistent/cancel?f=json");
 
@@ -1472,6 +1498,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
     public async Task CancelJobPost_WithInvalidJobId_ReturnsError()
     {
+        await InitializeDefaultApplicationAsync();
         using var requestContent = new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json" });
         var response = await _client.PostAsync(
             $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/jobs/nonexistent/cancel",
@@ -1489,6 +1516,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
     public async Task JobStatus_WithMismatchedService_ReturnsNotFound()
     {
+        await InitializeDefaultApplicationAsync();
         // Create a job directly via the store with GPServer binding metadata.
         var jobStore = _fixture.GetService<IExecutionJobStore>();
 
@@ -1528,6 +1556,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
     public async Task JobStatus_WithMismatchedTask_ReturnsNotFound()
     {
+        await InitializeDefaultApplicationAsync();
         // Create a job directly via the store with GPServer binding metadata.
         var jobStore = _fixture.GetService<IExecutionJobStore>();
 
@@ -1571,6 +1600,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs")]
     public async Task JobsList_ReturnsServiceTaskBoundJobsNewestFirst()
     {
+        await InitializeDefaultApplicationAsync();
         var jobStore = _fixture.GetService<IExecutionJobStore>();
         var task = $"ListTask{Guid.NewGuid():N}";
         var now = DateTimeOffset.UtcNow;
@@ -1603,6 +1633,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs")]
     public async Task JobsList_WithStatusFilter_ReturnsOnlyMatchingStatus()
     {
+        await InitializeDefaultApplicationAsync();
         var jobStore = _fixture.GetService<IExecutionJobStore>();
         var task = $"FilterTask{Guid.NewGuid():N}";
         var now = DateTimeOffset.UtcNow;
@@ -1627,6 +1658,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs")]
     public async Task JobsList_WithInvalidNum_ReturnsBadRequest()
     {
+        await InitializeDefaultApplicationAsync();
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/AnyTask/jobs?num=0&f=json");
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
@@ -1671,6 +1703,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
     public async Task JobStatus_WithNonGPServerJob_ReturnsNotFound()
     {
+        await InitializeDefaultApplicationAsync();
         // Write a job record directly to the store without GPServer binding metadata.
         // This simulates a gRPC-submitted job that should not be visible via GPServer routes.
         var jobStore = _fixture.GetService<IExecutionJobStore>();
@@ -1712,6 +1745,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithEnvOutSR_IsAccepted()
     {
+        await InitializeDefaultApplicationAsync();
         // env:outSR is now recognized (not rejected) on submitJob, matching the
         // synchronous execute route's behavior. See #1228.
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
@@ -1737,6 +1771,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJobPost_WithEnvInQueryString_IsAccepted()
     {
+        await InitializeDefaultApplicationAsync();
         // POST with form body but env control in query string â€” the query-string
         // parameter must still be read and honored (not silently dropped).
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
@@ -1877,6 +1912,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithInvalidEnvOverwriteOutput_ReturnsBadRequest()
     {
+        await InitializeDefaultApplicationAsync();
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
@@ -1904,6 +1940,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
     public async Task JobStatus_WithMissingJobId_ReturnsBadRequestOrNotFound()
     {
+        await InitializeDefaultApplicationAsync();
         // Empty jobId in the route â€” the routing framework will either 404 or match
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/jobs/?f=json");

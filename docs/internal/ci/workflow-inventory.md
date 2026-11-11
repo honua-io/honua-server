@@ -694,6 +694,10 @@ Affected shard concurrency remains six, including full-coverage routing fallback
 manual and scheduled full runs retain their existing budget. Required PR gates
 and shard definitions are unchanged.
 
+GPServer endpoint tests retain database infrastructure and avoid unused default
+application startup under the
+[GPServer state isolation contract](gate-model.md#gpserver-endpoint-state-isolation).
+
 ## Automatic merge admission
 
 `auto-merge-ready.yml` reconciles same-repository trunk PRs using the repository-scoped

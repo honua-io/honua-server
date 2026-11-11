@@ -734,6 +734,14 @@ Affected shard concurrency remains six, including full-coverage routing fallback
 manual and scheduled full runs retain their existing budget. Required PR gates
 and shard definitions are unchanged.
 
+### GPServer endpoint state isolation
+
+`GPServerEndpointTests` retains PostgreSQL for the class lifetime. Each case
+keeps its own application, schema and execution-job store; default setup runs
+only in cases that use it. Cases with custom services initialize and dispose
+their custom applications as before. Retaining database infrastructure avoids
+repeating container bootstrap without sharing job state or changing assertions.
+
 ## Automatic merge admission
 
 [Automatic merge admission](workflow-inventory.md#automatic-merge-admission) uses
