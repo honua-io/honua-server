@@ -67,13 +67,19 @@ router_fixtures_finish
         self.assertIn('1 failed', result.stdout)
 
     def test_cancellation_terminates_fixture_descendants(self):
+        self.assert_cancellation_stops_descendants('')
+
+    def test_cancellation_kills_term_ignoring_descendants(self):
+        self.assert_cancellation_stops_descendants('trap \"\" TERM; ')
+
+    def assert_cancellation_stops_descendants(self, setup):
         with tempfile.TemporaryDirectory() as directory:
             marker = Path(directory) / 'alive'
             body = (
                 'set -euo pipefail\n'
                 f'source "{LIBRARY}"\n'
                 'PYTHON_BIN=python3; SCRIPT_DIR=.; router_fixtures_init\n'
-                "run_fixture cancel bash -c '(while true; do echo alive >> \"$1\"; sleep 0.05; done) & wait' bash \"$1\"\n"
+                f"run_fixture cancel bash -c '({setup}for attempt in {{1..30}}; do echo alive >> \"$1\"; sleep 0.05; done) & wait' bash \"$1\"\n"
                 'router_fixtures_finish\n'
             )
             environment = dict(os.environ, CI='true', GITHUB_ACTIONS='', HONUA_ROUTER_WORKERS='1')

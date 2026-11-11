@@ -34,8 +34,14 @@ router_fixtures_init() {
 
 router_fixtures_cleanup() {
   local pid
-  # jobs reports only children still owned by this shell, avoiding PID reuse.
-  for pid in $(jobs -pr); do kill -TERM -- "-$pid" 2>/dev/null || true; done
+  local -a workers=()
+  # Retain the owned groups even if TERM reaps their direct worker shells.
+  mapfile -t workers < <(jobs -pr)
+  for pid in "${workers[@]}"; do kill -TERM -- "-$pid" 2>/dev/null || true; done
+  if (( ${#workers[@]} )); then
+    sleep 0.2
+    for pid in "${workers[@]}"; do kill -KILL -- "-$pid" 2>/dev/null || true; done
+  fi
   wait || true
   rm -rf -- "${ROUTER_RESULTS:?}"
 }

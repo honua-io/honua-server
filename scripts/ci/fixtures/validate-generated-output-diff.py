@@ -266,7 +266,7 @@ class WorkflowCompletion(unittest.TestCase):
         for job in ('format', 'fast-tests', 'pr-gate', 'ci-router-validation', 'required'):
             self.assertNotIn('if', gate['jobs'][job]) if job != 'required' else self.assertEqual(gate['jobs'][job]['if'], 'always()')
         self.assertEqual(gate['jobs']['required']['name'], 'PR Gate')
-        self.assertEqual(gate['jobs']['required']['needs'], ['pr-gate', 'fast-tests', 'format', 'ci-router-validation', 'affected-shards'])
+        self.assertEqual(gate['jobs']['required']['needs'], ['pr-gate', 'fast-tests', 'format', 'ci-router-validation', 'affected-shards', 'server-test-producer'])
         # Evaluate actual Actions expressions for the expensive steps. True and
         # false/absent classification must respectively skip and preserve them.
         for verdict in ('true', 'false', ''):
@@ -320,7 +320,7 @@ class WorkflowCompletion(unittest.TestCase):
                 'AFFECTED_SHARDS_RESULT')
         for key in keys:
             for result, expected in (('success', 0), ('failure', 1), ('skipped', 1), ('cancelled', 1)):
-                env = dict(os.environ, GITHUB_EVENT_NAME='pull_request',
+                env = dict(os.environ, GITHUB_EVENT_NAME='pull_request', SERVER_PRODUCER_RESULT='success',
                            **{name: 'success' for name in keys})
                 env[key] = result
                 run = subprocess.run(['bash', '-c', aggregate], capture_output=True, env=env)
