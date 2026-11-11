@@ -1,7 +1,8 @@
 # CI Gate Model
 
+
 > Defines the five-tier quality gate model governing all CI workflows across the Honua project.
-> Last updated: 2026-11-09
+> Last updated: 2026-11-10
 
 ## Tier Definitions
 
@@ -14,6 +15,8 @@
 | **maintenance** | Repo automation and housekeeping | Version automation, metadata updates, scheduled hygiene | No |
 
 ## Governing Rules
+
+Draft pull requests run Format, Clean code, and Repository hygiene only; optional PR verification and PR Gate heavy jobs wait for `ready_for_review`. Converting a ready PR back to draft cancels its previous run. The stable `PR Gate` aggregate still runs with `always()` and fails on skipped heavy dependencies, so a draft run cannot supply mergeable verification. PR Gate and native-image impact observers exclude this intentional draft failure only when the source run’s latest `PR Gate / Runner select` and `PR Gate / Build and tests` outcomes at or before the source attempt were both skipped (a partial rerun keeps earlier outcomes; a failed runner selection is a ready-run failure), preserving ready-run failures in promotion evidence even across same-SHA draft transitions. Manual and trunk verification retain their existing coverage.
 
 1. **PR gates must be deterministic and directly actionable by the author.** If a check fails, the author must be able to reproduce and fix it locally without external system access.
 
@@ -638,6 +641,8 @@ unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
+
+Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. If both producer jobs were skipped by job-level admission (draft or non-base edit), the consumer also returns without validation or mutation. Missing envelopes from ordinary producers remain errors.
 
 ### Router validator execution
 
