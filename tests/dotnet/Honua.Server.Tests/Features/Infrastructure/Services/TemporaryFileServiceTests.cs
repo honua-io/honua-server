@@ -589,7 +589,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
         (await cloudStorage.ExistsAsync(activeTemporary.File!.FileId)).Should().BeTrue();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task StoreTemporaryFileAsync_WithRemoteCloudStorageAndSharedLease_SerializesQuotaAcrossInstances()
     {
         var cloudStorage = new FakeCloudFileStorage(
@@ -635,7 +635,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
         results.Count(result => result is TemporaryStorageLimitExceededException).Should().Be(1);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task StoreTemporaryFileAsync_WithoutASystemDatabase_FailsClosedForCloudStorage()
     {
         var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
