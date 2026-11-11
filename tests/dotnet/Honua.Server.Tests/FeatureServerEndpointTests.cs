@@ -255,27 +255,59 @@ public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
 
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database.CoreEndpoints")]
-public sealed class FeatureServerEndpointTests : IAsyncLifetime
+public sealed class FeatureServerEndpointTests : IAsyncLifetime, IClassFixture<FeatureServerEndpointTests.ReadOnlyFixture>
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;
 
-    public async Task InitializeAsync()
+    private readonly WebAppFixture _fixture = CreateApplication();
+
+    private readonly WebAppFixture _readOnlyApplication;
+    private bool _defaultInitialized;
+
+    public FeatureServerEndpointTests(ReadOnlyFixture fixture)
     {
-        await _fixture.InitializeAsync();
-        _fixture.EnableV2ServiceEditingCapabilities(TestServiceId, ["Create", "Update", "Delete"]);
+        _readOnlyApplication = fixture.Application;
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public Task DisposeAsync() => _defaultInitialized ? _fixture.DisposeAsync() : Task.CompletedTask;
+
+    private async Task InitializeDefaultApplicationAsync()
+    {
+        _defaultInitialized = true;
+        await InitializeApplicationAsync(_fixture);
+    }
+
+    private static WebAppFixture CreateApplication() => new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+
+    private static async Task InitializeApplicationAsync(WebAppFixture application)
+    {
+        await application.InitializeAsync();
+        application.EnableV2ServiceEditingCapabilities(TestServiceId, ["Create", "Update", "Delete"]);
+    }
+
+    // Cases that edit features, change metadata, or expand the seed dataset need separate
+    // applications and schemas; immutable metadata and query seeds can share this application.
+    public sealed class ReadOnlyFixture : IAsyncLifetime
+    {
+        public WebAppFixture Application { get; } = CreateApplication();
+
+        public Task InitializeAsync() => InitializeApplicationAsync(Application);
+
+        public Task DisposeAsync() => Application.DisposeAsync();
+    }
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
     public async Task GetServiceMetadata_WithValidServiceId_ReturnsServiceInfo()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer");
 
         // Assert
         response.Be200Ok();
@@ -308,8 +340,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
     public async Task GetServiceMetadata_WithNonExistentService_Returns404()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act
-        var response = await _fixture.Client.GetAsync("/rest/services/nonexistent/FeatureServer");
+        var response = await client.GetAsync("/rest/services/nonexistent/FeatureServer");
 
         // Assert
         await response.AssertGeoServicesErrorAsync(404);
@@ -329,7 +363,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
     public async Task GetServiceMetadata_WithUnsupportedFormat_Returns400()
     {
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer?f=html");
+        using var client = _readOnlyApplication.CreateClient();
+
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer?f=html");
 
         await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
@@ -346,8 +382,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task GetLayerMetadata_WithValidLayerId_ReturnsLayerInfo()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}");
 
         // Assert
         response.Be200Ok();
@@ -400,6 +438,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task GetLayerMetadata_WithSubtypes_ReturnsSubtypeFieldAndSubtypes()
     {
+        await InitializeDefaultApplicationAsync();
+
         // honua-server#1378 (#1254): an Esri subtype set carried on the canonical
         // resource must be served on the FeatureServer layer metadata as
         // subtypeField / subtypes / defaultSubtypeCode, reusing the shared domain mapper
@@ -488,6 +528,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task GetLayerMetadata_ObjectIdField_IsTypedEsriFieldTypeOid()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Regression for #1299: Esri clients (including the ArcGIS Python SDK) locate the
         // object-id field by filtering fields for type == "esriFieldTypeOID". The field that
         // matches objectIdField must therefore be typed esriFieldTypeOID, and there must be
@@ -517,11 +559,13 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_ObjectIdField_IsTypedEsriFieldTypeOid()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Regression for #1299: the query response fields[] array must also type the
         // object-id field as esriFieldTypeOID so feature-returning queries resolve the OID.
 
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&f=json");
 
         // Assert
@@ -557,7 +601,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task GetLayerMetadata_WithUnsupportedFormat_Returns400()
     {
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}?f=html");
+        using var client = _readOnlyApplication.CreateClient();
+
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}?f=html");
 
         await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
@@ -574,7 +620,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task GetLayerMetadata_IncludesDrawingInfo()
     {
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}");
+        using var client = _readOnlyApplication.CreateClient();
+
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}");
 
         response.Be200Ok();
 
@@ -591,11 +639,13 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task GetLayerMetadata_WithoutSavedStyle_SynthesizesDefaultRenderer()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Only layer 0 carries a saved esri-drawing-info style in the fixture; layer 1
         // has none. Esri FeatureServers always return drawingInfo for renderable layers,
         // so the server must synthesize a default simple renderer from the geometry type
         // rather than omit drawingInfo (which leaves Esri clients with no symbology).
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/1");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/1");
 
         response.Be200Ok();
 
@@ -619,8 +669,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task GetLayerMetadata_WithNonExistentService_Returns404()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act
-        var response = await _fixture.Client.GetAsync($"/rest/services/nonexistent/FeatureServer/{TestLayerId}");
+        var response = await client.GetAsync($"/rest/services/nonexistent/FeatureServer/{TestLayerId}");
 
         // Assert
         await response.AssertGeoServicesErrorAsync(404);
@@ -640,8 +692,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task GetLayerMetadata_WithNonExistentLayer_Returns404()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/999");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/999");
 
         // Assert
         await response.AssertGeoServicesErrorAsync(404);
@@ -660,8 +714,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task GetLayerMetadata_WithInvalidLayerId_Returns404()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/invalid");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/invalid");
 
         // Assert - Should return 404 because 'invalid' doesn't match int route constraint
         await response.AssertGeoServicesErrorAsync(404);
@@ -672,9 +728,11 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
     public async Task GetServiceMetadata_WithWrongHttpMethod_Returns405()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Service metadata answers GET and POST (Esri clients hydrate via POST);
         // a genuinely unsupported method (DELETE) must still return 405.
-        var response = await _fixture.Client.DeleteAsync($"/rest/services/{TestServiceId}/FeatureServer");
+        var response = await client.DeleteAsync($"/rest/services/{TestServiceId}/FeatureServer");
 
         // Assert
         await response.AssertGeoServicesErrorAsync(405);
@@ -685,8 +743,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task GetLayerMetadata_WithWrongHttpMethod_Returns405()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Layer metadata answers GET and POST; DELETE remains unsupported -> 405.
-        var response = await _fixture.Client.DeleteAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}");
+        var response = await client.DeleteAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}");
 
         // Assert
         await response.AssertGeoServicesErrorAsync(405);
@@ -697,8 +757,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
     public async Task GetServiceMetadata_ResponseValidatesAgainstGeoServicesSchema()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer");
 
         // Assert
         response.Be200Ok();
@@ -734,8 +796,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task GetLayerMetadata_ResponseValidatesAgainstGeoServicesSchema()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}");
 
         // Assert
         response.Be200Ok();
@@ -781,8 +845,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithValidWhereClause_ReturnsFilteredFeatures()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=name='Test Feature'");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=name='Test Feature'");
 
         // Assert
         response.Be200Ok();
@@ -812,8 +878,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_ReturnDistinctValuesWithTautologicalWhere_Returns200WithDistinctValues()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act: where=1=1 produces no bound parameters; category has duplicate values across rows.
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&outFields=category&returnDistinctValues=true&returnGeometry=false&f=json");
 
         // Assert
@@ -843,8 +911,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_ReturnDistinctValuesWithContradictoryWhere_Returns200Empty()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act: where=1=2 is also paramless and matches nothing.
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D2&outFields=category&returnDistinctValues=true&returnGeometry=false&f=json");
 
         // Assert
@@ -862,8 +932,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_ReturnDistinctValuesWithRealPredicate_Returns200WithDistinctValues()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act: a real bound predicate exercises the parameterized path alongside distinct.
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=category='test'&outFields=category&returnDistinctValues=true&returnGeometry=false&f=json");
 
         // Assert
@@ -883,8 +955,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_ReturnDistinctValuesWithAllFields_Returns200()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act: outFields=* does not apply distinct, but must still succeed with where=1=1.
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&outFields=*&returnDistinctValues=true&returnGeometry=false&f=json");
 
         // Assert
@@ -902,6 +976,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithPostRequest_ReturnsFilteredFeatures()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Arrange
         var json = """
             {
@@ -913,7 +989,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
-        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
+        var response = await client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
 
         // Assert
         response.Be200Ok();
@@ -933,7 +1009,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/query")]
     public async Task ServiceQueryFeatures_GetWithLayerId_ReturnsFilteredFeatures()
     {
-        var response = await _fixture.Client.GetAsync(
+        using var client = _readOnlyApplication.CreateClient();
+
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/query?layerId={TestLayerId}&where=1%3D1&f=json");
 
         response.Be200Ok();
@@ -954,13 +1032,15 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_PostRequest_HonorsQueryStringParameters()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("where", "1=1"),
             new KeyValuePair<string, string>("f", "json")
         ]);
 
-        var response = await _fixture.Client.PostAsync(
+        var response = await client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?returnGeometry=false",
             payload);
 
@@ -980,7 +1060,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/query")]
     public async Task ServiceQueryFeatures_GetWithMalformedLayersDelimiter_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync(
+        using var client = _readOnlyApplication.CreateClient();
+
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/query?layers={TestLayerId},&where=1%3D1&f=json");
 
         await response.AssertGeoServicesErrorAsync(400);
@@ -991,7 +1073,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnCountOnly=true")]
     public async Task QueryFeatures_WithReturnCountOnly_ReturnsCount()
     {
-        var response = await _fixture.Client.GetAsync(
+        using var client = _readOnlyApplication.CreateClient();
+
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?returnCountOnly=true");
 
         response.Be200Ok();
@@ -1019,11 +1103,13 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnCountOnly=true&f=pbf")]
     public async Task QueryFeatures_WithReturnCountOnlyAndPbf_ReturnsProtobufCount()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Regression (#1775): the count-only path ignored f=pbf and returned JSON. It must
         // emit a protobuf-encoded count (CountResult arm of the FeatureCollectionPBuffer
         // QueryResult oneof) with Content-Type application/x-protobuf, mirroring the
         // feature query pbf path.
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?returnCountOnly=true&f=pbf");
 
         response.Be200Ok();
@@ -1213,10 +1299,12 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnIdsOnly=true&f=pbf")]
     public async Task QueryFeatures_WithReturnIdsOnlyAndPbf_ReturnsProtobufIds()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Regression (#1824): returnIdsOnly ignored f=pbf and returned JSON. It must emit the
         // ObjectIdsResult arm of the FeatureCollectionPBuffer QueryResult oneof with
         // Content-Type application/x-protobuf, mirroring the count-pbf path (#1784).
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&returnIdsOnly=true&f=pbf");
 
         response.Be200Ok();
@@ -1234,10 +1322,12 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnExtentOnly=true&f=pbf")]
     public async Task QueryFeatures_WithReturnExtentOnlyAndPbf_ReturnsProtobufExtent()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Regression (#1824): returnExtentOnly ignored f=pbf and returned JSON. It must emit the
         // ExtentCountResult arm of the FeatureCollectionPBuffer QueryResult oneof with
         // Content-Type application/x-protobuf.
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&returnExtentOnly=true&f=pbf");
 
         response.Be200Ok();
@@ -1257,9 +1347,11 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnCountOnly=true&f=geojson")]
     public async Task QueryFeatures_WithReturnCountOnlyAndGeoJson_ReturnsBadRequest()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Regression (#1824): geojson on the secondary modes was silently downgraded to an
         // Esri-JSON 200; it must be a clean 400 instead.
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&returnCountOnly=true&f=geojson");
 
         await response.AssertGeoServicesErrorAsync(400);
@@ -1270,7 +1362,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnIdsOnly=true&f=geojson")]
     public async Task QueryFeatures_WithReturnIdsOnlyAndGeoJson_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync(
+        using var client = _readOnlyApplication.CreateClient();
+
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&returnIdsOnly=true&f=geojson");
 
         await response.AssertGeoServicesErrorAsync(400);
@@ -1281,7 +1375,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnExtentOnly=true&f=geojson")]
     public async Task QueryFeatures_WithReturnExtentOnlyAndGeoJson_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync(
+        using var client = _readOnlyApplication.CreateClient();
+
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&returnExtentOnly=true&f=geojson");
 
         await response.AssertGeoServicesErrorAsync(400);
@@ -1292,7 +1388,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnIdsOnly=true")]
     public async Task QueryFeatures_WithReturnIdsOnly_ReturnsIds()
     {
-        var response = await _fixture.Client.GetAsync(
+        using var client = _readOnlyApplication.CreateClient();
+
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?returnIdsOnly=true");
 
         response.Be200Ok();
@@ -1320,7 +1418,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnIdsOnly=true")]
     public async Task QueryFeatures_WithReturnIdsOnly_DoesNotIncludeExceededTransferLimit()
     {
-        var response = await _fixture.Client.GetAsync(
+        using var client = _readOnlyApplication.CreateClient();
+
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?returnIdsOnly=true&resultRecordCount=1");
 
         response.Be200Ok();
@@ -1344,7 +1444,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnExtentOnly=true")]
     public async Task QueryFeatures_WithReturnExtentOnly_ReturnsExtent()
     {
-        var response = await _fixture.Client.GetAsync(
+        using var client = _readOnlyApplication.CreateClient();
+
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?returnExtentOnly=true");
 
         response.Be200Ok();
@@ -1375,8 +1477,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer")]
     public async Task GenerateRenderer_WithUnsupportedClassificationType_ReturnsBadRequest()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         var classificationDef = Uri.EscapeDataString("""{"type":"uniqueValue"}""");
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/generateRenderer?classificationDef={classificationDef}");
 
         await response.AssertGeoServicesErrorAsync(400);
@@ -1390,9 +1494,11 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer")]
     public async Task GenerateRenderer_WithClassBreaksDef_ReturnsClassBreaksRenderer()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         var classificationDef = Uri.EscapeDataString(
             """{"type":"classBreaksDef","classificationField":"objectid","classificationMethod":"esriClassifyEqualInterval","breakCount":3}""");
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/generateRenderer?classificationDef={classificationDef}");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -1426,6 +1532,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer")]
     public async Task GenerateRenderer_PostWithClassBreaksDef_ReturnsClassBreaksRenderer()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         using var form = new FormUrlEncodedContent(new[]
         {
             new KeyValuePair<string, string>(
@@ -1434,7 +1542,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             new KeyValuePair<string, string>("f", "json")
         });
 
-        var response = await _fixture.Client.PostAsync(
+        var response = await client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/generateRenderer",
             form);
 
@@ -1453,8 +1561,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer")]
     public async Task GenerateRenderer_PostWithoutClassificationDef_ReturnsSimpleRenderer()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         using var form = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]);
-        var response = await _fixture.Client.PostAsync(
+        var response = await client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/generateRenderer",
             form);
 
@@ -1470,9 +1580,11 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer")]
     public async Task GenerateRenderer_WithClassBreaksDefQuantile_ReturnsClassBreaksRenderer()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         var classificationDef = Uri.EscapeDataString(
             """{"type":"classBreaksDef","classificationField":"objectid","classificationMethod":"esriClassifyQuantile","breakCount":2}""");
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/generateRenderer?classificationDef={classificationDef}");
 
         response.Be200Ok();
@@ -1491,9 +1603,11 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer")]
     public async Task GenerateRenderer_WithUniqueValueDef_ReturnsUniqueValueRenderer()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         var classificationDef = Uri.EscapeDataString(
             """{"type":"uniqueValueDef","uniqueValueFields":["category"],"fieldDelimiter":","}""");
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/generateRenderer?classificationDef={classificationDef}");
 
         response.Be200Ok();
@@ -1525,8 +1639,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer")]
     public async Task GenerateRenderer_WithMalformedClassificationDef_DoesNotLeakJsonParserDetails()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         var malformedClassificationDef = Uri.EscapeDataString("{\"type\":");
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/generateRenderer?classificationDef={malformedClassificationDef}");
 
         await response.AssertGeoServicesErrorAsync(400);
@@ -1543,8 +1659,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithSqlInjectionAttempt_Returns400()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act - Attempt SQL injection
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=name='Test'; DROP TABLE users; --");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=name='Test'; DROP TABLE users; --");
 
         // Assert
         await response.AssertGeoServicesErrorAsync(400);
@@ -1566,8 +1684,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithInvalidWhereClause_Returns400()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act - Invalid WHERE clause format
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=invalid syntax here");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=invalid syntax here");
 
         // Assert
         await response.AssertGeoServicesErrorAsync(400);
@@ -1587,8 +1707,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?unexpected=1")]
     public async Task QueryFeatures_WithUnknownParameter_Returns400()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?unexpected=1");
 
         // Assert
@@ -1609,9 +1731,11 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnAllRecords=true")]
     public async Task QueryFeatures_WithGeoServicesClientParameters_ReturnsOk()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // ArcGIS Pro and the ArcGIS API for Python send these by default; they must
         // be accepted (and ignored where unsupported) rather than rejected (#1276).
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
             "?where=1=1&outFields=*&returnAllRecords=true&multipatchOption=xyFootprint" +
             "&featureEncoding=esriDefault&datumTransformations=[]&f=json");
@@ -1624,11 +1748,13 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnAdvancedSymbols=true")]
     public async Task QueryFeatures_WithReturnAdvancedSymbols_ReturnsOk()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Regression for #1455: the Esri .NET Runtime SDK (ServiceFeatureTable.LoadAsync)
         // sends returnAdvancedSymbols=true on every layer query. It must be accepted and
         // ignored (HTTP 200) rather than rejected with 400, which would block the entire
         // .NET FeatureServer client.
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
             "?where=1=1&returnAdvancedSymbols=true&f=json");
 
@@ -1640,8 +1766,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithNonExistentService_Returns404()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act
-        var response = await _fixture.Client.GetAsync($"/rest/services/nonexistent/FeatureServer/{TestLayerId}/query");
+        var response = await client.GetAsync($"/rest/services/nonexistent/FeatureServer/{TestLayerId}/query");
 
         // Assert
         await response.AssertGeoServicesErrorAsync(404);
@@ -1661,8 +1789,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithNonExistentLayer_Returns404()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/999/query");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/999/query");
 
         // Assert
         await response.AssertGeoServicesErrorAsync(404);
@@ -1681,8 +1811,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithOutFields_ReturnsOnlySpecifiedFields()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?outFields=objectid,name");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?outFields=objectid,name");
 
         // Assert
         response.Be200Ok();
@@ -1700,8 +1832,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithReturnGeometryFalse_ReturnsNoGeometry()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?returnGeometry=false");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?returnGeometry=false");
 
         // Assert
         response.Be200Ok();
@@ -1727,8 +1861,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithSingleObjectId_ReturnsOneFeature()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?objectIds=1");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?objectIds=1");
 
         // Assert
         response.Be200Ok();
@@ -1757,8 +1893,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithMultipleObjectIds_ReturnsSpecificFeatures()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act - Request features with objectIds 1, 3, 5
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?objectIds=1,3,5");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?objectIds=1,3,5");
 
         // Assert
         response.Be200Ok();
@@ -1787,6 +1925,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithManyObjectIds_DoesNotApplyDefaultRecordLimit()
     {
+        await InitializeDefaultApplicationAsync();
+
         await _fixture.EnsureLargeTestDatasetAsync();
 
         _fixture.CurrentSchema.Should().NotBeNullOrWhiteSpace();
@@ -1845,6 +1985,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_PostWithObjectIds_ReturnsSpecificFeatures()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Arrange
         var json = """
             {
@@ -1856,7 +1998,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
-        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
+        var response = await client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
 
         // Assert
         response.Be200Ok();
@@ -1885,8 +2027,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithObjectIdsAndWhereClause_ReturnsIntersection()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act - Request objectId 1 with a where clause that excludes it.
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?objectIds=1&where=objectid>100");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?objectIds=1&where=objectid>100");
 
         // Assert
         response.Be200Ok();
@@ -1908,8 +2052,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithObjectIdsAndReturnIdsOnly_ReturnsOnlyIds()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?objectIds=1,2,3&returnIdsOnly=true");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?objectIds=1,2,3&returnIdsOnly=true");
 
         // Assert
         response.Be200Ok();
@@ -1934,8 +2080,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithObjectIdsAndReturnCountOnly_ReturnsCount()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?objectIds=1,2,3&returnCountOnly=true");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?objectIds=1,2,3&returnCountOnly=true");
 
         // Assert
         response.Be200Ok();
@@ -1959,8 +2107,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithInvalidObjectIdFormat_Returns400()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act - Invalid objectId format (non-numeric)
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?objectIds=1,invalid,3");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?objectIds=1,invalid,3");
 
         // Assert
         await response.AssertGeoServicesErrorAsync(400);
@@ -1989,6 +2139,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_PostFormDataWithObjectIds_ReturnsSpecificFeatures()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Arrange - Form data POST
         using var formData = new FormUrlEncodedContent(new[]
         {
@@ -1998,7 +2150,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         });
 
         // Act
-        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", formData);
+        var response = await client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", formData);
 
         // Assert
         response.Be200Ok();
@@ -2027,8 +2179,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithNonExistentObjectIds_ReturnsEmptyResult()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act - Request objectIds that don't exist (TestFeatureStore has IDs 1-5)
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?objectIds=999,1000");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?objectIds=999,1000");
 
         // Assert
         response.Be200Ok();
@@ -2053,8 +2207,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithResultOffset_SkipsCorrectNumberOfRecords()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act - Skip first 2 records
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?resultOffset=2");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?resultOffset=2");
 
         // Assert
         response.Be200Ok();
@@ -2080,8 +2236,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithResultRecordCount_LimitsReturnedFeatures()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act - Limit to 3 records
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?resultRecordCount=3");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?resultRecordCount=3");
 
         // Assert
         response.Be200Ok();
@@ -2104,8 +2262,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithOffsetAndCount_ReturnsCorrectPage()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act - Skip 1 record and limit to 2 records
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?resultOffset=1&resultRecordCount=2");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?resultOffset=1&resultRecordCount=2");
 
         // Assert
         response.Be200Ok();
@@ -2125,9 +2285,11 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithPagingWithoutExplicitOrder_DoesNotOverlapPages()
     {
-        var page1Response = await _fixture.Client.GetAsync(
+        using var client = _readOnlyApplication.CreateClient();
+
+        var page1Response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&resultOffset=0&resultRecordCount=2");
-        var page2Response = await _fixture.Client.GetAsync(
+        var page2Response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&resultOffset=2&resultRecordCount=2");
 
         page1Response.Be200Ok();
@@ -2166,8 +2328,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithExceededLimit_SetsExceededTransferLimitFlag()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act - Request only 1 record when TestFeatureStore has 5 features
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?resultRecordCount=1");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?resultRecordCount=1");
 
         // Assert
         response.Be200Ok();
@@ -2193,8 +2357,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithAllResults_ExceededTransferLimitIsFalse()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act - Request all 5 records that exist in TestFeatureStore
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?resultRecordCount=5");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?resultRecordCount=5");
 
         // Assert
         response.Be200Ok();
@@ -2224,6 +2390,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_PostWithPagingParameters_ReturnsCorrectPage()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Arrange
         var json = """
             {
@@ -2237,7 +2405,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
-        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
+        var response = await client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
 
         // Assert
         response.Be200Ok();
@@ -2260,11 +2428,13 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithPointGeometryIntersects_ReturnsFilteredFeatures()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Arrange - Point geometry in GeoServices REST JSON format
         var pointGeometry = @"{""x"":-122.4194,""y"":37.7749}"; // San Francisco coordinates
 
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?geometry={Uri.EscapeDataString(pointGeometry)}&spatialRel=esriSpatialRelIntersects&f=json");
 
         // Assert
@@ -2288,6 +2458,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_PostWithPolygonGeometryContains_ReturnsContainedFeatures()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Arrange - Polygon geometry around San Francisco Bay Area
         var json = """
             {
@@ -2300,7 +2472,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
-        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
+        var response = await client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
 
         // Assert
         response.Be200Ok();
@@ -2325,11 +2497,13 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_SpatialRelMapping_ReturnsValidResponse(string spatialRel)
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Arrange
         var pointGeometry = @"{""x"":-122.4,""y"":37.7}";
 
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?geometry={Uri.EscapeDataString(pointGeometry)}&spatialRel={spatialRel}&f=json");
 
         // Assert - Should not throw an exception for valid spatial relationships
@@ -2351,11 +2525,13 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithInvalidGeometry_Returns400()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Arrange - Invalid JSON geometry
         var invalidGeometry = @"{""invalid"":""geometry""}";
 
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?geometry={Uri.EscapeDataString(invalidGeometry)}&f=json");
 
         // Assert
@@ -2370,12 +2546,14 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithUnsupportedSpatialRel_Returns400()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Arrange
         var pointGeometry = @"{""x"":-122.4,""y"":37.7}";
         var unsupportedSpatialRel = "esriSpatialRelInvalid"; // Invalid spatial relationship
 
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?geometry={Uri.EscapeDataString(pointGeometry)}&spatialRel={unsupportedSpatialRel}&f=json");
 
         // Assert
@@ -2390,12 +2568,14 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithSpatialAndAttributeFilters_ReturnsFilteredFeatures()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Arrange
         var pointGeometry = @"{""x"":-122.4,""y"":37.7}";
         var whereClause = "name='Test Feature'";
 
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?geometry={Uri.EscapeDataString(pointGeometry)}&where={Uri.EscapeDataString(whereClause)}&f=json");
 
         // Assert
@@ -2419,8 +2599,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithFormatJson_ReturnsGeoServicesJsonFormat()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json");
 
         // Assert
         response.BeSuccessful();
@@ -2448,8 +2630,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithFormatGeoJson_ReturnsGeoJsonFormat()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=geojson");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=geojson");
 
         // Assert
         response.BeSuccessful();
@@ -2490,8 +2674,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithGeoJsonExceededTransferLimit_IncludesExceededTransferLimit()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=geojson&resultRecordCount=1");
 
         // Assert
@@ -2519,8 +2705,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithOutFieldsParam_FiltersAttributesInBothFormats()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Test GeoServices REST JSON format
-        var geoServicesResponse = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json&outFields=objectid,name");
+        var geoServicesResponse = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json&outFields=objectid,name");
         geoServicesResponse.BeSuccessful();
 
         var geoServicesContent = await geoServicesResponse.Content.ReadAsStringAsync();
@@ -2536,7 +2724,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         });
 
         // Test GeoJSON format
-        var geoJsonResponse = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=geojson&outFields=objectid,name");
+        var geoJsonResponse = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=geojson&outFields=objectid,name");
         geoJsonResponse.BeSuccessful();
 
         var geoJsonContent = await geoJsonResponse.Content.ReadAsStringAsync();
@@ -2560,8 +2748,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithOutFieldsWildcardAndExplicitFields_ReturnsAllAttributes()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json&outFields=*,name");
 
         // Assert
@@ -2589,8 +2779,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithReturnGeometryFalse_OmitsGeometryInBothFormats()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Test GeoServices REST JSON format
-        var geoServicesResponse = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json&returnGeometry=false");
+        var geoServicesResponse = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json&returnGeometry=false");
         geoServicesResponse.BeSuccessful();
 
         var geoServicesContent = await geoServicesResponse.Content.ReadAsStringAsync();
@@ -2606,7 +2798,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         }
 
         // Test GeoJSON format
-        var geoJsonResponse = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=geojson&returnGeometry=false");
+        var geoJsonResponse = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=geojson&returnGeometry=false");
         geoJsonResponse.BeSuccessful();
 
         var geoJsonContent = await geoJsonResponse.Content.ReadAsStringAsync();
@@ -2624,6 +2816,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_PostWithGeoJsonFormat_ReturnsGeoJsonFormat()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Arrange
         var requestBody = JsonSerializer.Serialize(new QueryParameters
         {
@@ -2634,7 +2828,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         using var content = new StringContent(requestBody, Encoding.UTF8, "application/json");
 
         // Act
-        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
+        var response = await client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
 
         // Assert
         response.BeSuccessful();
@@ -2663,8 +2857,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithInvalidFormat_Returns400()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=invalid");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=invalid");
 
         // Assert
         await response.AssertGeoServicesErrorAsync(400);
@@ -2685,8 +2881,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_GeoJsonFormat_IncludesFeatureIds()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Act
-        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=geojson&resultRecordCount=1");
+        var response = await client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=geojson&resultRecordCount=1");
 
         // Assert
         response.BeSuccessful();
@@ -2737,6 +2935,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithLineStringGeometry_ReturnsValidResponse()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Arrange - LineString geometry in GeoServices REST JSON format
         var json = """
             {
@@ -2750,7 +2950,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
-        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
+        var response = await client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
 
         // Assert
         response.Be200Ok();
@@ -2771,6 +2971,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithMultiPointGeometry_ReturnsValidResponse()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Arrange - MultiPoint geometry
         var json = """
             {
@@ -2784,7 +2986,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
-        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
+        var response = await client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
 
         // Assert
         response.Be200Ok();
@@ -2805,6 +3007,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithEnvelopeGeometry_ReturnsValidResponse()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Arrange - Envelope geometry (bounding box)
         var json = """
             {
@@ -2818,7 +3022,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
-        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
+        var response = await client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
 
         // Assert
         response.Be200Ok();
@@ -2839,6 +3043,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithMultiPolygonGeometry_ReturnsValidResponse()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Arrange - MultiPolygon geometry (two separate polygons)
         var json = """
             {
@@ -2852,7 +3058,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
-        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
+        var response = await client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
 
         // Assert
         response.Be200Ok();
@@ -2873,6 +3079,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithInvalidLineStringGeometry_Returns400()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Arrange - Invalid LineString geometry (missing paths)
         var json = """
             {
@@ -2885,7 +3093,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
-        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
+        var response = await client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
 
         // Assert
         await response.AssertGeoServicesErrorAsync(400);
@@ -2899,6 +3107,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithEmptyMultiPointGeometry_Returns400()
     {
+        using var client = _readOnlyApplication.CreateClient();
+
         // Arrange - Empty MultiPoint geometry
         var json = """
             {
@@ -2911,7 +3121,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
-        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
+        var response = await client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
 
         // Assert
         await response.AssertGeoServicesErrorAsync(400);
@@ -2922,6 +3132,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
     public async Task ApplyEdits_ServiceLevel_WithLayerPayload_ReturnsPerLayerResults()
     {
+        await InitializeDefaultApplicationAsync();
+
         var request = """
             [
                 {
@@ -2964,6 +3176,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
     public async Task ApplyEdits_ServiceLevel_AddsOnly_IncludesEmptyUpdateAndDeleteResults()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Regression (#1775): a real Esri FeatureServer always includes per-layer
         // updateResults and deleteResults (empty arrays when none). arcpy's `da` driver
         // raises without them. An adds-only payload must still emit all three arrays.
@@ -3018,6 +3232,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_LayerLevel_AddsOnly_IncludesEmptyUpdateAndDeleteResults()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Regression (#4100): Esri clients expect all three result arrays even when the
         // request contains only one edit kind.
         var request = """
@@ -3065,6 +3281,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
     public async Task ApplyEdits_ServiceLevel_WithMalformedJson_DoesNotLeakParserDetails()
     {
+        await InitializeDefaultApplicationAsync();
+
         var malformedRequest = """[{"id":0,"adds":[{"attributes":{"name":"bad"}}]""";
         using var content = new StringContent(malformedRequest, Encoding.UTF8, "application/json");
 
@@ -3085,6 +3303,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
     public async Task ApplyEdits_ServiceLevel_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
     {
+        await InitializeDefaultApplicationAsync();
+
         var request = """[{"id":0,"adds":[{"attributes":{"name":"bad"}}]}]""";
         using var content = new StringContent(request, Encoding.UTF8, "text/plain");
 
@@ -3102,6 +3322,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
     public async Task ApplyEdits_ServiceLevel_WithUseGlobalIdsEnabled_ReturnsBadRequest()
     {
+        await InitializeDefaultApplicationAsync();
+
         var request = """
             [
               {
@@ -3131,6 +3353,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithAddOperation_ReturnsNewObjectId()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Arrange
         var editsRequest = new ApplyEditsRequest
         {
@@ -3198,6 +3422,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         string value,
         bool onQueryString)
     {
+        await InitializeDefaultApplicationAsync();
         var name = $"noop-{Guid.NewGuid():N}";
 
         var response = await PostLayerApplyEditsFormAsync(name, control, value, onQueryString);
@@ -3233,6 +3458,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         bool onQueryString,
         string expectedError)
     {
+        await InitializeDefaultApplicationAsync();
         var name = $"rejected-{Guid.NewGuid():N}";
 
         var response = await PostLayerApplyEditsFormAsync(name, control, value, onQueryString);
@@ -3249,6 +3475,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_ReturnEditMomentTrue_ReportsWhenEditsWereApplied(bool onQueryString)
     {
+        await InitializeDefaultApplicationAsync();
+
         // #4105: the ArcGIS Maps SDK for JavaScript sends returnEditMoment=true whenever it holds an
         // edit session; the server reports its own clock after committing, so the moment lies between
         // wall-clock readings taken before and after the request.
@@ -3289,6 +3517,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
     public async Task ApplyEdits_ServiceLevel_ReturnEditMomentTrue_ReportsPerLayerEditMoment()
     {
+        await InitializeDefaultApplicationAsync();
+
         var name = $"service-moment-{Guid.NewGuid():N}";
         using var form = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -3367,6 +3597,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         string value,
         string expectedError)
     {
+        await InitializeDefaultApplicationAsync();
         var edits = """
             [{"id":0,"adds":[{"attributes":{"name":"form controls"}}]}]
             """;
@@ -3388,6 +3619,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
     public async Task ApplyEdits_ServiceLevel_AttachmentPayload_IsRejectedInsteadOfDropped()
     {
+        await InitializeDefaultApplicationAsync();
+
         var request = """
             [{
               "id": 0,
@@ -3410,6 +3643,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_RejectsEditKindMissingFromDeclaredCapabilities()
     {
+        await InitializeDefaultApplicationAsync();
+
         _fixture.EnableV2ServiceEditingCapabilities(TestServiceId, ["Update"]);
         using var content = new StringContent(
             "{\"adds\":[{\"attributes\":{\"name\":\"undeclared create\"}}]}",
@@ -3428,6 +3663,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     public async Task Calculate_AcceptsEsriValueAndSqlExpressionForms()
     {
+        await InitializeDefaultApplicationAsync();
+
         var addPayload = """
             {"features":[{"attributes":{"name":"calculate source","description":"before"}}]}
             """;
@@ -3466,6 +3703,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_RetriedAddWithSameIdempotencyKey_CreatesExactlyOneFeature()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Server-side at-most-once (#2250): a client that retries an add carrying the same
         // Idempotency-Key must not create a duplicate feature; the retry replays the original
         // response (the same objectId) and the layer ends up with exactly one new row.
@@ -3544,6 +3783,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_RetryAfterValidationRollbackWithSameIdempotencyKey_RepeatsRollbackInsteadOfConflict()
     {
+        await InitializeDefaultApplicationAsync();
+
         // #3052: the rollbackOnFailure validation-failure response returns before the handler
         // records a replay value, so before the fix the reservation taken by TryReserveAsync stayed
         // held for the whole reservation window. A client retrying inside that window found no
@@ -3589,6 +3830,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_RetryAfterZeroRowCommitWithSameIdempotencyKey_ReattemptsInsteadOfConflict()
     {
+        await InitializeDefaultApplicationAsync();
+
         // #3052: a committed-but-zero-row edit is deliberately NOT recorded so a genuine retry is
         // re-attempted rather than replaying a no-op failure — but before the fix the still-held
         // reservation blocked exactly that retry with a 409, contradicting the branch's own intent.
@@ -3638,6 +3881,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WhileAnotherRequestHoldsTheSameIdempotencyKey_ReportsConflict()
     {
+        await InitializeDefaultApplicationAsync();
+
         // The reservation's real purpose (BH5-001) must survive the #3052 release change: while a
         // reservation is genuinely held, a second request carrying the same key must be rejected as a
         // conflict rather than executing a duplicate edit. Reserving directly through the store makes
@@ -3727,6 +3972,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithCalculationRule_PopulatesTargetFieldOnAdd()
     {
+        await InitializeDefaultApplicationAsync();
+
         // honua-server#1271: a calculation attribute rule attached to the resource must
         // fire on applyEdits and populate its target field before write. The 'description'
         // string field is part of the seeded test layer schema, so we drive a constant
@@ -3794,6 +4041,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithConstraintRule_RejectsViolatingEditWithCleanError()
     {
+        await InitializeDefaultApplicationAsync();
+
         // honua-server#1271: a constraint attribute rule that evaluates to false must
         // reject the edit through the standard per-feature edit-error shape (not a 500).
         var rule = new MetadataV2AttributeRule
@@ -3848,6 +4097,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithUnsupportedRuleExpression_DoesNotFailEdit()
     {
+        await InitializeDefaultApplicationAsync();
+
         // honua-server#1271: a constraint whose Arcade expression is outside the supported
         // safe subset must be routed out of scope (skipped) rather than failing the edit.
         var rule = new MetadataV2AttributeRule
@@ -3897,6 +4148,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithAddOperationAndCallerObjectId_ReturnsGeneratedObjectId()
     {
+        await InitializeDefaultApplicationAsync();
+
         var editsRequest = new ApplyEditsRequest
         {
             Adds =
@@ -3941,6 +4194,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithUpdateOperation_ReturnsUpdatedObjectId()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Arrange - First add a feature to update
         var addRequest = new ApplyEditsRequest
         {
@@ -4008,6 +4263,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithDeleteOperation_ReturnsDeletedObjectId()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Arrange - First add a feature to delete
         var addRequest = new ApplyEditsRequest
         {
@@ -4064,6 +4321,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithMixedOperations_ReturnsCorrectResults()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Arrange - First add a feature to update/delete
         var setupRequest = new ApplyEditsRequest
         {
@@ -4162,6 +4421,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithInvalidUpdate_ReturnsError()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Arrange - Try to update non-existent feature
         var updateRequest = new ApplyEditsRequest
         {
@@ -4202,6 +4463,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithUseGlobalIdsEnabled_ReturnsBadRequest()
     {
+        await InitializeDefaultApplicationAsync();
+
         var payload = """
             {
               "adds": [
@@ -4228,6 +4491,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithUnsupportedFormat_ReturnsBadRequest()
     {
+        await InitializeDefaultApplicationAsync();
+
         var payload = """
             {
               "adds": [
@@ -4258,6 +4523,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures")]
     public async Task AddFeatures_WithFeaturePayload_ReturnsAddResults()
     {
+        await InitializeDefaultApplicationAsync();
+
         var payload = """
             {
               "features": [
@@ -4296,6 +4563,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures")]
     public async Task UpdateFeatures_WithFeaturePayload_ReturnsUpdateResults()
     {
+        await InitializeDefaultApplicationAsync();
+
         var addPayload = """
             {
               "features": [
@@ -4354,6 +4623,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures")]
     public async Task UpdateFeatures_WithAttributeOnlyPayload_PreservesExistingGeometryAndAttributes()
     {
+        await InitializeDefaultApplicationAsync();
+
         var addPayload = """
             {
               "features": [
@@ -4419,6 +4690,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures")]
     public async Task DeleteFeatures_WithObjectIdsPayload_ReturnsDeleteResults()
     {
+        await InitializeDefaultApplicationAsync();
+
         var addPayload = """
             {
               "features": [
@@ -4469,6 +4742,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures")]
     public async Task DeleteFeatures_WithMalformedObjectIdsDelimiter_ReturnsBadRequest()
     {
+        await InitializeDefaultApplicationAsync();
+
         var deletePayload = """
             {
               "objectIds": "1,,2",
@@ -4489,6 +4764,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithGeometryTypeMismatch_FailsPerFeatureWithoutStoring()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Bug A regression: a polygon must not be accepted/stored on an esriGeometryPoint layer.
         var editsRequest = """
             {
@@ -4534,6 +4811,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithMatchingPointGeometry_Succeeds()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Bug A guard: a valid point geometry must still be accepted on a point layer.
         var editsRequest = """
             {
@@ -4567,6 +4846,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
     public async Task ApplyEdits_ServiceLevel_DefaultRollbackOnFailure_RollsBackAllLayerEdits()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Bug B regression: with rollbackOnFailure=true a valid add must NOT persist when a
         // sibling edit targeting the same layer fails. The two array elements both target
         // layer 0; the failing update (objectid that does not exist) must roll back the add.
@@ -4618,6 +4899,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures")]
     public async Task DeleteFeatures_WithWhereClauseInBody_DeletesMatchingFeatures()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Bug C regression: deleteFeatures must honor a where clause (here in the request body)
         // to select rows, not just explicit objectIds.
         var marker = $"bugC-where-{Guid.NewGuid():N}";
@@ -4673,6 +4956,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures")]
     public async Task DeleteFeatures_WithGeometryFilterInQuery_DeletesMatchingFeatures()
     {
+        await InitializeDefaultApplicationAsync();
+
         // Bug C regression: deleteFeatures must honor a spatial (geometry) filter for selection.
         var marker = $"bugC-geom-{Guid.NewGuid():N}";
         var addPayload = $$"""

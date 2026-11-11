@@ -716,3 +716,8 @@ GitHub's specific clean-status response ends neutrally; other API errors fail.
 
 WFS shard coverage follows the
 [WFS endpoint state isolation contract](gate-model.md#wfs-endpoint-state-isolation).
+
+### FeatureServer query fixtures
+
+FeatureServer query coverage follows the
+[query state isolation contract](gate-model.md#featureserver-query-state-isolation).

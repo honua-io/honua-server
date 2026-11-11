@@ -756,3 +756,10 @@ each case. Feature inserts, transactions, stored-query mutations, metadata
 overrides, and custom configuration require separate applications and schemas so feature counts and
 catalog definitions cannot leak across cases. PR shards and full trunk runs
 exercise the same cases under this contract.
+
+### FeatureServer query state isolation
+
+Read-only FeatureServer metadata, renderer and query cases may share a seeded
+application with a fresh HTTP client per case. Feature edits, metadata overrides,
+and expanded datasets require separate applications and schemas. The same state
+isolation applies to PR shards and full trunk coverage.
