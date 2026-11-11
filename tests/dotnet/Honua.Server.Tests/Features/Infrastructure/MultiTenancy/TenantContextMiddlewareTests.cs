@@ -226,18 +226,83 @@ public class TenantContextMiddlewareTests
     [IntegrationTest]
     [Operation(Operations.Security)]
     [Endpoint("GET /tenant")]
-    public async Task OperatorBearerWithoutTenantClaim_TenantBoundRouteIsRejected()
+    public async Task OperatorBearerWithoutTenantClaim_TenantBoundRoute_ResolvesDefaultTenantLikeAdminSession()
     {
         var principal = AuthenticatedPrincipal(
             claims: (ClaimTypes.Name, "operator"),
             authenticationType: "OperatorBearer");
 
         var client = await CreateAppAsync(principal);
+        var tenant = await client.GetStringAsync("/tenant");
+        var binding = await client.GetStringAsync("/binding");
+
+        Assert.Equal("Default:public", tenant);
+        Assert.Equal("public|public", binding);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /tenant")]
+    public async Task OperatorBearerWithoutTenantClaim_NoDefaultTenant_TenantBoundRouteIsRejected()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: (ClaimTypes.Name, "operator"),
+            authenticationType: "OperatorBearer");
+
+        var client = await CreateAppAsync(principal, options => options.DefaultTenantId = null);
         var response = await client.GetAsync("/tenant");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal("authentication_required", document.RootElement.GetProperty("code").GetString());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /tenant")]
+    public async Task OperatorBearerWithUnauthorizedTenantHeader_IsDenied()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: (ClaimTypes.Name, "operator"),
+            authenticationType: "OperatorBearer");
+
+        var client = await CreateAppAsync(principal);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/tenant");
+        request.Headers.Add(TenantContextOptions.TenantHeaderName, "tenant-other");
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /tenant")]
+    public async Task JwtBearerWithoutTenantClaim_TenantBoundRouteIsRejected()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: (ClaimTypes.Name, "external-user"),
+            authenticationType: "Bearer");
+
+        var client = await CreateAppAsync(principal);
+        var response = await client.GetAsync("/tenant");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /tenant")]
+    public async Task OperatorBearerIdentityAlongsideJwtBearer_TenantBoundRouteIsRejected()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: (ClaimTypes.Name, "operator"),
+            authenticationType: "OperatorBearer");
+        principal.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Name, "external-user")], "Bearer"));
+
+        var client = await CreateAppAsync(principal);
+        var response = await client.GetAsync("/tenant");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [IntegrationTest]

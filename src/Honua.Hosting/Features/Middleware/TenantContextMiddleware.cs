@@ -145,6 +145,18 @@ internal sealed class TenantContextMiddleware(
         // An authenticated bearer without a validated tenant claim must never inherit
         // the anonymous public default. Tenant-required operations will reject the
         // null context downstream rather than running under the wrong tenant.
+        // Operator bearers are minted from an administrator session with its claims copied
+        // verbatim, so they resolve the default tenant exactly as that session's cookie does.
+        // External bearers stay fail-closed below.
+        if (isAuthenticated && IsOperatorBearerOnly(principal!) && !string.IsNullOrWhiteSpace(_options.DefaultTenantId))
+        {
+            tenantContext.Set(_options.DefaultTenantId, TenantContextSource.Default);
+            CanonicalSecurityActor.StampRequestBinding(principal!, _options.DefaultTenantId);
+            TenantContextLog.Resolved(_logger, nameof(TenantContextSource.Default), _options.DefaultTenantId!, path);
+            await _next(context).ConfigureAwait(false);
+            return;
+        }
+
         if (isAuthenticated && CanonicalSecurityActor.IsBearerPrincipal(principal!))
         {
             tenantContext.Set(null, TenantContextSource.Anonymous);
@@ -193,6 +205,17 @@ internal sealed class TenantContextMiddleware(
         tenantContext.Set(null, TenantContextSource.Anonymous);
         TenantContextLog.AnonymousNoDefault(_logger, path);
         await _next(context).ConfigureAwait(false);
+    }
+
+    private static bool IsOperatorBearerOnly(ClaimsPrincipal principal)
+    {
+        var stampedScheme = CanonicalSecurityActor.FindStampedValue(principal, CanonicalSecurityActor.AuthenticationSchemeClaim);
+        var authenticated = principal.Identities.Where(static identity => identity.IsAuthenticated).ToArray();
+        return authenticated.Length > 0
+            && authenticated.All(static identity => string.Equals(identity.AuthenticationType,
+                OidcAuthenticationExtensions.OperatorBearerScheme, StringComparison.Ordinal))
+            && (stampedScheme is null || string.Equals(stampedScheme,
+                OidcAuthenticationExtensions.OperatorBearerScheme, StringComparison.Ordinal));
     }
 
     private bool TryReadHeader(HttpContext context, out string tenantId)
