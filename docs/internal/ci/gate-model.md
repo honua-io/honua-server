@@ -752,6 +752,20 @@ on selected PR runs and twice-daily full trunk runs. This changes no runner
 count, required check name, required aggregate dependency, workflow, or shard
 definition.
 
+### Capability manifest endpoint fixture lifetime
+
+`CapabilityManifestEndpointTests` starts its default manifest application once
+per class through an `IClassFixture` and disposes it when the class finishes.
+Each case still makes its own anonymous and admin `HttpClient` against that
+host, and only cases that read without writing use it. Cases that need a
+different license, configuration or set of services build, start and dispose
+their own `WebAppFixture` inside the test, so configured applications stay
+isolated from each other and from the shared one.
+All cases and assertions remain in the Server Features Capabilities shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
 ## Trailing affected CI selection
 
 Trailing affected CI refreshes its completed-ancestor base when the selection job starts,

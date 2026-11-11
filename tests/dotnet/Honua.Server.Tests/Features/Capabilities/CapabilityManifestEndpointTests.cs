@@ -53,15 +53,27 @@ namespace Honua.Server.Tests.Features.Capabilities;
 [Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.Metadata)]
-public sealed partial class CapabilityManifestEndpointTests : IAsyncLifetime
+public sealed partial class CapabilityManifestEndpointTests
+    : IClassFixture<CapabilityManifestEndpointTests.DefaultApplication>, IAsyncLifetime
 {
     private readonly WebAppFixture _fixture;
     private HttpClient _anonymousClient = null!;
     private HttpClient _adminClient = null!;
 
-    public CapabilityManifestEndpointTests()
+    public CapabilityManifestEndpointTests(DefaultApplication defaultApplication)
     {
-        _fixture = CreateManifestFixture();
+        _fixture = defaultApplication.Fixture;
+    }
+
+    // Read-only default application shared by the class; tests that need other configuration
+    // build and dispose their own application.
+    public sealed class DefaultApplication : IAsyncLifetime
+    {
+        public WebAppFixture Fixture { get; } = CreateManifestFixture();
+
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
     }
 
     private static WebAppFixture CreateManifestFixture(
@@ -422,18 +434,18 @@ public sealed partial class CapabilityManifestEndpointTests : IAsyncLifetime
                 });
             });
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync()
     {
-        await _fixture.InitializeAsync();
         _anonymousClient = _fixture.CreateClient();
         _adminClient = _fixture.CreateAdminClient();
+        return Task.CompletedTask;
     }
 
-    public async Task DisposeAsync()
+    public Task DisposeAsync()
     {
         _anonymousClient.Dispose();
         _adminClient.Dispose();
-        await _fixture.DisposeAsync();
+        return Task.CompletedTask;
     }
 
     [IntegrationTest]
