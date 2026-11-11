@@ -668,3 +668,14 @@ client compatibility receipts instead of every test language, and GIS data
 instead of GIS prose. Runtime source, generator scripts, CITE status and all
 existing build/setup inputs remain covered. Its producer/consumer security
 boundary and deterministic replay are unchanged.
+
+### WPS endpoint fixture lifetime
+
+`Wps20EndpointsTests` shares its default application and identically configured
+conformance-echo application for the lifetime of the sequential test class.
+Each application seeds its database once. Tests with service substitutes or
+custom host configuration retain isolated applications; echo results are
+accessed through their request-generated job IDs and reference tokens.
+All cases and assertions remain in the WFS 1–9 shard family on selected PR runs
+and twice-daily full trunk runs. This changes no runner count, required check
+name, required aggregate dependency, workflow, or shard definition.

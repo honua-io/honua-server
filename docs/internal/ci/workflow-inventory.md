@@ -646,3 +646,9 @@ Unknown projects outside the solution still fail planning; test selection is unc
 
 Optional PR workflow filters and retained post-merge coverage are documented in
 [optional PR input boundaries](gate-model.md#optional-pr-workflow-input-boundaries).
+
+### WPS endpoint fixture lifetime
+
+The WFS 1–9 shard family includes `Wps20EndpointsTests`. See
+[WPS endpoint fixture lifetime](gate-model.md#wps-endpoint-fixture-lifetime)
+for its class-scoped applications and isolated custom-host cases.
