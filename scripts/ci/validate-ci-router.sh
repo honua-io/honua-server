@@ -152,6 +152,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-managed-test-build.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-artifact-install-cancellation.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-managed-ci-workflow.py
+"${PYTHON_BIN}" scripts/ci/fixtures/validate-analyzer-test-filter.py
 "${PYTHON_BIN}" scripts/ci/fixtures/validate-fast-test-selection.py
 "${PYTHON_BIN}" scripts/ci/fixtures/validate-partition-managed-producer.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-matrix-file-transport.py

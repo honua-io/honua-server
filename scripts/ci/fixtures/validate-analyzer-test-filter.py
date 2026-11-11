@@ -1,0 +1,43 @@
+#!/usr/bin/env python3
+"""Verify analyzer root partitions preserve full and affected coverage."""
+import importlib.util
+import json
+from pathlib import Path
+import tempfile
+import unittest
+
+SCRIPT = Path(__file__).resolve().parents[1] / 'analyzer-test-filter.py'
+spec = importlib.util.spec_from_file_location('test_filter', SCRIPT)
+filters = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(filters)
+
+
+class PartitionTests(unittest.TestCase):
+    def test_full_and_affected_partitions_preserve_exact_union(self):
+        root = SCRIPT.parents[2]
+        full = set(filters.partition(root, None, 'server') + filters.partition(root, None, 'other'))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'scope.slnf'
+            for selected in [full, {filters.SERVER}, full - {filters.SERVER}, set()]:
+                path.write_text(json.dumps({'solution': {'path': str(root / 'Honua.sln'),
+                                                       'projects': [p.replace('/', '\\') for p in selected]}}))
+                server = set(filters.partition(root, path, 'server'))
+                other = set(filters.partition(root, path, 'other'))
+                self.assertEqual(selected, server | other)
+                self.assertFalse(server & other)
+                self.assertLessEqual(server, {filters.SERVER})
+
+    def test_invalid_filter_fails_closed(self):
+        root = SCRIPT.parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'scope.slnf'
+            for solution, projects in [('wrong.sln', []), (str(root / 'Honua.sln'), ['unknown.csproj']),
+                                       (str(root / 'Honua.sln'), 'not-an-array'),
+                                       (str(root / 'Honua.sln'), [42])]:
+                path.write_text(json.dumps({'solution': {'path': solution, 'projects': projects}}))
+                with self.assertRaises(ValueError):
+                    filters.partition(root, path, 'server')
+
+
+if __name__ == '__main__':
+    unittest.main()

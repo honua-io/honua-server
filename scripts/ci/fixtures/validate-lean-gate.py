@@ -241,7 +241,8 @@ import json
 _draft, _ready = (json.loads(value) for value in format_matrix.groups())
 assert [row['check'] for row in _draft] == ['Format']
 assert [(row['check'], row['analyzer-partition'], row['analyzer-build']) for row in _ready] == [
-    ('Format', 'all', 'false'), ('Analyzers', 'source', 'true'), ('Analyzers (tests)', 'tests', 'true')]
+    ('Format', 'all', 'false'), ('Analyzers', 'source', 'true'), ('Analyzers (tests)', 'tests', 'true'), ('Analyzers (server tests)', 'tests', 'true')]
+assert [row.get('analyzer-test-partition', 'all') for row in _ready] == ['all', 'all', 'other', 'server']
 assert _draft == _ready[:1]
 _format_job = PR_GATE.read_text().split('  format:\n', 1)[1].split('\n  fast-tests:', 1)[0]
 _wait = _format_job.split('- name: Await exact-head review', 1)[1].split('- uses:', 1)[0]

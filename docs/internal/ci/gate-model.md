@@ -205,7 +205,7 @@ group. Unknown projects, invalid roots, missing history, selector errors and
 non-PR events retain every group. Existing docs/generated-only classification
 and exact-head review admission still apply. A skipped test body completes its
 matrix row successfully, preserving the required aggregate's needs contract.
-Drafts instantiate only the Format matrix row; ready PRs retain both analyzer
+Drafts instantiate only the Format matrix row; ready PRs retain all analyzer
 partitions and Format.
 
 **Governance and runtime proofs.** The independent PR Fast job retains the
@@ -664,3 +664,7 @@ the same warnings, analyzers and graph-build settings as the solution build.
 Unknown projects outside the solution still fail planning; test selection is unchanged.
 
 Each affected shard selects the SDK and workflow-attempt identity exported by its own managed producer. A shard spanning both producers rebuilds its projects locally instead of combining independently resolved SDK outputs. Fast-test selection reads imported build documents through the shared project parser; unresolved imports or linked inputs retain all four groups.
+
+### Test analyzer compilation roots
+
+The ready-PR format matrix retains `PR Gate / Analyzers (tests)` and adds `PR Gate / Analyzers (server tests)`. The latter compiles Honua.Server.Tests; the former compiles every other selected solution root. Their union equals the original full or affected root set, with no overlap. Forward dependencies still compile and test diagnostics remain warnings-as-errors in both jobs. A partition with no roots skips restore and build explicitly. The required format matrix waits for both jobs; drafts retain Format only. This separates the measured 14.9-minute test-analyzer path; the new timing must be measured on a hosted gate run.
