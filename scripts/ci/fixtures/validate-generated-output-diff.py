@@ -272,6 +272,7 @@ class WorkflowCompletion(unittest.TestCase):
         for verdict in ('true', 'false', ''):
             values = {'env.REVIEW_FIRST_MODE': 'observe', 'github.event_name': 'pull_request',
                       'github.run_attempt': 1, 'steps.docs-only.outputs.docs_only': 'false',
+                      'steps.fast-selection.outputs[matrix.test-group]': 'true',
                       'steps.generated-only.outputs.generated_only': verdict,
                       'needs.pr-gate.outputs.docs_only': 'false',
                       'needs.pr-gate.outputs.generated_only': verdict,

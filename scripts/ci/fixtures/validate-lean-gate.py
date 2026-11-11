@@ -363,7 +363,9 @@ require(
 )
 require(
     r"required:\n[\s\S]*?- name: Revalidate exact-head review before success\n"
-    r"\s+if: env\.REVIEW_FIRST_MODE == 'enforce'[\s\S]*?Review Gate",
+    r"\s+if: env\.REVIEW_FIRST_MODE == 'enforce'[\s\S]*?"
+    r"require\(`\$\{process\.env\.GITHUB_WORKSPACE\}/\.github/scripts/revalidate-exact-head-review\.cjs`\);\n"
+    r"\s+await revalidate\(\{ github, context, core, expectedHead: '\$\{\{ github\.event\.pull_request\.head\.sha \}\}' \}\);",
     "revalidate exact-head review after both parallel paths complete",
     text=PR_GATE_TEXT,
 )
