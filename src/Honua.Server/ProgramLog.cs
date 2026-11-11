@@ -9,10 +9,6 @@ internal static partial class ProgramLog
     [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to connect to Redis at startup. RedisCacheService will operate in fallback mode.")]
     public static partial void RedisStartupConnectionFailed(ILogger logger, Exception exception);
 
-    [LoggerMessage(
-        Level = LogLevel.Warning,
-        Message = "Admin API keys are held in process memory on a multi-instance host without Redis or a PostgreSQL database; a key minted on one instance is unknown to the others.")]
-    public static partial void AdminApiKeysPerInstance(ILogger logger);
 
     [LoggerMessage(
         Level = LogLevel.Information,

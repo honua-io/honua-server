@@ -14,6 +14,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Import.FileImport.Durable;
 using Honua.Server.Features.Import;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -144,7 +145,7 @@ public sealed class UniversalImportJobServiceDurableDispatchTests
     public async Task QueueImportAsync_WithBatchRunner_SubmitsFileImportJobCarryingStorageReference()
     {
         var jobStore = new InMemoryExecutionJobStore();
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var backend = new StubBatchComputeBackend(BatchBackendName, BatchComputeTargetKind.AwsBatch);
         var inProcess = new ProgressReadingImportJobService(progressStore);
         var service = CreateService(
@@ -191,7 +192,7 @@ public sealed class UniversalImportJobServiceDurableDispatchTests
     public async Task QueueImportAsync_WithLocalDurableRunner_EnqueuesOnTheSharedQueue()
     {
         var jobStore = new InMemoryExecutionJobStore();
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var queue = Substitute.For<IJobQueue>();
         var service = CreateService(
             BackgroundImportRunnerDecision.Decide(true, null, frozenBetweenRequests: false),
@@ -210,7 +211,7 @@ public sealed class UniversalImportJobServiceDurableDispatchTests
     [UnitTest]
     public async Task QueueImportAsync_WithoutDurableRunnerOnLongLivedHost_UsesInProcessRunner()
     {
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var inProcess = new ProgressReadingImportJobService(progressStore);
         var service = CreateService(
             BackgroundImportRunnerDecision.Decide(false, null, frozenBetweenRequests: false),
@@ -225,7 +226,7 @@ public sealed class UniversalImportJobServiceDurableDispatchTests
     [UnitTest]
     public async Task QueueImportAsync_OnLambdaWithoutRunner_Refuses()
     {
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var inProcess = new ProgressReadingImportJobService(progressStore);
         var service = CreateService(
             BackgroundImportRunnerDecision.Decide(false, null, frozenBetweenRequests: true),
@@ -242,7 +243,7 @@ public sealed class UniversalImportJobServiceDurableDispatchTests
     public async Task QueueImportAsync_WhenDurableImportQueueIsFull_ThrowsQueueFull()
     {
         var jobStore = new InMemoryExecutionJobStore();
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var queue = Substitute.For<IJobQueue>();
         var service = CreateService(
             BackgroundImportRunnerDecision.Decide(true, null, frozenBetweenRequests: false),
@@ -261,7 +262,7 @@ public sealed class UniversalImportJobServiceDurableDispatchTests
     public async Task GetActiveJobsAsync_DropsDurableJobsWhoseExecutionRecordEnded()
     {
         var jobStore = new InMemoryExecutionJobStore();
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var service = CreateService(
             BackgroundImportRunnerDecision.Decide(true, null, frozenBetweenRequests: false),
             new ProgressReadingImportJobService(progressStore), jobStore, progressStore, [], Substitute.For<IJobQueue>());
@@ -278,7 +279,7 @@ public sealed class UniversalImportJobServiceDurableDispatchTests
     public async Task GetProgressAsync_WhenExecutionRecordFailedWithoutTerminalDocument_ReportsFailed()
     {
         var jobStore = new InMemoryExecutionJobStore();
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var backend = new StubBatchComputeBackend(BatchBackendName, BatchComputeTargetKind.AwsBatch);
         var service = CreateService(
             BackgroundImportRunnerDecision.Decide(true, GpBatchWorkload(), frozenBetweenRequests: true),
@@ -307,7 +308,7 @@ public sealed class UniversalImportJobServiceDurableDispatchTests
     public async Task CancelJobAsync_UnclaimedLocalJob_CancelsRecordAndDocument()
     {
         var jobStore = new InMemoryExecutionJobStore();
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var service = CreateService(
             BackgroundImportRunnerDecision.Decide(true, null, frozenBetweenRequests: false),
             new ProgressReadingImportJobService(progressStore), jobStore, progressStore, [], Substitute.For<IJobQueue>());
@@ -457,42 +458,5 @@ public sealed class UniversalImportJobServiceDurableDispatchTests
 
         public Task ReleaseLeaseAsync(string operationId, string ownerId, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
-    }
-
-    private sealed class InMemoryProgressStore : IUniversalProgressStore
-    {
-        private readonly ConcurrentDictionary<string, IOperationProgress> _progress = new(StringComparer.Ordinal);
-
-        public Task SetProgressAsync(string operationId, IOperationProgress progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
-        {
-            _progress[operationId] = progress;
-            return Task.CompletedTask;
-        }
-
-        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(string operationId, IOperationProgress progress, OperationStatus expectedStatus, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
-        {
-            _progress[operationId] = progress;
-            return Task.FromResult(ProgressCompareAndSetResult.Updated);
-        }
-
-        public Task<TProgress?> GetProgressAsync<TProgress>(string operationId, CancellationToken cancellationToken = default)
-            where TProgress : class, IOperationProgress
-            => Task.FromResult(_progress.TryGetValue(operationId, out var p) ? p as TProgress : null);
-
-        public Task<IOperationProgress?> GetProgressAsync(string operationId, CancellationToken cancellationToken = default)
-            => Task.FromResult(_progress.TryGetValue(operationId, out var p) ? p : null);
-
-        public Task DeleteProgressAsync(string operationId, CancellationToken cancellationToken = default)
-        {
-            _progress.TryRemove(operationId, out _);
-            return Task.CompletedTask;
-        }
-
-        public Task<IReadOnlyList<string>> GetActiveOperationIdsAsync(OperationType? operationType = null, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<string>>(_progress.Keys.ToArray());
-
-        public Task<IReadOnlyList<TProgress>> GetActiveOperationsAsync<TProgress>(OperationType operationType, CancellationToken cancellationToken = default)
-            where TProgress : class, IOperationProgress
-            => Task.FromResult<IReadOnlyList<TProgress>>(_progress.Values.OfType<TProgress>().ToArray());
     }
 }

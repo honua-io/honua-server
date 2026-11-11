@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.TestKit.Extensions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -65,7 +66,7 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests : IAsyncLifet
     ];
 
     private WebAppFixture CreateConnectionDiscoveryFixture() =>
-        new WebAppFixture().UseKestrel().ConfigureWebHost(builder =>
+        new WebAppFixture().WithProductionJobSubstrate().UseKestrel().ConfigureWebHost(builder =>
         {
             builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
             builder.UseSetting("Licensing:DevGrantEdition", "Pro");

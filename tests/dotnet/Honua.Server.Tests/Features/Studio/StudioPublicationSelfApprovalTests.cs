@@ -15,6 +15,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Services;
+using Honua.TestKit.Extensions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -37,7 +38,7 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
     private const string Tenant = "tenant-a";
     private const string HumanSessionRequired = "Human approval requires";
 
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
     private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
     private readonly RedisFixture _redis = new();
     private string _denialAuditMode = "ok";
