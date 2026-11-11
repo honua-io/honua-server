@@ -12,6 +12,7 @@ using Honua.ControlPlane;
 using Honua.Infrastructure.Progress;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -80,7 +81,7 @@ public sealed class TileCacheJobServiceTests
             .Build();
         var graphProvider = new TestMetadataV2GraphProvider(graph);
         var jobStore = new InMemoryExecutionJobStore();
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
         var service = CreateService(jobStore, progressStore, [backend], options, graphProvider: graphProvider);
@@ -110,7 +111,7 @@ public sealed class TileCacheJobServiceTests
     public async Task SubmitAsync_LocalBackend_CreatesQueuedJobAndEnqueues()
     {
         var jobStore = new InMemoryExecutionJobStore();
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var jobQueue = Substitute.For<IJobQueue>();
         var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
@@ -141,7 +142,7 @@ public sealed class TileCacheJobServiceTests
     public async Task SubmitAsync_NormalizesOperationBeforeDurableDispatch()
     {
         var jobStore = new InMemoryExecutionJobStore();
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
         var service = CreateService(jobStore, progressStore, [backend], options);
@@ -164,7 +165,7 @@ public sealed class TileCacheJobServiceTests
     public async Task SubmitAsync_RemoteBackend_SubmitsToProviderWithoutEnqueue()
     {
         var jobStore = new InMemoryExecutionJobStore();
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var jobQueue = Substitute.For<IJobQueue>();
         var remote = new StubBatchComputeBackend("honua-aws-batch", BatchComputeTargetKind.AwsBatch);
         var options = new TileCacheBatchOptions
@@ -194,7 +195,7 @@ public sealed class TileCacheJobServiceTests
     public async Task SubmitAsync_RemoteBackendUnregistered_RollsBackJob()
     {
         var jobStore = new InMemoryExecutionJobStore();
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var options = new TileCacheBatchOptions
         {
             Enabled = true,
@@ -218,7 +219,7 @@ public sealed class TileCacheJobServiceTests
         // observes that progress and maps it to an execution-job status, which is the
         // canonical observation path used by the reconciler and admin status API.
         var jobStore = new InMemoryExecutionJobStore();
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var jobQueue = Substitute.For<IJobQueue>();
         var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
@@ -254,7 +255,7 @@ public sealed class TileCacheJobServiceTests
     public async Task CancelAsync_RunningJob_RequestsBackendCancellation()
     {
         var jobStore = new InMemoryExecutionJobStore();
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var jobQueue = Substitute.For<IJobQueue>();
         var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
@@ -277,7 +278,7 @@ public sealed class TileCacheJobServiceTests
     public async Task CancelAsync_TerminalJob_ReturnsFalse()
     {
         var jobStore = new InMemoryExecutionJobStore();
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
 
@@ -296,7 +297,7 @@ public sealed class TileCacheJobServiceTests
     public async Task CancelAsync_UnknownJob_ReturnsFalse()
     {
         var jobStore = new InMemoryExecutionJobStore();
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
 
@@ -372,43 +373,6 @@ public sealed class TileCacheJobServiceTests
 
         public Task ReleaseLeaseAsync(string operationId, string ownerId, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
-    }
-
-    private sealed class InMemoryProgressStore : IUniversalProgressStore
-    {
-        private readonly ConcurrentDictionary<string, IOperationProgress> _progress = new(StringComparer.Ordinal);
-
-        public Task SetProgressAsync(string operationId, IOperationProgress progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
-        {
-            _progress[operationId] = progress;
-            return Task.CompletedTask;
-        }
-
-        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(string operationId, IOperationProgress progress, OperationStatus expectedStatus, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
-        {
-            _progress[operationId] = progress;
-            return Task.FromResult(ProgressCompareAndSetResult.Updated);
-        }
-
-        public Task<TProgress?> GetProgressAsync<TProgress>(string operationId, CancellationToken cancellationToken = default)
-            where TProgress : class, IOperationProgress
-            => Task.FromResult(_progress.TryGetValue(operationId, out var p) ? p as TProgress : null);
-
-        public Task<IOperationProgress?> GetProgressAsync(string operationId, CancellationToken cancellationToken = default)
-            => Task.FromResult(_progress.TryGetValue(operationId, out var p) ? p : null);
-
-        public Task DeleteProgressAsync(string operationId, CancellationToken cancellationToken = default)
-        {
-            _progress.TryRemove(operationId, out _);
-            return Task.CompletedTask;
-        }
-
-        public Task<IReadOnlyList<string>> GetActiveOperationIdsAsync(OperationType? operationType = null, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<string>>(_progress.Keys.ToArray());
-
-        public Task<IReadOnlyList<TProgress>> GetActiveOperationsAsync<TProgress>(OperationType operationType, CancellationToken cancellationToken = default)
-            where TProgress : class, IOperationProgress
-            => Task.FromResult<IReadOnlyList<TProgress>>(_progress.Values.OfType<TProgress>().ToArray());
     }
 
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>

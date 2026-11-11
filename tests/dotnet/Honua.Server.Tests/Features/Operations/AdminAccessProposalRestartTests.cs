@@ -14,19 +14,17 @@ using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using StackExchange.Redis;
+using Honua.TestKit.Extensions;
 using IOperationInstanceStore = Honua.Core.Features.Operations.Abstractions.IOperationInstanceStore;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-/// <summary>
-/// #3361 acceptance: a destructive access operation persists its canonical proposal payload and
-/// idempotency identity, and after the host restarts over the same Redis and PostgreSQL stores the
-/// operation instance, proposal, audit and correlation identities still line up through generic clients.
-/// </summary>
-[Collection(RedisFixture.CollectionName)]
+// A destructive access operation persists its canonical proposal payload and
+// idempotency identity, and after the host restarts over the same PostgreSQL stores the
+// operation instance, proposal, audit and correlation identities still line up through generic clients.
+[Collection("Database")]
 [Protocol(TestProtocols.Admin)]
-public sealed class AdminAccessProposalRestartTests(RedisFixture redis)
+public sealed class AdminAccessProposalRestartTests
 {
     private const string BootstrapKey = "lane-c-restart-bootstrap-key";
     private const string DestructiveOperationId = "admin.role.delete";
@@ -40,17 +38,13 @@ public sealed class AdminAccessProposalRestartTests(RedisFixture redis)
     public async Task DestructiveAccessOperation_ProposalIdentitiesAndIdempotencySurviveHostRestart()
     {
         var fixture = new WebAppFixture()
+            .WithProductionJobSubstrate()
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", BootstrapKey);
 
-                // Entitled Redis makes the server compose its production approval surface: the Redis
-                // proposal store and the operation gateway. Each host generation connects its own
-                // multiplexer to the same Redis.
-                builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
-                builder.UseSetting("Licensing:DevGrantEdition", "Pro");
 
                 // Production requires an enabled policy; this rule routes the destructive operation to approval.
                 builder.UseSetting("Operations:Policy:Enabled", "true");
@@ -61,11 +55,10 @@ public sealed class AdminAccessProposalRestartTests(RedisFixture redis)
             .ConfigureServices(services =>
             {
                 // The Test environment composes a volatile instance store; the restart proof binds the
-                // production Redis instance store, so the recreated service container reads the instance
+                // production instance store, so the recreated service container reads the instance
                 // and proposal records the first host wrote.
                 services.RemoveAll<IOperationInstanceStore>();
-                services.AddSingleton<IOperationInstanceStore>(sp =>
-                    new RedisOperationInstanceStore(sp.GetRequiredService<IConnectionMultiplexer>()));
+                services.AddSingleton<IOperationInstanceStore>(sp => sp.GetRequiredService<PostgresOperationInstanceStore>());
             });
         await fixture.InitializeAsync();
         try

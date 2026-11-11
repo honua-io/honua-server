@@ -337,13 +337,7 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor, IOpera
                     ?? throw new InvalidOperationException("Secret-bearing operation result requires the operation secret channel.");
                 try
                 {
-                    secretReferences.Add(store.Store(
-                        operationInstanceId,
-                        OperationId,
-                        context.PrincipalId,
-                        context.TenantId,
-                        secretName,
-                        secret));
+                    secretReferences.Add(store.Store(new OperationSecretBinding(operationInstanceId, OperationId, context.PrincipalId, context.TenantId), secretName, secret));
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException)
                 {

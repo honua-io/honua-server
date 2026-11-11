@@ -32,12 +32,11 @@ public sealed class AiAdmissionControlHostTests
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/operations/{id}/submit")]
-    public async Task AdminPostgresRedisOff_ControlsUseDurableLedgerAndAudit()
+    public async Task AdminControls_UseDurableLedgerAndAudit()
     {
         var fixture = await CreateFixtureAsync("Allow");
         try
         {
-            UnavailableOperationProposalStore.IsDurable(fixture.Services.GetService<IOperationProposalStore>()).Should().BeFalse();
             using var admin = Admin(fixture);
             foreach (var action in new[] { "initialize", "resume", "stop", "policy-update" })
             {
@@ -49,7 +48,7 @@ public sealed class AiAdmissionControlHostTests
                 response.Handle.GetProperty("status").GetString().Should().Be("Completed");
                 response.Handle.GetProperty("auditId").GetString().Should().NotBeNullOrWhiteSpace();
                 response.Handle.GetProperty("evidenceRefs").EnumerateArray().Select(item => item.GetString())
-                    .Should().Contain(NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef);
+                    .Should().NotContain(NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef);
             }
             using var scope = fixture.Services.CreateScope();
             var store = scope.ServiceProvider.GetRequiredService<IAiExecutionAdmissionStore>();
@@ -90,14 +89,15 @@ public sealed class AiAdmissionControlHostTests
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/operations/{id}/submit")]
-    public async Task RequireApprovalWithoutRedis_DoesNotFallBackToDirectMutation()
+    public async Task RequireApproval_WaitsForApprovalWithoutMutating()
     {
         var fixture = await CreateFixtureAsync("RequireApproval");
         try
         {
             using var admin = Admin(fixture);
             var response = await SubmitAsync(admin, "initialize", PolicyParameters());
-            response.Status.Should().Be(HttpStatusCode.ServiceUnavailable);
+            response.Status.Should().Be(HttpStatusCode.OK);
+            response.Handle.GetProperty("status").GetString().Should().Be("RequiresApproval");
             (await CountControlEventsAsync(fixture)).Should().Be(0);
         }
         finally { await fixture.DisposeAsync(); }

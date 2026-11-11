@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -31,7 +32,7 @@ public sealed class TileOperationJobServiceTests
     public async Task ProcessQueuedJobAsync_WhenJobCompletes_RemovesCachedStartRequest()
     {
         using var serviceProvider = CreateServiceProvider();
-        var progressStore = new InMemoryUniversalProgressStore();
+        var progressStore = new ComparingInMemoryProgressStore();
         var sut = CreateSut(progressStore, serviceProvider.GetRequiredService<IServiceScopeFactory>());
 
         var jobId = await sut.StartAsync(new TileOperationStartRequest
@@ -52,7 +53,7 @@ public sealed class TileOperationJobServiceTests
     public async Task RetryAsync_WhenJobFailed_UsesCachedRequestAndReturnsNewJobId()
     {
         using var serviceProvider = CreateServiceProvider();
-        var progressStore = new InMemoryUniversalProgressStore();
+        var progressStore = new ComparingInMemoryProgressStore();
         var sut = CreateSut(progressStore, serviceProvider.GetRequiredService<IServiceScopeFactory>());
 
         var failedJobId = await sut.StartAsync(new TileOperationStartRequest
@@ -76,7 +77,7 @@ public sealed class TileOperationJobServiceTests
     public async Task RetryAsync_WithLegacyCachedRequestPayload_ReturnsNewJobId()
     {
         using var serviceProvider = CreateServiceProvider();
-        var progressStore = new InMemoryUniversalProgressStore();
+        var progressStore = new ComparingInMemoryProgressStore();
         var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
         var sut = CreateSut(progressStore, serviceProvider.GetRequiredService<IServiceScopeFactory>(), cache);
         const string jobId = "legacy-failed-job";
@@ -109,7 +110,7 @@ public sealed class TileOperationJobServiceTests
     public async Task ReadQueuedJobIdsAsync_WithLegacyCachedRequestPayload_RecoversQueuedJob()
     {
         using var serviceProvider = CreateServiceProvider();
-        var progressStore = new InMemoryUniversalProgressStore();
+        var progressStore = new ComparingInMemoryProgressStore();
         var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
         var sut = CreateSut(progressStore, serviceProvider.GetRequiredService<IServiceScopeFactory>(), cache);
         const string jobId = "legacy-queued-job";
@@ -138,7 +139,7 @@ public sealed class TileOperationJobServiceTests
     public async Task ReadQueuedJobIdsAsync_WithQueuedPublishJob_RecoversAcrossRestart()
     {
         using var serviceProvider = CreateServiceProvider();
-        var progressStore = new InMemoryUniversalProgressStore();
+        var progressStore = new ComparingInMemoryProgressStore();
         var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
         var sut = CreateSut(progressStore, serviceProvider.GetRequiredService<IServiceScopeFactory>(), cache);
         const string jobId = "publish-queued-job";
@@ -170,7 +171,7 @@ public sealed class TileOperationJobServiceTests
     public async Task ProcessQueuedJobAsync_WhenRequestMetadataIsMissing_FailsJobAndCleansUpRequest()
     {
         using var serviceProvider = CreateServiceProvider();
-        var progressStore = new InMemoryUniversalProgressStore();
+        var progressStore = new ComparingInMemoryProgressStore();
         var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
         var sut = CreateSut(progressStore, serviceProvider.GetRequiredService<IServiceScopeFactory>(), cache);
 
@@ -197,7 +198,7 @@ public sealed class TileOperationJobServiceTests
     public async Task ReadQueuedJobIdsAsync_WhenRecoveredJobRequestMetadataIsMissing_FailsJob()
     {
         using var serviceProvider = CreateServiceProvider();
-        var progressStore = new InMemoryUniversalProgressStore();
+        var progressStore = new ComparingInMemoryProgressStore();
         var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
         var sut = CreateSut(progressStore, serviceProvider.GetRequiredService<IServiceScopeFactory>(), cache);
         const string jobId = "missing-request-job";
@@ -224,7 +225,7 @@ public sealed class TileOperationJobServiceTests
     public async Task ProcessQueuedJobAsync_WithMissingRequest_ReleasesRedisLease()
     {
         using var serviceProvider = CreateServiceProvider();
-        var progressStore = new InMemoryUniversalProgressStore();
+        var progressStore = new ComparingInMemoryProgressStore();
         var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
         var database = Substitute.For<IDatabase>();
         database.LockTakeAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
@@ -252,7 +253,7 @@ public sealed class TileOperationJobServiceTests
     public async Task ProcessQueuedJobAsync_WithCancelledStatus_ReleasesRedisLease()
     {
         using var serviceProvider = CreateServiceProvider();
-        var progressStore = new InMemoryUniversalProgressStore();
+        var progressStore = new ComparingInMemoryProgressStore();
         var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
         var database = Substitute.For<IDatabase>();
         database.LockTakeAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
@@ -292,7 +293,7 @@ public sealed class TileOperationJobServiceTests
     public async Task RecoverQueuedJobIdsAsync_WithActiveRedisClaim_DoesNotRequeueProcessingJob()
     {
         using var serviceProvider = CreateServiceProvider();
-        var progressStore = new InMemoryUniversalProgressStore();
+        var progressStore = new ComparingInMemoryProgressStore();
         var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
         var database = Substitute.For<IDatabase>();
         database.StringGetAsync("tile:job:claim:claimed-tile-job", Arg.Any<CommandFlags>())
@@ -403,94 +404,5 @@ public sealed class TileOperationJobServiceTests
             ?? throw new InvalidOperationException("TryRemove method was not found.");
         var args = new object?[] { jobId, null };
         _ = remove.Invoke(dictionary, args);
-    }
-
-    private sealed class InMemoryUniversalProgressStore : IUniversalProgressStore
-    {
-        private readonly ConcurrentDictionary<string, IOperationProgress> _entries = new(StringComparer.Ordinal);
-
-        public Task SetProgressAsync(
-            string operationId,
-            IOperationProgress progress,
-            TimeSpan? ttl = null,
-            CancellationToken cancellationToken = default)
-        {
-            _entries[operationId] = progress;
-            return Task.CompletedTask;
-        }
-
-        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(
-            string operationId,
-            IOperationProgress progress,
-            OperationStatus expectedStatus,
-            TimeSpan? ttl = null,
-            CancellationToken cancellationToken = default)
-        {
-            while (true)
-            {
-                if (!_entries.TryGetValue(operationId, out var current))
-                {
-                    return Task.FromResult(ProgressCompareAndSetResult.NotFound);
-                }
-
-                if (current.Status != expectedStatus)
-                {
-                    return Task.FromResult(ProgressCompareAndSetResult.StatusMismatch(current));
-                }
-
-                if (_entries.TryUpdate(operationId, progress, current))
-                {
-                    return Task.FromResult(ProgressCompareAndSetResult.Updated);
-                }
-            }
-        }
-
-        public Task<TProgress?> GetProgressAsync<TProgress>(
-            string operationId,
-            CancellationToken cancellationToken = default)
-            where TProgress : class, IOperationProgress
-        {
-            if (_entries.TryGetValue(operationId, out var progress) && progress is TProgress typed)
-            {
-                return Task.FromResult<TProgress?>(typed);
-            }
-
-            return Task.FromResult<TProgress?>(null);
-        }
-
-        public Task<IOperationProgress?> GetProgressAsync(string operationId, CancellationToken cancellationToken = default)
-        {
-            _entries.TryGetValue(operationId, out var progress);
-            return Task.FromResult(progress);
-        }
-
-        public Task DeleteProgressAsync(string operationId, CancellationToken cancellationToken = default)
-        {
-            _entries.TryRemove(operationId, out _);
-            return Task.CompletedTask;
-        }
-
-        public Task<IReadOnlyList<string>> GetActiveOperationIdsAsync(
-            OperationType? operationType = null,
-            CancellationToken cancellationToken = default)
-        {
-            var ids = _entries
-                .Where(kvp => operationType == null || kvp.Value.Type == operationType.Value)
-                .Select(static kvp => kvp.Key)
-                .ToArray();
-            return Task.FromResult<IReadOnlyList<string>>(ids);
-        }
-
-        public Task<IReadOnlyList<TProgress>> GetActiveOperationsAsync<TProgress>(
-            OperationType operationType,
-            CancellationToken cancellationToken = default)
-            where TProgress : class, IOperationProgress
-        {
-            var operations = _entries.Values
-                .Where(progress => progress.Type == operationType)
-                .OfType<TProgress>()
-                .ToArray();
-            return Task.FromResult<IReadOnlyList<TProgress>>(operations);
-        }
     }
 }

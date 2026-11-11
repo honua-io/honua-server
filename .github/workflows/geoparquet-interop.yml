@@ -11,6 +11,7 @@ on:
       - '.github/actions/setup-dotnet-ci/**'
       - 'Directory.Build.*'
       - 'Directory.Packages.props'
+      - 'global.json'
       - 'NuGet.config'
       - 'src/Honua.Server/Honua.Server.csproj'
       - 'src/Honua.Core/Core/Features/Metadata/**'

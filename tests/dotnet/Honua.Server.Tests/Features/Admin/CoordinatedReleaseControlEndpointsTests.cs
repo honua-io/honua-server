@@ -54,8 +54,7 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests : IAsyncLife
             {
                 services.RemoveAll<AdminAuthSessionStore>();
                 services.AddSingleton(provider => new AdminAuthSessionStore(
-                    provider.GetRequiredService<IMemoryCache>(), provider.GetRequiredService<ILogger<AdminAuthSessionStore>>(),
-                    CreateSessionCache()));
+                    CreateSessionTokens(), provider.GetRequiredService<ILogger<AdminAuthSessionStore>>()));
                 services.RemoveAll<IWorkflowOperationStore>();
                 services.AddSingleton<IWorkflowOperationStore>(_workflowStore);
 

@@ -70,7 +70,7 @@ public sealed class ApplyEditsIdempotencyCallerScopeTests
     }
 
     private static DistributedApplyEditsIdempotencyStore NewStore()
-        => new(cache: null, NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
+        => new(new InMemoryIdempotencyReservationStore(), NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
 
     private static async Task RecordAsync(DistributedApplyEditsIdempotencyStore store, IdempotencyCaller caller)
     {
