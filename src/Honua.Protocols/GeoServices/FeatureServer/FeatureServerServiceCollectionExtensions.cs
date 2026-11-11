@@ -9,8 +9,8 @@ using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Query;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Abstractions;
+using Honua.Infrastructure.Security;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using StackExchange.Redis;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
@@ -45,26 +45,23 @@ internal static class FeatureServerServiceCollectionExtensions
             serviceProvider.GetRequiredService<FeatureServerQueryHandler>());
         services.AddScoped<FeatureServerRelatedRecordsDependencies>();
         services.AddScoped<FeatureServerRelatedRecordsHandler>();
-        // At-most-once applyEdits store (#2250). Distributed (Redis) when an IConnectionMultiplexer is
-        // registered, with IDistributedCache fallback, otherwise an in-process fallback. Singleton so
-        // the in-process fallback dictionary survives across requests.
-        // IConnectionMultiplexer is required for atomic SET NX reservation (BH5-001).
+        // At-most-once applyEdits store. Reservations and receipts live in the shared reservation
+        // store, which is the system database on a host that has one.
+        services.TryAddSingleton<IIdempotencyReservationStore, InMemoryIdempotencyReservationStore>();
         services.TryAddSingleton<IApplyEditsIdempotencyStore>(static serviceProvider =>
             new DistributedApplyEditsIdempotencyStore(
-                serviceProvider.GetService<IConnectionMultiplexer>(),
-                serviceProvider.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
+                serviceProvider.GetRequiredService<IIdempotencyReservationStore>(),
                 serviceProvider.GetRequiredService<ILogger<DistributedApplyEditsIdempotencyStore>>(),
                 DistributedApplyEditsIdempotencyStore.ReservationWindowFor(
                     serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>()
                         .Value.Connections.RequestTimeout)));
 
-        // At-most-once synchronizeReplica uploads (#4026): same backing and reservation semantics as
-        // the applyEdits store, singleton for the same reason. The reservation outlasts the configured
-        // request timeout so a slow upload is never overtaken by its own retry.
+        // At-most-once synchronizeReplica uploads: same store and reservation semantics as applyEdits.
+        // The reservation outlasts the configured request timeout so a slow upload is never overtaken
+        // by its own retry.
         services.TryAddSingleton<IReplicaUploadIdempotencyStore>(static serviceProvider =>
             new DistributedReplicaUploadIdempotencyStore(
-                serviceProvider.GetService<IConnectionMultiplexer>(),
-                serviceProvider.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
+                serviceProvider.GetRequiredService<IIdempotencyReservationStore>(),
                 serviceProvider.GetRequiredService<ILogger<DistributedReplicaUploadIdempotencyStore>>(),
                 DistributedReplicaUploadIdempotencyStore.ReservationWindowFor(
                     serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>()

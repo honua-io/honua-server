@@ -1990,7 +1990,7 @@ internal sealed partial class Wfs20Handler
 
     private sealed record WfsFeatureTypeDescriptor(
         MetadataV2Resource Resource,
-        MetadataV2Publication? Publication,
+        MetadataV2Publication Publication,
         MetadataV2Service? Service,
         int StorageLayerId,
         string QualifiedName,

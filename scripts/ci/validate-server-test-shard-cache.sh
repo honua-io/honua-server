@@ -44,6 +44,17 @@ server="$(plan server --shard server --project "${SERVER_PROJECT}" --matrix-json
 odata="$(plan odata --shard odata --project "${ODATA_PROJECT}" --matrix-json "${mixed_matrix}" \
   --source-sha "${SOURCE_SHA}" --runner-os Linux --sdk 10.0.301)"
 
+# Grouped jobs skip the single-project cache and cannot own its publication.
+grouped_matrix="$(jq -nc --arg member "${ODATA_PROJECT}" '[
+  {shard_name:"Runtime Units",csproj:"",csprojs:[$member]},
+  {shard_name:"Core Mutation Concurrency",csproj:""}
+]')"
+monolith="$(plan grouped-writer --shard 'Core Mutation Concurrency' --project "${SERVER_PROJECT}" \
+  --matrix-json "${grouped_matrix}" --source-sha "${SOURCE_SHA}" --runner-os Linux --sdk 10.0.301 \
+  --prebuild-consume true)"
+grep -qx 'cache_writer=true' <<<"${monolith}"
+grep -qx 'cache_writer_shard=Core Mutation Concurrency' <<<"${monolith}"
+
 # The writer is the first shard in MATRIX order, not lexicographic order:
 # `z-second` is declared first in same_project_matrix and therefore wins.
 grep -qx 'cache_writer=false' <<<"${writer}"

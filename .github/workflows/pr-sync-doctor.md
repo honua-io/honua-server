@@ -56,6 +56,7 @@ concurrency:
   job-discriminator: ${{ github.run_id }}
   group: pr-sync-doctor
   cancel-in-progress: false
+  queue: max
 
 jobs:
   eligibility:

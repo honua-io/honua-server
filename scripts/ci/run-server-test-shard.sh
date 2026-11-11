@@ -16,6 +16,10 @@ if [[ -z "${shard_name}" || -z "${filter_expression}" || -z "${log_name}" ]]; th
   exit 2
 fi
 
+if [[ -n "${HONUA_SERVER_TEST_CSPROJS:-}" && "${HONUA_SERVER_TEST_CSPROJS}" != null ]]; then
+  exec python3 "${SCRIPT_DIR}/run-multi-project-shard.py"
+fi
+
 configuration="${HONUA_SERVER_TEST_CONFIGURATION:-Release}"
 results_dir="${HONUA_SERVER_TEST_RESULTS_DIR:-./artifacts/test-results}"
 # Phase 2 / ADR-0042: shards may target a per-protocol test project; default
@@ -124,6 +128,11 @@ test_command=(
   "${extra_args[@]}"
 )
 
+# The outer timeout covers both attempts and evidence checks.
+test_command=(python3 "${SCRIPT_DIR}/retry-failed-shard-tests.py"
+  --project "${test_csproj}" --results "${results_dir}" --log "${log_name}"
+  -- "${test_command[@]}")
+
 run_command=("${test_command[@]}")
 timeout_command=""
 if [[ -n "${timeout_minutes}" ]]; then
@@ -138,7 +147,11 @@ if [[ -n "${timeout_minutes}" ]]; then
   fi
 
   if [[ -n "${timeout_command}" ]]; then
-    run_command=("${timeout_command}" --kill-after="${kill_after_seconds}s" "${timeout_minutes}m" "${test_command[@]}")
+    timeout_options=()
+    if [[ "${HONUA_SERVER_TEST_TIMEOUT_FOREGROUND:-false}" == "true" ]]; then
+      timeout_options+=(--foreground)
+    fi
+    run_command=("${timeout_command}" "${timeout_options[@]}" --kill-after="${kill_after_seconds}s" "${timeout_minutes}m" "${test_command[@]}")
   fi
 fi
 

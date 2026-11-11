@@ -1,0 +1,47 @@
+{
+  "originalShard": {
+    "name": "Server Features Admin Governance and Sharing",
+    "shard_name": "Server Features Admin Governance and Sharing",
+    "dispatch_rank": 17.5,
+    "artifact_suffix": "server-features-admin-governance-sharing",
+    "log_name": "server-tests-server-features-admin-governance-sharing",
+    "timeout_minutes": 32,
+    "test_timeout_minutes": 22,
+    "max_cpu_count": "",
+    "upload_operator_eval_report": false,
+    "upload_odata_evidence": false,
+    "_comment": "#3059 catch-all split of Server Features Admin Platform and Governance. Owns compliance, federation, investigation, proposal, and administrative sharing plus any future class selected by the legacy parent but not assigned to release control or platform/connections.",
+    "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Admin.)&FullyQualifiedName!~RoleEndpointsTests&(FullyQualifiedName~MetadataRelease|FullyQualifiedName~CoordinatedRelease|FullyQualifiedName~DeployControl|FullyQualifiedName~Platform|FullyQualifiedName~SecureConnection|FullyQualifiedName~Compliance|FullyQualifiedName~Federation|FullyQualifiedName~Investigation|FullyQualifiedName~Proposal|FullyQualifiedName~Admin.Share.|FullyQualifiedName~License))&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.CoordinatedReleaseControlEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.MetadataReleaseControlEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.MetadataReleaseEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.MetadataReleaseOperationEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.LicenseEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.PlatformReleaseConvergeEndpointTests&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests",
+    "paths": [
+      "src/Honua.Core/Core/Features/Validation/",
+      "src/Honua.Server/Features/Admin/Compliance",
+      "src/Honua.Server/Features/Admin/Federation/",
+      "src/Honua.Server/Features/Admin/Investigation",
+      "src/Honua.Server/Features/Admin/Models/Compliance",
+      "src/Honua.Server/Features/Admin/Models/Investigation",
+      "src/Honua.Server/Features/Admin/Models/Proposal",
+      "src/Honua.Server/Features/Admin/Proposal",
+      "src/Honua.Server/Features/Admin/Share/",
+      "tests/dotnet/Honua.Server.Tests/Features/Admin/ComplianceAdminEndpointsTests.cs",
+      "tests/dotnet/Honua.Server.Tests/Features/Admin/Federation/",
+      "tests/dotnet/Honua.Server.Tests/Features/Admin/InvestigationEndpointsTests.cs",
+      "tests/dotnet/Honua.Server.Tests/Features/Admin/ProposalEndpointsTests.cs",
+      "tests/dotnet/Honua.Server.Tests/Features/Admin/Share/",
+      "tests/dotnet/RedisCollection.cs",
+      "tests/dotnet/Shared/AlertUnitSupport/AlertEventTestFactories.cs",
+      "tests/dotnet/Shared/AlertUnitSupport/AwsPublisherFakes.cs",
+      "tests/dotnet/Shared/AlertUnitSupport/AzurePublisherFake.cs",
+      "tests/dotnet/Shared/ProtocolUnits/Ai/SpecGroundingTestSupport.cs",
+      "tests/dotnet/Shared/SceneUnitSupport/CityGmlSceneFixtures.cs",
+      "tests/dotnet/Shared/SceneUnitSupport/InMemoryCloudFileStorage.cs",
+      "tests/dotnet/Shared/SceneUnitSupport/PointCloudSceneFixtures.cs",
+      "tests/dotnet/Shared/SceneUnitSupport/SceneExecutorTestStubs.cs"
+    ],
+    "csproj": ""
+  },
+  "childNames": [
+    "Server Features Admin Governance and Sharing 1",
+    "Server Features Admin Governance and Sharing 2",
+    "Server Features Admin Governance and Sharing 3"
+  ]
+}

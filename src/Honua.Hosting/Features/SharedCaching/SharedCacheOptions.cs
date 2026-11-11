@@ -18,9 +18,6 @@ internal sealed class SharedCacheOptions
     public SharedCacheLifetime MetadataDocument { get; set; } =
         new() { MaxAgeSeconds = 30, SharedMaxAgeSeconds = 60 };
 
-    public SharedCacheLifetime StaticMapImage { get; set; } =
-        new() { MaxAgeSeconds = 0, SharedMaxAgeSeconds = 60, StaleWhileRevalidateSeconds = 30 };
-
     public SharedCacheLifetime StaticObject { get; set; } =
         new() { MaxAgeSeconds = 60, SharedMaxAgeSeconds = 300 };
 
@@ -37,7 +34,6 @@ internal sealed class SharedCacheOptions
         ResponseCacheClass.Tile => Tile,
         ResponseCacheClass.FeatureQuery => FeatureQuery,
         ResponseCacheClass.MetadataDocument => MetadataDocument,
-        ResponseCacheClass.StaticMapImage => StaticMapImage,
         ResponseCacheClass.StaticObject => StaticObject,
         _ => throw new ArgumentOutOfRangeException(nameof(cacheClass), cacheClass, null),
     };
