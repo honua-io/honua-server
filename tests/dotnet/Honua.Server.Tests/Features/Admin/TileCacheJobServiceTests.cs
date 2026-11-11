@@ -95,7 +95,7 @@ public sealed class TileCacheJobServiceTests
         }, schemaName: null);
         var byLayer = await service.SubmitAsync(new TileOperationStartRequest
         {
-            Operation = "delete",
+            Operation = "invalidate",
             LayerId = 42,
             TileMatrixSetId = "Web_MercatorQuad",
             Style = "a_b"
@@ -147,15 +147,15 @@ public sealed class TileCacheJobServiceTests
 
         var jobId = await service.SubmitAsync(SeedRequest() with
         {
-            Operation = " DELETE ",
+            Operation = " INVALIDATE ",
             TileMatrixSetId = " WebMercatorQuad ",
             Style = " default ",
         }, schemaName: null);
 
         var record = (await jobStore.GetAsync(jobId))!;
-        record.Spec.Parameters[TileCacheJobParameterKeys.Operation].Should().Be("delete");
+        record.Spec.Parameters[TileCacheJobParameterKeys.Operation].Should().Be("invalidate");
         var progress = (await progressStore.GetProgressAsync<TileOperationProgress>(jobId))!;
-        progress.Operation.Should().Be("delete");
+        progress.Operation.Should().Be("invalidate");
         progress.TileMatrixSetId.Should().Be("WebMercatorQuad");
     }
 

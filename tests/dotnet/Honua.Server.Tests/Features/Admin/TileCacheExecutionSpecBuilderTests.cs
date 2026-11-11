@@ -171,7 +171,7 @@ public sealed class TileCacheExecutionSpecBuilderTests
     {
         var request = new TileOperationStartRequest
         {
-            Operation = "delete",
+            Operation = "invalidate",
             LayerId = 4,
             TileMatrixSetId = "WebMercatorQuad",
             Style = "night",
@@ -187,7 +187,7 @@ public sealed class TileCacheExecutionSpecBuilderTests
 
         parsed.Should().BeTrue();
         error.Should().BeEmpty();
-        decoded.Operation.Should().Be("delete");
+        decoded.Operation.Should().Be("invalidate");
         decoded.Style.Should().Be("night");
         decoded.Format.Should().Be("png");
     }
@@ -197,7 +197,7 @@ public sealed class TileCacheExecutionSpecBuilderTests
     {
         var spec = TileCacheExecutionSpecBuilder.Build(new TileOperationStartRequest
         {
-            Operation = " DELETE ",
+            Operation = " INVALIDATE ",
             LayerId = 4,
             TileMatrixSetId = " WebMercatorQuad ",
             Style = " night ",
@@ -208,7 +208,7 @@ public sealed class TileCacheExecutionSpecBuilderTests
             spec.Parameters, out var decoded, out _, out var error).Should().BeTrue();
 
         error.Should().BeEmpty();
-        decoded.Operation.Should().Be("delete");
+        decoded.Operation.Should().Be("invalidate");
         decoded.TileMatrixSetId.Should().Be("WebMercatorQuad");
         decoded.Style.Should().Be("night");
         decoded.Format.Should().Be("png");
@@ -220,7 +220,7 @@ public sealed class TileCacheExecutionSpecBuilderTests
         // Back-compat: a spec produced before the style/format fields existed must still parse.
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            [TileCacheJobParameterKeys.Operation] = "expire",
+            [TileCacheJobParameterKeys.Operation] = "invalidate",
             [TileCacheJobParameterKeys.LayerId] = "8",
             [TileCacheJobParameterKeys.TileMatrixSetId] = "WebMercatorQuad"
         };
@@ -240,7 +240,7 @@ public sealed class TileCacheExecutionSpecBuilderTests
     {
         var request = new TileOperationStartRequest
         {
-            Operation = "expire",
+            Operation = "invalidate",
             LayerId = 8
         };
 
@@ -249,7 +249,7 @@ public sealed class TileCacheExecutionSpecBuilderTests
 
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            [TileCacheJobParameterKeys.Operation] = "delete",
+            [TileCacheJobParameterKeys.Operation] = "invalidate",
             [TileCacheJobParameterKeys.LayerId] = "8"
         };
         TileCacheExecutionSpecBuilder.TryParse(parameters, out var decoded, out _, out var error).Should().BeTrue();
@@ -262,7 +262,7 @@ public sealed class TileCacheExecutionSpecBuilderTests
     {
         TileCacheExecutionSpecBuilder.BuildPartitionKey(new TileOperationStartRequest
         {
-            Operation = "delete",
+            Operation = "invalidate",
             ServiceId = "svc-1",
             TileMatrixSetId = "WebMercatorQuad",
             Style = "night"
@@ -273,7 +273,7 @@ public sealed class TileCacheExecutionSpecBuilderTests
     public void BuildPartitionKey_SameWindow_ProducesSameKey_DifferentWindow_Differs()
     {
         var a = new TileOperationStartRequest { Operation = "seed", ServiceId = "svc", TileMatrixSetId = "WebMercatorQuad", Style = "default" };
-        var b = new TileOperationStartRequest { Operation = "delete", ServiceId = "svc", TileMatrixSetId = "WebMercatorQuad", Style = "default" };
+        var b = new TileOperationStartRequest { Operation = "invalidate", ServiceId = "svc", TileMatrixSetId = "WebMercatorQuad", Style = "default" };
         var c = new TileOperationStartRequest { Operation = "seed", ServiceId = "svc", TileMatrixSetId = "WebMercatorQuad", Style = "night" };
 
         // Two operations on the same (service, gridset, style) window share a partition key so the
@@ -296,7 +296,7 @@ public sealed class TileCacheExecutionSpecBuilderTests
         };
         var layerRequest = serviceRequest with
         {
-            Operation = "delete",
+            Operation = "invalidate",
             ServiceId = null,
             LayerId = 42,
             TileMatrixSetId = "Web_MercatorQuad",
@@ -312,7 +312,7 @@ public sealed class TileCacheExecutionSpecBuilderTests
     {
         var serviceRequest = new TileOperationStartRequest
         {
-            Operation = "delete",
+            Operation = "invalidate",
             ServiceId = "svc",
             TileMatrixSetId = "WebMercatorQuad",
             Style = "default",
