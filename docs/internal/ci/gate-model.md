@@ -771,6 +771,15 @@ scenarios and alternative grants own separate applications. The Security and
 Authorization shards partition these cases by method. PR path routing selects
 affected shards; full trunk runs cover the entire matrix.
 
+### FeatureServer authorization-denial fixture lifetime
+
+`FeatureServerServiceRbacTests` shares one class-lifetime application for eleven
+requests rejected before a state change. Each request keeps its own client and
+claims. Successful edits, calculations, replica creation, and tests that create a
+replica before checking denial retain isolated applications. Every status and
+response assertion remains in the Security and Authorization shard family;
+required checks, aggregate dependencies, and full trunk coverage are unchanged.
+
 ## Automatic merge admission
 
 [Automatic merge admission](workflow-inventory.md#automatic-merge-admission) uses

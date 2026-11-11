@@ -715,6 +715,12 @@ The Security and Authorization shards exercise the cross-protocol permission mat
 Its application ownership rules are documented in
 [Security permission matrix fixture lifetime](gate-model.md#security-permission-matrix-fixture-lifetime).
 
+### FeatureServer authorization fixtures
+
+FeatureServer RBAC coverage retains its existing Security and Authorization
+shard routing. Application reuse is described in the
+[gate model](gate-model.md#featureserver-authorization-denial-fixture-lifetime).
+
 ## Automatic merge admission
 
 `auto-merge-ready.yml` reconciles same-repository trunk PRs using the repository-scoped
