@@ -231,8 +231,7 @@ internal sealed class ExportJobService(
             }
             else
             {
-                var admission = await _progressStore.TrySetProgressAsync(job.JobId, progress,
-                    existing.Status, _jobRetention, processingToken).ConfigureAwait(false);
+                var admission = await _progressStore.TrySetProgressAsync(new OperationProgressWrite(job.JobId, progress, _jobRetention), existing.Status, processingToken).ConfigureAwait(false);
                 if (admission.Outcome != ProgressCompareAndSetOutcome.Updated)
                 {
                     return;
@@ -312,8 +311,7 @@ internal sealed class ExportJobService(
                     CompletedAt = DateTimeOffset.UtcNow,
                     CurrentPhase = "Export completed"
                 };
-                var completion = await _progressStore.TrySetProgressAsync(job.JobId, completed,
-                    OperationStatus.Processing, _jobRetention, processingToken).ConfigureAwait(false);
+                var completion = await _progressStore.TrySetProgressAsync(new OperationProgressWrite(job.JobId, completed, _jobRetention), OperationStatus.Processing, processingToken).ConfigureAwait(false);
                 if (completion.Outcome != ProgressCompareAndSetOutcome.Updated)
                 {
                     // Preserve the state accepted on another node and retract the losing artifact.
@@ -372,8 +370,7 @@ internal sealed class ExportJobService(
                     CompletedAt = DateTimeOffset.UtcNow,
                     CurrentPhase = "Cancelled by user"
                 };
-                var cancellation = await _progressStore.TrySetProgressAsync(job.JobId, cancelled,
-                    OperationStatus.Processing, _jobRetention, CancellationToken.None).ConfigureAwait(false);
+                var cancellation = await _progressStore.TrySetProgressAsync(new OperationProgressWrite(job.JobId, cancelled, _jobRetention), OperationStatus.Processing, CancellationToken.None).ConfigureAwait(false);
                 if (cancellation.Outcome != ProgressCompareAndSetOutcome.Updated &&
                     cancellation.CurrentProgress?.Status != OperationStatus.Cancelled)
                 {

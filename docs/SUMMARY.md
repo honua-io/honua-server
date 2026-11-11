@@ -162,6 +162,7 @@
   - [Monitoring](guides/deploy/monitoring.md)
   - [Backup & restore](guides/deploy/backup-and-restore.md)
   - [Scaling & performance](guides/deploy/scaling-and-performance.md)
+  - [Cache behind a CDN](guides/deploy/cdn-caching.md)
   - [Upgrade & rollback](guides/deploy/upgrade-and-rollback.md)
   - [Troubleshooting](guides/deploy/troubleshooting.md)
   - [Capability deployment profiles](guides/deploy/capability-deployment-profiles.md)

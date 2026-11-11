@@ -14,9 +14,12 @@
 #   The union of:
 #     1. compute-affected-projects.sh — the changed projects plus their
 #        reverse-dependency (consumer) closure, and
-#     2. REQUIRED_TEST_PROJECTS — the leaf test projects the gate's later
-#        `dotnet test --no-build` steps execute. They must be compiled even for
-#        a docs-only diff or those steps fail with "assembly not found".
+#     2. the root projects of GATE_TEST_GROUP — the leaf test projects that
+#        group's `dotnet test --no-build` steps execute (or the server host the
+#        producer boots). They must be compiled even for a diff that does not
+#        reach them or those steps fail with "assembly not found".
+#   BUILD_SCOPE=test-roots skips the diff and builds only the group's roots:
+#   a parallel test job whose compile coverage another job already provides.
 #   Forward dependencies are NOT enumerated here; MSBuild resolves them from
 #   <ProjectReference> when it builds the filtered set.
 #
@@ -31,7 +34,10 @@
 #   it is fixed forward and never reaches trunk unverified.
 #
 # Inputs (env):
-#   BUILD_SCOPE        'full' (default) or 'affected'.
+#   BUILD_SCOPE        'full' (default), 'affected' or 'test-roots'.
+#   GATE_TEST_GROUP    'all' (default), 'architecture', 'unit-fast',
+#                      'server-fast', 'server-governance', 'producer' or
+#                      'analyzers'.
 #   GITHUB_EVENT_NAME  Event driving the caller; only 'pull_request' has a
 #                      trustworthy diff base.
 #   GATE_BASE_REF      Optional explicit base ref (tests use this). Defaults to
@@ -42,7 +48,8 @@
 #   GATE_FILTER_PATH   Where to write the .slnf (default "${RUNNER_TEMP}/lean-gate.slnf").
 #
 # Outputs:
-#   Appends `mode=` (full|affected) and `filter=` (path, empty when full) to
+#   Appends `mode=` (full|affected|test-roots|none) and `filter=` (path, empty
+#   when full or none; none means the diff reaches no project) to
 #   $GITHUB_OUTPUT when set, and always prints a human-readable summary.
 #
 # Exit codes: 0 always, unless invoked outside a git repository.
@@ -56,11 +63,13 @@ cd "${REPO_ROOT}"
 SOLUTION="Honua.sln"
 
 # The leaf test projects the lean gate's `dotnet test --no-build` steps run.
-# scripts/ci/fixtures/validate-lean-gate.py asserts this list is exactly the set
-# of projects those steps name, so adding a test step without adding it here is
-# a red gate, not a mystery "assembly not found" at run time.
-REQUIRED_TEST_PROJECTS=(
+# scripts/ci/fixtures/validate-lean-gate.py asserts these lists are exactly the
+# set of projects those steps name, so adding a test step without adding it here
+# is a red gate, not a mystery "assembly not found" at run time.
+SERVER_TEST_PROJECTS=(
   "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
+)
+ARCHITECTURE_TEST_PROJECTS=(
   "tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj"
   "tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj"
   # Projection generators run tests from these assemblies before verification.
@@ -76,6 +85,21 @@ UNIT_FAST_TEST_PROJECTS=()
 if [[ -n "${unit_fast_projects}" ]]; then
   mapfile -t UNIT_FAST_TEST_PROJECTS <<< "${unit_fast_projects}"
 fi
+
+# The producer boots this host after its build.
+SERVER_HOST_PROJECT="src/Honua.Server/Honua.Server.csproj"
+
+test_group="${GATE_TEST_GROUP:-all}"
+case "${test_group}" in
+  all) ROOT_PROJECTS=("${SERVER_TEST_PROJECTS[@]}" "${ARCHITECTURE_TEST_PROJECTS[@]}" "${UNIT_FAST_TEST_PROJECTS[@]}") ;;
+  # Projection regeneration exports the admin parity manifest from Server.Tests.
+  architecture) ROOT_PROJECTS=("${ARCHITECTURE_TEST_PROJECTS[@]}" "${SERVER_TEST_PROJECTS[@]}") ;;
+  unit-fast) ROOT_PROJECTS=("${UNIT_FAST_TEST_PROJECTS[@]}") ;;
+  server-fast|server-governance) ROOT_PROJECTS=("${SERVER_TEST_PROJECTS[@]}") ;;
+  producer) ROOT_PROJECTS=("${SERVER_HOST_PROJECT}") ;;
+  analyzers) ROOT_PROJECTS=() ;;
+  *) echo "::error::Unknown lean gate test group '${test_group}'" >&2; exit 1 ;;
+esac
 
 build_scope="${BUILD_SCOPE:-full}"
 event_name="${GITHUB_EVENT_NAME:-}"
@@ -97,9 +121,59 @@ full() {
   exit 0
 }
 
-if [[ "${build_scope}" != "affected" ]]; then
-  full "caller requested build-scope=${build_scope}"
-fi
+# Writes the solution filter for the given projects and emits it under a mode.
+write_filter() {
+  local mode="$1" reason="$2"
+  shift 2
+  local solution_text project windows_path
+  local -a selected=()
+  solution_text="$(cat "${SOLUTION}")"
+  for project in "$@"; do
+    windows_path="${project//\//\\}"
+    if [[ "${solution_text}" != *"\"${windows_path}\""* ]]; then
+      if [[ " ${ROOT_PROJECTS[*]} " == *" ${project} "* ]]; then
+        full "root project '${project}' is missing from ${SOLUTION}"
+      fi
+      echo "::debug::skipping '${project}': not a member of ${SOLUTION}"
+      continue
+    fi
+    selected+=("${windows_path}")
+  done
+
+  if [[ ${#selected[@]} -eq 0 ]]; then
+    [[ "${test_group}" == analyzers ]] && { emit "none" "" "the diff reaches no solution project"; exit 0; }
+    full "no solution projects selected"
+  fi
+
+  mapfile -t selected < <(printf '%s\n' "${selected[@]}" | sort -u)
+  mkdir -p "$(dirname "${filter_path}")"
+  {
+    echo '{'
+    echo '  "solution": {'
+    printf '    "path": "%s",\n' "${REPO_ROOT}/${SOLUTION}"
+    echo '    "projects": ['
+    local index separator
+    for index in "${!selected[@]}"; do
+      separator=','
+      [[ "${index}" -eq $(( ${#selected[@]} - 1 )) ]] && separator=''
+      printf '      "%s"%s\n' "${selected[${index}]//\\/\\\\}" "${separator}"
+    done
+    echo '    ]'
+    echo '  }'
+    echo '}'
+  } > "${filter_path}"
+
+  echo "Lean gate solution filter (${#selected[@]} of $(grep -c '^Project(' "${SOLUTION}") solution projects):"
+  printf '  %s\n' "${selected[@]//\\//}"
+  emit "${mode}" "${filter_path}" "${#selected[@]} projects, ${reason}"
+  exit 0
+}
+
+case "${build_scope}" in
+  affected) ;;
+  test-roots) write_filter "test-roots" "roots of test group ${test_group}" "${ROOT_PROJECTS[@]}" ;;
+  *) full "caller requested build-scope=${build_scope}" ;;
+esac
 
 # Only a pull_request has a merge ref whose first parent is the base branch.
 # merge_group batches, workflow_dispatch and schedule do not, and the composite's
@@ -128,57 +202,18 @@ if printf '%s\n' "${affected}" | grep -qx 'ALL'; then
   full "shared build infrastructure changed (compute-affected-projects.sh reported ALL)"
 fi
 
-# Union the diff closure with the leaf test projects the --no-build steps need.
+# Union the diff closure with the roots the group's later steps need.
 declare -A wanted=()
 while IFS= read -r project; do
   [[ -z "${project}" ]] && continue
   wanted["${project}"]=1
 done <<< "${affected}"
-for project in "${REQUIRED_TEST_PROJECTS[@]}" "${UNIT_FAST_TEST_PROJECTS[@]}"; do
+for project in "${ROOT_PROJECTS[@]}"; do
   wanted["${project}"]=1
 done
 
 # A .slnf can only name projects the solution already contains. Anything else
 # (the docker/ custom-code harness, conformance generators) is not built by the
-# full-solution build either, so dropping it changes nothing — but a project
-# that should be in the solution and is not is a signal, so say so and keep the
-# gate honest by falling back to full.
-solution_text="$(cat "${SOLUTION}")"
-declare -a selected=()
-for project in "${!wanted[@]}"; do
-  windows_path="${project//\//\\}"
-  if [[ "${solution_text}" != *"\"${windows_path}\""* ]]; then
-    if [[ " ${REQUIRED_TEST_PROJECTS[*]} ${UNIT_FAST_TEST_PROJECTS[*]} " == *" ${project} "* ]]; then
-      full "required test project '${project}' is missing from ${SOLUTION}"
-    fi
-    echo "::debug::skipping '${project}': not a member of ${SOLUTION}"
-    continue
-  fi
-  selected+=("${windows_path}")
-done
-
-if [[ ${#selected[@]} -eq 0 ]]; then
-  full "no solution projects selected"
-fi
-
-mapfile -t selected < <(printf '%s\n' "${selected[@]}" | sort -u)
-
-mkdir -p "$(dirname "${filter_path}")"
-{
-  echo '{'
-  echo '  "solution": {'
-  printf '    "path": "%s",\n' "${REPO_ROOT}/${SOLUTION}"
-  echo '    "projects": ['
-  for index in "${!selected[@]}"; do
-    separator=','
-    [[ "${index}" -eq $(( ${#selected[@]} - 1 )) ]] && separator=''
-    printf '      "%s"%s\n' "${selected[${index}]//\\/\\\\}" "${separator}"
-  done
-  echo '    ]'
-  echo '  }'
-  echo '}'
-} > "${filter_path}"
-
-echo "Lean gate solution filter (${#selected[@]} of $(grep -c '^Project(' "${SOLUTION}") solution projects):"
-printf '  %s\n' "${selected[@]//\\//}"
-emit "affected" "${filter_path}" "${#selected[@]} projects"
+# full-solution build either, so write_filter skips it, except a missing root,
+# which is a signal and falls back to full.
+write_filter "affected" "test group ${test_group}" "${!wanted[@]}"

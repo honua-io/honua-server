@@ -27,11 +27,11 @@ internal sealed class FeatureMutationEventService(
     public bool OutboxEnabled => _outboxCapabilityProvider?.SupportsTransactionalOutbox == true;
 
     public Task InvalidateLayerAsync(string? serviceId, int serviceLayerIndex, CancellationToken cancellationToken)
-        => _outputCacheInvalidationService?.InvalidateLayerAsync(serviceId, serviceLayerIndex, cancellationToken)
+        => _outputCacheInvalidationService?.InvalidateEditedLayerAsync(serviceId, serviceLayerIndex, cancellationToken)
            ?? Task.CompletedTask;
 
     public Task InvalidateStorageLayerAsync(int storageLayerId, CancellationToken cancellationToken)
-        => _outputCacheInvalidationService?.InvalidateStorageLayerAsync(storageLayerId, cancellationToken)
+        => _outputCacheInvalidationService?.InvalidateEditedStorageLayerAsync(storageLayerId, cancellationToken)
            ?? Task.CompletedTask;
 
     public Task InvalidateCollectionAsync(string? collectionId, CancellationToken cancellationToken)
@@ -41,7 +41,7 @@ internal sealed class FeatureMutationEventService(
             return Task.CompletedTask;
         }
 
-        return _outputCacheInvalidationService.InvalidateCollectionAsync(collectionId, cancellationToken);
+        return _outputCacheInvalidationService.InvalidateEditedCollectionAsync(collectionId, cancellationToken);
     }
 
     public async Task InvalidatePublishedLayerAsync(MetadataV2Publication publication, int storageLayerId)

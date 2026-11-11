@@ -20,6 +20,7 @@ using Honua.Protocols.Ogc.Api.Features.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Protocols.Ogc.Api.Features;
 
@@ -60,6 +61,7 @@ internal static class CollectionsEndpoints
             .WithDescription("Lists all available feature collections")
             .WithTags("OGC API Features")
             .CacheOutput("OgcCollections")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces<Collections>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html)
             .Produces(404);
@@ -71,6 +73,7 @@ internal static class CollectionsEndpoints
             .WithDescription("Get detailed metadata for a specific collection")
             .WithTags("OGC API Features")
             .CacheOutput("OgcCollection")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces<CollectionInfo>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html)
             .Produces(404);
@@ -82,6 +85,7 @@ internal static class CollectionsEndpoints
             .WithDescription("Get the schema for queryable properties of a collection")
             .WithTags("OGC API Features")
             .CacheOutput("OgcQueryables")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces<QueryablesSchema>(200, MediaTypes.Json)
             .Produces<QueryablesSchema>(200, MediaTypes.SchemaJson)
             .Produces<string>(200, MediaTypes.Html)

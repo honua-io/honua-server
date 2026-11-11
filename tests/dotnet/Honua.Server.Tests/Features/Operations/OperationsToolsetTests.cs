@@ -831,9 +831,9 @@ public sealed class OperationsToolsetTests
             handle.Result!.Details["response"].Should().NotContain(secret);
             var reference = handle.Result.SecretReferences.Should().ContainSingle().Subject;
             reference.Name.Should().Be(operation.Output);
-            store.Consume(reference, handle.OperationInstanceId, handle.OperationId, context.PrincipalId, context.TenantId)
+            store.Consume(reference, new OperationSecretBinding(handle.OperationInstanceId, handle.OperationId, context.PrincipalId, context.TenantId))
                 .Should().Be(secret);
-            store.Consume(reference, handle.OperationInstanceId, handle.OperationId, context.PrincipalId, context.TenantId)
+            store.Consume(reference, new OperationSecretBinding(handle.OperationInstanceId, handle.OperationId, context.PrincipalId, context.TenantId))
                 .Should().BeNull();
         }
     }
@@ -2468,15 +2468,13 @@ public sealed class OperationsToolsetTests
 
         public bool IsAvailable => true;
 
-        public OperationSecretReference Store(string operationInstanceId, string operationId, string? principalId,
-            string? tenantId, string name, string value, TimeSpan? ttl = null)
+        public OperationSecretReference Store(OperationSecretBinding binding, string name, string value, TimeSpan? ttl = null)
         {
             LastTtl = ttl;
             return new OperationSecretReference { ReferenceId = "opsecret-recorded", Name = name };
         }
 
-        public string? Consume(OperationSecretReference reference, string operationInstanceId, string operationId,
-            string? principalId, string? tenantId) => null;
+        public string? Consume(OperationSecretReference reference, OperationSecretBinding binding) => null;
     }
 
     private sealed class FailingOperationSecretStore : IOperationSecretStore
@@ -2485,14 +2483,12 @@ public sealed class OperationsToolsetTests
 
         public bool IsAvailable => true;
 
-        public OperationSecretReference Store(string operationInstanceId, string operationId, string? principalId,
-            string? tenantId, string name, string value, TimeSpan? ttl = null)
+        public OperationSecretReference Store(OperationSecretBinding binding, string name, string value, TimeSpan? ttl = null)
         {
             StoreCalled = true;
             throw new InvalidOperationException("secret store unavailable after actuation");
         }
 
-        public string? Consume(OperationSecretReference reference, string operationInstanceId, string operationId,
-            string? principalId, string? tenantId) => null;
+        public string? Consume(OperationSecretReference reference, OperationSecretBinding binding) => null;
     }
 }

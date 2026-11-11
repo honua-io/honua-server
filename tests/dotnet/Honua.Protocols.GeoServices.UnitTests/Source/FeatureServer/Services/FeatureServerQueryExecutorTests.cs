@@ -829,7 +829,7 @@ public sealed class FeatureServerQueryExecutorTests
             resource,
             publication,
             7,
-            new FeatureQuery(),
+            new FeatureQuery { PublicIdAttributeName = "source_id" },
             "objectid",
             context,
             CancellationToken.None);
@@ -842,6 +842,9 @@ public sealed class FeatureServerQueryExecutorTests
         objectIds[0].GetInt64().Should().Be(1);
         objectIds[1000].GetInt64().Should().Be(1001);
         document.RootElement.GetProperty("exceededTransferLimit").GetBoolean().Should().BeFalse();
+        await providerReader.Received(1).QueryObjectIdsAsync(7,
+            Arg.Is<FeatureQuery>(query => query.ReturnPublicObjectIds && query.PublicIdAttributeName == "source_id"),
+            Arg.Any<CancellationToken>());
         await featureReader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
         await providerReader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
     }
@@ -1042,10 +1045,13 @@ public sealed class FeatureServerQueryExecutorTests
             resource,
             publication,
             7,
-            new FeatureQuery(),
+            new FeatureQuery { PublicIdAttributeName = "source_id" },
             CancellationToken.None);
 
         ids.Should().Equal(4L, 9L);
+        await featureReader.Received(1).QueryObjectIdsAsync(7,
+            Arg.Is<FeatureQuery>(query => query.ReturnPublicObjectIds && query.PublicIdAttributeName == "source_id"),
+            Arg.Any<CancellationToken>());
         pipeline.LastContext.Should().BeNull();
         await featureReader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
     }

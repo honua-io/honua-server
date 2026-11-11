@@ -8,11 +8,16 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import xml.etree.ElementTree as ET
 import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shard_projects import shard_projects
+
 MONOLITH = 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
+MAX_STAGE0_CPU_COUNT = 16
 
 
 def planner(root):
@@ -27,10 +32,10 @@ def order_shards(root, plan, timings):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     config = json.loads((root / '.github/ci-shards.json').read_text())
-    names = [s['name'] for s in plan['shards']]
+    names = list(dict.fromkeys(s['name'] for s in plan['shards']))
     ordered = module.order_names(names, config, module.observations(config, timings))
-    entries = {s['name']: s for s in plan['shards']}
-    plan['shards'] = [entries[name] for name in ordered]
+    positions = {name: index for index, name in enumerate(ordered)}
+    plan['shards'] = sorted(plan['shards'], key=lambda shard: positions[shard['name']])
     plan['ordering'] = {'changed': names != ordered, 'timingsDirectory': str(timings),
                         'policy': 'longest-first only with complete compatible timing hints; selection unchanged'}
 
@@ -70,7 +75,8 @@ def make_plan(catalog, unit_plan, routing, registry, changed):
     requested = {aliases.get(n, n) for n in requested}
     if not routing.get('run_all') and requested - names:
         raise ValueError('Unknown routed shards: ' + ', '.join(sorted(requested - names)))
-    for shard in registry['shards']:
+    expanded = [{**s, 'csproj': p} for s in registry['shards'] for p in shard_projects(s)]
+    for shard in expanded:
         name = shard['shard_name']
         if not routing.get('run_all') and name not in requested:
             skips.append({'shard': name, 'reason': 'not selected by canonical router'})
@@ -107,6 +113,18 @@ def make_plan(catalog, unit_plan, routing, registry, changed):
             'skips': skips, 'emptySelection': not projects}
 
 
+def unit_feedback(plan, catalog):
+    known = catalog['projects']
+    excluded = [shard for shard in plan['shards'] if known[shard['project']]['role'] != 'unit']
+    plan['shards'] = [shard for shard in plan['shards'] if known[shard['project']]['role'] == 'unit']
+    plan['skips'].extend({'shard': shard['name'], 'reason': 'integration feedback is opt-in'}
+                         for shard in excluded)
+    plan['projects'] = sorted(set(plan['units']) | {shard['project'] for shard in plan['shards']})
+    plan['resources'] = sorted({resource for project in plan['projects'] for resource in known[project]['resources']})
+    plan['emptySelection'] = not plan['projects']
+    return plan
+
+
 def require_tests(directory):
     reports = list(Path(directory).glob('*.trx'))
     total = 0
@@ -120,6 +138,60 @@ def require_tests(directory):
         raise ValueError('No tests recorded in fresh TRX results: ' + str(directory))
 
 
+def feedback_environment():
+    cpu_count = int(os.environ.get('HONUA_STAGE0_MAX_CPU_COUNT', '5'))
+    if not 1 <= cpu_count <= MAX_STAGE0_CPU_COUNT:
+        raise ValueError(f'HONUA_STAGE0_MAX_CPU_COUNT must be between 1 and {MAX_STAGE0_CPU_COUNT}')
+    env = os.environ.copy()
+    env['DOTNET_PROCESSOR_COUNT'] = str(cpu_count)
+    return env
+
+
+def build_feedback(root, projects, invoke):
+    env = feedback_environment()
+    with tempfile.TemporaryDirectory(prefix='.honua-local-feedback-', dir=root) as temporary:
+        selection = Path(temporary) / 'feedback.slnf'
+        selection.write_text(json.dumps({'solution': {'path': str(root / 'Honua.sln'), 'projects': projects}}))
+        properties = ['-p:TreatWarningsAsErrors=true', '-p:UseSharedCompilation=false',
+                      '-p:RunAnalyzers=false', '-p:RunAnalyzersDuringBuild=false',
+                      f'-maxCpuCount:{env["DOTNET_PROCESSOR_COUNT"]}', '-nodeReuse:false']
+        invoke(['dotnet', 'restore', str(selection), *properties], cwd=root, check=True, env=env)
+        invoke(['dotnet', 'build', str(selection), '--no-restore', '--configuration', 'Release',
+                *properties], cwd=root, check=True, env=env)
+
+
+def shard_environment(execution_env, shard, directory):
+    env = execution_env.copy()
+    env.update({'HONUA_SERVER_TEST_SHARD_NAME': shard['name'], 'HONUA_SERVER_TEST_CSPROJ': shard['project'],
+                'HONUA_SERVER_TEST_FILTER': shard['filter'], 'HONUA_SERVER_TEST_LOG_NAME': 'feedback',
+                'HONUA_SERVER_TEST_CONFIGURATION': 'Release', 'HONUA_SERVER_TEST_RESULTS_DIR': str(directory),
+                'HONUA_SERVER_TEST_EXCLUDE_SLOW': 'true', 'HONUA_SERVER_TEST_EXCLUDE_FAST': 'true'})
+    for key, value in [('HONUA_SERVER_TEST_TIMEOUT_MINUTES', shard['timeoutMinutes']),
+                       ('HONUA_SERVER_TEST_MAX_CPU_COUNT', shard['maxCpuCount'])]:
+        if value is not None:
+            env[key] = str(value)
+        else:
+            env.pop(key, None)
+    return env
+
+
+def run_feedback_tests(plan, results, invoke):
+    execution_env = feedback_environment()
+    for index, project in enumerate(plan['units']):
+        directory = results / ('unit-' + str(index))
+        directory.mkdir()
+        invoke(['dotnet', 'test', project, '--no-build', '--no-restore', '--configuration', 'Release',
+                '--logger', 'trx;LogFileName=feedback.trx', '--results-directory', str(directory)],
+               check=True, env=execution_env)
+        require_tests(directory)
+    for index, shard in enumerate(plan['shards']):
+        directory = results / ('shard-' + str(index))
+        directory.mkdir()
+        env = shard_environment(execution_env, shard, directory)
+        invoke(['bash', 'scripts/ci/run-server-test-shard.sh'], check=True, env=env)
+        require_tests(directory)
+
+
 def execute(root, plan, run=subprocess.run, results_directory=None):
     if not plan['projects']:
         print('No affected tests selected; no validation verdict was produced.', file=sys.stderr)
@@ -131,44 +203,25 @@ def execute(root, plan, run=subprocess.run, results_directory=None):
     status = {'feedbackOnly': True, 'validatesPullRequest': False, 'fullGatesRequired': True,
               'status': 'running', 'source': plan.get('source'), 'commands': []}
     def invoke(command, **kwargs):
+        kwargs.setdefault('cwd', root)
         index = len(status['commands'])
         log = results / ('command-' + str(index) + '.log')
         status['commands'].append({'command': command, 'log': str(log), 'status': 'running'})
         print('Feedback command log: ' + str(log), flush=True)
-        with log.open('w') as output:
-            run(command, stdout=output, stderr=subprocess.STDOUT, **kwargs)
+        started = time.monotonic()
+        try:
+            with log.open('w') as output:
+                run(command, stdout=output, stderr=subprocess.STDOUT, **kwargs)
+        finally:
+            elapsed = round(time.monotonic() - started, 3)
+            status['commands'][-1]['durationSeconds'] = elapsed
+            print(f'Feedback timing: {command[0]} {command[1]}={elapsed}s', flush=True)
         status['commands'][-1]['status'] = 'passed'
     # PATH dotnet preserves the supervisor/Flow admission wrapper.
     try:
         (results / 'result.json').write_text(json.dumps(status, indent=2) + '\n')
-        with tempfile.TemporaryDirectory(prefix='.honua-local-feedback-', dir=root) as temporary:
-            temporary = Path(temporary)
-            selection = temporary / 'feedback.slnf'
-            selection.write_text(json.dumps({'solution': {'path': str(root / 'Honua.sln'), 'projects': plan['projects']}}))
-            invoke(['dotnet', 'build', str(selection), '--configuration', 'Release',
-                 '-p:TreatWarningsAsErrors=true', '-p:UseSharedCompilation=false'], cwd=root, check=True)
-            for index, project in enumerate(plan['units']):
-                directory = results / ('unit-' + str(index))
-                directory.mkdir()
-                invoke(['dotnet', 'test', project, '--no-build', '--no-restore', '--configuration', 'Release',
-                     '--logger', 'trx;LogFileName=feedback.trx', '--results-directory', str(directory)], cwd=root, check=True)
-                require_tests(directory)
-            for index, shard in enumerate(plan['shards']):
-                directory = results / ('shard-' + str(index))
-                directory.mkdir()
-                env = os.environ.copy()
-                env.update({'HONUA_SERVER_TEST_SHARD_NAME': shard['name'], 'HONUA_SERVER_TEST_CSPROJ': shard['project'],
-                            'HONUA_SERVER_TEST_FILTER': shard['filter'], 'HONUA_SERVER_TEST_LOG_NAME': 'feedback',
-                            'HONUA_SERVER_TEST_CONFIGURATION': 'Release', 'HONUA_SERVER_TEST_RESULTS_DIR': str(directory),
-                            'HONUA_SERVER_TEST_EXCLUDE_SLOW': 'true', 'HONUA_SERVER_TEST_EXCLUDE_FAST': 'true'})
-                for key, value in [('HONUA_SERVER_TEST_TIMEOUT_MINUTES', shard['timeoutMinutes']),
-                                   ('HONUA_SERVER_TEST_MAX_CPU_COUNT', shard['maxCpuCount'])]:
-                    if value is not None:
-                        env[key] = str(value)
-                    else:
-                        env.pop(key, None)
-                invoke(['bash', 'scripts/ci/run-server-test-shard.sh'], cwd=root, check=True, env=env)
-                require_tests(directory)
+        build_feedback(root, plan['projects'], invoke)
+        run_feedback_tests(plan, results, invoke)
         status['status'] = 'passed'
     except (Exception, KeyboardInterrupt) as error:
         status['status'] = 'cancelled' if isinstance(error, KeyboardInterrupt) else 'failed'
@@ -187,6 +240,7 @@ def main():
     parser.add_argument('--root', type=Path, default=ROOT)
     parser.add_argument('--base', default='origin/trunk')
     parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--unit-only', action='store_true', help='Omit component/integration shards')
     parser.add_argument('--results-directory', type=Path, help='Parent for a unique retained feedback run directory')
     parser.add_argument('--timings-dir', type=Path, help='Optional retained timing evidence; affects order only')
     args = parser.parse_args()
@@ -198,6 +252,8 @@ def main():
     unit_plan = module.plan(root, catalog, changed)
     routing = route(root, changed)
     result = make_plan(catalog, unit_plan, routing, json.loads((root / '.github/ci-shards.json').read_text()), changed)
+    if args.unit_only:
+        result = unit_feedback(result, catalog)
     try:
         order_shards(root, result, args.timings_dir or Path(os.environ.get('HONUA_LOCAL_CI_TIMINGS', str(root / 'artifacts/test-results'))))
     except (ValueError, OSError, KeyError):

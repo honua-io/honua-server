@@ -18,7 +18,6 @@ using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using StackExchange.Redis;
 using IOperationExecutor = Honua.Core.Features.Operations.Abstractions.IOperationExecutor;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
@@ -30,12 +29,12 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests
     [InlineData("admin.api-key.revoke", false, false)]
     [InlineData("admin.api-key.create", true, false)]
     [InlineData("admin.api-key.create", false, true)]
-    public async Task ProposeAsync_AllowPolicy_RequiresDistinctApprovalAndReplaysOriginalExactlyOnce(string operationId, bool loseProposalAudit, bool revokeProposer)
+    public async Task ProposeAsync_AllowPolicy_VerifiedHumanApprovalReplaysOriginalExactlyOnce(string operationId, bool loseProposalAudit, bool revokeProposer)
     {
-        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        var proposals = new RedisOperationProposalStore(multiplexer, NullLogger<RedisOperationProposalStore>.Instance);
-        var instances = new RedisOperationInstanceStore(multiplexer);
-        var secrets = BuildRedisSecretStore(multiplexer);
+        var state = await SharedControlPlaneState.GetAsync();
+        var proposals = state.CreateProposalStore();
+        var instances = state.CreateInstanceStore();
+        var secrets = BuildSecretStore(state);
         var audit = new RecordingAuditLog { FailAction = loseProposalAudit ? "operation.proposed" : null };
         var definition = AdminAccessOperationCatalog.Definitions.Single(d => d.OperationId == operationId);
         var mapper = new AdminOperateOperationApprovalRequestMapper(definition, secrets);
@@ -53,9 +52,10 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests
         var issued = await credentialStore.CreateAsync("proposer-6662", ["admin:*"], null, "fixture-operator", default);
         services.AddSingleton<IAdminApiKeyStore>(credentialStore);
         var executor = new ContradictoryProposalExecutor(BuildAccessExecutor(operationId, client, secrets, credentialStore));
-        services.AddSingleton<IOperationGateway>(sp => new OperationGateway(ladder, proposals, [],
+        services.AddSingleton<IOperationGateway>(sp => new OperationGateway(ladder, proposals,
             sp.GetRequiredService<IServiceScopeFactory>(), new NullProposalNotifier(), NullLogger<OperationGateway>.Instance,
-            proposerKeyAuthority: new OperationProposerApiKeyAuthority(TimeProvider.System, credentialStore)));
+            proposerKeyAuthority: new OperationProposerApiKeyAuthority(TimeProvider.System, credentialStore),
+            humanApprovalVerifier: new CanonicalOperationGatewayTestComposition.StateMachineHumanApprovalVerifier()));
         services.AddSingleton<IOperationInvoker>(sp => new OperationDispatcher(
             new OperationCatalog([new AdminAccessOperationDescriptorProvider()], TimeProvider.System), [executor],
             new AllowPolicyDecisionPoint(), TimeProvider.System,
@@ -87,7 +87,7 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests
             var failedProposal = await proposals.GetAsync(failedProposalId!);
             failedProposal!.Status.Should().Be(Honua.Core.Features.ControlPlane.Domain.OperationProposalStatus.Failed);
             var forbiddenReplay = () => provider.GetRequiredService<IOperationGateway>()
-                .ApplyApprovedProposalAsync(failedProposalId!, "distinct-approver-6662");
+                .ApplyApprovedProposalAsync(failedProposalId!, new OperationProposalApprovalContext { ApprovedBy = "distinct-approver-6662", TenantId = string.Empty });
             await forbiddenReplay.Should().ThrowAsync<InvalidOperationException>();
             handler.Sends.Should().Be(0);
             return;
@@ -105,7 +105,7 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests
         if (revokeProposer)
         {
             (await credentialStore.RevokeAsync(issued.Record.Id, default)).Should().NotBeNull();
-            var refused = () => gateway.ApplyApprovedProposalAsync(pending.ProposalId!, "distinct-approver-6662");
+            var refused = () => gateway.ApplyApprovedProposalAsync(pending.ProposalId!, new OperationProposalApprovalContext { ApprovedBy = "distinct-approver-6662", TenantId = string.Empty });
             await refused.Should().ThrowAsync<InvalidOperationException>(); handler.Sends.Should().Be(0);
             (await proposals.GetAsync(pending.ProposalId!))!.Status.Should()
                 .Be(Honua.Core.Features.ControlPlane.Domain.OperationProposalStatus.AwaitingApproval);
@@ -114,15 +114,13 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests
             denial.Details.Should().Contain("current_authority");
             return;
         }
-        var self = () => gateway.ApplyApprovedProposalAsync(pending.ProposalId!, original);
-        await self.Should().ThrowAsync<InvalidOperationException>(); handler.Sends.Should().Be(0);
-        var approved = await gateway.ApplyApprovedProposalAsync(pending.ProposalId!, "distinct-approver-6662");
+        var approved = await gateway.ApplyApprovedProposalAsync(pending.ProposalId!, new OperationProposalApprovalContext { ApprovedBy = "distinct-approver-6662", TenantId = string.Empty });
         approved!.Status.Should().Be(Honua.Core.Features.ControlPlane.Domain.OperationProposalStatus.Succeeded);
         handler.Sends.Should().Be(1);
         handler.Path.Should().Be(operationId.EndsWith("create", StringComparison.Ordinal)
             ? "/api/v1/admin/api-keys" : "/api/v1/admin/api-keys/" + request.Parameters["id"] + "/revoke");
         if (operationId.EndsWith("create", StringComparison.Ordinal)) handler.Body.Should().Contain("synthetic-6662");
-        var again = () => gateway.ApplyApprovedProposalAsync(pending.ProposalId!, "distinct-approver-6662");
+        var again = () => gateway.ApplyApprovedProposalAsync(pending.ProposalId!, new OperationProposalApprovalContext { ApprovedBy = "distinct-approver-6662", TenantId = string.Empty });
         await again.Should().ThrowAsync<InvalidOperationException>(); handler.Sends.Should().Be(1);
         var completed = await instances.GetAsync(pending.OperationInstanceId);
         completed!.Status.Should().Be(OperationHandleStatus.Completed);
@@ -135,9 +133,9 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests
         {
             JsonSerializer.Serialize(completed).Should().NotContain(secret);
             var reference = completed.Result!.SecretReferences.Should().ContainSingle().Subject;
-            secrets.Consume(reference, pending.OperationInstanceId, operationId, "distinct-approver-6662", tenant).Should().BeNull();
-            secrets.Consume(reference, pending.OperationInstanceId, operationId, original, tenant).Should().Be(secret);
-            secrets.Consume(reference, pending.OperationInstanceId, operationId, original, tenant).Should().BeNull();
+            secrets.Consume(reference, new OperationSecretBinding(pending.OperationInstanceId, operationId, "distinct-approver-6662", tenant)).Should().BeNull();
+            secrets.Consume(reference, new OperationSecretBinding(pending.OperationInstanceId, operationId, original, tenant)).Should().Be(secret);
+            secrets.Consume(reference, new OperationSecretBinding(pending.OperationInstanceId, operationId, original, tenant)).Should().BeNull();
         }
         JsonSerializer.Serialize(audit.Events).Should().NotContain(secret);
     }

@@ -13,6 +13,8 @@ using Microsoft.Extensions.DependencyInjection;
 using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
+using Honua.Infrastructure.SharedCaching;
+
 namespace Honua.Infrastructure.Validation;
 
 internal static partial class LayerValidationHelpers
@@ -171,6 +173,7 @@ internal static partial class LayerValidationHelpers
         }
 
         ValidatedMetadataSnapshot.Remember(context, resource!, snapshot);
+        SharedCacheResponse.UsePublication(context, service, publication);
         return new MetadataV2ValidationResult(true, publication, resource, service, null, snapshot);
     }
 
@@ -252,6 +255,7 @@ internal static partial class LayerValidationHelpers
         }
 
         ValidatedMetadataSnapshot.Remember(context, resource!, snapshot);
+        SharedCacheResponse.UsePublication(context, service, publication);
         return new MetadataV2ValidationResult(true, publication, resource, service, null, snapshot);
     }
 
@@ -518,6 +522,7 @@ internal static partial class LayerValidationHelpers
         }
 
         ValidatedMetadataSnapshot.Remember(context, resource!, snapshot);
+        SharedCacheResponse.UsePublication(context, service, publication);
         return new MetadataV2ValidationResult(true, publication, resource, service, null, snapshot);
     }
 

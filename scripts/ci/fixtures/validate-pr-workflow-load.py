@@ -37,7 +37,7 @@ def pr_admissions():
     for path in sorted(WORKFLOWS.glob("*.y*ml")):
         definition = workflow(path.name)
         triggers = definition.get("on", {})
-        if not any(str(event).startswith("pull_request") for event in triggers):
+        if "pull_request" not in triggers and "pull_request_target" not in triggers:
             continue
         for job in definition["jobs"].values():
             if not job.get("needs"):
@@ -78,12 +78,33 @@ class PullRequestLoadTests(unittest.TestCase):
                 types = workflow(name)["on"]["pull_request"].get("types", [])
                 self.assertTrue(expected <= set(types), types)
 
-    def test_each_pr_workflow_cancels_admission_by_pr_number(self):
+    def test_each_pr_workflow_scopes_admission_by_pr_number(self):
         for name, concurrency in pr_admissions():
             with self.subTest(workflow=name):
                 self.assertIn("github.event.pull_request.number", concurrency.get("group", ""))
                 cancellation = concurrency.get("cancel-in-progress")
-                self.assertIn(cancellation, ("true", "${{ github.event_name == 'pull_request' }}"))
+                if name in ("review-gate.yml", "review-event-bridge.yml", "pr-review-doctor.lock.yml", "normalize-derived-artifacts.yml", "auto-merge-ready.yml"):
+                    self.assertEqual(cancellation, "false")
+                    self.assertEqual(concurrency.get("queue"), "max")
+                else:
+                    self.assertIn(cancellation, ("true", "${{ github.event_name == 'pull_request' }}"))
+
+    def test_doctor_submitted_reviews_do_not_cancel_paid_work(self):
+        triage = workflow("pr-review-doctor-triage.lock.yml")
+        self.assertEqual(triage["on"]["pull_request_review"]["types"], ["submitted"])
+        self.assertNotIn("pull_request_review_comment", triage["on"])
+        self.assertEqual(triage["concurrency"]["cancel-in-progress"], "false")
+
+    def test_failed_trunk_ci_notifies_doctor_without_full_ci_dispatch(self):
+        callback = workflow("ci.yml")["jobs"]["doctor-notify"]
+        self.assertEqual(callback["needs"], "ci-gate")
+        self.assertEqual(callback["permissions"], {"actions": "write"})
+        condition = callback["if"]
+        self.assertIn("needs.ci-gate.result == 'failure'", condition)
+        self.assertIn("github.ref == 'refs/heads/trunk'", condition)
+        script = job_scripts(callback)
+        self.assertIn("workflow_id: 'ci-doctor-triage.lock.yml'", script)
+        self.assertIn("source_run_id: String(context.runId)", script)
 
     def test_required_checks_keep_draft_admission_and_names(self):
         gate = workflow("pr-gate.yml")

@@ -18,49 +18,26 @@ using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>Exercises the approved restore continuation through the real Redis stores and gateway.</summary>
-[Collection(RedisFixture.CollectionName)]
+// Exercises the approved restore continuation through the real PostgreSQL stores and gateway.
+[Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.TestInfrastructure)]
-public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
+public sealed class DurableRestoreLifecycleIntegrationTests
 {
     [IntegrationTest]
     public async Task ApprovedConvergence_AfterFailedStatusRead_StartsTheNextDeployment()
     {
-        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        var database = connection.GetDatabase();
+        var state = await SharedControlPlaneState.GetAsync();
         var proposalIds = new List<string>();
-        var proposals = new RedisOperationProposalStore(connection, NullLogger<RedisOperationProposalStore>.Instance);
-        await database.KeyDeleteAsync("controlplane:workflow:restore-cell-exclusive-owner");
+        var proposals = state.CreateProposalStore();
+        await ReleaseCellOwnershipAsync(state);
         try
         {
-            var workflows = new RedisWorkflowOperationStore(connection, NullLogger<RedisWorkflowOperationStore>.Instance);
-            var monitor = Substitute.For<IOptionsMonitor<ControlPlaneOptions>>();
-            monitor.CurrentValue.Returns(new ControlPlaneOptions
-            {
-                DeployTargets = [new DeployTargetOptions { TargetId = "local", TargetKind = DeployTargetKind.LocalCompose }]
-            });
-            var targets = Substitute.For<IDeployTargetRegistry>();
-            targets.GetAsync("local", Arg.Any<CancellationToken>()).Returns(new DeployTargetDefinition
-            {
-                TargetId = "local",
-                TargetKind = DeployTargetKind.LocalCompose,
-                Backend = "test",
-                Environment = "local",
-                TargetName = "honua"
-            });
-            var backend = Substitute.For<IDeployBackend>();
-            backend.BackendName.Returns("test");
-            backend.TargetKind.Returns(DeployTargetKind.LocalCompose);
-            backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new DeployBackendCapabilities());
-            backend.PlanAsync(Arg.Any<DeployOperationSpec>(), Arg.Any<CancellationToken>()).Returns(new DeployPlan { IsReadyToSubmit = true });
-            backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>()).Returns(new DeploySubmissionResult { Status = WorkflowOperationStatus.Reconciling });
-            var service = new DeployWorkflowService(targets, [workflows], [backend], Substitute.For<IOperatorApprovalEvaluator>(),
-                NullLogger<DeployWorkflowService>.Instance, monitor);
+            var workflows = state.CreateWorkflowOperationStore();
+            var (service, backend, monitor) = CreateLocalDeployFixture(workflows, proposals);
             var compose = Substitute.For<IComposeExecutorClient>();
             compose.ExecuteAsync(Arg.Any<ComposeExecutorRequest>(), Arg.Any<CancellationToken>())
                 .Returns<Task<ComposeExecutorResponse>>(_ => throw new IOException("Status unavailable"));
@@ -84,18 +61,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
                     DesiredRevision = "sha256:" + new string('a', 64)
                 }.Serialize();
                 var id = DurableRestoreQueue.CreateId();
-                Assert.True(await proposals.TryCreateAsync(new OperationProposal
-                {
-                    ProposalId = proposalId,
-                    Kind = OperationClass.Deploy,
-                    RequestedBy = request.RequestedBy,
-                    Status = OperationProposalStatus.Executing,
-                    ResolvedBy = "approver",
-                    ExecutionOperationId = id,
-                    Plan = new OperationProposalPlan { Summary = "Converge", ExecutionPayload = payload },
-                    CreatedAt = DateTimeOffset.UtcNow,
-                    UpdatedAt = DateTimeOffset.UtcNow
-                }));
+                Assert.True(await proposals.TryCreateAsync(CreateClaimedLegacyApproval(request, payload, id)));
                 Assert.Equal(id, await queue.EnqueueAsync(request, payload, CancellationToken.None));
                 var claimed = await proposals.GetAsync(proposalId);
                 Assert.True(await proposals.TrySetAsync(claimed! with { Status = OperationProposalStatus.Submitted }));
@@ -105,7 +71,9 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             await Worker().ReconcileAsync(failedId, CancellationToken.None);
             Assert.Equal(WorkflowOperationStatus.Failed, (await workflows.GetAsync(failedId))?.Status);
             Assert.Equal(PreMigrationRestoreCodes.ProviderFailed, (await workflows.GetAsync(failedId))?.ErrorMessage);
-            Assert.True((await database.KeyTimeToLiveAsync("controlplane:workflow:" + failedId)).GetValueOrDefault() > TimeSpan.FromDays(300));
+            Assert.True(await state.ScalarAsync<bool>(
+                $"SELECT expires_at > now() + interval '300 days' FROM {state.Table("workflow_operations")} WHERE operation_id = @id",
+                new Npgsql.NpgsqlParameter("id", failedId)));
             // Also exercise cleanup after a host exits before it can release the saved owner.
             var owner = await workflows.GetAsync(RestoreDeployAdmission.CellOwnerId);
             Assert.True(await workflows.TrySetAsync(owner! with { CurrentPhase = failedId }));
@@ -135,20 +103,19 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
                 if (proposal is not null)
                     await proposals.TrySetAsync(proposal with { Status = OperationProposalStatus.Cancelled });
             }
-            await database.KeyDeleteAsync("controlplane:workflow:restore-cell-exclusive-owner");
+            await ReleaseCellOwnershipAsync(state);
         }
     }
 
     [IntegrationTest]
     public async Task ApprovedRestore_ReplacementWorker_WaitsForProtectionAndVerifiesReadback()
     {
-        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        var database = connection.GetDatabase();
-        await database.KeyDeleteAsync("controlplane:workflow:restore-cell-exclusive-owner");
+        var state = await SharedControlPlaneState.GetAsync();
+        await ReleaseCellOwnershipAsync(state);
         try
         {
-            var workflows = new RedisWorkflowOperationStore(connection, NullLogger<RedisWorkflowOperationStore>.Instance);
-            var proposals = new RedisOperationProposalStore(connection, NullLogger<RedisOperationProposalStore>.Instance);
+            var workflows = state.CreateWorkflowOperationStore();
+            var proposals = state.CreateProposalStore();
             var journal = Substitute.For<ISchemaJournal>();
             journal.ReadAsync(Arg.Any<CancellationToken>()).Returns(new SchemaJournalSnapshot(true,
                 [new AppliedSchemaMigration(142, "reader-incompatible", 0)]));
@@ -204,7 +171,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>()).Returns(new DeploySubmissionResult { Status = WorkflowOperationStatus.Reconciling });
             var approvals = Substitute.For<IOperatorApprovalEvaluator>();
             approvals.Evaluate(Arg.Any<System.Security.Claims.ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>()).Returns(ApprovalRequirement.NotRequired());
-            var deploy = new DeployOperationExecutor(new DeployWorkflowService(targets, [workflows], [backend], approvals, NullLogger<DeployWorkflowService>.Instance, restoreOptions: cell));
+            var deploy = new DeployOperationExecutor(new DeployWorkflowService(targets, [workflows], [backend], approvals, NullLogger<DeployWorkflowService>.Instance, restoreOptions: cell, proposalStore: proposals));
             var queue = new DurableRestoreQueue(workflows, proposals);
             var guarded = new RestoreGuardedDeployOperationExecutor(deploy, coordinator, audit, cell, queue);
             var ladder = Substitute.For<IGuardrailLadder>();
@@ -221,9 +188,9 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             });
             Assert.Equal(OperationGatewayOutcome.ProposalCreated, routed.Outcome);
             Assert.NotNull(routed.ProposalId);
-            await Assert.ThrowsAsync<InvalidOperationException>(() => gateway.ApplyApprovedProposalAsync(routed.ProposalId, "proposer"));
+            var approved = await gateway.ApplyApprovedProposalAsync(routed.ProposalId,
+                new OperationProposalApprovalContext { ApprovedBy = "proposer", TenantId = string.Empty });
             await snapshots.DidNotReceive().BeginAsync(Arg.Any<RdsRestoreRequest>(), Arg.Any<CancellationToken>());
-            var approved = await gateway.ApplyApprovedProposalAsync(routed.ProposalId, "approver");
             Assert.NotNull(approved);
             Assert.Equal(OperationProposalStatus.Submitted, approved.Status);
             Assert.NotNull(approved.ExecutionOperationId);
@@ -236,7 +203,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
                 Plan = new OperationProposalPlan { Summary = "Restore prior image", ExecutionPayload = payload }
             });
             Assert.NotNull(secondRoute.ProposalId);
-            var second = await gateway.ApplyApprovedProposalAsync(secondRoute.ProposalId, "approver");
+            var second = await gateway.ApplyApprovedProposalAsync(secondRoute.ProposalId, new OperationProposalApprovalContext { ApprovedBy = "approver", TenantId = string.Empty });
             Assert.NotNull(second);
             Assert.NotNull(second.ExecutionOperationId);
             // Simulate a crash after the durable enqueue but before the gateway's final resolution write.
@@ -324,7 +291,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
         }
         finally
         {
-            await database.KeyDeleteAsync("controlplane:workflow:restore-cell-exclusive-owner");
+            await ReleaseCellOwnershipAsync(state);
         }
     }
     [IntegrationTheory]
@@ -333,12 +300,11 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
     [InlineData(DeployTargetKind.AwsEcs)]
     public async Task ApprovedConvergence_CanTakeOverOnlyTerminalFailure(DeployTargetKind targetKind)
     {
-        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        var database = connection.GetDatabase();
-        await database.KeyDeleteAsync("controlplane:workflow:restore-cell-exclusive-owner");
+        var state = await SharedControlPlaneState.GetAsync();
+        await ReleaseCellOwnershipAsync(state);
         try
         {
-            var workflows = new RedisWorkflowOperationStore(connection, NullLogger<RedisWorkflowOperationStore>.Instance);
+            var workflows = state.CreateWorkflowOperationStore();
             var submissionId = "deploy-submission-" + Guid.NewGuid().ToString("N");
             await using (var submission = await RestoreDeployAdmission.AcquireWorkflowAsync(workflows, submissionId, CancellationToken.None))
             {
@@ -443,47 +409,37 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
         }
         finally
         {
-            await database.KeyDeleteAsync("controlplane:workflow:restore-cell-exclusive-owner");
+            await ReleaseCellOwnershipAsync(state);
         }
     }
 
     [IntegrationTest]
     public async Task LocalCheckpoint_WithoutWorkflow_ResumesDeterministicSubmission()
     {
-        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        var database = connection.GetDatabase();
-        await database.KeyDeleteAsync("controlplane:workflow:restore-cell-exclusive-owner");
+        var state = await SharedControlPlaneState.GetAsync();
+        var proposals = state.CreateProposalStore();
+        var proposalId = "proposal-" + Guid.NewGuid().ToString("N");
+        await ReleaseCellOwnershipAsync(state);
         try
         {
-            var workflows = new RedisWorkflowOperationStore(connection, NullLogger<RedisWorkflowOperationStore>.Instance);
-            var monitor = Substitute.For<IOptionsMonitor<ControlPlaneOptions>>();
-            monitor.CurrentValue.Returns(new ControlPlaneOptions
-            {
-                DeployTargets = [new DeployTargetOptions { TargetId = "local", TargetKind = DeployTargetKind.LocalCompose }]
-            });
-            var targets = Substitute.For<IDeployTargetRegistry>();
-            targets.GetAsync("local", Arg.Any<CancellationToken>()).Returns(new DeployTargetDefinition
-            {
-                TargetId = "local",
-                TargetKind = DeployTargetKind.LocalCompose,
-                Backend = "test",
-                Environment = "local",
-                TargetName = "honua"
-            });
-            var backend = Substitute.For<IDeployBackend>();
-            backend.BackendName.Returns("test");
-            backend.TargetKind.Returns(DeployTargetKind.LocalCompose);
-            backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new DeployBackendCapabilities());
-            backend.PlanAsync(Arg.Any<DeployOperationSpec>(), Arg.Any<CancellationToken>()).Returns(new DeployPlan { IsReadyToSubmit = true });
-            backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>()).Returns(new DeploySubmissionResult { Status = WorkflowOperationStatus.Reconciling });
-            var service = new DeployWorkflowService(targets, [workflows], [backend], Substitute.For<IOperatorApprovalEvaluator>(),
-                NullLogger<DeployWorkflowService>.Instance, monitor);
-            var worker = new DurableRestoreWorker(workflows, null!, null!, new DeployOperationExecutor(service), null!, null!,
+            var workflows = state.CreateWorkflowOperationStore();
+            var (service, backend, monitor) = CreateLocalDeployFixture(workflows, proposals);
+            var worker = new DurableRestoreWorker(workflows, proposals, null!, new DeployOperationExecutor(service), null!, null!,
                 NullLogger<DurableRestoreWorker>.Instance, monitor, Substitute.For<IComposeExecutorClient>());
             var now = DateTimeOffset.UtcNow;
             var id = "restore-local-" + Guid.NewGuid().ToString("N");
             var workflowId = DeployWorkflowService.CreateOperationId(id);
             var payload = new DeployExecutionPayload { TargetId = "local", DesiredRevision = "sha256:" + new string('a', 64), CurrentRevision = "sha256:" + new string('b', 64) };
+            var request = new OperationGatewayRequest
+            {
+                Kind = OperationClass.Deploy,
+                RequestedBy = "proposer",
+                ApprovedBy = "approver",
+                ApprovedProposalId = proposalId,
+            };
+            Assert.True(await proposals.TryCreateAsync(CreateClaimedLegacyApproval(request, payload.Serialize(), id)
+                with
+            { Status = OperationProposalStatus.Submitted }));
             Assert.True(await workflows.TryCreateAsync(new WorkflowOperationRecord
             {
                 OperationId = id,
@@ -491,7 +447,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
                 Status = WorkflowOperationStatus.Reconciling,
                 CreatedAt = now,
                 UpdatedAt = now,
-                Audit = new OperationAuditInfo { RequestedBy = "proposer", ProposalId = "proposal" },
+                Audit = new OperationAuditInfo { RequestedBy = request.RequestedBy, ProposalId = proposalId },
                 PreMigrationRestore = new PreMigrationRestoreContext
                 {
                     Phase = "awaiting-local-deploy",
@@ -519,8 +475,65 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
         }
         finally
         {
-            await database.KeyDeleteAsync("controlplane:workflow:restore-cell-exclusive-owner");
+            var proposal = await proposals.GetAsync(proposalId);
+            if (proposal is not null)
+                await proposals.TrySetAsync(proposal with { Status = OperationProposalStatus.Cancelled });
+            await ReleaseCellOwnershipAsync(state);
         }
     }
 
+    // The cell owner is one well-known operation, so each test starts and ends without it.
+    private static Task ReleaseCellOwnershipAsync(ControlPlaneStateHarness state)
+        => state.ExecuteAsync(
+            $"""
+            DELETE FROM {state.Table("workflow_operations")} WHERE operation_id = 'restore-cell-exclusive-owner';
+            DELETE FROM {state.Table("leases")} WHERE lease_key LIKE '%restore-cell-exclusive-owner'
+            """);
+
+    private static (DeployWorkflowService Service, IDeployBackend Backend, IOptionsMonitor<ControlPlaneOptions> Options)
+        CreateLocalDeployFixture(IWorkflowOperationStore workflows, IOperationProposalStore proposals)
+    {
+        var monitor = Substitute.For<IOptionsMonitor<ControlPlaneOptions>>();
+        monitor.CurrentValue.Returns(new ControlPlaneOptions
+        {
+            DeployTargets = [new DeployTargetOptions { TargetId = "local", TargetKind = DeployTargetKind.LocalCompose }]
+        });
+        var targets = Substitute.For<IDeployTargetRegistry>();
+        targets.GetAsync("local", Arg.Any<CancellationToken>()).Returns(new DeployTargetDefinition
+        {
+            TargetId = "local",
+            TargetKind = DeployTargetKind.LocalCompose,
+            Backend = "test",
+            Environment = "local",
+            TargetName = "honua"
+        });
+        var backend = Substitute.For<IDeployBackend>();
+        backend.BackendName.Returns("test");
+        backend.TargetKind.Returns(DeployTargetKind.LocalCompose);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new DeployBackendCapabilities());
+        backend.PlanAsync(Arg.Any<DeployOperationSpec>(), Arg.Any<CancellationToken>()).Returns(new DeployPlan { IsReadyToSubmit = true });
+        backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>()).Returns(new DeploySubmissionResult { Status = WorkflowOperationStatus.Reconciling });
+        var service = new DeployWorkflowService(targets, [workflows], [backend], Substitute.For<IOperatorApprovalEvaluator>(),
+            NullLogger<DeployWorkflowService>.Instance, monitor, proposalStore: proposals);
+        return (service, backend, monitor);
+    }
+
+    private static OperationProposal CreateClaimedLegacyApproval(OperationGatewayRequest request, string payload, string id)
+    {
+        var plan = new OperationProposalPlan { Summary = "Claimed restore", ExecutionPayload = payload };
+        return new OperationProposal
+        {
+            ProposalId = request.ApprovedProposalId!,
+            Kind = OperationClass.Deploy,
+            RequestedBy = request.RequestedBy,
+            ResolvedBy = request.ApprovedBy,
+            Status = OperationProposalStatus.Executing,
+            ExecutionOperationId = id,
+            Audit = new OperationAuditInfo { OperationInstanceId = request.OperationInstanceId },
+            Plan = plan,
+            SealedPlanHash = Honua.Server.Features.Operations.OperationApprovalPlanSeal.Compute(plan),
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
+    }
 }

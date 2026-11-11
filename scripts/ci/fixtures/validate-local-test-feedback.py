@@ -43,7 +43,7 @@ class FeedbackTests(unittest.TestCase):
         catalog = json.loads((root / '.github/test-projects.json').read_text())['projects']
         monolith = 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
         selected = [next(shard for shard in config['shards']
-                         if catalog[shard.get('csproj') or monolith]['role'] == role)
+                         if catalog[(shard.get('csprojs') or [shard.get('csproj') or monolith])[0]]['role'] == role)
                     for role in ('unit', 'component', 'mixed')]
         original = [{'name': s['shard_name'], 'effectiveFilter': s['filter'], 'marker': i}
                     for i, s in enumerate(selected)]
@@ -56,7 +56,7 @@ class FeedbackTests(unittest.TestCase):
                 (timings / f'{i}.timing.json').write_text(json.dumps({
                     'shard': shard['shard_name'], 'status': 'passed', 'duration_seconds': (i + 1) * 10,
                     'started_at': datetime.now(timezone.utc).isoformat(),
-                    'filter': expected_filter}))
+                    'filter': expected_filter, 'projects': shard.get('csprojs')}))
             plan = {'shards': original.copy(), 'projects': ['keep'], 'resources': ['postgres']}
             feedback.order_shards(root, plan, timings)
             self.assertEqual(plan['shards'], original[::-1])
@@ -68,6 +68,15 @@ class FeedbackTests(unittest.TestCase):
             feedback.order_shards(root, plan, timings)
             self.assertEqual(plan['shards'], original)
             self.assertFalse(plan['ordering']['changed'])
+
+    def test_ordering_preserves_all_group_members(self):
+        root = SCRIPT.parents[2]
+        name = json.loads((root / '.github/ci-shards.json').read_text())['shards'][0]['shard_name']
+        original = [{'name': name, 'project': project} for project in ('A.csproj', 'B.csproj')]
+        plan = {'shards': original.copy()}
+        with tempfile.TemporaryDirectory() as directory:
+            feedback.order_shards(root, plan, Path(directory))
+        self.assertEqual(original, plan['shards'])
 
     def test_full_unit_owns_overlap_but_retains_component_and_mixed_filters(self):
         result = self.plan([self.unit], ['unit-id', 'Component', 'Mixed'])
@@ -83,6 +92,12 @@ class FeedbackTests(unittest.TestCase):
         result = self.plan(all_shards=True)
         self.assertEqual(len(result['shards']), 3)
         self.assertFalse(result['emptySelection'])
+
+    def test_unit_feedback_omits_integration_but_preserves_routing_validation(self):
+        result = feedback.unit_feedback(self.plan([self.unit], all_shards=True), self.catalog)
+        self.assertEqual(result['projects'], [self.unit])
+        self.assertEqual(result['shards'], [])
+        self.assertEqual(len(result['skips']), 3)
 
     def test_unknown_shard_fails_instead_of_silent_omission(self):
         with self.assertRaisesRegex(ValueError, 'Unknown routed shards'):
@@ -118,11 +133,15 @@ class FeedbackTests(unittest.TestCase):
             (directory / 'feedback.trx').write_text('<TestRun><ResultSummary><Counters total="2" executed="2"/></ResultSummary></TestRun>')
         with tempfile.TemporaryDirectory() as root:
             feedback.execute(Path(root), result, run=run)
-        self.assertEqual([c[0][0:2] for c in calls], [['dotnet', 'build'], ['dotnet', 'test'], ['bash', 'scripts/ci/run-server-test-shard.sh']])
-        self.assertIn('--no-build', calls[1][0])
-        self.assertIn('--no-restore', calls[1][0])
-        self.assertEqual(calls[2][1]['env']['HONUA_SERVER_TEST_FILTER'], 'FullyQualifiedName~Component')
+        self.assertEqual([c[0][0:2] for c in calls], [['dotnet', 'restore'], ['dotnet', 'build'], ['dotnet', 'test'], ['bash', 'scripts/ci/run-server-test-shard.sh']])
+        self.assertTrue(all(call[1]['env']['DOTNET_PROCESSOR_COUNT'] == '5' for call in calls))
+        self.assertIn('--no-build', calls[2][0])
+        self.assertIn('--no-restore', calls[2][0])
+        self.assertEqual(calls[3][1]['env']['HONUA_SERVER_TEST_FILTER'], 'FullyQualifiedName~Component')
         self.assertTrue(all(c[1]['check'] for c in calls))
+        self.assertIn('--no-restore', calls[1][0])
+        self.assertIn('-p:RunAnalyzers=false', calls[1][0])
+        self.assertTrue(any(arg.startswith('-maxCpuCount:') for arg in calls[1][0]))
 
     def test_zero_or_missing_trx_fails_even_if_executor_exits_successfully(self):
         for contents in [None, '<TestRun><Counters total="0"/></TestRun>',
@@ -190,11 +209,13 @@ class FeedbackTests(unittest.TestCase):
             (binaries / 'python3').chmod(0o755)
             env = os.environ.copy()
             env['PATH'] = str(binaries) + os.pathsep + env['PATH']
-            for flag in ['--affected-tests', '--unit-only']:
-                result = subprocess.run(['bash', str(ci / 'pre-pr-check.sh'), flag,
+            for flags, expected in [(['--affected-tests'], ['--unit-only']),
+                                    (['--affected-tests', '--integration'], []),
+                                    (['--unit-only'], [])]:
+                result = subprocess.run(['bash', str(ci / 'pre-pr-check.sh'), *flags,
                                          '--dry-run', '--base', 'fixture-base'],
                                         env=env, text=True, capture_output=True, check=True)
-                self.assertEqual(json.loads(result.stdout), ['plan', '--base', 'fixture-base'])
+                self.assertEqual(json.loads(result.stdout), ['plan', '--base', 'fixture-base'] + expected)
 
     def test_namespaced_trx_is_supported(self):
         with tempfile.TemporaryDirectory() as root:

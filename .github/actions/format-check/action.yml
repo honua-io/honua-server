@@ -1,5 +1,8 @@
 name: Lean Gate Format Check
-description: Run the shared full or affected-scope solution format verification.
+description: >
+  Run the shared full or affected-scope solution format verification, then the
+  warnings-as-errors Release build with analyzers, code style and documentation
+  diagnostics on for the matching build scope.
 
 inputs:
   format-scope:
@@ -8,12 +11,40 @@ inputs:
       analysis to the pull-request diff and fails safely back to full.
     required: false
     default: 'full'
+  format:
+    description: >
+      Whether to run the format verification. Defaults to true; a caller that
+      runs format and the analyzer build as parallel jobs passes 'false' to the
+      analyzer job.
+    required: false
+    default: 'true'
+  analyzer-build:
+    description: >
+      Whether to run the analyzer build. Defaults to true; only a caller whose
+      own build already ran analyzers as errors passes 'false'. The build scope
+      follows format-scope: 'affected' compiles the diff's reverse-dependency
+      closure, skips the build when the diff reaches no project, and falls back
+      to the full solution exactly like the lean gate.
+    required: false
+    default: 'true'
+  analyzer-partition:
+    description: >
+      Analyzer ownership: 'source' checks non-test projects, 'tests' checks test
+      projects, and 'all' preserves the complete pass. Split callers must require
+      both partitions. Dependencies still compile in each partition.
+    required: false
+    default: 'all'
+  analyzer-build-timeout-minutes:
+    description: 'Cap for the analyzer build step.'
+    required: false
+    default: '25'
 
 runs:
   using: composite
   steps:
     - name: Compute gate format scope
       id: format-scope
+      if: inputs.format == 'true'
       shell: bash
       env:
         FORMAT_SCOPE: ${{ inputs.format-scope }}
@@ -21,6 +52,7 @@ runs:
       run: scripts/ci/compute-lean-gate-format-scope.sh
 
     - name: Format Check
+      if: inputs.format == 'true'
       shell: bash
       env:
         GATE_FORMAT_MODE: ${{ steps.format-scope.outputs.mode }}
@@ -39,3 +71,65 @@ runs:
         else
           dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic
         fi
+
+    - name: Compute analyzer build scope
+      id: analyzer-build-scope
+      if: inputs.analyzer-build == 'true'
+      shell: bash
+      env:
+        BUILD_SCOPE: ${{ inputs.format-scope }}
+        GATE_TEST_GROUP: analyzers
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+        GATE_FILTER_PATH: ${{ runner.temp }}/analyzer-build.slnf
+      run: scripts/ci/compute-lean-gate-build-scope.sh
+
+    - name: Restore analyzer build scope
+      if: inputs.analyzer-build == 'true' && steps.analyzer-build-scope.outputs.mode != 'none'
+      shell: bash
+      env:
+        GATE_BUILD_MODE: ${{ steps.analyzer-build-scope.outputs.mode }}
+        GATE_BUILD_FILTER: ${{ steps.analyzer-build-scope.outputs.filter }}
+      run: |
+        target=Honua.sln
+        if [[ "${GATE_BUILD_MODE}" == "affected" && "${{ inputs.analyzer-partition }}" != "source" ]]; then
+          [[ -f "${GATE_BUILD_FILTER}" ]] || { echo "::error::Missing analyzer build filter"; exit 1; }
+          target="${GATE_BUILD_FILTER}"
+        fi
+        scripts/ci/dotnet-restore-retry.sh "${target}" --property:Configuration=Release
+
+    # Composite-action steps do not support `timeout-minutes`.
+    - name: Build with analyzers (warnings as errors)
+      if: inputs.analyzer-build == 'true' && steps.analyzer-build-scope.outputs.mode != 'none'
+      shell: bash
+      env:
+        ANALYZER_PARTITION: ${{ inputs.analyzer-partition }}
+        # Avoid persistent MSBuild server teardown affecting the build exit code.
+        DOTNET_CLI_USE_MSBUILD_SERVER: 'false'
+        MSBUILDUSESERVER: '0'
+        MSBUILDDISABLENODEREUSE: '1'
+        GATE_BUILD_MODE: ${{ steps.analyzer-build-scope.outputs.mode }}
+        GATE_BUILD_FILTER: ${{ steps.analyzer-build-scope.outputs.filter }}
+      run: |
+        target=Honua.sln
+        [[ "${GATE_BUILD_MODE}" == "affected" ]] && target="${GATE_BUILD_FILTER}"
+        if [[ "${ANALYZER_PARTITION}" == "source" ]]; then
+          # Keep all source roots: an affected test root can reference any of them.
+          source_filter="${RUNNER_TEMP}/source-analyzer-build.slnf"
+          python3 scripts/ci/analyzer-source-filter.py --output "${source_filter}"
+          source_count=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["solution"]["projects"]))' "${source_filter}")
+          if [[ "${source_count}" == "0" ]]; then
+            echo "No source analyzer roots selected; the test partition owns this scope."
+            exit 0
+          fi
+          target="${source_filter}"
+        fi
+        timeout "${{ inputs.analyzer-build-timeout-minutes }}m" \
+          dotnet build "${target}" \
+            --no-restore \
+            --configuration Release \
+            -graphBuild \
+            /p:TreatWarningsAsErrors=true \
+            /p:HonuaAnalyzerPartition="${ANALYZER_PARTITION}" \
+            /p:EnforceCodeStyleInBuild=true \
+            /p:GenerateDocumentationFile=true \
+            /p:UseSharedCompilation=false

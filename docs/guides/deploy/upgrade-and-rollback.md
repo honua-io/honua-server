@@ -42,16 +42,29 @@ and cancellation retain the last durable status for the replacement controller.
 It does not prove that the Batch job failed or stopped. Keep the durable Redis
 store and worker definitions available across both directions of a switch.
 
+**2026.1-rc.2 is the supported rollback floor.** Any supported release from rc.2
+onward must allow application rollback to rc.2 or any later supported release
+without restoring the database. Rollback to an image older than rc.2 is unsupported;
+restore its matching pre-upgrade backup if that recovery is necessary.
+
+The pre-rc.2 exceptions are pinned by exact name and SHA-256 in
+`eng/schema/schema-release-boundary.v1.json`: `142_CreateAiFinancialAccounting.sql`,
+`144_RenameGeoServicesRestSourceKind.sql`, and `145_ProtectImportDependencies.sql`.
+These immutable scripts establish the boundary; they do not authorize future
+incompatible migrations. CODEOWNERS designates the founder as the reviewer for boundary changes.
+
 The frozen reader baseline is `eng/schema/schema-reader-baseline.v1.json`.
 Every migration, including each newly added script, must also be hash-pinned in
 `eng/schema/schema-migration-hashes.v1.json`; extend that ledger when adding an
 expand migration. Keep existing hashes and script names immutable. A new ledger
 entry does not extend the frozen reader baseline or exempt a script from contract
 checks. Hashes are uppercase SHA-256 over UTF-8 SQL with LF line endings.
-New scripts classified as contracting fail the gate even with a compatibility
-review annotation. A contract-phase release requires an explicit new rollback
-boundary and backup/restore plan; an annotation alone does not permit it in a
-rolling update.
+From rc.2, a migration carrying `honua:reader-incompatible` or classified as
+contracting fails CI unless its exact name and hash match the release boundary.
+Every migration numbered above that boundary (server 145, raster 008) must declare `expand` and be accepted
+by the rc.2 reader. A compatibility-review annotation cannot waive these rules.
+Redesign incompatible changes as additive migrations with compatible application
+reads and writes; defer removals until an explicitly approved future release boundary.
 
 The shared runtime classifier detects removals of views, types, routines, triggers,
 policies and indexes, as well as table contractions, renames, schema moves and
@@ -110,31 +123,26 @@ matching backup. Some schema 135 images predate the skip-path check. They accept
 declarations only with migrations enabled, and with `HONUA_SKIP_MIGRATIONS=true`
 they still require every applied migration to be one they ship.
 
-**Rules for migration authors.** The shared classifier decides `expand` vs
-`contract`, but it only reads DDL. Some additive-looking scripts still break the
-previous reader: a new `NOT NULL` column whose default the old code violates,
-new enum values the old code cannot parse, a new constraint, or a trigger that
-changes the meaning of the old code's writes. Mark such a script with
-`-- honua:reader-incompatible reason=<what an older reader would violate>`, so
-that older readers refuse it and the operator restores instead. When a script
-is safe only for readers at or after a known schema, add
-`-- honua:reader-compatible-from schema=<N>`. The highest annotation applies. An
-annotation the reader cannot parse counts as reader-incompatible. Annotations
-are part of the hash-pinned script text, so add them before the migration first
-ships.
+**Rules for migration authors.** The shared classifier detects potentially
+contracting DDL, but additive-looking SQL can still break an older reader: stored
+enum rewrites, constraints, defaults or triggers can change what it reads or writes.
+Design those changes to preserve rc.2 readers. `honua:reader-incompatible` records a
+refusal for the immutable pre-rc.2 exceptions; it is not an author opt-out from CI.
+A `honua:reader-compatible-from schema=<N>` annotation must not raise the reader
+floor above rc.2. An annotation the reader cannot parse counts as incompatible.
+Annotations are part of the hash-pinned script text; never edit shipped migrations.
 
 **Every migration change is checked against the previous image.** The pull
-request check `PR Gate / N-1 reader compatibility` applies the change's full
-migration set to a fresh database, starts the server image of the latest
-published platform release on it (pulled by the digest the release recorded) with
-migrations enabled, and requires it to become ready and to read and write a
-seeded layer. A refusal passes only when every refused script is classified
-`contract` or carries `-- honua:reader-incompatible`; each such script must also
-carry `-- honua:compatibility-review` and be named, by its file name, in a
-rollback-boundary note in this guide that tells operators to restore instead of
-rolling back.
+request check `PR Gate / N-1 reader compatibility` applies the full migration set
+to a fresh database and starts the latest published platform release image using
+its recorded digest. With migrations enabled, it must become ready and read and
+write a seeded layer. A typed refusal is accepted only for exact hash-pinned
+pre-rc.2 exceptions or frozen historical contracting migrations. A review annotation
+and a rollback note alone never permit a new incompatible script. A refusal from
+an unsupported pre-rc.2 image does not prove the supported rc.2 rollback promise;
+the release journey must verify an rc.2 image on the upgraded schema.
 
-### Import replacement dependency rollback boundary
+### Historical pre-rc.2 import replacement boundary
 
 `145_ProtectImportDependencies.sql` changes the import swap helper to refuse
 replacement when other database objects depend on the target. Deploy it with the
@@ -145,10 +153,12 @@ replacement or change the reader schema. Its exact reviewed bytes are additive.
 Earlier images lack that exact-byte review, classify the deferred helper operations
 as contract, and refuse startup against the migrated database. The migration records
 an explicit `reader-incompatible` declaration for this observed compatibility boundary.
-Upgrade all server and worker instances together. Application-only rollback is not
-supported after migration 145: restore the pre-upgrade database backup and its matching
-application image. Do not remove the migration journal entry or reintroduce cascading
-replacement to bypass that boundary.
+Upgrade all server and worker instances together when crossing this pre-rc.2 boundary.
+Application-only rollback across migration 145 to an image older than rc.2 is
+unsupported: restore the pre-upgrade database backup and its matching application
+image. Rollbacks to rc.2 or later retain the supported application-only path. Do not
+remove the migration journal entry or reintroduce cascading replacement to bypass
+that boundary.
 
 ### Configuration binding correction
 
@@ -341,7 +351,7 @@ For an ECS image convergence target, configure `aws.ecs.stable_service` as a dis
 
 ### Governed restart and config
 
-An approved admin-config proposal can restart the registered deployment or change one allowlisted field. The action names are `workload.restart_ecs`, `workload.restart_lambda`, and `workload.set_config`. The `target` is a deploy-target id. Restart forces a new ECS deployment of that service, or publishes a new Lambda version of the alias's current image. That publish sets only the function description, and only after the unpublished configuration matches the serving version. The alias moves only when the published version is new and the image is unchanged. `workload.set_config` accepts only `ecs.desired_count` (an integer from 0 through 10) and fails if the task definition would change. Any other action or field fails before a provider write. The returned id is the durable `opsaction-…` record. Approval still requires a different principal than the proposer.
+An approved admin-config proposal can restart the registered deployment or change one allowlisted field. The action names are `workload.restart_ecs`, `workload.restart_lambda`, and `workload.set_config`. The `target` is a deploy-target id. Restart forces a new ECS deployment of that service, or publishes a new Lambda version of the alias's current image. That publish sets only the function description, and only after the unpublished configuration matches the serving version. The alias moves only when the published version is new and the image is unchanged. `workload.set_config` accepts only `ecs.desired_count` (an integer from 0 through 10) and fails if the task definition would change. Any other action or field fails before a provider write. The returned id is the durable `opsaction-…` record. Approval requires one authorized human through the [interactive review flow](../secure/authentication.md#human-operation-approval); the requester may approve.
 
 Version-to-digest resolution lives in the signed release lock published with each Honua release, not in the server. The provisioning executor writes the lock's resolved artifacts into `ControlPlane__PlatformRelease__Version`, `ControlPlane__PlatformRelease__ServingArtifactReference` and `ControlPlane__PlatformRelease__Workers__*`; to move to another release, re-provision with that release's lock and then propose convergence.
 

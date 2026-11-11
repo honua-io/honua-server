@@ -420,7 +420,10 @@ public static class SharingRestEndpoints
                 // Carry the verified credential so the issuer clamps this token's lifetime to
                 // that credential's own expiry and re-checks it on every restore, instead of
                 // leaving the token valid after the credential stops being (SEC-9).
-                Source: verified.Source),
+                Source: verified.Source)
+            {
+                RolesDependOnlyOnRoleClaimSelection = verified.RolesDependOnlyOnRoleClaimSelection,
+            },
             context.RequestAborted).ConfigureAwait(false);
 
         return CreateGenerateTokenResponse(

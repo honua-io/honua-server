@@ -12,6 +12,7 @@ using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Server.Features.Styling;
 
@@ -28,6 +29,7 @@ internal static class StyleEndpoints
             .WithDescription("Returns a MapLibre style for the exact publication identifier. Pass ?theme=dark|colorblind-safe|print for theme transforms.")
             .WithTags("Styles")
             .CacheOutput("LayerStyle")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .WithETag()
             .Produces<JsonElement>(StatusCodes.Status200OK, MediaTypes.Json)
             .Produces(StatusCodes.Status400BadRequest)

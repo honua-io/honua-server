@@ -78,21 +78,15 @@ internal static partial class OidcAuthenticationLog
     public static partial void TokenReplayDetected(ILogger logger);
 
     [LoggerMessage(
-        EventId = 4212,
-        Level = LogLevel.Warning,
-        Message = "OIDC token replay protection could not use Redis because the multiplexer is disconnected. Falling back to in-memory protection.")]
-    public static partial void TokenReplayRedisDisconnected(ILogger logger);
-
-    [LoggerMessage(
         EventId = 4213,
         Level = LogLevel.Warning,
-        Message = "OIDC token replay protection failed while accessing Redis. Falling back to in-memory protection.")]
-    public static partial void TokenReplayRedisAccessFailed(ILogger logger, Exception exception);
+        Message = "OIDC token replay protection could not reach the replay store.")]
+    public static partial void TokenReplayStoreAccessFailed(ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 4214,
         Level = LogLevel.Warning,
-        Message = "OIDC token replay protection is enabled but no replay cache is available. Allowing token to avoid permanent lockout.")]
+        Message = "OIDC token replay protection is enabled but no replay store is registered.")]
     public static partial void TokenReplayCacheUnavailable(ILogger logger);
 
     [LoggerMessage(
@@ -120,6 +114,12 @@ internal static partial class OidcAuthenticationLog
     public static partial void CustomClaimsMappingNotEntitled(ILogger logger);
 
     [LoggerMessage(
+        EventId = 4221,
+        Level = LogLevel.Debug,
+        Message = "OIDC role claim types are configured but the identity.oidc entitlement is not active; reading roles from the default claim types only.")]
+    public static partial void RoleClaimSelectionNotEntitled(ILogger logger);
+
+    [LoggerMessage(
         EventId = 4219,
         Level = LogLevel.Debug,
         Message = "OIDC token reuse admitted as a continuation of the server-issued session it is bound to.")]
@@ -128,7 +128,7 @@ internal static partial class OidcAuthenticationLog
     [LoggerMessage(
         EventId = 4220,
         Level = LogLevel.Warning,
-        Message = "OIDC token replay continuation could not be recorded in Redis; reuse of this token will be rejected as a replay.")]
+        Message = "OIDC token replay continuation could not be recorded in the replay store; reuse of this token will be rejected as a replay.")]
     public static partial void TokenReplayContinuationBindFailed(ILogger logger, Exception exception);
 
 }

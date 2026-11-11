@@ -99,8 +99,8 @@ internal static class OperationSecretKeyRingProtection
     }
 
     // Development and Test may start without a key-ring certificate; every other environment that connected to Redis requires one.
-    public static bool RequiresDurableChannelCertificate(bool isDevelopment, bool isTest, bool redisConnected)
-        => redisConnected && !isDevelopment && !isTest;
+    public static bool RequiresDurableChannelCertificate(bool isDevelopment, bool isTest, bool keyRingIsShared)
+        => keyRingIsShared && !isDevelopment && !isTest;
 
     internal static bool IsReadable(uint owner, uint group, UnixFileMode mode, uint userId, uint groupId)
     {

@@ -30,6 +30,7 @@ using Honua.Protocols.Ogc.Api.Features.Models;
 using Honua.Protocols.Ogc.Api.Features.Services;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
+using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Protocols.Ogc.Api.Features;
 
@@ -223,9 +224,10 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             var cacheableFormat = string.Equals(outputFormat, MediaTypes.Json, StringComparison.OrdinalIgnoreCase) ||
                                   string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase);
+            var adHocSpatial = SharedCacheResponse.ExcludeIfAdHocSpatial(context, query, filter);
             var canCache = !useStreaming &&
                            cacheableFormat &&
-                           !ResponseCacheUtilities.ShouldBypassAdHocSpatialResponseCache(query, filter) &&
+                           !adHocSpatial &&
                            ResponseCacheUtilities.ShouldCache(context, _cacheOptions);
             var cacheTtl = canCache ? _cacheOptions.GetQueryTtlWithJitter() : TimeSpan.Zero;
             if (canCache && cacheTtl <= TimeSpan.Zero)

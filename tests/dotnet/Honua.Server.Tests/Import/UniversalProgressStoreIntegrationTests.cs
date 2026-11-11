@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Deployment.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Import;
 using Honua.Migration;
@@ -161,9 +162,9 @@ public sealed class UniversalProgressStoreIntegrationTests
             // while ignoring wall-clock drift in that view, including during rolling upgrades.
             await store.SetProgressAsync(id, initial);
             await Task.Delay(10);
-            (await store.TryReplaceProgressAsync(id, refreshed, initial, TimeSpan.FromMinutes(5)))
+            (await store.TryReplaceProgressAsync(new OperationProgressWrite(id, refreshed, TimeSpan.FromMinutes(5)), initial))
                 .Outcome.Should().Be(ProgressCompareAndSetOutcome.Updated);
-            (await store.TryReplaceProgressAsync(id, initial with { Status = OperationStatus.Failed }, initial))
+            (await store.TryReplaceProgressAsync(new OperationProgressWrite(id, initial with { Status = OperationStatus.Failed }), initial))
                 .Outcome.Should().Be(ProgressCompareAndSetOutcome.StatusMismatch);
             var stored = await store.GetProgressAsync<PrintProgress>(id);
             stored!.Status.Should().Be(OperationStatus.Processing);

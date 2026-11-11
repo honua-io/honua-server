@@ -1,0 +1,109 @@
+name: Trunk affected run
+
+# Stage 3 verifies new merges since the latest completed CI run. The last
+# green range remains visible separately for investigation while trunk is red.
+
+on:
+  push:
+    branches: [trunk]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: trunk-affected
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Dispatch selective CI
+    if: github.repository == 'honua-io/honua-server'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: trunk
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: Resolve completed and green trunk heads
+        id: base
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUSHED_HEAD: ${{ github.event_name == 'push' && github.sha || '' }}
+        run: |
+          set -euo pipefail
+          trunk_tip="$(git rev-parse HEAD)"
+          if [ -n "${PUSHED_HEAD}" ] && [ "${trunk_tip}" != "${PUSHED_HEAD}" ]; then
+            echo "Trunk moved to ${trunk_tip}; the run for that push covers ${PUSHED_HEAD}."
+            echo "superseded=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "superseded=false" >> "$GITHUB_OUTPUT"
+
+          latest_ancestor() {
+            local candidate
+            while read -r candidate; do
+              [[ "${candidate}" =~ ^[0-9a-f]{40}$ ]] || continue
+              if git merge-base --is-ancestor "${candidate}" "${trunk_tip}" 2>/dev/null; then
+                echo "${candidate}"
+                return
+              fi
+            done <<<"$1"
+          }
+
+          completed_base="$(python3 scripts/ci/completed_ci_base.py "${trunk_tip}")"
+          green_heads="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?branch=trunk&status=success&per_page=100" \
+            --jq '[.workflow_runs[] | select((.display_title // "") | startswith("CI affected ") | not)] | sort_by(.updated_at) | reverse | .[].head_sha' </dev/null)"
+
+          echo "head=${trunk_tip}" >> "$GITHUB_OUTPUT"
+          echo "completed_base=${completed_base}" >> "$GITHUB_OUTPUT"
+          echo "last_green=$(latest_ancestor "${green_heads}")" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch CI over the new merges
+        if: steps.base.outputs.superseded == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.base.outputs.head }}
+          COMPLETED_BASE: ${{ steps.base.outputs.completed_base }}
+          LAST_GREEN: ${{ steps.base.outputs.last_green }}
+        run: |
+          set -euo pipefail
+          if [ -n "${LAST_GREEN}" ]; then
+            echo "Investigation range from the last green CI run (independent of execution scope):" >> "$GITHUB_STEP_SUMMARY"
+            scripts/ci/trunk-suspect-range.sh "${LAST_GREEN}" "${HEAD_SHA}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No green trunk ancestor found; the culprit range is unknown." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "${COMPLETED_BASE}" = "${HEAD_SHA}" ]; then
+            echo "Trunk head ${HEAD_SHA} already has a completed CI run; no new merges to verify." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ -n "${COMPLETED_BASE}" ]; then
+            run_title="affected ${COMPLETED_BASE:0:12}..${HEAD_SHA:0:12}"
+            echo "Execution range: ${COMPLETED_BASE}..${HEAD_SHA}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            run_title="full matrix (no completed trunk ancestor)"
+            echo "No completed CI ancestor of ${HEAD_SHA}; dispatching the full matrix." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+          run_url="$(gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/dispatches" \
+            -f ref=trunk \
+            -F return_run_details=true \
+            -f "inputs[selective_base]=${COMPLETED_BASE}" \
+            -f "inputs[investigation_base]=${LAST_GREEN}" \
+            -f "inputs[merge_train_nonce]=${run_title}" \
+            --jq '.html_url // empty' </dev/null)"
+
+          {
+            echo
+            echo "Dispatched \`CI ${run_title}\`: ${run_url:-see the CI workflow runs on trunk}"
+          } | tee -a "$GITHUB_STEP_SUMMARY"

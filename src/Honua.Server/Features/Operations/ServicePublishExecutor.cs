@@ -212,6 +212,7 @@ internal sealed class ServicePublishExecutor
             FolderId = request.Parameters.TryGetValue("folderId", out var folderId)
                 ? new MetadataV2FolderSelection(folderId) : default,
             PublicName = request.Parameters.GetValueOrDefault("publicName"),
+            Namespace = request.Parameters.GetValueOrDefault("namespace"),
             ConnectionId = Guid.TryParse(request.ConnectionId, out var connectionId) ? connectionId : null,
             ConnectionEndpointFingerprint = GetOptional(request, ConnectionEndpointFingerprint.MetadataKey)
         };

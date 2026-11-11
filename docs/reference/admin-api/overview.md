@@ -45,8 +45,8 @@ Each capability record reports:
 | `supported` | The server build registers the backing implementation. |
 | `available` | Usable for this request after the deployment profile, configuration, environment, authentication, license, and policy checks. A configured profile makes a capability that maps to a route unavailable when that route's key is not enabled. A capability with no mapped route is unchanged. |
 | `reasonCode` | Present only when unavailable; stable values include `unsupported`, `experimental-disabled`, `disabled-by-configuration`, `deployment-profile-excluded`, `license-required`, `entitlement-inactive`, `insufficient-policy`, `environment-unavailable`, and `workspace-scope-required`. Preview surfaces are opt-in through `Capabilities:Experimental:<capability-id>:Enabled=true`. |
-| `lifecycle` | Product lifecycle classification. Customer alerting (`alerts.geofence`), realtime feature streams, and SensorThings report `preview` for 2026.1; alerting qualification evidence does not promote it to GA. |
-| `optInRequired` | Whether the capability must be explicitly enabled. Preview realtime capabilities remain declared but unavailable with `disabled-by-configuration` until opted in. |
+| `lifecycle` | Product lifecycle classification. Customer alerting (`alerts.geofence`) and SensorThings report `preview`, and realtime feature streams report `experimental`, for 2026.1; alerting qualification evidence does not promote it to GA. |
+| `optInRequired` | Whether the capability must be explicitly enabled. Preview and Experimental realtime capabilities remain declared but unavailable with `disabled-by-configuration` until opted in. |
 
 The document also carries `transports` (REST, GeoServices, OGC, OData, STAC, tiles, gRPC, MCP, QGIS, mTLS), `limits` (query, analysis, upload, and job limits), and `policies` (license and entitlement state). The manifest is informational only — operation endpoints remain the source of truth for authorization and resource checks. Do not persist it as an authorization cache.
 

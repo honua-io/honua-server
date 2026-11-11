@@ -1,15 +1,17 @@
 ---
 type: runbook
 title: "Deploy with Docker Compose"
-description: "Take a single-node Compose install to production: a TLS edge, backups you have restored from, and a rollback path."
+description: "Harden a single-node Compose evaluation install with a TLS edge, restored backups, and a rollback path. Not a certified rc.2 production target."
 ---
 # Deploy with Docker Compose
+
+> Compose is for local evaluation, not certified rc.2 production; see [deployment scope](cloud-deployments.md#pick-a-pattern).
 
 Before choosing an image, review [default and full serving images](choose-serving-image.md).
 That guide distinguishes the planned rc.2 store variants from older published
 images and explains when the deployment health probe must change with the image.
 
-This is the **single-node** path: one host you administer, running Compose. It
+This is the **single-node local evaluation** path: one host you administer, running Compose. It
 covers what the quickstart leaves out — terminating TLS in front of it, taking
 backups you have actually restored from, and upgrading without losing the
 database.
@@ -39,9 +41,9 @@ dc() { docker compose --env-file .env -f compose.yaml "$@"; }
 Compose 2.23.1 or later is required. Nothing here needs a repository checkout, a
 compiler, or a registry credential.
 
-## Production install from the shipped Compose file
+## Hardened evaluation install from the shipped Compose file
 
-The release also ships a production Compose file,
+The release also ships a hardened Compose file (named `production`; not certified for rc.2),
 [`docker/compose/docker-compose.production.yml`](../../../docker/compose/docker-compose.production.yml), and its
 environment template, [`.env.production.example`](../../../.env.production.example).
 Use them instead of the quickstart project when you want the hardened
@@ -238,8 +240,8 @@ handle carries `durable: false` (and the evidence reference
 `honua_render_map` and the OGC styles endpoints are reads and do not use the
 operation runtime. A caller the policy denies gets a `Denied` handle. A publish
 or style preset whose policy decision is "require approval" still refuses with
-the typed `redis` receipt, because it needs a governed proposal. Geoprocessing,
-Studio compositions and publication requests, proposals and approvals, and the
+the typed `redis` receipt, because it needs a governed proposal. Geoprocessing
+plans that need approval, Studio compositions and publication requests, proposals and approvals, and the
 `honua_admin_*` tools keep the typed refusal.
 
 On a Development or Test host without Redis, Studio drafts still compose against a
@@ -255,8 +257,9 @@ tells it in advance which ones will refuse: `operations.proposals` and
 (or `"license-required"` when Redis is configured but not entitled).
 
 **What "required" means: present and working, not a proven durability policy.**
-The governed control plane and durable jobs need Redis to be configured,
-entitled and connected. They do not need a particular persistence policy (owner
+The governed control plane needs Redis to be configured, entitled and
+connected. Background jobs (geoprocessing, imports, tile and export jobs) are
+stored in PostgreSQL and do not need Redis. The control plane does not need a particular persistence policy (owner
 ruling, 2026-10-10). At startup the server still reads the Redis policy
 (`appendonly`, `appendfsync`, `maxmemory-policy`) and publishes the result in the
 capability manifest as `limits.job.redisDurability.status`. The value is
@@ -265,9 +268,9 @@ that blocks `CONFIG`) or `not-durable` (the policy was read and is not
 durable). The result never disables `operations.proposals` or `jobs.runner`.
 
 A Redis started with `--appendonly yes --appendfsync everysec --maxmemory-policy
-noeviction` keeps proposals and job state across restarts and reports `attested`.
+noeviction` keeps proposals and workflow state across restarts and reports `attested`.
 A stock `redis:7` image also works. The manifest then reports `not-durable`, and
-a Redis restart can lose recent proposals and job state. If you would rather the server refuse to
+a Redis restart can lose recent proposals and workflow state. If you would rather the server refuse to
 start unless the policy is `attested`, set `Jobs__RequireDurableStore=true`
 (see [Redis durability](troubleshooting.md#redis-durability)).
 
@@ -284,14 +287,14 @@ To omit Redis, remove `ConnectionStrings__Redis`, the `honua.depends_on.redis`
 entry, the `redis` service and the `redis` volume declaration from `compose.yaml`.
 Keep a single server instance. Restore those four entries and provide the
 appropriate licence before enabling durable operations. A persisted Redis volume
-must be retained if it already contains job or workflow state.
+must be retained if it already contains proposal or workflow state.
 
 ## Backup and recovery
 
 A restart or container recreation preserves volumes but is not a backup. Before
 an upgrade, stop Honua so it cannot write while database and file-storage snapshots
 are taken. This small-install procedure pauses service for the backup. It keeps
-Redis out of the backup: deployments using durable jobs/workflows must also follow
+Redis out of the backup: deployments using governed proposals or workflows must also follow
 the coordinated [backup and restore policy](backup-and-restore.md) before using
 this recipe with live customer data.
 
@@ -483,5 +486,7 @@ The private installation folder remains for deliberate retention or deletion.
 The [customer quickstart package](../../get-started/quickstart.md#install-the-customer-package)
 includes the stable manager and dedicated executor image by default.
 Only the executor has Docker access. It targets the configured local project and
-executes only proposals approved by a different principal. Preserve the image lock,
+executes only proposals approved by one authorized human through the
+[interactive review flow](../secure/authentication.md#human-operation-approval).
+The requester may approve. Preserve the image lock,
 private locally generated credentials, management volumes, and verified backups.

@@ -7,6 +7,11 @@ Honua's live `/mcp` advertised tool input schemas and resource payload shapes
 **conform to the open standard Honua champions** — Honua is the reference
 implementation.
 
+The `geospatial-mcp/ops-parity-map.yaml` route map is maintained by Honua Server,
+separately from the upstream JSON Schemas. `SeatParityContractTests` enforces its
+route coverage and human-only justifications. Console vendors that map from a
+merged Server commit.
+
 ## Provenance
 
 - `geospatial-mcp/` is byte-identical to `spec/schemas/` of `geospatial-mcp`

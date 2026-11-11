@@ -26,16 +26,8 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OperationsRedisOff;
 
-/// <summary>
-/// Owner decision 3 (topology) on top of decision 20, host composition: the real composition
-/// root booted in <c>Production</c> with NO Redis connection. A Redis-off cell is a serving +
-/// configure + style/render topology, so terminal-journey stage 4 (<c>style.apply-preset</c>)
-/// must execute there. honua-release run 38249563601 (aws-ecs, redis-off, image 0e03bdd06)
-/// recorded <c>code=unavailable; missingDependency=redis</c> for <c>honua_apply_style_preset</c>.
-/// A policy-allowed admin style preset now completes with the canonical handle; Studio
-/// compositions, publication requests and the governed admin operations keep the typed Redis
-/// refusal.
-/// </summary>
+// The real composition root booted in Production with no Redis: a policy-allowed admin style preset
+// completes with the canonical handle on the durable operation stores.
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Update)]
@@ -82,7 +74,6 @@ public sealed class RedisOffDirectStylePresetHostTests : IAsyncLifetime
             .UseEnvironment(Environments.Production)
             .ConfigureWebHost(builder =>
             {
-                // Deliberately no ConnectionStrings:redis.
                 builder.UseSetting("Licensing:Mode", "Disabled");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
@@ -106,9 +97,7 @@ public sealed class RedisOffDirectStylePresetHostTests : IAsyncLifetime
     public async Task RedisOffProduction_AdminStylePreset_ExecutesDirectlyWithCanonicalHandle()
     {
         UnavailableOperationProposalStore.IsDurable(_fixture.Services.GetService<IOperationProposalStore>())
-            .Should().BeFalse("the host under test has no Redis-backed control plane");
-        _fixture.Services.GetRequiredService<IOperationInstanceStore>().GetType().Name
-            .Should().Be("UnavailableOperationInstanceStore");
+            .Should().BeTrue("the system database carries the control plane");
 
         using var admin = ApiKeyClient(AdminPassword);
         var (status, payload) = await SubmitAsync(admin, StylePresetOperation.OperationId,
@@ -124,36 +113,9 @@ public sealed class RedisOffDirectStylePresetHostTests : IAsyncLifetime
         handle.GetProperty("auditId").GetString().Should().NotBeNullOrWhiteSpace();
         handle.GetProperty("policyDecision").GetString().Should().Be("Allow");
         handle.GetProperty("evidenceRefs").EnumerateArray().Select(item => item.GetString())
-            .Should().Contain(NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef);
+            .Should().NotContain(NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef);
         await _catalog.Received(1).AssociateLayerAsync(StorageLayerId, StyleId, 0, Arg.Any<CancellationToken>());
         await _graphSync.Received(1).SyncLayerStylesAsync(StorageLayerId, Arg.Any<CancellationToken>());
-    }
-
-    [IntegrationTest]
-    [Endpoint("POST /api/v1/operations/studio.draft.create/submit")]
-    public async Task RedisOffProduction_AdminGovernedOperations_KeepTypedRedisRefusal()
-    {
-        using var admin = ApiKeyClient(AdminPassword);
-
-        // Geoprocessing runs on the durable job runtime (journey stage 5), which refuses
-        // separately; through the operation catalog, Studio compositions, publication requests
-        // and the governed honua_admin_* operations keep the typed Redis refusal.
-        foreach (var operationId in new[]
-                 {
-                     StudioDraftOperations.Create,
-                     StudioDraftOperations.CreatePublicationRequest,
-                     "admin.layer.style.set",
-                 })
-        {
-            var (status, payload) = await SubmitAsync(admin, operationId, """{"parameters":{}}""");
-
-            status.Should().Be(HttpStatusCode.ServiceUnavailable, $"{operationId}: {payload}");
-            using var document = JsonDocument.Parse(payload);
-            document.RootElement.GetProperty("missingDependency").GetString()
-                .Should().Be(CapabilityUnavailableCodes.RedisDependency, payload);
-        }
-
-        await _catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
     }
 
     private HttpClient ApiKeyClient(string key)

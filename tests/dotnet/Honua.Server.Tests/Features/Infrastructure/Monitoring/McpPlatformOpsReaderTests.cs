@@ -38,16 +38,13 @@ using Microsoft.Extensions.Options;
 using NSubstitute;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Crypto.Signers;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Redis-backed integration coverage for signed MCP platform-ops proposals (#3888).
-/// </summary>
+// Integration coverage for signed MCP platform-ops proposals over the real proposal store.
 [Protocol(TestProtocols.TestQuality)]
-[Collection("Redis")]
-public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
+[Collection("Database")]
+public sealed class McpPlatformOpsReaderIntegrationTests
 {
     [IntegrationTheory]
     [Operation(Operations.TestInfrastructure)]
@@ -153,9 +150,8 @@ public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
             DateTimeOffset.UtcNow.AddMinutes(5),
             "test",
             CancellationToken.None);
-        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        var proposalStore = new RedisOperationProposalStore(
-            multiplexer, NullLogger<RedisOperationProposalStore>.Instance);
+        var proposalStore = (await Honua.Server.Tests.Features.Infrastructure.ControlPlane.SharedControlPlaneState.GetAsync())
+            .CreateProposalStore();
         var ladder = Substitute.For<Honua.Core.Features.Guardrails.Abstractions.IGuardrailLadder>();
         var decision = new GuardrailDecision(GuardrailTier.RequiresApproval, operationClass, HonuaEdition.Enterprise, "model-proposal");
         ladder.Resolve(operationClass).Returns(decision);
@@ -188,7 +184,7 @@ public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
         result.StructuredContent!.Value.GetProperty("requiresApproval").GetBoolean().Should().BeTrue();
         var proposalId = result.StructuredContent.Value.GetProperty("proposalId").GetString();
         var persisted = await proposalStore.GetAsync(proposalId!);
-        persisted.Should().NotBeNull("the real Redis store must round-trip the sealed proposal");
+        persisted.Should().NotBeNull("the real store must round-trip the sealed proposal");
         persisted!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
         persisted.Kind.Should().Be(operationClass);
         persisted.Plan.ExecutionPayload.Should().Contain("candidate-a");
@@ -1653,7 +1649,7 @@ public sealed class McpPlatformOpsReaderTests
 
         public Task<OperationProposal?> ApplyApprovedProposalAsync(
             string proposalId,
-            string approvedBy,
+            OperationProposalApprovalContext approval,
             CancellationToken cancellationToken = default)
             => Task.FromResult<OperationProposal?>(null);
 

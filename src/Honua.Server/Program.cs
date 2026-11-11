@@ -236,6 +236,10 @@ if (clientCertificateMode != ClientCertificateAuthenticationMode.Disabled)
 // envelope was created on another node fails closed instead of being replayed with plaintext.
 builder.Services.AddDataProtection()
     .SetApplicationName("Honua.Server");
+builder.Services.AddSingleton<Honua.ControlPlane.OperationHumanApprovalAuthority>();
+builder.Services.AddSingleton<Honua.ControlPlane.OperationInitiationResolver>();
+builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationHumanApprovalVerifier>(
+    services => services.GetRequiredService<Honua.ControlPlane.OperationHumanApprovalAuthority>());
 
 // Enable Aspire integrations only when Aspire configuration is present.
 var useAspire = builder.Configuration.GetSection("Aspire").Exists();
@@ -337,18 +341,6 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
         connectedRedis = ConnectionMultiplexer.Connect(redisOptions);
         builder.Services.TryAddSingleton<IConnectionMultiplexer>(connectedRedis);
 
-        // The durable job substrate is composed only when it is ENTITLED (honua-server#4502).
-        // The multiplexer above is registered regardless, because requiresDurableDistributedEvents
-        // connects infrastructure Redis for distributed events in every non-Development/Test
-        // deployment — so it is not evidence of a jobs entitlement, and AddGeoprocessing keys the
-        // IExecutionJobStore registration on THIS marker instead. Deliberately independent of the
-        // durability attestation registered below: durability decides what is advertised,
-        // entitlement decides what exists.
-        if (redisCacheEntitled)
-        {
-            builder.Services.TryAddSingleton(new DurableJobSubstrateEntitlement());
-        }
-
         if (!connectedRedis.IsConnected)
         {
             if (requireRedisAtStartup)
@@ -434,27 +426,29 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
     }
 }
 
-if (connectedRedis is not null &&
-    OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
+if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
         builder.Environment.IsDevelopment(),
         isTestEnvironment,
-        redisConnected: true))
+        keyRingIsShared: !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection"))))
 {
-    // The operation-secret protector is intentionally backed by the same Redis authority
-    // as the proposal/instance stores so every replay node shares a rotation-capable key ring.
-    // Native AOT cannot run EncryptedXml. It still stores the ring in Redis and wraps each key
-    // with the certificate using RSA-OAEP and AES-GCM, so another execution environment can
-    // unwrap it. A process-local ring would make a consume on the wrong environment delete the
-    // secret before it can be unprotected.
+    // The key ring lives in the system database so that every node unprotects what any node
+    // protected: an operation secret consumed on another node is deleted before it is
+    // unprotected. Native AOT cannot run EncryptedXml, so there each key is wrapped with the
+    // certificate using RSA-OAEP and AES-GCM instead.
     var nativeAot = !System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported;
-    var keyRepository = new RedisDataProtectionKeyRepository(connectedRedis);
-    keyRepository.EnsureAllElementsAreProtected();
-    var keyRing = builder.Services.AddDataProtection()
-        .SetApplicationName("Honua.Server")
-        .AddKeyManagementOptions(options => options.XmlRepository = keyRepository);
+    builder.Services.AddSingleton(static provider => new PostgresDataProtectionKeyRepository(
+        provider.GetRequiredService<Npgsql.NpgsqlDataSource>(),
+        provider.GetRequiredService<Honua.ControlPlane.JobStoreDatabase>()));
+    builder.Services.AddOptions<Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>()
+        .Configure<PostgresDataProtectionKeyRepository>(static (options, keyRepository) =>
+        {
+            keyRepository.EnsureAllElementsAreProtected();
+            options.XmlRepository = keyRepository;
+        });
+    var keyRing = builder.Services.AddDataProtection().SetApplicationName("Honua.Server");
 
     // A key ring persisted beside the ciphertext it unlocks is not a boundary on its own. The
-    // certificate is mandatory so a Redis reader or snapshot cannot carry both halves. Lambda
+    // certificate is mandatory so a database reader or backup cannot carry both halves. Lambda
     // cannot mount the file, so a Secrets Manager bundle is written to a private temp file first.
     System.Security.Cryptography.X509Certificates.X509Certificate2 keyRingCertificate;
     try
@@ -490,12 +484,12 @@ if (connectedRedis is not null &&
     }
 }
 
-// The ONE sanctioned way the durability attestation may stop this process, and only when the
-// operator opted in with Jobs:RequireDurableStore=true (honua-server#4502). Otherwise the
-// attestation is information and a connected Redis composes the full control plane.
+// Jobs:RequireDurableStore=true is satisfied by the system database, which holds the job store.
+// Only a host with no system database can still be stopped here.
 DurableJobSubstrateStartupGate.EnsureSatisfied(
     new DurableJobSubstrateOptions
     {
+        SystemDatabaseConfigured = !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection")),
         RedisConfigured = !string.IsNullOrWhiteSpace(redisConnectionString),
         RedisEntitled = redisCacheEntitled,
         RedisDurabilityAttestation = redisDurabilityAttestation,
@@ -688,13 +682,12 @@ builder.Services.AddHonuaBatchAndDeployBackends();
 builder.Services.AddHonuaSelfHostedRollingProxy(builder.Configuration);
 // ---- End extracted block
 
-// Gated on the ENTITLED substrate, not merely a connected multiplexer (honua-server#4502): the
-// members of this block take IExecutionJobStore as a required dependency, and AddGeoprocessing
-// composes that store only when the entitlement marker is present. Keying the two on different
-// facts is precisely what made a non-AOF Redis abort ServiceProvider validation with 31
-// unresolved-service failures; an unentitled deployment with connected infrastructure Redis was
-// the second trigger of the same defect.
-if (connectedRedis != null && redisCacheEntitled)
+// The workflow, proposal and release members of this block live in the system database and take
+// the job store, so they are composed on a host that registers its infrastructure in production
+// order. A Test host that registers its data source afterwards, from the test fixture, opts in
+// with HONUA_REGISTER_TEST_INFRASTRUCTURE.
+var hostHasSystemDatabase = registerProviderInfrastructure && builder.Services.HasSystemDataSource();
+if (hostHasSystemDatabase)
 {
     builder.Services.AddHonuaControlPlaneReconcilers(builder.Configuration);
 
@@ -720,7 +713,6 @@ if (connectedRedis != null && redisCacheEntitled)
         if (controlPlaneTriggerMode == Honua.ControlPlane.ControlPlaneTriggerMode.Poll)
         {
             builder.Services.AddHostedService<DeployWorkflowReconcilerBackgroundService>();
-            builder.Services.AddHostedService<ExecutionJobReconcilerBackgroundService>();
             builder.Services.AddHostedService<Honua.ControlPlane.MetadataReleaseReconcilerBackgroundService>();
             builder.Services.AddHostedService<Honua.ControlPlane.CoordinatedReleaseReconcilerBackgroundService>();
         }
@@ -732,29 +724,22 @@ if (connectedRedis != null && redisCacheEntitled)
         // hosts keep them.
         if (!Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.IsEventHandlerProfile(builder.Configuration))
         {
-            // The backstop sweeps ship in BOTH modes so a dropped/missed event (or, under poll, a wedged
-            // loop) self-heals. They are low-frequency and are a no-op when the active operations are
-            // fresh. The execution-job backstop covers Batch jobs; the workflow backstop covers the
-            // deploy/metadata/coordinated operations and walks any wedged staged release forward.
-            builder.Services.AddHostedService<Honua.ControlPlane.ExecutionJobBackstopSweepService>();
+            // The workflow backstop ships in BOTH modes so a dropped/missed event (or, under poll, a
+            // wedged loop) self-heals. It covers the deploy/metadata/coordinated operations and walks
+            // any wedged staged release forward.
             builder.Services.AddHostedService<Honua.ControlPlane.WorkflowOperationBackstopSweepService>();
-
-            // GP-plane observability spine (#2463): sample the execution-job store on a low-frequency
-            // loop and publish per-(status, backend) queue depth for the honua.execution.queue.depth
-            // gauge. Runs in both trigger modes since it only reads state to emit telemetry.
-            builder.Services.AddHostedService<Honua.ControlPlane.ExecutionQueueDepthCollectorBackgroundService>();
 
             // Graduated ops-findings autonomy (#2557): a leased singleton evaluator that can
             // route auto-safe remediation findings back through the operation gateway. It is
-            // only hosted when Redis/job-store coordination is active; no-Redis hosts stay inert.
+            // only hosted with the Redis-backed operation gateway; no-Redis hosts stay inert.
             builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.OpsFindingsAutonomyEvaluationService>();
         }
     }
 
     // Agent-operation approval surface (#1692/#1693): durable proposal store +
     // shared operation gateway choke point + per-class executors.
-    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore,
-        Honua.ControlPlane.RedisOperationProposalStore>();
+    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>(
+        static provider => provider.GetRequiredService<Honua.ControlPlane.PostgresOperationProposalStore>());
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationGateway,
         Honua.ControlPlane.OperationGateway>();
     builder.Services.AddSingleton<Honua.ControlPlane.OperationProposerApiKeyAuthority>();
@@ -806,7 +791,7 @@ else
 // HONUA_CONTROL_PLANE_LAMBDA_HANDLER is set, Redis or not, so what it resolves is registered on
 // every host. On a Redis-off cell the Redis-independent ticks run and the rest refuse with a typed
 // 503 (missingDependency=redis) instead of a 500 (honua-release run 38242272260).
-builder.Services.AddHonuaControlPlaneLambdaEventTargets();
+builder.Services.AddHonuaControlPlaneLambdaEventTargets(builder.Configuration);
 
 // Pending-approval notification channel (#1695): emitted from the gateway/store
 // boundary, not per-endpoint. Safe to register regardless of Redis availability.
@@ -830,6 +815,7 @@ builder.Services.AddScoped<Honua.ControlPlane.IAutonomousOperationConvergence,
 
 // Configure tile options
 InfrastructureCompositionRoot.ConfigureTileOptions(builder.Services, builder.Configuration);
+Honua.Infrastructure.SharedCaching.SharedCacheExtensions.AddSharedCachePolicy(builder.Services, builder.Configuration);
 
 // Configure caching options and register cache services
 InfrastructureCompositionRoot.ConfigureCaching(builder.Services, builder.Configuration, redisCacheEntitled);
@@ -840,6 +826,9 @@ builder.Services.Configure<Honua.Core.Features.Import.ObjectStore.ImportObjectSt
     builder.Configuration.GetSection(Honua.Core.Features.Import.ObjectStore.ImportObjectStoreOptions.SectionName));
 #if !HONUA_EXCLUDE_AWS
 builder.Services.AddAwsImportObjectStore();
+Honua.Cloud.Aws.Features.Cdn.CloudFrontCdnServiceCollectionExtensions.AddCloudFrontCdnInvalidation(
+    builder.Services, builder.Configuration);
+builder.Services.AddHostedService<Honua.ControlPlane.ReleaseChangeCdnInvalidation>();
 #endif
 
 // Configure file upload security limits
@@ -972,34 +961,27 @@ builder.Services.AddScoped(static sp => new Honua.Core.Features.FeatureStore.Ser
     sp.GetService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>(),
     sp.GetService<Honua.Core.Features.FeatureStore.Services.FeatureProviderQueryRouter>(),
     sp.GetService<Honua.Core.Features.FeatureStore.Abstractions.IFeatureDataProviderRegistry>()));
-// Redis is the shared registry when it is connected. Without it, a host that runs as several
-// instances (AWS Lambda, Deployment:Mode=MultiNode) keeps the keys in the shared database, so a key
-// minted on one instance authenticates on the others (honua-server#6487). A single instance keeps
-// the in-process registry.
-var adminKeysNeedSharedStore = Honua.Ai.Protocols.Mcp.McpSessionModeResolver.DescribeMultiInstanceHost(
-    builder.Configuration, Environment.GetEnvironmentVariable) is not null;
+// API keys and OAuth clients are rows of the system database, so a key minted on one node
+// authenticates on every node and a revocation is effective on the next request anywhere. A Test
+// host keeps them in process, unless it declares several instances, so that hosts sharing one
+// test database do not see each other's credentials.
+var credentialRegistryIsShared = !isTestEnvironment
+    || Honua.Ai.Protocols.Mcp.McpSessionModeResolver.DescribeMultiInstanceHost(
+        builder.Configuration, Environment.GetEnvironmentVariable) is not null;
 builder.Services.AddSingleton<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(sp =>
-{
-    if (sp.GetService<StackExchange.Redis.IConnectionMultiplexer>() is { } redis)
-    {
-        return new Honua.Infrastructure.Authentication.RedisAdminApiKeyStore(redis, sp.GetService<TimeProvider>());
-    }
-
-    if (adminKeysNeedSharedStore && sp.GetService<Npgsql.NpgsqlDataSource>() is { } dataSource)
-    {
-        return new Honua.Server.Features.Admin.Services.PostgresAdminApiKeyStore(
-            dataSource, sp.GetService<TimeProvider>(), builder.Configuration["Database:Schema"]);
-    }
-
-    if (adminKeysNeedSharedStore)
-    {
-        ProgramLog.AdminApiKeysPerInstance(
-            sp.GetRequiredService<ILoggerFactory>().CreateLogger("Honua.AdminApiKeys"));
-    }
-
-    return new Honua.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>());
-});
-builder.Services.AddHostedService<Honua.Infrastructure.Authentication.RedisAdminApiKeyIndexMaintenance>();
+    credentialRegistryIsShared && sp.GetService<Npgsql.NpgsqlDataSource>() is { } dataSource
+        ? new Honua.Server.Features.Admin.Services.PostgresAdminApiKeyStore(
+            dataSource, sp.GetService<TimeProvider>(), builder.Configuration["Database:Schema"])
+        : new Honua.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>()));
+builder.Services.AddSingleton<Honua.ControlPlane.IExpiredRowSweep>(sp =>
+    sp.GetRequiredService<Honua.Infrastructure.Authentication.IAdminApiKeyStore>() as Honua.ControlPlane.IExpiredRowSweep
+    ?? Honua.Server.Startup.NoExpiredRows.Instance);
+builder.Services.RemoveAll<Honua.Infrastructure.Authentication.IOAuthClientStore>();
+builder.Services.AddSingleton<Honua.Infrastructure.Authentication.IOAuthClientStore>(sp =>
+    credentialRegistryIsShared && sp.GetService<Npgsql.NpgsqlDataSource>() is not null
+        ? new Honua.Server.Features.Infrastructure.SecurityState.PostgresOAuthClientStore(
+            sp.GetRequiredService<Honua.ControlPlane.JobStoreDatabase>(), sp.GetService<TimeProvider>())
+        : new Honua.Infrastructure.Authentication.InMemoryOAuthClientStore(sp.GetService<TimeProvider>()));
 // A Lambda sandbox freezes between invocations, so a host that starts stopping there stays a
 // listener-less zombie for minutes. Exit after a short drain so Lambda recycles it (#6558).
 if (Honua.Infrastructure.Hosting.LambdaHostStopExitGuard.IsAwsLambda(Environment.GetEnvironmentVariable))
@@ -1079,6 +1061,7 @@ builder.Services.AddStyleSuggestionCore();
 builder.Services.Configure<Honua.Infrastructure.Services.TemporaryFileOptions>(
     builder.Configuration.GetSection(Honua.Infrastructure.Services.TemporaryFileOptions.SectionName));
 builder.Services.AddSingleton<Honua.Infrastructure.Services.FileSystemTemporaryFileService>();
+builder.Services.TryAddSingleton<Honua.Infrastructure.Security.ISecurityTokenStore, Honua.Infrastructure.Security.InMemorySecurityTokenStore>();
 builder.Services.AddSingleton<Honua.Infrastructure.Services.ITemporaryFileService,
     Honua.Infrastructure.Services.CloudBackedTemporaryFileService>();
 
@@ -1127,6 +1110,15 @@ builder.Services.AddAdminRealtime(builder.Configuration);
 if (!isTestEnvironment)
 {
     builder.Services.AddOrchestrationBackgroundServices(builder.Configuration);
+}
+
+if (builder.Services.HasExecutionJobStore())
+{
+    builder.Services.AddExecutionJobReconciliation();
+    if (!isTestEnvironment)
+    {
+        builder.Services.AddExecutionJobReconciliationLoops(builder.Configuration);
+    }
 }
 
 var offlineSyncEnabled = CapabilityFlagOptions.IsExperimentalEnabled(builder.Configuration, "sync.offline");
@@ -1179,18 +1171,19 @@ if (replicaProvider != DataProviderNames.DuckDb &&
             versionLock: sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IVersionLock>()));
 }
 
-// Branch-versioning durable lock + async job runtime (#1553). The Redis-backed version lock serializes
-// reconcile/post/resolve per (service, version) across replicas; the Redis-backed job store makes the
-// async reconcile/post job pollable and restart-durable. Both degrade to single-node in-process/in-memory
-// fallbacks when Redis is not configured. The job runner wraps the synchronous reconcile/post engine in a
-// durable, pollable job and is provider-agnostic (it adapts to the registered IVersionManager). These are
-// registered for every provider so the version-management endpoints can resolve them uniformly; for
-// non-Postgres providers the NoOp version manager rejects reconcile/post, so the lock/store/runner stay
-// inert.
+// The version lock serializes reconcile, post and resolve per (service, version) across nodes on a
+// lease row in the system database. A host with no system database has one node, so an in-process
+// lock is enough. The async job store below still uses Redis when it is configured.
+if (builder.Services.TryAddPostgresExecutionJobStore(builder.Configuration))
+{
+    builder.Services.TryAddSingleton<Honua.Core.Features.Infrastructure.Coordination.ILeaseStore,
+        Honua.Server.Features.Infrastructure.Coordination.PostgresLeaseStore>();
+}
+
 builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionLock>(sp =>
-    new Honua.Infrastructure.Coordination.RedisVersionLock(
-        sp.GetService<StackExchange.Redis.IConnectionMultiplexer>(),
-        sp.GetRequiredService<ILogger<Honua.Infrastructure.Coordination.RedisVersionLock>>()));
+    sp.GetService<Honua.Core.Features.Infrastructure.Coordination.ILeaseStore>() is { } leases
+        ? new Honua.Core.Features.Infrastructure.Coordination.LeaseVersionLock(leases)
+        : new Honua.Core.Features.FeatureStore.Services.InProcessVersionLock());
 builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionJobStore>(sp =>
     new Honua.Infrastructure.Coordination.RedisVersionJobStore(
         sp.GetService<StackExchange.Redis.IConnectionMultiplexer>(),
@@ -1354,6 +1347,12 @@ if (activeDbConnectionTracker != null)
 {
     EnhancedTelemetry.ConfigureActiveDbConnectionsProvider(activeDbConnectionTracker.GetActiveCount);
 }
+
+// First in the pipeline so its response-start callback runs last, on every response including the
+// ones short-circuited below. Authentication decisions and authenticated data must not survive
+// credential changes in client caches, and a response that is not provably public leaves as
+// private, no-store.
+app.UseMiddleware<AuthenticationResponseCacheMiddleware>();
 
 app.UseGeoServicesPublicPaths();
 
@@ -1697,13 +1696,6 @@ app.UseGlobalExceptionHandling();
 // untouched. Runs after global exception handling so thrown exceptions keep their
 // existing protocol shaping and only status-only responses are re-shaped here.
 app.UseRestErrorEnvelope();
-
-// Authentication decisions and authenticated data must not survive credential changes
-// in client caches, including clients using non-standard credential headers. Registered
-// before every middleware below that can terminate a credential route (license expiry,
-// a disabled deployment capability, invalid input) so a short-circuited denial still
-// registers the OnStarting callback that applies the final cache policy (#4609 review).
-app.UseMiddleware<AuthenticationResponseCacheMiddleware>();
 
 // Paid deployments stop every data surface at expiry, including cached reads and exports.
 app.UseMiddleware<Honua.Infrastructure.Licensing.LicenseOperationMiddleware>();

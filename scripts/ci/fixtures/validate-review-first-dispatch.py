@@ -125,8 +125,6 @@ def main() -> None:
 
     build_test_job = job("pr-gate")
     require(build_test_job, "name: PR Gate / Build and tests", "exact admission job name must remain stable")
-    consumer_job = job("pr-gate-tests")
-    require(consumer_job, "needs: pr-gate", "consumer must depend on producer admission")
     positions = [build_test_job.index(f"- name: {name}") for name in ordered_steps]
     if positions != sorted(positions):
         raise AssertionError("admission receipt/wait must precede every expensive step")
@@ -164,24 +162,20 @@ def main() -> None:
     # failure on enforced attempt 1 also blocks its dependent consumer job.
     for source, names in [
         (build_test_job, ["Setup .NET", "Plan managed test producer", "Lean gate (managed build producer)", "Publish pristine managed test outputs"]),
-        (consumer_job, ["Start freeing runtime proof disk space", "Setup .NET", "Wait for runtime proof disk cleanup", "Plan managed test consumer", "Restore verified managed test outputs", "Build missing managed test outputs"]),
+        (job("fast-tests"), ["Setup .NET", "Lean gate (build and fast unit/architecture verification)"]),
     ]:
         for name in names:
             step = source.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
             if not review_gated(step):
                 raise AssertionError(f"{name} must remain behind exact-head review")
-    for name, message in [
-        ("Prepare secondary Testcontainers proof images", "secondary proof-image preparation must remain behind exact-head review"),
-        ("Prove raster catalog execution with production GDAL", "real raster execution must remain behind exact-head review"),
-        ("Prove remote source execution with real HTTP and PostGIS", "real remote-source execution must remain behind exact-head review"),
-        ("Prove the real-GDAL CLI cases run on the required gate", "real GDAL CLI execution must remain behind exact-head review"),
-        ("Build production PDAL native tools", "Build production PDAL native tools must remain behind exact-head review"),
-        ("Prove point-cloud execution with production PDAL", "Prove point-cloud execution with production PDAL must remain behind exact-head review"),
-    ]:
-        proof_step = consumer_job.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
-        if not review_gated(proof_step):
-            raise AssertionError(message)
-
+    fast_job = job("fast-tests")
+    wait = fast_job.index("- name: Await exact-head review")
+    checkout = fast_job.index("- uses: actions/checkout@")
+    if wait >= checkout:
+        raise AssertionError("independent Fast job must fail admission before checkout")
+    require(fast_job[wait:checkout], wait_condition, "Fast attempt 1 must fail closed")
+    require(fast_job[wait:checkout], "exit 1", "Fast admission must fail for rerun release")
+    require(fast_job[checkout:].split("- name:", 1)[0], full_condition, "Fast checkout must wait for review")
     revalidation_condition = (
         "if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == "
         "'pull_request' && github.run_attempt > 1"
@@ -189,7 +183,6 @@ def main() -> None:
     require(pr_gate, "  statuses: read", "attempt 2 needs bounded read access to Review Gate status")
     for source, label, expensive_name in [
         (build_test_job, "producer", "Free disk space"),
-        (consumer_job, "consumer", "Start freeing runtime proof disk space"),
     ]:
         before_name = "Revalidate exact-head review before verification"
         after_name = "Revalidate exact-head review before success"
@@ -210,12 +203,12 @@ def main() -> None:
     require(
         review_gate,
         "group: review-resolve-pr-${{ github.event.pull_request.number || github.event.issue.number || github.event.client_payload.pr || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number) || format('{0}:{1}', github.event.workflow_run.head_repository.full_name, github.event.workflow_run.head_branch) || github.run_id }}",
-        "resolver concurrency must cancel superseded heads for the same PR",
+        "resolver concurrency must serialize events for the same PR",
     )
     require(
         review_bridge,
         "group: review-event-bridge-pr-${{ github.event.pull_request.number }}",
-        "review bridge concurrency must cancel superseded heads for the same PR",
+        "review bridge concurrency must serialize events for the same PR",
     )
     require(
         review_gate,
@@ -269,11 +262,12 @@ def main() -> None:
         "if: steps.stale.outputs.superseded != 'true'",
         "superseded bridge events must skip trusted gate notification",
     )
-    require(
-        review_bridge,
-        "core.setFailed('Superseded review event; trusted notification suppressed.');",
-        "superseded bridge events must expose a non-success workflow conclusion",
-    )
+    if "core.setFailed(" in review_bridge:
+        raise AssertionError("superseded bridge events must complete neutrally")
+    for source in [review_gate, review_bridge]:
+        require(source, "queue: max", "review helpers must queue rather than cancel pending events")
+        if "cancel-in-progress: true" in source:
+            raise AssertionError("review helpers must not cancel in-progress events")
     require(
         review_gate,
         "ref: ${{ github.workflow_sha }}",

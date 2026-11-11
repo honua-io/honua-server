@@ -1,11 +1,11 @@
 ---
 type: runbook
 title: "Deploy on AWS and Azure"
-description: "You'll pick a 2026.1 deployment pattern for Honua — Compose and ECS are GA, Lambda and Kubernetes are Preview, Azure is not offered — and know which image, configuration, and rollout mechanism each one uses."
+description: "You'll pick a 2026.1 deployment pattern for Honua — ECS Fargate is the only certified rc.2 production target, Compose is for local evaluation, Lambda and Kubernetes are Preview, Azure is not offered — and know which image, configuration, and rollout mechanism each one uses."
 ---
 # Deploy on AWS and Azure
 
-You'll pick a 2026.1 deployment pattern for Honua — Compose and ECS are GA, Lambda and Kubernetes are Preview, Azure is not offered — and know which image, configuration, and rollout mechanism each one uses.
+You'll pick a 2026.1 deployment pattern for Honua — ECS Fargate is the only certified rc.2 production target, Compose is for local evaluation, Lambda and Kubernetes are Preview, Azure is not offered — and know which image, configuration, and rollout mechanism each one uses.
 
 **Prerequisites:** A PostGIS database (RDS or Azure Database for PostgreSQL Flexible Server), the required env vars from [Configure Honua Server](configuration.md) (`ConnectionStrings__DefaultConnection`, `HONUA_ADMIN_PASSWORD`, `Security__ConnectionEncryption__MasterKey`, `Cors__AllowedOrigins__0`), and TLS terminated at the edge (ALB, API Gateway, Front Door) — Honua does not terminate TLS.
 
@@ -30,10 +30,15 @@ ref policy, and [deployment presets](https://github.com/honua-io/honua-iac/blob/
 
 ## Pick a pattern
 
+> **2026.1 rc.2 deployment scope:** Lambda and Kubernetes/Helm are not certified
+> in this release candidate. The supported production deployment is AWS ECS
+> Fargate with RDS PostGIS, ElastiCache, and Console in S3/CloudFront.
+> Docker Compose remains the local evaluation path, not a certified production target.
+
 | Pattern | 2026.1 tier | Best for | Image family | Rollout mechanism | honua-iac module |
 |---|---|---|---|---|---|
-| Docker Compose | GA | Dev/test on one host | generic web image | Recreate the container | — |
-| AWS ECS/Fargate + ALB | GA | Steady production traffic | generic web image (multi-arch index; runs `x86_64`) | ALB weighted target groups (canary) | `aws-ecs` |
+| Docker Compose | Local evaluation | Dev/test on one host | generic web image | Recreate the container | — |
+| AWS ECS/Fargate + ALB | Certified rc.2 target | Steady production traffic | generic web image (multi-arch index; runs `x86_64`) | ALB weighted target groups (canary) | `aws-ecs` |
 | AWS Lambda | Preview | Spiky/low traffic, scale-to-zero | `*-lambda-aot` (single-arch `x86_64`/amd64) | Alias weighted versions (canary) | `aws-serverless` |
 | Kubernetes (EKS/AKS) with Helm | Preview | Existing cluster estate | generic web image (`x86_64`) | See [Deploy on Kubernetes](kubernetes.md) | `aws-eks`, `azure-aks` |
 | Azure Container Apps | Not offered in 2026.1 | Steady traffic on Azure | generic web image | Revision traffic splitting (canary) | `azure-aca` |
@@ -239,7 +244,7 @@ If the secret uses a customer-managed KMS key, also grant `kms:Decrypt` on that 
 
 ### How the control-plane event functions dispatch
 
-The three control-plane event functions run with `ControlPlane__TriggerMode=Event`, and `HONUA_CONTROL_PLANE_LAMBDA_HANDLER` picks the handler: `batch-event` (alias `reconcile`) reconciles the execution job named by an EventBridge "Batch Job State Change" event's `detail.jobId`, `backstop` runs one execution-job sweep and one workflow-operation sweep, and `scheduled-tick` runs the tick named by the schedule's `{"kind": "<ScheduledTickKind>"}` input. By default they run the `*-lambda-aot` image. Its Lambda Web Adapter posts every non-HTTP invocation as raw JSON to `POST /events` on `127.0.0.1:8080` (the adapter's `AWS_LWA_PASS_THROUGH_PATH`, default `/events`), and the server maps that route only when `HONUA_CONTROL_PLANE_LAMBDA_HANDLER` is set. The route runs the handler in-process and answers only loopback callers, so it needs no token. On these functions host validation also accepts a loopback Host header on a connection that is loopback at both ends, because the adapter's requests never carry the public hosts in `HostValidation__AllowedHosts`. The API function sets no selector, so it keeps strict host validation and has no `/events` route. An unknown selector returns `400` with `control_plane_lambda_handler_unknown`. On a cell without Redis, `batch-event`, `backstop`, and the `WorkflowSchedule`, `JobReconciliation`, and `GeoprocessingOutputSweep` ticks answer `503` with a capability-unavailable problem that names `missingDependency: redis` (logged once per cold start at Warning), the other ticks run as usual, and any unexpected failure answers a problem+json `500` that names the exception type.
+The three control-plane event functions run with `ControlPlane__TriggerMode=Event`, and `HONUA_CONTROL_PLANE_LAMBDA_HANDLER` picks the handler: `batch-event` (alias `reconcile`) reconciles the execution job named by an EventBridge "Batch Job State Change" event's `detail.jobId`, `backstop` runs one execution-job sweep and one workflow-operation sweep, and `scheduled-tick` runs the tick named by the schedule's `{"kind": "<ScheduledTickKind>"}` input. Schedule `{"kind": "JobStoreRetention"}` every 10 minutes: it deletes jobs, job logs, result packages and leases past their retention, which no Lambda function does on its own. By default they run the `*-lambda-aot` image. Its Lambda Web Adapter posts every non-HTTP invocation as raw JSON to `POST /events` on `127.0.0.1:8080` (the adapter's `AWS_LWA_PASS_THROUGH_PATH`, default `/events`), and the server maps that route only when `HONUA_CONTROL_PLANE_LAMBDA_HANDLER` is set. The route runs the handler in-process and answers only loopback callers, so it needs no token. On these functions host validation also accepts a loopback Host header on a connection that is loopback at both ends, because the adapter's requests never carry the public hosts in `HostValidation__AllowedHosts`. The API function sets no selector, so it keeps strict host validation and has no `/events` route. An unknown selector returns `400` with `control_plane_lambda_handler_unknown`. On a cell without Redis, `batch-event`, `backstop`, and the `WorkflowSchedule`, `JobReconciliation`, and `GeoprocessingOutputSweep` ticks answer `503` with a capability-unavailable problem that names `missingDependency: redis` (logged once per cold start at Warning), the other ticks run as usual, and any unexpected failure answers a problem+json `500` that names the exception type.
 
 ### MCP sessions on Lambda
 

@@ -29,6 +29,10 @@ internal static partial class AdminLayerAuthoringEndpoints
             .WithTags("Admin", "Metadata", "Authoring")
             .RequireAdminAuthorization();
 
+        _ = group.MapGet("/{storageLayerId:int}/display", HandleGetDisplay).WithName("GetAdminLayerDisplay");
+        _ = group.MapPut("/{storageLayerId:int}/display", HandleSetDisplay).WithName("SetAdminLayerDisplay");
+        _ = group.MapGet("/{storageLayerId:int}/spatial", HandleGetSpatial).WithName("GetAdminLayerSpatial");
+        _ = group.MapPut("/{storageLayerId:int}/spatial", HandleSetSpatial).WithName("SetAdminLayerSpatial");
         _ = group.MapGet("/{storageLayerId:int}/popup-info", HandleGetPopupInfo).WithName("GetAdminLayerPopupInfo");
         _ = group.MapPut("/{storageLayerId:int}/popup-info", HandleSetPopupInfo).WithName("SetAdminLayerPopupInfo");
         _ = group.MapGet("/{storageLayerId:int}/drawing-info", HandleGetDrawingInfo).WithName("GetAdminLayerDrawingInfo");

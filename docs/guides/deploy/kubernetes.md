@@ -5,7 +5,7 @@ description: "Install the honua-helm chart as one coordinated replica with a per
 ---
 # Deploy on Kubernetes
 
-Kubernetes with Helm is Preview in 2026.1: available for evaluation, and outside
+Kubernetes with Helm is Preview and not certified for 2026.1 rc.2; [ECS Fargate is the certified target](cloud-deployments.md#pick-a-pattern). It is available for evaluation, and outside
 the GA operational, SLA, and scale commitments. `x86_64` is the supported
 architecture. This guide starts with one coordinated Honua replica and a
 persistent volume. That is the safe Kubernetes baseline. Horizontal scaling is
@@ -24,7 +24,8 @@ moving branch.
 - A Kubernetes cluster with `kubectl` and Helm 3 access.
 - PostGIS and Redis endpoints reachable from the cluster. Redis is required by
   the chart for non-development deployments, including the single-node path.
-  Any working Redis enables the control plane and jobs. For durable
+  Any working Redis enables the governed control plane; jobs are stored in
+  PostGIS and do not use Redis. For durable
   acknowledged state, configure `appendonly yes`, `appendfsync everysec` (or
   `always`) and `maxmemory-policy noeviction`, or use a managed service's own
   durability. See [Redis durability](#redis-durability) below.
@@ -295,7 +296,7 @@ This applies to the API host and native GDAL worker's built-in secret resolver.
 
 The `honua-kubernetes-job` batch backend runs each asynchronous geoprocessing
 job as a `batch/v1` Job that starts the server image as a single-job worker.
-The worker needs the same database, Redis and master key as the server. Give it
+The worker needs the same database and master key as the server. Give it
 those through Kubernetes Secret references, not through literal values. Literal
 `env.*` and `k8s.env.*` values are written into the Job object.
 
@@ -492,8 +493,9 @@ kubectl -n honua rollout status deployment/honua-honua --timeout=600s
 
 ## Redis durability
 
-Redis holds acknowledged control-plane state: durable jobs, the job queue,
-execution logs and governed proposals. Any working Redis enables all of it. At
+Redis holds acknowledged control-plane state: governed proposals and workflow
+operations. Jobs, the job queue and execution logs are in PostGIS. Any working
+Redis enables the control plane. At
 startup the server reads the Redis persistence policy once and publishes the
 outcome as information (`limits.job.redisDurability` on the capability
 manifest). It reports `attested` only when all three of these hold:
@@ -509,8 +511,8 @@ such as AWS ElastiCache and MemoryDB blocks `CONFIG`) or `not-durable` (the
 policy was read and is not durable). A stock `redis:7-alpine` sidecar defaults
 to `appendonly no` and reports `not-durable`.
 
-**The outcome is information, not a gate.** `operations.proposals` and
-`jobs.runner` stay available, pods stay `Ready`, and the `redis` health entry
+**The outcome is information, not a gate.** `operations.proposals` stays
+available, `jobs.runner` does not depend on Redis, pods stay `Ready`, and the `redis` health entry
 stays `Healthy` with the outcome in its data. Durability is a property of the
 Redis you choose. Configure the policy above on self-managed Redis, or rely on
 the managed service's replication, snapshots or transaction log.

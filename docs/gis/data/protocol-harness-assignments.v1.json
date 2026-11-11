@@ -249,7 +249,7 @@
       "capability_key": "serve.geoservices-vectortileserver",
       "surface": "vector-tile-server",
       "operation": "GET /rest/services/{serviceId}/VectorTileServer/tile/{z}/{y}/{x}.pbf",
-      "test_ids": ["VectorTileServerEndpointTests.VectorTileServer_Tile_InRange_ReturnsMvtBytesWithCacheHeader"],
+      "test_ids": ["VectorTileServerEndpointTests.VectorTileServer_Tile_InRange_ReturnsMvtBytesNeverStoredForACredentialedCaller"],
       "scenario_facets": ["positive", "media-schema"]
     },
     {

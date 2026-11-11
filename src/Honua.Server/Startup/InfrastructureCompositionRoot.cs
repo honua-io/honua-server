@@ -199,7 +199,9 @@ internal static class InfrastructureCompositionRoot
                 }
 
                 var cacheOptions = sp.GetRequiredService<IOptions<CacheOptions>>().Value;
-                if (!cacheOptions.Enabled)
+                // Catalog edits and promotions bypass layer-row writes, so their
+                // current default must be read before reusing a parsed render plan.
+                if (!cacheOptions.Enabled || sp.GetRequiredService<IServiceProviderIsService>().IsService(typeof(IStyleCatalog)))
                 {
                     return innerStyleCatalog;
                 }
@@ -310,35 +312,15 @@ internal static class InfrastructureCompositionRoot
         services.AddHostedService(sp =>
             sp.GetRequiredService<DistributedCacheRefreshCoordinator>());
 
-        ConfigureMetadataGraphCacheInvalidation(services);
+        ConfigureMetadataGraphCoherence(services);
     }
 
-    public static void ConfigureMetadataGraphCacheInvalidation(IServiceCollection services)
+    public static void ConfigureMetadataGraphCoherence(IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        // Correctness, not a licensed capability: keyed on the multiplexer being composed at all,
-        // not on the Redis cache entitlement. Multi-node mode already requires Redis
-        // (ConfigurationValidationService), so a Redis-off deployment is single-node by contract.
-        // Lambda is the exception (many instances, no Redis required): its read path revalidates the
-        // cached snapshot per request instead (Cache:MetadataGraphRevalidateOnRead, #6762).
-        if (!services.Any(static d => d.ServiceType == typeof(IConnectionMultiplexer)))
-        {
-            return;
-        }
-
-        Honua.Core.Features.Metadata.MetadataServiceCollectionExtensions.AddMetadataV2GraphSnapshotCache(services);
-        services.TryAddSingleton(sp => new RedisMetadataV2GraphCacheInvalidator(
-            sp.GetRequiredService<Honua.Core.Features.Metadata.Caching.MetadataV2GraphSnapshotCache>(),
-            sp.GetRequiredService<IConnectionMultiplexer>(),
-            sp.GetRequiredService<ILogger<RedisMetadataV2GraphCacheInvalidator>>(),
-            keyPrefix: sp.GetService<IOptions<CacheOptions>>()?.Value.KeyPrefix));
-
-        // Replace (not TryAdd) so this wins regardless of whether the store composition registered
-        // the in-process invalidator before or after this call.
-        services.RemoveAll<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphCacheInvalidator>();
-        services.AddSingleton<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphCacheInvalidator>(
-            static sp => sp.GetRequiredService<RedisMetadataV2GraphCacheInvalidator>());
-        services.AddHostedService(static sp => sp.GetRequiredService<RedisMetadataV2GraphCacheInvalidator>());
+        services.AddHttpContextAccessor();
+        services.TryAddScoped<Honua.Core.Features.Metadata.Caching.IMetadataGraphFreshnessRequirement,
+            HttpMetadataGraphFreshnessRequirement>();
     }
 }

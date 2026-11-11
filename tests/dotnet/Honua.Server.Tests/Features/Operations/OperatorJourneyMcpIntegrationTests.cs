@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.TestKit.Extensions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -40,7 +41,7 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
     [Endpoint("POST /mcp")]
     public async Task AdminKey_ConfiguresThroughMcp_AndNonAdminCreatesNoRow()
     {
-        var fixture = new WebAppFixture()
+        var fixture = new WebAppFixture().WithProductionJobSubstrate()
             .UseKestrel()
             .ConfigureWebHost(builder =>
             {

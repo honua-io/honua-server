@@ -38,6 +38,7 @@ namespace Honua.Protocols.Ogc.Classic.Wms;
 
 internal static partial class WmsRequestHandlers
 {
+    private const string LoggerCategory = "Honua.Protocols.Ogc.Classic.Wms.WmsRequestHandlers";
     private const int WmsMaxImageDimension = 4096;
     private const string Wms13Version = "1.3.0";
     private const string Wms111Version = "1.1.1";
@@ -117,7 +118,7 @@ internal static partial class WmsRequestHandlers
         }
 
         var loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
-        var logger = loggerFactory.CreateLogger("Honua.Protocols.Ogc.Classic.Wms.WmsRequestHandlers");
+        var logger = loggerFactory.CreateLogger(LoggerCategory);
 
         try
         {

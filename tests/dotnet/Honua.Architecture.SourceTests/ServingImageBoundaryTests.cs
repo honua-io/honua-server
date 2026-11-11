@@ -354,8 +354,11 @@ public sealed class ServingImageBoundaryTests
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var workflow = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/pr-gate.yml"));
 
-        workflow.Should().Contain("validate-serving-image-boundary.py");
-        workflow.Should().Contain("validate-promote-verified-image.py");
+        var router = File.ReadAllText(Path.Join(repositoryRoot, "scripts/ci/validate-ci-router.sh"));
+
+        workflow.Should().Contain("scripts/ci/validate-ci-router.sh");
+        router.Should().Contain("scripts/ci/fixtures/validate-serving-image-boundary.py");
+        router.Should().Contain("scripts/ci/fixtures/validate-promote-verified-image.py");
         workflow.Should().NotContain("docker/build-push-action");
         workflow.Should().NotContain("docker run -d");
     }
@@ -524,8 +527,10 @@ public sealed class ServingImageBoundaryTests
             "the AOT compile gate must still be scoped to batches that change runtime source");
 
         var prGate = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/pr-gate.yml"));
-        prGate.Should().Contain("validate-serving-image-boundary.py",
-            "boundary detector correctness stays on every pull request");
+        prGate.Should().Contain("scripts/ci/validate-ci-router.sh",
+            "boundary detector correctness stays on every pull request through the CI router");
+        var router = File.ReadAllText(Path.Join(repositoryRoot, "scripts/ci/validate-ci-router.sh"));
+        router.Should().Contain("scripts/ci/fixtures/validate-serving-image-boundary.py");
     }
 
     [ArchitectureTest]
@@ -536,13 +541,13 @@ public sealed class ServingImageBoundaryTests
 
         workflow.Should().Contain("file: docker/worker-gdal/Dockerfile");
         workflow.Should().Contain("--worker-image honua-worker-gdal:boundary");
-        workflow.Should().Contain("--worker-redis 127.0.0.1:6379");
+        workflow.Should().Contain("--worker-database \"Host=127.0.0.1;Database=postgres;Username=postgres;Password=worker-smoke\"");
         workflow.Should().Contain("uses: ./.github/actions/setup-dotnet-ci");
         workflow.Should().Contain("--filter FullyQualifiedName~ProductionWorkerContainerHandoffTests");
         workflow.Should().Contain("--filter 'Category=NativePublicApi'");
         workflow.Should().Contain("ET.parse('artifacts/test-results/native-public-api.trx')");
         workflow.Should().Contain("if passed < 1 or nonpassing:");
-        workflow.Should().Contain("redis:");
+        workflow.Should().Contain("postgis/postgis:");
         workflow.Should().Contain("aquasecurity/trivy-action");
         workflow.Should().Contain("severity: CRITICAL,HIGH", Exactly.Twice());
         workflow.Should().Contain("ignore-unfixed: true", Exactly.Twice());

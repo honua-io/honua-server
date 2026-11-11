@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Offline regression fixtures for FAST selection and real closure reporting."""
+import json
 import os
 from pathlib import Path
 import shutil
@@ -167,6 +168,35 @@ pathlib.Path(out).write_text(json.dumps({'projects': projects}))
         self.write("src/Honua.Geometry/Repair.cs", 'internal class Repair\n{\n    internal int Value()\n    {\n        return 2;\n    }\n}\n')
         self.commit()
 
+    def test_affected_ci_only_changes_keep_governance_fast_path(self):
+        self.write("scripts/ci/fixture-ci-only.sh", "#!/bin/bash\ntrue\n", executable=True)
+        self.commit()
+        result = self.execute("--affected-tests", "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("Mode: CI-SHELL-ONLY", result.stdout)
+        self.assertIn("no restore/build/format/test", result.stdout)
+        self.assertFalse((self.root / "artifacts/test-results/local-feedback").exists())
+
+    def test_stage_zero_full_fallback_bounds_build_without_analyzers(self):
+        path = self.root / "scripts/ci/pre-pr-check.sh"
+        path.write_text(path.read_text() + "\n# Changed validation contract.\n")
+        self.commit()
+        log = self.root / ".git/dotnet-log.jsonl"
+        result = self.execute("--affected-tests", env_extra={
+            "HONUA_DOTNET_LOG": str(log), "HONUA_STAGE0_MAX_CPU_COUNT": "4",
+        })
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("Mode: FULL", result.stdout)
+        builds = [json.loads(line) for line in log.read_text().splitlines()
+                  if json.loads(line)[0] == "build"]
+        self.assertTrue(builds)
+        for build in builds:
+            self.assertIn("-maxCpuCount:4", build)
+            self.assertIn("-p:RunAnalyzers=false", build)
+            self.assertIn("-p:RunAnalyzersDuringBuild=false", build)
+            self.assertIn("-p:TreatWarningsAsErrors=true", build)
+            self.assertIn("-nodeReuse:false", build)
+
     def test_fast_source_closure_and_format_owner(self):
         self.source_repair()
         output = self.plan("--fast")
@@ -178,6 +208,33 @@ pathlib.Path(out).write_text(json.dumps({'projects': projects}))
         self.assertIn("Format dependency closure: 2 projects", output)
         self.assertIn("0 test projects; evaluated Debug graph", output)
         self.assertIn("Format workspace: 1 owning project", output)
+
+    def test_grouped_shard_keeps_full_filter_for_sibling_assemblies(self):
+        for grouped in (True, False):
+            with self.subTest(grouped=grouped):
+                shard = {'shard_name': 'fixture', 'filter': 'FullyQualifiedName~Honua',
+                         'test_timeout_minutes': 20}
+                shard.update({'csprojs': self.projects[3:5]} if grouped else {'csproj': self.projects[3]})
+                self.write('.github/ci-shards.json', json.dumps({'shards': [shard]}))
+                self.write('scripts/ci/honua-server-targeted-tests.sh',
+                           '#!/bin/bash\necho \'{"run_all":false,"shards":["fixture"],"reason":"fixture"}\'\n',
+                           executable=True)
+                selection = {'runAll': False, 'reason': 'fixture', 'capabilities': ['fixture'],
+                             'unmatchedSourceFiles': [], 'provingTestCount': 1,
+                             'shards': ['fixture'], 'testsByShard': {'fixture': ['Honua.RepairTests.Repair']}}
+                self.write('scripts/ci/capability-impact.py',
+                           'import json,sys\nif sys.argv[1] != "validate": print(json.dumps(' + repr(selection) + '))\n')
+                self.commit()
+                self.base = self.run_command('git', 'rev-parse', 'HEAD').strip()
+                self.write(self.test_path, self.test_source.replace('Assert.Equal(1, 1)', 'Assert.Equal(2, 2)'))
+                output = self.plan()
+                self.assertIn('Server-test shards: 1/1 selected', output)
+                self.assertEqual(not grouped, '1 of those capability-narrowed' in output, output)
+                build = self.execute(env_extra={'HONUA_PRE_PR_PRINT_BUILD_PLAN': '1'})
+                self.assertEqual(build.returncode, 0, build.stdout)
+                if grouped:
+                    for project in self.projects[3:5]:
+                        self.assertIn(project, build.stdout.replace('\\', '/'))
 
     def test_default_preserves_transitive_test_closure(self):
         self.source_repair()

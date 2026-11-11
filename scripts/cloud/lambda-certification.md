@@ -1,6 +1,8 @@
-# Lambda certification lane
+# Lambda Preview qualification lane
 
-`lambda-preview-certification.yml` certifies the manifest's exact image digest and
+> This Preview qualification lane is outside the [rc.2 certification gate](../../docs/guides/deploy/cloud-deployments.md#pick-a-pattern); ECS Fargate is the certified target.
+
+`lambda-preview-certification.yml` qualifies the manifest's exact image digest and
 `awsLambdaArchitecture` (`x86_64` → OCI `amd64`, or `arm64`), using the matching
 native GitHub runner for the executable runtime-adapter check. It preserves the true
 ECR digest handoff and the existing image revision, runtime adapter, health,
