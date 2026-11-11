@@ -78,6 +78,7 @@ public sealed class ConsoleBrowserRouteAccessTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "initialize")]
     public async Task McpFromConsoleOrigin_PreflightAllowsAndResponseExposesSessionHeader()
     {
         using var bearer = await SignInCrossOriginAsync();

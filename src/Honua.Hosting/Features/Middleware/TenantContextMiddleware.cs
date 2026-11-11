@@ -156,8 +156,8 @@ internal sealed class TenantContextMiddleware(
             return;
         }
 
-        // 3. Default tenant: anonymous public reads (CITE / unauthenticated OGC), session
-        //    cookies and operator bearers without a tenant claim.
+        // 3. Default tenant: anonymous public reads (CITE / unauthenticated OGC), any
+        //    non-bearer caller and operator bearers without a tenant claim.
         if (hasDefaultTenant)
         {
             tenantContext.Set(_options.DefaultTenantId, TenantContextSource.Default);

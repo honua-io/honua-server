@@ -231,8 +231,10 @@ back on follow-up calls). Without a tenant claim it resolves the configured
 `MultiTenancy:DefaultTenantId`, as the cookie does; with no default tenant it is
 limited to tenant-independent administration routes. The bearer is stateless:
 signing out ends the cookie session but not a bearer already issued, which stays
-valid until it expires. Keep `Authentication:OperatorBearer:MaxLifetimeMinutes`
-short and rotate the signing key to revoke every outstanding bearer.
+valid until it expires. The tenant is resolved on each request, so changing
+`MultiTenancy:DefaultTenantId` also moves bearers that are still valid. Keep
+`Authentication:OperatorBearer:MaxLifetimeMinutes` short and rotate the signing
+key to revoke every outstanding bearer.
 
 Separate-origin OIDC requires a public SPA client registered with the provider.
 Use authorization code with PKCE and an API-audience access token accepted by the
