@@ -83,7 +83,7 @@ class PullRequestLoadTests(unittest.TestCase):
             with self.subTest(workflow=name):
                 self.assertIn("github.event.pull_request.number", concurrency.get("group", ""))
                 cancellation = concurrency.get("cancel-in-progress")
-                if name in ("review-gate.yml", "review-event-bridge.yml", "pr-review-doctor.lock.yml", "normalize-derived-artifacts.yml"):
+                if name in ("review-gate.yml", "review-event-bridge.yml", "pr-review-doctor.lock.yml", "normalize-derived-artifacts.yml", "auto-merge-ready.yml"):
                     self.assertEqual(cancellation, "false")
                     self.assertEqual(concurrency.get("queue"), "max")
                 else:
