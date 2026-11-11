@@ -18,22 +18,26 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Wcs201)]
-public sealed class Wcs20EndpointsTests : IAsyncLifetime
+public sealed class Wcs20EndpointsTests : IClassFixture<Wcs20EndpointsTests.RasterApplication>
 {
     private const long TestRasterId = 377;
-    private readonly IRasterStore _rasterStore = Substitute.For<IRasterStore>();
-    private readonly List<RasterQuery> _exportQueries = [];
+    private readonly IRasterStore _rasterStore;
+    private readonly List<RasterQuery> _exportQueries;
     private readonly WebAppFixture _fixture;
 
-    public Wcs20EndpointsTests()
+    public Wcs20EndpointsTests(RasterApplication application)
     {
-        ConfigureRasterStore(_rasterStore, _exportQueries);
-        _fixture = new WebAppFixture().ReplaceService(_rasterStore);
+        application.RestoreDefaults();
+        _rasterStore = application.RasterStore;
+        _exportQueries = application.ExportQueries;
+        _fixture = application.Application;
     }
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public sealed class RasterApplication : SubstitutedRasterStoreApplication
+    {
+        protected override void ConfigureDefaults(IRasterStore rasterStore, List<RasterQuery> exportQueries)
+            => ConfigureRasterStore(rasterStore, exportQueries);
+    }
 
     [IntegrationTheory]
     [InlineData("/ogc/services/{0}/wcs")]
