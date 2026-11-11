@@ -39,11 +39,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:
-      # Keep all heads for one PR in the same cancellation group. Fork
+      # Keep all heads for one PR in the same serial queue. Fork
       # workflow_run payloads may omit pull_requests, so repository + branch is
       # the stable subject fallback for those completions.
       group: review-resolve-pr-${{ github.event.pull_request.number || github.event.issue.number || github.event.client_payload.pr || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number) || format('{0}:{1}', github.event.workflow_run.head_repository.full_name, github.event.workflow_run.head_branch) || github.run_id }}
-      cancel-in-progress: true
+      cancel-in-progress: false
+      queue: max
     permissions:
       contents: read
       pull-requests: read
@@ -128,7 +129,7 @@ jobs:
               if (openPrs.length === 1) prNumber = openPrs[0].number;
             }
             if (!prNumber) {
-              core.setFailed('Event does not identify exactly one open pull request.');
+              core.notice('Event does not identify exactly one open pull request; no attestation needed.');
               return '';
             }
             return String(prNumber);
@@ -146,6 +147,7 @@ jobs:
       # Never interrupt this trusted workflow between accepting a rerun and
       # recording the result. The next event observes the serialized result.
       cancel-in-progress: false
+      queue: max
     steps:
       - name: Shed superseded review subject
         id: subject
@@ -154,37 +156,8 @@ jobs:
           PR: ${{ needs.resolve.outputs.pr }}
         with:
           script: |
-            // THE SECOND STALENESS WINDOW. `resolve` already sheds an event whose
-            // subject is stale when the event arrives. This job then serializes
-            // behind every other event for the same pull request -- deliberately,
-            // `cancel-in-progress: false` -- so the subject it was admitted for can
-            // go stale while it waits in that queue. The shed in `resolve` cannot
-            // see that; only this step, at the moment the trusted job starts, can.
-            //
-            // Left unshed, the queued attestation spends the whole trusted job to
-            // stamp a RED `Review Gate` status onto a commit no admission can
-            // consume, because `pull request is not open` is scored as a blocking
-            // reason. Measured on trunk: 27 of 63 sampled `attest` failures (43%)
-            // were exactly that, and every one of them ran the full GraphQL
-            // snapshot and admission evaluation first (#3213).
-            //
-            // The shed is NEUTRAL and ONE-DIRECTIONAL: it writes no commit status,
-            // fails nothing, and can only WITHHOLD an attestation. It can never
-            // publish one, so it cannot admit a pull request that would otherwise
-            // have been blocked. `reopened` re-fires this workflow.
-            //
-            // CLOSED IS THE ONLY STALENESS THIS JOB MAY SHED. A moved head must
-            // still be attested here, because this job is the fallback that keeps
-            // the live head covered. `resolve` uses ONE PR-wide
-            // `cancel-in-progress: true` group and GitHub guarantees no ordering
-            // within it, so a late-delivered event for an OLD head can cancel the
-            // resolver for the NEWEST head and then shed itself. The attestation
-            // already queued behind it is then the only thing left that will stamp
-            // the live head, and `Review Gate` is required at the exact current
-            // head. Shedding on a moved subject here would leave that head
-            // permanently unattested and the PR unmergeable until an unrelated
-            // comment or label event happened to wake the gate again. The steps
-            // below deliberately re-read the LIVE head rather than a bound subject.
+            // Attestation reads the live head after queueing. A moved subject
+            // must not leave its replacement unattested; only closed PRs are shed.
             const shed = async reason => {
               core.notice(`superseded: ${reason}`);
               core.summary.addRaw(`Shed superseded review subject: ${reason}`, true);
@@ -305,7 +278,7 @@ jobs:
                   : exactReview || exactCleanComment
                     ? 'Current exact-head review evidence is clean'
                     : 'No reviewer objections; review trails this merge (fix-forward admission)';
-              return { head, reasons, reviewDescription, snapshotTruncated };
+              return { head, reasons, reviewDescription, snapshotTruncated, isDraft: pr.isDraft };
             };
 
             const initialReview = await evaluateCurrentReview();
@@ -314,7 +287,7 @@ jobs:
               return;
             }
             const { head, reasons, reviewDescription } = initialReview;
-            const state = reasons.length === 0 ? 'success' : 'failure';
+            const state = reasons.length === 0 ? 'success' : initialReview.isDraft ? 'pending' : 'failure';
             const description = reasons.length === 0
               ? reviewDescription
               : reasons.join('; ').slice(0, 140);
@@ -323,7 +296,10 @@ jobs:
               target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/pull/${prNumber}`,
             });
             if (state !== 'success') {
-              core.setFailed(description);
+              core.notice(`Review admission deferred: ${description}`);
+              await core.summary.addHeading('Review admission deferred')
+                .addRaw(`${description}. The required Review Gate remains ${state}.`, true)
+                .write();
               return;
             }
 

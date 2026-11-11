@@ -31,6 +31,14 @@
 
 Full CI runs twice daily at `09:00` and `21:00` UTC (01:00 and 13:00 Pacific standard time). It retains protocol-profile compilation, remote-source and server execution proofs, and import/export fidelity. The existing Worker GDAL job owns native GDAL/PDAL coverage and the raster execution receipt checks.
 
+## Neutral automation helpers
+
+See [the workflow inventory](workflow-inventory.md#neutral-automation-helpers)
+for helper check names and queue policy. Helper completion does not grant
+admission: drafts retain pending `Review Gate` status, blocking reviews retain
+failure, and real attestation/API errors fail. Superseded normalization producers
+and consumers exit neutrally before producing data or mutating a branch.
+
 ## Verification stages
 
 Every stage reacts to a repository event; no stage polls. A change is verified
@@ -152,11 +160,23 @@ computation force-fulls, and the optimization silently never fires.
 
 **Format scope.** The PR's existing independent format job retains its affected
 or full document selection and complete formatter restore context. A parallel
-`PR Gate / Analyzers` job of the same matrix owns the analyzer pass: every other
-PR build runs with `/p:RunAnalyzers=false`, and this job builds the diff's
+`PR Gate / Analyzers` (source) and `PR Gate / Analyzers (tests)` jobs of the
+same matrix own disjoint analyzer passes: every other
+PR build runs with `/p:RunAnalyzers=false`, and both jobs build the diff's
 affected closure (or the full solution on fallback, and nothing when the diff
 reaches no project) with analyzers, code style and documentation diagnostics
-as warnings-as-errors, so `PR Gate` still fails on every analyzer finding. Full CI runs
+as warnings-as-errors. `HonuaAnalyzerPartition` in `Directory.Build.targets`
+assigns `IsTestProject=true` projects to `tests` and every other project to
+`source`. After restore, the source partition evaluates `IsTestProject` through MSBuild
+and omits test-only compilation roots; imports are respected, incomplete evaluation
+fails closed, and multi-targeted projects conservatively remain included. Each
+partition still compiles forward dependencies but runs analyzers only for its own set; source generators remain enabled. The `format` matrix remains
+in `required.needs`, so both partitions must pass. The existing analyzer check
+name is retained for the source partition. Analyzer builds disable persistent
+MSBuild servers and node reuse so process teardown does not depend on a shared
+server; compiler, analyzer and timeout failures still fail the job.
+Unpartitioned callers default to
+`all`; invalid partitions fail the build. `PR Gate` still fails on every analyzer finding. Full CI runs
 an independent full-solution format job; `CI Gate` requires it when build inputs
 are selected, without making test consumers wait for formatting.
 
@@ -575,6 +595,8 @@ unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
+
+Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. Missing envelopes from ordinary producers remain errors.
 
 ### Governance capacity split
 

@@ -6,23 +6,20 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Redis Testcontainers integration coverage for the durable execution substrate
-/// used by the control-plane worker and reconciler services.
-/// </summary>
-[Collection("Redis")]
+// PostgreSQL Testcontainers integration coverage for the durable execution substrate
+// used by the control-plane worker and reconciler services.
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.TestInfrastructure)]
-public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
+public sealed class PostgresExecutionSubstrateIntegrationTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
     [IntegrationTest]
     public Task SweepActiveJobs_HeartbeatRefreshedBeforeRetryWrite_PreservesRunningClaim()
@@ -34,26 +31,24 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
 
     private async Task AssertLateHeartbeatPreservesClaimAsync(int maxAttempts)
     {
-        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await CreateHarnessAsync();
         var queued = CreateQueuedJob($"late-heartbeat-{Guid.NewGuid():N}",
             retryPolicy: new JobRetryPolicy { MaxAttempts = maxAttempts });
         await harness.JobStore.TryCreateAsync(queued);
         await harness.Queue.EnqueueAsync(queued.OperationId);
         (await harness.Queue.TryClaimAsync("live-worker")).Should().Be(queued.OperationId);
         var claimed = (await harness.JobStore.GetAsync(queued.OperationId))!;
-        var expired = claimed with
+        (await harness.JobStore.TrySetAsync(claimed with
         {
             Status = ExecutionJobStatus.Running,
-            ClaimedAt = DateTimeOffset.UtcNow.AddSeconds(-92),
-            LastHeartbeatAt = DateTimeOffset.UtcNow.AddSeconds(-91),
             HeartbeatPolicy = JobHeartbeatPolicy.Default
-        };
-        (await harness.JobStore.TrySetAsync(expired)).Should().BeTrue();
+        })).Should().BeTrue();
+        await harness.AgeClaimAsync(queued.OperationId, TimeSpan.FromSeconds(92));
         var snapshot = (await harness.JobStore.GetAsync(queued.OperationId))!;
         var refreshedAt = DateTimeOffset.UtcNow;
         var reads = 0;
         // Only interpose at the read boundary. Heartbeat and recovery writes still
-        // use real Redis CAS, and claim/requeue use the real Lua queue scripts.
+        // use the real compare-and-set, and claim/requeue use the real queue statements.
         var store = Substitute.For<IExecutionJobStore>();
         store.ListActiveAsync(null, null, Arg.Any<CancellationToken>()).Returns([snapshot]);
         store.GetAsync(queued.OperationId, Arg.Any<CancellationToken>()).Returns(async _ =>
@@ -75,33 +70,34 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
         var callback = new RecordingTerminalCallback();
         using var service = new JobReconciliationService(store, harness.Queue, harness.Queue,
             new ExecutionJobCancellationTokens(), [callback], harness.LogStore,
-            NullLogger<JobReconciliationService>.Instance);
+            NullLogger<JobReconciliationService>.Instance, harness.JobStore, harness.JobStore);
 
         await service.SweepActiveJobsAsync(CancellationToken.None);
 
         reads.Should().Be(2, "the heartbeat must land after the first expiry check");
         var preserved = (await harness.JobStore.GetAsync(queued.OperationId))!;
         preserved.Status.Should().Be(ExecutionJobStatus.Running);
-        preserved.LastHeartbeatAt.Should().Be(refreshedAt);
+        preserved.LastHeartbeatAt.Should().BeAfter(snapshot.LastHeartbeatAt!.Value)
+            .And.BeCloseTo(await harness.JobStore.GetUtcNowAsync(), TimeSpan.FromSeconds(30));
         preserved.ClaimedBy.Should().Be("live-worker");
         preserved.AttemptCount.Should().Be(1);
         callback.IsCompleted.Should().BeFalse();
         (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
         (await harness.Queue.TryClaimAsync("duplicate-worker")).Should().BeNull();
-        (await harness.Database.SortedSetScoreAsync("controlplane:jobqueue:claimed", queued.OperationId))
-            .Should().NotBeNull();
+        (await harness.IsInQueueAsync(queued.OperationId)).Should().BeTrue("the live worker still holds its delivery");
     }
 
     [IntegrationTest]
     public async Task JobReconciliation_PersistedLocalJobWithoutDelivery_ReplacementWorkerExecutesOnce()
     {
-        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await CreateHarnessAsync();
         var queued = CreateQueuedJob($"interrupted-admission-{Guid.NewGuid():N}");
         queued = queued with { Spec = queued.Spec with { Backend = "local" }, Priority = OperationPriority.High };
         await harness.JobStore.TryCreateAsync(queued);
         // Simulate process loss after durable creation: no progress or pending membership.
         using var sweep = new JobReconciliationService(harness.JobStore, harness.Queue, harness.Queue,
-            new ExecutionJobCancellationTokens(), [], harness.LogStore, NullLogger<JobReconciliationService>.Instance);
+            new ExecutionJobCancellationTokens(), [], harness.LogStore, NullLogger<JobReconciliationService>.Instance,
+            harness.JobStore, harness.JobStore);
         await sweep.SweepActiveJobsAsync(CancellationToken.None);
         await sweep.SweepActiveJobsAsync(CancellationToken.None);
         (await harness.Queue.GetQueueDepthAsync()).Should().Be(1);
@@ -132,7 +128,7 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
     [IntegrationTest]
     public async Task JobQueue_RepeatedAdmissionRepair_DoesNotRepublishAnAlreadyClaimedDelivery()
     {
-        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await CreateHarnessAsync();
         var job = CreateQueuedJob($"dispatch-repair-{Guid.NewGuid():N}");
         await harness.JobStore.TryCreateAsync(job);
         await harness.Queue.EnqueueAsync(job.OperationId);
@@ -146,7 +142,7 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
     [IntegrationTest]
     public async Task ExecutionJobStore_TenantScope_FiltersBeforePaginationAndCursorCreation()
     {
-        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await CreateHarnessAsync();
         var owner = $"tenant-owner-{Guid.NewGuid():N}";
         var created = DateTimeOffset.UtcNow;
         var expected = new Dictionary<string, List<string>>(StringComparer.Ordinal);
@@ -189,9 +185,9 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
     }
 
     [IntegrationTest]
-    public async Task ExecutionJobStore_WithRedis_SupportsCasUpdatesAndActiveIndexes()
+    public async Task ExecutionJobStore_SupportsCasUpdatesAndActiveIndexes()
     {
-        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await CreateHarnessAsync();
         var operationId = $"job-{Guid.NewGuid():N}";
         var job = CreateQueuedJob(operationId);
 
@@ -242,9 +238,42 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
     }
 
     [IntegrationTest]
-    public async Task ExecutionJobStore_WithRedis_FinalizesOnlyWhileLeaseIsOwned()
+    public async Task TrySetAsync_RecordWithFieldsThisReleaseDoesNotKnow_KeepsThem()
     {
-        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await CreateHarnessAsync();
+        var operationId = $"job-newer-release-{Guid.NewGuid():N}";
+        (await harness.JobStore.TryCreateAsync(CreateQueuedJob(operationId))).Should().BeTrue();
+        // A newer release wrote two fields this build has no property for.
+        await harness.ExecuteAsync(
+            $$$"""
+            UPDATE {{{harness.JobsTable}}}
+            SET record = (jsonb_set(record::jsonb || '{"addedByNewerRelease": {"mode": "streaming"}}'::jsonb,
+                                    '{spec,addedToSpec}', '"shard-7"'))::json
+            WHERE operation_id = @operation_id
+            """,
+            new Npgsql.NpgsqlParameter("operation_id", operationId));
+
+        var read = (await harness.JobStore.GetAsync(operationId))!;
+        (await harness.JobStore.TrySetAsync(read with
+        {
+            Status = ExecutionJobStatus.Running,
+            LastHeartbeatAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        })).Should().BeTrue();
+
+        var stored = await harness.ScalarAsync<string>(
+            $"SELECT record::text FROM {harness.JobsTable} WHERE operation_id = @operation_id",
+            new Npgsql.NpgsqlParameter("operation_id", operationId));
+        using var document = System.Text.Json.JsonDocument.Parse(stored!);
+        document.RootElement.GetProperty("addedByNewerRelease").GetProperty("mode").GetString().Should().Be("streaming");
+        document.RootElement.GetProperty("spec").GetProperty("addedToSpec").GetString().Should().Be("shard-7");
+        (await harness.JobStore.GetAsync(operationId))!.Status.Should().Be(ExecutionJobStatus.Running);
+    }
+
+    [IntegrationTest]
+    public async Task ExecutionJobStore_FinalizesOnlyWhileLeaseIsOwned()
+    {
+        await using var harness = await CreateHarnessAsync();
         var operationId = $"job-lease-finalize-{Guid.NewGuid():N}";
         var leaseOperationId = $"partition:{Guid.NewGuid():N}";
         const string owner = "worker-a:job";
@@ -268,23 +297,21 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
         };
         (await harness.JobStore.TrySetIfLeaseOwnedAsync(
             succeeded,
-            leaseOperationId,
-            "worker-b:job")).Should().BeFalse();
+            new OwnedJobLease(leaseOperationId, "worker-b:job"))).Should().BeFalse();
         (await harness.JobStore.GetAsync(operationId)).Should().Match<ExecutionJobRecord>(
             value => value.Status == ExecutionJobStatus.Running);
 
         (await harness.JobStore.TrySetIfLeaseOwnedAsync(
             succeeded,
-            leaseOperationId,
-            owner)).Should().BeTrue();
+            new OwnedJobLease(leaseOperationId, owner))).Should().BeTrue();
         (await harness.JobStore.GetAsync(operationId)).Should().Match<ExecutionJobRecord>(
             value => value.Status == ExecutionJobStatus.Succeeded);
     }
 
     [IntegrationTest]
-    public async Task ExecutionJobStore_WithRedis_QueriesByFiltersAndCursor()
+    public async Task ExecutionJobStore_QueriesByFiltersAndCursor()
     {
-        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await CreateHarnessAsync();
         var now = DateTimeOffset.UtcNow;
         var firstId = $"job-query-first-{Guid.NewGuid():N}";
         var secondId = $"job-query-second-{Guid.NewGuid():N}";
@@ -465,9 +492,9 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
     }
 
     [IntegrationTest]
-    public async Task ExecutionJobStore_WithRedis_QueryPaginatesAcrossCreatedAtTies()
+    public async Task ExecutionJobStore_QueryPaginatesAcrossCreatedAtTies()
     {
-        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await CreateHarnessAsync();
         var createdAt = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         var prefix = $"job-query-tie-{Guid.NewGuid():N}";
         var targetId = $"{prefix}-000";
@@ -525,13 +552,12 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
     }
 
     [IntegrationTest]
-    public async Task ExecutionJobStore_WithRedis_UpdateKeepsJobVisibleInIndexesItStillBelongsTo()
+    public async Task ExecutionJobStore_UpdateKeepsJobVisibleInIndexesItStillBelongsTo()
     {
-        // An update writes the payload first and the secondary indexes after it. A job must
-        // never drop out of an index it belongs to both before and after the update (the
-        // created-order index behind an unfiltered query, the requested-by index), or a reader
-        // racing the update cannot list a job whose status it can already read (#4965).
-        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        // A job must never drop out of a listing it belongs to both before and after an update
+        // (the unfiltered listing, the requested-by listing), or a reader racing the update
+        // cannot list a job whose status it can already read.
+        await using var harness = await CreateHarnessAsync();
         var owner = $"index-owner-{Guid.NewGuid():N}";
         var operationId = $"job-index-{Guid.NewGuid():N}";
         (await harness.JobStore.TryCreateAsync(CreateQueuedJob(operationId) with
@@ -585,19 +611,19 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
         misses.Should().BeEmpty(
             $"the job existed for all {reads} reads, so no read may miss it; missed: {string.Join(", ", misses.Take(10))}");
 
-        // The status index still tracks the final state and releases the previous one.
+        // The status filter tracks the final state and releases the previous one.
         var final = (await harness.JobStore.GetAsync(operationId))!;
         final.Status.Should().Be(ExecutionJobStatus.Provisioning);
         (await harness.JobStore.QueryAsync(new ExecutionJobQuery { Statuses = [ExecutionJobStatus.Provisioning] }))
             .Items.Should().ContainSingle(job => job.OperationId == operationId);
-        (await harness.Database.SortedSetScoreAsync("controlplane:job:index:created:status:running", operationId))
-            .Should().BeNull("a job leaves the index of a status it no longer has");
+        (await harness.JobStore.QueryAsync(new ExecutionJobQuery { Statuses = [ExecutionJobStatus.Running] }))
+            .Items.Should().NotContain(job => job.OperationId == operationId, "a job leaves the listing of a status it no longer has");
     }
 
     [IntegrationTest]
-    public async Task ExecutionJobStore_WithRedis_CreatedToInsideSameMillisecond_HonoursExclusiveBound()
+    public async Task ExecutionJobStore_CreatedToInsideSameMillisecond_HonoursExclusiveBound()
     {
-        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await CreateHarnessAsync();
         var createdAtMillisecond = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         var includedId = $"job-query-created-to-included-{Guid.NewGuid():N}";
         var excludedId = $"job-query-created-to-excluded-{Guid.NewGuid():N}";
@@ -627,9 +653,9 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
     }
 
     [IntegrationTest]
-    public async Task ExecutionLogStore_WithRedis_AppendsInOrderAndHonoursRetention()
+    public async Task ExecutionLogStore_AppendsInOrderAndHonoursRetention()
     {
-        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await CreateHarnessAsync();
         var operationId = $"job-log-{Guid.NewGuid():N}";
 
         await harness.LogStore.AppendAsync(operationId, new ExecutionLogEntry
@@ -670,21 +696,15 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
 
         await harness.LogStore.SetRetentionAsync(operationId, TimeSpan.FromMinutes(2));
 
-        var ttl = await harness.GetTtlAsync(GetLogKey(operationId));
-        ttl.Should().NotBeNull();
-        if (ttl is null)
-        {
-            throw new InvalidOperationException("Expected the log key to have a TTL after SetRetentionAsync.");
-        }
-
-        ttl.Value.Should().BeLessThanOrEqualTo(TimeSpan.FromMinutes(2));
-        ttl.Value.Should().BeGreaterThan(TimeSpan.FromSeconds(30));
+        var remaining = await GetLogRetentionRemainingAsync(harness, operationId);
+        remaining.Should().BeLessThanOrEqualTo(TimeSpan.FromMinutes(2));
+        remaining.Should().BeGreaterThan(TimeSpan.FromSeconds(30));
     }
 
     [IntegrationTest]
-    public async Task JobExecutionService_WithRedis_CompletesJobAndPersistsArtifactsLogsAndCallbacks()
+    public async Task JobExecutionService_CompletesJobAndPersistsArtifactsLogsAndCallbacks()
     {
-        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await CreateHarnessAsync();
         var operationId = $"job-exec-{Guid.NewGuid():N}";
         var callback = new RecordingTerminalCallback();
         var executor = new DelegatingJobExecutor(
@@ -747,9 +767,9 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
     }
 
     [IntegrationTest]
-    public async Task NativeWorkerHandoff_WithRedis_ClaimsMaterializesAndSurfacesCompletedResult()
+    public async Task NativeWorkerHandoff_ClaimsMaterializesAndSurfacesCompletedResult()
     {
-        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await CreateHarnessAsync();
         var operationId = $"job-native-handoff-{Guid.NewGuid():N}";
         var callback = new RecordingTerminalCallback();
         var executor = new DelegatingJobExecutor(
@@ -789,7 +809,7 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
             surfaced.PercentComplete.Should().Be(100);
             surfaced.ArtifactReferences.Should().ContainSingle("s3://integration/native-result.tif");
             (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
-            await AssertClaimStateCleanedAsync(harness.Database, operationId);
+            (await harness.IsInQueueAsync(operationId)).Should().BeFalse();
         }
         finally
         {
@@ -800,7 +820,7 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
     [IntegrationTest]
     public async Task NativeWorkerHandoff_WhenWorkerHeartbeatExpires_SurfacesTerminalFailure()
     {
-        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await CreateHarnessAsync();
         var operationId = $"job-native-crash-{Guid.NewGuid():N}";
         var callback = new RecordingTerminalCallback();
         var heartbeatPolicy = new JobHeartbeatPolicy
@@ -846,7 +866,9 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
             new ExecutionJobCancellationTokens(),
             [callback],
             harness.LogStore,
-            NullLogger<JobReconciliationService>.Instance);
+            NullLogger<JobReconciliationService>.Instance,
+            harness.JobStore,
+            harness.JobStore);
 
         await reconciler.SweepActiveJobsAsync(CancellationToken.None);
 
@@ -857,14 +879,14 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
         surfaced.ErrorMessage.Should().Contain("Worker heartbeat expired");
         surfaced.CompletedAt.Should().NotBeNull();
         (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
-        await AssertClaimStateCleanedAsync(harness.Database, operationId);
+        (await harness.IsInQueueAsync(operationId)).Should().BeFalse();
     }
 
     [IntegrationTest]
-    public async Task NativeWorkerHandoff_WithMalformedQueuePayload_RejectsWithoutExecutionOrJobMutation()
+    public async Task NativeWorkerHandoff_EnqueueWithoutAJobRecord_RejectsWithoutExecutionOrJobMutation()
     {
-        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
-        var malformedPayload = $"{{not-an-operation-envelope:{Guid.NewGuid():N}";
+        await using var harness = await CreateHarnessAsync();
+        var unknownOperationId = $"{{not-an-operation-envelope:{Guid.NewGuid():N}";
         var executorCalls = 0;
         var executor = new DelegatingJobExecutor(
             ExecutionJobKind.Geoprocessing,
@@ -883,17 +905,14 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
             harness.LogStore,
             NullLogger<JobExecutionService>.Instance);
 
-        await harness.Database.SortedSetAddAsync(
-            "controlplane:jobqueue:pending",
-            malformedPayload,
-            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        await harness.Queue.EnqueueAsync(unknownOperationId);
 
         await service.StartAsync(CancellationToken.None);
         try
         {
             await WaitForQueueDepthAsync(harness.Queue, depth => depth == 0, TimeSpan.FromSeconds(5));
             executorCalls.Should().Be(0);
-            (await harness.JobStore.GetAsync(malformedPayload)).Should().BeNull();
+            (await harness.JobStore.GetAsync(unknownOperationId)).Should().BeNull();
         }
         finally
         {
@@ -902,10 +921,9 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
     }
 
     [IntegrationTest]
-    [FlakyTest("10s wait on reconciliation callback intermittently times out under shared 'Redis' collection + Testcontainers load — tracked in #812")]
-    public async Task JobReconciliationService_WithRedis_CancelsDurablyRequestedStaleJob()
+    public async Task JobReconciliationService_CancelsDurablyRequestedStaleJob()
     {
-        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await CreateHarnessAsync();
         var operationId = $"job-cancel-{Guid.NewGuid():N}";
         var callback = new RecordingTerminalCallback();
         var retryPolicy = new JobRetryPolicy
@@ -958,7 +976,9 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
             new ExecutionJobCancellationTokens(),
             [callback],
             harness.LogStore,
-            NullLogger<JobReconciliationService>.Instance);
+            NullLogger<JobReconciliationService>.Instance,
+            harness.JobStore,
+            harness.JobStore);
 
         await service.StartAsync(CancellationToken.None);
         try
@@ -979,9 +999,7 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
             var queueDepth = await harness.Queue.GetQueueDepthAsync();
             queueDepth.Should().Be(0);
 
-            var ttl = await harness.GetTtlAsync(GetLogKey(operationId));
-            ttl.Should().NotBeNull();
-            ttl!.Value.Should().BeGreaterThan(TimeSpan.FromDays(6));
+            (await GetLogRetentionRemainingAsync(harness, operationId)).Should().BeGreaterThan(TimeSpan.FromDays(6));
         }
         finally
         {
@@ -990,9 +1008,9 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
     }
 
     [IntegrationTest]
-    public async Task JobReconciliationService_WithRedis_RequeuesHeartbeatExpiredJobForRetry()
+    public async Task JobReconciliationService_RequeuesHeartbeatExpiredJobForRetry()
     {
-        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        await using var harness = await CreateHarnessAsync();
         var operationId = $"job-retry-{Guid.NewGuid():N}";
         var callback = new RecordingTerminalCallback();
         var retryPolicy = new JobRetryPolicy
@@ -1036,7 +1054,9 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
             new ExecutionJobCancellationTokens(),
             [callback],
             harness.LogStore,
-            NullLogger<JobReconciliationService>.Instance);
+            NullLogger<JobReconciliationService>.Instance,
+            harness.JobStore,
+            harness.JobStore);
 
         await service.StartAsync(CancellationToken.None);
         try
@@ -1091,14 +1111,14 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
             {
                 Kind = ExecutionJobKind.Geoprocessing,
                 TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "integration-test",
-                WorkloadName = "redis-substrate-integration"
+                Backend = LocalBatchComputeBackend.BackendId,
+                WorkloadName = "postgres-substrate-integration"
             }
         };
     }
 
     private static async Task<ExecutionJobRecord> WaitForJobAsync(
-        RedisExecutionJobStore jobStore,
+        PostgresExecutionJobStore jobStore,
         string operationId,
         Func<ExecutionJobRecord, bool> predicate,
         TimeSpan timeout)
@@ -1119,7 +1139,7 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
     }
 
     private static async Task<long> WaitForQueueDepthAsync(
-        RedisJobQueue queue,
+        PostgresJobQueue queue,
         Func<long, bool> predicate,
         TimeSpan timeout)
     {
@@ -1135,18 +1155,16 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
             await Task.Delay(TimeSpan.FromMilliseconds(50));
         }
 
-        throw new TimeoutException("Timed out waiting for the Redis queue to reach the expected depth.");
+        throw new TimeoutException("Timed out waiting for the job queue to reach the expected depth.");
     }
 
-    private static string GetLogKey(string operationId) => $"controlplane:job:log:{operationId}";
+    private Task<PostgresJobSubstrateHarness> CreateHarnessAsync()
+        => PostgresJobSubstrateHarness.CreateAsync(database, nameof(PostgresExecutionSubstrateIntegrationTests));
 
-    private static async Task AssertClaimStateCleanedAsync(IDatabase database, string operationId)
-    {
-        (await database.SortedSetScoreAsync("controlplane:jobqueue:claimed", operationId))
-            .Should().BeNull();
-        (await database.KeyExistsAsync($"controlplane:jobqueue:meta:{operationId}"))
-            .Should().BeFalse();
-    }
+    private static async Task<TimeSpan> GetLogRetentionRemainingAsync(PostgresJobSubstrateHarness harness, string operationId)
+        => await harness.ScalarAsync<TimeSpan>(
+            $"SELECT expires_at - now() FROM {harness.Database.Table("execution_job_log_streams")} WHERE operation_id = @operation_id",
+            new Npgsql.NpgsqlParameter("operation_id", operationId));
 
     private sealed class DelegatingJobExecutor(
         ExecutionJobKind kind,
@@ -1179,70 +1197,6 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
         {
             _whenCompleted.TrySetResult(job);
             return ValueTask.CompletedTask;
-        }
-    }
-
-    private sealed class ControlPlaneRedisHarness : IAsyncDisposable
-    {
-        private readonly ConnectionMultiplexer _multiplexer;
-
-        private ControlPlaneRedisHarness(ConnectionMultiplexer multiplexer)
-        {
-            _multiplexer = multiplexer;
-            Database = _multiplexer.GetDatabase();
-            Server = GetServer(_multiplexer);
-            JobStore = new RedisExecutionJobStore(_multiplexer, NullLogger<RedisExecutionJobStore>.Instance);
-            LogStore = new RedisExecutionLogStore(_multiplexer, NullLogger<RedisExecutionLogStore>.Instance);
-            Queue = new RedisJobQueue(_multiplexer, JobStore, NullLogger<RedisJobQueue>.Instance);
-        }
-
-        public IDatabase Database { get; }
-
-        public IServer Server { get; }
-
-        public RedisExecutionJobStore JobStore { get; }
-
-        public RedisExecutionLogStore LogStore { get; }
-
-        public RedisJobQueue Queue { get; }
-
-        public static async Task<ControlPlaneRedisHarness> CreateAsync(string connectionString)
-        {
-            var multiplexer = await ConnectionMultiplexer.ConnectAsync(connectionString);
-            var harness = new ControlPlaneRedisHarness(multiplexer);
-            await harness.CleanupAsync();
-            return harness;
-        }
-
-        public async Task<TimeSpan?> GetTtlAsync(string key)
-            => await Database.KeyTimeToLiveAsync(key);
-
-        public async ValueTask DisposeAsync()
-        {
-            await CleanupAsync();
-            await _multiplexer.DisposeAsync();
-        }
-
-        private async Task CleanupAsync()
-        {
-            var keys = Server.Keys(pattern: "controlplane:*").ToArray();
-            if (keys.Length == 0)
-            {
-                return;
-            }
-
-            await Database.KeyDeleteAsync(keys);
-        }
-
-        private static IServer GetServer(ConnectionMultiplexer multiplexer)
-        {
-            var endpoints = multiplexer.GetEndPoints();
-            if (endpoints.Length == 0)
-            {
-                throw new InvalidOperationException("Redis connection string did not provide any endpoints.");
-            }
-
-            return multiplexer.GetServer(endpoints[0]);
         }
     }
 }

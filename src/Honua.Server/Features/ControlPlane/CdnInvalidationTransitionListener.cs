@@ -16,12 +16,13 @@ internal sealed class CdnInvalidationTransitionListener(
 {
     internal const string WarningPrefix = "CDN invalidation failed";
 
-    private readonly ConcurrentDictionary<string, WorkflowOperationTransitionKind> _invalidated = new(StringComparer.Ordinal);
+    // One operation can be promoted and then rolled back; each changes what is served, and each is invalidated once.
+    private readonly ConcurrentDictionary<(string OperationId, WorkflowOperationTransitionKind Kind), byte> _invalidated = new();
 
     public async Task OnTransitionAsync(WorkflowOperationTransition transition, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(transition);
-        if (!ChangesWhatIsServed(transition) || !_invalidated.TryAdd(transition.OperationId, transition.Kind))
+        if (!ChangesWhatIsServed(transition) || !_invalidated.TryAdd((transition.OperationId, transition.Kind), 0))
         {
             return;
         }
