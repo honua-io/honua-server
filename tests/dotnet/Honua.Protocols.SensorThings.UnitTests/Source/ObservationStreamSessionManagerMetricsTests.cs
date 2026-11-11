@@ -35,8 +35,7 @@ public sealed class ObservationStreamSessionManagerMetricsTests
         listener.Start();
 
         using var manager = new ObservationStreamSessionManager(
-            NullLogger<ObservationStreamSessionManager>.Instance,
-            redis: null);
+            NullLogger<ObservationStreamSessionManager>.Instance);
 
         Assert.NotNull(published);
         Assert.Equal(ObservationStreamSessionManager.MeterName, published!.Meter.Name);
@@ -63,7 +62,6 @@ public sealed class ObservationStreamSessionManagerMetricsTests
 
         using var manager = new ObservationStreamSessionManager(
             NullLogger<ObservationStreamSessionManager>.Instance,
-            redis: null,
             new ObservationStreamOptions { MaxBufferPerConnection = 1 });
         var scope = new ObservationStreamScope("tenant-a", "schema_a");
         using var session = manager.TryCreateSession("sse", datastreamId: 7, scope)!;
@@ -83,7 +81,6 @@ public sealed class ObservationStreamSessionManagerMetricsTests
     {
         using var manager = new ObservationStreamSessionManager(
             NullLogger<ObservationStreamSessionManager>.Instance,
-            redis: null,
             new ObservationStreamOptions { MaxBufferPerConnection = 1 });
         var scope = new ObservationStreamScope("tenant-a", "schema_a");
         var session = manager.TryCreateSession("sse", datastreamId: 7, scope);
@@ -113,7 +110,6 @@ public sealed class ObservationStreamSessionManagerMetricsTests
     {
         using var manager = new ObservationStreamSessionManager(
             NullLogger<ObservationStreamSessionManager>.Instance,
-            redis: null,
             new ObservationStreamOptions { MaxBufferPerConnection = 1 });
         var scope = new ObservationStreamScope("tenant-a", "schema_a");
         var session = manager.TryCreateSession("websocket", datastreamId: null, scope);

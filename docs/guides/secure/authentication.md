@@ -379,10 +379,8 @@ per-tenant cap, fails startup validation. `RetryAfterSeconds` (default 30) sets 
 hint returned with a refusal. A refused request never opens a stream: the problem
 response is returned before the SSE headers or the WebSocket upgrade.
 
-Upgrade every observation-stream node together. Scoped fan-out uses a new Redis
-channel, so old and updated nodes do not exchange observations during a rolling
-upgrade. Reconnect clients to updated nodes; streams remain best-effort, with no
-replay guarantee. Disable the old stream endpoints until their nodes are updated.
+Each node streams only the observations created through that node. Streams are
+best-effort, with no replay guarantee.
 
 ## Verify
 

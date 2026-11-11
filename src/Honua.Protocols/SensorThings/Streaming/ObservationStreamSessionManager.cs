@@ -3,11 +3,9 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
-using System.Text.Json;
 using System.Threading.Channels;
 using Honua.Core.Features.SensorThings.Domain;
 using Microsoft.Extensions.Logging;
-using StackExchange.Redis;
 
 namespace Honua.Protocols.SensorThings.Streaming;
 
@@ -19,34 +17,23 @@ internal sealed class ObservationStreamSessionManager : IDisposable
     private const string UntenantedPartition = "untenanted";
     private const string UnidentifiedPrincipal = "unidentified";
 
-    private static readonly RedisChannel BroadcastChannel =
-        // Isolate the scoped protocol from older nodes that broadcast every frame to
-        // every tenant. They must never receive scoped messages during rolling upgrades.
-        new("sta:observation:stream:v2:broadcast", RedisChannel.PatternMode.Literal);
-
     private readonly ConcurrentDictionary<Guid, SessionEntry> _sessions = new();
     private readonly ILogger<ObservationStreamSessionManager> _logger;
-    private readonly IConnectionMultiplexer? _redis;
-    private readonly ISubscriber? _subscriber;
     private readonly Meter _meter;
     private readonly Counter<long> _observationStreamDrops;
     private readonly Counter<long> _sessionRejections;
-    private readonly string _instanceId = Guid.NewGuid().ToString("N");
     private readonly ObservationStreamOptions _options;
     private readonly Lock _admissionLock = new();
     private readonly Dictionary<string, int> _tenantSessionCounts = new(StringComparer.Ordinal);
     private readonly Dictionary<(string Tenant, string Principal), int> _principalSessionCounts = new();
     private int _activeSessionCount;
     private long _slowConsumerDrops;
-    private readonly bool _clusterEnabled;
 
     public ObservationStreamSessionManager(
         ILogger<ObservationStreamSessionManager> logger,
-        IConnectionMultiplexer? redis = null,
         ObservationStreamOptions? options = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _redis = redis;
         _options = options ?? new ObservationStreamOptions();
         _meter = new Meter(MeterName);
         _observationStreamDrops = _meter.CreateCounter<long>(
@@ -55,23 +42,6 @@ internal sealed class ObservationStreamSessionManager : IDisposable
         _sessionRejections = _meter.CreateCounter<long>(
             "honua_sensorthings_observation_stream_rejections_total",
             description: "Observation-stream sessions refused because a principal, tenant, or node admission cap was reached.");
-
-        if (_redis is null)
-        {
-            return;
-        }
-
-        try
-        {
-            _subscriber = _redis.GetSubscriber();
-            _subscriber.Subscribe(BroadcastChannel, HandleClusterBroadcast);
-            _clusterEnabled = true;
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Best-effort: degrade to single-node fan-out when Redis is unavailable.
-            ObservationStreamLog.ClusterUnavailable(_logger, ex);
-        }
     }
 
     public long SlowConsumerDrops => Interlocked.Read(ref _slowConsumerDrops);
@@ -215,65 +185,13 @@ internal sealed class ObservationStreamSessionManager : IDisposable
             return;
         }
 
-        // Not a candidate for .Select(...): each mapped frame is immediately fanned out via
-        // the side-effecting BroadcastLocally/TryPublishCluster calls below rather than
-        // collected, so this is a side-effecting loop, not a projection.
-        foreach (var frame in (observations).Select(observation => ObservationStreamFrame.FromObservation(observation)))
+        foreach (var frame in observations.Select(ObservationStreamFrame.FromObservation))
         {
-            BroadcastLocally(frame, scope);
-
-            if (_clusterEnabled && _subscriber is not null)
-            {
-                TryPublishCluster(frame, scope);
-            }
+            Broadcast(frame, scope);
         }
     }
 
-    private void TryPublishCluster(ObservationStreamFrame frame, ObservationStreamScope scope)
-    {
-        try
-        {
-            var payload = JsonSerializer.Serialize(
-                new ClusterBroadcastDto(_instanceId, frame, scope),
-                ObservationStreamJsonContext.Default.ClusterBroadcastDto);
-            _subscriber!.Publish(BroadcastChannel, payload, CommandFlags.FireAndForget);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Intentional catch-all: cluster fan-out is best-effort (single-node delivery
-            // already happened via BroadcastLocally); log and continue rather than fail ingest.
-            ObservationStreamLog.ClusterPublishFailed(_logger, ex);
-        }
-    }
-
-    private void HandleClusterBroadcast(RedisChannel channel, RedisValue value)
-    {
-        if (value.IsNullOrEmpty)
-        {
-            return;
-        }
-
-        try
-        {
-            var message = JsonSerializer.Deserialize(
-                value.ToString(), ObservationStreamJsonContext.Default.ClusterBroadcastDto);
-            if (message?.Scope is null || message.Frame is null ||
-                string.Equals(message.OriginInstanceId, _instanceId, StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            BroadcastLocally(message.Frame, message.Scope);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Intentional catch-all: a malformed/incompatible cluster broadcast message must
-            // not tear down the Redis subscriber callback; log and drop this message only.
-            ObservationStreamLog.ClusterPublishFailed(_logger, ex);
-        }
-    }
-
-    private void BroadcastLocally(ObservationStreamFrame frame, ObservationStreamScope scope)
+    private void Broadcast(ObservationStreamFrame frame, ObservationStreamScope scope)
     {
         List<Guid>? overflow = null;
         foreach (var (id, entry) in _sessions)
@@ -342,19 +260,6 @@ internal sealed class ObservationStreamSessionManager : IDisposable
 
     public void Dispose()
     {
-        if (_subscriber is not null)
-        {
-            try
-            {
-                _subscriber.Unsubscribe(BroadcastChannel, HandleClusterBroadcast);
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                // Best-effort shutdown: Dispose() must not throw, so log and continue.
-                ObservationStreamLog.ClusterUnsubscribeFailed(_logger, ex);
-            }
-        }
-
         foreach (var (_, entry) in _sessions)
         {
             entry.Cts.Cancel();

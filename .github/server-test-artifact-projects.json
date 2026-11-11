@@ -44,7 +44,7 @@
     {
       "artifact_suffix": "sensor-things",
       "csproj": "tests/dotnet/Honua.Protocols.SensorThings.Tests/Honua.Protocols.SensorThings.Tests.csproj",
-      "proof_filter": "FullyQualifiedName~ObservationStreamSessionManagerDisposeTests"
+      "proof_filter": "FullyQualifiedName~ObservationStreamTenantIsolationTests"
     },
     {
       "artifact_suffix": "stac",

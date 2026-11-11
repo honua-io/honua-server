@@ -18,7 +18,7 @@ public sealed class ObservationStreamAdmissionTests
     private static readonly ObservationStreamScope TenantC = new("tenant-c", "schema_c");
 
     private static ObservationStreamSessionManager CreateManager(int perPrincipal, int perTenant, int node) =>
-        new(NullLogger<ObservationStreamSessionManager>.Instance, redis: null, new ObservationStreamOptions
+        new(NullLogger<ObservationStreamSessionManager>.Instance, new ObservationStreamOptions
         {
             MaxSessionsPerPrincipal = perPrincipal,
             MaxSessionsPerTenant = perTenant,

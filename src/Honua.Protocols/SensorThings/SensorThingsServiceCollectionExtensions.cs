@@ -8,7 +8,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 
 namespace Honua.Protocols.SensorThings;
 
@@ -32,7 +31,6 @@ internal static class SensorThingsServiceCollectionExtensions
         // singleton transport must never hold request services or read ambient state.
         services.TryAddSingleton(sp => new ObservationStreamSessionManager(
             sp.GetRequiredService<ILogger<ObservationStreamSessionManager>>(),
-            sp.GetService<IConnectionMultiplexer>(),
             sp.GetRequiredService<IOptions<ObservationStreamOptions>>().Value));
         services.TryAddScoped(ObservationStreamScope.FromServices);
         services.TryAddScoped<IObservationChangeEventPublisher, ObservationStreamPublisher>();
