@@ -14,7 +14,7 @@ CREATE INDEX IF NOT EXISTS idx_version_jobs_expires
 
 -- Resume points of tile-cache seed and warm generations (ADR-0082 row D6).
 CREATE TABLE IF NOT EXISTS $HonuaSchema$.tile_generation_checkpoints (
-    generation_id TEXT COLLATE "C" PRIMARY KEY,
+    generation_id TEXT COLLATE "C" PRIMARY KEY CHECK (length(generation_id) BETWEEN 1 AND 512),
     record        JSON NOT NULL,
     expires_at    TIMESTAMPTZ NOT NULL
 );

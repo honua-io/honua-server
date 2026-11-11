@@ -1173,7 +1173,7 @@ if (replicaProvider != DataProviderNames.DuckDb &&
 
 // The version lock serializes reconcile, post and resolve per (service, version) across nodes on a
 // lease row in the system database. A host with no system database has one node, so an in-process
-// lock is enough. The async job store below keeps every job in the system database.
+// lock is enough.
 if (builder.Services.TryAddPostgresExecutionJobStore(builder.Configuration))
 {
     builder.Services.TryAddSingleton<Honua.Core.Features.Infrastructure.Coordination.ILeaseStore,
@@ -1184,8 +1184,6 @@ builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVer
     sp.GetService<Honua.Core.Features.Infrastructure.Coordination.ILeaseStore>() is { } leases
         ? new Honua.Core.Features.Infrastructure.Coordination.LeaseVersionLock(leases)
         : new Honua.Core.Features.FeatureStore.Services.InProcessVersionLock());
-builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionJobStore>(sp =>
-    sp.GetRequiredService<Honua.Server.Features.Infrastructure.Coordination.PostgresVersionJobStore>());
 builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionJobRunner,
     Honua.Core.Features.FeatureStore.Services.VersionJobRunner>();
 if (offlineSyncEnabled)

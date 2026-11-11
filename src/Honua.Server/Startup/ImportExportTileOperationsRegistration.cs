@@ -130,12 +130,6 @@ internal static class ImportExportTileOperationsRegistration
             services.AddHostedService<ExportBackgroundService>();
         }
 
-        // Resume points of generated tile-cache seed and warm generations (#2661) are rows of the
-        // system database, so a fix-forward retry on any node resumes the generation instead of
-        // restarting the whole grid.
-        services.AddSingleton<Honua.Core.Features.Tiles.ITileCacheGenerationCheckpointStore>(sp =>
-            sp.GetRequiredService<PostgresTileCacheGenerationCheckpointStore>());
-
         // Tile operations (cache warming + reseed + invalidation orchestration).
         services.AddSingleton<ITileOperationJobService>(sp =>
             new TileOperationJobService(

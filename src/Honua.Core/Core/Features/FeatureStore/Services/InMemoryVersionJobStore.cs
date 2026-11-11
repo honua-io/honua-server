@@ -8,8 +8,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 namespace Honua.Core.Features.FeatureStore.Services;
 
 /// <summary>
-/// Process-local <see cref="IVersionJobStore"/> (#1553) for tests that exercise the job runner without a
-/// system database. Every server host uses the PostgreSQL store.
+/// Process-local <see cref="IVersionJobStore"/> for a host with no system database, which has one node.
 /// </summary>
 public sealed class InMemoryVersionJobStore : IVersionJobStore
 {

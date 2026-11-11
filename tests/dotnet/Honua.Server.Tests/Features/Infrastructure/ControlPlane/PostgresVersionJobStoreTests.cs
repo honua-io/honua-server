@@ -55,6 +55,43 @@ public sealed class PostgresVersionJobStoreTests(DatabaseFixtureAdapter database
     }
 
     [IntegrationTest]
+    public async Task SaveAsync_RunningAndSucceededOnTwoNodesAtOnce_EndsSucceeded()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var firstNode = harness.CreateVersionJobStore();
+        var secondNode = harness.CreateVersionJobStore();
+        for (var iteration = 0; iteration < 25; iteration++)
+        {
+            var running = Job() with { Status = VersionJobStatus.Running };
+            var succeeded = running with { Status = VersionJobStatus.Succeeded, AppliedChanges = iteration };
+            using var start = new Barrier(2);
+
+            await Task.WhenAll(
+                Task.Run(() => { start.SignalAndWait(); return firstNode.SaveAsync(running); }),
+                Task.Run(() => { start.SignalAndWait(); return secondNode.SaveAsync(succeeded); }));
+
+            (await firstNode.GetAsync(running.JobId)).Should().Be(succeeded);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task GetAsync_UnreadableRecord_ReturnsNullAndKeepsTheRow()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.CreateVersionJobStore();
+        var job = Job();
+        await store.SaveAsync(job);
+        await harness.ExecuteAsync(
+            $"UPDATE {harness.Table("version_jobs")} SET record = '[1]' WHERE job_id = @id",
+            new NpgsqlParameter("id", job.JobId));
+
+        (await store.GetAsync(job.JobId)).Should().BeNull();
+        (await harness.ScalarAsync<long>(
+            $"SELECT count(*) FROM {harness.Table("version_jobs")} WHERE job_id = @id",
+            new NpgsqlParameter("id", job.JobId))).Should().Be(1);
+    }
+
+    [IntegrationTest]
     public async Task GetAsync_AfterRetention_ReturnsNullAndTheSweepDeletesTheJob()
     {
         await using var harness = await CreateHarnessAsync();

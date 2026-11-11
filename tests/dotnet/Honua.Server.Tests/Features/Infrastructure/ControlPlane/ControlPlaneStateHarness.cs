@@ -92,7 +92,8 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
 
     public PostgresUniversalProgressStore CreateProgressStore() => new(_jobs.Database);
 
-    public PostgresVersionJobStore CreateVersionJobStore() => new(_jobs.Database);
+    public PostgresVersionJobStore CreateVersionJobStore()
+        => new(_jobs.Database, NullLogger<PostgresVersionJobStore>.Instance);
 
     public PostgresTileCacheGenerationCheckpointStore CreateTileCheckpointStore()
         => new(_jobs.Database, NullLogger<PostgresTileCacheGenerationCheckpointStore>.Instance);

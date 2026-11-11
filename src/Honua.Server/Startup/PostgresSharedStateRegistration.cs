@@ -4,8 +4,11 @@
 using System.Diagnostics.CodeAnalysis;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Coordination;
+using Honua.Core.Features.Tiles;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Infrastructure.Progress;
@@ -50,8 +53,6 @@ internal static class PostgresSharedStateRegistration
             provider.GetRequiredService<JobStoreDatabase>(),
             provider.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>()));
         services.TryAddSingleton<PostgresUniversalProgressStore>();
-        services.TryAddSingleton<PostgresVersionJobStore>();
-        services.TryAddSingleton<PostgresTileCacheGenerationCheckpointStore>();
         services.TryAddSingleton(provider => new PostgresTokenReplayStore(
             provider.GetRequiredService<NpgsqlDataSource>(),
             provider.GetRequiredService<JobStoreDatabase>()));
@@ -62,6 +63,9 @@ internal static class PostgresSharedStateRegistration
         services.AddSharedOrLocal<IIdempotencyReservationStore, PostgresIdempotencyReservationStore>(
             static () => new InMemoryIdempotencyReservationStore());
         services.AddSharedOrLocal<ITokenReplayStore, PostgresTokenReplayStore>(static () => new InMemoryTokenReplayStore());
+        services.AddSharedOrLocal<IVersionJobStore, PostgresVersionJobStore>(static () => new InMemoryVersionJobStore());
+        services.AddSharedOrLocal<ITileCacheGenerationCheckpointStore, PostgresTileCacheGenerationCheckpointStore>(
+            static () => new InMemoryTileCacheGenerationCheckpointStore());
 
         services.AddRetentionSweep<PostgresOperationProposalStore>();
         services.AddRetentionSweep<PostgresWorkflowOperationStore>();
