@@ -11,8 +11,43 @@ internal sealed partial class StreamingFileImportService
 {
     private static ImportCoordinateSystem FromDetectedSrid(SupportedFileFormat format, int? srid)
     {
-        var formatDefined = format is SupportedFileFormat.Kml or SupportedFileFormat.Gpx;
-        return ImportCoordinateSystem.FromDetection(srid, srid.HasValue && !formatDefined, formatDefined);
+        if (format is SupportedFileFormat.Kml or SupportedFileFormat.Gpx)
+        {
+            return ImportCoordinateSystem.FromDetection(srid, ImportCrsProvenance.FormatDefined);
+        }
+        return ImportCoordinateSystem.FromDetection(
+            srid, srid.HasValue ? ImportCrsProvenance.FileMetadata : ImportCrsProvenance.Unknown);
+    }
+
+    private async Task<ImportCoordinateSystem> InspectFlatGeobufCoordinateSystemAsync(
+        Stream stream, CancellationToken cancellationToken)
+    {
+        var (headerSrid, crsWkt) = FlatGeobufFormatReader.ReadCrsInfo(stream);
+        if (headerSrid.HasValue)
+        {
+            return ImportCoordinateSystem.FromDetection(headerSrid, ImportCrsProvenance.FileMetadata);
+        }
+        if (string.IsNullOrEmpty(crsWkt))
+        {
+            return ImportCoordinateSystem.FromDetection(null, ImportCrsProvenance.Unknown);
+        }
+        return ImportCoordinateSystem.FromDetection(
+            await ResolveDeclaredWktSridAsync(crsWkt, SupportedFileFormat.FlatGeobuf, cancellationToken),
+            ImportCrsProvenance.FileMetadata);
+    }
+
+    private async Task<int?> ResolveDeclaredWktSridAsync(
+        string crsWkt, SupportedFileFormat format, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _crsDetectionService.DetectFromWktAsync(crsWkt, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+        {
+            ImportLog.CrsDetectionFailed(_logger, ex, format);
+            return null;
+        }
     }
 
     private async Task<ImportCoordinateSystem> InspectSourceCoordinateSystemAsync(
@@ -31,6 +66,10 @@ internal sealed partial class StreamingFileImportService
             if (format == SupportedFileFormat.GeoServicesJson)
             {
                 return await GeoServicesJsonFormatReader.InspectCoordinateSystemAsync(stream, cancellationToken);
+            }
+            if (format == SupportedFileFormat.FlatGeobuf)
+            {
+                return await InspectFlatGeobufCoordinateSystemAsync(stream, cancellationToken);
             }
             var srid = await DetectCrsStreamingAsync(stream, format, cancellationToken);
             return FromDetectedSrid(format, srid);

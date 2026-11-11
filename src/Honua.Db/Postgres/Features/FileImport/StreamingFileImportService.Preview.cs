@@ -66,7 +66,7 @@ internal sealed partial class StreamingFileImportService
                 availableLayers = layers.Select(layer => layer.TableName).ToArray();
                 previewGeoPackageLayer = layers[0];
                 detectedSrid = layers[0].Srid;
-                coordinateSystem = ImportCoordinateSystem.FromDetection(detectedSrid, declared: true);
+                coordinateSystem = ImportCoordinateSystem.FromDetection(detectedSrid, ImportCrsProvenance.FileMetadata);
             }
             else if (format.Value == SupportedFileFormat.Shapefile)
             {
@@ -79,7 +79,8 @@ internal sealed partial class StreamingFileImportService
                 detectedSrid = await _crsDetectionService.DetectFromShapefilePrjAsync(shapefileScratch.ShpPath, cancellationToken);
                 var prjDeclared = Directory.EnumerateFiles(Path.GetDirectoryName(shapefileScratch.ShpPath)!)
                     .Any(path => Path.GetExtension(path).Equals(".prj", StringComparison.OrdinalIgnoreCase));
-                coordinateSystem = ImportCoordinateSystem.FromDetection(detectedSrid, prjDeclared);
+                coordinateSystem = ImportCoordinateSystem.FromDetection(
+                    detectedSrid, prjDeclared ? ImportCrsProvenance.FileMetadata : ImportCrsProvenance.Unknown);
             }
             else if (format.Value == SupportedFileFormat.Kml && IsKmzFileName(fileName))
             {
@@ -102,8 +103,11 @@ internal sealed partial class StreamingFileImportService
                 availableLayers = layers.Select(layer => layer.Name).ToArray();
                 previewFileGdbLayer = layers.Length > 0 ? layers[0] : null;
                 detectedSrid = await ResolveFileGdbSridAsync(layers, cancellationToken);
-                coordinateSystem = ImportCoordinateSystem.FromDetection(detectedSrid,
-                    detectedSrid.HasValue || !string.IsNullOrWhiteSpace(previewFileGdbLayer?.SpatialReferenceWkt));
+                coordinateSystem = ImportCoordinateSystem.FromDetection(
+                    detectedSrid,
+                    detectedSrid.HasValue || !string.IsNullOrWhiteSpace(previewFileGdbLayer?.SpatialReferenceWkt)
+                        ? ImportCrsProvenance.FileMetadata
+                        : ImportCrsProvenance.Unknown);
 
                 warnings = FileGdb.FileGdbAdvancedConstructs.DetectWarnings(fileGdbScratch.GdbPath);
                 if (layers.Length > 1)
@@ -119,7 +123,9 @@ internal sealed partial class StreamingFileImportService
                 var scratchStream = geoParquetScratch.Stream;
                 var parquetMeta = await GeoParquetReader.ExtractMetadataAsync(scratchStream, cancellationToken);
                 detectedSrid = parquetMeta.Srid;
-                coordinateSystem = ImportCoordinateSystem.FromDetection(detectedSrid, !parquetMeta.Crs84Implied, parquetMeta.Crs84Implied);
+                coordinateSystem = ImportCoordinateSystem.FromDetection(
+                    detectedSrid,
+                    parquetMeta.Crs84Implied ? ImportCrsProvenance.FormatDefined : ImportCrsProvenance.FileMetadata);
                 warnings = parquetMeta.Warnings;
                 geoParquetTotalRows = parquetMeta.TotalRowCount;
 

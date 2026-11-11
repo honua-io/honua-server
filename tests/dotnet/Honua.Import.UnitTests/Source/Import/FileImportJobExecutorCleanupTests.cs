@@ -81,6 +81,25 @@ public sealed class FileImportJobExecutorCleanupTests
     }
 
     [UnitTest]
+    public async Task SuccessfulImport_ReceiptReportsSourceAndStoredCoordinateSystem()
+    {
+        var progress = new MemoryProgress();
+        var importer = new ScriptedImporter((_, _) => Task.FromResult(
+            ImportResult.CreateSuccess("roads", SupportedFileFormat.GeoPackage, 3, detectedSrid: 2193)
+                with { SourceSrid = 2193, StoredSrid = 4326, Reprojected = true }));
+
+        await ExecuteAsync(new RecordingStorage(), importer, SixGiB, progress: progress);
+
+        var receipt = JsonSerializer.SerializeToElement(
+            progress.Last.Should().BeOfType<ImportProgress>().Subject,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        receipt.GetProperty("detectedSrid").GetInt32().Should().Be(2193);
+        receipt.GetProperty("sourceSrid").GetInt32().Should().Be(2193);
+        receipt.GetProperty("storedSrid").GetInt32().Should().Be(4326);
+        receipt.GetProperty("reprojected").GetBoolean().Should().BeTrue();
+    }
+
+    [UnitTest]
     public async Task StagedCopy_IsDeletedAfterSuccess()
     {
         var storage = new RecordingStorage();

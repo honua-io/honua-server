@@ -24,18 +24,21 @@ internal sealed partial class StreamingFileImportService
     private static bool HasConflictingSourceSrid(IFeature feature, int sourceSrid)
         => feature.Geometry is { SRID: > 0 } geometry && geometry.SRID != sourceSrid;
 
+    private readonly record struct SourceCrsUniformityCheck(
+        SupportedFileFormat Format, int SourceSrid, CsvImportOptions? CsvOptions);
+
     private static async Task<bool> HasUniformSourceCrsAsync(
-        Stream stream, SupportedFileFormat format, int sourceSrid, CsvImportOptions? csvOptions, CancellationToken cancellationToken)
+        Stream stream, SourceCrsUniformityCheck check, CancellationToken cancellationToken)
     {
         try
         {
-            var features = format == SupportedFileFormat.Csv
+            var features = check.Format == SupportedFileFormat.Csv
                 ? CsvFormatReader.ReadStreamingAsync(stream, delimiterOverride: null, diagnostics: null,
-                    options: csvOptions is null ? null : csvOptions with { AddressGeocoder = null }, cancellationToken)
+                    options: check.CsvOptions is null ? null : check.CsvOptions with { AddressGeocoder = null }, cancellationToken)
                 : WktFormatReader.ReadStreamingAsync(stream, cancellationToken);
             await foreach (var feature in features.WithCancellation(cancellationToken))
             {
-                if (HasConflictingSourceSrid(feature, sourceSrid)) return false;
+                if (HasConflictingSourceSrid(feature, check.SourceSrid)) return false;
             }
             return true;
         }
@@ -140,13 +143,7 @@ internal sealed partial class StreamingFileImportService
     /// header embeds CRS as WKT only.
     /// </summary>
     private async Task<int?> DetectFlatGeobufCrsAsync(Stream stream, CancellationToken cancellationToken = default)
-    {
-        var (srid, crsWkt) = FlatGeobufFormatReader.ReadCrsInfo(stream);
-        if (srid.HasValue) return srid;
-        if (!string.IsNullOrEmpty(crsWkt))
-            return await _crsDetectionService.DetectFromWktAsync(crsWkt, cancellationToken);
-        return null;
-    }
+        => (await InspectFlatGeobufCoordinateSystemAsync(stream, cancellationToken)).DetectedSrid;
 
     private static async Task<int?> DetectGeoJsonSridAsync(Stream stream, CancellationToken cancellationToken)
     {

@@ -139,7 +139,7 @@ internal static class GmlFormatReader
                 var srsName = reader.GetAttribute("srsName");
                 if (!string.IsNullOrWhiteSpace(srsName))
                 {
-                    return ImportCoordinateSystem.FromDetection(ParseSrsNameToSrid(srsName), declared: true);
+                    return ImportCoordinateSystem.FromDetection(ParseSrsNameToSrid(srsName), ImportCrsProvenance.FileMetadata);
                 }
 
                 // Only scan the root element — stop at the first feature member
@@ -151,7 +151,7 @@ internal static class GmlFormatReader
             }
         }
 
-        return ImportCoordinateSystem.FromDetection(null, declared: false);
+        return ImportCoordinateSystem.FromDetection(null, ImportCrsProvenance.Unknown);
     }
 
     /// <summary>

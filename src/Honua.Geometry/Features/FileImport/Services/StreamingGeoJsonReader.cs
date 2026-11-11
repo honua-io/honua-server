@@ -997,14 +997,20 @@ internal sealed class StreamingGeoJsonReader
                 var consumed = ReadCrsTokens(buffer.AsSpan(0, buffered), read == 0, ref state, scan);
                 if (scan.Complete || read == 0)
                 {
-                    var formatDefined = !scan.Declared && scan.Complete;
-                    return ImportCoordinateSystem.FromDetection(scan.Srid ?? (formatDefined ? 4326 : null), scan.Declared, formatDefined);
+                    if (scan.Declared)
+                    {
+                        return ImportCoordinateSystem.FromDetection(scan.Srid, ImportCrsProvenance.FileMetadata);
+                    }
+                    return scan.Complete
+                        ? ImportCoordinateSystem.FromDetection(scan.Srid ?? 4326, ImportCrsProvenance.FormatDefined)
+                        : ImportCoordinateSystem.FromDetection(scan.Srid, ImportCrsProvenance.Unknown);
                 }
                 buffer.AsSpan(consumed, buffered - consumed).CopyTo(buffer);
                 buffered -= consumed;
                 if (buffered == buffer.Length)
                 {
-                    if (buffer.Length >= 16 * 1024 * 1024) return ImportCoordinateSystem.FromDetection(null, scan.Declared);
+                    if (buffer.Length >= 16 * 1024 * 1024) return ImportCoordinateSystem.FromDetection(
+                        null, scan.Declared ? ImportCrsProvenance.FileMetadata : ImportCrsProvenance.Unknown);
                     Array.Resize(ref buffer, buffer.Length * 2);
                 }
             }
@@ -1012,7 +1018,7 @@ internal sealed class StreamingGeoJsonReader
         catch (JsonException)
         {
             // The shared validator and feature reader report malformed JSON before any rows are stored.
-            return ImportCoordinateSystem.FromDetection(4326, declared: false, formatDefined: true);
+            return ImportCoordinateSystem.FromDetection(4326, ImportCrsProvenance.FormatDefined);
         }
         finally
         {

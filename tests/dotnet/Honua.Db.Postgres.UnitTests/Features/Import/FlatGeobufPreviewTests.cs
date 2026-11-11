@@ -133,6 +133,19 @@ public sealed class FlatGeobufPreviewTests
     }
 
     [Fact]
+    public async Task PreviewFileAsync_FlatGeobuf_DeclaredUnresolvableWkt_ReportsDeclaredSourceNeedingOverride()
+    {
+        await using var stream = CreateFlatGeobufStreamWithWktCrs("LOCAL_CS[\"site grid\"]");
+
+        var preview = await CreateService().PreviewFileAsync(stream, "declared_wkt.fgb");
+
+        preview.CoordinateSystem!.DetectedSrid.Should().BeNull();
+        preview.CoordinateSystem.SourceCrsDeclared.Should().BeTrue();
+        preview.CoordinateSystem.DetectionMethod.Should().Be("file-metadata");
+        preview.CoordinateSystem.RequiresSourceOverride.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task PreviewFileAsync_FlatGeobuf_TotalFeatureCountUsesHeaderNotSampleCap()
     {
         // Create a FlatGeobuf file whose header declares FeaturesCount = 5 and
@@ -495,7 +508,20 @@ public sealed class FlatGeobufPreviewTests
         var builder = new FlatBufferBuilder(512);
         var orgOffset = builder.CreateString(org);
         var codeStringOffset = builder.CreateString(codeString);
-        var crsOffset = FlatGeobuf.Crs.CreateCrs(builder, orgOffset, 0, default, default, default, codeStringOffset);
+        return CreateHeaderOnlyFlatGeobufStream(
+            builder, FlatGeobuf.Crs.CreateCrs(builder, orgOffset, 0, default, default, default, codeStringOffset));
+    }
+
+    private static MemoryStream CreateFlatGeobufStreamWithWktCrs(string wkt)
+    {
+        var builder = new FlatBufferBuilder(512);
+        var wktOffset = builder.CreateString(wkt);
+        return CreateHeaderOnlyFlatGeobufStream(
+            builder, FlatGeobuf.Crs.CreateCrs(builder, default, 0, default, default, wktOffset, default));
+    }
+
+    private static MemoryStream CreateHeaderOnlyFlatGeobufStream(FlatBufferBuilder builder, Offset<FlatGeobuf.Crs> crsOffset)
+    {
         FlatGeobuf.Header.StartHeader(builder);
         FlatGeobuf.Header.AddGeometryType(builder, FlatGeobuf.GeometryType.Point);
         FlatGeobuf.Header.AddCrs(builder, crsOffset);

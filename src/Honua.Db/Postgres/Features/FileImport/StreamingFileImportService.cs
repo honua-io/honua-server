@@ -561,7 +561,10 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     shouldDisposeStream = true;
                     totalBytes = seekable.Length;
                 }
-                if (!await HasUniformSourceCrsAsync(fileStream, format.Value, sourceSrid.Value, request.CsvOptions, cancellationToken))
+                if (!await HasUniformSourceCrsAsync(
+                        fileStream,
+                        new SourceCrsUniformityCheck(format.Value, sourceSrid.Value, request.CsvOptions),
+                        cancellationToken))
                 {
                     return ImportResult.CreateFailure(request.TableName, format.Value, MixedSourceCrsMessage,
                         stopwatch.Elapsed, warnings, ImportValidationErrorCodes.SourceSridHeterogeneous,

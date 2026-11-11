@@ -22,14 +22,26 @@ public sealed record ImportCoordinateSystem
     public int? StoredSrid { get; init; }
     public bool Reprojected { get; init; }
     public bool RequiresSourceOverride { get; init; }
-    public static ImportCoordinateSystem FromDetection(int? srid, bool declared, bool formatDefined = false)
+    public static ImportCoordinateSystem FromDetection(int? srid, ImportCrsProvenance provenance)
         => new()
         {
             DetectedSrid = srid,
-            SourceCrsDeclared = declared,
-            DetectionMethod = formatDefined ? "format-defined" : declared ? "file-metadata" : "unknown",
+            SourceCrsDeclared = provenance == ImportCrsProvenance.FileMetadata,
+            DetectionMethod = provenance switch
+            {
+                ImportCrsProvenance.FileMetadata => "file-metadata",
+                ImportCrsProvenance.FormatDefined => "format-defined",
+                _ => "unknown"
+            },
             EffectiveSourceSrid = srid,
             StoredSrid = srid,
             RequiresSourceOverride = !srid.HasValue
         };
+}
+
+public enum ImportCrsProvenance
+{
+    Unknown,
+    FileMetadata,
+    FormatDefined
 }

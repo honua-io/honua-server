@@ -87,11 +87,12 @@ internal static class GeoServicesJsonFormatReader
             using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
             var root = document.RootElement;
             var declared = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("spatialReference", out _);
-            return ImportCoordinateSystem.FromDetection(TryReadWkid(root), declared);
+            return ImportCoordinateSystem.FromDetection(
+                TryReadWkid(root), declared ? ImportCrsProvenance.FileMetadata : ImportCrsProvenance.Unknown);
         }
         catch (JsonException)
         {
-            return ImportCoordinateSystem.FromDetection(null, declared: false);
+            return ImportCoordinateSystem.FromDetection(null, ImportCrsProvenance.Unknown);
         }
     }
 
