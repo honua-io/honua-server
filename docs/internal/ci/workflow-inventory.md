@@ -694,6 +694,9 @@ Affected shard concurrency remains six, including full-coverage routing fallback
 manual and scheduled full runs retain their existing budget. Required PR gates
 and shard definitions are unchanged.
 
+The `GeoServices GPServer and NAServer` shard includes the
+[routing integration isolation contract](gate-model.md#routing-integration-isolation-contract).
+
 ## Automatic merge admission
 
 `auto-merge-ready.yml` reconciles same-repository trunk PRs using the repository-scoped

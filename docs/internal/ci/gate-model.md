@@ -734,6 +734,14 @@ Affected shard concurrency remains six, including full-coverage routing fallback
 manual and scheduled full runs retain their existing budget. Required PR gates
 and shard definitions are unchanged.
 
+### Routing integration isolation contract
+
+`RoutingAsyncWebToolTests` in the `GeoServices GPServer and NAServer` shard
+(PR Gate and trunk `ci.yml`) exercises routing jobs with a fresh application
+schema, provider substitute and durable worker for each case. PostgreSQL job
+tables are cleared at each case start. Process-wide PostgreSQL infrastructure
+may be reused across cases; application and worker state must not be shared.
+
 ## Automatic merge admission
 
 [Automatic merge admission](workflow-inventory.md#automatic-merge-admission) uses
