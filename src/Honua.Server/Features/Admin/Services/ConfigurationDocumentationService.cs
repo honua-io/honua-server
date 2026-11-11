@@ -157,11 +157,9 @@ public sealed class ConfigurationDocumentationService
         return new ConfigurationSection
         {
             Name = "Cache",
-            Description = "Redis metadata and output caching configuration",
+            Description = "Per-node metadata and output caching configuration",
             Properties =
             [
-                BuildProperty("ConnectionStrings:redis", "ConnectionStrings__redis", "string",
-                    "Redis connection string for metadata/output caching", null, isSensitive: true),
                 BuildPropertyWithCurrent("Cache:Enabled", "Cache__Enabled", "boolean",
                     "Whether caching is enabled", true, opts.Enabled),
                 BuildPropertyWithCurrent("Cache:ResponseCachingEnabled", "Cache__ResponseCachingEnabled", "boolean",
@@ -912,7 +910,6 @@ public sealed class ConfigurationDocumentationService
             new() { Name = "Database__SecureConnection__Name", ConfigPath = "Database", Description = "Named secure connection to use from registry", Required = false, Example = "production-primary" },
 
             // Cache
-            new() { Name = "ConnectionStrings__redis", ConfigPath = "Cache", Description = "Redis connection string for metadata/output caching", Required = false, Example = "localhost:6379" },
             new() { Name = "Cache__Enabled", ConfigPath = "Cache", Description = "Enable caching", Default = "true", Example = "false" },
             new() { Name = "Cache__ResponseCachingEnabled", ConfigPath = "Cache", Description = "Enable exact response caching separately from metadata/catalog caching", Default = "false", Example = "true" },
             new() { Name = "Cache__ResponseCachingAllowInMemoryFallback", ConfigPath = "Cache", Description = "Allow response caching on a process-local cache for a single server instance", Default = "false", Example = "true" },

@@ -19,17 +19,15 @@ internal sealed partial class InMemoryCacheService : ICacheService, ICacheHealth
 {
     private const string CacheType = "layer-catalog";
     private const string StorageBackend = "memory";
-    private const int MaxKeyLocks = 1000;
     private static readonly TimeSpan CleanupInterval = TimeSpan.FromMinutes(1);
     private readonly CacheOptions _options;
     private readonly ILogger<InMemoryCacheService> _logger;
     private readonly IPerformanceMonitor _performanceMonitor;
     private readonly TimeProvider _timeProvider;
     private readonly ConcurrentDictionary<string, CacheEntry> _entries = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _keyLocks = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, KeyLockEntry> _keyLocks = new(StringComparer.Ordinal);
     private readonly ITimer _cleanupTimer;
     private volatile bool _disposed;
-    private int _isPruningKeyLocks;
 
     public InMemoryCacheService(
         IOptions<CacheOptions> options,
@@ -229,9 +227,9 @@ internal sealed partial class InMemoryCacheService : ICacheService, ICacheHealth
         var now = UtcNow;
         var targetSize = Math.Max(1, (int)(_options.MaxEntries * 0.75));
 
-        foreach (var key in _entries.Where(kvp => kvp.Value.ExpiresAt <= now).Select(kvp => kvp.Key).ToList())
+        foreach (var expired in _entries.Where(kvp => kvp.Value.ExpiresAt <= now).ToList())
         {
-            _entries.TryRemove(key, out _);
+            _entries.TryRemove(expired);
         }
 
         var evictCount = _entries.Count - targetSize;
@@ -293,43 +291,53 @@ internal sealed partial class InMemoryCacheService : ICacheService, ICacheHealth
         => CacheJsonContext.Default.GetTypeInfo(typeof(T))
             ?? throw new NotSupportedException($"Type '{typeof(T).FullName}' is not registered in {nameof(CacheJsonContext)}.");
 
+    // An entry leaves the dictionary only when its last holder or waiter leaves, so every
+    // caller for one key waits on the same semaphore and the dictionary holds only keys in use.
     private async ValueTask<KeyLock> AcquireKeyLockAsync(string key, CancellationToken cancellationToken)
     {
-        if (_keyLocks.Count > MaxKeyLocks)
-        {
-            TryPruneKeyLocks();
-        }
-
-        var semaphore = _keyLocks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
-        await semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
-        return new KeyLock(key, semaphore, _keyLocks);
-    }
-
-    private void TryPruneKeyLocks()
-    {
-        if (Interlocked.CompareExchange(ref _isPruningKeyLocks, 1, 0) != 0)
-        {
-            return;
-        }
-
+        var entry = RetainKeyLock(key);
         try
         {
-            PruneKeyLocks();
+            await entry.Semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
-        finally
+        catch
         {
-            Volatile.Write(ref _isPruningKeyLocks, 0);
+            ReleaseKeyLockReference(key, entry);
+            throw;
+        }
+
+        return new KeyLock(this, key, entry);
+    }
+
+    private KeyLockEntry RetainKeyLock(string key)
+    {
+        while (true)
+        {
+            var entry = _keyLocks.GetOrAdd(key, static _ => new KeyLockEntry());
+            lock (entry)
+            {
+                if (!entry.Retired)
+                {
+                    entry.References++;
+                    return entry;
+                }
+            }
         }
     }
 
-    // Best effort: removing the exact pair never drops a semaphore another caller just
-    // obtained, and a semaphore created after removal only costs one extra allocation.
-    private void PruneKeyLocks()
+    private void ReleaseKeyLockReference(string key, KeyLockEntry entry)
     {
-        foreach (var kvp in _keyLocks.Where(kvp => kvp.Value.CurrentCount == 1))
+        lock (entry)
         {
-            _keyLocks.TryRemove(kvp);
+            if (--entry.References > 0)
+            {
+                return;
+            }
+
+            entry.Retired = true;
         }
+
+        _keyLocks.TryRemove(new KeyValuePair<string, KeyLockEntry>(key, entry));
     }
 
     private bool ExceedsQueryResponseEntryCap(string prefixedKey, byte[] data)
@@ -378,15 +386,20 @@ internal sealed partial class InMemoryCacheService : ICacheService, ICacheHealth
         _disposed = true;
         _cleanupTimer.Dispose();
         _entries.Clear();
-        foreach (var semaphore in _keyLocks.Values)
-        {
-            semaphore.Dispose();
-        }
-
-        _keyLocks.Clear();
     }
 
-    private sealed class KeyLock(string key, SemaphoreSlim semaphore, ConcurrentDictionary<string, SemaphoreSlim> locks) : IDisposable
+    // The semaphores never allocate a wait handle, so in-flight callers may still release
+    // theirs after the service is disposed.
+    private sealed class KeyLockEntry
+    {
+        public SemaphoreSlim Semaphore { get; } = new(1, 1);
+
+        public int References { get; set; }
+
+        public bool Retired { get; set; }
+    }
+
+    private sealed class KeyLock(InMemoryCacheService owner, string key, KeyLockEntry entry) : IDisposable
     {
         private bool _released;
 
@@ -398,13 +411,8 @@ internal sealed partial class InMemoryCacheService : ICacheService, ICacheHealth
             }
 
             _released = true;
-            semaphore.Release();
-
-            // Removing the exact pair only drops this instance; a caller that re-acquired it holds CurrentCount at 0.
-            if (semaphore.CurrentCount == 1)
-            {
-                locks.TryRemove(new KeyValuePair<string, SemaphoreSlim>(key, semaphore));
-            }
+            entry.Semaphore.Release();
+            owner.ReleaseKeyLockReference(key, entry);
         }
     }
 

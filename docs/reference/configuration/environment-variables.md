@@ -127,11 +127,11 @@ To run a pure fail-closed policy instead, set `Operations__Policy__BuiltInProduc
 
 After a successful upload, `<LicensePath>.uploaded` takes precedence at startup. Replacing only `LicensePath` and restarting keeps that override. Renew through the admin upload endpoint, or stop the server, remove the override, and align the configured sources before restart. See [Renew or replace a license](../../concepts/editions-and-licensing.md#renew-or-replace-a-license). Persist and back up the containing license directory.
 
-## Caching (Redis)
+## Caching
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ConnectionStrings__Redis` | — | Redis connection string; unset uses the in-memory fallback only. |
+| `ConnectionStrings__Redis` | — | Redis connection string for job coordination. Caches are per node and do not use it. |
 | `HONUA_REDIS_URL` | — | Docker Compose convenience alias for `ConnectionStrings__Redis`. |
 | `Cache__Enabled` | `true` | Master switch for metadata/response caching. |
 | `Cache__DefaultTtlSeconds` | `300` (shipped config) | Default TTL for cached metadata. |

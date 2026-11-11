@@ -11486,7 +11486,7 @@
           "Operations"
         ],
         "summary": "Get Cache Health",
-        "description": "Reports cache service health, fallback state, and the effective cache configuration. Redis server info is included only when a Redis connection multiplexer is registered.",
+        "description": "Reports the health and effective configuration of the cache on the node that serves the request. Redis server info is included only when a Redis connection multiplexer is registered.",
         "operationId": "getOperationsCacheHealth",
         "responses": {
           "200": {
@@ -11570,7 +11570,7 @@
           "Operations"
         ],
         "summary": "Invalidate Cache",
-        "description": "Invalidates cached entries. Exactly one scope is selected, in precedence order: `keyPattern` (pattern removal), `scope` of `ogc-metadata` or `all`, `serviceId` plus `layerId` (layer scope), then `serviceId` alone (service catalog scope). At least one of `keyPattern`, `serviceId` or `scope` must be supplied.",
+        "description": "Invalidates cached entries. Exactly one scope is selected, in precedence order: `keyPattern` (pattern removal), `scope` of `ogc-metadata` or `all`, `serviceId` plus `layerId` (layer scope), then `serviceId` alone (service catalog scope). At least one of `keyPattern`, `serviceId` or `scope` must be supplied. Caches are per node: only the node that receives the request is cleared, and other nodes serve their entries until they expire.",
         "operationId": "invalidateOperationsCache",
         "requestBody": {
           "required": true,

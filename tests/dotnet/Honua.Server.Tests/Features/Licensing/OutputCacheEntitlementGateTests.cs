@@ -9,6 +9,8 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.OutputCaching;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Licensing;
@@ -85,6 +87,23 @@ public sealed class OutputCacheEntitlementGateTests
 
         IsOutputCacheEntitled(context).Should().BeFalse(
             "once the license snapshot reports Expired the output-cache branch must stop running");
+    }
+
+    [UnitTest]
+    public void OutputCacheStore_WithRedisConfigured_StaysInProcessMemory()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:redis"] = "localhost:6379" })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        ObservabilityServiceCollectionExtensions.ConfigureOutputCaching(services, configuration);
+
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<IOutputCacheStore>().GetType().Name.Should().NotContain(
+            "Redis",
+            "each node keeps its own output cache and the CDN is the shared cache");
     }
 
     [UnitTest]

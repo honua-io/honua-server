@@ -239,7 +239,7 @@ internal static class CacheOperationsEndpoints
             else if (hasScope && string.Equals(request.Scope, "all", StringComparison.OrdinalIgnoreCase))
             {
                 scope = "all";
-                detail = "All response and metadata caches invalidated";
+                detail = "All response and metadata caches on this node invalidated";
                 AdminLog.CacheInvalidationRequested(logger, scope);
                 await Task.WhenAll(
                     invalidationService.InvalidateLayerAsync(null, null, context.RequestAborted),

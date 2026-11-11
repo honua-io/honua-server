@@ -248,6 +248,7 @@ var redisConnectionString = builder.Configuration.GetConnectionString("redis")
 var redisCacheEntitled = await StartupConfigurationHelpers.IsRedisCacheEntitledAsync(
     builder.Configuration,
     builder.Environment);
+var redisCacheConnectionString = redisCacheEntitled ? redisConnectionString : null;
 RedisDurabilityAttestation? redisDurabilityAttestation = null;
 DurableJobSubstrateCause? redisDurabilityFailure = null;
 string? redisDurabilityDetail = null;
@@ -287,6 +288,16 @@ if (useAspire)
 
     // Add Npgsql with connection from Aspire
     builder.AddNpgsqlDataSource("DefaultConnection");
+
+    // Add Redis if configured, otherwise fallback to in-memory cache
+    if (!string.IsNullOrWhiteSpace(redisCacheConnectionString))
+    {
+        builder.AddRedisDistributedCache("redis");
+    }
+    else
+    {
+        builder.Services.AddDistributedMemoryCache();
+    }
 }
 else
 {
@@ -296,9 +307,22 @@ else
     {
         builder.AddTelemetryDefaults();
     }
-}
 
-builder.Services.AddDistributedMemoryCache();
+    // Add Redis if configured, otherwise fallback to in-memory cache
+    if (!string.IsNullOrWhiteSpace(redisCacheConnectionString))
+    {
+        var cacheKeyPrefix = builder.Configuration.GetSection("Cache")["KeyPrefix"] ?? "honua:";
+        builder.Services.AddStackExchangeRedisCache(options =>
+        {
+            options.Configuration = redisCacheConnectionString;
+            options.InstanceName = cacheKeyPrefix;
+        });
+    }
+    else
+    {
+        builder.Services.AddDistributedMemoryCache();
+    }
+}
 
 if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
 {
