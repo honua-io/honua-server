@@ -673,6 +673,6 @@ boundary and deterministic replay are unchanged.
 
 `GPServerDurableRuntimeTests` retains a `PostgresFixture` for the class to avoid
 repeating shared database initialization. Each case retains its application,
-isolated schema, execution store and worker lifetime, and PostgreSQL job
-substrate. Every durable-runtime assertion remains in its existing GPServer shard
+isolated schema, execution store and worker lifetime. PostgreSQL job tables are
+cleared at each case start. Every durable-runtime assertion remains in its existing GPServer shard
 and in full trunk runs.

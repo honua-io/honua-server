@@ -26,7 +26,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-// Retain PostgreSQL between isolated job hosts to avoid repeated container bootstrap.
+// Hold a shared PostgreSQL reference so per-case job hosts skip repeated database initialization.
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.GPServer)]
 public sealed partial class GPServerDurableRuntimeTests : IClassFixture<PostgresFixture>
