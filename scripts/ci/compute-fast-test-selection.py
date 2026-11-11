@@ -27,21 +27,31 @@ def select(closure, roots):
             if group in {'architecture', 'server-governance'} or set(closure).intersection(roots[group])]
 
 
+def item_includes(tree):
+    for node in tree.getroot().iter():
+        if node.tag.rsplit('}', 1)[-1] in {'Compile', 'Content', 'EmbeddedResource', 'None'}:
+            yield from node.attrib.get('Include', '').replace('\\', '/').split(';')
+
+
+def normalize_include(include, imported_base, project_base):
+    include = include.replace('$(MSBuildThisFileDirectory)', str(imported_base) + '/')
+    if not include:
+        return None
+    if any(token in include for token in ('$(', '@(')):
+        raise ValueError('Cannot resolve linked build input')
+    # MSBuild item paths are relative to the project, even inside imported files.
+    path = Path(posixpath.normpath(str(project_base / include)))
+    if not path.is_relative_to(ROOT):
+        raise ValueError('External linked build input')
+    return path.relative_to(ROOT).as_posix()
+
+
 def linked_patterns(project):
-    for tree, base in build_documents(ROOT, project):
-        for node in tree.getroot().iter():
-            if node.tag.rsplit('}', 1)[-1] not in {'Compile', 'Content', 'EmbeddedResource', 'None'}:
-                continue
-            for include in node.attrib.get('Include', '').replace('\\', '/').split(';'):
-                include = include.replace('$(MSBuildThisFileDirectory)', str(base) + '/')
-                if not include:
-                    continue
-                if any(token in include for token in ('$(', '@(')):
-                    raise ValueError('Cannot resolve linked build input')
-                path = posixpath.normpath(str(base / include))
-                if not Path(path).is_relative_to(ROOT):
-                    raise ValueError('External linked build input')
-                yield Path(path).relative_to(ROOT).as_posix()
+    project_base = (ROOT / project).parent
+    for tree, imported_base in build_documents(ROOT, project):
+        patterns = (normalize_include(include, imported_base, project_base)
+                    for include in item_includes(tree))
+        yield from (pattern for pattern in patterns if pattern is not None)
 
 
 def linked_inputs(changed, members):

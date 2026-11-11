@@ -109,6 +109,22 @@ class SelectionTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     selection.linked_inputs([changed], {project})
 
+    def test_imported_items_resolve_from_project_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = 'tests/Unit/Unit.csproj'
+            path = root / project
+            path.parent.mkdir(parents=True)
+            (root / 'build').mkdir()
+            path.write_text('<Project><Import Project="../../build/linked.props" /></Project>')
+            props = root / 'build/linked.props'
+            props.write_text('<Project><ItemGroup><Compile Include="../Library/Example.cs" />'
+                             '<None Include="$(MSBuildThisFileDirectory)Data.json" /></ItemGroup></Project>')
+            with patch.object(selection, 'ROOT', root):
+                self.assertTrue(selection.linked_inputs(['tests/Library/Example.cs'], {project}))
+                self.assertTrue(selection.linked_inputs(['build/Data.json'], {project}))
+                self.assertFalse(selection.linked_inputs(['Library/Example.cs'], {project}))
+
     def test_errors_emit_all_groups(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / 'outputs'
