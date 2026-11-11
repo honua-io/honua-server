@@ -67,7 +67,7 @@ public sealed class FeatureQueryBuilderObjectIdsTests
 
         if (returnPublicIds)
         {
-            result.Sql.Should().Contain("SELECT (attributes ->> $2)::bigint FROM");
+            result.Sql.Should().Contain("SELECT COALESCE((attributes ->> $2)::bigint, objectid) FROM");
             result.WhereParameters.Should().ContainSingle().Which.Should().Be("source_id");
         }
         else

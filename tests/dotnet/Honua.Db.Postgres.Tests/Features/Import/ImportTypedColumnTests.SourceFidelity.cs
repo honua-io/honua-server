@@ -31,14 +31,16 @@ public sealed partial class ImportTypedColumnTests
     {
         var polygons = Enumerable.Range(0, ringCount).Select(offset =>
         {
+            var column = offset % 20;
+            var row = offset / 20; // Integer rows keep the polygons on a twenty-column grid.
             var vertexCount = totalVertices / ringCount + (offset < totalVertices % ringCount ? 1 : 0);
             var ring = Enumerable.Range(0, vertexCount).Select(index =>
             {
                 var angle = index * Math.Tau / vertexCount;
                 return new[]
                 {
-                    -157 + offset % 20 * 0.004 + Math.Cos(angle) * 0.001,
-                    20 + offset / 20 * 0.004 + Math.Sin(angle) * 0.001
+                    -157 + column * 0.004 + Math.Cos(angle) * 0.001,
+                    20 + row * 0.004 + Math.Sin(angle) * 0.001
                 };
             }).ToList();
             ring.Add(ring[0]);

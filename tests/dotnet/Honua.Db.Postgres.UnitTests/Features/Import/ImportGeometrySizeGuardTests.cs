@@ -28,7 +28,7 @@ public sealed class ImportGeometrySizeGuardTests
             var coordinates = Enumerable.Range(0, verticesPerRing).Select(index =>
             {
                 var angle = index * Math.Tau / verticesPerRing;
-                return new Coordinate(offset * 3 + Math.Cos(angle), Math.Sin(angle));
+                return new Coordinate(offset * 3d + Math.Cos(angle), Math.Sin(angle));
             }).ToList();
             coordinates.Add(coordinates[0].Copy());
             return Factory.CreatePolygon(coordinates.ToArray());

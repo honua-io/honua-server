@@ -646,16 +646,14 @@ internal sealed class StreamingGeoJsonReader
     {
         if (root.TryGetProperty("properties", out var properties) && properties.ValueKind == JsonValueKind.Object)
         {
-            foreach (var property in properties.EnumerateObject())
+            foreach (var property in properties.EnumerateObject()
+                .Where(property => property.Name.Equals("created_at", StringComparison.OrdinalIgnoreCase)))
             {
-                if (property.Name.Equals("created_at", StringComparison.OrdinalIgnoreCase))
-                {
-                    issues.Add(ImportValidationIssue.Create(
-                        ImportValidationErrorCodes.ReservedAttributeName,
-                        "The attribute 'created_at' is reserved for the import audit timestamp. Rename the source field to 'source_created_at' before importing.",
-                        featureIndex,
-                        $"properties.{property.Name}"));
-                }
+                issues.Add(ImportValidationIssue.Create(
+                    ImportValidationErrorCodes.ReservedAttributeName,
+                    "The attribute 'created_at' is reserved for the import audit timestamp. Rename the source field to 'source_created_at' before importing.",
+                    featureIndex,
+                    $"properties.{property.Name}"));
             }
         }
 

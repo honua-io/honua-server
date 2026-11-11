@@ -343,7 +343,8 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                     throw new ArgumentException($"Invalid field name for public object ID: {query.PublicIdAttributeName}");
                 }
 
-                objectIdExpression = $"(attributes ->> ${paramIndex++})::bigint";
+                // Legacy public ID aliases may have no JSON value; match feature serialization's fallback.
+                objectIdExpression = $"COALESCE((attributes ->> ${paramIndex++})::bigint, {DatabaseSchema.ObjectIdColumn})";
                 parameters.Add(query.PublicIdAttributeName);
             }
 
