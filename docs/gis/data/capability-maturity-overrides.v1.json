@@ -99,7 +99,7 @@
       "capability": "streaming.feature-subscriptions",
       "maturity": "experimental",
       "reasonCode": "release-deferred",
-      "reason": "Realtime feature streams are Experimental. They work on a single node; delivery across several nodes needs an optional Redis add-on. This row also covers the streaming conformance-run routes, which have no capability descriptor of their own. The routes keep serving exactly as before; this row changes the claim, not the surface.",
+      "reason": "Realtime feature streams are Experimental. A stream delivers live only the changes committed through its own node; replay by cursor returns every change. This row also covers the streaming conformance-run routes, which have no capability descriptor of their own. The routes keep serving exactly as before; this row changes the claim, not the surface.",
       "decision": "Founder ruling (2026-11-09); honua-server#6809"
     },
     {

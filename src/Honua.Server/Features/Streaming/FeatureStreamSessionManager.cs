@@ -1017,10 +1017,3 @@ internal readonly record struct FeatureStreamMessage
     public static FeatureStreamMessage Heartbeat() =>
         new() { IsHeartbeat = true };
 }
-
-    public required FeatureStreamEnvelope Envelope { get; init; }
-
-    public double[]? GeometryEnvelope { get; init; }
-
-    public string? PropertiesJson { get; init; }
-}

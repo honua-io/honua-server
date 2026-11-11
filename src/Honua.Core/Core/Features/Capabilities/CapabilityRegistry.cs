@@ -290,8 +290,8 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // infrastructure. It is not a customer deployment claim. This classification
             // does not weaken the full-severity security floor for cross-tenant disclosure.
             ("admin.multi-tenancy", "control-plane", FeatureCatalog.MultiTenancyKey, CapabilityKind.Feature, null, CapabilityMaturity.Internal),
-            // Realtime is opt-in Experimental. It works on a
-            // single node; delivery across several nodes needs an optional Redis add-on.
+            // Realtime is opt-in Experimental. A stream delivers live only the changes
+            // committed through its own node; replay by cursor returns every change.
             ("realtime.feature-streams", "realtime", "streaming.feature-subscriptions", CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
             // SensorThings uses the same canonical opt-in gate as its route registration;
             // it must never be present at runtime while absent from capability discovery.

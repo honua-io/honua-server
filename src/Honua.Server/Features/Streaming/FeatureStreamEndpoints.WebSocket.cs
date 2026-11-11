@@ -1046,7 +1046,7 @@ internal static partial class FeatureStreamEndpoints
 
                 // Unpause now. Any event broadcast after this moment is queued
                 // via the normal channel path. The atomic per-(event,
-                // subscription) dedup in BroadcastLocally and ReplayToWebSocketAsync
+                // subscription) dedup in Broadcast and ReplayToWebSocketAsync
                 // ensures that a final post-unpause sweep below cannot duplicate
                 // events the broadcast already queued.
                 deps.SessionManager.TryUnpauseSubscription(session.SessionId, subscriptionId);

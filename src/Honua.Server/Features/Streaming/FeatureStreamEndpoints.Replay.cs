@@ -255,9 +255,9 @@ internal static partial class FeatureStreamEndpoints
         CancellationToken cancellationToken)
     {
         // A previous short batch observed this durable head and deliberately retried so an
-        // append racing that first query would not be mistaken for a gap. Redis commands are
-        // ordered: if the retry still cannot reach the already-observed head, at least one
-        // required payload is unavailable and replay must fail closed.
+        // append racing that first query would not be mistaken for a gap. The store applies
+        // appends in cursor order: if the retry still cannot reach the already-observed head,
+        // at least one required payload is unavailable and replay must fail closed.
         if (replayCursor < requiredThroughCursor)
         {
             ThrowReplayWindowGap(
@@ -268,7 +268,7 @@ internal static partial class FeatureStreamEndpoints
                 subscriptionId);
         }
 
-        // Empty and short batches are not proof of exhaustion. A Redis payload can expire or
+        // Empty and short batches are not proof of exhaustion. A stored payload can expire or
         // be evicted while its durable cursor remains advanced. Re-read the typed window before
         // ending; if a concurrent append advanced the head, retry once through that observed
         // boundary. The next short batch either reaches it or takes the fail-closed branch above.
