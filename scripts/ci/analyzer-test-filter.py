@@ -4,15 +4,14 @@
 import argparse
 import json
 from pathlib import Path
-import re
+
+from solution_projects import solution_projects
 
 SERVER = "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
 
 
 def partition(root: Path, source: Path | None, group: str) -> list[str]:
-    members = {path.replace("\\", "/") for path in re.findall(
-        r'^Project\([^\n]+? = "[^"]+", "([^"]+\.csproj)"',
-        (root / "Honua.sln").read_text(), re.MULTILINE)}
+    members = set(solution_projects(root))
     if SERVER not in members:
         raise ValueError("Server test project is missing from the solution")
     projects = members
