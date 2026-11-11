@@ -32,6 +32,26 @@ revision churn from generated assembly metadata. A changed source tree still
 creates a different revision. Live repeats must verify unchanged intermediate
 and output timestamps before claiming compilation reuse.
 
+A subsequent clean-HEAD repeat removed snapshot churn as a variable. The small
+prime built in 3.21 minutes; its repeat built in 3.24 minutes after 12.12 minutes
+in the queue (15 seconds readiness, 27 seconds sync, 4.44 seconds restore,
+5.42 minutes total execution and 11 seconds copy-back). The repeat regenerated
+all inspected Core intermediate timestamps. The medium prime built in 3.63
+minutes after 13.85 minutes queued (16 seconds readiness, 28 seconds sync,
+4.48 seconds restore, 5.65 minutes execution and 11 seconds copy-back). All
+three runs passed. These are observed rebuilds, not demonstrated warm hits.
+
+During these runs available host disk fell from 86 GiB to 28 GiB, then recovered
+to 80 GiB. Transport cleanup starts below 60 GiB and removes least-recently-used
+checkout outputs until 90 GiB is free, excluding the current and recently active
+checkouts. Queued checkouts have no active marker, so retention while waiting
+is not guaranteed. Cache eviction is a plausible confound; no per-eviction log
+was present to establish which outputs were removed. Some active markers
+outlived their local processes; a dead local PID does not establish that its
+remote child has exited. Marker cleanup must verify remote execution liveness
+before permitting eviction. Do not claim incremental reuse from output paths
+alone or remove marker protection based only on local process exit.
+
 Six lane slots, each bounded to five .NET processors and five MSBuild workers,
 limit nominal lane demand to 30 processors. PR runner services share the host
 and bypass lane admission. This is not an operating-system CPU reservation or
