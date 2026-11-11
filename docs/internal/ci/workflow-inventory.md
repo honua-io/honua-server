@@ -44,10 +44,10 @@ analysis.
 CodeQL, Compose Release Lifecycle, GeoArrow/GeoParquet interop, OGC API
 building-block conformance, and serving/GDAL image verification defer heavy jobs
 until the PR is ready. They subscribe to `ready_for_review` and ready-head
-`synchronize` events; conversion back to draft cancels the active run. PR Gate,
-its affected-shard verdict, clean code and repository hygiene continue on drafts.
-PR Gate also runs on `ready_for_review`, waking the trusted Claude observer after
-its exact-head verification completes.
+`synchronize` events; conversion back to draft cancels the active verification run.
+Drafts run Format, Clean code, and Repository hygiene. The `PR Gate` aggregate
+rejects their skipped heavy dependencies. Ready PRs run the complete gate, waking
+the trusted Claude observer after exact-head verification completes.
 
 Verification workflows cancel superseded admission per PR; automation helpers
 queue superseding events without cancellation. Trusted observers resolve the
@@ -599,7 +599,7 @@ Trailing `selective_base` dispatches use their verified base for the managed
 producer's affected project graph. An effective full-CI decision (including a
 router promotion or manual override) builds the whole solution. Consumers reuse the single producer's
 artifacts. Server shards retain descending measured `dispatch_rank` order and
-run at most six at once for every `selective_base` dispatch, including router
+run at most six at once for every `selective_base` dispatch (twelve above 30 selected shards), including router
 promotions and explicit full-coverage overrides. Full coverage still selects
 every shard; scheduled and non-selective full runs retain 24 concurrent shards. Expensive AOT, Docker,
 Postgres compatibility, browser, Python, MCP and quickstart lanes use
@@ -641,6 +641,8 @@ The budget job records each run's phase and credits, total triage/fix credits,
 paid-run counts and the share of triage events reaching a paid Opus run. Deterministic
 skips use zero model credits. The combined envelopes are 2500 credits ($25) per day;
 triage and fix do not each receive a separate allowance.
+
+Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. If both producer jobs were skipped by job-level admission (draft or non-base edit), the consumer also returns without validation or mutation. Missing envelopes from ordinary producers remain errors.
 
 ### Router validator execution
 
@@ -690,8 +692,13 @@ Trailing affected CI refreshes its completed-ancestor base when the selection jo
 so queued dispatches do not retain an obsolete range. Dispatch and execution use the same completed-run selector; execution never regresses behind the dispatched base. Selections above 30 shards
 fall back to the newest merge; the summary records the older range deferred to
 the twice-daily full run. A broad newest merge retains every selected shard.
-Affected shard concurrency remains six, including full-coverage routing fallbacks;
-manual and scheduled full runs retain their existing budget. Required PR gates
+Affected shard concurrency is six, or twelve when more than 30 shards remain
+selected (`scripts/ci/trailing_selection.py` owns both numbers and the
+threshold), including full-coverage routing fallbacks; manual and scheduled
+full runs retain 24. A
+134-shard affected run took 214 minutes at six while PR Gate job queueing stayed
+at a two-second median; twelve halves that so a broad run finishes before the
+next full run. Required PR gates
 and shard definitions are unchanged.
 
 ## Automatic merge admission
@@ -711,3 +718,5 @@ Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
 revocation: a human or drain lane owns any manually armed dependency PR.
 If mergeability becomes clean between the live query and enable mutation, only
 GitHub's specific clean-status response ends neutrally; other API errors fail.
+
+PR Gate and native-image impact observers record `source-run-draft-admission` when the latest `PR Gate / Runner select` and `PR Gate / Build and tests` outcomes at or before the source attempt were both skipped (a partial rerun keeps earlier outcomes); these attempts emit no promotion receipt. Ready-run failures remain observable.

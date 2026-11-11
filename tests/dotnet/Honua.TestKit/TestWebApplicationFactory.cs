@@ -74,7 +74,7 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrWhiteSpace(environmentName);
         builder.UseEnvironment(environmentName);
-        builder.ConfigureServices(services =>
+        builder.ConfigureServices((context, services) =>
         {
             services.AddScoped<IDatabaseHealthChecker, Honua.TestKit.Infrastructure.MockHealthyDatabaseChecker>();
             services.AddScoped<TestFeatureStore>();
@@ -108,7 +108,16 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             services.AddSingleton<ILeaderElectionStrategy, NoOpLeaderElectionStrategy>();
             services.AddScoped<IAlertAdminStore, NullAlertAdminStore>();
             services.RemoveAll<IAuditLog>();
-            services.AddSingleton<IAuditLog>(NullAuditLog.Instance);
+            // Non-Test hosts may run OperationRuntimeStartupValidator, which refuses a
+            // non-persisted sink. Test hosts keep the null sink.
+            if (context.HostingEnvironment.IsEnvironment("Test"))
+            {
+                services.AddSingleton<IAuditLog>(NullAuditLog.Instance);
+            }
+            else
+            {
+                services.AddSingleton<IAuditLog, PersistedTestAuditLog>();
+            }
             services.AddScoped<ISqlFilterTranslator, AllowAllSqlFilterTranslator>();
         });
         builder.ConfigureAppConfiguration((context, configBuilder) =>
@@ -233,6 +242,17 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 
         public bool ValidateConnectionString(string connectionString)
             => !string.IsNullOrWhiteSpace(connectionString);
+    }
+
+    private sealed class PersistedTestAuditLog : IAuditLog
+    {
+        public bool IsPersisted => true;
+
+        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(auditEvent);
+            return Task.FromResult<string?>(Guid.NewGuid().ToString("N"));
+        }
     }
 
     private sealed class NoOpLeaderElectionStrategy : ILeaderElectionStrategy
