@@ -1181,7 +1181,7 @@ public sealed record PreMigrationRestoreContext
 /// <summary>
 /// Batch-compute execution specification.
 /// </summary>
-public sealed record ExecutionJobSpec
+public sealed record ExecutionJobSpec : Honua.Core.Serialization.ExtensibleJsonRecord
 {
     /// <summary>
     /// Server-owned GPServer binding, stamped after scoped execution authorization.
@@ -1297,7 +1297,7 @@ public sealed record ExecutionJobDefinition
 /// <summary>
 /// Durable execution-job record for run-to-completion workloads.
 /// </summary>
-public sealed record ExecutionJobRecord
+public sealed record ExecutionJobRecord : Honua.Core.Serialization.ExtensibleJsonRecord
 {
     /// <summary>
     /// Stable execution job identifier.

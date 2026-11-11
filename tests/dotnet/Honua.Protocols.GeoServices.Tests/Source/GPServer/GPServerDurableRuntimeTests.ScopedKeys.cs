@@ -21,9 +21,8 @@ public sealed partial class GPServerDurableRuntimeTests
     [Endpoint("POST /services/{serviceId}/GPServer")]
     public async Task SoapScopedAPIKey_ExactAreaGrant_ExecutesAndOwnsDurableJob()
     {
-        await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
         var fixture = CreateScopedKeyFixture();
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         try
         {
             using var admin = fixture.CreateAdminClient();
@@ -80,7 +79,7 @@ public sealed partial class GPServerDurableRuntimeTests
     public async Task SoapScopedAPIKey_UnauthorizedAreaGrant_DeniesBeforeParameterParsing(string grantKind)
     {
         var fixture = CreateScopedKeyFixture();
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         try
         {
             using var admin = fixture.CreateAdminClient();
@@ -105,8 +104,8 @@ public sealed partial class GPServerDurableRuntimeTests
         }
     }
 
-    private WebAppFixture CreateScopedKeyFixture()
-        => CreateDurableFixture(productionExecutor: true).ConfigureWebHost(builder =>
+    private static WebAppFixture CreateScopedKeyFixture()
+        => CreateDurableFixture().ConfigureWebHost(builder =>
         {
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);

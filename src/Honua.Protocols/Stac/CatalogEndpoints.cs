@@ -10,6 +10,7 @@ using Honua.Infrastructure.Models;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Stac.Models;
 using Honua.Protocols.Stac.Services;
+using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Protocols.Stac;
 
@@ -24,6 +25,7 @@ internal static class CatalogEndpoints
             .WithDescription("Returns the root STAC catalog with links to child collections and search")
             .WithTags("STAC")
             .CacheOutput("StacCatalog")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .WithETag()
             .Produces<StacCatalog>(200, MediaTypes.Json)
             .Produces(404);
@@ -35,6 +37,7 @@ internal static class CatalogEndpoints
             .WithDescription("Returns the conformance classes implemented by the STAC API surface")
             .WithTags("STAC")
             .CacheOutput("StacCatalog")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces<ConformanceDeclaration>(200, MediaTypes.Json)
             .Produces(404);
 
@@ -46,6 +49,7 @@ internal static class CatalogEndpoints
             .WithTags("STAC")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .CacheOutput("StacCatalog")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .Produces<object>(200, MediaTypes.OpenApi)
             .Produces(404);
 

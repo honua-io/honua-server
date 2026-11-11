@@ -143,7 +143,8 @@ public sealed class SceneAuthorizationTests : IAsyncLifetime
         response.Headers.CacheControl?.Private.Should().BeTrue();
         response.Headers.CacheControl?.NoStore.Should().BeTrue();
         response.Headers.CacheControl?.Public.Should().BeFalse();
-        response.Headers.CacheControl?.MaxAge.Should().BeGreaterThan(TimeSpan.Zero);
+        response.Headers.CacheControl?.MaxAge.Should().BeNull();
+        response.Headers.CacheControl?.SharedMaxAge.Should().BeNull();
         response.Headers.Vary.Should().Contain("Authorization");
         response.Headers.Vary.Should().Contain("X-API-Key");
     }

@@ -7,7 +7,6 @@ using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
-using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -18,6 +17,7 @@ using Honua.Infrastructure.MultiTenancy;
 using Honua.Migration;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
@@ -30,7 +30,6 @@ using NSubstitute;
 using ProgressStatus = Honua.Core.Features.Infrastructure.Domain.OperationStatus;
 using StackExchange.Redis;
 using Testcontainers.Redis;
-using RedisJobQueue = Honua.ControlPlane.RedisJobQueue;
 
 namespace Honua.Server.Tests.Admin;
 
@@ -97,7 +96,8 @@ public sealed partial class LayerPublishingIntegrationTests
         await using var redis = new RedisBuilder("redis:7.2-alpine").Build();
         await redis.StartAsync();
         await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.GetConnectionString());
-        var jobs = new RedisExecutionJobStore(multiplexer, NullLogger<RedisExecutionJobStore>.Instance);
+        await using var jobSubstrate = await PostgresJobSubstrateHarness.CreateAsync(_fixture.Postgres, nameof(LayerPublishingIntegrationTests));
+        var jobs = jobSubstrate.JobStore;
         using var acceptingCache = new RedisCache(Options.Create(new RedisCacheOptions { Configuration = redis.GetConnectionString() }));
         using var workerCache = new RedisCache(Options.Create(new RedisCacheOptions { Configuration = redis.GetConnectionString() }));
         var acceptingProgress = new UniversalProgressStore(acceptingCache, NullLogger<UniversalProgressStore>.Instance, multiplexer);
@@ -115,7 +115,6 @@ public sealed partial class LayerPublishingIntegrationTests
         var services = new ServiceCollection().AddLogging();
         services.AddSingleton<Microsoft.Extensions.Configuration.IConfiguration>(new Microsoft.Extensions.Configuration.ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["AWS_LAMBDA_FUNCTION_NAME"] = "api" }).Build());
-        services.Configure<DurableJobSubstrateOptions>(options => { options.RedisConfigured = true; options.RedisEntitled = true; });
         services.Configure<ControlPlaneOptions>(options => options.ExecutionWorkloads.Add(new ExecutionWorkloadOptions
         {
             WorkloadId = "managed-publish",
@@ -128,7 +127,7 @@ public sealed partial class LayerPublishingIntegrationTests
         }));
         services.Configure<LayerPublishingOptions>(options => options.AsyncPublishRowThreshold = 1);
         services.AddSingleton<IExecutionJobStore>(jobs);
-        services.AddSingleton<IJobQueue>(new RedisJobQueue(multiplexer, jobs, NullLogger<RedisJobQueue>.Instance));
+        services.AddSingleton<IJobQueue>(jobSubstrate.Queue);
         services.AddSingleton<IUniversalProgressStore>(acceptingProgress);
         services.AddSingleton(scope.ServiceProvider.GetRequiredService<ILayerPublishingService>());
         services.AddSingleton(backend);
@@ -176,7 +175,7 @@ public sealed partial class LayerPublishingIntegrationTests
         using var worker = new JobExecutionService(assigned, jobs,
             [new LayerPublishJobExecutor(scopeFactory, workerProgress, NullLogger<LayerPublishJobExecutor>.Instance)],
             new ExecutionJobCancellationTokens(), [],
-            new RedisExecutionLogStore(multiplexer, NullLogger<RedisExecutionLogStore>.Instance),
+            jobSubstrate.LogStore,
             NullLogger<JobExecutionService>.Instance)
         {
             RequeueOnShutdown = true,
