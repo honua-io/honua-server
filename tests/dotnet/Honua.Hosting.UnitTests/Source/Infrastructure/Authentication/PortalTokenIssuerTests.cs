@@ -21,7 +21,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
@@ -45,7 +44,7 @@ public sealed class PortalTokenIssuerTests
         var logger = Substitute.For<ILogger<PortalTokenIssuer>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         using var cache = new MemoryCache(new MemoryCacheOptions());
-        var issuer = new PortalTokenIssuer(cache, logger);
+        var issuer = new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), logger);
         var issuance = await issuer.IssueAsync(
             new PortalTokenIssueRequest(
                 PrincipalId: "alice",
@@ -83,7 +82,7 @@ public sealed class PortalTokenIssuerTests
         var logger = Substitute.For<ILogger<PortalTokenIssuer>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         using var cache = new MemoryCache(new MemoryCacheOptions());
-        var issuer = new PortalTokenIssuer(cache, logger);
+        var issuer = new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), logger);
         var issuance = await issuer.IssueAsync(
             new PortalTokenIssueRequest(
                 PrincipalId: "alice",
@@ -115,7 +114,7 @@ public sealed class PortalTokenIssuerTests
     public async Task ValidateAsync_BrowserRefererToken_StillRequiresRefererHeader()
     {
         using var cache = new MemoryCache(new MemoryCacheOptions());
-        var issuer = new PortalTokenIssuer(cache, NullLogger<PortalTokenIssuer>.Instance);
+        var issuer = new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<PortalTokenIssuer>.Instance);
         var issuance = await issuer.IssueAsync(
             new PortalTokenIssueRequest(
                 PrincipalId: "alice",
@@ -370,85 +369,20 @@ public sealed class PortalTokenIssuerTests
         validation!.Principal.FindAll(ClaimTypes.Role).Should().BeEmpty();
     }
 
-    // ─── BH-028 regression ──────────────────────────────────────────────────────
-
     [UnitTest]
-    public async Task ValidateAsync_DistributedCacheThrows_FallsBackToMemoryCache()
+    public async Task ValidateAsync_OnASecondIssuerOverTheSameStore_HonoursTheTokenUntilItIsRevoked()
     {
-        // Regression test for BH-028: when distributedCache.GetAsync throws, the issuer
-        // previously evicted the in-process memory cache entry and returned null, conflating
-        // a transient Redis outage with key-not-found.  During a Redis cluster failover
-        // (typically 15-60 s) this invalidated all portal sessions simultaneously.
-        //
-        // After the fix, a distributed cache read exception falls back to the memory tier,
-        // preserving auth continuity for the duration of the outage.
-        var mockDistCache = NSubstitute.Substitute.For<IDistributedCache>();
-        // SetAsync returns Task.CompletedTask by default (NSubstitute) so issuance succeeds
-        // and the record is committed to both the distributed cache (mock) and memory cache.
-        mockDistCache
-            .GetAsync(NSubstitute.Arg.Any<string>(), NSubstitute.Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromException<byte[]?>(new InvalidOperationException("Redis cluster failover")));
+        var sharedTokens = new InMemorySecurityTokenStore();
+        var issuingNode = new PortalTokenIssuer(sharedTokens, NullLogger<PortalTokenIssuer>.Instance);
+        var otherNode = new PortalTokenIssuer(sharedTokens, NullLogger<PortalTokenIssuer>.Instance);
+        var binding = new PortalTokenBinding(Referer: null, ClientIp: "192.0.2.10");
+        var issuance = await issuingNode.IssueAsync(SampleIssue(), CancellationToken.None);
 
-        var memCache = new MemoryCache(new MemoryCacheOptions());
-        var issuer = new PortalTokenIssuer(memCache, NullLogger<PortalTokenIssuer>.Instance, mockDistCache);
-        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(30);
+        (await otherNode.ValidateAsync(issuance.Token, binding, CancellationToken.None)).Should().NotBeNull();
 
-        var issuance = await issuer.IssueAsync(
-            new PortalTokenIssueRequest(
-                PrincipalId: "alice",
-                DisplayName: null,
-                TenantId: "tenant-A",
-                Roles: ["viewer"],
-                ClientType: PortalTokenClientType.Ip,
-                BindingValue: "10.0.0.1",
-                ExpiresAt: expiresAt),
-            CancellationToken.None);
-
-        // Distributed cache throws → before the fix: memory entry evicted, null returned.
-        // After the fix: falls back to the memory tier and validation succeeds.
-        var validation = await issuer.ValidateAsync(
-            issuance.Token,
-            new PortalTokenBinding(Referer: null, ClientIp: "10.0.0.1"),
-            CancellationToken.None);
-
-        validation.Should().NotBeNull(
-            "the token must validate from memory cache during a Redis outage (BH-028)");
-        validation!.Principal.Identity!.IsAuthenticated.Should().BeTrue();
-        validation.Principal.FindFirstValue(TenantClaimType).Should().Be("tenant-A");
-    }
-
-    [UnitTest]
-    public async Task ValidateAsync_DistributedCacheReturnsNull_EvictsMemory_ReturnsNull()
-    {
-        // When distributedCache.GetAsync returns null (key genuinely expired / absent),
-        // the memory entry must be evicted and null returned — the correct
-        // key-not-found semantics that the BH-028 fix must not regress.
-        var mockDistCache = NSubstitute.Substitute.For<IDistributedCache>();
-        mockDistCache
-            .GetAsync(NSubstitute.Arg.Any<string>(), NSubstitute.Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<byte[]?>(null));
-
-        var memCache = new MemoryCache(new MemoryCacheOptions());
-        var issuer = new PortalTokenIssuer(memCache, NullLogger<PortalTokenIssuer>.Instance, mockDistCache);
-
-        var issuance = await issuer.IssueAsync(
-            new PortalTokenIssueRequest(
-                PrincipalId: "bob",
-                DisplayName: null,
-                TenantId: null,
-                Roles: [],
-                ClientType: PortalTokenClientType.Ip,
-                BindingValue: "10.0.0.2",
-                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30)),
-            CancellationToken.None);
-
-        var validation = await issuer.ValidateAsync(
-            issuance.Token,
-            new PortalTokenBinding(Referer: null, ClientIp: "10.0.0.2"),
-            CancellationToken.None);
-
-        validation.Should().BeNull(
-            "a null distributed cache result means key-not-found; the memory entry should be evicted");
+        await otherNode.RevokeAsync(issuance.Token, CancellationToken.None);
+        (await issuingNode.ValidateAsync(issuance.Token, binding, CancellationToken.None))
+            .Should().BeNull("a token revoked on one node is refused by the next request on any node");
     }
 
     // ─── SEC-9: the token is bound to the credential it was minted from ─────────
@@ -936,38 +870,16 @@ public sealed class PortalTokenIssuerTests
     }
 
     [UnitTest]
-    public async Task RevokeAsync_DistributedCacheRemoveThrows_ThrowsServiceUnavailable()
+    public async Task RevokeAsync_StoreUnavailable_ThrowsServiceUnavailable()
     {
-        var cache = Substitute.For<IDistributedCache>();
-        cache.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException(new RedisConnectionException(
-                ConnectionFailureType.UnableToConnect, "redis down")));
-        cache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns<Task<byte[]?>>(_ => throw new RedisConnectionException(
-                ConnectionFailureType.UnableToConnect, "redis down"));
-        using var memory = new MemoryCache(new MemoryCacheOptions());
-        var issuer = new PortalTokenIssuer(memory, NullLogger<PortalTokenIssuer>.Instance, cache);
-        var issuance = await issuer.IssueAsync(SampleIssue(), CancellationToken.None);
+        var tokens = Substitute.For<ISecurityTokenStore>();
+        tokens.RevokeAsync(default, default)
+            .ReturnsForAnyArgs(Task.FromException(new InvalidOperationException("database unavailable")));
+        var issuer = new PortalTokenIssuer(tokens, NullLogger<PortalTokenIssuer>.Instance);
 
-        var act = () => issuer.RevokeAsync(issuance.Token, CancellationToken.None);
+        var revoke = () => issuer.RevokeAsync("a-token", CancellationToken.None);
 
-        await act.Should().ThrowAsync<ServiceUnavailableException>();
-    }
-
-    [UnitTest]
-    public async Task RevokeAsync_DistributedCacheRemoveThrowsButKeyIsGone_Succeeds()
-    {
-        var cache = Substitute.For<IDistributedCache>();
-        cache.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException(new RedisConnectionException(
-                ConnectionFailureType.UnableToConnect, "delete denied")));
-        cache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<byte[]?>(null));
-        using var memory = new MemoryCache(new MemoryCacheOptions());
-        var issuer = new PortalTokenIssuer(memory, NullLogger<PortalTokenIssuer>.Instance, cache);
-        var issuance = await issuer.IssueAsync(SampleIssue(), CancellationToken.None);
-
-        await issuer.RevokeAsync(issuance.Token, CancellationToken.None);
+        await revoke.Should().ThrowAsync<ServiceUnavailableException>();
     }
 
     private static PortalTokenIssueRequest SampleIssue()
@@ -1039,8 +951,7 @@ public sealed class PortalTokenIssuerTests
                 timeProvider))
             .BuildServiceProvider();
 
-        var issuer = new PortalTokenIssuer(
-            memoryCache,
+        var issuer = new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(),
             NullLogger<PortalTokenIssuer>.Instance,
             serviceProvider: services);
         return new SourceBoundIssuer(issuer, keyStore, memoryCache, apiKeyOptions);
@@ -1066,7 +977,7 @@ public sealed class PortalTokenIssuerTests
     private static PortalTokenIssuer CreateIssuer()
     {
         var memoryCache = new MemoryCache(new MemoryCacheOptions());
-        return new PortalTokenIssuer(memoryCache, NullLogger<PortalTokenIssuer>.Instance);
+        return new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<PortalTokenIssuer>.Instance);
     }
 
     private static PortalTokenIssuer CreateIssuer(ILicenseEntitlementService entitlements)
@@ -1083,8 +994,7 @@ public sealed class PortalTokenIssuerTests
                 sp.GetRequiredService<IOptions<PortalTokenAuthenticationOptions>>(),
                 sp))
             .BuildServiceProvider();
-        return new PortalTokenIssuer(
-            memoryCache,
+        return new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(),
             NullLogger<PortalTokenIssuer>.Instance,
             serviceProvider: services);
     }
