@@ -7,6 +7,7 @@ using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Admin.Routing;
+using Honua.TestKit.Extensions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -44,7 +45,7 @@ public class NetworkTopologyPromotionAdminEndpointsTests : IAsyncLifetime
         // production composition root only wires AddJobOrchestration/AddJobWorker when a
         // Redis connection and a Redis-cache license entitlement are present — mirrors
         // GpJobWorkerCompositionRootTests.
-        _fixture = new WebAppFixture()
+        _fixture = new WebAppFixture().WithProductionJobSubstrate()
             .UseSeed("tests/seed/server.yaml")
             .ConfigureWebHost(builder =>
             {

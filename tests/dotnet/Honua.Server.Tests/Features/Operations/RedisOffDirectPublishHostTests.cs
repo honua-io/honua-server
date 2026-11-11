@@ -107,9 +107,7 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
     {
         _fixture.Services.GetRequiredService<IHostEnvironment>().EnvironmentName.Should().Be(Environments.Production);
         UnavailableOperationProposalStore.IsDurable(_fixture.Services.GetService<IOperationProposalStore>())
-            .Should().BeFalse("the host under test has no Redis-backed control plane");
-        _fixture.Services.GetRequiredService<IOperationInstanceStore>().GetType().Name
-            .Should().Be("UnavailableOperationInstanceStore");
+            .Should().BeTrue("the system database carries the control plane");
 
         using var admin = ApiKeyClient(AdminPassword);
         var output = await CallToolAsync(admin, PublishArguments("admin-parcels"));
@@ -158,23 +156,9 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
             Arg.Any<CancellationToken>());
     }
 
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/capabilities/manifest")]
-    public async Task RedisOffProduction_Manifest_StillReportsProposalsUnavailable()
-    {
-        using var admin = ApiKeyClient(AdminPassword);
-        using var response = await admin.GetAsync("/api/v1/capabilities/manifest");
-        var body = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
-
-        using var document = JsonDocument.Parse(body);
-        var proposals = document.RootElement.GetProperty("capabilities").EnumerateArray()
-            .Single(entry => entry.GetProperty("id").GetString() == CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
-        proposals.GetProperty("available").GetBoolean().Should().BeFalse(proposals.GetRawText());
-    }
-
     private void AssertCanonicalDirectPublish(JsonElement output)
     {
+        output.TryGetProperty("policyOutcome", out _).Should().BeTrue(output.GetRawText());
         output.GetProperty("status").GetString().Should().Be("Completed", output.GetRawText());
         output.GetProperty("operationId").GetString().Should().Be(ServicePublishOperation.OperationId);
         var operationInstanceId = output.GetProperty("operationInstanceId").GetString();
@@ -184,9 +168,8 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
         output.GetProperty("auditId").GetString().Should().NotBeNullOrWhiteSpace();
         output.GetProperty("policyOutcome").GetString().Should().Be("Allow");
         output.GetProperty("authorizationOutcome").GetString().Should().NotBeNullOrWhiteSpace();
-        output.GetProperty("durable").GetBoolean().Should().BeFalse();
         output.GetProperty("evidenceRefs").EnumerateArray().Select(item => item.GetString())
-            .Should().Contain(NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef);
+            .Should().NotContain(NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef);
         output.GetProperty("layerId").GetString().Should().Be("321");
     }
 
