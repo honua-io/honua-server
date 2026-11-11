@@ -51,6 +51,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     private readonly List<Action<IServiceCollection>> _serviceConfigurations = [];
     private readonly Dictionary<Type, object> _scopedServiceOverrides = [];
     private Action<IWebHostBuilder>? _configureWebHost;
+    private readonly Dictionary<string, string?> _configurationOverrides = new(StringComparer.OrdinalIgnoreCase);
     private WebApplicationFactory<Program>? _factory;
     private string? _currentSchema;
     private string _environmentName = "Test";
@@ -131,6 +132,7 @@ public sealed class WebAppFixture : IAsyncLifetime
 
     private bool HasCustomConfiguration => _useKestrel || _serviceConfigurations.Count > 0
         || _configureWebHost != null
+        || _configurationOverrides.Count > 0
         || !string.Equals(_environmentName, "Test", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
@@ -209,6 +211,7 @@ public sealed class WebAppFixture : IAsyncLifetime
                                 postgres.ConnectionString,
                                 Honua.TestKit.Mixins.WebAppFixturePostgresWiringMixin
                                     .BuildFixtureOperationalSchemaSettings(_currentSchema)));
+                    configBuilder.AddInMemoryCollection(_configurationOverrides);
                 });
 
                 builder.ConfigureTestServices(services =>
@@ -494,7 +497,8 @@ public sealed class WebAppFixture : IAsyncLifetime
             await Postgres.DropSchemaAsync(_currentSchema);
         }
 
-        Client.Dispose();
+        // Null when initialization failed: disposing must not hide that failure.
+        Client?.Dispose();
         if (_factory is not null)
         {
             await _factory.DisposeAsync();
@@ -512,6 +516,17 @@ public sealed class WebAppFixture : IAsyncLifetime
     public WebAppFixture ConfigureServices(Action<IServiceCollection> configure)
     {
         _serviceConfigurations.Add(configure);
+        return this;
+    }
+
+    // Settings applied after the fixture's own, for a test that must replace one the fixture sets.
+    public WebAppFixture OverrideConfiguration(IReadOnlyDictionary<string, string?> settings)
+    {
+        foreach (var setting in settings)
+        {
+            _configurationOverrides[setting.Key] = setting.Value;
+        }
+
         return this;
     }
 

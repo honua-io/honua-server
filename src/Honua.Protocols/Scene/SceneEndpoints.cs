@@ -85,6 +85,7 @@ internal static partial class SceneEndpoints
         endpoints.MapGet(
                 "/scenes/{sceneId}/exports/openusd/stage.usda",
                 HandleGetOpenUsdStageManifest)
+            .WithSharedCacheClass(ResponseCacheClass.StaticObject)
             .WithName("GetSceneOpenUsdStageManifest")
             .WithDisplayName("Get Scene OpenUSD Stage Manifest")
             .WithSummary("Export a preview USDA stage manifest for a hosted scene")

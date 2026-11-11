@@ -442,6 +442,22 @@
       "notes": "Honua extension (#3428): save a generation-checked immutable Studio version through the canonical mutation runtime; owner and policy checks apply."
     },
     {
+      "standardName": "studio_list_items",
+      "referenceToolName": "honua_studio_list_items",
+      "family": "Studio composition and lifecycle (Honua extension)",
+      "schema": "tools/studio_list_items.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension: Discover saved Studio items within the caller owner and tenant scope, with bounded cursor paging."
+    },
+    {
+      "standardName": "studio_list_versions",
+      "referenceToolName": "honua_studio_list_versions",
+      "family": "Studio composition and lifecycle (Honua extension)",
+      "schema": "tools/studio_list_versions.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension: Discover authorized immutable versions and content hashes without changing lifecycle pointers."
+    },
+    {
       "standardName": "studio_get_version",
       "referenceToolName": "honua_studio_get_version",
       "family": "Studio composition and lifecycle (Honua extension)",

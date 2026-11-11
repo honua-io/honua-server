@@ -43,7 +43,7 @@ workload parameters. A workload parameter can never set one of the `HONUA_*` lau
 
 Because `HONUA_OPERATION_ID` is set, the container starts as a **single-job execution worker**:
 
-- It claims only the attempt it was launched for in the shared Redis job store. A stale container,
+- It claims only the attempt it was launched for in the shared job store, which is in the system PostgreSQL database. A stale container,
   or one AWS Batch retried on its own, never runs a newer attempt.
 - It runs the GP executor and writes the result, or the typed failure, back to the job record. The
   serving host sees the terminal record.
@@ -56,8 +56,9 @@ Because `HONUA_OPERATION_ID` is set, the container starts as a **single-job exec
 The worker composes no job dispatch, control-plane reconcilers, scheduled background services,
 proposal gateway or HTTP surface. It never submits jobs to AWS Batch, so the job role does not need
 `batch:SubmitJob`. It does need what the server uses to run and report the job: the database
-connection, `ConnectionStrings__redis` and the operation key-ring certificate. Without Redis it
-refuses to start, because nobody could see the result.
+connection (`ConnectionStrings__DefaultConnection`, the same system database the server uses) and
+network access to that database. Without the database connection it refuses to start, because
+nobody could see the result. It does not need Redis to claim, run or report the job.
 
 ### Large layer publishes
 
@@ -65,7 +66,7 @@ Layer publishing also uses this shared execution worker. Above
 `LayerPublishing:AsyncPublishRowThreshold`, the accepting host prefers a configured
 remote `LayerPublish` workload, then a managed `Geoprocessing` workload. The
 workload must have a registered backend, a managed runtime profile, and the
-existing durable Redis job substrate. Native and custom-code workloads are not
+existing durable job substrate. Native and custom-code workloads are not
 eligible. Publishing reads a database table, so it does not require the shared
 file-storage prerequisite used by file imports.
 
@@ -79,7 +80,7 @@ operator evidence.
 
 Deploy a worker image that includes the `LayerPublish` executor and remote
 publish support before enabling this route. Both the API and the Batch job
-definition must use that implementation and share the database, Redis, and
+definition must use that implementation and share the database and
 connection-encryption key material. Advancing only the API image is insufficient.
 Use immutable images and a versioned job definition when qualifying the rollout.
 

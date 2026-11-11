@@ -6,15 +6,13 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.TestKit.Helpers;
 
-/// <summary>
-/// Functional in-memory <see cref="IExecutionJobStore"/> for integration tests. Production only
-/// registers a durable execution-job store when Redis (<c>IConnectionMultiplexer</c>) is present
-/// (see GeoprocessingServiceCollectionExtensions), and the <c>WebAppFixture</c> runs without
-/// Redis â€” so the durable-operation endpoint tests register this store to exercise the durable
-/// cancel/retry paths (the endpoints resolve <see cref="IExecutionJobStore"/> optionally and take
-/// the durable path when it is present). State is a plain dictionary; not thread-optimised, but the
-/// per-test server is single-caller.
-/// </summary>
+// Functional in-memory IExecutionJobStore for integration tests. Production
+// registers its job store from the system database in an order the default WebAppFixture
+// host does not follow, so that host has none and the durable-operation endpoint tests register
+// this store to exercise the durable
+// cancel/retry paths (the endpoints resolve IExecutionJobStore optionally and take
+// the durable path when it is present). State is a plain dictionary; not thread-optimised, but the
+// per-test server is single-caller.
 public sealed class InMemoryExecutionJobStore : IExecutionJobStore
 {
     private readonly Dictionary<string, ExecutionJobRecord> _jobs = new(StringComparer.Ordinal);
@@ -77,8 +75,7 @@ public sealed class InMemoryExecutionJobStore : IExecutionJobStore
     /// </summary>
     public Task<bool> TrySetIfLeaseOwnedAsync(
         ExecutionJobRecord job,
-        string leaseOperationId,
-        string leaseOwnerId,
+        OwnedJobLease lease,
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default)
         => TrySetAsync(job, ttl, cancellationToken);
@@ -101,8 +98,8 @@ public sealed class InMemoryExecutionJobStore : IExecutionJobStore
         {
             var query = _jobs.Values
                 .Where(job => !kind.HasValue || job.Spec.Kind == kind.Value);
-            // BH7-009: apply 2x overfetch budget when a limit is supplied (mirrors
-            // the Redis store behaviour; authorization filters may discard some records).
+            // BH7-009: apply 2x overfetch budget when a limit is supplied, because
+            // authorization filters may discard some records.
             if (limit.HasValue)
             {
                 query = query.Take(limit.Value * 2);
@@ -122,7 +119,7 @@ public sealed class InMemoryExecutionJobStore : IExecutionJobStore
 [System.Diagnostics.CodeAnalysis.SuppressMessage(
     "Naming",
     "CA1711:Identifiers should not have incorrect suffix",
-    Justification = "Test double implementing IJobQueue; the 'Queue' suffix mirrors the abstraction it stands in for, matching the production RedisJobQueue naming.")]
+    Justification = "Test double implementing IJobQueue; the 'Queue' suffix mirrors the abstraction it stands in for, matching the production PostgresJobQueue naming.")]
 public sealed class InMemoryJobQueue : IJobQueue
 {
     private readonly List<string> _queue = new();

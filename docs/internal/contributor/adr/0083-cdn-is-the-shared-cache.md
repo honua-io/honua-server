@@ -66,7 +66,6 @@ the only lifetime it has.
 | Public tile | `public, max-age=60, s-maxage=300, stale-while-revalidate=60, stale-if-error=86400` | Yes | `Origin, Accept, Accept-Encoding` | Per-layer setting, then the tileset setting, then `SharedCache:Tile` |
 | Public feature query | `public, max-age=0, s-maxage=30, stale-while-revalidate=30, stale-if-error=86400` | Yes | `Origin, Accept, Accept-Encoding, Prefer` | Per-layer setting, then `SharedCache:FeatureQuery` |
 | Capabilities and metadata documents | `public, max-age=30, s-maxage=60` | Yes | `Origin, Accept, Accept-Encoding, Accept-Language` | `SharedCache:MetadataDocument` |
-| Static map image | `public, max-age=0, s-maxage=60, stale-while-revalidate=30` | Yes | `Origin, Accept-Encoding` | Per-layer setting, then `SharedCache:StaticMapImage` |
 | Stored object served by the server from a key that is overwritten in place (scene assets) | `public, max-age=60, s-maxage=300` | Yes, from the store | `Origin, Accept-Encoding` | The dataset's own setting, then `SharedCache:StaticObject` |
 | Secured anything (credential on the request, authenticated principal, tenant named, denied or undecided access) | `private, no-store` | Unchanged | Unchanged | Not configurable |
 | Admin | `private, no-store` | Unchanged | Unchanged | Not configurable |
@@ -87,7 +86,8 @@ changing any stored per-layer value, and is reversed by unsetting it.
 so it never appears on a secured response.
 
 A feature query with an arbitrary extent or a spatial predicate (`bbox`, `geometry`, a CQL2 or
-OData spatial function) is never shared: every request is a near-unique address.
+OData spatial function) is never shared, and neither is a static map image, whose bbox or centre and
+zoom are not snapped to a grid: every request is a near-unique address.
 
 If a table is edited outside Honua, the server does not see the change: tiles and queries refresh
 after the layer's cache lifetime, or immediately when an operator purges the layer.

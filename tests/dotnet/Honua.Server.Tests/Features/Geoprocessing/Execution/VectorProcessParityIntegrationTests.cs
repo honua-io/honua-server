@@ -16,18 +16,14 @@ using Honua.Core.Features.Orchestration.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Geoprocessing;
-using Honua.ControlPlane;
 using Honua.Server.Features.Orchestration;
 using Honua.Server.Tests.Admin;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Configuration;
+using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using Npgsql;
@@ -48,9 +44,10 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 /// integration test shape so the new processes pin the same evidence
 /// contract.
 /// </summary>
-[Collection("Redis")]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.OgcApiProcesses)]
-public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
+public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter database, RedisFixture redis)
+    : IClassFixture<RedisFixture>
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";
 
@@ -63,8 +60,8 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task CommittedPostgisSink_ResultPackagePublishesAndQueriesAuthoredRows()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
-        var fixture = BuildFixture();
+        await database.DataSource.ClearJobSubstrateAsync();
+        var fixture = BuildWorkflowFixture();
         await fixture.InitializeAsync();
         await McpPublicationFixtureSetup.InstallPromotionStoresAsync(fixture);
         var table = $"gp_result_{Guid.NewGuid():N}";
@@ -190,7 +187,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
                     await Task.Delay(TimeSpan.FromMilliseconds(100), deadline.Token);
                 }
             }
-            terminalJob.Should().NotBeNull("the actual Redis worker must reach a terminal state");
+            terminalJob.Should().NotBeNull("the worker must reach a terminal state");
             terminalJob!.Status.Should().Be(ExecutionJobStatus.Succeeded, terminalJob.ErrorMessage);
 
             AnalysisResultPackage? package = null;
@@ -365,7 +362,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
                 finally
                 {
                     await fixture.DisposeAsync();
-                    await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+                    await database.DataSource.ClearJobSubstrateAsync();
                 }
             }
         }
@@ -386,7 +383,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task ClipProcess_CompletesAndReturnsClippedSquare()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
 
         var fixture = BuildFixture();
         await fixture.InitializeAsync();
@@ -428,7 +425,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await database.DataSource.ClearJobSubstrateAsync();
         }
     }
 
@@ -438,7 +435,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task IntersectProcess_CompletesAndReturnsOverlapSquare()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
 
         var fixture = BuildFixture();
         await fixture.InitializeAsync();
@@ -470,7 +467,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await database.DataSource.ClearJobSubstrateAsync();
         }
     }
 
@@ -480,7 +477,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task ProjectProcess_IdentityTransform_RoundTripsCoordinates()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
 
         var fixture = BuildFixture();
         await fixture.InitializeAsync();
@@ -517,7 +514,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await database.DataSource.ClearJobSubstrateAsync();
         }
     }
 
@@ -527,7 +524,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task AreaProcess_CompletesAndReturnsPlanarMeasure()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
 
         var fixture = BuildFixture();
         await fixture.InitializeAsync();
@@ -567,7 +564,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await database.DataSource.ClearJobSubstrateAsync();
         }
     }
 
@@ -577,7 +574,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task UnionProcess_CompletesAndReturnsAggregatePolygon()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
 
         var fixture = BuildFixture();
         await fixture.InitializeAsync();
@@ -621,7 +618,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await database.DataSource.ClearJobSubstrateAsync();
         }
     }
 
@@ -631,7 +628,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task CentroidProcess_CompletesAndReturnsCenterPoint()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
 
         var fixture = BuildFixture();
         await fixture.InitializeAsync();
@@ -675,7 +672,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await database.DataSource.ClearJobSubstrateAsync();
         }
     }
 
@@ -685,7 +682,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task LengthProcess_CompletesAndReturnsPlanarMeasure()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
 
         var fixture = BuildFixture();
         await fixture.InitializeAsync();
@@ -732,7 +729,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await database.DataSource.ClearJobSubstrateAsync();
         }
     }
 
@@ -742,7 +739,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task ConvexHullProcess_CompletesAndReturnsBoundingPolygon()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
 
         var fixture = BuildFixture();
         await fixture.InitializeAsync();
@@ -794,7 +791,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await database.DataSource.ClearJobSubstrateAsync();
         }
     }
 
@@ -804,7 +801,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task DissolveProcess_CompletesAndReturnsFeatureCollectionPerGroup()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
 
         var fixture = BuildFixture();
         await fixture.InitializeAsync();
@@ -853,7 +850,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await database.DataSource.ClearJobSubstrateAsync();
         }
     }
 
@@ -863,7 +860,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task SimplifyProcess_CollapsesBelowToleranceVertices()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
 
         var fixture = BuildFixture();
         await fixture.InitializeAsync();
@@ -915,7 +912,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await database.DataSource.ClearJobSubstrateAsync();
         }
     }
 
@@ -925,7 +922,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task SnapProcess_PullsInputOntoReferenceVertex()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
 
         var fixture = BuildFixture();
         await fixture.InitializeAsync();
@@ -976,7 +973,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await database.DataSource.ClearJobSubstrateAsync();
         }
     }
 
@@ -984,68 +981,16 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
     // Helpers
     // -------------------------------------------------------------------------
 
-    private WebAppFixture BuildFixture()
-        => new WebAppFixture()
-            .ConfigureWebHost(builder =>
-            {
-                builder.ConfigureAppConfiguration((_, configBuilder) =>
-                {
-                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
-                    {
-                        ["ConnectionStrings:redis"] = redis.ConnectionString
-                    });
-                });
-            })
-            .ConfigureServices(WireDurableRuntime);
+    private static WebAppFixture BuildFixture()
+        => new WebAppFixture().WithProductionJobSubstrate();
 
-    private void WireDurableRuntime(IServiceCollection services)
-    {
-        services.RemoveAll<IConnectionMultiplexer>();
-        services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redis.ConnectionString));
-
-        services.RemoveAll<IExecutionJobStore>();
-        services.AddSingleton<IExecutionJobStore>(sp =>
-            new RedisExecutionJobStore(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<ILogger<RedisExecutionJobStore>>()));
-
-        services.RemoveAll<IGeoprocessingResultPackageStore>();
-        services.AddSingleton<IGeoprocessingResultPackageStore>(sp =>
-            new RedisGeoprocessingResultPackageStore(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>(),
-                sp.GetRequiredService<ILogger<RedisGeoprocessingResultPackageStore>>()));
-
-        services.RemoveAll<RedisJobQueue>();
-        services.RemoveAll<IJobQueue>();
-        services.RemoveAll<IQueueClaimReconciler>();
-        services.AddSingleton<RedisJobQueue>(sp =>
-            new RedisJobQueue(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<IExecutionJobStore>(),
-                sp.GetRequiredService<ILogger<RedisJobQueue>>()));
-        services.AddSingleton<IJobQueue>(sp => sp.GetRequiredService<RedisJobQueue>());
-        services.AddSingleton<IQueueClaimReconciler>(sp => sp.GetRequiredService<RedisJobQueue>());
-
-        // WorkflowOnly sinks are admitted by the production orchestration engine.
-        // The fixture may install Redis after the default feature-registration pass.
-        services.AddOrchestration();
-
-        services.RemoveAll<IExecutionLogStore>();
-        services.AddSingleton<IExecutionLogStore>(sp =>
-            new RedisExecutionLogStore(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<ILogger<RedisExecutionLogStore>>()));
-
-        // Activate the worker host. The production dispatcher registered by
-        // AddGeoprocessing routes geometry.clip / geometry.intersect /
-        // geometry.project / geometry.area / geometry.union /
-        // geometry.centroid / geometry.length / geometry.convex-hull /
-        // geometry.dissolve / geometry.simplify / geometry.snap ids to
-        // their per-process executors — that's the system-under-test for
-        // this parity suite.
-        services.AddJobWorker();
-    }
+    // The workflow definition and run stores live in Redis, and the orchestration engine is composed only when a multiplexer is registered.
+    private WebAppFixture BuildWorkflowFixture()
+        => BuildFixture().ConfigureServices(services =>
+        {
+            services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redis.ConnectionString));
+            services.AddOrchestration();
+        });
 
     private static Polygon BuildBoxPolygon(double minX, double minY, double maxX, double maxY)
     {
@@ -1137,23 +1082,5 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
         root.GetProperty("type").GetString().Should().Be("MeasureResult");
         root.GetProperty("processId").GetString().Should().Be(expectedProcessId);
         return root;
-    }
-
-    private static async Task DeleteControlPlaneKeysAsync(string redisConnectionString)
-    {
-        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redisConnectionString);
-        var database = multiplexer.GetDatabase();
-        var endpoints = multiplexer.GetEndPoints();
-        if (endpoints.Length == 0)
-        {
-            return;
-        }
-
-        var server = multiplexer.GetServer(endpoints[0]);
-        var keys = server.Keys(pattern: "controlplane:*").ToArray();
-        if (keys.Length > 0)
-        {
-            await database.KeyDeleteAsync(keys);
-        }
     }
 }

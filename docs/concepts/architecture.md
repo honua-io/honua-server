@@ -45,7 +45,7 @@ flowchart LR
     mysql["MySQL / MariaDB — read-only"]
   end
 
-  redis["Redis — optional<br/>shared cache · durable jobs"]
+  redis["Redis — optional<br/>shared cache · governed operations"]
   files["File storage<br/>local · S3 · Azure Blob"]
 
   geoservices --> adapters
@@ -64,8 +64,9 @@ flowchart LR
 ```
 
 Dashed edges are optional infrastructure: remove Redis and the server still
-runs, with caching falling back to in-memory and the durable job and workflow
-endpoints reporting unavailable.
+runs, with caching falling back to in-memory and the governed proposal and
+workflow endpoints reporting unavailable. Background jobs are stored in
+PostgreSQL and keep running.
 
 Every protocol endpoint is a thin adapter over the same canonical query, edit, metadata, and rendering pipeline. Publish a layer once and it is served simultaneously through every protocol its service enables — see [Data model](data-model.md) and the [protocol matrix](protocols.md).
 
@@ -86,7 +87,7 @@ Read-only providers support query, count, extent, and pagination; they report un
 
 ## Optional infrastructure
 
-- **Redis** — distributed caching for multi-node deployments, and the durable store for background jobs and workflow orchestration. Without Redis, caching falls back to in-memory and durable job/workflow endpoints report unavailable.
+- **Redis** — distributed caching for multi-node deployments, and the durable store for governed proposals and workflow orchestration. Without Redis, caching falls back to in-memory and the proposal and workflow endpoints report unavailable. Background jobs do not use Redis.
 - **File storage** — attachments, imports, and raster assets use the local filesystem by default; S3-compatible storage (including MinIO) and Azure Blob Storage are configurable alternatives (`FileStorage__Provider`).
 
 ## Compute tier
@@ -113,9 +114,10 @@ Where that worker runs is the batch-compute backend, selected per workload under
 | `honua-aws-batch` | An AWS Batch job | AWS |
 | `honua-azure-batch` | An Azure Batch task | Azure |
 
-The job queue, execution-job store, log store, and result-package store are all Redis-backed, so
-**Redis is required for any deployment that runs jobs** — without it a submitted job stays in
-`accepted` and never drains.
+The job queue, execution-job store, log store, and result-package store are tables in the system
+PostgreSQL database, so **any deployment with its database runs jobs**; Redis is not involved. A
+worker that runs outside the server process (the GDAL worker, or a job launched on Kubernetes or a
+cloud batch service) needs the same database connection as the server.
 
 The two local backends are single-host only. They track launched jobs in an in-process registry that
 cannot survive a host restart or be seen from another node, so they do not work on a serverless
@@ -131,7 +133,7 @@ and the [ops control plane section](../guides/deploy/cloud-deployments.md#ops-co
 
 The same image runs in three shapes.
 
-**Single container.** One process, one host, local file storage; Redis optional unless you run jobs.
+**Single container.** One process, one host, local file storage; Redis optional.
 Docker Compose evaluation stacks and air-gapped single-host installs. Not zero-downtime.
 
 **Stateless replicas behind an edge.** The production shape: several identical containers sharing one
@@ -168,7 +170,7 @@ diagrams are in [Architecture diagrams](architecture-diagrams.md#10-deployment-a
 
 ## Scaling
 
-Server instances are stateless: catalog state lives in PostGIS, shared cache and job state in Redis, and files in the configured file store. To scale, run more containers behind a load balancer and point them at the same PostgreSQL, Redis, and file storage. The same image runs single-node evaluation stacks and multi-node production deployments.
+Server instances are stateless: catalog and job state live in PostGIS, shared cache and governed operation state in Redis, and files in the configured file store. To scale, run more containers behind a load balancer and point them at the same PostgreSQL, Redis, and file storage. The same image runs single-node evaluation stacks and multi-node production deployments.
 
 ## Observability and security
 
