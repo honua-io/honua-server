@@ -17,7 +17,7 @@ STEP = DEFINITION['jobs']['watch']['steps'][0]
 
 
 class WatchdogTests(unittest.TestCase):
-    def run_watchdog(self, scheduled, *, existing=False, runs=None):
+    def run_watchdog(self, scheduled, *, issues=(), runs=None):
         harness = r'''
 const vm = require('node:vm');
 const input = JSON.parse(process.argv[1]);
@@ -37,7 +37,7 @@ const sandbox = {
       return {data: {workflow_runs: params.event === 'schedule' ? input.scheduled : (input.runs || [result])}};
     }},
     issues: {
-      async listForRepo() { return {data: input.existing ? [{number: 1, title: input.env.ISSUE_TITLE}] : []}; },
+      async listForRepo() { return {data: input.issues}; },
       async create(params) { calls.push(['create', params]); },
       async createComment(params) { calls.push(['comment', params]); },
       async update(params) { calls.push(['update', params]); },
@@ -48,7 +48,7 @@ vm.runInNewContext('(async () => {' + input.script + '})()', sandbox)
   .then(() => process.stdout.write(JSON.stringify(calls)))
   .catch(error => { console.error(error); process.exitCode = 1; });
 '''
-        payload = dict(scheduled=scheduled, existing=existing, runs=runs, env=STEP['env'], script=STEP['with']['script'])
+        payload = dict(scheduled=scheduled, issues=issues, runs=runs, env=STEP['env'], script=STEP['with']['script'])
         completed = subprocess.run(['node', '-e', harness, json.dumps(payload)],
                                    text=True, capture_output=True, check=True)
         return json.loads(completed.stdout)
@@ -73,14 +73,14 @@ vm.runInNewContext('(async () => {' + input.script + '})()', sandbox)
             {'status': 'in_progress', 'run_started_at': '2026-11-12T11:00:00Z'},
         ]:
             with self.subTest(run=run):
-                calls = self.run_watchdog([run], existing=True)
+                calls = self.run_watchdog([run], issues=[{'number': 1, 'title': STEP['env']['ISSUE_TITLE']}])
                 self.assertTrue(any(kind == 'failed' for kind, _ in calls))
                 self.assertFalse(any(kind == 'update' for kind, _ in calls))
 
     def test_recent_scheduled_start_closes_existing_issue(self):
         calls = self.run_watchdog([
             {'status': 'in_progress', 'run_started_at': '2026-11-10T22:00:00Z'}
-        ], existing=True)
+        ], issues=[{'number': 1, 'title': STEP['env']['ISSUE_TITLE']}])
         self.assertIn(['update', {'owner': 'example', 'repo': 'server', 'issue_number': 1, 'state': 'closed'}], calls)
         self.assertFalse(any(kind == 'failed' for kind, _ in calls))
 
