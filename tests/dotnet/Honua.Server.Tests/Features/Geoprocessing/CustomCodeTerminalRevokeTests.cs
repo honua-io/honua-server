@@ -33,7 +33,7 @@ public sealed class CustomCodeTerminalRevokeTests
     [UnitTest]
     public async Task OnTerminal_CustomCodeJob_RevokesScopedToken()
     {
-        var issuer = new ScopedJobTokenIssuer(new MemoryCache(new MemoryCacheOptions()), NullLogger<ScopedJobTokenIssuer>.Instance);
+        var issuer = new ScopedJobTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<ScopedJobTokenIssuer>.Instance);
         const string jobId = "gp-cc-terminal-1";
 
         var issuance = await issuer.IssueAsync(
@@ -62,7 +62,7 @@ public sealed class CustomCodeTerminalRevokeTests
     [UnitTest]
     public async Task OnTerminal_NonCustomCodeJob_NoTokenToRevoke_NoThrow()
     {
-        var issuer = new ScopedJobTokenIssuer(new MemoryCache(new MemoryCacheOptions()), NullLogger<ScopedJobTokenIssuer>.Instance);
+        var issuer = new ScopedJobTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<ScopedJobTokenIssuer>.Instance);
         var callback = CreateCallback(issuer);
 
         var job = new ExecutionJobRecord

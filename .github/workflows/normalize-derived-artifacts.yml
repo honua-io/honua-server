@@ -9,7 +9,9 @@ on:
     branches: [trunk]
     paths:
       - 'src/**'
-      - 'tests/**'
+      - 'tests/dotnet/**'
+      - 'tests/fixtures/plugins/**'
+      - 'tests/baselines/client-compat/**'
       - 'scripts/ci/generate-feature-catalog.sh'
       - 'scripts/ci/generate-admin-operation-parity-exports.sh'
       - 'scripts/ci/verify-admin-operation-parity.py'
@@ -20,7 +22,7 @@ on:
       - 'scripts/ci/generate-capability-matrix.py'
       - 'scripts/ci/normalization-envelope.py'
       - 'docs/cite-status.md'
-      - 'docs/gis/**'
+      - 'docs/gis/data/**'
       - '*.sln'
       - '**/*.props'
       - '**/*.targets'

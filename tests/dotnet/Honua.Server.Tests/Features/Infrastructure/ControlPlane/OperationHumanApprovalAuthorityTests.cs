@@ -14,9 +14,7 @@ using Honua.Infrastructure.MultiTenancy;
 using Microsoft.Extensions.DependencyInjection;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.DataProtection;
-using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using NSubstitute;
 
@@ -216,7 +214,7 @@ public sealed class OperationHumanApprovalAuthorityTests
         var directory = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "honua-human-approval-" + Guid.NewGuid().ToString("N")));
         try
         {
-            var sharedSessions = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+            var sharedSessions = new InMemorySecurityTokenStore();
             using var first = new OperationHumanApprovalTestHost(DataProtectionProvider.Create(directory), sharedSessions);
             var human = await first.CreateHumanAsync();
             var proposal = OperationHumanApprovalTestHost.Proposal();

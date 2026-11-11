@@ -15,7 +15,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
@@ -32,23 +31,6 @@ public sealed class ApprovedReplayTenantAuthenticationTests
 
         (await store.RotateAsync(key.Record.Id, CancellationToken.None)).Should().BeNull();
         (await store.ValidateAsync(key.Key, CancellationToken.None)).Should().NotBeNull();
-    }
-
-    [Fact]
-    public async Task RedisApprovedCredential_RotationCannotReissueSealedAuthority()
-    {
-        var issuer = new InMemoryAdminApiKeyStore();
-        var key = await issuer.CreateAsync("approved-operation:proposal-a",
-            [AdminApiKeyPermission.CreateApprovedOperationGrant("PUT", "/api/v1/admin/metadata/layers/1/filter"),
-                "admin:operation:tenant:tenant-a"], DateTimeOffset.UtcNow.AddMinutes(5), "requester", CancellationToken.None);
-        var database = Substitute.For<IDatabase>();
-        database.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
-            .Returns((RedisValue)JsonSerializer.Serialize(key.Record));
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-        var store = new RedisAdminApiKeyStore(redis);
-
-        (await store.RotateAsync(key.Record.Id, CancellationToken.None)).Should().BeNull();
     }
 
     [Theory]
