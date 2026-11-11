@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Text.Json;
 using Honua.Core.Features.AttributeRules;
 using Honua.Core.Features.Collaboration.FeatureLocks;
 using Honua.Core.Features.Edit;
@@ -336,12 +337,16 @@ internal sealed class FeatureServerEditsHandler(
             {
                 editContext = await ProcessEditOperationsAsync(
                     request,
-                    resource,
-                    storageLayerId.Value,
-                    editPrincipal,
-                    lockScope,
-                    retryStaleUpdate,
-                    versionContext,
+                    new EditTarget
+                    {
+                        Resource = resource,
+                        StorageLayerId = storageLayerId.Value,
+                        Principal = editPrincipal,
+                        LockScope = lockScope,
+                        GuardUpdateSnapshot = retryStaleUpdate,
+                        VersionContext = versionContext,
+                        StorageBinding = snapshot.ResolveStorageBinding(publication)
+                    },
                     cancellationToken);
                 editContext.GuardUpdateSnapshot = retryStaleUpdate;
                 await ApplyPluginEditPipelineAsync(serviceId, layerId, resource, editContext, cancellationToken)
@@ -519,23 +524,29 @@ internal sealed class FeatureServerEditsHandler(
         MetadataV2Resource resource)
         => snapshot.ResolveStorageLayerId(publication, resource);
 
-    private async Task<EditOperationContext> ProcessEditOperationsAsync(
-        ApplyEditsRequest request,
-        MetadataV2Resource resource,
-        int storageLayerId,
-        EditPrincipal principal,
-        EditLockScope? lockScope,
-        bool guardUpdateSnapshot,
-        VersionContext? versionContext,
-        CancellationToken cancellationToken)
+    internal sealed class EditTarget
     {
+        internal required MetadataV2Resource Resource { get; init; }
+        internal required int StorageLayerId { get; init; }
+        internal EditPrincipal Principal { get; init; } = EditPrincipal.Anonymous;
+        internal VersionContext? VersionContext { get; init; }
+        internal MetadataV2StorageBinding? StorageBinding { get; init; }
+        internal EditLockScope? LockScope { get; init; }
+        internal bool GuardUpdateSnapshot { get; init; }
+    }
+
+    private async Task<EditOperationContext> ProcessEditOperationsAsync(
+        ApplyEditsRequest request, EditTarget target, CancellationToken cancellationToken)
+    {
+        var resource = target.Resource;
+        var principal = target.Principal;
         var context = new EditOperationContext
         {
             AddResults = request.Adds is { Length: > 0 } ? new EditResult?[request.Adds.Length] : null,
             UpdateResults = request.Updates is { Length: > 0 } ? new EditResult?[request.Updates.Length] : null,
             DeleteResults = request.Deletes is { Length: > 0 } ? new EditResult?[request.Deletes.Length] : null,
             RequiresOwnerGuards = OwnerEditPolicyFieldAccess.RequiresStoredOwner(resource.OwnerEditPolicy, principal),
-            LockScope = lockScope
+            LockScope = target.LockScope
         };
 
         await ProcessAddOperationsAsync(request, context, resource, principal, cancellationToken);
@@ -543,12 +554,12 @@ internal sealed class FeatureServerEditsHandler(
             request,
             context,
             resource,
-            storageLayerId,
+            target.StorageLayerId,
             principal,
-            guardUpdateSnapshot,
-            versionContext,
+            target.GuardUpdateSnapshot,
+            target.VersionContext,
             cancellationToken);
-        await ProcessDeleteOperationsAsync(request, resource, storageLayerId, context, principal, versionContext, cancellationToken);
+        await ProcessDeleteOperationsAsync(request, target, context, cancellationToken);
 
         return context;
     }
@@ -823,14 +834,13 @@ internal sealed class FeatureServerEditsHandler(
     }
 
     internal async Task ProcessDeleteOperationsAsync(
-        ApplyEditsRequest request,
-        MetadataV2Resource resource,
-        int storageLayerId,
-        EditOperationContext context,
-        EditPrincipal principal,
-        VersionContext? versionContext,
-        CancellationToken cancellationToken)
+        ApplyEditsRequest request, EditTarget target, EditOperationContext context, CancellationToken cancellationToken)
     {
+        var resource = target.Resource;
+        var storageLayerId = target.StorageLayerId;
+        var principal = target.Principal;
+        var versionContext = target.VersionContext;
+        var storageBinding = target.StorageBinding;
         if (request.Deletes == null)
             return;
 
@@ -889,7 +899,8 @@ internal sealed class FeatureServerEditsHandler(
                 .Where(static precondition => precondition.ExpectedRowAbsent)
                 .Select(static precondition => precondition.ObjectId)
                 .ToHashSet();
-        var usesInternalObjectIds = ShouldUseInternalObjectIdFastPath(resource);
+        var usesInternalObjectIds = ShouldUseInternalObjectIdFastPath(resource) ||
+            HasConfirmedStorageObjectId(resource, storageBinding);
         var ownerSnapshots = await ReadOwnerSnapshotsAsync(
             resource,
             storageLayerId,
@@ -1673,10 +1684,19 @@ internal sealed class FeatureServerEditsHandler(
         return resolved;
     }
 
+    // A declared objectid may be a source attribute with a separate storage key.
     private static bool ShouldUseInternalObjectIdFastPath(MetadataV2Resource resource)
-        => GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource)?.Name.Equals(
-            FieldNames.ObjectId,
-            StringComparison.OrdinalIgnoreCase) != false;
+        => GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource) is null;
+
+    private static bool HasConfirmedStorageObjectId(
+        MetadataV2Resource resource, MetadataV2StorageBinding? storageBinding)
+        => storageBinding is { StorageType: MetadataV2StorageType.RelationalTable } &&
+            storageBinding.Options.TryGetValue("primaryKeyColumn", out var primaryKey) &&
+            primaryKey.ValueKind == JsonValueKind.String &&
+            string.Equals(
+                GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource)?.Name,
+                primaryKey.GetString(),
+                StringComparison.OrdinalIgnoreCase);
 
     internal async Task<Feature> BuildFeatureFromGeoServicesAsync(
         GeoServicesFeature feature,

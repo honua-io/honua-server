@@ -5,7 +5,6 @@ using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Protocols.GeoServices.FeatureServer;
 
@@ -22,7 +21,7 @@ internal static class GeoServicesFeatureObjectIdResolver
         CancellationToken cancellationToken)
     {
         var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource);
-        if (objectIdField is null || objectIdField.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
+        if (objectIdField is null)
         {
             return await featureReader.GetAsync(storageLayerId, objectId, cancellationToken).ConfigureAwait(false);
         }
@@ -71,7 +70,7 @@ internal static class GeoServicesFeatureObjectIdResolver
         }
 
         var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource);
-        if (objectIdField is null || objectIdField.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
+        if (objectIdField is null)
         {
             foreach (var objectId in objectIds.Distinct())
             {

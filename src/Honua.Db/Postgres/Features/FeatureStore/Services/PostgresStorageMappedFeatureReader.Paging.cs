@@ -39,7 +39,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader
                     AddColumn(ValidateAndQuoteIdentifier(field.Name));
                 }
             }
-            else if (fields.Any(field => !IsObjectIdField(field.Name) && !field.SemanticRoles.Contains("id.primary")))
+            else if (fields.Any(field => !field.Name.Equals(_primaryIdFieldName, StringComparison.OrdinalIgnoreCase)))
             {
                 AddColumn(ValidateAndQuoteIdentifier(_mapping.AttributesColumn));
             }

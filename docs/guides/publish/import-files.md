@@ -119,6 +119,29 @@ Publish only the fields your clients need if you do not want the retained
 document in responses. Source attributes that were not promoted remain available
 inside that document.
 
+## Detailed polygons
+
+Default imports accept up to 100,000 vertices and 1,000 rings per feature,
+subject to the independent 1 MiB geometry WKB limit. All limits apply together;
+exceeding one rejects the geometry rather than removing rings or simplifying it.
+These bounds accommodate detailed zoning and coastal multipolygons without
+requiring a direct database load.
+
+Operators can set `Import__Limits__MaxVertices`, `Import__Limits__MaxRings`, and
+`Import__Limits__MaxWkbSize` (bytes) to positive values for their deployment's
+resource budget. An error identifies the exceeded bound; review the source
+geometry and deployment limits before retrying. The upload `/import/limits`
+endpoint reports file limits, not these per-feature geometry bounds.
+
+## Source fields
+
+GeoJSON source attributes named `created_at` (case insensitive) are rejected
+before loading because that name is reserved for the ingestion audit timestamp.
+Rename the source field to `source_created_at` to preserve its business meaning.
+
+Source `objectid` attributes remain source attributes; the storage primary key
+and the published layer's primary identifier can be different fields.
+
 ## Per-format notes
 
 | Format | Extension | Notes |
