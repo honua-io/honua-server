@@ -12,33 +12,22 @@ using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Security;
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.Authentication;
 
 internal sealed partial class PortalTokenIssuer(
-    IMemoryCache memoryCache,
+    ISecurityTokenStore tokens,
     ILogger<PortalTokenIssuer> logger,
-    IDistributedCache? distributedCache = null,
     IServiceProvider? serviceProvider = null) : IPortalTokenIssuer
 {
     internal const string AuthSchemeName = "PortalToken";
     internal const string AuthTypeClaimValue = "portal-token";
     internal const string TenantClaimType = "tenant_id";
     internal const string BindingClaimType = "portal_token_binding";
-    private const string TokenKeyPrefix = "portal-auth:token:";
 
-    // Redis keeps key lifetimes in whole seconds and rounds the remainder down, so a distributed
-    // entry that expires exactly at ExpiresAt can vanish up to a second before the expiry the
-    // client was given. The entry outlives ExpiresAt by this margin; the ExpiresAt check in
-    // GetAsync stays the authority for when the token stops validating (honua-server#4777).
-    private static readonly TimeSpan DistributedEntryExpiryMargin = TimeSpan.FromSeconds(2);
 
-    private readonly IMemoryCache _memoryCache = memoryCache;
     private readonly ILogger<PortalTokenIssuer> _logger = logger;
-    private readonly IDistributedCache? _distributedCache = distributedCache;
     private readonly IServiceProvider? _serviceProvider = serviceProvider;
 
     public async Task<PortalTokenIssuance> IssueAsync(
@@ -80,12 +69,7 @@ internal sealed partial class PortalTokenIssuer(
             }
         };
 
-        await SetAsync(
-            TokenKeyPrefix + token,
-            record,
-            expiresAt,
-            PortalTokenJsonContext.Default.PortalTokenRecord,
-            cancellationToken).ConfigureAwait(false);
+        await SetAsync(token, record, expiresAt, cancellationToken).ConfigureAwait(false);
 
         return new PortalTokenIssuance(token, expiresAt);
     }
@@ -159,12 +143,7 @@ internal sealed partial class PortalTokenIssuer(
             Source = presented.Source,
         };
 
-        await SetAsync(
-            TokenKeyPrefix + token,
-            record,
-            expiresAt,
-            PortalTokenJsonContext.Default.PortalTokenRecord,
-            cancellationToken).ConfigureAwait(false);
+        await SetAsync(token, record, expiresAt, cancellationToken).ConfigureAwait(false);
 
         return new PortalTokenExchange(
             new PortalTokenIssuance(token, expiresAt),
@@ -186,11 +165,7 @@ internal sealed partial class PortalTokenIssuer(
         // is not the bound client); active/expired/revoked is decided by cache
         // presence + lifetime, which GetAsync already enforces (it evicts and returns
         // null for an expired entry).
-        var record = await GetAsync(
-            TokenKeyPrefix,
-            tokenReference,
-            PortalTokenJsonContext.Default.PortalTokenRecord,
-            cancellationToken).ConfigureAwait(false);
+        var record = await GetAsync(tokenReference, cancellationToken).ConfigureAwait(false);
 
         if (record is null)
         {
@@ -229,9 +204,8 @@ internal sealed partial class PortalTokenIssuer(
         // revoked token is rejected on the very next request across every replica.
         // A shared-store delete that cannot be confirmed must fail the revocation;
         // swallowing it reports success while every replica keeps honouring the token
-        // (honua-server#6164).
-        await RemoveAsync(TokenKeyPrefix + tokenReference, cancellationToken, requireSharedRemoval: true)
-            .ConfigureAwait(false);
+        //.
+        await RevokeStoredAsync(tokenReference, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<PortalTokenRecord?> RestoreBoundRecordAsync(
@@ -246,11 +220,7 @@ internal sealed partial class PortalTokenIssuer(
             return null;
         }
 
-        var record = await GetAsync(
-            TokenKeyPrefix,
-            token,
-            PortalTokenJsonContext.Default.PortalTokenRecord,
-            cancellationToken).ConfigureAwait(false);
+        var record = await GetAsync(token, cancellationToken).ConfigureAwait(false);
 
         if (record is null)
         {
@@ -459,144 +429,45 @@ internal sealed partial class PortalTokenIssuer(
         return new ClaimsPrincipal(identity);
     }
 
-    private async Task SetAsync<T>(
-        string key,
-        T value,
-        DateTimeOffset expiresAt,
-        JsonTypeInfo<T> typeInfo,
-        CancellationToken cancellationToken)
+    // A token another node will not see must not look issued, so a store failure reaches the caller.
+    private Task SetAsync(string token, PortalTokenRecord record, DateTimeOffset expiresAt, CancellationToken cancellationToken)
+        => tokens.StoreAsync(
+            Key(token),
+            JsonSerializer.SerializeToUtf8Bytes(record, PortalTokenJsonContext.Default.PortalTokenRecord),
+            expiresAt - DateTimeOffset.UtcNow,
+            cancellationToken);
+
+    private async Task<PortalTokenRecord?> GetAsync(string? token, CancellationToken cancellationToken)
     {
-        var payload = JsonSerializer.SerializeToUtf8Bytes(value, typeInfo);
-        if (_distributedCache is null)
+        if (string.IsNullOrWhiteSpace(token))
         {
-            _memoryCache.Set(key, payload, expiresAt);
-            return;
+            return null;
         }
 
+        var stored = await tokens.FindAsync(Key(token), cancellationToken).ConfigureAwait(false);
+        if (stored is null)
+        {
+            return null;
+        }
+
+        var record = JsonSerializer.Deserialize(stored.Payload, PortalTokenJsonContext.Default.PortalTokenRecord);
+        return record is null || record.ExpiresAt <= DateTimeOffset.UtcNow ? null : record;
+    }
+
+    // A delete that cannot be confirmed must fail the revocation.
+    private async Task RevokeStoredAsync(string token, CancellationToken cancellationToken)
+    {
         try
         {
-            await _distributedCache.SetAsync(
-                key,
-                payload,
-                new DistributedCacheEntryOptions
-                {
-                    AbsoluteExpiration = expiresAt + DistributedEntryExpiryMargin
-                },
-                cancellationToken).ConfigureAwait(false);
-            _memoryCache.Set(key, payload, expiresAt);
+            await tokens.RevokeAsync(Key(token), cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception storeFailure) when (storeFailure is not OutOfMemoryException and not OperationCanceledException)
         {
-            _memoryCache.Remove(key);
-            PortalTokenLog.DistributedCachePersistFailed(_logger, LogValueRedactor.Hash(key), ex);
-            // Same rationale as AdminAuthSessionStore: surface persistence failures
-            // so the caller does not believe a session was issued when another
-            // replica will not see it.
-            throw;
+            throw new ServiceUnavailableException("The shared portal token could not be revoked.", storeFailure);
         }
     }
 
-    private async Task<PortalTokenRecord?> GetAsync(
-        string keyPrefix,
-        string token,
-        JsonTypeInfo<PortalTokenRecord> typeInfo,
-        CancellationToken cancellationToken)
-    {
-        var key = keyPrefix + token;
-        byte[]? payload = null;
-
-        if (_distributedCache is not null)
-        {
-            try
-            {
-                payload = await _distributedCache.GetAsync(key, cancellationToken).ConfigureAwait(false);
-                if (payload is null)
-                {
-                    _memoryCache.Remove(key);
-                    return null;
-                }
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                PortalTokenLog.DistributedCacheReadFailed(_logger, LogValueRedactor.Hash(key), ex);
-                // Intentional: distributed cache is unreachable; fall back to the in-process memory tier
-                // if a valid entry is present.  The memory entry was written atomically with
-                // the distributed entry at issuance time, so it remains consistent for its
-                // original TTL.  Evicting it would extend the auth outage beyond the Redis
-                // unavailability window and destroy warm in-process state unnecessarily (BH-028).
-                if (!_memoryCache.TryGetValue(key, out payload) || payload is null)
-                {
-                    return null;
-                }
-                // Fall through to deserialize the memory-cached payload.
-            }
-        }
-        else if (!_memoryCache.TryGetValue(key, out payload) || payload is null)
-        {
-            return null;
-        }
-
-        var value = JsonSerializer.Deserialize(payload, typeInfo);
-        if (value is null)
-        {
-            await RemoveAsync(key, cancellationToken).ConfigureAwait(false);
-            return null;
-        }
-
-        if (value.ExpiresAt <= DateTimeOffset.UtcNow)
-        {
-            await RemoveAsync(key, cancellationToken).ConfigureAwait(false);
-            return null;
-        }
-
-        _memoryCache.Set(key, payload, value.ExpiresAt);
-        return value;
-    }
-
-    private async Task RemoveAsync(string key, CancellationToken cancellationToken, bool requireSharedRemoval = false)
-    {
-        _memoryCache.Remove(key);
-
-        if (_distributedCache is null)
-        {
-            return;
-        }
-
-        try
-        {
-            await _distributedCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            PortalTokenLog.DistributedCacheRemoveFailed(_logger, LogValueRedactor.Hash(key), ex);
-            if (!requireSharedRemoval)
-            {
-                // Expiry cleanup is best-effort. Revocation is not: the caller must
-                // learn that the authoritative copy may still be live (honua-server#6164).
-                return;
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            try
-            {
-                // A direct shared-store miss confirms idempotent revocation. Never
-                // use the memory fallback or interpret a failed read as absence.
-                if (await _distributedCache.GetAsync(key, cancellationToken).ConfigureAwait(false) is null)
-                {
-                    return;
-                }
-            }
-            catch (Exception readException) when (readException is not OutOfMemoryException)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                PortalTokenLog.DistributedCacheReadFailed(
-                    _logger, LogValueRedactor.Hash(key), readException);
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            throw new ServiceUnavailableException("The shared portal token could not be revoked.", ex);
-        }
-    }
+    private static SecurityTokenKey Key(string token) => new(SecurityTokenKind.PortalToken, token);
 }
 
 internal sealed class PortalTokenRecord

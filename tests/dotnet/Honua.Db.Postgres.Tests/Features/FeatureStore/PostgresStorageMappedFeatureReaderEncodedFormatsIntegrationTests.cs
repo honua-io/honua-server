@@ -599,11 +599,14 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
         string? connectionString = null,
         bool preferSerialPlan = false,
         IAdoNetDatabaseConnectionProvider? connectionProvider = null,
-        int storageSrid = 4326)
+        int storageSrid = 4326,
+        string primaryKeyColumn = "objectid",
+        bool legacyPrimaryIdLast = false,
+        bool semanticPrimaryId = false)
     {
         var schemaFields = new List<MetadataV2Field>
         {
-            new() { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false, SemanticRoles = ["id.primary"] },
+            new() { Name = primaryKeyColumn, Type = MetadataV2FieldType.BigInteger, Nullable = false, SemanticRoles = ["id.primary"] },
             new() { Name = "geom", Type = MetadataV2FieldType.Geometry, Nullable = true, SemanticRoles = ["geometry.primary"] },
             new() { Name = "name", Type = MetadataV2FieldType.String },
             new() { Name = "population", Type = MetadataV2FieldType.Integer },
@@ -622,6 +625,8 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
             schemaFields.AddRange(additionalFields);
         }
 
+        ConfigurePrimaryIdField(schemaFields, primaryKeyColumn, semanticPrimaryId, legacyPrimaryIdLast);
+
         var resource = new MetadataV2Resource
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-cities", Name = "Cities" },
@@ -638,7 +643,7 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
         var mapping = new FeatureStorageMapping(
             TableName: "cities",
             SchemaName: _schema,
-            PrimaryKeyColumn: "objectid",
+            PrimaryKeyColumn: primaryKeyColumn,
             GeometryColumn: "geom",
             StorageSrid: storageSrid,
             AttributesColumn: attributesColumn,
@@ -658,6 +663,22 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
             connection: null,
             connectionEncryptionService: null,
             preferSerialBoundedSpatialReads: preferSerialPlan);
+    }
+
+    private static void ConfigurePrimaryIdField(
+        List<MetadataV2Field> schemaFields, string primaryKeyColumn, bool semanticPrimaryId, bool legacyPrimaryIdLast)
+    {
+        if (semanticPrimaryId)
+        {
+            schemaFields[0] = new MetadataV2Field { Name = primaryKeyColumn, Type = MetadataV2FieldType.BigInteger };
+        }
+
+        if (legacyPrimaryIdLast)
+        {
+            schemaFields.RemoveAt(0);
+            schemaFields.Add(new MetadataV2Field { Name = primaryKeyColumn, Type = MetadataV2FieldType.BigInteger });
+        }
+
     }
 
     private sealed class FixtureConnectionProvider : IAdoNetDatabaseConnectionProvider

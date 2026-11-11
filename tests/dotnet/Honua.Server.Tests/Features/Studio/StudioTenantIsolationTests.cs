@@ -19,6 +19,7 @@ using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Studio.Models;
+using Honua.TestKit.Extensions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -63,7 +64,7 @@ public sealed class StudioTenantIsolationTests : IAsyncLifetime
     private const string TenantB = "tenant-b";
     private const string JsonMediaType = "application/json";
 
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
     private readonly RedisFixture _redis = new();
     private HttpClient _tenantA = null!;
     private HttpClient _tenantB = null!;

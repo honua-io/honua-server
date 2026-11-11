@@ -2,29 +2,24 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.IdentityModel.Tokens.Jwt;
-using System.Collections.Concurrent;
 using System.Security.Claims;
 using System.Text;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
-using Honua.Infrastructure.Redis;
 using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
-using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
-using StackExchange.Redis;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 
 namespace Honua.Infrastructure.Authentication;
 
 public static partial class OidcAuthenticationExtensions
 {
-    private static readonly ConcurrentDictionary<string, ReplayLockState> TokenReplayLocks = new(StringComparer.Ordinal);
-
     private static readonly string[] GoogleIssuers = { "https://accounts.google.com" };
 
     public const string AzureAdScheme = "AzureAd";
@@ -219,8 +214,8 @@ public static partial class OidcAuthenticationExtensions
             };
         });
 
-        // Register claims transformation service
         services.AddScoped<IClaimsTransformation, OidcClaimsTransformation>();
+        services.TryAddSingleton<ITokenReplayStore, InMemoryTokenReplayStore>();
 
         return services;
     }
@@ -723,8 +718,7 @@ public static partial class OidcAuthenticationExtensions
                         context.HttpContext.Features.Get<LiveStreamRevalidationFeature>() is null &&
                         !context.HttpContext.IsAdminAuthSessionBridged())
                     {
-                        var redis = context.HttpContext.RequestServices.GetService<IConnectionMultiplexer>();
-                        var memoryCache = context.HttpContext.RequestServices.GetService<IMemoryCache>();
+                        var replays = context.HttpContext.RequestServices.GetService<ITokenReplayStore>();
                         var tokenKey = TryGetTokenReplayKey(context.SecurityToken);
                         if (!string.IsNullOrWhiteSpace(tokenKey))
                         {
@@ -737,12 +731,9 @@ public static partial class OidcAuthenticationExtensions
 
                             var scope = ResolveTokenReplayScope(context.HttpContext, context.SecurityToken);
                             var registration = await TryRegisterTokenReplayAsync(
-                                tokenKey,
-                                expiration,
-                                redis,
-                                memoryCache,
+                                new TokenReplayPresentation(tokenKey, expiration, scope),
+                                replays,
                                 oidcOptions.TokenValidation.ReplayProtectionFailClosed,
-                                scope,
                                 logger,
                                 context.HttpContext.RequestAborted).ConfigureAwait(false);
 
@@ -765,10 +756,9 @@ public static partial class OidcAuthenticationExtensions
                                 OidcAuthenticationLog.TokenReplayContinuationAccepted(logger);
                             }
 
-                            if (registration.Store is { } store)
+                            if (registration.Recorded)
                             {
-                                context.HttpContext.Features.Set(
-                                    new TokenReplayAdmissionFeature(tokenKey, expiration, store, scope));
+                                context.HttpContext.Features.Set(new TokenReplayAdmissionFeature(tokenKey, scope));
                             }
                         }
                     }
@@ -777,147 +767,45 @@ public static partial class OidcAuthenticationExtensions
         });
     }
 
+    // Every node records a presented token in the shared replay store, so a token used on one node is a replay on another.
     internal static async Task<TokenReplayRegistration> TryRegisterTokenReplayAsync(
-        string tokenKey,
-        DateTime expiresOn,
-        IConnectionMultiplexer? redis,
-        IMemoryCache? memoryCache,
+        TokenReplayPresentation presentation,
+        ITokenReplayStore? replays,
         bool failClosed,
-        TokenReplayScope scope,
         ILogger logger,
         CancellationToken cancellationToken)
     {
-        var expiresIn = expiresOn - DateTime.UtcNow;
-        if (expiresIn <= TimeSpan.Zero)
+        var lifetime = presentation.ExpiresOn - DateTime.UtcNow;
+        if (lifetime <= TimeSpan.Zero)
         {
-            return new(TokenReplayRegistrationResult.Unavailable, null);
+            return new(TokenReplayRegistrationResult.Unavailable, Recorded: false);
         }
 
-        if (redis is not null)
+        if (replays is null)
         {
-            try
-            {
-                if (redis.IsConnected)
-                {
-                    return await RedisClientFault.RetryCompletedReaderAsync(
-                        () => RegisterConnectedTokenReplayAsync(redis, tokenKey, scope, expiresIn),
-                        cancellationToken).ConfigureAwait(false);
-                }
-
-                OidcAuthenticationLog.TokenReplayRedisDisconnected(logger);
-            }
-            catch (Exception ex) when (RedisClientFault.IsRedisTransportFault(ex))
-            {
-                // RedisTimeoutException derives from TimeoutException, not RedisException.
-                // A torn pipe surfaces as the completed-reader InvalidOperationException
-                // (honua-server#6753) and degrades the same way as a timeout.
-                OidcAuthenticationLog.TokenReplayRedisAccessFailed(logger, ex);
-            }
-
-            // Redis is configured but unavailable: per-node memory cannot provide
-            // cluster-wide single-use semantics, so fail-closed deployments reject
-            // the token instead of silently degrading.
-            if (failClosed)
-            {
-                return new(TokenReplayRegistrationResult.Unavailable, null);
-            }
+            OidcAuthenticationLog.TokenReplayCacheUnavailable(logger);
+            return failClosed ? UnrecordedRefusal : UnrecordedAdmission;
         }
 
-        if (memoryCache is not null)
+        try
         {
-            return await TryRegisterTokenReplayInMemoryAsync(
-                tokenKey,
-                expiresOn,
-                memoryCache,
-                scope,
+            var registration = await replays.TryRegisterAsync(
+                new TokenReplayRegistrationRequest(presentation.TokenKey, presentation.Scope.RegistrationValue, lifetime),
                 cancellationToken).ConfigureAwait(false);
+            return registration.Registered
+                ? new(TokenReplayRegistrationResult.Registered, Recorded: true)
+                : new(ClassifyReusedToken(registration.ExistingMarker, presentation.Scope), Recorded: true);
         }
-
-        OidcAuthenticationLog.TokenReplayCacheUnavailable(logger);
-        return new(
-            failClosed ? TokenReplayRegistrationResult.Unavailable : TokenReplayRegistrationResult.Skipped,
-            null);
-    }
-
-    private static async Task<TokenReplayRegistration> RegisterConnectedTokenReplayAsync(
-        IConnectionMultiplexer redis,
-        string tokenKey,
-        TokenReplayScope scope,
-        TimeSpan expiresIn)
-    {
-        var database = redis.GetDatabase();
-        var registered = await database.StringSetAsync(
-            tokenKey,
-            scope.RegistrationValue,
-            expiresIn,
-            when: When.NotExists).ConfigureAwait(false);
-        if (registered)
+        catch (Exception storeFailure) when (storeFailure is not OutOfMemoryException and not OperationCanceledException)
         {
-            return new(TokenReplayRegistrationResult.Registered, TokenReplayStore.Redis);
-        }
-
-        // A reused token is admitted on the HTTP API it was admitted on
-        // (honua-server#4899) or on the server-issued continuation it is bound
-        // to (honua-server#4909); anywhere else it is a replay.
-        var current = await database.StringGetAsync(tokenKey).ConfigureAwait(false);
-        return new(ClassifyReusedToken((string?)current, scope), TokenReplayStore.Redis);
-    }
-
-    private static async Task<TokenReplayRegistration> TryRegisterTokenReplayInMemoryAsync(
-        string tokenKey,
-        DateTime expiresOn,
-        IMemoryCache memoryCache,
-        TokenReplayScope scope,
-        CancellationToken cancellationToken)
-    {
-        if (memoryCache.TryGetValue(tokenKey, out var existing))
-        {
-            return new(ClassifyReusedToken(existing, scope), TokenReplayStore.Memory);
-        }
-
-        var result = await WithReplayLockAsync(tokenKey, () =>
-        {
-            if (memoryCache.TryGetValue(tokenKey, out var raced))
-            {
-                return ClassifyReusedToken(raced, scope);
-            }
-
-            memoryCache.Set(tokenKey, scope.RegistrationValue, new MemoryCacheEntryOptions
-            {
-                AbsoluteExpiration = new DateTimeOffset(expiresOn)
-            });
-
-            return TokenReplayRegistrationResult.Registered;
-        }, cancellationToken).ConfigureAwait(false);
-        return new(result, TokenReplayStore.Memory);
-    }
-
-    private static ReplayLockState AcquireReplayLock(string tokenKey)
-    {
-        while (true)
-        {
-            var state = TokenReplayLocks.GetOrAdd(tokenKey, static _ => new ReplayLockState());
-
-            // Increment the reference count only while the state is live. A CAS loop
-            // (rather than a blind Interlocked.Increment) guarantees we never resurrect
-            // a state that the release path has already tombstoned and disposed.
-            var count = Volatile.Read(ref state.ReferenceCount);
-            while (count >= 0)
-            {
-                var previous = Interlocked.CompareExchange(ref state.ReferenceCount, count + 1, count);
-                if (previous == count)
-                {
-                    return state;
-                }
-
-                count = previous;
-            }
-
-            // The state was tombstoned between GetOrAdd and the increment; drop the
-            // dead entry (best effort) and retry with a fresh state.
-            TokenReplayLocks.TryRemove(new KeyValuePair<string, ReplayLockState>(tokenKey, state));
+            OidcAuthenticationLog.TokenReplayStoreAccessFailed(logger, storeFailure);
+            return failClosed ? UnrecordedRefusal : UnrecordedAdmission;
         }
     }
+
+    private static readonly TokenReplayRegistration UnrecordedRefusal = new(TokenReplayRegistrationResult.Unavailable, Recorded: false);
+
+    private static readonly TokenReplayRegistration UnrecordedAdmission = new(TokenReplayRegistrationResult.Skipped, Recorded: false);
 
     private static void ResolveOidcSecrets(OidcAuthenticationOptions options)
     {
@@ -1047,15 +935,6 @@ public static partial class OidcAuthenticationExtensions
         Reused,
 
         Unavailable
-    }
-
-    private sealed class ReplayLockState
-    {
-        public const int Tombstone = -1;
-
-        public SemaphoreSlim Semaphore { get; } = new(1, 1);
-
-        public int ReferenceCount;
     }
 
     private static void ConfigureAzureAdAuthentication(

@@ -340,9 +340,13 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         // temporal types. Reuse the canonical feature SELECT and one shared format writer.
         var selectQuery = _queryBuilder.BuildSelectQuery(layerId, query, geometryStorageType);
         var features = await _dataAccess.ExecuteSelectQueryAsync(selectQuery, query, layerId, cancellationToken).ConfigureAwait(false);
-        return FlatGeobufFeatureWriter.Write(features, resource, query,
-            FeatureQueryBuilder.GetEncodedBinaryAttributeFields(resource, query),
-            query.OutputSrid ?? resource.Spatial?.StorageCrs?.ResolveSrid() ?? resource.ReadSrid(), cancellationToken);
+        return FlatGeobufFeatureWriter.Write(features, new FlatGeobufFeatureWriter.ExportOptions
+        {
+            Resource = resource,
+            Query = query,
+            ProjectedFields = FeatureQueryBuilder.GetEncodedBinaryAttributeFields(resource, query),
+            OutputSrid = query.OutputSrid ?? resource.Spatial?.StorageCrs?.ResolveSrid() ?? resource.ReadSrid()
+        }, cancellationToken);
     }
 
     public async Task<byte[]?> QueryGeobufAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)

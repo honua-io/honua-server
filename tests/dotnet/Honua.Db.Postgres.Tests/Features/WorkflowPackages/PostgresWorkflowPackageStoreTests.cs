@@ -5,6 +5,7 @@ using System.Data;
 using System.Data.Common;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Orchestration.Domain;
 using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Db.Postgres.Features.WorkflowPackages;
 using Honua.TestKit;
@@ -20,6 +21,41 @@ namespace Honua.Db.Postgres.Tests.Features.WorkflowPackages;
 [Collection("Database")]
 public sealed class PostgresWorkflowPackageStoreTests(PostgresFixture fixture)
 {
+    [IntegrationTest]
+    public async Task ExecutionOptions_PersistAcrossStoreRestart_AndPreventStaleVersionCreation()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(ExecutionOptions_PersistAcrossStoreRestart_AndPreventStaleVersionCreation));
+        try
+        {
+            await ApplyMigrationAsync(schema);
+            var connections = new TestConnectionProvider(fixture.DataSource, schema);
+            var writer = new PostgresWorkflowPackageStore(connections, schema);
+            var package = SamplePackage("execution");
+            var originalNode = package.Graph.Nodes[0];
+            var node = originalNode with
+            {
+                RetryPolicy = new StepRetryPolicy { MaxAttempts = 3, InitialDelaySeconds = 2 },
+                FailurePolicy = WorkflowStepFailurePolicy.Skip,
+                TimeoutSeconds = 10,
+                Condition = new WorkflowStepCondition("source", WorkflowStepConditionKind.HasArtifact),
+                ForEach = new WorkflowForEachSpec(["east", "west"])
+            };
+            package = await writer.SavePackageAsync(package with { Graph = package.Graph with { Nodes = [node] } });
+            var hash = WorkflowPackageGraphHasher.Compute(package.Graph);
+            var version = await writer.CreateVersionAsync(package.PackageId, hash, package.Graph, WorkflowPackageValidationResult.Success(hash), "author");
+            var restarted = new PostgresWorkflowPackageStore(connections, schema);
+            (await restarted.GetPackageAsync(package.PackageId))!.Graph.Should().BeEquivalentTo(package.Graph);
+            (await restarted.GetVersionAsync(package.PackageId, version.Version))!.Graph.Should().BeEquivalentTo(package.Graph);
+            await writer.SavePackageAsync(package with { Graph = package.Graph with { Nodes = [node with { TimeoutSeconds = 20 }] } });
+            var staleVersion = () => restarted.CreateVersionAsync(package.PackageId, hash, package.Graph, WorkflowPackageValidationResult.Success(hash), "author");
+            await staleVersion.Should().ThrowAsync<WorkflowPackageGraphConflictException>();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     [IntegrationTest]
     public async Task PackageVersionAndPublication_SurviveRestart_AndAreVisibleToAPeer()
     {

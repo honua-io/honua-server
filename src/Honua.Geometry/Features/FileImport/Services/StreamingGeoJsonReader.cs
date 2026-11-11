@@ -547,6 +547,8 @@ internal sealed class StreamingGeoJsonReader
             return issues;
         }
 
+        ValidateReservedAttributes(root, featureIndex, issues);
+
         if (!root.TryGetProperty("geometry", out var geometryElement) ||
             geometryElement.ValueKind == JsonValueKind.Null)
         {
@@ -637,6 +639,24 @@ internal sealed class StreamingGeoJsonReader
         }
 
         return issues;
+    }
+
+    private static void ValidateReservedAttributes(
+        JsonElement root, int featureIndex, List<ImportValidationIssue> issues)
+    {
+        if (root.TryGetProperty("properties", out var properties) && properties.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in properties.EnumerateObject()
+                .Where(property => property.Name.Equals("created_at", StringComparison.OrdinalIgnoreCase)))
+            {
+                issues.Add(ImportValidationIssue.Create(
+                    ImportValidationErrorCodes.ReservedAttributeName,
+                    "The attribute 'created_at' is reserved for the import audit timestamp. Rename the source field to 'source_created_at' before importing.",
+                    featureIndex,
+                    $"properties.{property.Name}"));
+            }
+        }
+
     }
 
     /// <summary>

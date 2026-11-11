@@ -18,7 +18,6 @@ using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using StackExchange.Redis;
 using IOperationExecutor = Honua.Core.Features.Operations.Abstractions.IOperationExecutor;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
@@ -32,10 +31,10 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests
     [InlineData("admin.api-key.create", false, true)]
     public async Task ProposeAsync_AllowPolicy_VerifiedHumanApprovalReplaysOriginalExactlyOnce(string operationId, bool loseProposalAudit, bool revokeProposer)
     {
-        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        var proposals = new RedisOperationProposalStore(multiplexer, NullLogger<RedisOperationProposalStore>.Instance);
-        var instances = new RedisOperationInstanceStore(multiplexer);
-        var secrets = BuildRedisSecretStore(multiplexer);
+        var state = await SharedControlPlaneState.GetAsync();
+        var proposals = state.CreateProposalStore();
+        var instances = state.CreateInstanceStore();
+        var secrets = BuildSecretStore(state);
         var audit = new RecordingAuditLog { FailAction = loseProposalAudit ? "operation.proposed" : null };
         var definition = AdminAccessOperationCatalog.Definitions.Single(d => d.OperationId == operationId);
         var mapper = new AdminOperateOperationApprovalRequestMapper(definition, secrets);
@@ -134,9 +133,9 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests
         {
             JsonSerializer.Serialize(completed).Should().NotContain(secret);
             var reference = completed.Result!.SecretReferences.Should().ContainSingle().Subject;
-            secrets.Consume(reference, pending.OperationInstanceId, operationId, "distinct-approver-6662", tenant).Should().BeNull();
-            secrets.Consume(reference, pending.OperationInstanceId, operationId, original, tenant).Should().Be(secret);
-            secrets.Consume(reference, pending.OperationInstanceId, operationId, original, tenant).Should().BeNull();
+            secrets.Consume(reference, new OperationSecretBinding(pending.OperationInstanceId, operationId, "distinct-approver-6662", tenant)).Should().BeNull();
+            secrets.Consume(reference, new OperationSecretBinding(pending.OperationInstanceId, operationId, original, tenant)).Should().Be(secret);
+            secrets.Consume(reference, new OperationSecretBinding(pending.OperationInstanceId, operationId, original, tenant)).Should().BeNull();
         }
         JsonSerializer.Serialize(audit.Events).Should().NotContain(secret);
     }
