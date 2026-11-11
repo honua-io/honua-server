@@ -5,9 +5,11 @@ Both steps read documents that the PR Gate impact classifier treats as safe or
 as governed: `Verify review-first admission contract` parses
 `docs/internal/ci/gate-model.md` and `docs/internal/ci/workflow-inventory.md`,
 and `Verify .NET base-image security inventory` parses the code-scanning
-inventory. Their soundness argument depends on running unconditionally, so this
-asserts it structurally -- no step `if`, no `continue-on-error`, no job `if`,
-and the step still invokes its script -- rather than by matching workflow text.
+inventory. Their soundness argument depends on running on every admitted (ready
+or dispatched) run, so this asserts it structurally -- no step `if`, no
+`continue-on-error`, no job `if`, and the step still invokes its script -- rather
+than by matching workflow text. Drafts skip the job only through
+`needs: runner-select`, and the required aggregate fails on that skip.
 """
 
 from __future__ import annotations

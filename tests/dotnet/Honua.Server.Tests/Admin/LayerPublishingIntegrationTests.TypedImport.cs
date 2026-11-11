@@ -29,13 +29,7 @@ public sealed partial class LayerPublishingIntegrationTests
     public async Task PublishImportedGeoJson_TypedColumns_FilterAndSortAcrossFeatureSurfaces()
     {
         await InstallImportFunctionsAsync();
-        await DeleteSecureConnectionAsync();
-        _connectionCreated = false;
-        var publishConnection = new Npgsql.NpgsqlConnectionStringBuilder(_fixture.Postgres.ConnectionString)
-        {
-            SearchPath = $"{_fixture.CurrentSchema},public"
-        };
-        await CreateSecureConnectionAsync(publishConnection.ConnectionString);
+        await CreateSchemaScopedImportConnectionAsync();
 
         var logicalTableName = $"typed_points_{Guid.NewGuid():N}";
         const string geoJson = """
@@ -91,6 +85,14 @@ public sealed partial class LayerPublishingIntegrationTests
         columns.Should().Contain(["id", "name", "population", "properties", "geometry"]);
         columns.Should().NotContain("notes");
 
+        // The retained source document and promoted columns are independently editable.
+        // Filtering and sorting must continue to use the promoted value when they diverge.
+        await _fixture.Postgres.ExecuteDdlUnderLockAsync($$"""
+            UPDATE "{{importResult.Schema}}"."{{importResult.PhysicalTableName}}"
+            SET properties = jsonb_set(properties, '{name}', '"Original Alpha"'::jsonb)
+            WHERE name = 'Alpha';
+            """);
+
         var published = await PublishLayerAsync(new PublishLayerRequest
         {
             Schema = importResult.Schema,
@@ -114,7 +116,7 @@ public sealed partial class LayerPublishingIntegrationTests
         AssertTypedFeature(sortedFeatures[0], "Bravo", 10, "dock");
         AssertTypedFeature(sortedFeatures[1], "Alpha", 2, "park");
 
-        var filteredPayload = await ReadOgcItemsAsync($"filter={Uri.EscapeDataString("population = 2")}");
+        var filteredPayload = await ReadOgcItemsAsync($"filter={Uri.EscapeDataString("name = 'Alpha' AND population = 2")}");
         using var filtered = JsonDocument.Parse(filteredPayload);
         var filteredFeatures = filtered.RootElement.GetProperty("features");
         filteredFeatures.GetArrayLength().Should().Be(1, filteredPayload);
@@ -127,7 +129,7 @@ public sealed partial class LayerPublishingIntegrationTests
         AssertFeatureServerAttributes(featureServerFeatures[0].GetProperty("attributes"), "Bravo", 10);
         AssertFeatureServerAttributes(featureServerFeatures[1].GetProperty("attributes"), "Alpha", 2);
 
-        var filteredServerPayload = await ReadFeatureServerAsync("population = 2", "population DESC");
+        var filteredServerPayload = await ReadFeatureServerAsync("name = 'Alpha' AND population = 2", "population DESC");
         using var filteredServer = JsonDocument.Parse(filteredServerPayload);
         var filteredServerFeatures = filteredServer.RootElement.GetProperty("features");
         filteredServerFeatures.GetArrayLength().Should().Be(1, filteredServerPayload);
@@ -156,15 +158,19 @@ public sealed partial class LayerPublishingIntegrationTests
             serverResult.RootElement.GetProperty("features").GetArrayLength().Should().Be(1, field);
         }
 
-        var odataResponse = await _client.GetAsync($"/odata/Features({_layerId})?$filter=population%20eq%202&$orderby=population%20desc");
+        var odataResponse = await _client.GetAsync($"/odata/Features({_layerId})?$filter=name%20eq%20%27Alpha%27%20and%20population%20eq%202&$orderby=population%20desc");
         var odataPayload = await odataResponse.Content.ReadAsStringAsync();
         odataResponse.StatusCode.Should().Be(HttpStatusCode.OK, odataPayload);
         using var odata = JsonDocument.Parse(odataPayload);
         odata.RootElement.GetProperty("value").GetArrayLength().Should().Be(1, odataPayload);
+        AssertFeatureServerAttributes(
+            Honua.TestKit.Helpers.ODataTestHelpers.ParseAttributes(odata.RootElement.GetProperty("value")[0]),
+            "Alpha", 2);
 
         foreach (var (field, filter) in new[]
         {
             ("source_id", "source_id eq '002'"),
+            ("name", "name eq 'Bravo'"),
             ("is_open", "is_open eq true"),
             ("population", "population eq 10"),
             ("score", "score eq 2.5"),
@@ -187,7 +193,7 @@ public sealed partial class LayerPublishingIntegrationTests
                 .GetString().Should().Be("Bravo", field);
         }
 
-        var mcp = await CallQueryFeaturesAsync("population = 2");
+        var mcp = await CallQueryFeaturesAsync("name = 'Alpha' AND population = 2");
         if (mcp.TryGetProperty("isError", out var isError))
         {
             (isError.ValueKind == JsonValueKind.True).Should().BeFalse(mcp.GetRawText());
@@ -245,6 +251,17 @@ public sealed partial class LayerPublishingIntegrationTests
         (await ColumnNamesAsync("public", tableName)).Should().NotContain("name");
     }
 
+    private async Task CreateSchemaScopedImportConnectionAsync()
+    {
+        await DeleteSecureConnectionAsync();
+        _connectionCreated = false;
+        var publishConnection = new Npgsql.NpgsqlConnectionStringBuilder(_fixture.Postgres.ConnectionString)
+        {
+            SearchPath = $"{_fixture.CurrentSchema},public"
+        };
+        await CreateSecureConnectionAsync(publishConnection.ConnectionString);
+    }
+
     private async Task<string> ReadOgcItemsAsync(string query)
     {
         var response = await _client.GetAsync($"/ogc/features/collections/{_layerId}/items?f=json&{query}");
@@ -280,7 +297,7 @@ public sealed partial class LayerPublishingIntegrationTests
                     serviceId = _serviceName,
                     layerId = _layerId,
                     where,
-                    outFields = new[] { "name", "population" },
+                    outFields = new[] { "name", "population", "properties" },
                     limit = 10
                 }
             }
@@ -341,6 +358,7 @@ public sealed partial class LayerPublishingIntegrationTests
         properties.GetProperty("population").ValueKind.Should().Be(JsonValueKind.Number);
         properties.GetProperty("population").GetInt64().Should().Be(population);
         properties.TryGetProperty("created_at", out _).Should().BeFalse();
+        AssertRetainedImportDocument(properties, name, population);
         properties.GetProperty("properties").GetProperty("notes").GetProperty("kind").GetString().Should().Be(noteKind);
         properties.GetProperty("properties").GetProperty("id").GetString().Should().Be(population == 2 ? "100" : "200");
     }
@@ -351,6 +369,18 @@ public sealed partial class LayerPublishingIntegrationTests
         attributes.GetProperty("population").ValueKind.Should().Be(JsonValueKind.Number);
         attributes.GetProperty("population").GetInt64().Should().Be(population);
         attributes.TryGetProperty("created_at", out _).Should().BeFalse();
+        AssertRetainedImportDocument(attributes, name, population);
+    }
+
+    private static void AssertRetainedImportDocument(JsonElement attributes, string name, long population)
+    {
+        var retained = attributes.GetProperty("properties");
+        using var document = JsonDocument.Parse(retained.ValueKind == JsonValueKind.String
+            ? retained.GetString()!
+            : retained.GetRawText());
+        var source = document.RootElement;
+        source.GetProperty("name").GetString().Should().Be(name == "Alpha" ? "Original Alpha" : name);
+        source.GetProperty("population").GetInt64().Should().Be(population);
     }
 
     private static string ReadMigration(string name)
