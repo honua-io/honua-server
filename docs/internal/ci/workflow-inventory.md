@@ -450,8 +450,7 @@ conformance caller to succeed, even when optional integration dispatch is disabl
 Common CITE suites consume the candidate image and source SHA; standalone WFS, Maps and
 Building-Block suites retain their source-build checks at the release workflow commit.
 Exact-candidate certification remains a separate manual operation requiring its governed
-candidate context. Building-Block Conformance is currently disabled in repository settings;
-its trigger policy is safe to re-enable after this change lands.
+candidate context.
 
 ## Release and deploy
 
