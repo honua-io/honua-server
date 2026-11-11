@@ -622,6 +622,14 @@ twice-daily full matrix are preserved.
 
 Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. Missing envelopes from ordinary producers remain errors.
 
+### Authorization shard coverage
+
+The authorization matrix selects the live `AdminAuthorizationTests` class.
+The remaining authorization shard owns every other method in the original parent
+filter. Retired Redis endpoint selectors are removed; the coverage guard still
+rejects dead positive clauses, and the partition fixture verifies complete,
+disjoint method ownership with unchanged source triggers and budgets.
+
 ### Governance capacity split
 
 The former `Server Features Admin Governance and Sharing` shard timed out at
@@ -644,3 +652,42 @@ projects: when selected, each restores and builds by its own project path before
 managed outputs are published. Restore and build failures remain gating, with
 the same warnings, analyzers and graph-build settings as the solution build.
 Unknown projects outside the solution still fail planning; test selection is unchanged.
+
+### Optional PR workflow input boundaries
+
+Capability Impact Comparison keeps its PR observation report, scoped to runtime
+source, .NET proving tests, compatibility baselines, capability data, the shard
+map and the selector/report tools. Unrelated prose and workflow edits no longer
+start it. It is currently disabled in repository settings; this filter makes
+re-enabling it safe. Capability Matrix Aggregation and OpenAPI Contract
+Governance already enumerate their generator/contract inputs and retain those
+filters. GeoArrow now also watches global.json and NuGet.config; GeoParquet
+retains its existing serializer/query/import/build-input boundary.
+
+Docs Link Gate retains its complete PR suite for documentation, skills, checker
+and manifest edits. Source/docker/eng-only edits instead run the link checker and
+its adversarial fixtures in the existing ci.yml CI Router Validation job on affected trunk
+runs and twice-daily full runs. That job already participates in CI Gate; no
+required check name or aggregate dependency changes. The runtime URL scan still
+runs and fails the trunk gate when a source/config link breaks.
+
+Derived Artifact Normalization watches .NET generator/proving-test code and
+client compatibility receipts instead of every test language, and GIS data
+instead of GIS prose. Runtime source, generator scripts, CITE status and all
+existing build/setup inputs remain covered. Its producer/consumer security
+boundary and deterministic replay are unchanged.
+
+## Automatic merge admission
+
+[Automatic merge admission](workflow-inventory.md#automatic-merge-admission) uses
+the bot App to enable GitHub auto-merge. Repository rulesets and required checks decide when a PR merges.
+The workflow does not override protections. Exact-head review admission must be
+configured as a required check to be enforced by GitHub auto-merge.
+
+The event-driven auto-merge workflow skips Dependabot PRs before minting App credentials. Already mergeable PRs remain with the existing merge authority because GitHub cannot arm deferred auto-merge for them.
+
+Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
+`edited`. Dependabot PRs skip this workflow entirely, including hold-label
+revocation: a human or drain lane owns any manually armed dependency PR.
+If mergeability becomes clean between the live query and enable mutation, only
+GitHub's specific clean-status response ends neutrally; other API errors fail.
