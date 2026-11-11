@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Data;
 using System.Data.Common;
+using System.Runtime.CompilerServices;
 using System.Security.Claims;
 using FluentAssertions;
 using Grpc.Core;
@@ -33,15 +34,14 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
-using StackExchange.Redis;
 using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
 /// <summary>
 /// Keyed gRPC ApplyEdits retries: a stored result is replayed only to the same
-/// issuer-qualified actor in the same effective tenant (SEC-34), and a keyed edit
-/// commits at most once across replicas (SEC-36).
+/// issuer-qualified actor in the same effective tenant, and a keyed edit commits at most
+/// once across nodes because the receipt committed with the edit decides the winner.
 /// </summary>
 [Protocol(TestProtocols.Grpc)]
 [Operation(Operations.ApplyEdits)]
@@ -53,7 +53,7 @@ public sealed class GrpcApplyEditsIdempotencyTests
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     public async Task ApplyEdits_SameActorTenantAndKey_ReplaysTheFirstResult()
     {
-        var harness = new ServiceHarness(new GrpcApplyEditsIdempotencyStore());
+        var harness = new ServiceHarness(new GrpcApplyEditsReceipts());
         var user = Subject("editor", issuer: "https://issuer-a.example");
 
         var first = await harness.Service.ApplyEdits(AddRequest(), harness.Context(user, tenantId: "tenant-a"));
@@ -67,7 +67,7 @@ public sealed class GrpcApplyEditsIdempotencyTests
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     public async Task ApplyEdits_SameKeyInAnotherTenant_ExecutesItsOwnEdit()
     {
-        var harness = new ServiceHarness(new GrpcApplyEditsIdempotencyStore());
+        var harness = new ServiceHarness(new GrpcApplyEditsReceipts());
         var user = Subject("editor", issuer: "https://issuer-a.example");
 
         var tenantA = await harness.Service.ApplyEdits(AddRequest(), harness.Context(user, tenantId: "tenant-a"));
@@ -81,7 +81,7 @@ public sealed class GrpcApplyEditsIdempotencyTests
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     public async Task ApplyEdits_SameSubjectFromAnotherIssuer_ExecutesItsOwnEdit()
     {
-        var harness = new ServiceHarness(new GrpcApplyEditsIdempotencyStore());
+        var harness = new ServiceHarness(new GrpcApplyEditsReceipts());
 
         var first = await harness.Service.ApplyEdits(
             AddRequest(), harness.Context(Subject("shared-sub", issuer: "https://issuer-a.example"), tenantId: null));
@@ -96,7 +96,7 @@ public sealed class GrpcApplyEditsIdempotencyTests
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     public async Task ApplyEdits_SameKeyFromAnotherAuthenticationScheme_ExecutesItsOwnEdit()
     {
-        var harness = new ServiceHarness(new GrpcApplyEditsIdempotencyStore());
+        var harness = new ServiceHarness(new GrpcApplyEditsReceipts());
 
         await harness.Service.ApplyEdits(
             AddRequest(), harness.Context(Subject("shared-sub", issuer: null, scheme: "SchemeA"), tenantId: null));
@@ -110,7 +110,7 @@ public sealed class GrpcApplyEditsIdempotencyTests
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     public async Task KeyedEdits_WithDistinctKeys_DoNotRetainKeyGates()
     {
-        using var store = new GrpcApplyEditsIdempotencyStore();
+        using var store = new GrpcApplyEditsReceipts();
         var harness = new ServiceHarness(store);
         var user = Subject("editor", issuer: "https://issuer-a.example");
 
@@ -127,7 +127,7 @@ public sealed class GrpcApplyEditsIdempotencyTests
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     public async Task ApplyEdits_KeyedEditWithoutBindableIdentity_IsRefusedBeforeWriting()
     {
-        var harness = new ServiceHarness(new GrpcApplyEditsIdempotencyStore());
+        var harness = new ServiceHarness(new GrpcApplyEditsReceipts());
         var user = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "admin")], "Bearer"));
 
         var act = async () => await harness.Service.ApplyEdits(AddRequest(), harness.Context(user, tenantId: null));
@@ -140,7 +140,7 @@ public sealed class GrpcApplyEditsIdempotencyTests
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     public async Task ApplyEdits_CancelAfterWrite_DoesNotExecuteTheKeyedEditAgain()
     {
-        var harness = new ServiceHarness(new GrpcApplyEditsIdempotencyStore(), throwAfterWrite: true);
+        var harness = new ServiceHarness(new GrpcApplyEditsReceipts(), throwAfterWrite: true);
         var user = Subject("editor", issuer: "https://issuer-a.example");
 
         var first = async () => await harness.Service.ApplyEdits(AddRequest(), harness.Context(user, tenantId: null));
@@ -158,7 +158,7 @@ public sealed class GrpcApplyEditsIdempotencyTests
     {
         var unknown = FeatureEditResult.FailureWithUnknownCommitOutcome(
             createResults: ImmutableArray.Create(EditOperationResult.FailureWithUnknownCommitOutcome("commit acknowledgement lost")));
-        var harness = new ServiceHarness(new GrpcApplyEditsIdempotencyStore(), editResult: () => unknown);
+        var harness = new ServiceHarness(new GrpcApplyEditsReceipts(), editResult: () => unknown);
         var user = Subject("editor", issuer: "https://issuer-a.example");
 
         var first = await harness.Service.ApplyEdits(AddRequest(), harness.Context(user, tenantId: null));
@@ -176,7 +176,7 @@ public sealed class GrpcApplyEditsIdempotencyTests
     {
         var rolledBack = FeatureEditResult.Rollback(
             createResults: ImmutableArray.Create(EditOperationResult.Failure("rolled back", objectId: 5)));
-        var harness = new ServiceHarness(new GrpcApplyEditsIdempotencyStore(), editResult: () => rolledBack);
+        var harness = new ServiceHarness(new GrpcApplyEditsReceipts(), editResult: () => rolledBack);
         var user = Subject("editor", issuer: "https://issuer-a.example");
 
         var first = await harness.Service.ApplyEdits(AddRequest(), harness.Context(user, tenantId: null));
@@ -198,7 +198,7 @@ public sealed class GrpcApplyEditsIdempotencyTests
             deletedCount: 0,
             createResults: ImmutableArray.Create(EditOperationResult.Success(50)),
             updateResults: ImmutableArray.Create(EditOperationResult.FailureWithUnknownCommitOutcome("later row")));
-        var harness = new ServiceHarness(new GrpcApplyEditsIdempotencyStore(), editResult: () => partial);
+        var harness = new ServiceHarness(new GrpcApplyEditsReceipts(), editResult: () => partial);
         var user = Subject("editor", issuer: "https://issuer-a.example");
 
         var first = await harness.Service.ApplyEdits(AddRequest(), harness.Context(user, tenantId: null));
@@ -212,7 +212,7 @@ public sealed class GrpcApplyEditsIdempotencyTests
     [UnitTest]
     public async Task ConcurrentCallersOnOneScope_ShareOneGate_AndReleaseItAfterwards()
     {
-        using var store = new GrpcApplyEditsIdempotencyStore();
+        using var store = new GrpcApplyEditsReceipts();
 
         var first = await store.EnterAsync("scope", CancellationToken.None);
         var second = store.EnterAsync("scope", CancellationToken.None);
@@ -220,9 +220,9 @@ public sealed class GrpcApplyEditsIdempotencyTests
         second.IsCompleted.Should().BeFalse("a second caller on the same scope waits for the first");
         store.GateCount.Should().Be(1);
 
-        await first.CompleteAsync(Response(objectId: 7));
-        await first.DisposeAsync();
-        await using (var replay = await second.WaitAsync(TimeSpan.FromSeconds(10)))
+        first.Complete(Response(objectId: 7));
+        first.Dispose();
+        using (var replay = await second.WaitAsync(TimeSpan.FromSeconds(10)))
         {
             replay.Response!.AddResults[0].ObjectId.Should().Be(7);
         }
@@ -234,17 +234,14 @@ public sealed class GrpcApplyEditsIdempotencyTests
     public async Task LocalResults_AreBoundedByTheirSizeBudget()
     {
         const long budgetBytes = 4096;
-        using var store = new GrpcApplyEditsIdempotencyStore(
-            multiplexer: null,
-            logger: null,
-            GrpcApplyEditsIdempotencyStore.DefaultReservationWindow,
-            GrpcApplyEditsIdempotencyStore.DefaultResponseWindow,
-            budgetBytes);
+        using var store = new GrpcApplyEditsReceipts(
+            durableReceipts: null,
+            new GrpcApplyEditsReceipts.LocalResultLimits(GrpcApplyEditsReceipts.DefaultResponseWindow, budgetBytes));
 
         for (var i = 0; i < 200; i++)
         {
-            await using var lease = await store.EnterAsync($"scope-{i}", CancellationToken.None);
-            await lease.CompleteAsync(Response(objectId: i));
+            using var entry = await store.EnterAsync($"scope-{i}", CancellationToken.None);
+            entry.Complete(Response(objectId: i));
         }
 
         store.LocalResponseCount.Should().BeLessThanOrEqualTo((int)(budgetBytes / 256));
@@ -254,22 +251,20 @@ public sealed class GrpcApplyEditsIdempotencyTests
     [UnitTest]
     public async Task LocalResults_ExpireAfterTheirWindow_AndAreReclaimed()
     {
-        using var store = new GrpcApplyEditsIdempotencyStore(
-            multiplexer: null,
-            logger: null,
-            GrpcApplyEditsIdempotencyStore.DefaultReservationWindow,
-            responseWindow: TimeSpan.FromMilliseconds(200),
-            GrpcApplyEditsIdempotencyStore.DefaultLocalResponseBudgetBytes);
+        using var store = new GrpcApplyEditsReceipts(
+            durableReceipts: null,
+            new GrpcApplyEditsReceipts.LocalResultLimits(
+                TimeSpan.FromMilliseconds(200), GrpcApplyEditsReceipts.DefaultLocalResponseBudgetBytes));
 
-        await using (var lease = await store.EnterAsync("expiring", CancellationToken.None))
+        using (var entry = await store.EnterAsync("expiring", CancellationToken.None))
         {
-            await lease.CompleteAsync(Response(objectId: 1));
+            entry.Complete(Response(objectId: 1));
         }
 
         store.LocalResponseCount.Should().Be(1);
         await Task.Delay(500);
 
-        await using (var other = await store.EnterAsync("unrelated", CancellationToken.None))
+        using (var other = await store.EnterAsync("unrelated", CancellationToken.None))
         {
             other.Response.Should().BeNull();
         }
@@ -281,168 +276,111 @@ public sealed class GrpcApplyEditsIdempotencyTests
         }
 
         store.LocalResponseCount.Should().Be(0, "an expired result must be reclaimed without being requested again");
-        await using var retry = await store.EnterAsync("expiring", CancellationToken.None);
+        using var retry = await store.EnterAsync("expiring", CancellationToken.None);
         retry.Response.Should().BeNull();
     }
 
     [UnitTest]
-    public async Task ResultsAwaitingRedis_AreBoundedByCount_AndStayReplayableLocally()
-    {
-        var database = Substitute.For<IDatabase>();
-        database
-            .ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]?>(), Arg.Any<RedisValue[]?>(), Arg.Any<CommandFlags>())
-            .Returns(call =>
-            {
-                var script = call.ArgAt<string>(0);
-                if (ReferenceEquals(script, GrpcApplyEditsIdempotencyStore.AcquireScript))
-                {
-                    return Task.FromResult(RedisResult.Create(call.ArgAt<RedisValue[]>(2)[0]));
-                }
-
-                return ReferenceEquals(script, GrpcApplyEditsIdempotencyStore.CompleteScript)
-                    ? Task.FromException<RedisResult>(
-                        new RedisConnectionException(ConnectionFailureType.SocketFailure, "unavailable"))
-                    : Task.FromResult(RedisResult.Create((RedisValue)1));
-            });
-        var connection = Substitute.For<IConnectionMultiplexer>();
-        connection.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(database);
-        using var store = new GrpcApplyEditsIdempotencyStore(
-            connection,
-            logger: null,
-            GrpcApplyEditsIdempotencyStore.DefaultReservationWindow,
-            GrpcApplyEditsIdempotencyStore.DefaultResponseWindow,
-            GrpcApplyEditsIdempotencyStore.DefaultLocalResponseBudgetBytes,
-            maxUnpublishedResults: 4);
-
-        for (var i = 0; i < 20; i++)
-        {
-            await using var lease = await store.EnterAsync($"scope-{i}", CancellationToken.None);
-            (await lease.TryBeginWriteAsync(CancellationToken.None)).Should().NotBeNull();
-            await lease.CompleteAsync(Response(objectId: i));
-        }
-
-        store.UnpublishedResultCount.Should().BeLessThanOrEqualTo(4);
-        store.LocalResponseCount.Should().Be(20, "every committed result stays replayable on this replica");
-        store.GateCount.Should().Be(0);
-    }
-
-    [UnitTheory]
-    [InlineData(4, 65536)]
-    [InlineData(128, 64)]
-    public async Task ConcurrentFailedCompletions_RespectQueueCountAndByteBudgets(int maxResults, long localBudgetBytes)
-    {
-        var database = Substitute.For<IDatabase>();
-        database
-            .ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]?>(), Arg.Any<RedisValue[]?>(), Arg.Any<CommandFlags>())
-            .Returns(call =>
-            {
-                var script = call.ArgAt<string>(0);
-                if (ReferenceEquals(script, GrpcApplyEditsIdempotencyStore.AcquireScript))
-                {
-                    return Task.FromResult(RedisResult.Create(call.ArgAt<RedisValue[]>(2)[0]));
-                }
-
-                return ReferenceEquals(script, GrpcApplyEditsIdempotencyStore.CompleteScript)
-                    ? Task.FromException<RedisResult>(
-                        new RedisConnectionException(ConnectionFailureType.SocketFailure, "unavailable"))
-                    : Task.FromResult(RedisResult.Create((RedisValue)1));
-            });
-        var connection = Substitute.For<IConnectionMultiplexer>();
-        connection.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(database);
-        var response = Response(objectId: 7);
-        var receiptBytes = response.CalculateSize() + 1;
-        var expectedLimit = Math.Min(maxResults, (int)(localBudgetBytes / 4 / receiptBytes));
-
-        for (var round = 0; round < 10; round++)
-        {
-            using var store = new GrpcApplyEditsIdempotencyStore(
-                connection, logger: null,
-                GrpcApplyEditsIdempotencyStore.DefaultReservationWindow,
-                GrpcApplyEditsIdempotencyStore.DefaultResponseWindow,
-                localBudgetBytes, maxResults);
-            var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            var completions = Enumerable.Range(0, 64).Select(async i =>
-            {
-                await using var lease = await store.EnterAsync($"scope-{i}", CancellationToken.None);
-                await start.Task;
-                await lease.CompleteAsync(response);
-            }).ToArray();
-
-            start.SetResult();
-            await Task.WhenAll(completions).WaitAsync(TimeSpan.FromSeconds(30));
-
-            store.UnpublishedResultCount.Should().Be(expectedLimit, "concurrent producers must honor both limits");
-            store.GateCount.Should().Be(0);
-        }
-    }
-
-    [UnitTest]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
-    public async Task CommittedReceipt_IsReplayedWhenRedisStaysDownPastTheReservation()
+    public async Task CommittedReceipt_IsReplayedOnAnotherNode_WithoutExecutingAgain()
     {
         var receipts = new SharedEditReceipts();
         var transaction = new RecordingEditTransaction();
         var wroteBeforeCommit = false;
-        var replicaBAcquireCount = 0;
-
-        using var storeA = new GrpcApplyEditsIdempotencyStore(
-            RedisThatFailsReceiptWrites(),
-            logger: null,
-            GrpcApplyEditsIdempotencyStore.DefaultReservationWindow,
-            GrpcApplyEditsIdempotencyStore.DefaultResponseWindow,
-            GrpcApplyEditsIdempotencyStore.DefaultLocalResponseBudgetBytes,
-            durableReceipts: receipts);
-        using var storeB = new GrpcApplyEditsIdempotencyStore(
-            RedisThatGrantsAVacantReservation(() => Interlocked.Increment(ref replicaBAcquireCount)),
-            logger: null,
-            GrpcApplyEditsIdempotencyStore.DefaultReservationWindow,
-            GrpcApplyEditsIdempotencyStore.DefaultResponseWindow,
-            GrpcApplyEditsIdempotencyStore.DefaultLocalResponseBudgetBytes,
-            durableReceipts: receipts);
-        var replicaA = new ServiceHarness(
+        using var storeA = new GrpcApplyEditsReceipts(receipts);
+        using var storeB = new GrpcApplyEditsReceipts(receipts);
+        var nodeA = new ServiceHarness(
             storeA,
             commitReceipt: (receipt, result, cancellationToken) => CommitThroughWriterAsync(
-                transaction,
-                receipts,
+                new ReceiptCommit(transaction, receipts, () => wroteBeforeCommit = !transaction.Committed),
                 receipt,
                 result,
-                () => wroteBeforeCommit = !transaction.Committed,
                 cancellationToken));
-        var replicaB = new ServiceHarness(storeB);
+        var nodeB = new ServiceHarness(storeB);
         var user = Subject("editor", issuer: "https://issuer-a.example");
 
-        var original = await replicaA.Service.ApplyEdits(AddRequest(), replicaA.Context(user, tenantId: "tenant-a"));
+        var original = await nodeA.Service.ApplyEdits(AddRequest(), nodeA.Context(user, tenantId: "tenant-a"));
+        var retry = await nodeB.Service.ApplyEdits(AddRequest(), nodeB.Context(user, tenantId: "tenant-a"));
 
         wroteBeforeCommit.Should().BeTrue("the receipt row is written on the edit transaction before commit");
         transaction.CommitCalls.Should().Be(1);
-        storeA.UnpublishedResultCount.Should().Be(
-            1, "Redis still failed after commit; the queued republish is not the fence the other replica uses");
-        replicaA.WriteCount.Should().Be(1);
-
-        var retry = await replicaB.Service.ApplyEdits(AddRequest(), replicaB.Context(user, tenantId: "tenant-a"));
-
-        replicaB.WriteCount.Should().Be(0, "a vacant Redis key must not apply an edit whose receipt already committed");
-        Volatile.Read(ref replicaBAcquireCount).Should().Be(0, "the database receipt is read before the reservation is acquired");
+        nodeA.WriteCount.Should().Be(1);
+        nodeB.WriteCount.Should().Be(0, "a committed receipt is replayed instead of executing the edit again");
         retry.AddResults.Should().ContainSingle().Which.ObjectId.Should().Be(original.AddResults[0].ObjectId);
     }
 
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task DuplicateCommit_IsRolledBackByTheReceiptKey_AndReplaysTheFirstReceipt()
+    {
+        var receipts = new SharedEditReceipts();
+        var user = Subject("editor", issuer: "https://issuer-a.example");
+        using var storeA = new GrpcApplyEditsReceipts(receipts);
+        using var storeB = new GrpcApplyEditsReceipts(receipts);
+        var nodeA = new ServiceHarness(
+            storeA,
+            commitReceipt: (receipt, result, cancellationToken) => CommitThroughWriterAsync(
+                new ReceiptCommit(new RecordingEditTransaction(), receipts), receipt, result, cancellationToken));
+        Proto.ApplyEditsResponse? original = null;
+        var losingTransaction = new RecordingEditTransaction();
+        var nodeB = new ServiceHarness(
+            storeB,
+            commitReceipt: async (receipt, result, cancellationToken) =>
+            {
+                // Node B already found no receipt; node A commits the same key before B's receipt insert.
+                original = await nodeA.Service.ApplyEdits(AddRequest(), nodeA.Context(user, tenantId: null));
+                return await CommitThroughWriterAsync(
+                    new ReceiptCommit(losingTransaction, receipts), receipt, result, cancellationToken);
+            });
+
+        var replayed = await nodeB.Service.ApplyEdits(AddRequest(), nodeB.Context(user, tenantId: null));
+
+        losingTransaction.CommitCalls.Should().Be(0, "the receipt key rolls the duplicate commit back");
+        replayed.AddResults.Should().ContainSingle().Which.ObjectId.Should().Be(original!.AddResults[0].ObjectId);
+        storeB.GateCount.Should().Be(0);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task SupersededCommit_WhoseReceiptCannotBeRead_IsRefusedAndNotExecutedAgain()
+    {
+        var harness = new ServiceHarness(
+            new GrpcApplyEditsReceipts(),
+            commitReceipt: (_, result, _) => Task.FromResult(new FeatureEditApplication
+            {
+                Result = result,
+                SupersededByExistingReceipt = true,
+            }));
+        var user = Subject("editor", issuer: "https://issuer-a.example");
+
+        var first = async () => await harness.Service.ApplyEdits(AddRequest(), harness.Context(user, tenantId: null));
+        var retry = async () => await harness.Service.ApplyEdits(AddRequest(), harness.Context(user, tenantId: null));
+
+        (await first.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.Aborted);
+        (await retry.Should().ThrowAsync<RpcException>()).Which.Status.Detail.Should().Contain("may have committed");
+        harness.WriteCount.Should().Be(1);
+    }
+
+    private sealed record ReceiptCommit(
+        RecordingEditTransaction Transaction,
+        SharedEditReceipts Receipts,
+        Action? OnWrite = null);
+
     private static async Task<FeatureEditApplication> CommitThroughWriterAsync(
-        RecordingEditTransaction transaction,
-        SharedEditReceipts receipts,
+        ReceiptCommit commit,
         FeatureEditIdempotencyReceipt receipt,
         FeatureEditResult result,
-        Action onWrite,
         CancellationToken cancellationToken)
     {
         var staged = await FeatureDataAccess.CommitStagedEditAsync(
-            transaction,
+            commit.Transaction,
             result,
             receipt,
             (editTransaction, scope, payload, _, _) =>
             {
-                editTransaction.Should().BeSameAs(transaction);
-                onWrite();
-                return Task.FromResult(receipts.TryInsert(scope, payload.ToArray()));
+                editTransaction.Should().BeSameAs(commit.Transaction);
+                commit.OnWrite?.Invoke();
+                return Task.FromResult(commit.Receipts.TryInsert(scope, payload.ToArray()));
             },
             cancellationToken).ConfigureAwait(false);
         return new FeatureEditApplication
@@ -451,45 +389,6 @@ public sealed class GrpcApplyEditsIdempotencyTests
             ReceiptDurable = staged.ReceiptDurable,
             SupersededByExistingReceipt = staged.SupersededByExistingReceipt,
         };
-    }
-
-    private static IConnectionMultiplexer RedisThatFailsReceiptWrites()
-        => ScriptedRedis(call =>
-        {
-            var script = call.ArgAt<string>(0);
-            if (ReferenceEquals(script, GrpcApplyEditsIdempotencyStore.AcquireScript))
-            {
-                return Task.FromResult(RedisResult.Create(call.ArgAt<RedisValue[]>(2)[0]));
-            }
-
-            return ReferenceEquals(script, GrpcApplyEditsIdempotencyStore.CompleteScript)
-                ? Task.FromException<RedisResult>(
-                    new RedisConnectionException(ConnectionFailureType.SocketFailure, "redis unavailable after commit"))
-                : Task.FromResult(RedisResult.Create((RedisValue)1));
-        });
-
-    private static IConnectionMultiplexer RedisThatGrantsAVacantReservation(Action onAcquire)
-        => ScriptedRedis(call =>
-        {
-            var script = call.ArgAt<string>(0);
-            if (ReferenceEquals(script, GrpcApplyEditsIdempotencyStore.AcquireScript))
-            {
-                onAcquire();
-                return Task.FromResult(RedisResult.Create(call.ArgAt<RedisValue[]>(2)[0]));
-            }
-
-            return Task.FromResult(RedisResult.Create((RedisValue)1));
-        });
-
-    private static IConnectionMultiplexer ScriptedRedis(Func<NSubstitute.Core.CallInfo, Task<RedisResult>> evaluate)
-    {
-        var database = Substitute.For<IDatabase>();
-        database
-            .ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]?>(), Arg.Any<RedisValue[]?>(), Arg.Any<CommandFlags>())
-            .Returns(evaluate);
-        var connection = Substitute.For<IConnectionMultiplexer>();
-        connection.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(database);
-        return connection;
     }
 
     private sealed class SharedEditReceipts : IFeatureEditIdempotencyReceipts
@@ -565,43 +464,49 @@ public sealed class GrpcApplyEditsIdempotencyTests
         return request;
     }
 
-    /// <summary>One server replica: a real <see cref="HonuaFeatureService"/> over substitute storage.</summary>
+    /// <summary>One server node: a real <see cref="HonuaFeatureService"/> with its own in-process state.</summary>
     internal sealed class ServiceHarness
     {
         private static long _nextObjectId = 1000;
-        private int _writeCount;
+        private readonly StrongBox<int> _writeCount = new();
 
         public ServiceHarness(
-            GrpcApplyEditsIdempotencyStore store,
-            Func<CancellationToken, Task>? beforeCommit = null,
+            GrpcApplyEditsReceipts store,
             Func<FeatureEditResult>? editResult = null,
             bool throwAfterWrite = false,
             Func<FeatureEditIdempotencyReceipt, FeatureEditResult, CancellationToken, Task<FeatureEditApplication>>? commitReceipt = null)
         {
-            var resourceValidator = Substitute.For<IResourceValidator>();
-            var service = CreateService();
-            var resource = CreateResource();
-            resourceValidator
-                .ValidateServiceLayerV2Async("test", 0, Arg.Any<CancellationToken>())
-                .Returns(ResourceValidationResult.Success(CreateTriple(service, resource)));
+            Service = CreateService(store, ScriptedWriter(_writeCount, new ScriptedWrites(editResult, throwAfterWrite, commitReceipt)));
+        }
 
-            async Task<FeatureEditResult> WriteAsync(CancellationToken cancellationToken)
+        public ServiceHarness(GrpcApplyEditsReceipts store, IFeatureWriter writer)
+        {
+            Service = CreateService(store, writer);
+        }
+
+        public HonuaFeatureService Service { get; }
+
+        public int WriteCount => Volatile.Read(ref _writeCount.Value);
+
+        private sealed record ScriptedWrites(
+            Func<FeatureEditResult>? EditResult,
+            bool ThrowAfterWrite,
+            Func<FeatureEditIdempotencyReceipt, FeatureEditResult, CancellationToken, Task<FeatureEditApplication>>? CommitReceipt);
+
+        private static IFeatureWriter ScriptedWriter(StrongBox<int> writeCount, ScriptedWrites script)
+        {
+            FeatureEditResult Write(CancellationToken cancellationToken)
             {
-                if (beforeCommit is not null)
-                {
-                    await beforeCommit(cancellationToken).ConfigureAwait(false);
-                }
-
                 cancellationToken.ThrowIfCancellationRequested();
-                Interlocked.Increment(ref _writeCount);
-                if (throwAfterWrite)
+                Interlocked.Increment(ref writeCount.Value);
+                if (script.ThrowAfterWrite)
                 {
                     throw new OperationCanceledException(cancellationToken);
                 }
 
-                if (editResult is not null)
+                if (script.EditResult is not null)
                 {
-                    return editResult();
+                    return script.EditResult();
                 }
 
                 var objectId = Interlocked.Increment(ref _nextObjectId);
@@ -615,23 +520,32 @@ public sealed class GrpcApplyEditsIdempotencyTests
             var writer = Substitute.For<IFeatureWriter>();
             writer
                 .ApplyEditsAsync(default, default, default)
-                .ReturnsForAnyArgs(call => WriteAsync(call.ArgAt<CancellationToken>(2)));
+                .ReturnsForAnyArgs(call => Write(call.ArgAt<CancellationToken>(2)));
             writer
                 .ApplyEditsAsync(default, default, default(FeatureEditIdempotencyReceipt), default)
                 .ReturnsForAnyArgs(async call =>
                 {
                     var cancellationToken = call.ArgAt<CancellationToken>(3);
-                    var result = await WriteAsync(cancellationToken).ConfigureAwait(false);
-                    if (commitReceipt is null)
+                    var result = Write(cancellationToken);
+                    if (script.CommitReceipt is null)
                     {
                         return new FeatureEditApplication { Result = result, ReceiptDurable = false };
                     }
 
-                    return await commitReceipt(
+                    return await script.CommitReceipt(
                         call.ArgAt<FeatureEditIdempotencyReceipt>(2),
                         result,
                         cancellationToken).ConfigureAwait(false);
                 });
+            return writer;
+        }
+
+        private static HonuaFeatureService CreateService(GrpcApplyEditsReceipts store, IFeatureWriter writer)
+        {
+            var resourceValidator = Substitute.For<IResourceValidator>();
+            resourceValidator
+                .ValidateServiceLayerV2Async("test", 0, Arg.Any<CancellationToken>())
+                .Returns(ResourceValidationResult.Success(CreateTriple(CreateServiceMetadata(), CreateResource())));
 
             var crsRegistry = Substitute.For<ICrsRegistry>();
 #pragma warning disable CA2012 // NSubstitute setup for ValueTask-returning members.
@@ -640,7 +554,7 @@ public sealed class GrpcApplyEditsIdempotencyTests
                 .Returns(_ => new ValueTask<bool>(true));
 #pragma warning restore CA2012
 
-            Service = new HonuaFeatureService(
+            return new HonuaFeatureService(
                 resourceValidator,
                 Substitute.For<IFeatureReader>(),
                 writer,
@@ -655,10 +569,6 @@ public sealed class GrpcApplyEditsIdempotencyTests
                 NullLogger<HonuaFeatureService>.Instance,
                 store);
         }
-
-        public HonuaFeatureService Service { get; }
-
-        public int WriteCount => Volatile.Read(ref _writeCount);
 
         public ServerCallContext Context(ClaimsPrincipal user, string? tenantId)
         {
@@ -678,7 +588,7 @@ public sealed class GrpcApplyEditsIdempotencyTests
             return context;
         }
 
-        private static MetadataV2Service CreateService() => new()
+        private static MetadataV2Service CreateServiceMetadata() => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "service-test", Name = "test" },
             SpatialReference = MetadataV2SpatialReference.Wgs84,
@@ -748,256 +658,5 @@ public sealed class GrpcApplyEditsIdempotencyTests
             throw new NotSupportedException();
 
         protected override Task WriteResponseHeadersAsyncCore(Metadata responseHeaders) => Task.CompletedTask;
-    }
-}
-
-/// <summary>
-/// Redis-backed replicas sharing one reservation namespace: a keyed edit commits at most
-/// once even when its reservation lapses while the first writer is still running (SEC-36).
-/// </summary>
-[Protocol(TestProtocols.TestQuality)]
-[Collection(RedisFixture.CollectionName)]
-public sealed class GrpcApplyEditsDistributedIdempotencyTests(RedisFixture redis) : IAsyncLifetime
-{
-    private const string RedisPrefix = "honua:grpc:apply-edits:idempotency:";
-    private readonly List<ConnectionMultiplexer> _connections = [];
-
-    public Task InitializeAsync() => ClearReservationsAsync();
-
-    public async Task DisposeAsync()
-    {
-        await ClearReservationsAsync();
-        foreach (var connection in _connections)
-        {
-            await connection.DisposeAsync();
-        }
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.TestInfrastructure)]
-    public async Task ReservationLapsedDuringWrite_SecondReplicaCommits_FirstWriterDoesNotCommit()
-    {
-        var firstWriterStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var replicaA = new GrpcApplyEditsIdempotencyTests.ServiceHarness(
-            new GrpcApplyEditsIdempotencyStore(await ConnectAsync()),
-            beforeCommit: async cancellationToken =>
-            {
-                firstWriterStarted.TrySetResult();
-                await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
-            });
-        var replicaB = new GrpcApplyEditsIdempotencyTests.ServiceHarness(
-            new GrpcApplyEditsIdempotencyStore(await ConnectAsync()));
-        var user = GrpcApplyEditsIdempotencyTests.Subject("editor", issuer: "https://issuer-a.example");
-
-        var first = replicaA.Service.ApplyEdits(
-            GrpcApplyEditsIdempotencyTests.AddRequest(), replicaA.Context(user, tenantId: null));
-        await firstWriterStarted.Task.WaitAsync(TimeSpan.FromSeconds(30));
-
-        // The reservation disappears while the first writer is still running, exactly as
-        // it would once its time-to-live elapsed.
-        (await ClearReservationsAsync()).Should().BeGreaterThan(0);
-
-        await replicaB.Service.ApplyEdits(
-            GrpcApplyEditsIdempotencyTests.AddRequest(), replicaB.Context(user, tenantId: null));
-        replicaB.WriteCount.Should().Be(1);
-
-        var firstOutcome = async () => await first.WaitAsync(TimeSpan.FromSeconds(60));
-        (await firstOutcome.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.Aborted);
-        (replicaA.WriteCount + replicaB.WriteCount).Should().Be(1, "the keyed edit must commit exactly once");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.TestInfrastructure)]
-    public async Task WriteOutlastingTheReservationWindow_KeepsIt_AndAnotherReplicaReplaysTheResult()
-    {
-        var reservationWindow = TimeSpan.FromSeconds(1);
-        var clock = new GrpcIdempotencyTestClock();
-        var connectionA = await ConnectAsync();
-        var redisA = new GrpcIdempotencyClockedRedis(connectionA, clock);
-        var redisB = new GrpcIdempotencyClockedRedis(await ConnectAsync(), clock);
-        var firstWriterStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var allowCommit = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var storeA = Store(redisA.Connection, reservationWindow, clock);
-        using var storeB = Store(redisB.Connection, reservationWindow, clock);
-        var replicaA = new GrpcApplyEditsIdempotencyTests.ServiceHarness(
-            storeA,
-            beforeCommit: async cancellationToken =>
-            {
-                firstWriterStarted.TrySetResult();
-                await allowCommit.Task.WaitAsync(cancellationToken);
-            });
-        var replicaB = new GrpcApplyEditsIdempotencyTests.ServiceHarness(storeB);
-        var user = GrpcApplyEditsIdempotencyTests.Subject("editor", issuer: "https://issuer-a.example");
-
-        var first = replicaA.Service.ApplyEdits(
-            GrpcApplyEditsIdempotencyTests.AddRequest(), replicaA.Context(user, tenantId: null));
-        await firstWriterStarted.Task.WaitAsync(TimeSpan.FromSeconds(30));
-        await clock.WaitForDelayAsync(reservationWindow / 6);
-        var originalToken = await connectionA.GetDatabase().StringGetAsync(redisA.Key);
-        var retryTask = replicaB.Service.ApplyEdits(
-            GrpcApplyEditsIdempotencyTests.AddRequest(), replicaB.Context(user, tenantId: null));
-        await clock.WaitForDelayAsync(GrpcApplyEditsIdempotencyStore.PendingPollInterval);
-
-        // Four complete reservation windows pass while the write is gated. Each step
-        // waits for the real renewal script to finish before advancing the shared clock.
-        for (var step = 0; step < 16; step++)
-        {
-            clock.Advance(reservationWindow / 4);
-            await clock.WaitForDelayAsync(reservationWindow / 6);
-            (await redisA.RemainingLifetimeAsync()).Should().Be(reservationWindow);
-            (await connectionA.GetDatabase().StringGetAsync(redisA.Key)).Should().Be(originalToken);
-            retryTask.IsCompleted.Should().BeFalse("the other replica must wait for the live writer");
-            replicaA.WriteCount.Should().Be(0);
-            replicaB.WriteCount.Should().Be(0);
-        }
-
-        allowCommit.SetResult();
-        var original = await first.WaitAsync(TimeSpan.FromSeconds(30));
-        var retry = await clock.CompletePollingAsync(retryTask, GrpcApplyEditsIdempotencyStore.PendingPollInterval);
-
-        replicaA.WriteCount.Should().Be(1);
-        replicaB.WriteCount.Should().Be(0, "the reservation was renewed for as long as the first write ran");
-        retry.AddResults[0].ObjectId.Should().Be(original.AddResults[0].ObjectId);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.TestInfrastructure)]
-    public async Task RenewalAfterExpiry_DoesNotReviveTheReservation_OrCommitTheFirstWrite()
-    {
-        var reservationWindow = TimeSpan.FromSeconds(1);
-        var clock = new GrpcIdempotencyTestClock();
-        var redisA = new GrpcIdempotencyClockedRedis(await ConnectAsync(), clock);
-        var redisB = new GrpcIdempotencyClockedRedis(await ConnectAsync(), clock);
-        var firstWriterStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var allowCommit = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var storeA = Store(redisA.Connection, reservationWindow, clock);
-        using var storeB = Store(redisB.Connection, reservationWindow, clock);
-        var replicaA = new GrpcApplyEditsIdempotencyTests.ServiceHarness(
-            storeA,
-            beforeCommit: async cancellationToken =>
-            {
-                firstWriterStarted.TrySetResult();
-                await allowCommit.Task.WaitAsync(cancellationToken);
-            });
-        var replicaB = new GrpcApplyEditsIdempotencyTests.ServiceHarness(storeB);
-        var user = GrpcApplyEditsIdempotencyTests.Subject("editor", issuer: "https://issuer-a.example");
-
-        var first = replicaA.Service.ApplyEdits(
-            GrpcApplyEditsIdempotencyTests.AddRequest(), replicaA.Context(user, tenantId: null));
-        await firstWriterStarted.Task.WaitAsync(TimeSpan.FromSeconds(30));
-        await clock.WaitForDelayAsync(reservationWindow / 6);
-
-        // A scheduler pause spanning the entire lease must still cancel the old writer.
-        clock.Advance(reservationWindow);
-        var firstOutcome = async () => await first.WaitAsync(TimeSpan.FromSeconds(30));
-        (await firstOutcome.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.Aborted);
-        await replicaB.Service.ApplyEdits(
-            GrpcApplyEditsIdempotencyTests.AddRequest(), replicaB.Context(user, tenantId: null));
-
-        replicaA.WriteCount.Should().Be(0);
-        replicaB.WriteCount.Should().Be(1);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.TestInfrastructure)]
-    public async Task RedisBackedResult_IsSharedAcrossReplicas_WithoutALocalCopy()
-    {
-        using var storeA = new GrpcApplyEditsIdempotencyStore(await ConnectAsync());
-        var replicaA = new GrpcApplyEditsIdempotencyTests.ServiceHarness(storeA);
-        var replicaB = new GrpcApplyEditsIdempotencyTests.ServiceHarness(new GrpcApplyEditsIdempotencyStore(await ConnectAsync()));
-        var user = GrpcApplyEditsIdempotencyTests.Subject("editor", issuer: "https://issuer-a.example");
-
-        var original = await replicaA.Service.ApplyEdits(
-            GrpcApplyEditsIdempotencyTests.AddRequest(), replicaA.Context(user, tenantId: "tenant-a"));
-        var retry = await replicaB.Service.ApplyEdits(
-            GrpcApplyEditsIdempotencyTests.AddRequest(), replicaB.Context(user, tenantId: "tenant-a"));
-        await replicaB.Service.ApplyEdits(
-            GrpcApplyEditsIdempotencyTests.AddRequest(), replicaB.Context(user, tenantId: "tenant-b"));
-
-        retry.AddResults[0].ObjectId.Should().Be(original.AddResults[0].ObjectId);
-        (replicaA.WriteCount + replicaB.WriteCount).Should().Be(2, "only the other tenant's edit executes again");
-        storeA.LocalResponseCount.Should().Be(0);
-        storeA.GateCount.Should().Be(0);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.TestInfrastructure)]
-    public async Task ResultThatFailsToPersist_IsReplayedLocally_AndPublishedForOtherReplicas()
-    {
-        var reservationWindow = TimeSpan.FromSeconds(1.2);
-        var real = (await ConnectAsync()).GetDatabase();
-        var failedCompletions = 0;
-        var flaky = Substitute.For<IDatabase>();
-        flaky
-            .ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]?>(), Arg.Any<RedisValue[]?>(), Arg.Any<CommandFlags>())
-            .Returns(call =>
-            {
-                var script = call.ArgAt<string>(0);
-                if (ReferenceEquals(script, GrpcApplyEditsIdempotencyStore.CompleteScript)
-                    && Interlocked.Increment(ref failedCompletions) == 1)
-                {
-                    return Task.FromException<RedisResult>(
-                        new RedisConnectionException(ConnectionFailureType.SocketFailure, "connection dropped"));
-                }
-
-                return real.ScriptEvaluateAsync(
-                    script, call.ArgAt<RedisKey[]?>(1), call.ArgAt<RedisValue[]?>(2), call.ArgAt<CommandFlags>(3));
-            });
-        var flakyConnection = Substitute.For<IConnectionMultiplexer>();
-        flakyConnection.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(flaky);
-
-        using var storeA = Store(flakyConnection, reservationWindow);
-        var replicaA = new GrpcApplyEditsIdempotencyTests.ServiceHarness(storeA);
-        var replicaB = new GrpcApplyEditsIdempotencyTests.ServiceHarness(Store(await ConnectAsync(), reservationWindow));
-        var user = GrpcApplyEditsIdempotencyTests.Subject("editor", issuer: "https://issuer-a.example");
-
-        var original = await replicaA.Service.ApplyEdits(
-            GrpcApplyEditsIdempotencyTests.AddRequest(), replicaA.Context(user, tenantId: null));
-        var sameReplicaRetry = await replicaA.Service.ApplyEdits(
-            GrpcApplyEditsIdempotencyTests.AddRequest(), replicaA.Context(user, tenantId: null));
-        var otherReplicaRetry = await replicaB.Service.ApplyEdits(
-            GrpcApplyEditsIdempotencyTests.AddRequest(), replicaB.Context(user, tenantId: null));
-
-        Volatile.Read(ref failedCompletions).Should().BeGreaterThan(1, "the result is published again after the failure");
-        (replicaA.WriteCount + replicaB.WriteCount).Should().Be(1);
-        sameReplicaRetry.AddResults[0].ObjectId.Should().Be(original.AddResults[0].ObjectId);
-        otherReplicaRetry.AddResults[0].ObjectId.Should().Be(original.AddResults[0].ObjectId);
-    }
-
-    private static GrpcApplyEditsIdempotencyStore Store(
-        IConnectionMultiplexer connection, TimeSpan reservationWindow, TimeProvider? timeProvider = null)
-        => new(
-            connection,
-            logger: null,
-            reservationWindow,
-            GrpcApplyEditsIdempotencyStore.DefaultResponseWindow,
-            GrpcApplyEditsIdempotencyStore.DefaultLocalResponseBudgetBytes,
-            timeProvider: timeProvider);
-
-    private async Task<IConnectionMultiplexer> ConnectAsync()
-    {
-        var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        _connections.Add(connection);
-        return connection;
-    }
-
-    private async Task<int> ClearReservationsAsync()
-    {
-        var options = ConfigurationOptions.Parse(redis.ConnectionString);
-        options.AllowAdmin = true;
-        await using var admin = await ConnectionMultiplexer.ConnectAsync(options);
-        var removed = 0;
-        foreach (var endpoint in admin.GetEndPoints())
-        {
-            await foreach (var key in admin.GetServer(endpoint).KeysAsync(pattern: RedisPrefix + "*"))
-            {
-                if (await admin.GetDatabase().KeyDeleteAsync(key))
-                {
-                    removed++;
-                }
-            }
-        }
-
-        return removed;
     }
 }

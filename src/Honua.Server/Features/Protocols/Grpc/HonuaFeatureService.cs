@@ -46,7 +46,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     private readonly SpatialReferenceResolver _spatialReferenceResolver;
     private readonly FeatureMutationEventService _mutationEventService;
     private readonly ILogger<HonuaFeatureService> _logger;
-    private readonly GrpcApplyEditsIdempotencyStore _idempotencyStore;
+    private readonly GrpcApplyEditsReceipts _editReceipts;
     private readonly GeometryLimits _geometryLimits;
     private readonly EditLimits _editLimits;
     private readonly int _streamBatchSize;
@@ -62,7 +62,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         IOptions<LimitsOptions> limitsOptions,
         IOptions<GrpcOptions> grpcOptions,
         ILogger<HonuaFeatureService> logger,
-        GrpcApplyEditsIdempotencyStore idempotencyStore)
+        GrpcApplyEditsReceipts editReceipts)
         : this(
             resourceValidator,
             featureReader,
@@ -74,7 +74,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             limitsOptions,
             grpcOptions,
             logger,
-            idempotencyStore)
+            editReceipts)
     {
     }
 
@@ -90,7 +90,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         IOptions<LimitsOptions> limitsOptions,
         IOptions<GrpcOptions> grpcOptions,
         ILogger<HonuaFeatureService> logger,
-        GrpcApplyEditsIdempotencyStore idempotencyStore)
+        GrpcApplyEditsReceipts editReceipts)
     {
         _resourceValidator = resourceValidator;
         _featureReader = featureReader;
@@ -103,7 +103,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         _editLimits = limitsOptions?.Value?.Edits ?? new EditLimits();
         _streamBatchSize = Math.Max(grpcOptions?.Value?.StreamBatchSize ?? 1000, 1);
         _logger = logger;
-        _idempotencyStore = idempotencyStore;
+        _editReceipts = editReceipts;
     }
 
     public override async Task<Proto.QueryFeaturesResponse> QueryFeatures(
@@ -317,30 +317,28 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         }
 
         var idempotencyKey = request.IdempotencyKey?.Trim();
-        GrpcApplyEditsIdempotencyStore.Lease? idempotencyLease = null;
-        string? scope = null;
+        GrpcApplyEditsReceipts.Entry? keyedEdit = null;
         if (!string.IsNullOrEmpty(idempotencyKey))
         {
             // A stored result is replayed only within the same service, layer, effective
-            // tenant and scheme/issuer-qualified actor (SEC-34).
-            scope = GrpcApplyEditsIdempotencyStore.CreateScope(
+            // tenant and scheme/issuer-qualified actor.
+            var scope = GrpcApplyEditsReceipts.CreateScope(
                 context.GetHttpContext(), request.ServiceId, request.LayerId, idempotencyKey)
                 ?? throw new RpcException(new Status(
                     StatusCode.FailedPrecondition,
                     IdempotencyCaller.UnbindableCallerMessage));
-            idempotencyLease = await _idempotencyStore.EnterAsync(scope, context.CancellationToken).ConfigureAwait(false);
-        }
-        await using var heldIdempotencyLease = idempotencyLease;
-        if (idempotencyLease?.OutcomeUnknown == true)
-        {
-            throw new RpcException(new Status(
-                StatusCode.Aborted,
-                "A previous attempt with this idempotency key may have committed and will not be executed again."));
+            keyedEdit = await _editReceipts.EnterAsync(scope, context.CancellationToken).ConfigureAwait(false);
         }
 
-        if (idempotencyLease?.Response is not null)
+        using var heldKeyedEdit = keyedEdit;
+        if (keyedEdit?.OutcomeUnknown == true)
         {
-            return idempotencyLease.Response;
+            throw OutcomeMayHaveCommitted();
+        }
+
+        if (keyedEdit?.Response is not null)
+        {
+            return keyedEdit.Response;
         }
 
         // Per-row geometry-change semantics mirror the inline publish path
@@ -398,37 +396,23 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             cancellationToken: context.CancellationToken).ConfigureAwait(false);
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
 
-        // A keyed write runs only while its shared reservation is provably held, and is
-        // cancelled before that reservation could lapse, so another replica can never begin
-        // the same keyed edit while this one may still commit (SEC-36).
-        var writeCancellation = context.CancellationToken;
-        var writeDispatched = false;
-        GrpcApplyEditsIdempotencyStore.Lease? dispatchedLease = null;
-        if (idempotencyLease is not null)
-        {
-            writeCancellation = await idempotencyLease.TryBeginWriteAsync(context.CancellationToken).ConfigureAwait(false)
-                ?? throw IdempotencyReservationLost();
-            dispatchedLease = idempotencyLease;
-            writeDispatched = true;
-        }
-
         FeatureEditResult result;
         FeatureEditApplication? keyedApplication = null;
         try
         {
-            if (idempotencyLease is not null)
+            if (keyedEdit is not null)
             {
                 keyedApplication = await _featureWriter.ApplyEditsAsync(
                     layer.StorageLayerId,
                     editBatch,
                     new FeatureEditIdempotencyReceipt
                     {
-                        Scope = scope!,
-                        ExpiresAt = _idempotencyStore.ResponseExpiresAt,
-                        Payload = static staged => GrpcApplyEditsIdempotencyStore.EncodeReceipt(
+                        Scope = keyedEdit.Scope,
+                        ExpiresAt = _editReceipts.ResponseExpiresAt,
+                        Payload = static staged => GrpcApplyEditsReceipts.EncodeReceipt(
                             GrpcConversionHelpers.ToProtoApplyEditsResponse(staged)),
                     },
-                    writeCancellation).ConfigureAwait(false);
+                    context.CancellationToken).ConfigureAwait(false);
                 result = keyedApplication.Value.Result;
             }
             else
@@ -436,64 +420,39 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                 result = await _featureWriter.ApplyEditsAsync(
                     layer.StorageLayerId,
                     editBatch,
-                    writeCancellation).ConfigureAwait(false);
+                    context.CancellationToken).ConfigureAwait(false);
             }
         }
-        catch (OperationCanceledException) when (
-            idempotencyLease?.OwnershipLost == true && !context.CancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (keyedEdit is not null)
         {
-            throw IdempotencyReservationLost();
-        }
-        catch (OperationCanceledException) when (writeDispatched)
-        {
-            // The write was dispatched. A cancel here can follow a partial autocommit, so the
-            // key must not become runnable again when the short reservation expires.
-            // writeDispatched is set only after dispatchedLease is assigned. The filter stays
-            // on that flag alone so the null test is not a condition the compiler can see.
-            await dispatchedLease!.RetainAmbiguousAsync().ConfigureAwait(false);
+            // The write was dispatched. A cancel here can follow a partial autocommit or an
+            // unacknowledged commit, so this node must not run the key again.
+            keyedEdit.RetainAmbiguous();
             throw;
         }
 
-        // The losing writer rolled its edits back. Replay the receipt that committed, and
-        // do not publish change events for the result that did not.
+        // Another node's receipt already owned this scope, so this attempt was rolled back.
+        // Replay the receipt that committed, and publish no change events for this one.
         if (keyedApplication?.SupersededByExistingReceipt == true)
         {
-            return await ReplayCommittedReceiptAsync(scope!, idempotencyLease!).ConfigureAwait(false);
+            return await ReplayCommittedReceiptAsync(keyedEdit!).ConfigureAwait(false);
         }
 
         var response = GrpcConversionHelpers.ToProtoApplyEditsResponse(result);
 
-        // Record a completed receipt before any later step can fail, so a retry replays it
-        // instead of executing the edit again. An unknown commit is not a clean failure:
-        // keep the key so the edit is not run a second time. A database receipt from the
-        // same transaction is stronger than that marker and is replayed instead.
-        if (idempotencyLease is not null)
+        // Record the result on this node before any later step can fail, so a retry here
+        // replays it. An unknown commit is not a clean failure: keep the key from running
+        // again. A database receipt from the same transaction is stronger and is replayed.
+        if (keyedEdit is not null)
         {
-            if (IsAmbiguousCommit(result))
+            if (!IsAmbiguousCommit(result))
             {
-                GrpcApplyEditsIdempotencyStore.DurableEditReceipt durable;
-                try
-                {
-                    durable = await _idempotencyStore.TryReadDurableAsync(scope!, context.CancellationToken)
-                        .ConfigureAwait(false);
-                }
-                catch
-                {
-                    await idempotencyLease.RetainAmbiguousAsync().ConfigureAwait(false);
-                    throw;
-                }
-
-                if (durable.Response is not null)
-                {
-                    await idempotencyLease.ReleaseAsAlreadyRecordedAsync().ConfigureAwait(false);
-                    return durable.Response;
-                }
-
-                await idempotencyLease.RetainAmbiguousAsync().ConfigureAwait(false);
+                keyedEdit.Complete(response);
             }
-            else
+            else if (await ReadCommittedOrRetainAmbiguousAsync(keyedEdit, context.CancellationToken)
+                .ConfigureAwait(false) is { } committed)
             {
-                await idempotencyLease.CompleteAsync(response).ConfigureAwait(false);
+                return committed;
             }
         }
 
@@ -584,26 +543,36 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         }
     }
 
-    private async Task<Proto.ApplyEditsResponse> ReplayCommittedReceiptAsync(
-        string scope,
-        GrpcApplyEditsIdempotencyStore.Lease lease)
+    private static async Task<Proto.ApplyEditsResponse> ReplayCommittedReceiptAsync(GrpcApplyEditsReceipts.Entry keyedEdit)
+        => await ReadCommittedOrRetainAmbiguousAsync(keyedEdit, CancellationToken.None).ConfigureAwait(false)
+            ?? throw OutcomeMayHaveCommitted();
+
+    private static async Task<Proto.ApplyEditsResponse?> ReadCommittedOrRetainAmbiguousAsync(
+        GrpcApplyEditsReceipts.Entry keyedEdit,
+        CancellationToken cancellationToken)
     {
-        var durable = await _idempotencyStore.TryReadDurableAsync(scope, CancellationToken.None).ConfigureAwait(false);
-        if (durable.Response is not null)
+        GrpcApplyEditsReceipts.DurableEditReceipt committed;
+        try
         {
-            await lease.ReleaseAsAlreadyRecordedAsync().ConfigureAwait(false);
-            return durable.Response;
+            committed = await keyedEdit.ReadCommittedAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            keyedEdit.RetainAmbiguous();
+            throw;
         }
 
-        await lease.RetainAmbiguousAsync().ConfigureAwait(false);
-        throw new RpcException(new Status(
-            StatusCode.Aborted,
-            "A previous attempt with this idempotency key may have committed and will not be executed again."));
+        if (committed.Response is null)
+        {
+            keyedEdit.RetainAmbiguous();
+        }
+
+        return committed.Response;
     }
 
-    private static RpcException IdempotencyReservationLost() => new(new Status(
+    private static RpcException OutcomeMayHaveCommitted() => new(new Status(
         StatusCode.Aborted,
-        "The edit lost its idempotency reservation before it completed; retry with the same idempotency key."));
+        "A previous attempt with this idempotency key may have committed and will not be executed again."));
 
     private static bool IsAmbiguousCommit(FeatureEditResult result)
     {
