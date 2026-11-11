@@ -735,6 +735,23 @@ instead of GIS prose. Runtime source, generator scripts, CITE status and all
 existing build/setup inputs remain covered. Its producer/consumer security
 boundary and deterministic replay are unchanged.
 
+## Server test fixture lifetimes
+
+Class-scoped test applications and database infrastructure that shorten server
+test shards without changing what they run.
+
+### Routing async web tool database lifetime
+
+`RoutingAsyncWebToolTests` holds a class-level `PostgresFixture`, which keeps
+the shared, reference-counted PostgreSQL container and data source alive for the
+whole class instead of rebuilding them for each case. Each case still creates
+its own no-Redis `WebAppFixture` host with an isolated schema, cleared job
+tables, its own substitute routing provider and its own durable worker.
+All cases and assertions remain in the GeoServices GPServer and NAServer shard
+on selected PR runs and twice-daily full trunk runs. This changes no runner
+count, required check name, required aggregate dependency, workflow, or shard
+definition.
+
 ## Trailing affected CI selection
 
 Trailing affected CI refreshes its completed-ancestor base when the selection job starts,
