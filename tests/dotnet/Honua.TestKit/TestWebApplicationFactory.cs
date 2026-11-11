@@ -19,6 +19,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Protocols.GeoServices.FeatureServer;
+using Honua.Server.Features.Operations;
 using Honua.Core.Queries.Filters;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
@@ -109,6 +110,16 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             services.AddScoped<IAlertAdminStore, NullAlertAdminStore>();
             services.RemoveAll<IAuditLog>();
             services.AddSingleton<IAuditLog>(NullAuditLog.Instance);
+            // Production-mode authentication tests still use this database-free fixture.
+            // Durable operation startup checks and reconcilers require real persistence.
+            foreach (var descriptor in services.Where(descriptor =>
+                         descriptor.ServiceType == typeof(IHostedService) &&
+                         (descriptor.ImplementationType == typeof(OperationRuntimeStartupValidator) ||
+                          descriptor.ImplementationType == typeof(PlannedProposalReconciler) ||
+                          descriptor.ImplementationType == typeof(QueuedOperationReconciler))).ToArray())
+            {
+                services.Remove(descriptor);
+            }
             services.AddScoped<ISqlFilterTranslator, AllowAllSqlFilterTranslator>();
         });
         builder.ConfigureAppConfiguration((context, configBuilder) =>
