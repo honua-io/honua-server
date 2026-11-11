@@ -609,24 +609,6 @@ fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
 
-## Automatic merge admission
-
-`auto-merge-ready.yml` reconciles same-repository trunk PRs using the repository-scoped
-bot App token. Live drafts, forks, non-trunk bases and `hold`, `train:hold` or
-`train:escalated` labels are ineligible. One commit uses squash; bundles use merge
-commits. Synchronization and label changes revoke ineligible requests or replace a
-changed merge method. Required checks and repository rulesets decide when a PR
-merges; review admission applies only where configured as a required check. The
-helper checks out no contributor code and queues without cancellation.
-
-The event-driven auto-merge workflow skips Dependabot PRs before minting App credentials. Already mergeable PRs remain with the existing merge authority because GitHub cannot arm deferred auto-merge for them.
-
-Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
-`edited`. Dependabot PRs skip this workflow entirely, including hold-label
-revocation: a human or drain lane owns any manually armed dependency PR.
-If mergeability becomes clean between the live query and enable mutation, only
-GitHub's specific clean-status response ends neutrally; other API errors fail.
-
 ### Governance capacity split
 
 The former `Server Features Admin Governance and Sharing` shard timed out at
@@ -659,3 +641,21 @@ projects: when selected, each restores and builds by its own project path before
 managed outputs are published. Restore and build failures remain gating, with
 the same warnings, analyzers and graph-build settings as the solution build.
 Unknown projects outside the solution still fail planning; test selection is unchanged.
+
+## Automatic merge admission
+
+`auto-merge-ready.yml` reconciles same-repository trunk PRs using the repository-scoped
+bot App token. Live drafts, forks, non-trunk bases and `hold`, `train:hold` or
+`train:escalated` labels are ineligible. One commit uses squash; bundles use merge
+commits. Synchronization and label changes revoke ineligible requests or replace a
+changed merge method. Required checks and repository rulesets decide when a PR
+merges; review admission applies only where configured as a required check. The
+helper checks out no contributor code and queues without cancellation.
+
+The event-driven auto-merge workflow skips Dependabot PRs before minting App credentials. Already mergeable PRs remain with the existing merge authority because GitHub cannot arm deferred auto-merge for them.
+
+Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
+`edited`. Dependabot PRs skip this workflow entirely, including hold-label
+revocation: a human or drain lane owns any manually armed dependency PR.
+If mergeability becomes clean between the live query and enable mutation, only
+GitHub's specific clean-status response ends neutrally; other API errors fail.
