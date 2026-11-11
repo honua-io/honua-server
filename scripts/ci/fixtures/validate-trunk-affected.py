@@ -305,8 +305,10 @@ class RuntimeBaseTests(unittest.TestCase):
 FULL_HEAD, PRIOR_HEAD, NEWER_HEAD = "c" * 40, "b" * 40, "d" * 40
 
 
-def trunk_run(run_id, head, title, status="in_progress"):
-    return {"id": run_id, "head_sha": head, "display_title": title, "status": status}
+def trunk_run(run_id, head, title):
+    event = "schedule" if title == "CI " else "workflow_dispatch"
+    return {"id": run_id, "head_sha": head, "display_title": title, "status": "in_progress",
+            "event": event}
 
 
 class SupersedeTrailingRunsTests(unittest.TestCase):
@@ -331,7 +333,7 @@ class SupersedeTrailingRunsTests(unittest.TestCase):
     def test_full_run_cancels_selective_runs_at_or_before_its_head_only(self):
         runs = [trunk_run(1, FULL_HEAD, "CI "),
                 trunk_run(2, FULL_HEAD, "CI affected aaaa..cccc"),
-                trunk_run(3, PRIOR_HEAD, "CI affected aaaa..bbbb", status="pending"),
+                {**trunk_run(3, PRIOR_HEAD, "CI affected aaaa..bbbb"), "status": "pending"},
                 trunk_run(4, NEWER_HEAD, "CI affected cccc..dddd"),
                 trunk_run(5, PRIOR_HEAD, "CI ")]
         message, cancellations = self.decide(self.module.supersede_from_full_run, runs, 1, FULL_HEAD)
@@ -345,7 +347,7 @@ class SupersedeTrailingRunsTests(unittest.TestCase):
 
     def test_selective_run_cancels_itself_under_a_started_covering_full_run(self):
         for status in ("in_progress", "queued"):
-            runs = [trunk_run(9, NEWER_HEAD, "CI ", status=status),
+            runs = [{**trunk_run(9, NEWER_HEAD, "CI "), "status": status},
                     trunk_run(2, FULL_HEAD, "CI affected aaaa..cccc")]
             message, cancellations = self.decide(
                 self.module.supersede_own_selective_run, runs, 2, FULL_HEAD)
@@ -353,10 +355,12 @@ class SupersedeTrailingRunsTests(unittest.TestCase):
             self.assertIn("covers this head", message)
 
     def test_selective_run_continues_without_a_started_covering_full_run(self):
-        cases = {"full run held by concurrency": [trunk_run(9, NEWER_HEAD, "CI ", status="pending")],
+        cases = {"full run held by concurrency": [{**trunk_run(9, NEWER_HEAD, "CI "), "status": "pending"}],
                  "full run at an older head": [trunk_run(9, PRIOR_HEAD, "CI ")],
                  "only other selective runs": [trunk_run(4, NEWER_HEAD, "CI affected cccc..dddd")],
-                 "titled dispatch of unknown scope": [trunk_run(9, NEWER_HEAD, "CI train-42")]}
+                 "titled dispatch of unknown scope": [trunk_run(9, NEWER_HEAD, "CI train-42")],
+                 "manual dispatch without a title": [
+                     {**trunk_run(9, NEWER_HEAD, "CI "), "event": "workflow_dispatch"}]}
         for case, runs in cases.items():
             own = trunk_run(2, FULL_HEAD, "CI affected aaaa..cccc")
             _, cancellations = self.decide(
