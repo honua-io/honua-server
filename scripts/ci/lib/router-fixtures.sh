@@ -12,6 +12,8 @@ router_fixtures_init() {
     1:--changed-only) changed=true ;;
     *) echo 'Usage: validate-ci-router.sh [--changed-only]' >&2; exit 2 ;;
   esac
+  # Give each background worker an owned process group for cancellation.
+  set -m
   ROUTER_RESULTS="$(mktemp -d)"
   ROUTER_COUNT=0
   ROUTER_STARTED=$SECONDS
@@ -33,7 +35,7 @@ router_fixtures_init() {
 router_fixtures_cleanup() {
   local pid
   # jobs reports only children still owned by this shell, avoiding PID reuse.
-  for pid in $(jobs -pr); do kill "$pid" 2>/dev/null || true; done
+  for pid in $(jobs -pr); do kill -TERM -- "-$pid" 2>/dev/null || true; done
   wait || true
   rm -rf -- "${ROUTER_RESULTS:?}"
 }
@@ -65,6 +67,8 @@ run_fixture() {
   # Bash otherwise replaces a background command's inherited stdin with /dev/null.
   exec {fixture_stdin}<&0
   (
+    # Descendants stay in the worker group, including nested shell commands.
+    set +m
     started=$SECONDS
     set +e
     ( set -e; "$@" ) > "$result.log" 2>&1

@@ -212,9 +212,9 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/validate-server-test-archive.test.py "${PYTHON_BIN}" scripts/ci/validate-server-test-archive.test.py
 
   echo "Validating native-image impact observation contract..."
-  run_fixture managed-artifact-client node --test scripts/ci/trusted-pr-workflow-run.test.js
+  run_fixture scripts/ci/trusted-pr-workflow-run.test.js node --test scripts/ci/trusted-pr-workflow-run.test.js
   run_fixture scripts/ci/native-image-impact.py "${PYTHON_BIN}" scripts/ci/native-image-impact.py validate
-  run_fixture odata-pilot "${PYTHON_BIN}" -m unittest discover \
+  run_fixture native-image-impact-tests "${PYTHON_BIN}" -m unittest discover \
     -s tests/python/unit \
     -p 'test_native_image_impact.py' \
     -v

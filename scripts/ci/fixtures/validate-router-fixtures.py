@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Prove worker bounds, collected failures, argv fidelity and CI authority."""
 import os
+import signal
+import time
 from pathlib import Path
 import subprocess
 import sys
@@ -56,6 +58,35 @@ router_fixtures_finish
         self.assertNotIn('incorrectly-continued', result.stdout)
         self.assertIn('1 failed', result.stdout)
 
+    def test_cancellation_terminates_fixture_descendants(self):
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / 'alive'
+            body = (
+                'set -euo pipefail\n'
+                f'source "{LIBRARY}"\n'
+                'PYTHON_BIN=python3; SCRIPT_DIR=.; router_fixtures_init\n'
+                "run_fixture cancel bash -c '(while true; do echo alive >> \"$1\"; sleep 0.05; done) & wait' bash \"$1\"\n"
+                'router_fixtures_finish\n'
+            )
+            environment = dict(os.environ, CI='true', GITHUB_ACTIONS='', HONUA_ROUTER_WORKERS='1')
+            process = subprocess.Popen(['bash', '-c', body, 'fixture', str(marker)],
+                                       env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            try:
+                deadline = time.monotonic() + 5
+                while not marker.exists() and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                self.assertTrue(marker.exists(), 'fixture never started')
+                process.send_signal(signal.SIGTERM)
+                process.communicate(timeout=5)
+                self.assertEqual(process.returncode, 143)
+                size = marker.stat().st_size
+                time.sleep(0.2)
+                self.assertEqual(marker.stat().st_size, size, 'descendant survived cancellation')
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.communicate()
+
     def test_worker_limit(self):
         with tempfile.TemporaryDirectory() as directory:
             # A directory is an atomic lock; overlap would fail with one worker.
@@ -110,15 +141,19 @@ class ChangedInputsTests(unittest.TestCase):
             git('config', 'user.email', 'fixture@example.invalid')
             (root / 'old').write_text('original')
             (root / 'unstaged').write_text('original')
+            (root / 'staged-restored').write_text('original')
             git('add', '.')
             git('commit', '-qm', 'base')
             git('update-ref', 'refs/remotes/origin/trunk', 'HEAD')
             git('mv', 'old', 'new')
+            (root / 'staged-restored').write_text('staged')
+            git('add', 'staged-restored')
+            (root / 'staged-restored').write_text('original')
             (root / 'unstaged').write_text('modified')
             (root / 'untracked').write_text('new')
             result = subprocess.run([sys.executable, str(ROOT / 'scripts/ci/router-fixture-inputs.py')],
                                     cwd=root, text=True, capture_output=True, check=True)
-            self.assertEqual(set(result.stdout.splitlines()), {'old', 'new', 'unstaged', 'untracked'})
+            self.assertEqual(set(result.stdout.splitlines()), {'old', 'new', 'unstaged', 'untracked', 'staged-restored'})
             (root / 'newline\nname').write_text('ambiguous')
             result = subprocess.run([sys.executable, str(ROOT / 'scripts/ci/router-fixture-inputs.py')],
                                     cwd=root, text=True, capture_output=True, check=True)
