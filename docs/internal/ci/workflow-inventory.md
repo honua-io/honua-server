@@ -630,7 +630,7 @@ paid-run counts and the share of triage events reaching a paid Opus run. Determi
 skips use zero model credits. The combined envelopes are 2500 credits ($25) per day;
 triage and fix do not each receive a separate allowance.
 
-Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. Missing envelopes from ordinary producers remain errors.
+Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. If both producer jobs were skipped by draft admission, the consumer also returns without validation or mutation. Missing envelopes from ordinary producers remain errors.
 
 ### Standalone tooling in affected producer builds
 
