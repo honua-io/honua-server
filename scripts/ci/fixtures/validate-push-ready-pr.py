@@ -13,30 +13,30 @@ spec.loader.exec_module(publish)
 REPO = "honua-io/honua-server"
 
 
-def pr(head="old", state=True):
+def pr(head="old"):
     return {"number": 1, "head": {"ref": "topic", "sha": head,
-                                  "repo": {"full_name": REPO}}} if state else None
+                                  "repo": {"full_name": REPO}}}
 
 
 class PublishTests(unittest.TestCase):
-    def run_publish(self, pulls=None, runs=None, mutation=None, fail=None):
+    def run_publish(self, pulls=None, runs=None, mutation=None, fail=None, branch="topic", remote=None, dirty=False):
         pulls = iter(pulls or [[pr()], [pr()]])
         effects = []
         def command(*args):
             if fail and fail in args:
                 raise subprocess.CalledProcessError(1, args)
             if args[:2] == ("gh", "api"):
-                if "/pulls?" in args[-1]:
-                    return json.dumps([next(pulls)])
-                return json.dumps([{"workflow_runs": runs or []}])
+                if any("/pulls?" in arg for arg in args):
+                    return "\n".join(map(json.dumps, next(pulls)))
+                return "\n".join(map(json.dumps, runs or []))
             if args[:3] == ("gh", "repo", "view"):
                 return REPO
             if args[:3] == ("git", "remote", "get-url"):
-                return f"git@github.com:{REPO}.git"
+                return remote or f"git@github.com:{REPO}.git"
             if args[:2] == ("git", "symbolic-ref"):
-                return "topic"
+                return branch
             if args[:2] == ("git", "status"):
-                return ""
+                return " M changed" if dirty and effects else ""
             if args[:2] == ("git", "rev-parse"):
                 return "new" if mutation and effects else "local"
             self.fail(f"Unexpected command: {args}")
@@ -74,12 +74,34 @@ class PublishTests(unittest.TestCase):
         self.assertEqual([], effects)
 
     def test_pagination_covers_old_open_pr_and_active_run(self):
-        with patch.object(publish, "command", side_effect=[json.dumps([[], [pr()]]), json.dumps([
-                {"workflow_runs": [{"status": "completed"}]},
-                {"workflow_runs": [{"status": "in_progress", "id": 99}]}])]) as command:
+        with patch.object(publish, "command", side_effect=[json.dumps(pr()), "\n".join(map(json.dumps, [
+                {"status": "completed"}, {"status": "in_progress", "id": 99}]))]) as command:
             with self.assertRaisesRegex(publish.Deferred, "99"):
                 publish.inspect(REPO, "topic")
-            self.assertTrue(all("--paginate" in call.args for call in command.call_args_list))
+            for call in command.call_args_list:
+                self.assertIn("--paginate", call.args)
+                self.assertNotIn("--slurp", call.args)
+                self.assertIn("--jq", call.args)
+
+    def test_trunk_wrong_remote_and_ambiguous_pr_never_validate_or_push(self):
+        for options in [{"branch": "trunk"}, {"remote": "https://github.com/other/repo.git"},
+                        {"pulls": [[pr(), pr()]]}]:
+            result, effects = self.run_publish(**options)
+            self.assertEqual(75, result)
+            self.assertEqual([], effects)
+
+    def test_fork_and_deleted_fork_do_not_match_same_repo_branch(self):
+        for repo in [{"full_name": "someone/fork"}, None]:
+            fork = pr()
+            fork["head"]["repo"] = repo
+            with patch.object(publish, "command", return_value=json.dumps(fork)) as command:
+                self.assertIsNone(publish.inspect(REPO, "topic"))
+                self.assertEqual(1, command.call_count)
+
+    def test_dirty_tree_after_validation_never_pushes(self):
+        result, effects = self.run_publish(dirty=True)
+        self.assertEqual(75, result)
+        self.assertEqual([["pre-pr"]], effects)
 
     def test_validation_failure_never_pushes(self):
         with patch.object(publish, "inspect", return_value=None), patch.object(

@@ -15,10 +15,10 @@ def command(*args):
 
 def inspect(repo, branch, previous=None):
     # Paginate: a repository can have more than 100 open pull requests.
-    pulls = json.loads(command("gh", "api", "--paginate", "--slurp",
-                               f"repos/{repo}/pulls?state=open&per_page=100"))
-    matches = [p for page in pulls for p in page
-               if p["head"]["ref"] == branch and p["head"].get("repo", {}).get("full_name") == repo]
+    pulls = [json.loads(line) for line in command("gh", "api", "--paginate",
+             f"repos/{repo}/pulls?state=open&per_page=100", "--jq", ".[] | @json").splitlines()]
+    matches = [p for p in pulls
+               if p["head"]["ref"] == branch and (p["head"].get("repo") or {}).get("full_name") == repo]
     if len(matches) > 1:
         raise Deferred("Multiple open PRs use this branch; inspect them before publishing.")
     pr = matches[0] if matches else None
@@ -27,10 +27,10 @@ def inspect(repo, branch, previous=None):
     if not pr:
         return None
     head = pr["head"]["sha"]
-    pages = json.loads(command("gh", "api", "--paginate", "--slurp",
-                              f"repos/{repo}/actions/workflows/pr-gate.yml/runs?head_sha={head}&per_page=100"))
-    active = [run for page in pages for run in page["workflow_runs"]
-              if run["status"] != "completed"]
+    runs = command("gh", "api", "--paginate",
+                   f"repos/{repo}/actions/workflows/pr-gate.yml/runs?head_sha={head}&per_page=100",
+                   "--jq", ".workflow_runs[] | @json")
+    active = [run for line in runs.splitlines() if (run := json.loads(line))["status"] != "completed"]
     if active:
         run = active[0]
         raise Deferred(f"PR Gate {run['id']} is {run['status']}. Batch fixes locally; publish after it completes.")
