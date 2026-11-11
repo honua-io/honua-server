@@ -790,6 +790,15 @@ selected PR runs and twice-daily full trunk runs. This changes no runner count,
 required check name, required aggregate dependency, workflow, or shard
 definition.
 
+### Advanced spatial query fixture lifetime
+
+`AdvancedSpatialQueryTests` shares one seeded `WebAppFixture` for the lifetime
+of the sequential test class; every case is a read-only spatial query.
+All cases and assertions remain in the Core Spatial Query and Streaming shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
 ## Trailing affected CI selection
 
 Trailing affected CI refreshes its completed-ancestor base when the selection job starts,
