@@ -83,6 +83,8 @@ Stage 3 details:
   affected run of its merge.
 - `ci.yml` puts selective runs in their own concurrency group, so a burst of
   merges never replaces a pending scheduled full run.
+- A started full run cancels the selective runs it covers, and a selective
+  run under a covering full run cancels itself ([covered trunk runs](#covered-trunk-runs)).
 - The dispatched run is titled `CI affected <base>..<head>`. Its `changes`
   job prints the suspect range (`scripts/ci/trunk-suspect-range.sh`: every
   trunk commit in the range and the pull requests it names) to the job log and
@@ -744,6 +746,18 @@ full runs retain 24. A
 at a two-second median; twelve halves that so a broad run finishes before the
 next full run. Required PR gates
 and shard definitions are unchanged.
+
+### Covered trunk runs
+
+A full trunk run covers every merge up to its head. Its first job,
+`supersede-trailing-runs` (`scripts/ci/supersede_trailing_runs.py`), cancels
+queued or running `CI affected ...` runs at that head or an earlier one; a
+selective run cancels itself when a started full run's head contains its own.
+Ancestry comes from the compare API. A full run held by the concurrency group
+never cancels anything, and unreadable run history cancels nothing. On
+11 Nov a 164-job affected run and a manual full run tested the same head
+together, leaving 130 affected and 37 full jobs queued while every open PR
+Gate had six to nine jobs waiting for hosted runners.
 
 ## Automatic merge admission
 
