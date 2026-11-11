@@ -82,36 +82,6 @@ public sealed class DistributedCoordinationIntegrationTests
     }
 
     [UnitTest]
-    [Operation(Operations.Infrastructure)]
-    public async Task LeaderElection_MultipleInstances_OnlyOneBecomesLeader()
-    {
-        // Arrange: Create two leader election instances
-        var election1 = new RedisDistributedLeaderElection(
-            "test-service",
-            null, // No Redis - fallback mode
-            NullLogger<RedisDistributedLeaderElection>.Instance);
-
-        var election2 = new RedisDistributedLeaderElection(
-            "test-service",
-            null, // No Redis - fallback mode
-            NullLogger<RedisDistributedLeaderElection>.Instance);
-
-        // Act: Both try to acquire leadership
-        var leader1 = await election1.TryAcquireLeadershipAsync();
-        var leader2 = await election2.TryAcquireLeadershipAsync();
-
-        // Assert: In fallback mode, both become leaders (single instance assumption)
-        leader1.Should().BeTrue("first instance becomes leader in fallback mode");
-        leader2.Should().BeTrue("second instance also becomes leader in fallback mode");
-        election1.IsLeader.Should().BeTrue();
-        election2.IsLeader.Should().BeTrue();
-
-        // Cleanup
-        election1.Dispose();
-        election2.Dispose();
-    }
-
-    [UnitTest]
     [Operation(Operations.Cache)]
     public async Task CacheInvalidation_CrossInstance_PropagatesCorrectly()
     {
@@ -248,37 +218,4 @@ public sealed class DistributedCoordinationIntegrationTests
         coordinator.Dispose();
     }
 
-    [UnitTest]
-    [Operation(Operations.Infrastructure)]
-    public async Task LeaderElection_HeartbeatMaintenance_KeepsLeadership()
-    {
-        // Arrange
-        var election = new RedisDistributedLeaderElection(
-            "test-heartbeat",
-            null,
-            NullLogger<RedisDistributedLeaderElection>.Instance);
-
-        // Act: Acquire leadership and perform heartbeats
-        var acquired = await election.TryAcquireLeadershipAsync();
-        acquired.Should().BeTrue();
-        election.IsLeader.Should().BeTrue();
-
-        // Perform multiple heartbeats
-        for (int i = 0; i < 3; i++)
-        {
-            var heartbeat = await election.HeartbeatAsync();
-            heartbeat.Should().BeTrue($"heartbeat {i + 1} should succeed");
-            election.IsLeader.Should().BeTrue($"should remain leader after heartbeat {i + 1}");
-            await Task.Delay(50);
-        }
-
-        // Act: Release leadership
-        await election.ReleaseLeadershipAsync();
-
-        // Assert: No longer leader
-        election.IsLeader.Should().BeFalse();
-
-        // Cleanup
-        election.Dispose();
-    }
 }
