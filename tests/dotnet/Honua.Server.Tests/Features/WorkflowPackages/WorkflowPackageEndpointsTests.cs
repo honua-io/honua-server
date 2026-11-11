@@ -36,7 +36,7 @@ namespace Honua.Server.Tests.Features.WorkflowPackages;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ProcessExecution)]
-public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
+public sealed partial class WorkflowPackageEndpointsTests : IAsyncLifetime
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
