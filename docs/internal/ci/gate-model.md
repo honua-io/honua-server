@@ -748,3 +748,11 @@ Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
 revocation: a human or drain lane owns any manually armed dependency PR.
 If mergeability becomes clean between the live query and enable mutation, only
 GitHub's specific clean-status response ends neutrally; other API errors fail.
+
+### WFS endpoint state isolation
+
+WFS read-only cases may share a seeded application with a fresh HTTP client for
+each case. Feature inserts, transactions, stored-query mutations, metadata
+overrides, and custom configuration require separate applications and schemas so feature counts and
+catalog definitions cannot leak across cases. PR shards and full trunk runs
+exercise the same cases under this contract.

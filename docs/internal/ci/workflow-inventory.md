@@ -711,3 +711,8 @@ Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
 revocation: a human or drain lane owns any manually armed dependency PR.
 If mergeability becomes clean between the live query and enable mutation, only
 GitHub's specific clean-status response ends neutrally; other API errors fail.
+
+### WFS endpoint fixtures
+
+WFS shard coverage follows the
+[WFS endpoint state isolation contract](gate-model.md#wfs-endpoint-state-isolation).
