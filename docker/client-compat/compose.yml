@@ -330,6 +330,8 @@ services:
       - compat
     volumes:
       - ../../tests:/workspace/tests:rw
+      # playwright.config.ts allocates its page port through owned-server.py.
+      - ../../scripts/ci:/workspace/scripts/ci:ro
       - ../../artifacts/client-interop/openlayers:/output
 
   cesium:
