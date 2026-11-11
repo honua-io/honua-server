@@ -4,12 +4,10 @@
 using FluentAssertions;
 using Honua.Core.Exceptions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
@@ -22,8 +20,7 @@ public sealed class AdminAuthSessionApprovalTests
     [UnitTest]
     public async Task GetInteractiveSessionForApprovalAsync_ClaimsAssertInteractiveOrigin_RefusesUnknownSession()
     {
-        using var memory = new MemoryCache(new MemoryCacheOptions());
-        var store = CreateStore(memory);
+        var store = CreateStore(new InMemorySecurityTokenStore());
         var id = await store.CreateAuthenticatedSessionAsync(
             "oidc", "access-token", "id-token",
             [new() { Type = "sub", Value = "person" },
@@ -38,29 +35,25 @@ public sealed class AdminAuthSessionApprovalTests
     }
 
     [UnitTest]
-    public async Task GetInteractiveSessionForApprovalAsync_SharedStoreFails_RefusesWarmMemoryAuthority()
+    public async Task GetInteractiveSessionForApprovalAsync_SharedStoreFails_IsAnOutageNotAnAbsentSession()
     {
-        using var memory = new MemoryCache(new MemoryCacheOptions());
-        var shared = Substitute.For<IDistributedCache>();
-        shared.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<byte[]?>(new InvalidOperationException("unavailable")));
-        var store = CreateStore(memory, shared);
+        var shared = Substitute.For<ISecurityTokenStore>();
+        shared.FindAsync(default, default)
+            .ReturnsForAnyArgs(Task.FromException<StoredSecurityToken?>(new InvalidOperationException("unavailable")));
+        var store = CreateStore(shared);
         var id = await CreateInteractiveSessionAsync(store);
 
         var read = () => store.GetInteractiveSessionForApprovalAsync(id, CancellationToken.None);
 
         await read.Should().ThrowAsync<ServiceUnavailableException>();
-        (await store.GetAuthenticatedSessionAsync(id, CancellationToken.None)).Should().NotBeNull();
     }
 
     [UnitTest]
     public async Task GetInteractiveSessionForApprovalAsync_IndependentStoreAndRevocation_UsesSharedAuthority()
     {
-        using var firstMemory = new MemoryCache(new MemoryCacheOptions());
-        using var secondMemory = new MemoryCache(new MemoryCacheOptions());
-        var shared = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
-        var first = CreateStore(firstMemory, shared);
-        var second = CreateStore(secondMemory, shared);
+        var shared = new InMemorySecurityTokenStore();
+        var first = CreateStore(shared);
+        var second = CreateStore(shared);
         var id = await CreateInteractiveSessionAsync(first);
 
         var session = await second.GetInteractiveSessionForApprovalAsync(id, CancellationToken.None);
@@ -74,8 +67,7 @@ public sealed class AdminAuthSessionApprovalTests
     [UnitTest]
     public async Task GetInteractiveSessionForApprovalAsync_ExpiredSession_ReturnsNull()
     {
-        using var memory = new MemoryCache(new MemoryCacheOptions());
-        var store = CreateStore(memory);
+        var store = CreateStore(new InMemorySecurityTokenStore());
         var id = await store.CreateAuthenticatedSessionAsync(
             new AdminAuthAuthenticatedSession
             {
@@ -90,8 +82,8 @@ public sealed class AdminAuthSessionApprovalTests
         (await store.GetInteractiveSessionForApprovalAsync(id, CancellationToken.None)).Should().BeNull();
     }
 
-    private static AdminAuthSessionStore CreateStore(IMemoryCache memory, IDistributedCache? shared = null) =>
-        new(memory, NullLogger<AdminAuthSessionStore>.Instance, shared);
+    private static AdminAuthSessionStore CreateStore(ISecurityTokenStore shared) =>
+        new(shared, NullLogger<AdminAuthSessionStore>.Instance);
 
     private static Task<string> CreateInteractiveSessionAsync(AdminAuthSessionStore store) =>
         store.CreateAuthenticatedSessionAsync(

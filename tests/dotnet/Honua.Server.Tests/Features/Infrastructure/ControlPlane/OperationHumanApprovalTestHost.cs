@@ -18,7 +18,6 @@ using Honua.Server.Features.Operations;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
@@ -32,7 +31,7 @@ internal sealed class OperationHumanApprovalTestHost : IDisposable
 
     public OperationHumanApprovalTestHost(
         IDataProtectionProvider? protection = null,
-        IDistributedCache? sharedSessions = null,
+        ISecurityTokenStore? sharedSessions = null,
         string audience = "https://server.example.com")
     {
         Clock = new ApprovalTestClock();
@@ -56,7 +55,7 @@ internal sealed class OperationHumanApprovalTestHost : IDisposable
         services.AddScoped<ITenantContext>(provider => provider.GetRequiredService<RequestTenantContext>());
         services.AddAuthorization(options => options.AddPolicy(
             AuthenticationExtensions.AdminApprovePolicy, policy => policy.RequireRole("admin")));
-        if (sharedSessions is not null) services.AddSingleton(sharedSessions);
+        services.AddSingleton(sharedSessions ?? new InMemorySecurityTokenStore());
         services.AddSingleton<OperationHumanApprovalAuthority>();
         _services = services.BuildServiceProvider();
     }

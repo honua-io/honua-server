@@ -653,3 +653,6 @@ Each affected shard selects the SDK and workflow-attempt identity exported by it
 ### Test analyzer compilation roots
 
 The ready-PR format matrix retains `PR Gate / Analyzers (tests)` and adds `PR Gate / Analyzers (server tests)`. The latter compiles Honua.Server.Tests; the former compiles every other selected solution root. Their union equals the original full or affected root set, with no overlap. Forward dependencies still compile and test diagnostics remain warnings-as-errors in both jobs. A partition with no roots skips restore and build explicitly. The required format matrix waits for both jobs; drafts retain Format only. This separates the measured 14.9-minute test-analyzer path; the new timing must be measured on a hosted gate run.
+
+Optional PR workflow filters and retained post-merge coverage are documented in
+[optional PR input boundaries](gate-model.md#optional-pr-workflow-input-boundaries).

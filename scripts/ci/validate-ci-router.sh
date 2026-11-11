@@ -47,6 +47,7 @@ scripts/ci/validate-review-first-dispatch.sh
 echo "Validating PR Gate impact observation..."
 if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-workflow-load.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-optional-pr-inputs.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-testcontainer-images.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-heavy-runners.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-trunk-affected.py

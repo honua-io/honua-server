@@ -668,3 +668,27 @@ Each affected shard selects the SDK and workflow-attempt identity exported by it
 ### Test analyzer compilation roots
 
 The ready-PR format matrix retains `PR Gate / Analyzers (tests)` and adds `PR Gate / Analyzers (server tests)`. The latter compiles Honua.Server.Tests; the former compiles every other selected solution root. Their union equals the original full or affected root set, with no overlap. Forward dependencies still compile and test diagnostics remain warnings-as-errors in both jobs. A partition with no roots skips restore and build explicitly. The required format matrix waits for both jobs; drafts retain Format only. This separates the measured 14.9-minute test-analyzer path; the new timing must be measured on a hosted gate run.
+
+### Optional PR workflow input boundaries
+
+Capability Impact Comparison keeps its PR observation report, scoped to runtime
+source, .NET proving tests, compatibility baselines, capability data, the shard
+map and the selector/report tools. Unrelated prose and workflow edits no longer
+start it. It is currently disabled in repository settings; this filter makes
+re-enabling it safe. Capability Matrix Aggregation and OpenAPI Contract
+Governance already enumerate their generator/contract inputs and retain those
+filters. GeoArrow now also watches global.json and NuGet.config; GeoParquet
+retains its existing serializer/query/import/build-input boundary.
+
+Docs Link Gate retains its complete PR suite for documentation, skills, checker
+and manifest edits. Source/docker/eng-only edits instead run the link checker and
+its adversarial fixtures in the existing ci.yml CI Router Validation job on affected trunk
+runs and twice-daily full runs. That job already participates in CI Gate; no
+required check name or aggregate dependency changes. The runtime URL scan still
+runs and fails the trunk gate when a source/config link breaks.
+
+Derived Artifact Normalization watches .NET generator/proving-test code and
+client compatibility receipts instead of every test language, and GIS data
+instead of GIS prose. Runtime source, generator scripts, CITE status and all
+existing build/setup inputs remain covered. Its producer/consumer security
+boundary and deterministic replay are unchanged.

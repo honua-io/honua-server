@@ -784,7 +784,7 @@ public sealed class LayerPublishJobTests
         }
 
         public Task<ProgressCompareAndSetResult> TrySetProgressAsync(
-            string operationId, IOperationProgress progress, ProgressStatus expectedStatus, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+            OperationProgressWrite write, ProgressStatus expectedStatus, CancellationToken cancellationToken = default)
             => Task.FromResult(ProgressCompareAndSetResult.Updated);
 
         public Task<TProgress?> GetProgressAsync<TProgress>(string operationId, CancellationToken cancellationToken = default)
