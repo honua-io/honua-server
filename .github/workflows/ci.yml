@@ -690,6 +690,12 @@ jobs:
       - name: Validate Kubernetes operator guide contract
         run: scripts/ci/check-kubernetes-guide.sh
 
+      # Source/config URL checks run after merge after the routing and recovery guards.
+      - name: Verify runtime documentation links and anchors
+        run: |
+          python3 scripts/ci/check-doc-links.test.py
+          python3 scripts/ci/check-doc-links.py
+
   build:
     name: Build & Format Check
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
@@ -1201,8 +1207,8 @@ jobs:
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
-      # Bound trailing shard fanout so PR Gate can obtain runners. Full runs retain their budget.
-      max-parallel: ${{ inputs.selective_base && needs.changes.outputs.full_ci != 'true' && 6 || 24 }}
+      # Keep the trailing budget even when routing expands to full coverage.
+      max-parallel: ${{ inputs.selective_base && 6 || 24 }}
       matrix:
         include: ${{ fromJson(needs.targeted-shards.outputs.matrix_include) }}
     env:

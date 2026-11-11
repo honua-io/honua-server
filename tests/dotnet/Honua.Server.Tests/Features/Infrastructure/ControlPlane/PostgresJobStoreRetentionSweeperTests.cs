@@ -101,7 +101,9 @@ public sealed class PostgresJobStoreRetentionSweeperTests(DatabaseFixtureAdapter
         await using var harness = await CreateHarnessAsync();
         var expiredTerminal = await CreateJobAsync(harness, ExecutionJobStatus.Cancelled, expired: true);
         var expiredButRunning = await CreateJobAsync(harness, ExecutionJobStatus.Running, expired: true);
-        var handler = new JobStoreRetentionScheduledTickHandler(CreateSweeper(harness));
+        var handler = new JobStoreRetentionScheduledTickHandler(
+            CreateSweeper(harness),
+            new SharedStateRetentionSweeper([], Options.Create(new JobStoreOptions())));
 
         handler.Kind.Should().Be(ScheduledTickKind.JobStoreRetention);
         await handler.RunTickAsync(CancellationToken.None);

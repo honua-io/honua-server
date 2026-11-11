@@ -110,18 +110,13 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
         await SetProgressUnguardedAsync(operationId, progress, effectiveTtl, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<ProgressCompareAndSetResult> TrySetProgressAsync(
-        string operationId,
-        IOperationProgress progress,
-        OperationStatus expectedStatus,
-        TimeSpan? ttl = null,
-        CancellationToken cancellationToken = default)
+    public async Task<ProgressCompareAndSetResult> TrySetProgressAsync(OperationProgressWrite write, OperationStatus expectedStatus, CancellationToken cancellationToken = default)
     {
-        var effectiveTtl = ttl ?? TimeSpan.FromHours(24);
+        var effectiveTtl = write.Ttl ?? TimeSpan.FromHours(24);
 
         if (AllowsLocalFallback)
         {
-            return TrySetProgressInFallback(operationId, progress, expectedStatus, effectiveTtl);
+            return TrySetProgressInFallback(write.OperationId, write.Progress, expectedStatus, effectiveTtl);
         }
 
         if (_isUsingFallback && ShouldRetryRedis(DateTime.UtcNow))
@@ -138,10 +133,10 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
         // Redis lock, then read-check-write. Lock acquisition is best-effort: when the lock cannot be
         // obtained the check-and-write still runs immediately before the write, which is the narrowest
         // window achievable over IDistributedCache.
-        var lockToken = await TryAcquireConditionalWriteLockAsync(operationId, cancellationToken).ConfigureAwait(false);
+        var lockToken = await TryAcquireConditionalWriteLockAsync(write.OperationId, cancellationToken).ConfigureAwait(false);
         try
         {
-            var current = await GetProgressAsync(operationId, cancellationToken).ConfigureAwait(false);
+            var current = await GetProgressAsync(write.OperationId, cancellationToken).ConfigureAwait(false);
             if (current is null)
             {
                 return ProgressCompareAndSetResult.NotFound;
@@ -152,37 +147,32 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
                 return ProgressCompareAndSetResult.StatusMismatch(current);
             }
 
-            await SetProgressUnguardedAsync(operationId, progress, effectiveTtl, cancellationToken).ConfigureAwait(false);
+            await SetProgressUnguardedAsync(write.OperationId, write.Progress, effectiveTtl, cancellationToken).ConfigureAwait(false);
             return ProgressCompareAndSetResult.Updated;
         }
         finally
         {
-            await ReleaseConditionalWriteLockAsync(operationId, lockToken).ConfigureAwait(false);
+            await ReleaseConditionalWriteLockAsync(write.OperationId, lockToken).ConfigureAwait(false);
         }
     }
 
-    public async Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(
-        string operationId,
-        IOperationProgress progress,
-        IOperationProgress expectedProgress,
-        TimeSpan? ttl = null,
-        CancellationToken cancellationToken = default)
+    public async Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress expectedProgress, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(progress);
+        ArgumentNullException.ThrowIfNull(write.Progress);
         ArgumentNullException.ThrowIfNull(expectedProgress);
         cancellationToken.ThrowIfCancellationRequested();
-        if (progress.Type != expectedProgress.Type)
+        if (write.Progress.Type != expectedProgress.Type)
         {
-            throw new ArgumentException("A progress update cannot change the operation type.", nameof(progress));
+            throw new ArgumentException("A progress update cannot change the operation type.", nameof(write));
         }
 
-        var effectiveTtl = ttl ?? TimeSpan.FromHours(24);
+        var effectiveTtl = write.Ttl ?? TimeSpan.FromHours(24);
         RedisValue persisted = RedisValue.Null;
         IOperationProgress? current;
-        var key = (RedisKey)$"{_cacheInstanceName}{KeyPrefix}{operationId}";
+        var key = (RedisKey)$"{_cacheInstanceName}{KeyPrefix}{write.OperationId}";
         if (AllowsLocalFallback)
         {
-            current = await GetProgressAsync(operationId, cancellationToken).ConfigureAwait(false);
+            current = await GetProgressAsync(write.OperationId, cancellationToken).ConfigureAwait(false);
         }
         else
         {
@@ -193,23 +183,23 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
             persisted = await RedisClientFault.RetryCompletedReaderAsync(
                 () => _redis!.GetDatabase().HashGetAsync(key, "data"),
                 cancellationToken).ConfigureAwait(false);
-            current = persisted.HasValue ? DeserializeProgress(persisted.ToString()) : null;
+            current = persisted.HasValue ? OperationProgressSerializer.Deserialize(persisted.ToString()) : null;
         }
         if (current is null)
         {
             return ProgressCompareAndSetResult.NotFound;
         }
 
-        if (!SameProgressSnapshot(current, expectedProgress))
+        if (!OperationProgressSerializer.SameSnapshot(current, expectedProgress))
         {
             return ProgressCompareAndSetResult.StatusMismatch(current);
         }
 
         if (AllowsLocalFallback)
         {
-            if (_fallbackStore.TryUpdate($"{KeyPrefix}{operationId}", progress, current))
+            if (_fallbackStore.TryUpdate($"{KeyPrefix}{write.OperationId}", write.Progress, current))
             {
-                _fallbackExpiry[$"{KeyPrefix}{operationId}"] = DateTime.UtcNow.Add(effectiveTtl);
+                _fallbackExpiry[$"{KeyPrefix}{write.OperationId}"] = DateTime.UtcNow.Add(effectiveTtl);
                 return ProgressCompareAndSetResult.Updated;
             }
         }
@@ -222,12 +212,12 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
 
             // RedisCache stores payload and expiration metadata in this hash. Compare and update
             // inside one Redis transaction, including expiry, so lock loss/expiry and unguarded
-            // progress writers cannot turn an old heartbeat snapshot into an accepted write.
+            // write.Progress writers cannot turn an old heartbeat snapshot into an accepted write.
             var transaction = _redis!.GetDatabase().CreateTransaction();
             transaction.AddCondition(Condition.HashEqual(key, "data", persisted));
             _ = transaction.HashSetAsync(key,
             [
-                new HashEntry("data", SerializeProgress(progress)),
+                new HashEntry("data", OperationProgressSerializer.Serialize(write.Progress)),
                 new HashEntry("absexp", DateTimeOffset.UtcNow.Add(effectiveTtl).Ticks),
                 new HashEntry("sldexp", -1)
             ]);
@@ -238,35 +228,8 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
             }
         }
 
-        current = await GetProgressAsync(operationId, cancellationToken).ConfigureAwait(false);
+        current = await GetProgressAsync(write.OperationId, cancellationToken).ConfigureAwait(false);
         return current is null ? ProgressCompareAndSetResult.NotFound : ProgressCompareAndSetResult.StatusMismatch(current);
-    }
-
-    private static bool SameProgressSnapshot(IOperationProgress current, IOperationProgress expected)
-    {
-        if (current.GetType() != expected.GetType())
-        {
-            return false;
-        }
-
-        // Duration is a computed wall-clock view, never a state/version field. Compare every
-        // persisted state field, but use the original Redis bytes as the atomic transaction token
-        // so legacy payloads (including their old computed Duration) remain compatible.
-        var currentData = SerializeProgressData(current);
-        var expectedData = SerializeProgressData(expected);
-        foreach (var property in expectedData.EnumerateObject())
-        {
-            if (property.NameEquals("Duration"))
-            {
-                continue;
-            }
-            if (!currentData.TryGetProperty(property.Name, out var value) ||
-                !string.Equals(value.GetRawText(), property.Value.GetRawText(), StringComparison.Ordinal))
-            {
-                return false;
-            }
-        }
-        return true;
     }
 
     private async Task SetProgressUnguardedAsync(string operationId, IOperationProgress progress, TimeSpan effectiveTtl, CancellationToken cancellationToken)
@@ -296,7 +259,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
 
         try
         {
-            var json = SerializeProgress(progress);
+            var json = OperationProgressSerializer.Serialize(progress);
             await _cache.SetStringAsync(key, json,
                 new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = effectiveTtl },
                 cancellationToken);
@@ -377,7 +340,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
                 return null;
             }
 
-            return DeserializeProgress(json);
+            return OperationProgressSerializer.Deserialize(json);
         }
         // Intentional: see the "set progress" catch above — same translate-to-typed-exception
         // pattern for the Redis boundary.
@@ -450,68 +413,6 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
 
         return operations;
     }
-
-    private static string SerializeProgress(IOperationProgress progress)
-    {
-        var wrapper = new ProgressWrapper
-        {
-            Type = progress.Type,
-            ProgressType = progress.GetType().Name,
-            Data = SerializeProgressData(progress)
-        };
-
-        return JsonSerializer.Serialize(wrapper, UniversalProgressJsonContext.Default.ProgressWrapper);
-    }
-
-    private static IOperationProgress? DeserializeProgress(string json)
-    {
-        var wrapper = JsonSerializer.Deserialize(json, UniversalProgressJsonContext.Default.ProgressWrapper);
-        if (wrapper?.Data == null)
-        {
-            return null;
-        }
-
-        return wrapper.ProgressType switch
-        {
-            nameof(ImportProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.ImportProgress),
-            nameof(GeoservicesImportProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.GeoservicesImportProgress),
-            nameof(GeoServerImportProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.GeoServerImportProgress),
-            nameof(UploadProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.UploadProgress),
-            nameof(IngestProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.IngestProgress),
-            nameof(TileOperationProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.TileOperationProgress),
-            nameof(ExportProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.ExportProgress),
-            nameof(PrintProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.PrintProgress),
-            nameof(RasterImportProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.RasterImportProgress),
-            nameof(GeoprocessingProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.GeoprocessingProgress),
-            nameof(PublishingProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.PublishingProgress),
-            nameof(WorkflowProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.WorkflowProgress),
-            nameof(DeploymentProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.DeploymentProgress),
-            nameof(TemporalCorrectiveJobProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.TemporalCorrectiveJobProgress),
-            nameof(LayerPublishJobProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.LayerPublishJobProgress),
-            _ => null
-        };
-    }
-
-    private static JsonElement SerializeProgressData(IOperationProgress progress)
-        => progress switch
-        {
-            ImportProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.ImportProgress),
-            GeoservicesImportProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.GeoservicesImportProgress),
-            GeoServerImportProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.GeoServerImportProgress),
-            UploadProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.UploadProgress),
-            IngestProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.IngestProgress),
-            TileOperationProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.TileOperationProgress),
-            ExportProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.ExportProgress),
-            PrintProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.PrintProgress),
-            RasterImportProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.RasterImportProgress),
-            GeoprocessingProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.GeoprocessingProgress),
-            PublishingProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.PublishingProgress),
-            WorkflowProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.WorkflowProgress),
-            DeploymentProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.DeploymentProgress),
-            TemporalCorrectiveJobProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.TemporalCorrectiveJobProgress),
-            LayerPublishJobProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.LayerPublishJobProgress),
-            _ => throw new NotSupportedException($"Unsupported progress type '{progress.GetType().FullName}'.")
-        };
 
     private static bool IsTerminalStatus(OperationStatus status)
         => status is OperationStatus.Completed or OperationStatus.Failed or OperationStatus.Cancelled;
@@ -857,7 +758,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
                 return null;
             }
 
-            var progress = DeserializeProgress(progressValue.ToString());
+            var progress = OperationProgressSerializer.Deserialize(progressValue.ToString());
             return progress?.Type;
         }
         // Intentional: operation-type lookup is a best-effort convenience for index

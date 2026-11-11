@@ -33,7 +33,7 @@ public sealed class CustomCodeArtifactIngestorTests(DatabaseFixtureAdapter datab
         await using var harness = await CreateHarnessAsync();
         var jobs = harness.JobStore;
         using var cache = new MemoryCache(new MemoryCacheOptions());
-        var issuer = new ScopedJobTokenIssuer(cache, NullLogger<ScopedJobTokenIssuer>.Instance);
+        var issuer = new ScopedJobTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<ScopedJobTokenIssuer>.Instance);
         var client = new StubAwsBatchJobClient { SubmitException = new InjectedDispatchCrashException() };
         var backend = new AwsBatchComputeBackend(client, Options.Create(new AwsBatchExecutionOptions()),
             NullLogger<AwsBatchComputeBackend>.Instance, issuer);

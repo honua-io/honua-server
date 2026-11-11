@@ -16,6 +16,7 @@ using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Db.Postgres.Features.Publishing;
 using Honua.Db.Postgres.Features.Studio;
+using Honua.TestKit.Extensions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -41,7 +42,7 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
     private const string TenantA = "tenant-a";
     private const string TenantB = "tenant-b";
 
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
     private readonly RedisFixture _redis = new();
 
     public async Task InitializeAsync()

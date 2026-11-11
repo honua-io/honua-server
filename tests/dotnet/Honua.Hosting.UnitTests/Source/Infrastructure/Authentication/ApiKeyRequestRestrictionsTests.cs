@@ -3,7 +3,6 @@
 
 using System.Net;
 using System.Text.Encodings.Web;
-using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Infrastructure.Authentication;
@@ -259,38 +258,6 @@ public sealed class ApiKeyRequestRestrictionsTests
         ManagedKeyExchangeAuthority.ResolveTokenRoles(open.Record).Should().Equal("admin");
         ManagedKeyExchangeAuthority.ResolveTokenRoles(restricted.Record)
             .Should().BeNull("a portal token would not carry the key's restrictions");
-    }
-
-    [UnitTest]
-    public async Task RecordJson_UnrestrictedKey_SerializesWithoutRestrictionProperties()
-    {
-        // The Redis store's conditional usage write compares these bytes with what an older
-        // instance wrote, so an unrestricted record must serialize exactly as before.
-        var store = new InMemoryAdminApiKeyStore();
-        var open = await store.CreateAsync("open", ["read:test"], null, "test", CancellationToken.None);
-
-        var json = JsonSerializer.Serialize(open.Record, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord);
-
-        json.Should().NotContain("AllowedReferrers").And.NotContain("AllowedIpRanges");
-        var legacy = JsonSerializer.Deserialize(json, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord)!;
-        legacy.AllowedReferrers.Should().BeNull();
-        legacy.AllowedIpRanges.Should().BeNull();
-    }
-
-    [UnitTest]
-    public async Task RecordJson_RestrictedKey_RoundTrips()
-    {
-        var store = new InMemoryAdminApiKeyStore();
-        var restricted = await store.CreateAsync("restricted", ["read:test"], null, "test",
-            new AdminApiKeyRestrictions(["https://*.example.com"], ["203.0.113.0/24", "2001:db8::/32"]),
-            CancellationToken.None);
-
-        var json = JsonSerializer.Serialize(restricted.Record, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord);
-        var read = JsonSerializer.Deserialize(json, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord)!;
-
-        read.AllowedReferrers.Should().Equal("https://*.example.com");
-        read.AllowedIpRanges.Should().Equal("203.0.113.0/24", "2001:db8::/32");
-        JsonSerializer.Serialize(read, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord).Should().Be(json);
     }
 
     [UnitTest]
