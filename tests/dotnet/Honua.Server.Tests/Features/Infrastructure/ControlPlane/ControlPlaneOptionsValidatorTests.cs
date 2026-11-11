@@ -6,6 +6,7 @@ using System.Security.Cryptography.X509Certificates;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -66,6 +67,51 @@ public sealed class ControlPlaneOptionsValidatorTests
             failure.Contains("custom-code", StringComparison.Ordinal) &&
             failure.Contains("AWS-Batch-only", StringComparison.Ordinal) &&
             failure.Contains("ADR-0063", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public void Validate_EnvironmentWorkloadsMergedOverImageDefaults_NamesEntryThatInheritedAnotherTargetKind()
+    {
+        var options = BindWorkloads(new Dictionary<string, string?>
+        {
+            ["ControlPlane:ExecutionWorkloads:0:WorkloadId"] = "gp-batch",
+            ["ControlPlane:ExecutionWorkloads:0:TargetKind"] = "AwsBatch",
+            ["ControlPlane:ExecutionWorkloads:0:Backend"] = "honua-aws-batch",
+            ["ControlPlane:ExecutionWorkloads:1:WorkloadId"] = "gp-local",
+            ["ControlPlane:ExecutionWorkloads:1:Backend"] = "local",
+        });
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        var failure = Assert.Single(result.Failures ?? []);
+        Assert.Contains("ControlPlane:ExecutionWorkloads:1 (WorkloadId 'gp-local')", failure, StringComparison.Ordinal);
+        Assert.Contains("TargetKind 'AwsBatch'", failure, StringComparison.Ordinal);
+        Assert.Contains("ControlPlane__ExecutionWorkloads__1__TargetKind", failure, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public void Validate_ImageDefaultWorkloads_Succeed()
+    {
+        var options = BindWorkloads([]);
+
+        var result = _validator.Validate(null, options);
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Failures ?? []));
+    }
+
+    [UnitTest]
+    public void Validate_DisabledWorkloadWithMismatchedTargetKind_Succeeds()
+    {
+        var options = BindWorkloads(new Dictionary<string, string?>
+        {
+            ["ControlPlane:ExecutionWorkloads:0:TargetKind"] = "AwsBatch",
+            ["ControlPlane:ExecutionWorkloads:0:WorkloadId"] = "",
+        });
+
+        var result = _validator.Validate(null, options);
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Failures ?? []));
     }
 
     [UnitTest]
@@ -522,5 +568,25 @@ public sealed class ControlPlaneOptionsValidatorTests
             DateTimeOffset.UtcNow.AddDays(-1),
             DateTimeOffset.UtcNow.AddYears(1));
         return cert.ExportCertificatePem() + Environment.NewLine;
+    }
+
+    private static ControlPlaneOptions BindWorkloads(Dictionary<string, string?> environmentOverrides)
+    {
+        var imageDefaults = new Dictionary<string, string?>
+        {
+            ["ControlPlane:ExecutionWorkloads:0:WorkloadId"] = "geoprocessing-local",
+            ["ControlPlane:ExecutionWorkloads:0:Kind"] = "Geoprocessing",
+            ["ControlPlane:ExecutionWorkloads:0:TargetKind"] = "KubernetesJob",
+            ["ControlPlane:ExecutionWorkloads:0:Backend"] = "local",
+            ["ControlPlane:ExecutionWorkloads:1:WorkloadId"] = "geoprocessing-aws-batch",
+            ["ControlPlane:ExecutionWorkloads:1:Kind"] = "Geoprocessing",
+            ["ControlPlane:ExecutionWorkloads:1:TargetKind"] = "AwsBatch",
+            ["ControlPlane:ExecutionWorkloads:1:Backend"] = "honua-aws-batch",
+        };
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(imageDefaults)
+            .AddInMemoryCollection(environmentOverrides)
+            .Build();
+        return configuration.GetSection(ControlPlaneOptions.SectionName).Get<ControlPlaneOptions>()!;
     }
 }
