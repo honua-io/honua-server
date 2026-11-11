@@ -512,14 +512,6 @@ public sealed class FlatGeobufPreviewTests
             builder, FlatGeobuf.Crs.CreateCrs(builder, orgOffset, 0, default, default, default, codeStringOffset));
     }
 
-    private static MemoryStream CreateFlatGeobufStreamWithWktCrs(string wkt)
-    {
-        var builder = new FlatBufferBuilder(512);
-        var wktOffset = builder.CreateString(wkt);
-        return CreateHeaderOnlyFlatGeobufStream(
-            builder, FlatGeobuf.Crs.CreateCrs(builder, default, 0, default, default, wktOffset, default));
-    }
-
     private static MemoryStream CreateHeaderOnlyFlatGeobufStream(FlatBufferBuilder builder, Offset<FlatGeobuf.Crs> crsOffset)
     {
         FlatGeobuf.Header.StartHeader(builder);
