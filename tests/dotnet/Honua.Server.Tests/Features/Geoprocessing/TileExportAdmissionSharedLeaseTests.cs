@@ -18,66 +18,43 @@ using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
-using StackExchange.Redis;
-using Testcontainers.Redis;
 using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
 /// <summary>
 /// Two-node proof that tile-export and geoprocessing submissions share one admission lease
-/// and one durable active set (#4691). Each node is an independent connection, store,
+/// and one durable active set (#4691). Each node is an independent store,
 /// evaluator, and coordinator; the tile-export and geoprocessing services on a node share
 /// that node's coordinator. The services under test are the shipped ones.
 /// </summary>
 [Protocol(TestProtocols.GPServer)]
 public sealed class TileExportAdmissionSharedLeaseTests
-    : IClassFixture<TileExportAdmissionSharedLeaseTests.RedisServer>, IClassFixture<DatabaseFixtureAdapter>, IAsyncLifetime
+    : IClassFixture<DatabaseFixtureAdapter>, IAsyncLifetime
 {
     private const int RetryAfterSeconds = 7;
 
     private static readonly IOptionsMonitor<GeoprocessingExecutorOptions> ExecutorOptions =
         new StaticOptionsMonitor<GeoprocessingExecutorOptions>(new GeoprocessingExecutorOptions());
 
-    private readonly RedisServer _redis;
     private readonly DatabaseFixtureAdapter _database;
     private readonly ITestOutputHelper _output;
-    private readonly List<Node> _nodes = [];
-    private ConnectionMultiplexer _observer = null!;
     private PostgresJobSubstrateHarness _jobs = null!;
     private PostgresExecutionJobStore _observerStore = null!;
 
-    public TileExportAdmissionSharedLeaseTests(RedisServer redis, DatabaseFixtureAdapter database, ITestOutputHelper output)
+    public TileExportAdmissionSharedLeaseTests(DatabaseFixtureAdapter database, ITestOutputHelper output)
     {
-        _redis = redis;
         _database = database;
         _output = output;
     }
 
     public async Task InitializeAsync()
     {
-        var options = ConfigurationOptions.Parse(_redis.ConnectionString);
-        options.AllowAdmin = true;
-        _observer = await ConnectionMultiplexer.ConnectAsync(options);
-        foreach (var endpoint in _observer.GetEndPoints())
-        {
-            await _observer.GetServer(endpoint).FlushDatabaseAsync();
-        }
-
         _jobs = await PostgresJobSubstrateHarness.CreateAsync(_database, nameof(TileExportAdmissionSharedLeaseTests));
         _observerStore = _jobs.JobStore;
     }
 
-    public async Task DisposeAsync()
-    {
-        foreach (var node in _nodes)
-        {
-            await node.DisposeAsync();
-        }
-
-        await _observer.DisposeAsync();
-        await _jobs.DisposeAsync();
-    }
+    public async Task DisposeAsync() => await _jobs.DisposeAsync();
 
     [IntegrationTest]
     [Operation(Operations.Create)]
@@ -86,8 +63,8 @@ public sealed class TileExportAdmissionSharedLeaseTests
     {
         var limits = Limits(global: 1, perPartition: 100, cost: 1000);
         var rendezvous = new Rendezvous(parties: 2, TimeSpan.FromSeconds(1));
-        var nodeA = await CreateNodeAsync("node-a", limits, wrapStore: rendezvous.Wrap);
-        var nodeB = await CreateNodeAsync("node-b", limits, wrapStore: rendezvous.Wrap);
+        var nodeA = CreateNode("node-a", limits, wrapStore: rendezvous.Wrap);
+        var nodeB = CreateNode("node-b", limits, wrapStore: rendezvous.Wrap);
 
         var (attempts, sampler) = await BurstAsync(
         [
@@ -117,8 +94,8 @@ public sealed class TileExportAdmissionSharedLeaseTests
         // evaluated admits a tile export and a geoprocessing job against a global limit of one.
         var limits = Limits(global: 1, perPartition: 100, cost: 1000);
         var rendezvous = new Rendezvous(parties: 2, TimeSpan.FromSeconds(3));
-        var nodeA = await CreateNodeAsync("node-a", limits, sharedLease: false, wrapStore: rendezvous.Wrap);
-        var nodeB = await CreateNodeAsync("node-b", limits, sharedLease: false, wrapStore: rendezvous.Wrap);
+        var nodeA = CreateNode("node-a", limits, sharedLease: false, wrapStore: rendezvous.Wrap);
+        var nodeB = CreateNode("node-b", limits, sharedLease: false, wrapStore: rendezvous.Wrap);
 
         var (attempts, sampler) = await BurstAsync(
         [
@@ -139,8 +116,8 @@ public sealed class TileExportAdmissionSharedLeaseTests
     public async Task TwoNodes_MixedBurst_NeverExceedsConfiguredLimits()
     {
         var limits = Limits(global: 4, perPartition: 2, cost: 3);
-        var nodeA = await CreateNodeAsync("node-a", limits);
-        var nodeB = await CreateNodeAsync("node-b", limits);
+        var nodeA = CreateNode("node-a", limits);
+        var nodeB = CreateNode("node-b", limits);
 
         // Offered load exceeds every configured denominator: global (all of these), each
         // kind's partition (tiles share one resource, buffers share tenant-a, warps share
@@ -214,21 +191,17 @@ public sealed class TileExportAdmissionSharedLeaseTests
         DefaultRetryAfterSeconds = RetryAfterSeconds
     };
 
-    private async Task<Node> CreateNodeAsync(
+    private Node CreateNode(
         string name,
         ExecutionAdmissionOptions limits,
         bool sharedLease = true,
         Func<IExecutionJobStore, IExecutionJobStore>? wrapStore = null)
     {
-        var multiplexer = await ConnectionMultiplexer.ConnectAsync(_redis.ConnectionString);
-        IExecutionJobStore store = _jobs.CreateNodeJobStore();
-        if (wrapStore is not null)
-        {
-            store = wrapStore(store);
-        }
+        var nodeStore = _jobs.CreateNodeJobStore();
+        var store = wrapStore is null ? nodeStore : wrapStore(nodeStore);
 
         var admission = AdmissionNodeComposition.Compose(
-            multiplexer,
+            nodeStore,
             store,
             new StaticOptionsMonitor<ExecutionAdmissionOptions>(limits),
             sharedLease);
@@ -257,9 +230,7 @@ public sealed class TileExportAdmissionSharedLeaseTests
             admissionEvaluator: admission.Evaluator,
             admissionCoordinator: admission.Coordinator);
 
-        var node = new Node(name, multiplexer, geoprocessing, tiles);
-        _nodes.Add(node);
-        return node;
+        return new Node(name, geoprocessing, tiles);
     }
 
     private static async Task<Attempt> SubmitTileAsync(Node node, string key, TileExportJobPlan plan)
@@ -468,20 +439,7 @@ public sealed class TileExportAdmissionSharedLeaseTests
         string? PolicyRef,
         int? RetryAfterSeconds);
 
-    private sealed class Node(
-        string name,
-        ConnectionMultiplexer multiplexer,
-        GeoprocessingJobService geoprocessing,
-        TileExportJobService tiles) : IAsyncDisposable
-    {
-        public string Name { get; } = name;
-
-        public GeoprocessingJobService Geoprocessing { get; } = geoprocessing;
-
-        public TileExportJobService Tiles { get; } = tiles;
-
-        public ValueTask DisposeAsync() => multiplexer.DisposeAsync();
-    }
+    private sealed record Node(string Name, GeoprocessingJobService Geoprocessing, TileExportJobService Tiles);
 
     private sealed class ActiveSampler
     {
@@ -563,31 +521,5 @@ public sealed class TileExportAdmissionSharedLeaseTests
         public T Get(string? name) => value;
 
         public IDisposable? OnChange(Action<T, string?> listener) => null;
-    }
-
-    /// <summary>
-    /// A dedicated Redis for this class: tests flush it between runs, so it must never be the
-    /// process-wide shared container or an externally supplied server.
-    /// </summary>
-    public sealed class RedisServer : IAsyncLifetime
-    {
-        private RedisContainer? _container;
-
-        public string ConnectionString { get; private set; } = string.Empty;
-
-        public async Task InitializeAsync()
-        {
-            _container = new RedisBuilder("redis:7.2-alpine").Build();
-            await _container.StartAsync();
-            ConnectionString = _container.GetConnectionString();
-        }
-
-        public async Task DisposeAsync()
-        {
-            if (_container is not null)
-            {
-                await _container.DisposeAsync();
-            }
-        }
     }
 }

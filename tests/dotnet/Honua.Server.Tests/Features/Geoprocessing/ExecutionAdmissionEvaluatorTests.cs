@@ -409,32 +409,55 @@ public sealed class ExecutionAdmissionEvaluatorTests
     }
 
     // -----------------------------------------------------------------------
-    // Shared rate state unavailable â€” fail closed, never a per-node bucket (#3853)
+    // Shared rate window: counted jobs, failing closed when the count is unreadable
     // -----------------------------------------------------------------------
 
     [Fact]
-    public async Task Evaluate_SharedRateStateUnavailable_DeniesBackpressureInsteadOfPerNodeFallback()
+    public async Task Evaluate_SharedCountAtTheLimit_ThrottlesWithTheCountedSubmissions()
     {
-        // The window has 100 free slots, so the retired process-local fallback would have
-        // admitted every attempt below. A configured shared limit must instead refuse to admit
-        // against per-node state: N nodes would each grant the full window and a restart would
-        // reset it.
+        var options = DefaultOptions();
+        options.MaxSubmissionsPerWindow = 3;
+        var sut = CreateSut(options, SubmissionCounter(counted: 3));
+
+        var decision = await sut.EvaluateAsync(CreateRequest());
+
+        decision.Outcome.Should().Be(ExecutionAdmissionOutcome.Throttled);
+        decision.DenyingDimension.Should().Be(ExecutionAdmissionDimension.Rate);
+        decision.PolicyRef.Should().Be("rate:geoprocessing:per-principal");
+        decision.Snapshot.SubmissionsInWindow.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task Evaluate_SharedCountBelowTheLimit_AdmitsAndCountsThisSubmission()
+    {
+        var options = DefaultOptions();
+        options.MaxSubmissionsPerWindow = 3;
+        options.RateWindowSeconds = 45;
+        var submissions = SubmissionCounter(counted: 2);
+        var sut = CreateSut(options, submissions);
+
+        var decision = await sut.EvaluateAsync(CreateRequest());
+
+        decision.Outcome.Should().Be(ExecutionAdmissionOutcome.Admitted);
+        decision.Snapshot.SubmissionsInWindow.Should().Be(3);
+        await submissions.Received(1).CountAsync(
+            new AdmissionSubmissionWindow(ExecutionJobKind.Geoprocessing, Principal, _time.GetUtcNow().AddSeconds(-45), CountCap: 3),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Evaluate_SharedCountUnavailable_DeniesBackpressureInsteadOfPerNodeFallback()
+    {
+        // The window has 100 free slots, so the process-local bucket would have admitted every
+        // attempt below. A configured shared limit must instead refuse to admit against per-node
+        // state: N nodes would each grant the full window and a restart would reset it.
         var options = DefaultOptions();
         options.DefaultRetryAfterSeconds = 7;
-
-        var database = Substitute.For<IDatabase>();
-        database
-            .ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]>(), Arg.Any<RedisValue[]>(), Arg.Any<CommandFlags>())
-            .ThrowsAsync(new RedisConnectionException(ConnectionFailureType.UnableToConnect, "redis unreachable"));
-        var multiplexer = Substitute.For<IConnectionMultiplexer>();
-        multiplexer.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(database);
-
-        var sut = new ExecutionAdmissionEvaluator(
-            new TestOptionsMonitor(options),
-            _time,
-            NullLogger<ExecutionAdmissionEvaluator>.Instance,
-            _jobStore,
-            multiplexer);
+        var submissions = Substitute.For<IAdmissionSubmissionCounter>();
+        submissions
+            .CountAsync(Arg.Any<AdmissionSubmissionWindow>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new TimeoutException("count timed out"));
+        var sut = CreateSut(options, submissions);
 
         for (var attempt = 0; attempt < 3; attempt++)
         {
@@ -451,12 +474,24 @@ public sealed class ExecutionAdmissionEvaluatorTests
     // Helpers
     // -----------------------------------------------------------------------
 
-    private ExecutionAdmissionEvaluator CreateSut(ExecutionAdmissionOptions options)
+    private ExecutionAdmissionEvaluator CreateSut(
+        ExecutionAdmissionOptions options,
+        IAdmissionSubmissionCounter? submissions = null)
         => new(
             new TestOptionsMonitor(options),
             _time,
             NullLogger<ExecutionAdmissionEvaluator>.Instance,
-            _jobStore);
+            _jobStore,
+            submissions);
+
+    private static IAdmissionSubmissionCounter SubmissionCounter(int counted)
+    {
+        var submissions = Substitute.For<IAdmissionSubmissionCounter>();
+        submissions
+            .CountAsync(Arg.Any<AdmissionSubmissionWindow>(), Arg.Any<CancellationToken>())
+            .Returns(counted);
+        return submissions;
+    }
 
     private static ExecutionAdmissionOptions DefaultOptions() => new()
     {
