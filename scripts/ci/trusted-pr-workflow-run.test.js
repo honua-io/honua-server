@@ -717,7 +717,6 @@ for (const [name, overrides] of [
   });
 }
 
-
 test('partial rerun observes the heavy outcome retained from an earlier attempt', async () => {
   const { github } = draftAdmissionFixtures('success', {
     jobs: [heavyAttempt(1, 'success'), heavyAttempt(1, 'success', RUNNER_SELECT)],

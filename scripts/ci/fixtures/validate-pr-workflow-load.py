@@ -131,6 +131,9 @@ class PullRequestLoadTests(unittest.TestCase):
             heavy.append("server-test-producer")
         draft = {"event_name": "pull_request", "event": {"pull_request": {"draft": True}}}
         self.assertEqual(jobs["runner-select"]["if"], DRAFT_GUARD)
+        # Draft-admission evidence reads a skipped runner select as a draft; that
+        # holds only while its draft guard is the sole way it can be skipped.
+        self.assertNotIn("needs", jobs["runner-select"])
         self.assertFalse(evaluate(DRAFT_GUARD, draft))
         for key in heavy:
             with self.subTest(job=key):
