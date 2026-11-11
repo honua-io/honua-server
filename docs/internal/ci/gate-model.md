@@ -616,6 +616,8 @@ fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
 
+Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. Missing envelopes from ordinary producers remain errors.
+
 ### Spec endpoint application lifetime
 
 `SpecEndpointsTests` retains one application for validation, planning, and
@@ -624,8 +626,6 @@ and license variants own their hosts and state. The class fixture disposes the
 shared application after its last case. All cases and assertions run in their
 existing PR and trunk shard selections; runner counts, required check names,
 and aggregate dependencies are unchanged.
-
-Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. Missing envelopes from ordinary producers remain errors.
 
 ### Governance capacity split
 
