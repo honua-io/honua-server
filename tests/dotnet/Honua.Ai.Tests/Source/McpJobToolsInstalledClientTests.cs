@@ -6,11 +6,11 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.ControlPlane;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
 
@@ -30,7 +30,7 @@ public sealed class McpJobToolsInstalledClientTests
     {
         await using var redis = new RedisFixture();
         await redis.InitializeAsync();
-        await using var fixture = new WebAppFixture().UseKestrel().WithTestLicense(HonuaEdition.Pro)
+        await using var fixture = new WebAppFixture().UseKestrel().WithProductionJobSubstrate().WithTestLicense(HonuaEdition.Pro)
             .ConfigureWebHost(builder =>
             {
                 builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
@@ -38,8 +38,7 @@ public sealed class McpJobToolsInstalledClientTests
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-            })
-            .ConfigureServices(services => services.AddJobWorker());
+            });
         await fixture.InitializeAsync();
         using var admin = fixture.CreateAdminClient();
         using var keyResponse = await admin.PostAsJsonAsync("/api/v1/admin/api-keys", new
