@@ -164,16 +164,15 @@ internal sealed class ApiKeyAuthenticationHandler(
             }
         }
 
-        var passwordValidation = await ValidateAdminPasswordAsync(providedApiKey, schemeName, dependencies, logger,
-            cancellationToken).ConfigureAwait(false);
+        var passwordValidation = await ValidateAdminPasswordAsync(new AdminPasswordAttempt(providedApiKey, schemeName),
+            dependencies, logger, cancellationToken).ConfigureAwait(false);
         return storeUnavailable && passwordValidation.Rejection is ApiKeyRejection.AdminPasswordNotConfigured or ApiKeyRejection.InvalidKey
             ? new ApiKeyValidation(null, ApiKeyRejection.CredentialStoreUnavailable)
             : passwordValidation;
     }
 
     internal static async Task<ApiKeyValidation> ValidateAdminPasswordAsync(
-        string providedApiKey,
-        string schemeName,
+        AdminPasswordAttempt attempt,
         ApiKeyAuthenticationDependencies dependencies,
         ILogger logger,
         CancellationToken cancellationToken)
@@ -200,7 +199,7 @@ internal sealed class ApiKeyAuthenticationHandler(
         }
 
         // Perform constant-time comparison to prevent timing attacks
-        if (!IsApiKeyValid(providedApiKey, configuredPassword))
+        if (!IsApiKeyValid(attempt.Password, configuredPassword))
         {
             return new ApiKeyValidation(
                 null,
@@ -209,7 +208,7 @@ internal sealed class ApiKeyAuthenticationHandler(
 
         AuthenticationLog.ApiKeyAuthenticationSuccessful(logger);
         return new ApiKeyValidation(
-            CreateSuccessfulAuthenticationResult(schemeName, "admin", BootstrapAdminActorId),
+            CreateSuccessfulAuthenticationResult(attempt.SchemeName, "admin", BootstrapAdminActorId),
             ApiKeyRejection.None);
     }
 

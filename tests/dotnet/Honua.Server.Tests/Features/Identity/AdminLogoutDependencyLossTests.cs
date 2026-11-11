@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
@@ -34,20 +35,7 @@ public sealed class AdminLogoutDependencyLossTests
         var store = new AdminAuthSessionStore(sharedSessions, NullLogger<AdminAuthSessionStore>.Instance);
         var otherReplica = new AdminAuthSessionStore(sharedSessions, NullLogger<AdminAuthSessionStore>.Instance);
         using var certificate = SamlTestAssertions.CreateSigningCertificate();
-        await using var fixture = new WebAppFixture()
-            .UseSeed("tests/seed/server.yaml")
-            .ReplaceService(store)
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("Licensing:DevGrantEdition", "Enterprise");
-                builder.UseSetting("Saml:Enabled", "true");
-                builder.UseSetting("Saml:EntityId", SamlTestAssertions.Audience);
-                builder.UseSetting("Saml:IdpEntityId", SamlTestAssertions.Issuer);
-                builder.UseSetting("Saml:AssertionConsumerServiceUrl", SamlTestAssertions.Audience + "/saml/acs");
-                builder.UseSetting("Saml:IdpSigningCertificate", SamlTestAssertions.ToBase64Der(certificate));
-            });
+        await using var fixture = CreateSamlFixture(store, certificate);
         await fixture.InitializeAsync();
         var sessionId = await issuer.CreateAuthenticatedSessionAsync("saml", "token", null,
             [new AdminAuthSessionClaim { Type = "sub", Value = "admin" }],
@@ -89,6 +77,23 @@ public sealed class AdminLogoutDependencyLossTests
         Assert.Null(await store.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None));
         Assert.Null(await otherReplica.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None));
     }
+
+    private static WebAppFixture CreateSamlFixture(
+        AdminAuthSessionStore store, X509Certificate2 certificate) =>
+        new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .ReplaceService(store)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("Licensing:DevGrantEdition", "Enterprise");
+                builder.UseSetting("Saml:Enabled", "true");
+                builder.UseSetting("Saml:EntityId", SamlTestAssertions.Audience);
+                builder.UseSetting("Saml:IdpEntityId", SamlTestAssertions.Issuer);
+                builder.UseSetting("Saml:AssertionConsumerServiceUrl", SamlTestAssertions.Audience + "/saml/acs");
+                builder.UseSetting("Saml:IdpSigningCertificate", SamlTestAssertions.ToBase64Der(certificate));
+            });
 
     private sealed class RevocationFaultTokenStore : ISecurityTokenStore
     {

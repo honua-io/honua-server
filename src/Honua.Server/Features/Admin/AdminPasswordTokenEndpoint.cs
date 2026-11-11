@@ -15,8 +15,9 @@ internal sealed class AdminPasswordAuthenticator(
     ILogger<AdminAuthEndpoints.AdminAuthEndpointsLog> logger)
 {
     internal Task<ApiKeyValidation> ValidateAsync(string password, CancellationToken cancellationToken) =>
-        ApiKeyAuthenticationHandler.ValidateAdminPasswordAsync(password,
-            OidcAuthenticationExtensions.AdminSessionScheme, dependencies, logger, cancellationToken);
+        ApiKeyAuthenticationHandler.ValidateAdminPasswordAsync(
+            new AdminPasswordAttempt(password, OidcAuthenticationExtensions.AdminSessionScheme),
+            dependencies, logger, cancellationToken);
 
     internal static AdminAuthSessionClaim[] CreateClaims(ClaimsPrincipal principal) =>
         principal.Claims.Select(claim => new AdminAuthSessionClaim
