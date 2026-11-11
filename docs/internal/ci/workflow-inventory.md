@@ -656,25 +656,17 @@ Unknown projects outside the solution still fail planning; test selection is unc
 Optional PR workflow filters and retained post-merge coverage are documented in
 [optional PR input boundaries](gate-model.md#optional-pr-workflow-input-boundaries).
 
+## Trailing affected CI selection
+
+Trailing affected CI refreshes its completed-ancestor base when the selection job starts,
+so queued dispatches do not retain an obsolete range. Dispatch and execution use the same completed-run selector; execution never regresses behind the dispatched base. Selections above 30 shards
+fall back to the newest merge; the summary records the older range deferred to
+the twice-daily full run. A broad newest merge retains every selected shard.
+Affected shard concurrency remains six, including full-coverage routing fallbacks;
+manual and scheduled full runs retain their existing budget. Required PR gates
+and shard definitions are unchanged.
+
 ### Durable GPServer fixtures
 
 See [Durable GPServer database lifetime](gate-model.md#durable-gpserver-database-lifetime)
 for shared infrastructure and per-case durable execution isolation.
-
-## Automatic merge admission
-
-`auto-merge-ready.yml` reconciles same-repository trunk PRs using the repository-scoped
-bot App token. Live drafts, forks, non-trunk bases and `hold`, `train:hold` or
-`train:escalated` labels are ineligible. One commit uses squash; bundles use merge
-commits. Synchronization and label changes revoke ineligible requests or replace a
-changed merge method. Required checks and repository rulesets decide when a PR
-merges; review admission applies only where configured as a required check. The
-helper checks out no contributor code and queues without cancellation.
-
-The event-driven auto-merge workflow skips Dependabot PRs before minting App credentials. Already mergeable PRs remain with the existing merge authority because GitHub cannot arm deferred auto-merge for them.
-
-Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
-`edited`. Dependabot PRs skip this workflow entirely, including hold-label
-revocation: a human or drain lane owns any manually armed dependency PR.
-If mergeability becomes clean between the live query and enable mutation, only
-GitHub's specific clean-status response ends neutrally; other API errors fail.
