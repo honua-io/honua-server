@@ -52,6 +52,14 @@ Optional form fields: `sourceSrid` (when CRS auto-detection fails), `targetSchem
 
 Run `GET /api/v1/admin/import/jobs/{jobId}`, substituting the `jobId` returned by the upload.
 
+Wait for the completed status before publishing. The completed receipt carries
+`schema`, `physicalTableName`, and `featuresProcessed`. Use the physical identifiers
+in the publish request; `tableName` is the requested logical name. `connectionId`
+identifies the unique active registered connection matching the import database.
+If no unique match exists, it is null and `warnings` explains that a matching
+connection must be registered or selected before publishing. Queued, processing,
+failed and cancelled jobs do not expose a usable publication receipt.
+
 Cancel with `POST /api/v1/admin/import/jobs/{jobId}/cancel`; list active jobs with `GET /api/v1/admin/import/jobs`.
 
 #### Where background imports run
@@ -84,13 +92,32 @@ The server downloads the object directly; redirecting URLs are rejected. `POST /
 
 ## Verify
 
-A synchronous import returns the result inline; a completed background job returns it from the job-status endpoint:
+A synchronous import returns the result inline:
 
 ```json
 {"success": true, "tableName": "parcels", "featureCount": 1250, "format": "GeoJson", "detectedSrid": 4326, "warnings": [], …}
 ```
 
 `detectedSrid` confirms CRS auto-detection. The table is now discoverable via `GET /api/v1/admin/connections/{id}/tables` and ready to publish.
+
+## Published attributes
+
+File imports promote supported scalar attributes into typed database columns for
+filtering and sorting. The `properties` JSON document also retains the source
+attributes, including nested objects that cannot become scalar columns.
+
+When you publish both a promoted column and `properties`, both values appear in
+feature responses. For example, GeoJSON and OGC feature output can contain
+`properties.name` and `properties.properties.name`; FeatureServer output can
+contain `attributes.name` and `attributes.properties.name`.
+
+Use the promoted field as the authoritative value for queries, filters, and
+sorting. The retained JSON document is a separate field: edits to one database
+column do not automatically update the other. If they differ, the server returns
+both stored values and evaluates filters and sorting against the promoted field.
+Publish only the fields your clients need if you do not want the retained
+document in responses. Source attributes that were not promoted remain available
+inside that document.
 
 ## Detailed polygons
 
