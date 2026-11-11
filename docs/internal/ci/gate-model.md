@@ -790,6 +790,19 @@ Server Features Streaming Endpoints 1, 2, and 4 shards on selected PR runs and
 twice-daily full trunk runs. This changes no runner count, required check name,
 required aggregate dependency, workflow, or shard definition.
 
+### FeatureServer RBAC denial fixture lifetime
+
+FeatureServerServiceRbacTests uses one application per class, built once through
+xUnit's class fixture, for cases where authorization must reject a request
+before any write. Each case still creates its own HTTP client with its own role
+headers, so no authentication state is shared between cases. Cases that write
+successfully, or that create a replica as setup, still build their own
+application and discard it when the case ends.
+All cases and assertions remain in the Security and Authorization 5 shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
 ## Trailing affected CI selection
 
 Trailing affected CI refreshes its completed-ancestor base when the selection job starts,
