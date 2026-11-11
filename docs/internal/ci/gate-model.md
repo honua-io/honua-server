@@ -636,14 +636,6 @@ managed outputs are published. Restore and build failures remain gating, with
 the same warnings, analyzers and graph-build settings as the solution build.
 Unknown projects outside the solution still fail planning; test selection is unchanged.
 
-## OGC release-candidate qualification
-
-External OGC conformance runs through individual manual dispatchers and, after the
-RC image build, through `ogc-rc-conformance.yml`. The RC manifest waits for success.
-Optional integration flags
-do not bypass it. See the [workflow inventory](workflow-inventory.md#ogc-cite--conformance)
-for the complete dispatchers, source/image binding and separate certification policy.
-
 ### Optional PR workflow input boundaries
 
 Capability Impact Comparison keeps its PR observation report, scoped to runtime
@@ -667,3 +659,10 @@ client compatibility receipts instead of every test language, and GIS data
 instead of GIS prose. Runtime source, generator scripts, CITE status and all
 existing build/setup inputs remain covered. Its producer/consumer security
 boundary and deterministic replay are unchanged.
+
+## OGC release-candidate qualification
+
+External OGC conformance runs through individual manual dispatchers and, after the
+RC image build, through `ogc-rc-conformance.yml`. The RC manifest waits for success.
+Optional integration flags do not bypass it. See the [workflow inventory](workflow-inventory.md#ogc-cite--conformance)
+for the complete dispatchers, source/image binding and separate certification policy.
