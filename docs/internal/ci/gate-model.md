@@ -799,6 +799,18 @@ selected PR runs and twice-daily full trunk runs. This changes no runner count,
 required check name, required aggregate dependency, workflow, or shard
 definition.
 
+### Input validation fixture lifetime
+
+`InputValidationIntegrationTests` shares one Pro-licensed production-mode
+application for the lifetime of the sequential test class. Edit cases add
+features to the shared host, but every assertion on edited data filters by a
+name unique to that case and no case counts all rows, so results do not depend
+on case order. A new case must keep to that rule or use its own application.
+All cases and assertions remain in the Security and Authorization 5 shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
 ## Trailing affected CI selection
 
 Trailing affected CI refreshes its completed-ancestor base when the selection job starts,
