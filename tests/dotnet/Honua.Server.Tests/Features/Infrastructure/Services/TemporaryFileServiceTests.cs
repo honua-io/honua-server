@@ -658,7 +658,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
     public async Task StoreTemporaryFileAsync_WhenQuotaLeaseIsLostDuringUpload_FailsClosed()
     {
         var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
-        var redis = new LeaseLostAfterAcquireStore();
+        var leases = new LeaseLostAfterAcquireStore();
         var service = CreateCloudAwareService(
             new TemporaryFileOptions
             {
