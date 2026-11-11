@@ -324,13 +324,29 @@ public class TenantContextMiddlewareTests
     [IntegrationTest]
     [Operation(Operations.Security)]
     [Endpoint("GET /api/v1/admin/oidc/providers")]
-    public async Task OperatorBearerWithoutTenantClaim_ExplicitControlPlaneRouteContinues()
+    public async Task OperatorBearerWithoutTenantClaim_ExplicitControlPlaneRouteUsesDefaultTenant()
     {
         var principal = AuthenticatedPrincipal(
             claims: (ClaimTypes.Name, "operator"),
             authenticationType: "OperatorBearer");
 
         var client = await CreateAppAsync(principal);
+        var response = await client.GetAsync("/api/v1/admin/oidc/providers");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Default:public", await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /api/v1/admin/oidc/providers")]
+    public async Task OperatorBearerWithoutTenantClaim_NoDefaultTenant_ExplicitControlPlaneRouteContinues()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: (ClaimTypes.Name, "operator"),
+            authenticationType: "OperatorBearer");
+
+        var client = await CreateAppAsync(principal, options => options.DefaultTenantId = null);
         var response = await client.GetAsync("/api/v1/admin/oidc/providers");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);

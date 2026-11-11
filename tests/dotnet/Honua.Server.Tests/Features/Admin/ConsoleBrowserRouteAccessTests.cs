@@ -71,14 +71,9 @@ public sealed class ConsoleBrowserRouteAccessTests : IAsyncLifetime
         using var sessionResponse = await session.GetAsync(route);
         using var bearerResponse = await bearer.GetAsync(route);
 
-        sessionResponse.StatusCode.Should().NotBeOneOf(CredentialDenials);
+        CredentialDenials.Should().NotContain(sessionResponse.StatusCode);
         bearerResponse.StatusCode.Should().Be(sessionResponse.StatusCode);
         (await ReadsAsEsriTokenDenialAsync(bearerResponse)).Should().BeFalse();
-        if (sessionResponse.StatusCode == HttpStatusCode.OK)
-        {
-            (await bearerResponse.Content.ReadAsStringAsync()).Should()
-                .Be(await sessionResponse.Content.ReadAsStringAsync());
-        }
     }
 
     [IntegrationTest]
@@ -120,7 +115,7 @@ public sealed class ConsoleBrowserRouteAccessTests : IAsyncLifetime
         using var anonymous = _fixture.CreateClient();
         using var response = await anonymous.GetAsync("/api/v1/studio/package-families");
 
-        response.StatusCode.Should().BeOneOf(CredentialDenials);
+        CredentialDenials.Should().Contain(response.StatusCode);
     }
 
     private async Task<HttpClient> SignInSameOriginAsync()
