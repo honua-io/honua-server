@@ -438,6 +438,14 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             return await ReplayCommittedReceiptAsync(keyedEdit!).ConfigureAwait(false);
         }
 
+        // A concurrent duplicate on another node can fail this attempt on the rows themselves
+        // before its receipt insert is reached. If that duplicate committed, replay its receipt.
+        if (keyedApplication?.RolledBackByConcurrentWrite == true
+            && (await keyedEdit!.ReadCommittedAsync(context.CancellationToken).ConfigureAwait(false)).Response is { } winner)
+        {
+            return winner;
+        }
+
         var response = GrpcConversionHelpers.ToProtoApplyEditsResponse(result);
 
         // Record the result on this node before any later step can fail, so a retry here

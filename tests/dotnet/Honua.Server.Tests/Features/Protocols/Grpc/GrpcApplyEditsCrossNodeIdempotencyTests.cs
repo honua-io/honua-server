@@ -14,6 +14,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
+using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
@@ -99,13 +100,17 @@ public sealed class GrpcApplyEditsCrossNodeIdempotencyTests(DatabaseFixtureAdapt
     }
 
     private GrpcApplyEditsIdempotencyTests.ServiceHarness Node(IAdoNetDatabaseConnectionProvider? connections = null)
-        => new(
+    {
+        var featureStore = FeatureStore(connections ?? Connections());
+        return new(
             new GrpcApplyEditsReceipts(new PostgresFeatureEditIdempotencyReceipts(database.DataSource, _schema)),
-            FeatureWriter(connections ?? Connections()));
+            featureStore,
+            featureStore);
+    }
 
     private TestDatabaseConnectionProvider Connections() => new(database.DataSource, () => _schema);
 
-    private PostgresFeatureStoreRefactored FeatureWriter(IAdoNetDatabaseConnectionProvider connections)
+    private PostgresFeatureStoreRefactored FeatureStore(IAdoNetDatabaseConnectionProvider connections)
     {
         var pools = new DefaultObjectPoolProvider();
         var geometryProcessor = new GeometryProcessor();
@@ -124,6 +129,61 @@ public sealed class GrpcApplyEditsCrossNodeIdempotencyTests(DatabaseFixtureAdapt
         var queryBuilder = new FeatureQueryBuilder(
             pools.Create(new Microsoft.Extensions.ObjectPool.StringBuilderPooledObjectPolicy()), geometryProcessor, _schema);
         return new PostgresFeatureStoreRefactored(queryBuilder, dataAccess, cacheManager);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task ApplyEdits_SameKeyUpdatingTheSameRowsOnTwoNodes_TheConflictingNodeReplaysTheFirstReceipt()
+    {
+        var targets = new[] { await SeedFeatureAsync(), await SeedFeatureAsync() };
+        var user = GrpcApplyEditsIdempotencyTests.Subject("editor", issuer: "https://issuer-a.example");
+        var secondSnapshotTaken = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstCommitted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var nodeA = Node();
+        var nodeB = Node(new PausingConnectionProvider(Connections(), async () =>
+        {
+            secondSnapshotTaken.TrySetResult();
+            await firstCommitted.Task.ConfigureAwait(false);
+        }));
+
+        // Node B's repeatable-read snapshot predates node A's commit, so B's own update of
+        // the same rows fails with a serialization failure before it reaches its receipt.
+        var racing = nodeB.Service.ApplyEdits(UpdateRequest(targets), nodeB.Context(user, tenantId: null));
+        await secondSnapshotTaken.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        var original = await nodeA.Service.ApplyEdits(UpdateRequest(targets), nodeA.Context(user, tenantId: null));
+        firstCommitted.SetResult();
+        var replayed = await racing.WaitAsync(TimeSpan.FromSeconds(30));
+
+        original.UpdateResults.Should().HaveCount(2).And.OnlyContain(result => result.Success);
+        replayed.Should().Be(original, "the node that lost the race replays the committed receipt");
+    }
+
+    private static Proto.ApplyEditsRequest UpdateRequest(IEnumerable<long> objectIds)
+    {
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            RollbackOnFailure = true,
+            IdempotencyKey = "update-retry-key",
+        };
+        foreach (var objectId in objectIds)
+        {
+            request.Updates.Add(new Proto.Feature
+            {
+                Id = objectId,
+                Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "renamed" } },
+            });
+        }
+
+        return request;
+    }
+
+    private async Task<long> SeedFeatureAsync()
+    {
+        await using var command = database.DataSource.CreateCommand(
+            $$"""INSERT INTO {{_schema}}.features (layer_id, attributes) VALUES (0, '{"name": "original"}') RETURNING objectid""");
+        return (long)(await command.ExecuteScalarAsync())!;
     }
 
     private async Task<long> FeatureCountAsync()

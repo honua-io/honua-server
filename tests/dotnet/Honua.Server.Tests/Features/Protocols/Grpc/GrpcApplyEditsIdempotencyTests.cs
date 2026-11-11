@@ -476,12 +476,15 @@ public sealed class GrpcApplyEditsIdempotencyTests
             bool throwAfterWrite = false,
             Func<FeatureEditIdempotencyReceipt, FeatureEditResult, CancellationToken, Task<FeatureEditApplication>>? commitReceipt = null)
         {
-            Service = CreateService(store, ScriptedWriter(_writeCount, new ScriptedWrites(editResult, throwAfterWrite, commitReceipt)));
+            Service = CreateService(
+                store,
+                Substitute.For<IFeatureReader>(),
+                ScriptedWriter(_writeCount, new ScriptedWrites(editResult, throwAfterWrite, commitReceipt)));
         }
 
-        public ServiceHarness(GrpcApplyEditsReceipts store, IFeatureWriter writer)
+        public ServiceHarness(GrpcApplyEditsReceipts store, IFeatureReader reader, IFeatureWriter writer)
         {
-            Service = CreateService(store, writer);
+            Service = CreateService(store, reader, writer);
         }
 
         public HonuaFeatureService Service { get; }
@@ -540,7 +543,10 @@ public sealed class GrpcApplyEditsIdempotencyTests
             return writer;
         }
 
-        private static HonuaFeatureService CreateService(GrpcApplyEditsReceipts store, IFeatureWriter writer)
+        private static HonuaFeatureService CreateService(
+            GrpcApplyEditsReceipts store,
+            IFeatureReader reader,
+            IFeatureWriter writer)
         {
             var resourceValidator = Substitute.For<IResourceValidator>();
             resourceValidator
@@ -556,7 +562,7 @@ public sealed class GrpcApplyEditsIdempotencyTests
 
             return new HonuaFeatureService(
                 resourceValidator,
-                Substitute.For<IFeatureReader>(),
+                reader,
                 writer,
                 Substitute.For<IStreamingFeatureStore>(),
                 new CommonQueryValidator(Options.Create(new LimitsOptions())),

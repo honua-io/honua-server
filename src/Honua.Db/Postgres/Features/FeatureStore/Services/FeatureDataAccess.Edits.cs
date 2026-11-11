@@ -328,6 +328,7 @@ internal sealed partial class FeatureDataAccess
                 Result = result,
                 ReceiptDurable = pending.Durable,
                 SupersededByExistingReceipt = pending.Superseded,
+                RolledBackByConcurrentWrite = pending.ConcurrentWriteConflict && !pending.Durable,
             };
         }
         finally
@@ -504,6 +505,7 @@ internal sealed partial class FeatureDataAccess
                 Log.ApplyEditsFailed(_logger, layerId, editBatch.TotalOperations, ex);
             }
 
+            NoteConcurrentWriteConflict(ex);
             if (transaction != null)
             {
                 await RollbackIfNeededAsync(transaction).ConfigureAwait(false);
@@ -1387,6 +1389,34 @@ internal sealed partial class FeatureDataAccess
         public bool Durable { get; set; }
 
         public bool Superseded { get; set; }
+
+        public bool ConcurrentWriteConflict { get; set; }
+    }
+
+    private static void NoteConcurrentWriteConflict(Exception exception)
+    {
+        if (PendingGrpcReceipt.Value is { } pending && IsConcurrentWriteConflict(exception))
+        {
+            pending.ConcurrentWriteConflict = true;
+        }
+    }
+
+    private static bool IsConcurrentWriteConflict(Exception? exception)
+    {
+        for (; exception is not null; exception = exception.InnerException)
+        {
+            if (exception is PostgresException
+                {
+                    SqlState: PostgresErrorCodes.SerializationFailure
+                        or PostgresErrorCodes.DeadlockDetected
+                        or PostgresErrorCodes.UniqueViolation,
+                })
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Outcome of committing a staged edit, possibly with its idempotency receipt.</summary>
@@ -2516,6 +2546,7 @@ internal sealed partial class FeatureDataAccess
         string operation,
         long? objectId = null)
     {
+        NoteConcurrentWriteConflict(exception);
         var errorMessage = GetSafeEditOperationError(exception, operation);
         if (exception is RowSecurityWriteCheckFailedException)
         {
