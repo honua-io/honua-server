@@ -2,6 +2,7 @@
 """Exercise draft admission and cancellation in the actual PR workflows."""
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import unittest
@@ -138,6 +139,34 @@ class PullRequestLoadTests(unittest.TestCase):
             self.assertIn("!github.event.pull_request.draft", jobs[key]["if"])
         self.assertEqual(jobs["required"]["if"], "always()")
         self.assertIn("!github.event.pull_request.draft", jobs["runner-select"].get("if", ""))
+
+    def test_required_aggregate_rejects_draft_and_missing_heavy_results(self):
+        required = workflow("pr-gate.yml")["jobs"]["required"]
+        self.assertEqual(set(required["needs"]), {
+            "pr-gate", "fast-tests", "format", "ci-router-validation", "affected-shards",
+        })
+        verdict = next(step for step in required["steps"] if "run" in step)
+
+        def run_verdict(results):
+            environment = dict(os.environ, GITHUB_EVENT_NAME="pull_request")
+            for name, expression in verdict["env"].items():
+                dependency = expression.removeprefix("${{ needs.").removesuffix(".result }}")
+                self.assertIn(dependency, required["needs"])
+                environment[name] = results[dependency]
+            return subprocess.run(
+                ["bash"], input=verdict["run"], env=environment,
+                text=True, capture_output=True, timeout=10,
+            ).returncode
+
+        ready = dict.fromkeys(required["needs"], "success")
+        self.assertEqual(run_verdict(ready), 0)
+        draft = dict.fromkeys(required["needs"], "skipped")
+        draft["format"] = "success"
+        self.assertNotEqual(run_verdict(draft), 0)
+        for dependency in required["needs"]:
+            for result in ("skipped", "failure", "cancelled"):
+                with self.subTest(dependency=dependency, result=result):
+                    self.assertNotEqual(run_verdict(dict(ready, **{dependency: result})), 0)
 
     def test_format_runs_for_drafts_despite_skipped_runner_selection(self):
         condition = workflow("pr-gate.yml")["jobs"]["format"]["if"]
