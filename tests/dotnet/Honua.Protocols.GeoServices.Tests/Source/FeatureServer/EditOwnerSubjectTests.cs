@@ -345,9 +345,9 @@ public sealed class EditOwnerSubjectTests
                 var features = new[]
                 {
                     Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty
-                        .Add("name", "before").Add("owner", currentOwner())),
+                        .Add("objectid", 7L).Add("name", "before").Add("owner", currentOwner())),
                     Feature.Create(8, null, ImmutableDictionary<string, object?>.Empty
-                        .Add("name", "before").Add("owner", "subject-b")),
+                        .Add("objectid", 8L).Add("name", "before").Add("owner", "subject-b")),
                 }.Where(feature => query.ObjectIds == null || query.ObjectIds.Value.IsDefaultOrEmpty || query.ObjectIds.Value.Contains(feature.Id))
                     .ToImmutableArray();
                 return Task.FromResult(QueryResult<Feature>.Create(features.Length, features));
@@ -456,7 +456,7 @@ public sealed class EditOwnerSubjectTests
                 Substitute.For<IEditParameterAdapter<GeoServicesEditRequest>>(),
                 Substitute.For<IEditProcessor>(),
                 new FeatureMutationValidator(Substitute.For<IGeometryValidator>()),
-                Substitute.For<IFilterExpressionService>(),
+                ObjectIdFilters(),
                 Substitute.For<IHttpContextAccessor>(),
                 new FeatureMutationEventService(Substitute.For<IFeatureChangeEventPublisher>()),
                 Substitute.For<IPluginEditPipeline>(),
@@ -464,4 +464,12 @@ public sealed class EditOwnerSubjectTests
                 Substitute.For<IFeatureEditGuard>(),
                 Substitute.For<IFeatureLockService>()),
             NullLogger<FeatureServerEditsHandler>.Instance);
+
+    private static IFilterExpressionService ObjectIdFilters()
+    {
+        var filters = Substitute.For<IFilterExpressionService>();
+        filters.Translate(Arg.Any<FilterExpression?>(), Arg.Any<MetadataV2Resource>())
+            .Returns(FilterTranslationResult.Success(null, null));
+        return filters;
+    }
 }
