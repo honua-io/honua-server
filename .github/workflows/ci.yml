@@ -565,6 +565,7 @@ jobs:
       descriptor: ${{ steps.compute.outputs.descriptor }}
       matrix_include: ${{ steps.compute.outputs.matrix_include }}
       matrix_artifact: ${{ steps.compute.outputs.matrix_artifact }}
+      affected_max_parallel: ${{ steps.compute.outputs.affected_max_parallel }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -651,6 +652,7 @@ jobs:
           printf '%s\n' "${matrix_include}" > "${RUNNER_TEMP}/managed-matrix.json"
           echo "descriptor=${descriptor}" >> "$GITHUB_OUTPUT"
           echo "matrix_include=${matrix_include}" >> "$GITHUB_OUTPUT"
+          echo "affected_max_parallel=$(printf '%s' "${matrix_include}" | python3 scripts/ci/trailing_selection.py)" >> "$GITHUB_OUTPUT"
           echo "matrix_artifact=selected-server-test-matrix-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
 
       - name: Upload selected shard matrix
@@ -1211,8 +1213,8 @@ jobs:
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
-      # Keep the trailing budget even when routing expands to full coverage.
-      max-parallel: ${{ inputs.selective_base && 6 || 24 }}
+      # Keep the affected budget even when routing expands to full coverage.
+      max-parallel: ${{ inputs.selective_base && fromJson(needs.targeted-shards.outputs.affected_max_parallel) || 24 }}
       matrix:
         include: ${{ fromJson(needs.targeted-shards.outputs.matrix_include) }}
     env:

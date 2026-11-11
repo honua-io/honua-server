@@ -263,8 +263,13 @@ class WorkflowCompletion(unittest.TestCase):
     def test_named_jobs_keep_completion_and_every_product_step_is_gated(self):
         import yaml
         gate = yaml.safe_load((ROOT / '.github/workflows/pr-gate.yml').read_text())
-        for job in ('format', 'fast-tests', 'pr-gate', 'ci-router-validation', 'required'):
-            self.assertNotIn('if', gate['jobs'][job]) if job != 'required' else self.assertEqual(gate['jobs'][job]['if'], 'always()')
+        ready_only = "github.event_name != 'pull_request' || !github.event.pull_request.draft"
+        draft_format = ("always() && !cancelled() && (needs.runner-select.result == 'success' "
+                        "|| github.event.pull_request.draft == true)")
+        expected_conditions = {'format': draft_format, 'fast-tests': None, 'pr-gate': None,
+                               'ci-router-validation': ready_only, 'required': 'always()'}
+        for job, condition in expected_conditions.items():
+            self.assertEqual(gate['jobs'][job].get('if'), condition, job)
         self.assertEqual(gate['jobs']['required']['name'], 'PR Gate')
         self.assertEqual(gate['jobs']['required']['needs'], ['pr-gate', 'fast-tests', 'format', 'ci-router-validation', 'affected-shards', 'server-test-producer'])
         # Evaluate actual Actions expressions for the expensive steps. True and

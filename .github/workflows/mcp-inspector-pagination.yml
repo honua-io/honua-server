@@ -3,6 +3,7 @@ name: Installed Inspector Pagination Controls
 # These scripted-peer controls never constitute candidate qualification.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches: [trunk]
     paths:
       - 'tests/mcp-certification/inspector-pagination*'
@@ -22,6 +23,7 @@ concurrency:
 
 jobs:
   controls:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: Installed public Inspector pagination controls
     runs-on: ubuntu-latest
     timeout-minutes: 10

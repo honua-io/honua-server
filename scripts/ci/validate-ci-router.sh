@@ -215,6 +215,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
 
   echo "Validating native-image impact observation contract..."
   run_fixture scripts/ci/trusted-pr-workflow-run.test.js node --test scripts/ci/trusted-pr-workflow-run.test.js
+  run_fixture scripts/ci/trusted-pr-workflow-run-draft-admission.test.js node --test scripts/ci/trusted-pr-workflow-run-draft-admission.test.js
   run_fixture scripts/ci/native-image-impact.py "${PYTHON_BIN}" scripts/ci/native-image-impact.py validate
   run_fixture native-image-impact-tests "${PYTHON_BIN}" -m unittest discover \
     -s tests/python/unit \

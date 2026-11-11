@@ -15,6 +15,7 @@ name: Release Bundle (Compatibility Train)
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - '.github/workflows/release-bundle.yml'
       - '.github/workflows/cite-conformance.yml'
@@ -78,6 +79,7 @@ env:
 
 jobs:
   workflow-contract-tests:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: Release workflow contracts
     # Offline PR tests must not inherit the cross-repository dispatch token.
     env:
@@ -380,7 +382,7 @@ jobs:
     needs: [release-context, rc-image, integration, sdk-cut, realtime-preview-qualification, ogc-conformance]
     # Off-trunk runs deliberately stop at the unambiguous test image/evidence channel.
     # No candidate manifest is produced for the downstream release validator to accept.
-    if: ${{ always() && needs.release-context.outputs.candidate == 'true' && needs.rc-image.result == 'success' && needs.realtime-preview-qualification.result == 'success' && (github.event.inputs.channel != 'rc' || needs.ogc-conformance.result == 'success') }}
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) && always() && needs.release-context.outputs.candidate == 'true' && needs.rc-image.result == 'success' && needs.realtime-preview-qualification.result == 'success' && (github.event.inputs.channel != 'rc' || needs.ogc-conformance.result == 'success') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
