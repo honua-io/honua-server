@@ -36,10 +36,8 @@ public sealed class GeoservicesCatalogGeocodeServerTests : IClassFixture<Geoserv
         _fixture = fixture;
     }
 
-    /// <summary>
-    /// Shares read-only catalogs after seeding each configuration once. Collision graphs remain
-    /// isolated from the unmodified restricted catalog and from other locator/authorization settings.
-    /// </summary>
+    // Collision graphs stay separate from the unmodified catalog and other authorization settings;
+    // only read-only mount-prefix variants share a seeded configuration.
     public sealed class CatalogFixture : IDisposable
     {
         private readonly Dictionary<(bool Configured, bool RestrictedFeatures), WebApplicationFactory<Program>>
@@ -47,7 +45,7 @@ public sealed class GeoservicesCatalogGeocodeServerTests : IClassFixture<Geoserv
 
         public WebApplicationFactory<Program> Application { get; } = CreateFactory(restrictedFeatures: true);
 
-        public async Task<WebApplicationFactory<Program>> GetCollisionApplicationAsync(bool configured, bool restrictedFeatures)
+        public async Task<WebApplicationFactory<Program>> GetOrCreateCollisionApplicationAsync(bool configured, bool restrictedFeatures)
         {
             var configuration = (configured, restrictedFeatures);
             if (_collisionApplications.TryGetValue(configuration, out var application))
@@ -297,7 +295,7 @@ public sealed class GeoservicesCatalogGeocodeServerTests : IClassFixture<Geoserv
     [Endpoint("GET /rest/services/{folderName}")]
     public async Task ParentDirectory_PublicLocatorCollidesWithGraphService_PreservesStandalonePrecedence(string mount, bool restrictedFeatures)
     {
-        var factory = await _fixture.GetCollisionApplicationAsync(configured: true, restrictedFeatures: restrictedFeatures);
+        var factory = await _fixture.GetOrCreateCollisionApplicationAsync(configured: true, restrictedFeatures: restrictedFeatures);
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync($"{mount}/rest/services/World?f=json");
@@ -319,7 +317,7 @@ public sealed class GeoservicesCatalogGeocodeServerTests : IClassFixture<Geoserv
     [Endpoint("GET /rest/services/{folderName}")]
     public async Task ParentDirectory_UnavailableLocatorCollidesWithGraphService_UsesGraphVisibility(string mount, bool restrictedFeatures)
     {
-        var factory = await _fixture.GetCollisionApplicationAsync(configured: false, restrictedFeatures: restrictedFeatures);
+        var factory = await _fixture.GetOrCreateCollisionApplicationAsync(configured: false, restrictedFeatures: restrictedFeatures);
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync($"{mount}/rest/services/World?f=json");
