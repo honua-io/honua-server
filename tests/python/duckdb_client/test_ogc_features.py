@@ -274,7 +274,7 @@ def test_auth_02_api_key_admin_probe_succeeds(
         f"expected 2xx. Body: {response.text[:300]}. Scheme under test: "
         f"header {fx.ADMIN_API_KEY_HEADER} = HONUA_ADMIN_PASSWORD."
     )
-    # The admin service list is paged (#7040): `data` is `{"items": [...], ...}`.
+    # The admin service list is paged: `data` is `{"items": [...], ...}`.
     page = response.json().get("data") or {}
     assert isinstance(page, dict), f"admin probe data is not a page object: {type(page).__name__}"
     services = page.get("items") or []

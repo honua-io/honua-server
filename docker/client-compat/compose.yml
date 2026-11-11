@@ -32,8 +32,8 @@ services:
 
   redis:
     image: redis:7.4-alpine
-    # The multidimensional fixture starts the GDAL worker, which is a durable-job
-    # consumer and therefore requires the same Redis durability contract as production.
+    # The `honua` service still reads ConnectionStrings__Redis; the GDAL worker
+    # claims jobs from PostgreSQL and does not use Redis.
     command: redis-server --appendonly yes --appendfsync always --maxmemory-policy noeviction
     networks:
       - compat
