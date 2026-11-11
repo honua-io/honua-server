@@ -43,4 +43,7 @@ public interface IVersionLock
 /// </summary>
 public interface IVersionLockHandle : IAsyncDisposable
 {
+    // Cancelled once the holder cannot prove it owns the lock, after which another holder
+    // may acquire it. Work protected by the lock observes this token.
+    CancellationToken LockLostToken { get; }
 }

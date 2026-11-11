@@ -336,12 +336,7 @@ internal static partial class PrintingToolsEndpoints
             context.RequestServices.GetRequiredService<PrintJobCancellationTokens>().Cancel(jobId);
             if (print.WithCancellation(DateTimeOffset.UtcNow, "Cancelled") is PrintProgress cancelled)
             {
-                await progressStore.TrySetProgressAsync(
-                    jobId,
-                    cancelled,
-                    print.Status,
-                    PrintingToolsRequestHandlers.ResultTtl,
-                    cancellationToken).ConfigureAwait(false);
+                await progressStore.TrySetProgressAsync(new OperationProgressWrite(jobId, cancelled, PrintingToolsRequestHandlers.ResultTtl), print.Status, cancellationToken).ConfigureAwait(false);
             }
         }
 

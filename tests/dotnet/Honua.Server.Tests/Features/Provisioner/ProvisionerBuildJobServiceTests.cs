@@ -11,6 +11,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Provisioner.BuildJobs;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -70,7 +71,7 @@ public sealed class ProvisionerBuildJobServiceTests
     public async Task SubmitGeocoderBuild_LocalBackend_CreatesQueuedJobAndEnqueues()
     {
         var jobStore = new InMemoryExecutionJobStore();
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var jobQueue = Substitute.For<IJobQueue>();
         var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var options = new ProvisionerBuildBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
@@ -98,7 +99,7 @@ public sealed class ProvisionerBuildJobServiceTests
     public async Task SubmitRouterBuild_RemoteBackend_SubmitsToProviderWithoutEnqueue()
     {
         var jobStore = new InMemoryExecutionJobStore();
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var jobQueue = Substitute.For<IJobQueue>();
         var remote = new StubBatchComputeBackend("honua-aws-batch", BatchComputeTargetKind.AwsBatch);
         var options = new ProvisionerBuildBatchOptions
@@ -130,7 +131,7 @@ public sealed class ProvisionerBuildJobServiceTests
     public async Task SubmitGeocoderBuild_RemoteBackendUnregistered_RollsBackJob()
     {
         var jobStore = new InMemoryExecutionJobStore();
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var options = new ProvisionerBuildBatchOptions
         {
             Enabled = true,
@@ -151,7 +152,7 @@ public sealed class ProvisionerBuildJobServiceTests
     public async Task CancelAsync_RunningJob_RequestsBackendCancellation()
     {
         var jobStore = new InMemoryExecutionJobStore();
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var jobQueue = Substitute.For<IJobQueue>();
         var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var options = new ProvisionerBuildBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
@@ -173,7 +174,7 @@ public sealed class ProvisionerBuildJobServiceTests
     public async Task CancelAsync_TerminalJob_ReturnsFalse()
     {
         var jobStore = new InMemoryExecutionJobStore();
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var options = new ProvisionerBuildBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
 
@@ -190,7 +191,7 @@ public sealed class ProvisionerBuildJobServiceTests
     public async Task CancelAsync_UnknownJob_ReturnsFalse()
     {
         var jobStore = new InMemoryExecutionJobStore();
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var options = new ProvisionerBuildBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
 
@@ -203,7 +204,7 @@ public sealed class ProvisionerBuildJobServiceTests
     public void IsEnabled_ReflectsOptions()
     {
         var jobStore = new InMemoryExecutionJobStore();
-        var progressStore = new InMemoryProgressStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
         var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
 
         CreateService(jobStore, progressStore, [localBackend], new ProvisionerBuildBatchOptions { Enabled = false })
@@ -279,43 +280,6 @@ public sealed class ProvisionerBuildJobServiceTests
 
         public Task ReleaseLeaseAsync(string operationId, string ownerId, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
-    }
-
-    private sealed class InMemoryProgressStore : IUniversalProgressStore
-    {
-        private readonly ConcurrentDictionary<string, IOperationProgress> _progress = new(StringComparer.Ordinal);
-
-        public Task SetProgressAsync(string operationId, IOperationProgress progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
-        {
-            _progress[operationId] = progress;
-            return Task.CompletedTask;
-        }
-
-        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(string operationId, IOperationProgress progress, OperationStatus expectedStatus, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
-        {
-            _progress[operationId] = progress;
-            return Task.FromResult(ProgressCompareAndSetResult.Updated);
-        }
-
-        public Task<TProgress?> GetProgressAsync<TProgress>(string operationId, CancellationToken cancellationToken = default)
-            where TProgress : class, IOperationProgress
-            => Task.FromResult(_progress.TryGetValue(operationId, out var p) ? p as TProgress : null);
-
-        public Task<IOperationProgress?> GetProgressAsync(string operationId, CancellationToken cancellationToken = default)
-            => Task.FromResult(_progress.TryGetValue(operationId, out var p) ? p : null);
-
-        public Task DeleteProgressAsync(string operationId, CancellationToken cancellationToken = default)
-        {
-            _progress.TryRemove(operationId, out _);
-            return Task.CompletedTask;
-        }
-
-        public Task<IReadOnlyList<string>> GetActiveOperationIdsAsync(OperationType? operationType = null, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<string>>(_progress.Keys.ToArray());
-
-        public Task<IReadOnlyList<TProgress>> GetActiveOperationsAsync<TProgress>(OperationType operationType, CancellationToken cancellationToken = default)
-            where TProgress : class, IOperationProgress
-            => Task.FromResult<IReadOnlyList<TProgress>>(_progress.Values.OfType<TProgress>().ToArray());
     }
 
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>

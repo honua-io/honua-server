@@ -235,6 +235,16 @@ public sealed class CapabilityKeyCatalogTests
 
     [Trait("Tier", "Fast")]
     [Fact]
+    public void RealtimeStreamAndCollaborationKeys_AreAllMarkedExperimental()
+    {
+        CapabilityKeyCatalog.All
+            .Where(capability => capability.Category is FeatureCatalog.Categories.Streaming
+                or CapabilityKeyCatalog.Categories.Collaboration)
+            .Should().OnlyContain(capability => capability.Status == CapabilityKeyCatalog.ExperimentalStatus);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public void CustomerAlertingKeys_AreAllMarkedPreview()
     {
         CapabilityKeyCatalog.All

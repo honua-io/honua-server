@@ -18,19 +18,12 @@ internal sealed partial class PostgresVersionManager
     // collected alongside the rest of the platform (#1553).
     private static readonly ActivitySource VersioningActivitySource = new("Honua", "1.0.0");
 
-    /// <summary>
-    /// Acquires the durable (service, version) maintenance lock so a reconcile, post, or conflicting
-    /// resolve runs exclusively for a version (#1553). Throws <see cref="VersionLockedException"/> when
-    /// the lock is already held by another in-flight reconcile/post, so the caller can surface a clear
-    /// in-progress (409) response or record an async job as lock-contended.
-    /// </summary>
-    private async Task<IVersionLockHandle> AcquireVersionLockAsync(Guid versionId, CancellationToken cancellationToken)
-    {
-        var handle = await _versionLock
-            .TryAcquireAsync(_lockScope, versionId, MaintenanceLockLease, cancellationToken)
-            .ConfigureAwait(false);
-        return handle ?? throw new VersionLockedException(versionId);
-    }
+    private Task<TResult> RunUnderVersionLockAsync<TResult>(
+        Guid versionId,
+        Func<CancellationToken, Task<TResult>> work,
+        CancellationToken cancellationToken)
+        => _versionLock.RunExclusiveAsync(
+            new VersionLockRequest(_lockScope, versionId, MaintenanceLockLease), work, cancellationToken);
 
     // Reconcile/post core (#1272 Track B Slice 2, ADR-0051; conflict-resolution layer #371). Reconcile
     // diffs DEFAULT feature_changes since the version's merge base against the version's tagged overlay
@@ -62,16 +55,22 @@ internal sealed partial class PostgresVersionManager
     // canonical async wrapper (IVersionJobRunner) calls these same methods on a durable, pollable job.
 
     /// <inheritdoc />
-    public async Task<VersionReconcileResult> ReconcileAsync(
+    public Task<VersionReconcileResult> ReconcileAsync(
         Guid versionId,
         VersionReconcilePolicy policy = VersionReconcilePolicy.None,
         VersionConflictDetection detection = VersionConflictDetection.ByAttribute,
         CancellationToken cancellationToken = default)
-    {
-        // The (service, version) lock serializes reconcile/post/resolve for the version (#1553); a
-        // competing in-flight reconcile/post throws VersionLockedException for a clear in-progress 409.
-        await using var lockHandle = await AcquireVersionLockAsync(versionId, cancellationToken).ConfigureAwait(false);
+        => RunUnderVersionLockAsync(
+            versionId,
+            token => ReconcileUnderLockAsync(versionId, policy, detection, token),
+            cancellationToken);
 
+    private async Task<VersionReconcileResult> ReconcileUnderLockAsync(
+        Guid versionId,
+        VersionReconcilePolicy policy,
+        VersionConflictDetection detection,
+        CancellationToken cancellationToken)
+    {
         using var activity = VersioningActivitySource.StartActivity("Version.Reconcile", ActivityKind.Internal);
         activity?.SetTag("honua.version.id", versionId.ToString());
         activity?.SetTag("honua.version.service", _lockScope);
@@ -181,17 +180,25 @@ internal sealed partial class PostgresVersionManager
     }
 
     /// <inheritdoc />
-    public async Task<VersionConflictResolutionResult> ResolveConflictsAsync(
+    public Task<VersionConflictResolutionResult> ResolveConflictsAsync(
         Guid versionId,
         IReadOnlyList<VersionConflictResolution> resolutions,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(resolutions);
 
-        // A manual resolve rewrites the overlay, so it must not race a reconcile/post for the same
-        // version; it takes the same lock (#1553).
-        await using var lockHandle = await AcquireVersionLockAsync(versionId, cancellationToken).ConfigureAwait(false);
+        // A manual resolve rewrites the overlay, so it takes the reconcile/post lock.
+        return RunUnderVersionLockAsync(
+            versionId,
+            token => ResolveConflictsUnderLockAsync(versionId, resolutions, token),
+            cancellationToken);
+    }
 
+    private async Task<VersionConflictResolutionResult> ResolveConflictsUnderLockAsync(
+        Guid versionId,
+        IReadOnlyList<VersionConflictResolution> resolutions,
+        CancellationToken cancellationToken)
+    {
         // Not rewritten as .Where(...).Count(): each resolution requires a sequential
         // awaited DB call, which plain synchronous LINQ cannot express.
         var resolved = 0;
@@ -205,12 +212,11 @@ internal sealed partial class PostgresVersionManager
     }
 
     /// <inheritdoc />
-    public async Task<VersionPostResult> PostAsync(Guid versionId, CancellationToken cancellationToken = default)
-    {
-        // Post takes the same (service, version) lock as reconcile so a post is serialized against any
-        // concurrent reconcile/post for the version (#1553); contention surfaces as VersionLockedException.
-        await using var lockHandle = await AcquireVersionLockAsync(versionId, cancellationToken).ConfigureAwait(false);
+    public Task<VersionPostResult> PostAsync(Guid versionId, CancellationToken cancellationToken = default)
+        => RunUnderVersionLockAsync(versionId, token => PostUnderLockAsync(versionId, token), cancellationToken);
 
+    private async Task<VersionPostResult> PostUnderLockAsync(Guid versionId, CancellationToken cancellationToken)
+    {
         using var activity = VersioningActivitySource.StartActivity("Version.Post", ActivityKind.Internal);
         activity?.SetTag("honua.version.id", versionId.ToString());
         activity?.SetTag("honua.version.service", _lockScope);

@@ -541,13 +541,13 @@ public sealed class ServingImageBoundaryTests
 
         workflow.Should().Contain("file: docker/worker-gdal/Dockerfile");
         workflow.Should().Contain("--worker-image honua-worker-gdal:boundary");
-        workflow.Should().Contain("--worker-redis 127.0.0.1:6379");
+        workflow.Should().Contain("--worker-database \"Host=127.0.0.1;Database=postgres;Username=postgres;Password=worker-smoke\"");
         workflow.Should().Contain("uses: ./.github/actions/setup-dotnet-ci");
         workflow.Should().Contain("--filter FullyQualifiedName~ProductionWorkerContainerHandoffTests");
         workflow.Should().Contain("--filter 'Category=NativePublicApi'");
         workflow.Should().Contain("ET.parse('artifacts/test-results/native-public-api.trx')");
         workflow.Should().Contain("if passed < 1 or nonpassing:");
-        workflow.Should().Contain("redis:");
+        workflow.Should().Contain("postgis/postgis:");
         workflow.Should().Contain("aquasecurity/trivy-action");
         workflow.Should().Contain("severity: CRITICAL,HIGH", Exactly.Twice());
         workflow.Should().Contain("ignore-unfixed: true", Exactly.Twice());

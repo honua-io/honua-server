@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "studio_list_versions",
+  "x-honua-extension": true,
+  "type": "object",
+  "required": [
+    "itemId"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "itemId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "beforeVersionNumber": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "default": 25
+    }
+  }
+}

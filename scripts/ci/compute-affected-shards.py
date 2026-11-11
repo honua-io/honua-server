@@ -129,6 +129,7 @@ def _load_sibling(name: str) -> Any:
     return module
 
 
+shard_projects = _load_sibling("shard_projects").shard_projects
 time_budget = _load_sibling("shard_time_budget")
 apply_time_budget = time_budget.apply_time_budget
 
@@ -310,7 +311,7 @@ def run_affected_projects(root: Path, script: str, base: str, head: str) -> list
 
 
 def shard_test_project(shard: dict[str, Any]) -> str:
-    return shard.get("csproj") or DEFAULT_TEST_PROJECT
+    return "" if shard.get("csprojs") else shard.get("csproj") or DEFAULT_TEST_PROJECT
 
 
 @functools.lru_cache(maxsize=1)
@@ -482,11 +483,11 @@ def count_test_class_hits(
             for fqn, entry in declared.get(changed, ())
         }
         for shard in config["shards"]:
-            project = shard_test_project(shard)
+            projects = shard_projects(shard)
             count = 0
             for changed in test_files:
                 for fqn, entry in declared.get(changed, ()):
-                    if entry["csproj"] != project:
+                    if entry["csproj"] not in projects:
                         continue
                     if any(
                         coverage.shard_claims(shard["filter"], f"{entry.get('fqn', fqn)}.{method}")
@@ -566,7 +567,7 @@ def select(
         # it must not be read as "this shard is unaffected".
         if project_scope in ("unknown", "all"):
             return True
-        return shard_test_project(shard) in closure
+        return any(project in closure for project in shard_projects(shard))
 
     router_run_all = bool(descriptor.get("run_all"))
     router_shards = [name for name in descriptor.get("shards") or [] if name in shards_by_name]
@@ -638,6 +639,7 @@ def select(
                 "timeout_minutes": shard.get("timeout_minutes"),
                 "test_timeout_minutes": shard.get("test_timeout_minutes"),
                 "test_project": shard_test_project(shard),
+                "test_projects": shard_projects(shard),
             }
         )
     ranked.sort(
@@ -735,7 +737,9 @@ def matrix_include(result: dict[str, Any], config: dict[str, Any]) -> list[dict[
     for name in result["shards"]:
         shard = shards_by_name[name]
         entry = {field: shard.get(field, "") for field in MATRIX_FIELDS}
-        entry["csproj"] = shard_test_project(shard)
+        entry["csproj"] = shard.get("csproj") or ("" if "csprojs" in shard else DEFAULT_TEST_PROJECT)
+        if "csprojs" in shard:
+            entry["csprojs"] = shard_projects(shard)
         entry["dispatch_rank"] = shard.get("dispatch_rank")
         entries.append(entry)
     entries.sort(key=lambda entry: -(entry["dispatch_rank"] or 0.0))

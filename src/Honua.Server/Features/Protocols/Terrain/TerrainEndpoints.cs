@@ -17,6 +17,7 @@ using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using Microsoft.Net.Http.Headers;
 
 namespace Honua.Server.Features.Protocols.Terrain;
 
@@ -172,6 +173,11 @@ internal static class TerrainEndpoints
                 AccessScope.Read,
                 TerrainProtocolName,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        if (validation.IsValid && !RequestAnonymity.IsAnonymous(context))
+        {
+            context.Response.Headers.Append(HeaderNames.Vary, "Authorization, X-API-Key");
+        }
 
         if (!validation.IsValid || validation.Publication?.LayerIndex is not null)
         {

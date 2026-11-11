@@ -64,6 +64,7 @@ concurrency:
   job-discriminator: ${{ github.run_id }}
   group: pr-review-doctor-${{ inputs.pull_number }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   eligibility:
