@@ -102,6 +102,11 @@ def oci_blob(archive, descriptor):
     return payload
 
 
+def manifest_matches_image(payload, image_id):
+    return (json.loads(payload).get('config', {}).get('digest') == image_id
+            or 'sha256:' + hashlib.sha256(payload).hexdigest() == image_id)
+
+
 def measure_oci_archive(path, image_id):
     with tarfile.open(path) as archive:
         pending = json.load(archive.extractfile('index.json'))['manifests']
@@ -111,7 +116,7 @@ def measure_oci_archive(path, image_id):
             if 'manifests' in manifest:
                 pending.extend(manifest['manifests'])
                 continue
-            if manifest.get('config', {}).get('digest') != image_id:
+            if not manifest_matches_image(manifest_payload, image_id):
                 continue
             oci_blob(archive, manifest['config'])
             for layer in manifest['layers']:
@@ -124,13 +129,13 @@ def measure_oci_archive(path, image_id):
 
 def compressed_manifest_measurement(payload, image_id):
     manifest = json.loads(payload)
-    if manifest.get('config', {}).get('digest') != image_id:
+    if not manifest_matches_image(payload, image_id):
         raise ValueError('Manifest does not contain the loaded image')
     layers = manifest['layers']
     if not layers or any(not layer.get('mediaType', '').endswith(('+gzip', '+zstd', '.gzip'))
                          for layer in layers):
         raise ValueError('Size evidence must contain compressed layers')
-    return {'config_digest': image_id,
+    return {'config_digest': manifest['config']['digest'],
             'compressed_layer_bytes': sum(layer['size'] for layer in layers),
             'config_bytes': manifest['config']['size'],
             'manifest_bytes': len(payload),
@@ -159,7 +164,7 @@ def measure_registry_image(reference, image_id):
         manifest = json.loads(payload)
         if 'manifests' in manifest:
             pending.extend((child['digest'], child['size']) for child in manifest['manifests'])
-        elif manifest.get('config', {}).get('digest') == image_id:
+        elif manifest_matches_image(payload, image_id):
             return compressed_manifest_measurement(payload, image_id)
     raise ValueError('Registry manifest does not contain the loaded image')
 

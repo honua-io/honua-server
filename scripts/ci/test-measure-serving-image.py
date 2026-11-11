@@ -85,6 +85,30 @@ class ServingImageMeasurementTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'loaded image'):
                 self.measurement.measure_oci_archive(path, 'sha256:' + '0' * 64)
 
+    def test_oci_measurement_accepts_containerd_manifest_image_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, config_digest, layer_size = self.make_oci_archive(directory)
+            with tarfile.open(path) as archive:
+                image_id = json.load(archive.extractfile('index.json'))['manifests'][0]['digest']
+            result = self.measurement.measure_oci_archive(path, image_id)
+            self.assertEqual(result['compressed_layer_bytes'], layer_size)
+            self.assertEqual(result['config_digest'], config_digest)
+
+    def test_registry_measurement_accepts_containerd_manifest_image_id(self):
+        config_digest = 'sha256:' + 'a' * 64
+        layer = {'size': 37, 'mediaType': 'application/vnd.oci.image.layer.v1.tar+gzip'}
+        manifest = json.dumps({'config': {'digest': config_digest, 'size': 42}, 'layers': [layer]}).encode()
+        image_id = 'sha256:' + hashlib.sha256(manifest).hexdigest()
+        index = json.dumps({'manifests': [{'digest': image_id, 'size': len(manifest)}]}).encode()
+        for root_payload in (manifest, index):
+            with self.subTest(index=root_payload == index):
+                root = 'registry.example/server@sha256:' + hashlib.sha256(root_payload).hexdigest()
+                responses = [manifest] if root_payload == manifest else [index, manifest]
+                with patch.object(self.measurement.subprocess, 'check_output', side_effect=responses):
+                    result = self.measurement.measure_registry_image(root, image_id)
+                self.assertEqual(result['compressed_layer_bytes'], 37)
+                self.assertEqual(result['config_digest'], config_digest)
+
     def test_registry_measurement_selects_loaded_platform_from_attested_index(self):
         image_id = 'sha256:' + 'a' * 64
         layer = {'size': 37, 'mediaType': 'application/vnd.oci.image.layer.v1.tar+gzip'}
