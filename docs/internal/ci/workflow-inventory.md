@@ -643,3 +643,11 @@ projects: when selected, each restores and builds by its own project path before
 managed outputs are published. Restore and build failures remain gating, with
 the same warnings, analyzers and graph-build settings as the solution build.
 Unknown projects outside the solution still fail planning; test selection is unchanged.
+
+### Stage 0 evidence and cross-phase reuse
+
+[Stage 0 reuse assessment](stage-zero-reuse.md) records live queue/build timings,
+the five-run cache observation, and the protected issuer requirements for any
+future gate skip. Local receipts do not currently skip hosted tests. Compiled
+output caching remains opt-in; no cross-phase promotion is authorized by the
+observational sample.
