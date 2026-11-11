@@ -212,7 +212,7 @@ jobs:
       - name: Verify RC AOT candidate before registry publication
         shell: bash
         env:
-          CANDIDATE: ${{ steps.candidate.outputs.image_digest_ref }}
+          CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
           docker pull "$CANDIDATE"
@@ -221,7 +221,7 @@ jobs:
       - name: Fail on high or critical RC AOT vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ steps.candidate.outputs.image_digest_ref }}
+          image-ref: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
           format: table
           severity: HIGH,CRITICAL
           exit-code: '1'
@@ -237,7 +237,7 @@ jobs:
       - name: Publish verified RC AOT tag
         shell: bash
         env:
-          CANDIDATE: ${{ steps.candidate.outputs.image_digest_ref }}
+          CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
           IMAGE_REF: ${{ steps.ref.outputs.image_ref }}
         run: docker buildx imagetools create --prefer-index=false --tag "$IMAGE_REF" "$CANDIDATE"
 
