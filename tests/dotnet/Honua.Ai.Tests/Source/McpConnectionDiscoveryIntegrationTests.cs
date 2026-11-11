@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.TestKit.Extensions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -29,7 +30,7 @@ public sealed class McpConnectionDiscoveryIntegrationTests : IAsyncLifetime
     [Endpoint("POST /mcp")]
     public async Task ConnectionDiscovery_AdminAndNonAdminKeys_MatchRestPermissionsAndReturnOnlySafeFields()
     {
-        await using var fixture = new WebAppFixture().UseKestrel().ConfigureWebHost(builder =>
+        await using var fixture = new WebAppFixture().WithProductionJobSubstrate().UseKestrel().ConfigureWebHost(builder =>
         {
             builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
             builder.UseSetting("Licensing:DevGrantEdition", "Pro");

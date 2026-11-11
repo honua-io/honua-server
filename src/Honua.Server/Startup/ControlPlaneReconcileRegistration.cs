@@ -27,7 +27,7 @@ internal static class ControlPlaneReconcileRegistration
         //     same seam as a second listener.
         //   * NotifyingWorkflowOperationStore raises ops-alert notifications on terminal transitions (it
         //     no-ops when ops notifications are disabled, the default).
-        services.AddSingleton<RedisWorkflowOperationStore>();
+        services.AddPostgresSharedState(configuration);
         services.AddSingleton<Honua.Infrastructure.Monitoring.ReleaseTimelineBuffer>();
         services.AddSingleton<IWorkflowOperationTransitionListener>(sp =>
             new Honua.Infrastructure.Monitoring.ReleaseTimelineTransitionListener(
@@ -38,7 +38,7 @@ internal static class ControlPlaneReconcileRegistration
                 sp));
         services.AddSingleton<IWorkflowOperationStore>(sp => new Honua.Alerts.Ops.NotifyingWorkflowOperationStore(
             new Honua.ControlPlane.TransitionObservingWorkflowOperationStore(
-                sp.GetRequiredService<RedisWorkflowOperationStore>(),
+                sp.GetRequiredService<PostgresWorkflowOperationStore>(),
                 sp.GetServices<IWorkflowOperationTransitionListener>(),
                 sp.GetRequiredService<ILogger<Honua.ControlPlane.TransitionObservingWorkflowOperationStore>>()),
             sp.GetRequiredService<IServiceScopeFactory>(),
@@ -113,6 +113,7 @@ internal static class ControlPlaneReconcileRegistration
             services.AddHostedService<ExecutionJobBackstopSweepService>();
             services.AddHostedService<ExecutionQueueDepthCollectorBackgroundService>();
             services.AddHostedService<JobStoreRetentionSweepService>();
+            services.AddPostgresSharedState(configuration);
         }
 
         return services;

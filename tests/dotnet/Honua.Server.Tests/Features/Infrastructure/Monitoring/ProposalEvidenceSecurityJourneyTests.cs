@@ -75,6 +75,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
     private readonly List<HttpClient> _clients = [];
     private readonly Dictionary<string, ToolDescriptor> _descriptors = new(StringComparer.Ordinal);
     private ConnectionMultiplexer _redis = null!;
+    private Honua.Server.Tests.Features.Infrastructure.ControlPlane.ControlPlaneStateHarness _controlPlaneState = null!;
     private FaultSwitchProposalStore _proposals = null!;
     private WebAppFixture _fixture = null!;
     private IAdminApiKeyStore _apiKeys = null!;
@@ -84,8 +85,8 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
     public async Task InitializeAsync()
     {
         _redis = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
-        _proposals = new FaultSwitchProposalStore(new RedisOperationProposalStore(
-            _redis, NullLogger<RedisOperationProposalStore>.Instance));
+        _controlPlaneState = await Honua.Server.Tests.Features.Infrastructure.ControlPlane.SharedControlPlaneState.GetAsync();
+        _proposals = new FaultSwitchProposalStore(_controlPlaneState.CreateProposalStore());
 
         _fixture = HumanApprovalHttpClient.Configure(new WebAppFixture(), _identity)
             .ConfigureWebHost(ConfigureHost)
@@ -1043,7 +1044,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         services.RemoveAll<IOperationProposalStore>();
         services.AddSingleton<IOperationProposalStore>(_proposals);
         services.RemoveAll<IOperationInstanceStore>();
-        services.AddSingleton<IOperationInstanceStore>(new RedisOperationInstanceStore(_redis));
+        services.AddSingleton<IOperationInstanceStore>(_controlPlaneState.CreateInstanceStore());
         services.RemoveAll<IOperationEnvelopeFactory>();
         services.AddSingleton<IOperationEnvelopeFactory>(provider => new ScopedOperationEnvelopeFactory(
             provider.GetRequiredService<IServiceScopeFactory>(), useVolatileAudit: false));

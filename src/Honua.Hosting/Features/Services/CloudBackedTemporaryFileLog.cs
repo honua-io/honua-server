@@ -64,22 +64,22 @@ internal static partial class CloudBackedTemporaryFileLog
 
     [LoggerMessage(
         Level = LogLevel.Warning,
-        Message = "Rejecting shared temporary file write because Redis coordination is required for cloud-backed storage quotas.")]
-    public static partial void SharedWriteRejectedRedisRequired(ILogger logger);
+        Message = "Rejecting shared temporary file write because the system database is required to coordinate cloud-backed storage quotas.")]
+    public static partial void SharedWriteRejectedCoordinationRequired(ILogger logger);
 
     [LoggerMessage(
         Level = LogLevel.Warning,
-        Message = "Rejecting shared temporary file write because Redis coordination is unavailable for cloud-backed storage.")]
-    public static partial void SharedWriteRejectedRedisUnavailable(ILogger logger);
+        Message = "Rejecting shared temporary file write because its download token could not be recorded.")]
+    public static partial void SharedWriteRejectedCoordinationUnavailable(ILogger logger, Exception exception);
 
     [LoggerMessage(
         Level = LogLevel.Warning,
-        Message = "Rejecting shared temporary file write because Redis coordination was lost while enforcing cloud-backed storage quotas.")]
-    public static partial void SharedWriteRejectedRedisLost(ILogger logger);
+        Message = "Rejecting shared temporary file write because the storage quota lease was lost.")]
+    public static partial void SharedWriteRejectedCoordinationLost(ILogger logger);
 
     [LoggerMessage(
         Level = LogLevel.Warning,
-        Message = "Failed to remove temporary file {FileId} from shared {Provider} storage after Redis quota coordination was lost.")]
+        Message = "Failed to remove temporary file {FileId} from shared {Provider} storage after the storage quota lease was lost.")]
     public static partial void SharedStorageCleanupAfterLeaseLossFailed(
         ILogger logger,
         string fileId,

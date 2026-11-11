@@ -81,7 +81,7 @@ public sealed class GpProcessReleaseJobEndpointsTests : IAsyncLifetime
                 ? AccessDecision.Forbidden("Custom-code permission is required.") : AccessDecision.Allowed()));
         var approval = Substitute.For<IOperatorApprovalEvaluator>();
         approval.Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>()).Returns(ApprovalRequirement.NotRequired());
-        var issuer = new ScopedJobTokenIssuer(_tokenCache, NullLogger<ScopedJobTokenIssuer>.Instance);
+        var issuer = new ScopedJobTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<ScopedJobTokenIssuer>.Instance);
         var storage = Substitute.For<ICloudFileStorage>();
         storage.Provider.Returns(CloudStorageProvider.AwsS3);
         var service = new GeoprocessingJobService(

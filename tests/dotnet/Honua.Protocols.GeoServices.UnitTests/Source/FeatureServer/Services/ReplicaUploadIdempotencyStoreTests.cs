@@ -30,7 +30,7 @@ public sealed class ReplicaUploadIdempotencyStoreTests
            ?? throw new InvalidOperationException("The test caller must be bindable.");
 
     private static DistributedReplicaUploadIdempotencyStore CreateStore(TimeProvider? time = null, TimeSpan? reservationWindow = null)
-        => new(multiplexer: null, cache: null, NullLogger<DistributedReplicaUploadIdempotencyStore>.Instance, reservationWindow, time);
+        => new(new InMemoryIdempotencyReservationStore(time), NullLogger<DistributedReplicaUploadIdempotencyStore>.Instance, reservationWindow);
 
     [Fact]
     public async Task TryReserveAsync_ConcurrentSameUpload_ExactlyOneWins()

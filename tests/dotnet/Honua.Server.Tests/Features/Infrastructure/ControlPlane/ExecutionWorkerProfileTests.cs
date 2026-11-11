@@ -658,7 +658,7 @@ public sealed class ExecutionWorkerProfileTests
         services.AddHostedService<WorkflowOperationBackstopSweepService>();
         services.AddExecutionJobReconciliation();
         services.AddExecutionJobReconciliationLoops(configuration);
-        services.AddSingleton<IOperationProposalStore, RedisOperationProposalStore>();
+        services.AddSingleton<IOperationProposalStore>(provider => provider.GetRequiredService<PostgresOperationProposalStore>());
         services.AddSingleton<IOperationGateway, OperationGateway>();
         services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
             Honua.ControlPlane.Executors.DeployOperationExecutor>();

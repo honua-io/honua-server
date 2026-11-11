@@ -5,19 +5,19 @@ using Amazon.S3;
 using Amazon.S3.Model;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.FileStorage;
+using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Services;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
-using StackExchange.Redis;
 using System.Security.Claims;
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
@@ -26,6 +26,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Services;
 
 public sealed class TemporaryFileServiceTests : IDisposable
 {
+    private readonly InMemorySecurityTokenStore _sharedTokens = new();
     private readonly string _storageDirectory = Path.Join(
         Path.GetTempPath(),
         $"honua-temp-tests-{Guid.NewGuid():N}");
@@ -34,7 +35,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
     public async Task SRV_AUTH_003_RejectsEncodedTemporaryObjectKeyWithParentTraversal()
     {
         var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AzureBlob);
-        var redis = CreateRedisLeaseMultiplexer();
+        var leases = new InMemoryLeaseStore();
         var service = CreateCloudAwareService(
             new TemporaryFileOptions
             {
@@ -42,7 +43,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
                 BaseUrl = "/temp"
             },
             cloudStorage,
-            redis: redis);
+            leases: leases);
         var token = WebEncoders.Base64UrlEncode(
             System.Text.Encoding.UTF8.GetBytes("temporary-files/../exports/package.zip"));
 
@@ -88,7 +89,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
         cloudStorage.SeedObject(ordinaryPrefixKey, [1, 2, 3], "image/jpeg");
         cloudStorage.SeedObject(extensionlessKey, [9, 8, 7], "application/octet-stream");
 
-        var distributedCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var tokens = new InMemorySecurityTokenStore();
         var service = CreateCloudAwareService(
             new TemporaryFileOptions
             {
@@ -96,13 +97,13 @@ public sealed class TemporaryFileServiceTests : IDisposable
                 BaseUrl = "/temp"
             },
             cloudStorage,
-            distributedCache,
-            redis: CreateRedisLeaseMultiplexer());
+            tokens,
+            leases: new InMemoryLeaseStore());
 
-        await AssertClientChosenKeyIsNotReadableAsync(service, distributedCache, doubledPrefixKey);
-        await AssertClientChosenKeyIsNotReadableAsync(service, distributedCache, nestedPrefixKey);
-        await AssertClientChosenKeyIsNotReadableAsync(service, distributedCache, ordinaryPrefixKey);
-        await AssertClientChosenKeyIsNotReadableAsync(service, distributedCache, extensionlessKey);
+        await AssertClientChosenKeyIsNotReadableAsync(service, doubledPrefixKey);
+        await AssertClientChosenKeyIsNotReadableAsync(service, nestedPrefixKey);
+        await AssertClientChosenKeyIsNotReadableAsync(service, ordinaryPrefixKey);
+        await AssertClientChosenKeyIsNotReadableAsync(service, extensionlessKey);
         cloudStorage.MetadataRequests.Should().BeEmpty(
             "a client-chosen encoding of a well-formed provider key must not be resolved after the cache mapping is gone");
     }
@@ -113,7 +114,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
         var objectKey = "temporary-files/../exports/package.zip";
         var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AzureBlob);
         cloudStorage.SeedObject(objectKey, [1, 2, 3], "application/zip");
-        var distributedCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var tokens = new InMemorySecurityTokenStore();
         var service = CreateCloudAwareService(
             new TemporaryFileOptions
             {
@@ -121,10 +122,14 @@ public sealed class TemporaryFileServiceTests : IDisposable
                 BaseUrl = "/temp"
             },
             cloudStorage,
-            distributedCache,
-            redis: CreateRedisLeaseMultiplexer());
+            tokens,
+            leases: new InMemoryLeaseStore());
         const string token = "client-chosen-token";
-        await distributedCache.SetStringAsync("honua:temporary-files:cloud:" + token, objectKey);
+        await tokens.StoreAsync(
+            new SecurityTokenKey(SecurityTokenKind.TemporaryFile, token),
+            System.Text.Encoding.UTF8.GetBytes(objectKey),
+            TimeSpan.FromMinutes(5),
+            CancellationToken.None);
 
         var result = await service.GetTemporaryFileAsync(token + ".bin");
 
@@ -151,7 +156,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
                 BaseUrl = "/temp"
             },
             cloudStorage,
-            redis: CreateRedisLeaseMultiplexer());
+            leases: new InMemoryLeaseStore());
         cloudStorage.SeedObject(objectKey, [1, 2, 3], "image/png");
         var token = WebEncoders.Base64UrlEncode(System.Text.Encoding.UTF8.GetBytes(objectKey));
 
@@ -164,13 +169,9 @@ public sealed class TemporaryFileServiceTests : IDisposable
 
     private static async Task AssertClientChosenKeyIsNotReadableAsync(
         CloudBackedTemporaryFileService service,
-        MemoryDistributedCache distributedCache,
         string objectKey)
     {
         var token = WebEncoders.Base64UrlEncode(System.Text.Encoding.UTF8.GetBytes(objectKey));
-        var cacheKey = "honua:temporary-files:cloud:" + token;
-        await distributedCache.SetStringAsync(cacheKey, objectKey);
-        await distributedCache.RemoveAsync(cacheKey);
 
         var publicFileName = string.IsNullOrEmpty(Path.GetExtension(objectKey))
             ? token
@@ -451,8 +452,8 @@ public sealed class TemporaryFileServiceTests : IDisposable
     public async Task StoreTemporaryFileAsync_WithRemoteCloudStorage_AllowsCrossInstanceRetrieval()
     {
         var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
-        var distributedCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
-        var redis = CreateRedisLeaseMultiplexer();
+        var tokens = new InMemorySecurityTokenStore();
+        var leases = new InMemoryLeaseStore();
         var firstService = CreateCloudAwareService(
             new TemporaryFileOptions
             {
@@ -460,8 +461,8 @@ public sealed class TemporaryFileServiceTests : IDisposable
                 BaseUrl = "/temp"
             },
             cloudStorage,
-            distributedCache,
-            redis: redis);
+            tokens,
+            leases: leases);
         var secondService = CreateCloudAwareService(
             new TemporaryFileOptions
             {
@@ -469,8 +470,8 @@ public sealed class TemporaryFileServiceTests : IDisposable
                 BaseUrl = "/temp"
             },
             cloudStorage,
-            distributedCache,
-            redis: redis);
+            tokens,
+            leases: leases);
         var owner = CreatePrincipal("owner");
 
         var url = await firstService.StoreTemporaryFileAsync(
@@ -490,8 +491,8 @@ public sealed class TemporaryFileServiceTests : IDisposable
     public async Task StoreTemporaryFileAsync_WithRemoteCloudStorage_PreservesPrincipalAuthorization()
     {
         var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AzureBlob);
-        var distributedCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
-        var redis = CreateRedisLeaseMultiplexer();
+        var tokens = new InMemorySecurityTokenStore();
+        var leases = new InMemoryLeaseStore();
         var service = CreateCloudAwareService(
             new TemporaryFileOptions
             {
@@ -499,8 +500,8 @@ public sealed class TemporaryFileServiceTests : IDisposable
                 BaseUrl = "/temp"
             },
             cloudStorage,
-            distributedCache,
-            redis: redis);
+            tokens,
+            leases: leases);
         var owner = CreatePrincipal("owner");
         var other = CreatePrincipal("other");
 
@@ -521,8 +522,8 @@ public sealed class TemporaryFileServiceTests : IDisposable
     public async Task StoreTemporaryFileAsync_WithRemoteCloudStorageAndRawSubject_RemainsOwnerRestricted()
     {
         var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AzureBlob);
-        var distributedCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
-        var redis = CreateRedisLeaseMultiplexer();
+        var tokens = new InMemorySecurityTokenStore();
+        var leases = new InMemoryLeaseStore();
         var service = CreateCloudAwareService(
             new TemporaryFileOptions
             {
@@ -530,8 +531,8 @@ public sealed class TemporaryFileServiceTests : IDisposable
                 BaseUrl = "/temp"
             },
             cloudStorage,
-            distributedCache,
-            redis: redis);
+            tokens,
+            leases: leases);
         var owner = CreateSubjectPrincipal("owner-subject");
         var other = CreateSubjectPrincipal("other-subject");
 
@@ -543,36 +544,6 @@ public sealed class TemporaryFileServiceTests : IDisposable
 
         (await service.GetTemporaryFileAsync(fileId, owner)).Should().NotBeNull();
         (await service.GetTemporaryFileAsync(fileId, other)).Should().BeNull();
-    }
-
-    [Fact]
-    public async Task StoreTemporaryFileAsync_WithRemoteCloudStorage_RemainsReadableAfterDistributedCacheEviction()
-    {
-        var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
-        var distributedCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
-        var redis = CreateRedisLeaseMultiplexer();
-        var service = CreateCloudAwareService(
-            new TemporaryFileOptions
-            {
-                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
-                BaseUrl = "/temp"
-            },
-            cloudStorage,
-            distributedCache,
-            redis: redis);
-
-        var url = await service.StoreTemporaryFileAsync(
-            [4, 5, 6],
-            "image/png");
-
-        var fileId = Path.GetFileName(url);
-        await distributedCache.RemoveAsync("honua:temporary-files:cloud:" + Path.GetFileNameWithoutExtension(fileId));
-
-        var retrieved = await service.GetTemporaryFileAsync(fileId);
-
-        retrieved.Should().NotBeNull();
-        retrieved!.Value.data.Should().Equal(4, 5, 6);
-        retrieved!.Value.contentType.Should().Be("image/png");
     }
 
     [Fact]
@@ -618,13 +589,13 @@ public sealed class TemporaryFileServiceTests : IDisposable
         (await cloudStorage.ExistsAsync(activeTemporary.File!.FileId)).Should().BeTrue();
     }
 
-    [Fact]
-    public async Task StoreTemporaryFileAsync_WithRemoteCloudStorageAndRedisLease_SerializesQuotaAcrossInstances()
+    [UnitTest]
+    public async Task StoreTemporaryFileAsync_WithRemoteCloudStorageAndSharedLease_SerializesQuotaAcrossInstances()
     {
         var cloudStorage = new FakeCloudFileStorage(
             CloudStorageProvider.AwsS3,
             uploadDelay: TimeSpan.FromMilliseconds(200));
-        var redis = CreateRedisLeaseMultiplexer();
+        var leases = new InMemoryLeaseStore();
         var options = new TemporaryFileOptions
         {
             StorageDirectory = Path.Join(_storageDirectory, "node-a"),
@@ -633,8 +604,8 @@ public sealed class TemporaryFileServiceTests : IDisposable
             MaxTotalStorageBytes = 1024 * 1024,
             DefaultExpiration = TimeSpan.FromMinutes(5)
         };
-        var firstService = CreateCloudAwareService(options, cloudStorage, redis: redis);
-        var secondService = CreateCloudAwareService(options, cloudStorage, redis: redis);
+        var firstService = CreateCloudAwareService(options, cloudStorage, leases: leases);
+        var secondService = CreateCloudAwareService(options, cloudStorage, leases: leases);
         var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         async Task<Exception?> StoreAsync(CloudBackedTemporaryFileService service)
@@ -664,30 +635,8 @@ public sealed class TemporaryFileServiceTests : IDisposable
         results.Count(result => result is TemporaryStorageLimitExceededException).Should().Be(1);
     }
 
-    [Fact]
-    public async Task StoreTemporaryFileAsync_WithDisconnectedRedis_FailsClosedForCloudStorage()
-    {
-        var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        redis.IsConnected.Returns(false);
-        var service = CreateCloudAwareService(
-            new TemporaryFileOptions
-            {
-                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
-                BaseUrl = "/temp",
-                DefaultExpiration = TimeSpan.FromMinutes(5)
-            },
-            cloudStorage,
-            redis: redis);
-
-        Func<Task> act = async () => await service.StoreTemporaryFileAsync([1, 2, 3], "image/png");
-
-        var ex = await act.Should().ThrowAsync<TemporaryStorageLimitExceededException>();
-        ex.Which.Message.Should().Contain("coordination");
-    }
-
-    [Fact]
-    public async Task StoreTemporaryFileAsync_WithMissingRedis_FailsClosedForCloudStorage()
+    [UnitTest]
+    public async Task StoreTemporaryFileAsync_WithoutASystemDatabase_FailsClosedForCloudStorage()
     {
         var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
         var service = CreateCloudAwareService(
@@ -702,14 +651,14 @@ public sealed class TemporaryFileServiceTests : IDisposable
         Func<Task> act = async () => await service.StoreTemporaryFileAsync([1, 2, 3], "image/png");
 
         var ex = await act.Should().ThrowAsync<TemporaryStorageLimitExceededException>();
-        ex.Which.Message.Should().Contain("Redis");
+        ex.Which.Message.Should().Contain("system database");
     }
 
     [Fact]
     public async Task StoreTemporaryFileAsync_WhenQuotaLeaseIsLostDuringUpload_FailsClosed()
     {
         var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
-        var redis = CreateRedisLeaseLossMultiplexer();
+        var leases = new LeaseLostAfterAcquireStore();
         var service = CreateCloudAwareService(
             new TemporaryFileOptions
             {
@@ -718,7 +667,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
                 DefaultExpiration = TimeSpan.FromMinutes(5)
             },
             cloudStorage,
-            redis: redis);
+            leases: leases);
 
         Func<Task> act = async () => await service.StoreTemporaryFileAsync([1, 2, 3], "image/png");
 
@@ -730,7 +679,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
     public async Task StoreTemporaryFileAsync_WithRemoteCloudStorageCountsBytesBeyondFirstThousandObjects()
     {
         var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
-        var redis = CreateRedisLeaseMultiplexer();
+        var leases = new InMemoryLeaseStore();
         for (var i = 0; i < 1001; i++)
         {
             await cloudStorage.UploadAsync(new ByteArrayUploadRequest
@@ -753,7 +702,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
                 DefaultExpiration = TimeSpan.FromMinutes(5)
             },
             cloudStorage,
-            redis: redis);
+            leases: leases);
 
         Func<Task> act = async () => await service.StoreTemporaryFileAsync([2], "application/octet-stream");
 
@@ -768,7 +717,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
         var cloudStorage = new FakeCloudFileStorage(
             CloudStorageProvider.AwsS3,
             listFilesException: capacityFailure);
-        var redis = CreateRedisLeaseMultiplexer();
+        var leases = new InMemoryLeaseStore();
         var logger = new ListLogger<CloudBackedTemporaryFileService>();
         var service = CreateCloudAwareService(
             new TemporaryFileOptions
@@ -780,7 +729,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
                 DefaultExpiration = TimeSpan.FromMinutes(5)
             },
             cloudStorage,
-            redis: redis,
+            leases: leases,
             logger: logger);
 
         var url = await service.StoreTemporaryFileAsync([4, 5, 6], "image/png");
@@ -804,7 +753,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
     public async Task StoreTemporaryFileAsync_WithRemoteCloudStorageAndNoDistributedCache_UsesOpaqueRoundTrippableToken()
     {
         var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
-        var redis = CreateRedisLeaseMultiplexer();
+        var leases = new InMemoryLeaseStore();
         var service = CreateCloudAwareService(
             new TemporaryFileOptions
             {
@@ -812,7 +761,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
                 BaseUrl = "/temp"
             },
             cloudStorage,
-            redis: redis);
+            leases: leases);
 
         var url = await service.StoreTemporaryFileAsync(
             [9, 8, 7],
@@ -827,65 +776,13 @@ public sealed class TemporaryFileServiceTests : IDisposable
         retrieved!.Value.contentType.Should().Be("image/png");
     }
 
-    // honua-server#5826: the shared mapping is a Redis string under its own key. A stale
-    // process-local cache entry, including one stored at the IDistributedCache key, must not
-    // resolve the file. Deleting the shared key makes every replica miss.
-    [UnitTest]
-    public async Task GetTemporaryFileAsync_SharedRedisToken_ResolvesOnAnotherReplicaAfterLocalCacheEviction()
-    {
-        var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
-        var redis = CreateRedisLeaseMultiplexer();
-        var issuerCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
-        var issuer = CreateCloudAwareService(
-            new TemporaryFileOptions
-            {
-                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
-                BaseUrl = "/temp",
-            },
-            cloudStorage,
-            issuerCache,
-            redis: redis);
-        var reader = CreateCloudAwareService(
-            new TemporaryFileOptions
-            {
-                StorageDirectory = Path.Join(_storageDirectory, "node-b"),
-                BaseUrl = "/temp",
-            },
-            cloudStorage,
-            redis: redis);
-
-        var url = await issuer.StoreTemporaryFileAsync([9, 8, 7], "image/png");
-        var fileId = Path.GetFileName(url);
-        var token = Path.GetFileNameWithoutExtension(fileId);
-        await issuerCache.SetStringAsync(
-            "honua:temporary-files:cloud:" + token,
-            "temporary-files/not-the-uploaded-object");
-
-        var fromReader = await reader.GetTemporaryFileAsync(fileId);
-        fromReader.Should().NotBeNull();
-        fromReader!.Value.data.Should().Equal(9, 8, 7);
-        fromReader.Value.contentType.Should().Be("image/png");
-        (await issuer.GetTemporaryFileAsync(fileId))!.Value.data.Should().Equal(9, 8, 7);
-
-        (await redis.GetDatabase().KeyDeleteAsync("honua:temporary-files:cloud:" + token)).Should().BeFalse();
-        (await redis.GetDatabase().KeyDeleteAsync("honua:temporary-files:shared:" + token)).Should().BeTrue();
-        (await issuer.GetTemporaryFileAsync(fileId)).Should().BeNull();
-        (await reader.GetTemporaryFileAsync(fileId)).Should().BeNull();
-    }
-
     [UnitTest]
     public async Task StoreTemporaryFileAsync_WhenSharedTokenPublishFails_DeletesTheUploadedObject()
     {
         var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
-        var redis = CreateRedisLeaseMultiplexer();
-        redis.GetDatabase().StringSetAsync(
-                Arg.Any<RedisKey>(),
-                Arg.Any<RedisValue>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<When>(),
-                Arg.Any<CommandFlags>())
-            .Returns<Task<bool>>(_ => throw new RedisConnectionException(ConnectionFailureType.UnableToConnect, "lost"));
+        var tokens = Substitute.For<ISecurityTokenStore>();
+        tokens.StoreAsync(default, default, default, default)
+            .ReturnsForAnyArgs(Task.FromException(new InvalidOperationException("database unavailable")));
         var service = CreateCloudAwareService(
             new TemporaryFileOptions
             {
@@ -893,28 +790,8 @@ public sealed class TemporaryFileServiceTests : IDisposable
                 BaseUrl = "/temp",
             },
             cloudStorage,
-            redis: redis);
-
-        var act = () => service.StoreTemporaryFileAsync([1, 2, 3], "image/png");
-
-        await act.Should().ThrowAsync<RedisConnectionException>();
-        (await cloudStorage.ListFilesAsync("temporary-files")).Should().BeEmpty();
-    }
-
-    [UnitTest]
-    public async Task StoreTemporaryFileAsync_WhenRedisDisconnectsBeforeTokenPublish_DoesNotLeaveAnObject()
-    {
-        var cloudStorage = new FakeCloudFileStorage(CloudStorageProvider.AwsS3);
-        var redis = CreateRedisLeaseMultiplexer();
-        redis.IsConnected.Returns(true, false);
-        var service = CreateCloudAwareService(
-            new TemporaryFileOptions
-            {
-                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
-                BaseUrl = "/temp",
-            },
-            cloudStorage,
-            redis: redis);
+            tokens,
+            leases: new InMemoryLeaseStore());
 
         var act = () => service.StoreTemporaryFileAsync([1, 2, 3], "image/png");
 
@@ -944,7 +821,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
             NullLogger<AwsS3FileStorage>.Instance,
             progressStore,
             s3);
-        var redis = CreateRedisLeaseMultiplexer();
+        var leases = new InMemoryLeaseStore();
         var service = CreateCloudAwareService(
             new TemporaryFileOptions
             {
@@ -955,7 +832,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
                 DefaultExpiration = TimeSpan.FromMinutes(5)
             },
             storage,
-            redis: redis);
+            leases: leases);
 
         var url = await service.StoreTemporaryFileAsync([1, 2, 3, 4], "image/png");
 
@@ -983,12 +860,13 @@ public sealed class TemporaryFileServiceTests : IDisposable
             httpContextAccessor);
     }
 
+    // Services built in one test share one token store, as nodes share one system database.
     private CloudBackedTemporaryFileService CreateCloudAwareService(
         TemporaryFileOptions options,
         ICloudFileStorage cloudStorage,
-        IDistributedCache? distributedCache = null,
+        ISecurityTokenStore? tokens = null,
         IHttpContextAccessor? httpContextAccessor = null,
-        IConnectionMultiplexer? redis = null,
+        ILeaseStore? leases = null,
         ILogger<CloudBackedTemporaryFileService>? logger = null)
     {
         var localService = CreateService(options, httpContextAccessor);
@@ -997,157 +875,23 @@ public sealed class TemporaryFileServiceTests : IDisposable
             cloudStorage,
             Options.Create(options),
             logger ?? NullLogger<CloudBackedTemporaryFileService>.Instance,
+            tokens ?? _sharedTokens,
             httpContextAccessor,
-            distributedCache,
-            redis);
+            leases);
     }
 
-    private static IConnectionMultiplexer CreateRedisLeaseMultiplexer()
+    // Grants a lease once and refuses every renewal, so the holder loses it mid-write.
+    private sealed class LeaseLostAfterAcquireStore : ILeaseStore
     {
-        var ownerSync = new object();
-        string? currentOwner = null;
-        var database = Substitute.For<IDatabase>();
-        database.LockTakeAsync(
-                Arg.Any<RedisKey>(),
-                Arg.Any<RedisValue>(),
-                Arg.Any<TimeSpan>(),
-                Arg.Any<CommandFlags>())
-            .Returns(callInfo =>
-            {
-                lock (ownerSync)
-                {
-                    if (currentOwner is null)
-                    {
-                        currentOwner = callInfo.ArgAt<RedisValue>(1).ToString();
-                        return Task.FromResult(true);
-                    }
+        private int _acquired;
 
-                    return Task.FromResult(false);
-                }
-            });
-        database.LockExtendAsync(
-                Arg.Any<RedisKey>(),
-                Arg.Any<RedisValue>(),
-                Arg.Any<TimeSpan>(),
-                Arg.Any<CommandFlags>())
-            .Returns(callInfo =>
-            {
-                lock (ownerSync)
-                {
-                    return Task.FromResult(string.Equals(
-                        currentOwner,
-                        callInfo.ArgAt<RedisValue>(1).ToString(),
-                        StringComparison.Ordinal));
-                }
-            });
-        database.LockReleaseAsync(
-                Arg.Any<RedisKey>(),
-                Arg.Any<RedisValue>(),
-                Arg.Any<CommandFlags>())
-            .Returns(callInfo =>
-            {
-                lock (ownerSync)
-                {
-                    var owner = callInfo.ArgAt<RedisValue>(1).ToString();
-                    var released = string.Equals(currentOwner, owner, StringComparison.Ordinal);
-                    if (released)
-                    {
-                        currentOwner = null;
-                    }
+        public Task<bool> TryAcquireAsync(LeaseClaim claim, TimeSpan duration, CancellationToken cancellationToken = default)
+            => Task.FromResult(Interlocked.Exchange(ref _acquired, 1) == 0);
 
-                    return Task.FromResult(released);
-                }
-            });
+        public Task<bool> RenewAsync(LeaseClaim claim, TimeSpan duration, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
 
-        ConfigureSharedTokenMap(database);
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        redis.IsConnected.Returns(true);
-        redis.GetDatabase().Returns(database);
-        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-        return redis;
-    }
-
-    private static IConnectionMultiplexer CreateRedisLeaseLossMultiplexer()
-    {
-        var ownerSync = new object();
-        string? currentOwner = null;
-        var database = Substitute.For<IDatabase>();
-        database.LockTakeAsync(
-                Arg.Any<RedisKey>(),
-                Arg.Any<RedisValue>(),
-                Arg.Any<TimeSpan>(),
-                Arg.Any<CommandFlags>())
-            .Returns(callInfo =>
-            {
-                lock (ownerSync)
-                {
-                    if (currentOwner is null)
-                    {
-                        currentOwner = callInfo.ArgAt<RedisValue>(1).ToString();
-                        return Task.FromResult(true);
-                    }
-
-                    return Task.FromResult(false);
-                }
-            });
-        database.LockExtendAsync(
-                Arg.Any<RedisKey>(),
-                Arg.Any<RedisValue>(),
-                Arg.Any<TimeSpan>(),
-                Arg.Any<CommandFlags>())
-            .Returns(Task.FromResult(false));
-        database.LockReleaseAsync(
-                Arg.Any<RedisKey>(),
-                Arg.Any<RedisValue>(),
-                Arg.Any<CommandFlags>())
-            .Returns(callInfo =>
-            {
-                lock (ownerSync)
-                {
-                    var owner = callInfo.ArgAt<RedisValue>(1).ToString();
-                    var released = string.Equals(currentOwner, owner, StringComparison.Ordinal);
-                    if (released)
-                    {
-                        currentOwner = null;
-                    }
-
-                    return Task.FromResult(released);
-                }
-            });
-
-        ConfigureSharedTokenMap(database);
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        redis.IsConnected.Returns(true);
-        redis.GetDatabase().Returns(database);
-        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-        return redis;
-    }
-
-    // honua-server#5826: both lease substitutes are connected, so token reads go to Redis.
-    // An unconfigured StringGetAsync returns a null task and the existing store/get tests throw.
-    private static void ConfigureSharedTokenMap(IDatabase database)
-    {
-        var entries = new ConcurrentDictionary<string, string>(StringComparer.Ordinal);
-        database.StringSetAsync(
-                Arg.Any<RedisKey>(),
-                Arg.Any<RedisValue>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<When>(),
-                Arg.Any<CommandFlags>())
-            .Returns(callInfo =>
-            {
-                entries[callInfo.ArgAt<RedisKey>(0).ToString()] = callInfo.ArgAt<RedisValue>(1).ToString();
-                return Task.FromResult(true);
-            });
-        database.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
-            .Returns(callInfo =>
-            {
-                var found = entries.TryGetValue(callInfo.ArgAt<RedisKey>(0).ToString(), out var value);
-                return Task.FromResult(found ? (RedisValue)value! : RedisValue.Null);
-            });
-        database.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
-            .Returns(callInfo => Task.FromResult(entries.TryRemove(callInfo.ArgAt<RedisKey>(0).ToString(), out _)));
+        public Task ReleaseAsync(LeaseClaim claim, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private static ClaimsPrincipal CreatePrincipal(string subject)

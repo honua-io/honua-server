@@ -5,22 +5,18 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Infrastructure.Security;
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Caching.Memory;
 
 namespace Honua.Infrastructure.Authentication;
 
 // Attenuation is frozen at mint time, nothing presented at callback can widen it, and the principal uses the shared role grammar so authorization is not forked.
 internal sealed partial class ScopedJobTokenIssuer(
-    IMemoryCache memoryCache,
-    ILogger<ScopedJobTokenIssuer> logger,
-    IDistributedCache? distributedCache = null) : IScopedJobTokenIssuer
+    ISecurityTokenStore tokens,
+    ILogger<ScopedJobTokenIssuer> logger) : IScopedJobTokenIssuer
 {
     internal const string AuthSchemeName = "ScopedJobToken";
     internal const string AuthTypeClaimValue = "scoped-job-token";
@@ -28,11 +24,7 @@ internal sealed partial class ScopedJobTokenIssuer(
     internal const string JobIdClaimType = "honua_job_id";
     internal const string PermissionClaimType = "permission";
     internal const string RolesClaimType = "roles";
-    private const string TokenKeyPrefix = "scoped-job-auth:token:";
-
-    private readonly IMemoryCache _memoryCache = memoryCache;
     private readonly ILogger<ScopedJobTokenIssuer> _logger = logger;
-    private readonly IDistributedCache? _distributedCache = distributedCache;
 
     public async Task<ScopedJobTokenIssuance> IssueAsync(
         ScopedJobTokenRequest request,
@@ -73,11 +65,11 @@ internal sealed partial class ScopedJobTokenIssuer(
             ExpiresAt = request.ExpiresAt,
         };
 
-        await SetAsync(
-            TokenKeyPrefix + token,
-            record,
-            request.ExpiresAt,
-            ScopedJobTokenJsonContext.Default.ScopedJobTokenRecord,
+        // A token another node will not see must not look issued, so a store failure reaches the caller.
+        await tokens.StoreAsync(
+            Key(token),
+            JsonSerializer.SerializeToUtf8Bytes(record, ScopedJobTokenJsonContext.Default.ScopedJobTokenRecord),
+            request.ExpiresAt - DateTimeOffset.UtcNow,
             cancellationToken).ConfigureAwait(false);
 
         ScopedJobTokenLog.TokenIssued(_logger, record.JobId, claims.Roles.Count, claims.Permissions.Count);
@@ -120,9 +112,21 @@ internal sealed partial class ScopedJobTokenIssuer(
             return Task.CompletedTask;
         }
 
-        // Same contract as portal revocation: a shared-store delete that cannot be
-        // confirmed must not look like success (honua-server#6164).
-        return RemoveAsync(TokenKeyPrefix + token, cancellationToken, requireSharedRemoval: true);
+        return RevokeStoredAsync(token, cancellationToken);
+    }
+
+    // A delete that cannot be confirmed must not look like success.
+    private async Task RevokeStoredAsync(string token, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await tokens.RevokeAsync(Key(token), cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception storeFailure) when (storeFailure is not OutOfMemoryException and not OperationCanceledException)
+        {
+            ScopedJobTokenLog.DistributedCacheRemoveFailed(_logger, LogValueRedactor.Hash(token), storeFailure);
+            throw new ServiceUnavailableException("The shared job token could not be revoked.", storeFailure);
+        }
     }
 
     private static string CreateTokenValue()
@@ -174,136 +178,19 @@ internal sealed partial class ScopedJobTokenIssuer(
         return new ClaimsPrincipal(identity);
     }
 
-    private async Task SetAsync<T>(
-        string key,
-        T value,
-        DateTimeOffset expiresAt,
-        JsonTypeInfo<T> typeInfo,
-        CancellationToken cancellationToken)
-    {
-        var payload = JsonSerializer.SerializeToUtf8Bytes(value, typeInfo);
-        if (_distributedCache is null)
-        {
-            _memoryCache.Set(key, payload, expiresAt);
-            return;
-        }
-
-        try
-        {
-            await _distributedCache.SetAsync(
-                key,
-                payload,
-                new DistributedCacheEntryOptions
-                {
-                    AbsoluteExpiration = expiresAt
-                },
-                cancellationToken).ConfigureAwait(false);
-            _memoryCache.Set(key, payload, expiresAt);
-        }
-        catch (Exception ex)
-        {
-            _memoryCache.Remove(key);
-            ScopedJobTokenLog.DistributedCachePersistFailed(_logger, LogValueRedactor.Hash(key), ex);
-            // Surface persistence failures so the caller does not believe a token
-            // was issued when another replica will not see it.
-            throw;
-        }
-    }
-
     private async Task<ScopedJobTokenRecord?> GetAsync(string token, CancellationToken cancellationToken)
     {
-        var key = TokenKeyPrefix + token;
-        byte[]? payload = null;
-
-        if (_distributedCache is not null)
-        {
-            try
-            {
-                payload = await _distributedCache.GetAsync(key, cancellationToken).ConfigureAwait(false);
-                if (payload is null)
-                {
-                    _memoryCache.Remove(key);
-                    return null;
-                }
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                ScopedJobTokenLog.DistributedCacheReadFailed(_logger, LogValueRedactor.Hash(key), ex);
-                // Intentional: distributed cache is unreachable; fall back to the in-process memory tier
-                // if a valid entry is present.  The memory entry was written atomically with
-                // the distributed entry at issuance time, so it remains consistent for its
-                // original TTL.  Evicting it would extend the auth outage beyond the Redis
-                // unavailability window and destroy warm in-process state unnecessarily (BH-028).
-                if (!_memoryCache.TryGetValue(key, out payload) || payload is null)
-                {
-                    return null;
-                }
-                // Fall through to deserialize the memory-cached payload.
-            }
-        }
-        else if (!_memoryCache.TryGetValue(key, out payload) || payload is null)
+        var stored = await tokens.FindAsync(Key(token), cancellationToken).ConfigureAwait(false);
+        if (stored is null)
         {
             return null;
         }
 
-        var value = JsonSerializer.Deserialize(payload, ScopedJobTokenJsonContext.Default.ScopedJobTokenRecord);
-        if (value is null)
-        {
-            await RemoveAsync(key, cancellationToken).ConfigureAwait(false);
-            return null;
-        }
-
-        if (value.ExpiresAt <= DateTimeOffset.UtcNow)
-        {
-            await RemoveAsync(key, cancellationToken).ConfigureAwait(false);
-            return null;
-        }
-
-        _memoryCache.Set(key, payload, value.ExpiresAt);
-        return value;
+        var record = JsonSerializer.Deserialize(stored.Payload, ScopedJobTokenJsonContext.Default.ScopedJobTokenRecord);
+        return record is null || record.ExpiresAt <= DateTimeOffset.UtcNow ? null : record;
     }
 
-    private async Task RemoveAsync(string key, CancellationToken cancellationToken, bool requireSharedRemoval = false)
-    {
-        _memoryCache.Remove(key);
-
-        if (_distributedCache is null)
-        {
-            return;
-        }
-
-        try
-        {
-            await _distributedCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            ScopedJobTokenLog.DistributedCacheRemoveFailed(_logger, LogValueRedactor.Hash(key), ex);
-            if (!requireSharedRemoval)
-            {
-                // Expiry cleanup is best-effort. Revocation is not (honua-server#6164).
-                return;
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            try
-            {
-                if (await _distributedCache.GetAsync(key, cancellationToken).ConfigureAwait(false) is null)
-                {
-                    return;
-                }
-            }
-            catch (Exception readException) when (readException is not OutOfMemoryException)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                ScopedJobTokenLog.DistributedCacheReadFailed(
-                    _logger, LogValueRedactor.Hash(key), readException);
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            throw new ServiceUnavailableException("The shared job token could not be revoked.", ex);
-        }
-    }
+    private static SecurityTokenKey Key(string token) => new(SecurityTokenKind.JobToken, token);
 }
 
 internal sealed class ScopedJobTokenRecord

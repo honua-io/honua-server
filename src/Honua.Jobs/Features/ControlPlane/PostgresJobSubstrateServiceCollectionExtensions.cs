@@ -43,6 +43,7 @@ internal static class PostgresJobSubstrateServiceCollectionExtensions
             provider.GetRequiredService<NpgsqlDataSource>(),
             configuration[SystemSchemaKey]));
         services.TryAddSingleton<JobStoreRetentionSweeper>();
+        services.TryAddSingleton<SharedStateRetentionSweeper>();
         services.TryAddSingleton<PostgresExecutionJobStore>();
         services.TryAddSingleton<IExecutionJobStore>(provider => provider.GetRequiredService<PostgresExecutionJobStore>());
         services.TryAddSingleton<IJobStoreClock>(provider => provider.GetRequiredService<PostgresExecutionJobStore>());
