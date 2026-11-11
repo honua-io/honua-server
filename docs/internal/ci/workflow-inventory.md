@@ -637,6 +637,24 @@ The `Server Features Admin Layer Publishing` shard selects 48 named
 `Server Features Admin Runtime Operations` through its complementary filter.
 Each shard process builds its own instance of the shared class fixture.
 
+### WPS endpoint fixture lifetime
+
+The WFS 1–9 shard family includes `Wps20EndpointsTests`. See
+[WPS endpoint fixture lifetime](gate-model.md#wps-endpoint-fixture-lifetime)
+for its class-scoped applications and isolated custom-host cases.
+
+### ImageServer endpoint fixtures
+
+See [ImageServer endpoint database lifetime](gate-model.md#imageserver-endpoint-database-lifetime)
+for endpoint isolation and database reuse. The pure WMTS capability unit test runs
+without a database fixture in the ImageServer Rendering and Support shard.
+
+### Geocoding endpoint fixtures
+
+The geocoding shard includes the endpoint response and provider request-contract
+cases. See [Geocoding response fixture lifetime](gate-model.md#geocoding-response-fixture-lifetime)
+for their application isolation rules.
+
 ### Governance capacity split
 
 The former `Server Features Admin Governance and Sharing` shard timed out at
@@ -733,21 +751,3 @@ Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
 revocation: a human or drain lane owns any manually armed dependency PR.
 If mergeability becomes clean between the live query and enable mutation, only
 GitHub's specific clean-status response ends neutrally; other API errors fail.
-
-### WPS endpoint fixture lifetime
-
-The WFS 1–9 shard family includes `Wps20EndpointsTests`. See
-[WPS endpoint fixture lifetime](gate-model.md#wps-endpoint-fixture-lifetime)
-for its class-scoped applications and isolated custom-host cases.
-
-### ImageServer endpoint fixtures
-
-See [ImageServer endpoint database lifetime](gate-model.md#imageserver-endpoint-database-lifetime)
-for endpoint isolation and database reuse. The pure WMTS capability unit test runs
-without a database fixture in the ImageServer Rendering and Support shard.
-
-### Geocoding endpoint fixtures
-
-The geocoding shard includes the endpoint response and provider request-contract
-cases. See [Geocoding response fixture lifetime](gate-model.md#geocoding-response-fixture-lifetime)
-for their application isolation rules.

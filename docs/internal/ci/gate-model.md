@@ -678,6 +678,33 @@ the server seed, which deletes and recreates the seeded features and catalog met
 restores the metadata graph with a new revision.
 The missing-SRID simulation creates and removes its expression index under the schema lock.
 
+### WPS endpoint fixture lifetime
+
+`Wps20EndpointsTests` shares its default application and identically configured
+conformance-echo application for the lifetime of the sequential test class.
+Each application seeds its database once. Tests with service substitutes or
+custom host configuration retain isolated applications; echo results are
+accessed through their request-generated job IDs and reference tokens.
+All cases and assertions remain in the WFS 1–9 shard family on selected PR runs
+and twice-daily full trunk runs. This changes no runner count, required check
+name, required aggregate dependency, workflow, or shard definition.
+
+### ImageServer endpoint database lifetime
+
+`ImageServerEndpointsTests` retains a `PostgresFixture` reference for the class
+to avoid repeating shared database initialization between cases. Each case owns
+its configured application, isolated schema, and raster substitutes; the class
+fixture releases the infrastructure after the last case. Pure capability XML
+coverage lives in `ImageServerWmtsCapabilitiesTests` without a database fixture.
+Full trunk runs include every case; PR routing selects affected ImageServer shards.
+
+### Geocoding response fixture lifetime
+
+`GeocodingEndpointTests` uses one class-lifetime Community application for
+request-derived default-provider responses. Each case owns its HTTP client.
+Request-capture, custom-provider and Enterprise configurations own separate
+applications. Full trunk runs include every case; PR routing selects affected geocoding shards.
+
 ### Governance capacity split
 
 The former `Server Features Admin Governance and Sharing` shard timed out at
@@ -772,30 +799,3 @@ Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
 revocation: a human or drain lane owns any manually armed dependency PR.
 If mergeability becomes clean between the live query and enable mutation, only
 GitHub's specific clean-status response ends neutrally; other API errors fail.
-
-### WPS endpoint fixture lifetime
-
-`Wps20EndpointsTests` shares its default application and identically configured
-conformance-echo application for the lifetime of the sequential test class.
-Each application seeds its database once. Tests with service substitutes or
-custom host configuration retain isolated applications; echo results are
-accessed through their request-generated job IDs and reference tokens.
-All cases and assertions remain in the WFS 1–9 shard family on selected PR runs
-and twice-daily full trunk runs. This changes no runner count, required check
-name, required aggregate dependency, workflow, or shard definition.
-
-### ImageServer endpoint database lifetime
-
-`ImageServerEndpointsTests` retains a `PostgresFixture` reference for the class
-to avoid repeating shared database initialization between cases. Each case owns
-its configured application, isolated schema, and raster substitutes; the class
-fixture releases the infrastructure after the last case. Pure capability XML
-coverage lives in `ImageServerWmtsCapabilitiesTests` without a database fixture.
-Full trunk runs include every case; PR routing selects affected ImageServer shards.
-
-### Geocoding response fixture lifetime
-
-`GeocodingEndpointTests` uses one class-lifetime Community application for
-request-derived default-provider responses. Each case owns its HTTP client.
-Request-capture, custom-provider and Enterprise configurations own separate
-applications. Full trunk runs include every case; PR routing selects affected geocoding shards.
