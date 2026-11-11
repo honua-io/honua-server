@@ -67,8 +67,7 @@ internal sealed class GeoServerImportJobManager : IImportWorkerJobManager<GeoSer
     internal Task<ProgressCompareAndSetResult> TryTransitionAsync(
         string jobId, GeoServerImportProgress progress, OperationStatus expectedStatus,
         CancellationToken cancellationToken)
-        => _universalProgressStore.TrySetProgressAsync(jobId, progress, expectedStatus,
-            TimeSpan.FromHours(24), cancellationToken);
+        => _universalProgressStore.TrySetProgressAsync(new OperationProgressWrite(jobId, progress, TimeSpan.FromHours(24)), expectedStatus, cancellationToken);
 
     public void Dispose()
     {

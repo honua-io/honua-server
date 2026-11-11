@@ -221,16 +221,11 @@ public class PrintingToolsOrphanReconcilerTests
             return Task.CompletedTask;
         }
 
-        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(
-            string operationId,
-            IOperationProgress progress,
-            OperationStatus expectedStatus,
-            TimeSpan? ttl = null,
-            CancellationToken cancellationToken = default)
+        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(OperationProgressWrite write, OperationStatus expectedStatus, CancellationToken cancellationToken = default)
         {
             lock (_gate)
             {
-                if (!_items.TryGetValue(operationId, out var current))
+                if (!_items.TryGetValue(write.OperationId, out var current))
                 {
                     return Task.FromResult(ProgressCompareAndSetResult.NotFound);
                 }
@@ -240,24 +235,19 @@ public class PrintingToolsOrphanReconcilerTests
                     return Task.FromResult(ProgressCompareAndSetResult.StatusMismatch(current));
                 }
 
-                _items[operationId] = progress;
+                _items[write.OperationId] = write.Progress;
                 return Task.FromResult(ProgressCompareAndSetResult.Updated);
             }
         }
 
         public Action? BeforeSnapshotReplace { get; set; }
 
-        public Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(
-            string operationId,
-            IOperationProgress progress,
-            IOperationProgress expectedProgress,
-            TimeSpan? ttl = null,
-            CancellationToken cancellationToken = default)
+        public Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(OperationProgressWrite write, IOperationProgress expectedProgress, CancellationToken cancellationToken = default)
         {
             BeforeSnapshotReplace?.Invoke();
             lock (_gate)
             {
-                if (!_items.TryGetValue(operationId, out var current))
+                if (!_items.TryGetValue(write.OperationId, out var current))
                 {
                     return Task.FromResult(ProgressCompareAndSetResult.NotFound);
                 }
@@ -265,8 +255,8 @@ public class PrintingToolsOrphanReconcilerTests
                 {
                     return Task.FromResult(ProgressCompareAndSetResult.StatusMismatch(current));
                 }
-                _items[operationId] = progress;
-                if (progress.Status == OperationStatus.Failed)
+                _items[write.OperationId] = write.Progress;
+                if (write.Progress.Status == OperationStatus.Failed)
                 {
                     _terminalReplacement.TrySetResult(_enumerationCount);
                 }

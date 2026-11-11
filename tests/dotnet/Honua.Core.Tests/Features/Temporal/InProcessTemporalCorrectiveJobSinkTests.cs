@@ -145,17 +145,12 @@ public sealed class InProcessTemporalCorrectiveJobSinkTests
             return Task.CompletedTask;
         }
 
-        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(
-            string operationId,
-            IOperationProgress progress,
-            OperationStatus expectedStatus,
-            TimeSpan? ttl = null,
-            CancellationToken cancellationToken = default)
+        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(OperationProgressWrite write, OperationStatus expectedStatus, CancellationToken cancellationToken = default)
         {
             while (true)
             {
                 ProgressCompareAndSetResult result;
-                if (!_entries.TryGetValue(operationId, out var current))
+                if (!_entries.TryGetValue(write.OperationId, out var current))
                 {
                     result = ProgressCompareAndSetResult.NotFound;
                 }
@@ -163,7 +158,7 @@ public sealed class InProcessTemporalCorrectiveJobSinkTests
                 {
                     result = ProgressCompareAndSetResult.StatusMismatch(current);
                 }
-                else if (_entries.TryUpdate(operationId, progress, current))
+                else if (_entries.TryUpdate(write.OperationId, write.Progress, current))
                 {
                     result = ProgressCompareAndSetResult.Updated;
                 }

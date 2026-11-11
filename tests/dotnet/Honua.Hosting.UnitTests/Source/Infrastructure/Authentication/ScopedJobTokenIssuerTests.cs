@@ -10,11 +10,8 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
@@ -449,78 +446,45 @@ public sealed class ScopedJobTokenIssuerTests
             .Should().ThrowAsync<ArgumentException>();
     }
 
-    // ─── BH-028 regression ──────────────────────────────────────────────────────
-
     [UnitTest]
-    public async Task ValidateAsync_DistributedCacheThrows_FallsBackToMemoryCache()
+    public async Task ValidateAsync_OnASecondIssuerOverTheSameStore_AcceptsTheToken()
     {
-        // Regression test for BH-028: when distributedCache.GetAsync throws (Redis outage),
-        // the store previously evicted the memory cache entry and returned null, causing
-        // every in-flight geoprocessing job callback to be rejected for the duration of
-        // the outage.  After the fix, the memory tier is preserved as a fallback.
-        var mockDistCache = NSubstitute.Substitute.For<IDistributedCache>();
-        mockDistCache
-            .GetAsync(NSubstitute.Arg.Any<string>(), NSubstitute.Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromException<byte[]?>(new InvalidOperationException("Redis cluster failover")));
+        var sharedStore = new InMemorySecurityTokenStore();
+        var issuingNode = new ScopedJobTokenIssuer(sharedStore, NullLogger<ScopedJobTokenIssuer>.Instance);
+        var callbackNode = new ScopedJobTokenIssuer(sharedStore, NullLogger<ScopedJobTokenIssuer>.Instance);
+        var issuance = await issuingNode.IssueAsync(SampleJobToken(), CancellationToken.None);
 
-        var memCache = new MemoryCache(new MemoryCacheOptions());
-        var issuer = new ScopedJobTokenIssuer(memCache, NullLogger<ScopedJobTokenIssuer>.Instance, mockDistCache);
+        var validation = await callbackNode.ValidateAsync(issuance.Token, "gp-revoke-1", CancellationToken.None);
 
-        var issuance = await issuer.IssueAsync(
-            new ScopedJobTokenRequest(
-                PrincipalId: "alice",
-                TenantId: "tenant-A",
-                Roles: ["data-editor:parcels"],
-                Grants: [],
-                JobId: "gp-bh028-1",
-                ResourceScope: [new JobResourceScopeEntry("parcels", null, JobResourceAccess.Read)],
-                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30)),
-            CancellationToken.None);
-
-        // Distributed cache throws → before the fix: memory entry evicted, null returned.
-        // After the fix: falls back to the memory tier.
-        var validation = await issuer.ValidateAsync(
-            issuance.Token, "gp-bh028-1", CancellationToken.None);
-
-        validation.Should().NotBeNull(
-            "the token must validate from memory cache during a Redis outage (BH-028)");
-        validation!.JobId.Should().Be("gp-bh028-1");
-        validation.Principal.Identity!.IsAuthenticated.Should().BeTrue();
+        validation.Should().NotBeNull("the node a worker calls back to is rarely the node that issued the token");
+        await issuingNode.RevokeAsync(issuance.Token, CancellationToken.None);
+        (await callbackNode.ValidateAsync(issuance.Token, "gp-revoke-1", CancellationToken.None)).Should().BeNull();
     }
 
     [UnitTest]
-    public async Task RevokeAsync_DistributedCacheRemoveThrows_ThrowsServiceUnavailable()
+    public async Task IssueAsync_StoreUnavailable_ThrowsSoTheTokenIsNotHandedOut()
     {
-        var cache = Substitute.For<IDistributedCache>();
-        cache.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException(new RedisConnectionException(
-                ConnectionFailureType.UnableToConnect, "redis down")));
-        cache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns<Task<byte[]?>>(_ => throw new RedisConnectionException(
-                ConnectionFailureType.UnableToConnect, "redis down"));
-        using var memory = new MemoryCache(new MemoryCacheOptions());
-        var issuer = new ScopedJobTokenIssuer(memory, NullLogger<ScopedJobTokenIssuer>.Instance, cache);
-        var issuance = await issuer.IssueAsync(SampleJobToken(), CancellationToken.None);
+        var store = Substitute.For<ISecurityTokenStore>();
+        store.StoreAsync(default, default, default, default)
+            .ReturnsForAnyArgs(Task.FromException(new InvalidOperationException("database unavailable")));
+        var issuer = new ScopedJobTokenIssuer(store, NullLogger<ScopedJobTokenIssuer>.Instance);
 
-        var act = () => issuer.RevokeAsync(issuance.Token, CancellationToken.None);
+        var issue = () => issuer.IssueAsync(SampleJobToken(), CancellationToken.None);
 
-        await act.Should().ThrowAsync<ServiceUnavailableException>();
+        await issue.Should().ThrowAsync<InvalidOperationException>();
     }
 
     [UnitTest]
-    public async Task RevokeAsync_DistributedCacheRemoveThrowsButKeyIsGone_Succeeds()
+    public async Task RevokeAsync_StoreUnavailable_ThrowsServiceUnavailable()
     {
-        var cache = Substitute.For<IDistributedCache>();
-        cache.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException(new RedisConnectionException(
-                ConnectionFailureType.UnableToConnect, "delete denied")));
-        cache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<byte[]?>(null));
-        using var memory = new MemoryCache(new MemoryCacheOptions());
-        var issuer = new ScopedJobTokenIssuer(memory, NullLogger<ScopedJobTokenIssuer>.Instance, cache);
-        var issuance = await issuer.IssueAsync(SampleJobToken(), CancellationToken.None);
+        var store = Substitute.For<ISecurityTokenStore>();
+        store.RevokeAsync(default, default)
+            .ReturnsForAnyArgs(Task.FromException(new InvalidOperationException("database unavailable")));
+        var issuer = new ScopedJobTokenIssuer(store, NullLogger<ScopedJobTokenIssuer>.Instance);
 
-        await issuer.RevokeAsync(issuance.Token, CancellationToken.None);
+        var revoke = () => issuer.RevokeAsync("a-token", CancellationToken.None);
+
+        await revoke.Should().ThrowAsync<ServiceUnavailableException>();
     }
 
     private static ScopedJobTokenRequest SampleJobToken()
@@ -540,7 +504,6 @@ public sealed class ScopedJobTokenIssuerTests
 
     private static ScopedJobTokenIssuer CreateIssuer()
     {
-        var memoryCache = new MemoryCache(new MemoryCacheOptions());
-        return new ScopedJobTokenIssuer(memoryCache, NullLogger<ScopedJobTokenIssuer>.Instance);
+        return new ScopedJobTokenIssuer(new InMemorySecurityTokenStore(), NullLogger<ScopedJobTokenIssuer>.Instance);
     }
 }

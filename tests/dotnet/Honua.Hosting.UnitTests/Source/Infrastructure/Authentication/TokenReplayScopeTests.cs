@@ -3,13 +3,14 @@
 
 using System.IdentityModel.Tokens.Jwt;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
-using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Internal;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
-using StackExchange.Redis;
 using static Honua.Infrastructure.Authentication.OidcAuthenticationExtensions;
 
 namespace Honua.Hosting.UnitTests.Authentication;
@@ -23,12 +24,10 @@ public sealed class TokenReplayScopeTests
     [InlineData("http")]
     [InlineData("legacy")]
     [InlineData("modern")]
-    public async Task Memory_ValidTokenBeyondOldWindow_RetainsSurfaceIsolationAndNeverRefreshesExpiry(string initialSurface)
+    public async Task ValidTokenBeyondOldWindow_RetainsSurfaceIsolationAndNeverRefreshesExpiry(string initialSurface)
     {
         var time = new TransitionClock();
-        var cacheClock = Substitute.For<ISystemClock>();
-        cacheClock.UtcNow.Returns(_ => time.GetUtcNow());
-        using var cache = new MemoryCache(new MemoryCacheOptions { Clock = cacheClock });
+        var replays = new InMemoryTokenReplayStore(time);
         var key = Guid.NewGuid().ToString();
         var token = new JwtSecurityToken(expires: time.GetUtcNow().UtcDateTime.AddHours(1));
         var expiry = GetReplayCacheExpiration(token, new TokenValidationOptions(), time.GetUtcNow().UtcDateTime)!.Value;
@@ -39,61 +38,60 @@ public sealed class TokenReplayScopeTests
             "legacy" => TokenReplayScope.ContinuationSurface(null),
             _ => modern
         };
-        Assert.Equal(TokenReplayRegistrationResult.Registered, (await RegisterAsync(cache, key, initial, expiry)).Result);
-        var admission = new TokenReplayAdmissionFeature(key, expiry, TokenReplayStore.Memory, initial);
-        var binding = await TryBindTokenReplayContinuationAsync(admission, "session-a", null, cache, NullLogger.Instance, default);
-        Assert.Equal(initialSurface == "legacy", binding);
+        Assert.Equal(TokenReplayRegistrationResult.Registered, (await RegisterAsync(replays, key, initial, expiry)).Result);
+        var admission = new TokenReplayAdmissionFeature(key, initial);
+        Assert.Equal(initialSurface == "legacy", await BindAsync(replays, admission, "session-a"));
         var currentScope = initialSurface == "legacy"
             ? TokenReplayScope.ContinuationSurface(BuildTokenReplayContinuationMarker("session-a")) : initial;
-        var expectedMarker = cache.Get<string>(key);
         time.Advance(TimeSpan.FromMinutes(15));
-        var same = await RegisterAsync(cache, key, currentScope, expiry);
+        var same = await RegisterAsync(replays, key, currentScope, expiry);
         Assert.Equal(initialSurface == "legacy" ? TokenReplayRegistrationResult.Continued : TokenReplayRegistrationResult.Reused, same.Result);
         var otherScopes = initialSurface == "modern"
             ? new[] { TokenReplayScope.HttpApi, TokenReplayScope.ContinuationSurface(null), TokenReplayScope.ContinuationSurface(BuildTokenReplayContinuationMarker("session-a")) }
             : new[] { modern };
         foreach (var other in otherScopes)
         {
-            Assert.Equal(TokenReplayRegistrationResult.ReplayDetected, (await RegisterAsync(cache, key, other, expiry)).Result);
+            Assert.Equal(TokenReplayRegistrationResult.ReplayDetected, (await RegisterAsync(replays, key, other, expiry)).Result);
         }
-        Assert.Equal(expectedMarker, cache.Get<string>(key));
+
         time.Advance(TimeSpan.FromMinutes(49));
-        await RegisterAsync(cache, key, currentScope, expiry.AddHours(1));
+        await RegisterAsync(replays, key, currentScope, expiry.AddHours(1));
         if (initialSurface == "legacy")
         {
-            Assert.True(await TryBindTokenReplayContinuationAsync(admission, "session-a", null, cache, NullLogger.Instance, default));
+            Assert.True(await BindAsync(replays, admission, "session-a"));
         }
-        Assert.True(cache.TryGetValue(key, out _));
+
+        Assert.Equal(same.Result, (await RegisterAsync(replays, key, currentScope, expiry)).Result);
         time.Advance(TimeSpan.FromMinutes(2));
-        Assert.False(cache.TryGetValue(key, out _));
+        Assert.Equal(TokenReplayRegistrationResult.Registered, (await RegisterAsync(replays, key, modern, expiry.AddHours(1))).Result);
     }
 
     [UnitTest]
-    public async Task Memory_RepeatedBindingWithLaterAdmissionExpiration_KeepsOriginalExpiration()
+    public async Task RepeatedBindingWithLaterAdmissionExpiration_KeepsOriginalExpiration()
     {
         var time = new TransitionClock();
-        var cacheClock = Substitute.For<ISystemClock>();
-        cacheClock.UtcNow.Returns(_ => time.GetUtcNow());
-        using var cache = new MemoryCache(new MemoryCacheOptions { Clock = cacheClock });
+        var replays = new InMemoryTokenReplayStore(time);
         var key = Guid.NewGuid().ToString();
-        var originalExpiration = time.GetUtcNow().UtcDateTime.AddMinutes(10);
-        var laterExpiration = time.GetUtcNow().UtcDateTime.AddMinutes(65);
         var initialScope = TokenReplayScope.ContinuationSurface(null);
-        Assert.Equal(TokenReplayRegistrationResult.Registered, (await RegisterAsync(cache, key, initialScope, originalExpiration)).Result);
-        var originalAdmission = new TokenReplayAdmissionFeature(key, originalExpiration, TokenReplayStore.Memory);
-        Assert.True(await TryBindTokenReplayContinuationAsync(originalAdmission, "session-a", null, cache, NullLogger.Instance, default));
+        Assert.Equal(TokenReplayRegistrationResult.Registered,
+            (await RegisterAsync(replays, key, initialScope, DateTime.UtcNow.AddMinutes(10))).Result);
+        var admission = new TokenReplayAdmissionFeature(key);
+        Assert.True(await BindAsync(replays, admission, "session-a"));
         var continuedScope = TokenReplayScope.ContinuationSurface(BuildTokenReplayContinuationMarker("session-a"));
-        Assert.Equal(TokenReplayRegistrationResult.Continued, (await RegisterAsync(cache, key, continuedScope, laterExpiration)).Result);
-        var laterAdmission = new TokenReplayAdmissionFeature(key, laterExpiration, TokenReplayStore.Memory);
-        Assert.True(await TryBindTokenReplayContinuationAsync(laterAdmission, "session-a", null, cache, NullLogger.Instance, default));
+        Assert.Equal(TokenReplayRegistrationResult.Continued,
+            (await RegisterAsync(replays, key, continuedScope, DateTime.UtcNow.AddMinutes(65))).Result);
+        Assert.True(await BindAsync(replays, admission, "session-a"));
+
         time.Advance(TimeSpan.FromMinutes(11));
-        Assert.False(cache.TryGetValue(key, out _));
+
+        Assert.Equal(TokenReplayRegistrationResult.Registered,
+            (await RegisterAsync(replays, key, initialScope, DateTime.UtcNow.AddMinutes(10))).Result);
     }
 
     [UnitTest]
-    public async Task Memory_ConcurrentModernFirstUse_RegistersOnceAndRefusesAnotherValidatedToken()
+    public async Task ConcurrentModernFirstUse_RegistersOnceAndRefusesAnotherValidatedToken()
     {
-        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var replays = new InMemoryTokenReplayStore();
         var key = Guid.NewGuid().ToString();
         var expiry = DateTime.UtcNow.AddHours(1);
         var scope = TokenReplayScope.ReusableSurface("mcp", "validated-token-a");
@@ -101,42 +99,71 @@ public sealed class TokenReplayScopeTests
         var requests = Enumerable.Range(0, 24).Select(_ => Task.Run(async () =>
         {
             await barrier.Task;
-            return await RegisterAsync(cache, key, scope, expiry);
+            return await RegisterAsync(replays, key, scope, expiry);
         })).ToArray();
         barrier.SetResult();
         var results = await Task.WhenAll(requests);
         Assert.Single(results, result => result.Result == TokenReplayRegistrationResult.Registered);
         Assert.Equal(23, results.Count(result => result.Result == TokenReplayRegistrationResult.Reused));
         var changed = TokenReplayScope.ReusableSurface("mcp", "validated-token-b");
-        Assert.Equal(TokenReplayRegistrationResult.ReplayDetected, (await RegisterAsync(cache, key, changed, expiry)).Result);
-        Assert.Equal(scope.RegistrationValue, cache.Get<string>(key));
+        Assert.Equal(TokenReplayRegistrationResult.ReplayDetected, (await RegisterAsync(replays, key, changed, expiry)).Result);
+        Assert.Equal(TokenReplayRegistrationResult.Reused, (await RegisterAsync(replays, key, scope, expiry)).Result);
     }
 
     [UnitTest]
-    public async Task Memory_ExpiredRegistration_IsNotCreatedWithSlidingFallback()
+    public async Task ExpiredPresentation_IsNotRecorded()
     {
-        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var replays = new InMemoryTokenReplayStore();
         var key = Guid.NewGuid().ToString();
-        var result = await RegisterAsync(cache, key, TokenReplayScope.HttpApi, DateTime.UtcNow.AddMinutes(-1));
+
+        var result = await RegisterAsync(replays, key, TokenReplayScope.HttpApi, DateTime.UtcNow.AddMinutes(-1));
+
         Assert.Equal(TokenReplayRegistrationResult.Unavailable, result.Result);
-        Assert.False(cache.TryGetValue(key, out _));
+        Assert.False(result.Recorded);
+        Assert.Equal(TokenReplayRegistrationResult.Registered,
+            (await RegisterAsync(replays, key, TokenReplayScope.HttpApi, DateTime.UtcNow.AddMinutes(5))).Result);
     }
 
     [UnitTheory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task Register_SharedStoreUnavailable_PreservesConfiguredFailClosedBehavior(bool failClosed)
+    public async Task Register_SharedStoreUnavailable_FollowsTheConfiguredFailClosedSetting(bool failClosed)
     {
-        using var cache = new MemoryCache(new MemoryCacheOptions());
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        redis.IsConnected.Returns(false);
-        var key = Guid.NewGuid().ToString();
-        var result = await TryRegisterTokenReplayAsync(key, DateTime.UtcNow.AddHours(1), redis, cache, failClosed,
-            TokenReplayScope.ReusableSurface("mcp", "validated-token"), NullLogger.Instance, default);
-        Assert.Equal(failClosed ? TokenReplayRegistrationResult.Unavailable : TokenReplayRegistrationResult.Registered, result.Result);
-        Assert.Equal(!failClosed, cache.TryGetValue(key, out _));
+        var replays = Substitute.For<ITokenReplayStore>();
+        replays.TryRegisterAsync(default, default)
+            .ReturnsForAnyArgs(Task.FromException<TokenReplayRegistrationOutcome>(new InvalidOperationException("database unavailable")));
+
+        var result = await TryRegisterTokenReplayAsync(
+            new TokenReplayPresentation(Guid.NewGuid().ToString(), DateTime.UtcNow.AddHours(1), TokenReplayScope.ReusableSurface("mcp", "validated-token")),
+            replays, failClosed, NullLogger.Instance, default);
+
+        Assert.Equal(failClosed ? TokenReplayRegistrationResult.Unavailable : TokenReplayRegistrationResult.Skipped, result.Result);
+        Assert.False(result.Recorded);
     }
 
-    private static Task<TokenReplayRegistration> RegisterAsync(MemoryCache cache, string key, TokenReplayScope scope, DateTime expiry) =>
-        TryRegisterTokenReplayAsync(key, expiry, null, cache, true, scope, NullLogger.Instance, default);
+    [UnitTest]
+    public async Task Bind_SharedStoreUnavailable_ReturnsFalse()
+    {
+        var replays = Substitute.For<ITokenReplayStore>();
+        replays.TryRebindAsync(default, default)
+            .ReturnsForAnyArgs(Task.FromException<bool>(new InvalidOperationException("database unavailable")));
+
+        Assert.False(await BindAsync(replays, new TokenReplayAdmissionFeature(Guid.NewGuid().ToString()), "session-a"));
+    }
+
+    private static Task<TokenReplayRegistration> RegisterAsync(ITokenReplayStore replays, string key, TokenReplayScope scope, DateTime expiry) =>
+        TryRegisterTokenReplayAsync(new TokenReplayPresentation(key, expiry, scope), replays, true, NullLogger.Instance, default);
+
+    private static Task<bool> BindAsync(ITokenReplayStore replays, TokenReplayAdmissionFeature admission, string continuationId)
+    {
+        var context = new DefaultHttpContext
+        {
+            RequestServices = new ServiceCollection()
+                .AddSingleton(replays)
+                .AddSingleton<ILogger<OidcAuthenticationOptions>>(NullLogger<OidcAuthenticationOptions>.Instance)
+                .BuildServiceProvider()
+        };
+        context.Features.Set(admission);
+        return TryBindTokenReplayContinuationAsync(context, continuationId);
+    }
 }
