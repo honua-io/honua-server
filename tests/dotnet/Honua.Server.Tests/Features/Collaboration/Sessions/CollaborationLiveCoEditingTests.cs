@@ -341,7 +341,7 @@ public sealed class CollaborationLiveCoEditingTests
             $"/api/v1/saved-maps/{draft.DraftId:D}/collaboration/operations", appendContent);
         var appendText = await appendResponse.Content.ReadAsStringAsync();
         appendResponse.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, "append response body: {0}", appendText);
-        appendText.Should().Contain("replica-shared");
+        appendText.Should().Contain("same node");
 
         using var content = new StringContent("{}", Encoding.UTF8, "application/json");
         using var response = await client.PostAsync(
