@@ -765,3 +765,12 @@ accessed through their request-generated job IDs and reference tokens.
 All cases and assertions remain in the WFS 1–9 shard family on selected PR runs
 and twice-daily full trunk runs. This changes no runner count, required check
 name, required aggregate dependency, workflow, or shard definition.
+
+### ImageServer endpoint database lifetime
+
+`ImageServerEndpointsTests` retains a `PostgresFixture` reference for the class
+to avoid repeating shared database initialization between cases. Each case owns
+its configured application, isolated schema, and raster substitutes; the class
+fixture releases the infrastructure after the last case. Pure capability XML
+coverage lives in `ImageServerWmtsCapabilitiesTests` without a database fixture.
+Full trunk runs include every case; PR routing selects affected ImageServer shards.

@@ -722,3 +722,9 @@ GitHub's specific clean-status response ends neutrally; other API errors fail.
 The WFS 1–9 shard family includes `Wps20EndpointsTests`. See
 [WPS endpoint fixture lifetime](gate-model.md#wps-endpoint-fixture-lifetime)
 for its class-scoped applications and isolated custom-host cases.
+
+### ImageServer endpoint fixtures
+
+See [ImageServer endpoint database lifetime](gate-model.md#imageserver-endpoint-database-lifetime)
+for endpoint isolation and database reuse. The pure WMTS capability unit test runs
+without a database fixture in the ImageServer Rendering and Support shard.
