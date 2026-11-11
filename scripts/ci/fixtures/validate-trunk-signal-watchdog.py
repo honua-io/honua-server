@@ -17,14 +17,14 @@ STEP = DEFINITION['jobs']['watch']['steps'][0]
 
 
 class WatchdogTests(unittest.TestCase):
-    def run_watchdog(self, scheduled, *, recent_result=True, existing=False, runs=None):
+    def run_watchdog(self, scheduled, *, existing=False, runs=None):
         harness = r'''
 const vm = require('node:vm');
 const input = JSON.parse(process.argv[1]);
 const now = Date.parse('2026-11-11T12:00:00Z');
 const calls = [];
 const result = {status: 'completed', conclusion: 'success',
-  updated_at: new Date(now - (input.recent_result ? 1 : 3) * 3600000).toISOString(),
+  updated_at: new Date(now - 3600000).toISOString(),
   html_url: 'https://example.test/result'};
 const sandbox = {
   context: {repo: {owner: 'example', repo: 'server'}},
@@ -48,8 +48,7 @@ vm.runInNewContext('(async () => {' + input.script + '})()', sandbox)
   .then(() => process.stdout.write(JSON.stringify(calls)))
   .catch(error => { console.error(error); process.exitCode = 1; });
 '''
-        payload = dict(scheduled=scheduled, recent_result=recent_result,
-                       existing=existing, runs=runs, env=STEP['env'], script=STEP['with']['script'])
+        payload = dict(scheduled=scheduled, existing=existing, runs=runs, env=STEP['env'], script=STEP['with']['script'])
         completed = subprocess.run(['node', '-e', harness, json.dumps(payload)],
                                    text=True, capture_output=True, check=True)
         return json.loads(completed.stdout)
@@ -88,7 +87,7 @@ vm.runInNewContext('(async () => {' + input.script + '})()', sandbox)
     def test_idle_trunk_does_not_require_continuous_results(self):
         calls = self.run_watchdog([
             {'status': 'completed', 'run_started_at': '2026-11-11T09:00:00Z'}
-        ], recent_result=False)
+        ], runs=[{'status': 'completed', 'conclusion': 'success', 'updated_at': '2026-11-11T09:00:00Z'}])
         self.assertFalse(any(kind == 'failed' for kind, _ in calls))
 
     def test_latest_completion_and_current_queue_attempt_are_used(self):
@@ -104,7 +103,7 @@ vm.runInNewContext('(async () => {' + input.script + '})()', sandbox)
     def test_fresh_schedule_does_not_hide_stale_result(self):
         calls = self.run_watchdog([
             {'status': 'completed', 'run_started_at': '2026-11-11T11:00:00Z'}
-        ], recent_result=False, runs=[
+        ], runs=[
             {'status': 'completed', 'conclusion': 'success', 'updated_at': '2026-11-11T09:00:00Z'},
             {'status': 'in_progress'},
         ])
