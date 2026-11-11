@@ -7,14 +7,8 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Ai.Protocols.Mcp;
-using Honua.Ai.Protocols.Mcp.MapTools;
-using Honua.Ai.Protocols.Mcp.Tools;
-using Honua.Core.Configuration;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
-using Honua.Core.Features.Attachments.Abstractions;
-using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
@@ -23,15 +17,12 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Models;
-using Honua.Db.Postgres.Features.Attachments;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Npgsql;
 using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 using Honua.Core.Features.Licensing.Domain;
@@ -45,7 +36,7 @@ namespace Honua.Server.Tests.Admin;
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
-public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
+public sealed partial class LayerPublishingIntegrationTests : IClassFixture<LayerPublishingIntegrationTests.PublishingFixture>, IAsyncLifetime
 {
     private static readonly string[] _idNameFields = ["id", "name"];
     private static readonly string[] _idNamePopulationFields = ["id", "name", "population"];
@@ -56,7 +47,8 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
     };
     private const string PublishSchema = "public";
 
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    private readonly PublishingFixture _publishingFixture;
+    private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
     private string _schema = string.Empty;
     private Guid _connectionId;
@@ -67,42 +59,19 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
     private string _serviceName = string.Empty;
     private string? _retainedSourceServiceName;
     private int? _layerId;
-    private bool _missingLayerSrid;
     private string? _importedTableName;
     private string? _legacyImportedTableName;
     private string? _importedTableSchema;
 
+    public LayerPublishingIntegrationTests(PublishingFixture publishingFixture)
+    {
+        _publishingFixture = publishingFixture;
+        _fixture = publishingFixture.Host;
+    }
+
     public async Task InitializeAsync()
     {
-        _fixture.DecorateService<IFeatureCacheManager>(inner =>
-            new MissingSridCacheManager(inner, layerId => _missingLayerSrid && layerId == _layerId));
-        // Program skips provider infrastructure in Test, and WebAppFixture installs
-        // the graph provider after AddServerFeatures has run. Register the same
-        // catalog-only MCP surface after that fixture provider composition.
-        _fixture.ConfigureServices(services =>
-        {
-            services.AddMcpCatalogPublicationSurface();
-            // The Test host composes MCP before the fixture graph provider exists, so
-            // honua_query_features is absent unless this production tool is registered here.
-            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, QueryFeaturesTool>());
-            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ListLayersTool>());
-            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, DescribeLayerTool>());
-            // Publication metadata is stored in the canonical honua schema. Use its
-            // production attachment authority as well; the fixture's isolated feature
-            // schema is not a second attachment authority for these publications.
-            services.RemoveAll<PostgresAttachmentStore>();
-            services.AddScoped(serviceProvider => new PostgresAttachmentStore(
-                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
-                serviceProvider.GetService<ICloudFileStorage>(),
-                serviceProvider.GetRequiredService<ILogger<PostgresAttachmentStore>>(),
-                schemaName: "honua",
-                orphanLedger: serviceProvider.GetRequiredService<IAttachmentOrphanLedger>(),
-                attachmentLimits: serviceProvider.GetService<IOptions<LimitsOptions>>()?.Value.Attachments
-                    ?? new AttachmentLimits(),
-                migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!));
-        });
-        await _fixture.InitializeAsync();
-        await ServerTestData.EnsureFixtureAttachmentsAsync(_fixture.Postgres, "honua");
+        await _publishingFixture.ResetAsync();
         _client = _fixture.CreateAdminClient();
         _schema = PublishSchema;
         _tableName = $"layer_{Guid.NewGuid():N}";
@@ -119,7 +88,8 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         await DeleteSecureConnectionAsync();
         await DropPostGisTableAsync();
         await DropImportedTableAsync();
-        await _fixture.DisposeAsync();
+        _client.Dispose();
+        await _publishingFixture.ClearMissingSridAsync();
     }
 
     [IntegrationTheory]
@@ -1675,7 +1645,7 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         // Model a missing catalog SRID without altering the shared catalog's NOT NULL
         // constraint. The stored row and transform expression index still require a
         // valid SRID even for an attribute-only UPDATE.
-        _missingLayerSrid = true;
+        _publishingFixture.MissingSridLayerId = _layerId;
         await using (var connection = await _fixture.Postgres.GetConnectionAsync())
         {
             await using var command = connection.CreateCommand();

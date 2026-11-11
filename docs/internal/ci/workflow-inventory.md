@@ -683,3 +683,11 @@ Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
 revocation: a human or drain lane owns any manually armed dependency PR.
 If mergeability becomes clean between the live query and enable mutation, only
 GitHub's specific clean-status response ends neutrally; other API errors fail.
+
+### Layer publishing shared application fixture
+
+`LayerPublishingIntegrationTests` reuses its customized application host for the class.
+Each case still reseeds the database, restores the metadata graph with a fresh revision,
+and creates and cleans up its own source tables and secure connection. The missing-SRID
+case also clears its cache override and temporary index. Test names, assertions, shard
+filters, timeouts, required checks, and aggregate dependencies remain unchanged.
