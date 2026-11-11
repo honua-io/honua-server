@@ -761,6 +761,22 @@ and Authorization 7 shards on selected PR runs and twice-daily full trunk runs.
 This changes no runner count, required check name, required aggregate
 dependency, workflow, or shard definition.
 
+### FeatureServer endpoint fixture lifetime
+
+FeatureServerEndpointTests starts one seeded, Pro-licensed application per test
+class, through an xUnit class fixture, and every read-only metadata and query
+case reuses it with the same schema and editing capabilities. Any case that
+edits features, adds data or changes metadata calls
+`UseIsolatedApplicationAsync()` first and gets its own application and schema,
+which is disposed when the case ends. The shared application is never written
+to, so the read-only cases do not depend on order. The class still runs one case
+at a time in the `Database.CoreEndpoints` collection, and method names are
+unchanged, so the Core Endpoints shard filter is unaffected.
+All cases and assertions remain in the Core Endpoints, Core Endpoint Queries,
+and Core Endpoint Mutations shards on selected PR runs and twice-daily full
+trunk runs. This changes no runner count, required check name, required
+aggregate dependency, workflow, or shard definition.
+
 ## Trailing affected CI selection
 
 Trailing affected CI refreshes its completed-ancestor base when the selection job starts,
