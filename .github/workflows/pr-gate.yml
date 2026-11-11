@@ -251,6 +251,9 @@ jobs:
     needs: runner-select
     runs-on: ${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 45
+    outputs:
+      producer-attempt: ${{ steps.managed-producer.outputs.producer-attempt }}
+      managed-sdk-version: ${{ steps.managed-sdk.outputs.dotnet-sdk-version }}
     steps:
       # `rerun-failed-jobs` only releases jobs that failed attempt 1. Make this
       # independent path an admission failure too, otherwise a skipped-success
@@ -282,6 +285,7 @@ jobs:
         run: scripts/ci/docs-only-diff.sh --github-output
 
       - name: Setup .NET
+        id: managed-sdk
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: ./.github/actions/setup-dotnet-ci
         with:
@@ -312,6 +316,7 @@ jobs:
           run-analyzers: 'false'
 
       - name: Publish selected server test outputs
+        id: managed-producer
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: ./.github/actions/managed-test-artifacts
         with:
@@ -814,16 +819,8 @@ jobs:
       - name: Start freeing disk space
         run: scripts/ci/server-test-shard-free-disk.sh
 
-      - name: Setup .NET
-        uses: ./.github/actions/setup-dotnet-ci
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-          artifact-sdk-version: ${{ needs.pr-gate.outputs.managed-sdk-version }}
-
-      - name: Wait for free disk space
-        run: scripts/ci/server-test-shard-free-disk.sh --await
-
       - name: Plan affected shard binary consumer
+        id: consumer-plan
         env:
           SHARD_CSPROJ: ${{ matrix.csproj }}
           SHARD_CSPROJS: ${{ toJSON(matrix.csprojs) }}
@@ -831,14 +828,25 @@ jobs:
           mkdir -p artifacts/pr-gate
           python3 scripts/ci/managed-test-build.py projects --lane shard --project "${SHARD_CSPROJ}" --projects-json "${SHARD_CSPROJS}" --output "artifacts/pr-gate/managed-projects.json"
 
+          python3 scripts/ci/partition-managed-producer.py consumer --projects-file "artifacts/pr-gate/managed-projects.json" --output "${GITHUB_OUTPUT}"
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          artifact-sdk-version: ${{ steps.consumer-plan.outputs.producer == 'server' && needs.server-test-producer.outputs.managed-sdk-version || needs.pr-gate.outputs.managed-sdk-version }}
+
+      - name: Wait for free disk space
+        run: scripts/ci/server-test-shard-free-disk.sh --await
+
       - name: Restore verified managed test outputs
         id: managed-consumer
         uses: ./.github/actions/managed-test-artifacts
         with:
           mode: consume
           projects-file: artifacts/pr-gate/managed-projects.json
-          producer-attempt: ${{ needs.pr-gate.outputs.producer-attempt }}
-          enabled: ${{ vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' && 'true' || 'false' }}
+          producer-attempt: ${{ steps.consumer-plan.outputs.producer == 'server' && needs.server-test-producer.outputs.producer-attempt || needs.pr-gate.outputs.producer-attempt }}
+          enabled: ${{ steps.consumer-plan.outputs.producer != 'none' && vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' && 'true' || 'false' }}
 
       - name: Build missing managed test outputs
         timeout-minutes: 20

@@ -2,14 +2,18 @@
 """Select independent PR fast-test groups from the shared affected closure."""
 import argparse
 import fnmatch
+from importlib import import_module
 import json
 import os
 import posixpath
 from pathlib import Path
 import subprocess
+import sys
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+build_documents = import_module('test-projects').build_documents
 GROUPS = ('architecture', 'unit-fast', 'server-fast', 'server-governance')
 
 
@@ -24,21 +28,25 @@ def select(closure, roots):
 
 
 def linked_patterns(project):
-    for node in ET.parse(ROOT / project).getroot().iter():
-        if node.tag.rsplit('}', 1)[-1] in {'Compile', 'Content', 'EmbeddedResource', 'None'}:
-            yield from node.attrib.get('Include', '').replace('\\', '/').split(';')
-
-
-def normalize_link(project, include):
-    if '$(' in include:
-        raise ValueError('Cannot resolve linked build input')
-    return posixpath.normpath(posixpath.join(posixpath.dirname(project), include))
+    for tree, base in build_documents(ROOT, project):
+        for node in tree.getroot().iter():
+            if node.tag.rsplit('}', 1)[-1] not in {'Compile', 'Content', 'EmbeddedResource', 'None'}:
+                continue
+            for include in node.attrib.get('Include', '').replace('\\', '/').split(';'):
+                include = include.replace('$(MSBuildThisFileDirectory)', str(base) + '/')
+                if not include:
+                    continue
+                if any(token in include for token in ('$(', '@(')):
+                    raise ValueError('Cannot resolve linked build input')
+                path = posixpath.normpath(str(base / include))
+                if not Path(path).is_relative_to(ROOT):
+                    raise ValueError('External linked build input')
+                yield Path(path).relative_to(ROOT).as_posix()
 
 
 def linked_inputs(changed, members):
-    """The shared P2P closure cannot represent files linked from another directory."""
-    patterns = (normalize_link(project, include) for project in members
-                for include in linked_patterns(project) if include.startswith('../'))
+    """The shared P2P closure cannot represent linked or imported file inputs."""
+    patterns = (pattern for project in members for pattern in linked_patterns(project))
     return any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns for path in changed)
 
 

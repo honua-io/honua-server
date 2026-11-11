@@ -25,6 +25,15 @@ def main_projects(projects):
     return sorted(checked_projects(projects) - {SERVER})
 
 
+def consumer_producer(projects):
+    selected = checked_projects(projects)
+    if selected == {SERVER}:
+        return 'server'
+    # A mixed shard must rebuild locally rather than combine potentially
+    # incompatible SDK outputs from the two independently resolved producers.
+    return 'none' if SERVER in selected else 'main'
+
+
 @dataclass(frozen=True)
 class BuildFilterRequest:
     root: Path
@@ -69,13 +78,19 @@ def exclude_server(request):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=['server-projects', 'main-projects', 'filter'])
+    parser.add_argument('operation', choices=['server-projects', 'main-projects', 'consumer', 'filter'])
     parser.add_argument('--projects-file', type=Path)
     parser.add_argument('--mode')
     parser.add_argument('--filter', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    if args.operation in {'server-projects', 'main-projects'}:
+    if args.operation == 'consumer':
+        if args.projects_file is None:
+            parser.error('consumer requires --projects-file')
+        producer = consumer_producer(json.loads(args.projects_file.read_text()))
+        with args.output.open('a') as output:
+            output.write(f'producer={producer}\n')
+    elif args.operation in {'server-projects', 'main-projects'}:
         if args.projects_file is None:
             parser.error('project partition requires --projects-file')
         select = server_projects if args.operation == 'server-projects' else main_projects

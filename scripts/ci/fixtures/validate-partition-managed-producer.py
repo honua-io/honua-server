@@ -28,6 +28,13 @@ class ProducerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 partition.main_projects(invalid)
 
+    def test_consumer_selects_own_identity_and_rebuilds_mixed_projects(self):
+        self.assertEqual('server', partition.consumer_producer([SERVER]))
+        self.assertEqual('main', partition.consumer_producer([OTHER]))
+        self.assertEqual('none', partition.consumer_producer([SERVER, OTHER]))
+        with self.assertRaises(ValueError):
+            partition.consumer_producer([None])
+
     def make_root(self, root, reference=''):
         for project in [SERVER, OTHER]:
             path = root / project

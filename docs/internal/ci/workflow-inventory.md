@@ -645,3 +645,5 @@ projects: when selected, each restores and builds by its own project path before
 managed outputs are published. Restore and build failures remain gating, with
 the same warnings, analyzers and graph-build settings as the solution build.
 Unknown projects outside the solution still fail planning; test selection is unchanged.
+
+Each affected shard selects the SDK and workflow-attempt identity exported by its own managed producer. A shard spanning both producers rebuilds its projects locally instead of combining independently resolved SDK outputs. Fast-test selection reads imported build documents through the shared project parser; unresolved imports or linked inputs retain all four groups.

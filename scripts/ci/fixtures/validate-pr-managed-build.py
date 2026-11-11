@@ -39,6 +39,22 @@ class PrManagedBuildTests(unittest.TestCase):
                          'Publish selected server test outputs']:
             self.assertIn(contract, producer)
 
+    def test_consumers_select_their_own_producer_sdk_and_attempt(self):
+        import yaml
+        jobs = yaml.safe_load(TEXT)['jobs']
+        producer = jobs['server-test-producer']
+        self.assertIn('managed-sdk', producer['outputs']['managed-sdk-version'])
+        self.assertIn('managed-producer', producer['outputs']['producer-attempt'])
+        steps = jobs['affected-shard']['steps']
+        plan = next(step for step in steps if step.get('id') == 'consumer-plan')
+        sdk = next(step for step in steps if step.get('name') == 'Setup .NET')
+        consume = next(step for step in steps if step.get('id') == 'managed-consumer')
+        self.assertLess(steps.index(plan), steps.index(sdk))
+        self.assertIn('partition-managed-producer.py consumer', plan['run'])
+        self.assertIn('needs.server-test-producer.outputs.managed-sdk-version', sdk['with']['artifact-sdk-version'])
+        self.assertIn('needs.server-test-producer.outputs.producer-attempt', consume['with']['producer-attempt'])
+        self.assertIn("outputs.producer != 'none'", consume['with']['enabled'])
+
     def test_required_results_fail_closed(self):
         required = job('required')
         self.assertIn('needs: [pr-gate, fast-tests, format, ci-router-validation, affected-shards]', required)
@@ -200,7 +216,8 @@ class PrManagedBuildTests(unittest.TestCase):
             self.assertIn('--no-restore',command)
         shard=job('affected-shard')
         self.assertIn('needs: [affected-shards-select, pr-gate, server-test-producer]',shard)
-        self.assertIn('producer-attempt: ${{ needs.pr-gate.outputs.producer-attempt }}',shard)
+        self.assertIn('needs.pr-gate.outputs.producer-attempt', shard)
+        self.assertIn('needs.server-test-producer.outputs.producer-attempt', shard)
 
 
 if __name__ == '__main__':

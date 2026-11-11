@@ -92,6 +92,23 @@ class SelectionTests(unittest.TestCase):
                 self.assertTrue(selection.linked_inputs([changed], members))
                 self.assertEqual(list(selection.GROUPS), selection.safe_selection(['known.csproj'], members))
 
+    def test_imported_linked_inputs_and_unresolved_imports(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = 'tests/Unit/Unit.csproj'
+            path = root / project
+            path.parent.mkdir(parents=True)
+            path.write_text('<Project><Import Project="linked.props" /></Project>')
+            props = path.parent / 'linked.props'
+            props.write_text('<Project><ItemGroup><Compile Include="../Shared/Example.cs" /></ItemGroup></Project>')
+            changed = 'tests/Shared/Example.cs'
+            with patch.object(selection, 'ROOT', root):
+                self.assertTrue(selection.linked_inputs([changed], {project}))
+                self.assertFalse(selection.linked_inputs(['src/Unrelated.cs'], {project}))
+                props.write_text('<Project><Import Project="$(Unknown)/missing.props" /></Project>')
+                with self.assertRaises(ValueError):
+                    selection.linked_inputs([changed], {project})
+
     def test_errors_emit_all_groups(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / 'outputs'
