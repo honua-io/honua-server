@@ -644,5 +644,10 @@ managed outputs are published. Restore and build failures remain gating, with
 the same warnings, analyzers and graph-build settings as the solution build.
 Unknown projects outside the solution still fail planning; test selection is unchanged.
 
+Optional PR workflow filters and retained post-merge coverage are documented in
+[optional PR input boundaries](gate-model.md#optional-pr-workflow-input-boundaries).
+
+### FeatureServer query fixtures
+
 FeatureServer query coverage follows the
 [query state isolation contract](gate-model.md#featureserver-query-state-isolation).
