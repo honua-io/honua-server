@@ -778,6 +778,18 @@ Conformance shard on selected PR runs and twice-daily full trunk runs. This
 changes no runner count, required check name, required aggregate dependency,
 workflow, or shard definition.
 
+### WCS endpoint fixture lifetime
+
+`Wcs10EndpointsTests` and `Wcs20EndpointsTests` each share one application with
+a substituted raster store for the lifetime of the sequential test class,
+through `SubstitutedRasterStoreApplication`. Cases that rebind the metadata
+graph or need other services still create their own application, so no rebinding
+leaks into the shared host.
+All cases and assertions remain in the WFS 3, WFS 8, and WFS 9 shards on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
 ## Trailing affected CI selection
 
 Trailing affected CI refreshes its completed-ancestor base when the selection job starts,
