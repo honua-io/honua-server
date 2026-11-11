@@ -4,10 +4,12 @@
 import argparse
 import json
 from pathlib import Path
-import re
 import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
+
+
+from solution_projects import solution_projects
 
 
 def source_roots(root: Path, projects: list[str]) -> list[str]:
@@ -47,9 +49,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     root = args.root.resolve()
-    members = {path.replace("\\", "/"): path for path in re.findall(
-        r'^Project\([^\n]+? = "[^"]+", "([^"]+\.csproj)"',
-        (root / "Honua.sln").read_text(), re.MULTILINE)}
+    members = solution_projects(root)
     projects = sorted(members)
     roots = source_roots(root, projects) if projects else []
     args.output.write_text(json.dumps({"solution": {"path": str(root / "Honua.sln"),
