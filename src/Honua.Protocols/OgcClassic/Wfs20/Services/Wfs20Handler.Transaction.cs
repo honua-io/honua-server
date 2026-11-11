@@ -201,6 +201,18 @@ internal sealed partial class Wfs20Handler
                 ex.Message,
                 ex.Locator);
         }
+        catch (WfsQueryException ex)
+        {
+            // Target-resolution query errors (e.g. a ResourceId naming another feature type) are
+            // typed with an author-controlled message/locator, as on the GetFeature path.
+            Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
+            HonuaTelemetry.RecordException(activity, ex);
+            return Wfs20ErrorResults.CreateBadRequest(
+                context,
+                ex.ExceptionCode,
+                ex.Message,
+                ex.Locator);
+        }
         catch (ArgumentException ex)
         {
             Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
