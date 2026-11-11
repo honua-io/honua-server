@@ -599,7 +599,7 @@ Trailing `selective_base` dispatches use their verified base for the managed
 producer's affected project graph. An effective full-CI decision (including a
 router promotion or manual override) builds the whole solution. Consumers reuse the single producer's
 artifacts. Server shards retain descending measured `dispatch_rank` order and
-run at most six at once for every `selective_base` dispatch, including router
+run at most six at once for every `selective_base` dispatch (twelve above 30 selected shards), including router
 promotions and explicit full-coverage overrides. Full coverage still selects
 every shard; scheduled and non-selective full runs retain 24 concurrent shards. Expensive AOT, Docker,
 Postgres compatibility, browser, Python, MCP and quickstart lanes use
@@ -690,8 +690,12 @@ Trailing affected CI refreshes its completed-ancestor base when the selection jo
 so queued dispatches do not retain an obsolete range. Dispatch and execution use the same completed-run selector; execution never regresses behind the dispatched base. Selections above 30 shards
 fall back to the newest merge; the summary records the older range deferred to
 the twice-daily full run. A broad newest merge retains every selected shard.
-Affected shard concurrency remains six, including full-coverage routing fallbacks;
-manual and scheduled full runs retain their existing budget. Required PR gates
+Affected shard concurrency is six, or twelve when more than 30 shards remain
+selected (`scripts/ci/trailing_selection.py` owns both numbers), including
+full-coverage routing fallbacks; manual and scheduled full runs retain 24. A
+134-shard affected run took 214 minutes at six while PR Gate job queueing stayed
+at a two-second median; twelve halves that so a broad run finishes before the
+next full run. Required PR gates
 and shard definitions are unchanged.
 
 ## Automatic merge admission

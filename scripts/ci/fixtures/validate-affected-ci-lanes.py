@@ -122,11 +122,13 @@ class AffectedLaneTests(unittest.TestCase):
         scripts = '\n'.join(step.get('run', '') for step in jobs['targeted-shards']['steps'])
         self.assertIn('sort_by(-.dispatch_rank)', scripts)
         self.assertIn('build', jobs['server-tests']['needs'])
-        self.assertIn('6 || 24', jobs['server-tests']['strategy']['max-parallel'])
-        parallelism = jobs['server-tests']['strategy']['max-parallel']
-        self.assertIn('inputs.selective_base &&', parallelism)
-        self.assertNotIn('full_ci', parallelism,
+        self.assertEqual('${{ fromJson(needs.targeted-shards.outputs.max_parallel) }}',
+                         jobs['server-tests']['strategy']['max-parallel'])
+        compute = next(step for step in jobs['targeted-shards']['steps'] if step.get('id') == 'compute')
+        self.assertEqual("${{ inputs.selective_base && 'true' || 'false' }}",
+                         compute['env']['AFFECTED_DISPATCH'],
                          'Full coverage must not expand an affected run beyond its runner budget')
+        self.assertIn('trailing_selection.py --affected-dispatch "${AFFECTED_DISPATCH}"', compute['run'])
         step = next(step for step in jobs['changes']['steps'] if step.get('id') == 'specialized')
         self.assertIn("trailing_selective == 'true'", step['env']['SELECTIVE'])
         self.assertIn("full_ci != 'true'", step['env']['SELECTIVE'])
@@ -134,6 +136,28 @@ class AffectedLaneTests(unittest.TestCase):
                     'docker-build', 'python-integration-tests', 'mcp-certification', 'quickstart-console-smoke']:
             self.assertIn('inputs.selective_base &&', jobs[job]['if'])
             self.assertIn("full_ci == 'true'", jobs[job]['if'])
+
+
+class ShardWidthTests(unittest.TestCase):
+    def run_width(self, shards, affected_dispatch):
+        result = subprocess.run(
+            [sys.executable, str(ROOT / 'scripts/ci/trailing_selection.py'),
+             '--affected-dispatch', affected_dispatch],
+            input='[' + ','.join('{}' for _ in range(shards)) + ']',
+            capture_output=True, text=True, check=True)
+        return int(result.stdout)
+
+    def test_full_and_pull_request_runs_keep_full_width(self):
+        self.assertEqual(24, self.run_width(134, 'false'))
+        self.assertEqual(24, self.run_width(3, 'false'))
+
+    def test_narrow_affected_runs_keep_pr_safe_width(self):
+        self.assertEqual(6, self.run_width(1, 'true'))
+        self.assertEqual(6, self.run_width(30, 'true'))
+
+    def test_broad_affected_runs_double_width_without_reaching_full(self):
+        self.assertEqual(12, self.run_width(31, 'true'))
+        self.assertEqual(12, self.run_width(134, 'true'))
 
 
 if __name__ == '__main__':

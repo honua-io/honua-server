@@ -297,7 +297,7 @@ class RuntimeBaseTests(unittest.TestCase):
         for job_name in ("targeted-shards", "build"):
             self.assertIn("needs.changes.outputs.selective_base", json.dumps(jobs[job_name]))
         self.assertEqual(jobs["server-tests"]["strategy"]["max-parallel"],
-                         "${{ inputs.selective_base && 6 || 24 }}")
+                         "${{ fromJson(needs.targeted-shards.outputs.max_parallel) }}")
 
 
 if __name__ == "__main__":
