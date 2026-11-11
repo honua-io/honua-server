@@ -32,6 +32,10 @@ services:
       - /tmp/honua:rw,noexec,nosuid,size=512m,uid=1001,gid=1001,mode=750
     environment:
       TZ: Pacific/Honolulu
+      # appsettings.Test enables stores excluded from the PostGIS-only image.
+      Experimental__Features__RedshiftProvider: "false"
+      Experimental__Features__SnowflakeProvider: "false"
+      Experimental__Features__DatabricksProvider: "false"
 EOF
 export HONUA_CNG_SERVER_PORT="$PORT" HONUA_CNG_POSTGRES_PORT="$PG_PORT"
 export HONUA_GITHUB_ACTOR_SECRET_FILE="$work/empty-secret" HONUA_GITHUB_TOKEN_SECRET_FILE="$work/empty-secret"

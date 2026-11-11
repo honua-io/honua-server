@@ -13,6 +13,14 @@ def workflow(name):
 
 
 class StoreProfileWorkflowTests(unittest.TestCase):
+    def test_serving_formats_smoke_disables_excluded_test_providers(self):
+        script = (ROOT / 'scripts/ci/smoke-serving-formats.sh').read_text()
+        override = script.split('cat > "$work/override.yml" <<EOF\n', 1)[1].split('\nEOF', 1)[0]
+        environment = yaml.load(override, Loader=yaml.BaseLoader)['services']['honua-server']['environment']
+        for provider in ('Redshift', 'Snowflake', 'Databricks'):
+            with self.subTest(provider=provider):
+                self.assertEqual(environment.get(f'Experimental__Features__{provider}Provider'), 'false')
+
     def test_release_bundle_promotes_verified_jit_postgis_digest(self):
         job = workflow('release-bundle.yml')['jobs']['rc-image']
         steps = job['steps']
