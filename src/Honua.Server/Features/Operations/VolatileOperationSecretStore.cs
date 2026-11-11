@@ -13,17 +13,11 @@ public sealed class VolatileOperationSecretStore : IOperationSecretStore
 
     public bool IsAvailable => true;
 
-    public OperationSecretReference Store(
-        string operationInstanceId,
-        string operationId,
-        string? principalId,
-        string? tenantId,
-        string name,
-        string value,
-        TimeSpan? ttl = null)
+    public OperationSecretReference Store(OperationSecretBinding binding, string name, string value, TimeSpan? ttl = null)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(operationInstanceId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(operationId);
+        ArgumentNullException.ThrowIfNull(binding);
+        ArgumentException.ThrowIfNullOrWhiteSpace(binding.OperationInstanceId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(binding.OperationId);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentException.ThrowIfNullOrWhiteSpace(value);
 
@@ -35,10 +29,10 @@ public sealed class VolatileOperationSecretStore : IOperationSecretStore
         lock (_gate)
         {
             _entries.Add(reference.ReferenceId, new Entry(
-                operationInstanceId,
-                operationId,
-                principalId ?? "anonymous",
-                tenantId ?? string.Empty,
+                binding.OperationInstanceId,
+                binding.OperationId,
+                binding.PrincipalId ?? "anonymous",
+                binding.TenantId ?? string.Empty,
                 value,
                 DateTimeOffset.UtcNow.Add(ttl ?? TimeSpan.FromMinutes(15))));
         }
@@ -46,19 +40,14 @@ public sealed class VolatileOperationSecretStore : IOperationSecretStore
         return reference;
     }
 
-    public string? Consume(
-        OperationSecretReference reference,
-        string operationInstanceId,
-        string operationId,
-        string? principalId,
-        string? tenantId)
+    public string? Consume(OperationSecretReference reference, OperationSecretBinding binding)
     {
         ArgumentNullException.ThrowIfNull(reference);
         lock (_gate)
         {
             if (!_entries.TryGetValue(reference.ReferenceId, out var entry) ||
                 entry.ExpiresAt <= DateTimeOffset.UtcNow ||
-                !Matches(entry, operationInstanceId, operationId, principalId, tenantId))
+                !Matches(entry, binding))
             {
                 return null;
             }
@@ -68,16 +57,11 @@ public sealed class VolatileOperationSecretStore : IOperationSecretStore
         }
     }
 
-    private static bool Matches(
-        Entry entry,
-        string operationInstanceId,
-        string operationId,
-        string? principalId,
-        string? tenantId)
-        => string.Equals(entry.OperationInstanceId, operationInstanceId, StringComparison.Ordinal)
-            && string.Equals(entry.OperationId, operationId, StringComparison.Ordinal)
-            && string.Equals(entry.PrincipalId, principalId ?? "anonymous", StringComparison.Ordinal)
-            && string.Equals(entry.TenantId, tenantId ?? string.Empty, StringComparison.Ordinal);
+    private static bool Matches(Entry entry, OperationSecretBinding binding)
+        => string.Equals(entry.OperationInstanceId, binding.OperationInstanceId, StringComparison.Ordinal)
+            && string.Equals(entry.OperationId, binding.OperationId, StringComparison.Ordinal)
+            && string.Equals(entry.PrincipalId, binding.PrincipalId ?? "anonymous", StringComparison.Ordinal)
+            && string.Equals(entry.TenantId, binding.TenantId ?? string.Empty, StringComparison.Ordinal);
 
     private sealed record Entry(
         string OperationInstanceId,

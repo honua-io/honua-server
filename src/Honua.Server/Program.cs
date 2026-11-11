@@ -426,27 +426,29 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
     }
 }
 
-if (connectedRedis is not null &&
-    OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
+if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
         builder.Environment.IsDevelopment(),
         isTestEnvironment,
-        redisConnected: true))
+        keyRingIsShared: !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection"))))
 {
-    // The operation-secret protector is intentionally backed by the same Redis authority
-    // as the proposal/instance stores so every replay node shares a rotation-capable key ring.
-    // Native AOT cannot run EncryptedXml. It still stores the ring in Redis and wraps each key
-    // with the certificate using RSA-OAEP and AES-GCM, so another execution environment can
-    // unwrap it. A process-local ring would make a consume on the wrong environment delete the
-    // secret before it can be unprotected.
+    // The key ring lives in the system database so that every node unprotects what any node
+    // protected: an operation secret consumed on another node is deleted before it is
+    // unprotected. Native AOT cannot run EncryptedXml, so there each key is wrapped with the
+    // certificate using RSA-OAEP and AES-GCM instead.
     var nativeAot = !System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported;
-    var keyRepository = new RedisDataProtectionKeyRepository(connectedRedis);
-    keyRepository.EnsureAllElementsAreProtected();
-    var keyRing = builder.Services.AddDataProtection()
-        .SetApplicationName("Honua.Server")
-        .AddKeyManagementOptions(options => options.XmlRepository = keyRepository);
+    builder.Services.AddSingleton(static provider => new PostgresDataProtectionKeyRepository(
+        provider.GetRequiredService<Npgsql.NpgsqlDataSource>(),
+        provider.GetRequiredService<Honua.ControlPlane.JobStoreDatabase>()));
+    builder.Services.AddOptions<Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>()
+        .Configure<PostgresDataProtectionKeyRepository>(static (options, keyRepository) =>
+        {
+            keyRepository.EnsureAllElementsAreProtected();
+            options.XmlRepository = keyRepository;
+        });
+    var keyRing = builder.Services.AddDataProtection().SetApplicationName("Honua.Server");
 
     // A key ring persisted beside the ciphertext it unlocks is not a boundary on its own. The
-    // certificate is mandatory so a Redis reader or snapshot cannot carry both halves. Lambda
+    // certificate is mandatory so a database reader or backup cannot carry both halves. Lambda
     // cannot mount the file, so a Secrets Manager bundle is written to a private temp file first.
     System.Security.Cryptography.X509Certificates.X509Certificate2 keyRingCertificate;
     try
@@ -680,11 +682,12 @@ builder.Services.AddHonuaBatchAndDeployBackends();
 builder.Services.AddHonuaSelfHostedRollingProxy(builder.Configuration);
 // ---- End extracted block
 
-// The workflow, proposal and release members of this block are stored in Redis and also take the
-// job store, which exists only on a host with a system database. A Test host registers its data
-// source after this point, from the test fixture.
-var hostHasSystemDatabase = !registerProviderInfrastructure || builder.Services.HasSystemDataSource();
-if (connectedRedis != null && redisCacheEntitled && hostHasSystemDatabase)
+// The workflow, proposal and release members of this block live in the system database and take
+// the job store, so they are composed on a host that registers its infrastructure in production
+// order. A Test host that registers its data source afterwards, from the test fixture, opts in
+// with HONUA_REGISTER_TEST_INFRASTRUCTURE.
+var hostHasSystemDatabase = registerProviderInfrastructure && builder.Services.HasSystemDataSource();
+if (hostHasSystemDatabase)
 {
     builder.Services.AddHonuaControlPlaneReconcilers(builder.Configuration);
 
@@ -735,8 +738,8 @@ if (connectedRedis != null && redisCacheEntitled && hostHasSystemDatabase)
 
     // Agent-operation approval surface (#1692/#1693): durable proposal store +
     // shared operation gateway choke point + per-class executors.
-    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore,
-        Honua.ControlPlane.RedisOperationProposalStore>();
+    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>(
+        static provider => provider.GetRequiredService<Honua.ControlPlane.PostgresOperationProposalStore>());
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationGateway,
         Honua.ControlPlane.OperationGateway>();
     builder.Services.AddSingleton<Honua.ControlPlane.OperationProposerApiKeyAuthority>();
@@ -958,34 +961,27 @@ builder.Services.AddScoped(static sp => new Honua.Core.Features.FeatureStore.Ser
     sp.GetService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>(),
     sp.GetService<Honua.Core.Features.FeatureStore.Services.FeatureProviderQueryRouter>(),
     sp.GetService<Honua.Core.Features.FeatureStore.Abstractions.IFeatureDataProviderRegistry>()));
-// Redis is the shared registry when it is connected. Without it, a host that runs as several
-// instances (AWS Lambda, Deployment:Mode=MultiNode) keeps the keys in the shared database, so a key
-// minted on one instance authenticates on the others (honua-server#6487). A single instance keeps
-// the in-process registry.
-var adminKeysNeedSharedStore = Honua.Ai.Protocols.Mcp.McpSessionModeResolver.DescribeMultiInstanceHost(
-    builder.Configuration, Environment.GetEnvironmentVariable) is not null;
+// API keys and OAuth clients are rows of the system database, so a key minted on one node
+// authenticates on every node and a revocation is effective on the next request anywhere. A Test
+// host keeps them in process, unless it declares several instances, so that hosts sharing one
+// test database do not see each other's credentials.
+var credentialRegistryIsShared = !isTestEnvironment
+    || Honua.Ai.Protocols.Mcp.McpSessionModeResolver.DescribeMultiInstanceHost(
+        builder.Configuration, Environment.GetEnvironmentVariable) is not null;
 builder.Services.AddSingleton<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(sp =>
-{
-    if (sp.GetService<StackExchange.Redis.IConnectionMultiplexer>() is { } redis)
-    {
-        return new Honua.Infrastructure.Authentication.RedisAdminApiKeyStore(redis, sp.GetService<TimeProvider>());
-    }
-
-    if (adminKeysNeedSharedStore && sp.GetService<Npgsql.NpgsqlDataSource>() is { } dataSource)
-    {
-        return new Honua.Server.Features.Admin.Services.PostgresAdminApiKeyStore(
-            dataSource, sp.GetService<TimeProvider>(), builder.Configuration["Database:Schema"]);
-    }
-
-    if (adminKeysNeedSharedStore)
-    {
-        ProgramLog.AdminApiKeysPerInstance(
-            sp.GetRequiredService<ILoggerFactory>().CreateLogger("Honua.AdminApiKeys"));
-    }
-
-    return new Honua.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>());
-});
-builder.Services.AddHostedService<Honua.Infrastructure.Authentication.RedisAdminApiKeyIndexMaintenance>();
+    credentialRegistryIsShared && sp.GetService<Npgsql.NpgsqlDataSource>() is { } dataSource
+        ? new Honua.Server.Features.Admin.Services.PostgresAdminApiKeyStore(
+            dataSource, sp.GetService<TimeProvider>(), builder.Configuration["Database:Schema"])
+        : new Honua.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>()));
+builder.Services.AddSingleton<Honua.ControlPlane.IExpiredRowSweep>(sp =>
+    sp.GetRequiredService<Honua.Infrastructure.Authentication.IAdminApiKeyStore>() as Honua.ControlPlane.IExpiredRowSweep
+    ?? Honua.Server.Startup.NoExpiredRows.Instance);
+builder.Services.RemoveAll<Honua.Infrastructure.Authentication.IOAuthClientStore>();
+builder.Services.AddSingleton<Honua.Infrastructure.Authentication.IOAuthClientStore>(sp =>
+    credentialRegistryIsShared && sp.GetService<Npgsql.NpgsqlDataSource>() is not null
+        ? new Honua.Server.Features.Infrastructure.SecurityState.PostgresOAuthClientStore(
+            sp.GetRequiredService<Honua.ControlPlane.JobStoreDatabase>(), sp.GetService<TimeProvider>())
+        : new Honua.Infrastructure.Authentication.InMemoryOAuthClientStore(sp.GetService<TimeProvider>()));
 // A Lambda sandbox freezes between invocations, so a host that starts stopping there stays a
 // listener-less zombie for minutes. Exit after a short drain so Lambda recycles it (#6558).
 if (Honua.Infrastructure.Hosting.LambdaHostStopExitGuard.IsAwsLambda(Environment.GetEnvironmentVariable))
@@ -1065,6 +1061,7 @@ builder.Services.AddStyleSuggestionCore();
 builder.Services.Configure<Honua.Infrastructure.Services.TemporaryFileOptions>(
     builder.Configuration.GetSection(Honua.Infrastructure.Services.TemporaryFileOptions.SectionName));
 builder.Services.AddSingleton<Honua.Infrastructure.Services.FileSystemTemporaryFileService>();
+builder.Services.TryAddSingleton<Honua.Infrastructure.Security.ISecurityTokenStore, Honua.Infrastructure.Security.InMemorySecurityTokenStore>();
 builder.Services.AddSingleton<Honua.Infrastructure.Services.ITemporaryFileService,
     Honua.Infrastructure.Services.CloudBackedTemporaryFileService>();
 

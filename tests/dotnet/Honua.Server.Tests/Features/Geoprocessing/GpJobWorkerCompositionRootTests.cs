@@ -6,6 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.TestKit.Extensions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -50,7 +51,7 @@ public sealed class GpJobWorkerCompositionRootTests(RedisFixture redis)
     {
         await DeleteControlPlaneKeysAsync(redis.ConnectionString);
 
-        var fixture = new WebAppFixture()
+        var fixture = new WebAppFixture().WithProductionJobSubstrate()
             .ConfigureWebHost(builder =>
             {
                 // Set via UseSetting (host configuration) rather than ConfigureAppConfiguration

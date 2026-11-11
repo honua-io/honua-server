@@ -53,8 +53,9 @@ public sealed class CacheOptions
     [Range(0, 3600, ErrorMessage = "MetadataGraphTtlSeconds must be between 0 and 3600 seconds.")]
     public int MetadataGraphTtlSeconds { get; set; } = 10;
 
-    // When unset, request revalidation turns on for Lambda with no Redis invalidation, so one instance sees another instance's publish before the TTL.
-    public bool? MetadataGraphRevalidateOnRead { get; set; }
+    // How long a node serves reads from its catalog snapshot before it checks the database for a newer revision. 0 checks on every request.
+    [Range(0, 60, ErrorMessage = "MetadataGraphRevalidationSeconds must be between 0 and 60 seconds.")]
+    public int MetadataGraphRevalidationSeconds { get; set; } = 2;
 
     public bool EnableFallback { get; set; } = true;
 
