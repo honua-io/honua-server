@@ -162,7 +162,6 @@ jobs:
           analyzer-test-partition: ${{ matrix.analyzer-test-partition || 'all' }}
 
   fast-tests:
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: PR Gate / Fast and architecture (${{ matrix.test-group }})
     needs: runner-select
     runs-on: ${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}
@@ -251,7 +250,6 @@ jobs:
             await revalidate({ github, context, core, expectedHead: '${{ github.event.pull_request.head.sha }}' });
 
   server-test-producer:
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: PR Gate / Server test producer
     needs: runner-select
     runs-on: ${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}
@@ -338,7 +336,6 @@ jobs:
             await revalidate({ github, context, core, expectedHead: '${{ github.event.pull_request.head.sha }}' });
 
   pr-gate:
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     # This exact string is the branch-protection verification context. Changing it
     # silently un-gates trunk or leaves pull requests waiting forever.
     name: PR Gate / Build and tests
