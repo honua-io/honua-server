@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -61,6 +62,7 @@ internal static class WebAppFixtureSharedBootstrapMixin
             {
                 _sharedPostgres = new PostgresFixture();
                 await _sharedPostgres.InitializeAsync();
+                await SharedDatabaseProductionJournal.EnsureJournaledAsync(_sharedPostgres);
 
                 _sharedFactory = BuildSharedFactory(_sharedPostgres.ConnectionString, sharedAdminPassword);
                 // Start the lazy host under the lock so parallel fixtures share one service provider.

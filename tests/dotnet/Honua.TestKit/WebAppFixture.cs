@@ -157,6 +157,7 @@ public sealed class WebAppFixture : IAsyncLifetime
 
         _postgres = new PostgresFixture();
         await _postgres.InitializeAsync();
+        await SharedDatabaseProductionJournal.EnsureJournaledAsync(_postgres);
         await InitializeIsolatedHostAsync();
     }
 
