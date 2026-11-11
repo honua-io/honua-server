@@ -1,7 +1,8 @@
 # CI Gate Model
 
+
 > Defines the five-tier quality gate model governing all CI workflows across the Honua project.
-> Last updated: 2026-11-09
+> Last updated: 2026-11-10
 
 ## Tier Definitions
 
@@ -14,6 +15,8 @@
 | **maintenance** | Repo automation and housekeeping | Version automation, metadata updates, scheduled hygiene | No |
 
 ## Governing Rules
+
+Draft pull requests run Format, Clean code, and Repository hygiene only; optional PR verification and PR Gate heavy jobs wait for `ready_for_review`. Converting a ready PR back to draft cancels its previous run. The stable `PR Gate` aggregate still runs with `always()` and fails on skipped heavy dependencies, so a draft run cannot supply mergeable verification. PR Gate and native-image impact observers exclude this intentional draft failure only when the source run’s latest `PR Gate / Runner select` and `PR Gate / Build and tests` outcomes at or before the source attempt were both skipped (a partial rerun keeps earlier outcomes; a failed runner selection is a ready-run failure), preserving ready-run failures in promotion evidence even across same-SHA draft transitions. Manual and trunk verification retain their existing coverage.
 
 1. **PR gates must be deterministic and directly actionable by the author.** If a check fails, the author must be able to reproduce and fix it locally without external system access.
 
@@ -91,7 +94,8 @@ Stage 3 details:
   a full run on the same sha cannot supersede that full run's certification.
   The full-matrix fallback is titled `CI full matrix ...` and still certifies.
 - Every `selective_base` dispatch limits server shards to six concurrent jobs,
-  including router promotions and explicit full-coverage overrides. These
+  or twelve when more than 30 shards remain selected after newest-merge
+  narrowing, including router promotions and explicit full-coverage overrides. These
   fallbacks still run every selected shard. Scheduled and non-selective full
   runs retain their 24-job budget.
 - Stage 3 is not a required check and changes no ruleset.
@@ -194,6 +198,19 @@ Unpartitioned callers default to
 `all`; invalid partitions fail the build. `PR Gate` still fails on every analyzer finding. Full CI runs
 an independent full-solution format job; `CI Gate` requires it when build inputs
 are selected, without making test consumers wait for formatting.
+
+**Fast-test selection.** The four existing fast-test check names remain present.
+Before setup or compilation, each uses `compute-fast-test-selection.py` to read
+`compute-affected-projects.sh` at the PR merge checkout (`HEAD^1..HEAD`) and
+intersect its reverse-dependency closure with the group's existing test roots.
+Empty closures skip all four builds and tests only after positive governed-docs proof;
+a nonempty managed closure retains architecture and Server governance checks as well as every affected
+group. Unknown projects, invalid roots, missing history, selector errors and
+non-PR events retain every group. Existing docs/generated-only classification
+and exact-head review admission still apply. A skipped test body completes its
+matrix row successfully, preserving the required aggregate's needs contract.
+Drafts instantiate only the Format matrix row; ready PRs retain all analyzer
+partitions and Format.
 
 **Governance and runtime proofs.** The independent PR Fast job retains the
 complete `Category=Architecture` governance set in `Honua.Server.Tests`, the real
@@ -457,6 +474,11 @@ git. `validate-single-merge-authority.sh` cannot see runtime API calls, so this
 allowlist is the control, and `scripts/ci/claude-review-lane.test.js` asserts it.
 The workflow's own `GITHUB_TOKEN` stays read-only.
 
+Both reviewer invocations admit only `dependabot[bot]`, `github-actions[bot]`,
+and `honua-io-bot` as automation actors. Bot-triggered runs still pass the same
+trusted default-branch and exact-head resolver; the fallback uses the same actor
+allowlist as the primary review.
+
 **It only ever posts comments — never a review verdict.** A
 `CHANGES_REQUESTED` is identity-scoped and is cleared only by a *newer positive
 from the same identity*; an optional reviewer that later stops running (secret
@@ -609,7 +631,7 @@ Trailing `selective_base` dispatches use their verified base for the managed
 producer's affected project graph. An effective full-CI decision (including a
 router promotion or manual override) builds the whole solution. Consumers reuse the single producer's
 artifacts. Server shards retain descending measured `dispatch_rank` order and
-run at most six at once (full runs retain 24). Expensive AOT, Docker,
+run at most six at once, twelve above 30 selected shards (full runs retain 24). Expensive AOT, Docker,
 Postgres compatibility, browser, Python, MCP and quickstart lanes use
 `scripts/ci/affected-ci-lanes.py` to select their own inputs. Native, container
 and MCP checks conservatively include every runtime source or project change,
@@ -619,6 +641,19 @@ unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
+
+Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. If both producer jobs were skipped by job-level admission (draft or non-base edit), the consumer also returns without validation or mutation. Missing envelopes from ordinary producers remain errors.
+
+### Router validator execution
+
+`validate-ci-router.sh` runs independent fixtures in a bounded pool (four workers by default; `HONUA_ROUTER_WORKERS=1..8`), records each fixture duration and collects every exit code before returning failure. A failed or missing result cannot produce success. The routing assertions retain their exact cases and shard ownership checks. Cancellation sends TERM to owned worker groups, escalates to KILL after a bounded grace period, and reaps workers before deleting results.
+
+`--changed-only` is a local feedback mode: stdin routing cases skip only when their complete input closure (router, shard map, jq wrapper and validator infrastructure) is unchanged against the merge base with `origin/trunk`. Staged, unstaged, renamed and untracked inputs count. Unknown base or an ambiguous path runs everything; undeclared fixture input closures also run. CI and GitHub Actions ignore the optimization and always run every fixture.
+
+The PR managed producer compiles `Honua.Server.Tests` in a parallel, review-admitted job. The main producer excludes that project and the full-coverage architecture collector, whose imported references pull Server.Tests into its graph. The independent architecture path and analyzer jobs retain collector compilation and verification. The shared import-aware project parser rejects any other reverse dependency on Server.Tests. Each producer publishes only the assemblies consumed by selected shards. The final required context directly requires the parallel producer on both pull-request and manual events; the PR-only affected-shards aggregate also checks it for an empty shard matrix. Only the affected-shard matrix cancels sibling shards after a failure; fast-test and analyzer matrices retain every result.
+Fast-test selection retains every group for linked cross-project inputs and for empty closures unless the governed docs classifier positively proves the diff safe.
+
+Review revalidation shares `.github/scripts/revalidate-exact-head-review.cjs` across producer, fast-test and aggregate jobs. The aggregate checks out code only for enforced attempt-2 review validation. Generated-output classification shares `scripts/ci/classify-generated-output.sh`; executable skip policy still comes from the immutable PR base, and uncertainty preserves all checks.
 
 Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. Missing envelopes from ordinary producers remain errors.
 
@@ -653,6 +688,24 @@ managed outputs are published. Restore and build failures remain gating, with
 the same warnings, analyzers and graph-build settings as the solution build.
 Unknown projects outside the solution still fail planning; test selection is unchanged.
 
+### Stage 0 evidence and cross-phase reuse
+
+The local build-host transport evicts idle checkout outputs before queued
+outputs under disk pressure. The existing free-space thresholds and active-run
+protections remain; queued outputs may still be evicted as a fallback.
+
+[Stage 0 reuse assessment](stage-zero-reuse.md) records live queue/build timings,
+the five-run cache observation, and the protected issuer requirements for any
+future gate skip. Local receipts do not currently skip hosted tests. Compiled
+output caching remains opt-in; no cross-phase promotion is authorized by the
+observational sample.
+
+Each affected shard selects the SDK and workflow-attempt identity exported by its own managed producer. A shard spanning both producers rebuilds its projects locally instead of combining independently resolved SDK outputs. Fast-test selection reads imported build documents through the shared project parser; unresolved imports or linked inputs retain all four groups.
+
+### Test analyzer compilation roots
+
+The ready-PR format matrix retains `PR Gate / Analyzers (tests)` and adds `PR Gate / Analyzers (server tests)`. The latter compiles Honua.Server.Tests; the former compiles every other selected solution root. The server root is also retained when an affected root imports or transitively references it. Forward dependencies still compile. The `server-tests` and `other-tests` diagnostic partitions assign Server.Tests exclusively to the server job and all other test diagnostics to the other job, including when the collector imports Server.Tests. Warnings remain errors. A partition with no roots skips restore and build explicitly. The required format matrix waits for both jobs; drafts retain Format only. This separates the measured 14.9-minute test-analyzer path; the new timing must be measured on a hosted gate run.
+
 ### Optional PR workflow input boundaries
 
 Capability Impact Comparison keeps its PR observation report, scoped to runtime
@@ -683,8 +736,13 @@ Trailing affected CI refreshes its completed-ancestor base when the selection jo
 so queued dispatches do not retain an obsolete range. Dispatch and execution use the same completed-run selector; execution never regresses behind the dispatched base. Selections above 30 shards
 fall back to the newest merge; the summary records the older range deferred to
 the twice-daily full run. A broad newest merge retains every selected shard.
-Affected shard concurrency remains six, including full-coverage routing fallbacks;
-manual and scheduled full runs retain their existing budget. Required PR gates
+Affected shard concurrency is six, or twelve when more than 30 shards remain
+selected (`scripts/ci/trailing_selection.py` owns both numbers and the
+threshold), including full-coverage routing fallbacks; manual and scheduled
+full runs retain 24. A
+134-shard affected run took 214 minutes at six while PR Gate job queueing stayed
+at a two-second median; twelve halves that so a broad run finishes before the
+next full run. Required PR gates
 and shard definitions are unchanged.
 
 ## Automatic merge admission

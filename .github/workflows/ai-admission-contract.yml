@@ -4,6 +4,7 @@ name: AI Admission Contract
 # evidence; it does not replace PR Gate, alter required contexts, or widen its cap.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches: [trunk]
     paths:
       - '.github/workflows/ai-admission-contract.yml'
@@ -64,6 +65,7 @@ env:
 
 jobs:
   contract:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: AI admission / reporting, controls and durable accounting
     runs-on: ubuntu-latest
     timeout-minutes: 45

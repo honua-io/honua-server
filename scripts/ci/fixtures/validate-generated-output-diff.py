@@ -36,7 +36,7 @@ class GeneratedOutputAdmission(unittest.TestCase):
         self.env = patch.dict(os.environ, GITHUB_EVENT_NAME='pull_request')
         self.env.start()
         self.git('init', '-b', 'trunk')
-        for name in ('generated-files.sh', 'generated-output-diff.py'):
+        for name in ('generated-files.sh', 'generated-output-diff.py', 'classify-generated-output.sh'):
             target = self.repo / 'scripts/ci' / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(ROOT / 'scripts/ci' / name, target)
@@ -263,15 +263,21 @@ class WorkflowCompletion(unittest.TestCase):
     def test_named_jobs_keep_completion_and_every_product_step_is_gated(self):
         import yaml
         gate = yaml.safe_load((ROOT / '.github/workflows/pr-gate.yml').read_text())
-        for job in ('format', 'fast-tests', 'pr-gate', 'ci-router-validation', 'required'):
-            self.assertNotIn('if', gate['jobs'][job]) if job != 'required' else self.assertEqual(gate['jobs'][job]['if'], 'always()')
+        ready_only = "github.event_name != 'pull_request' || !github.event.pull_request.draft"
+        draft_format = ("always() && !cancelled() && (needs.runner-select.result == 'success' "
+                        "|| github.event.pull_request.draft == true)")
+        expected_conditions = {'format': draft_format, 'fast-tests': None, 'pr-gate': None,
+                               'ci-router-validation': ready_only, 'required': 'always()'}
+        for job, condition in expected_conditions.items():
+            self.assertEqual(gate['jobs'][job].get('if'), condition, job)
         self.assertEqual(gate['jobs']['required']['name'], 'PR Gate')
-        self.assertEqual(gate['jobs']['required']['needs'], ['pr-gate', 'fast-tests', 'format', 'ci-router-validation', 'affected-shards'])
+        self.assertEqual(gate['jobs']['required']['needs'], ['pr-gate', 'fast-tests', 'format', 'ci-router-validation', 'affected-shards', 'server-test-producer'])
         # Evaluate actual Actions expressions for the expensive steps. True and
         # false/absent classification must respectively skip and preserve them.
         for verdict in ('true', 'false', ''):
             values = {'env.REVIEW_FIRST_MODE': 'observe', 'github.event_name': 'pull_request',
                       'github.run_attempt': 1, 'steps.docs-only.outputs.docs_only': 'false',
+                      'steps.fast-selection.outputs[matrix.test-group]': 'true',
                       'steps.generated-only.outputs.generated_only': verdict,
                       'needs.pr-gate.outputs.docs_only': 'false',
                       'needs.pr-gate.outputs.generated_only': verdict,
@@ -319,7 +325,7 @@ class WorkflowCompletion(unittest.TestCase):
                 'AFFECTED_SHARDS_RESULT')
         for key in keys:
             for result, expected in (('success', 0), ('failure', 1), ('skipped', 1), ('cancelled', 1)):
-                env = dict(os.environ, GITHUB_EVENT_NAME='pull_request',
+                env = dict(os.environ, GITHUB_EVENT_NAME='pull_request', SERVER_PRODUCER_RESULT='success',
                            **{name: 'success' for name in keys})
                 env[key] = result
                 run = subprocess.run(['bash', '-c', aggregate], capture_output=True, env=env)

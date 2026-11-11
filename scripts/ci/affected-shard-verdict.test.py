@@ -312,19 +312,22 @@ class AffectedShardVerdictTests(unittest.TestCase):
                     )
                     self.assertEqual(completed.returncode, 1, completed.stdout)
 
-    def test_workflow_applies_the_time_budget_in_both_selector_calls(self) -> None:
+    def test_workflow_applies_the_time_budget_in_every_selector_call(self) -> None:
         import yaml
 
         workflow = yaml.safe_load((ROOT / ".github/workflows/pr-gate.yml").read_text())
-        calls = [
-            step["run"]
-            for job in workflow["jobs"].values()
-            for step in job.get("steps", [])
-            if "compute-affected-shards.py" in step.get("run", "")
-        ]
-        self.assertEqual(len(calls), 2)
-        for call in calls:
-            self.assertIn("--time-budget", call)
+        calls = {
+            name: [step["run"] for step in job.get("steps", [])
+                   if "compute-affected-shards.py" in step.get("run", "")]
+            for name, job in workflow["jobs"].items()
+            if any("compute-affected-shards.py" in step.get("run", "")
+                   for step in job.get("steps", []))
+        }
+        self.assertEqual(set(calls), {"pr-gate", "server-test-producer", "affected-shards-select"})
+        for name, job_calls in calls.items():
+            with self.subTest(job=name):
+                self.assertEqual(len(job_calls), 1)
+                self.assertIn("--time-budget", job_calls[0])
         select = workflow["jobs"]["affected-shards-select"]
         self.assertIn("steps.select.outputs.deferred_to_trunk", select["outputs"]["deferred_to_trunk"])
         report = next(step for step in workflow["jobs"]["affected-shards"]["steps"]
@@ -478,7 +481,7 @@ class AffectedShardVerdictTests(unittest.TestCase):
                 env = {**os.environ, "GITHUB_EVENT_NAME": "pull_request",
                        "BUILD_AND_TEST_RESULT": "success", "FAST_RESULT": "success",
                        "FORMAT_RESULT": "success", "CI_ROUTER_RESULT": "success",
-                       "AFFECTED_SHARDS_RESULT": result}
+                       "SERVER_PRODUCER_RESULT": "success", "AFFECTED_SHARDS_RESULT": result}
                 run = subprocess.run(["bash", "-c", command], env=env, capture_output=True)
                 self.assertEqual(run.returncode == 0, result == "success")
         env.update(GITHUB_EVENT_NAME="workflow_dispatch", AFFECTED_SHARDS_RESULT="skipped")

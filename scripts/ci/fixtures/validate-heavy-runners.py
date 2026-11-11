@@ -52,8 +52,11 @@ class HeavyRunnerContractTests(unittest.TestCase):
         self.assertEqual(set(self.jobs), HEAVY_JOBS | HOSTED_JOBS | PINNED_JOBS)
 
 
-PR_GATE_SELECTED_JOBS = {"format", "fast-tests", "pr-gate"}
+PR_GATE_SELECTED_JOBS = {"format", "fast-tests", "pr-gate", "server-test-producer"}
 SELECTED_RUNNER = "${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}"
+READY_ONLY = "github.event_name != 'pull_request' || !github.event.pull_request.draft"
+DRAFT_FORMAT_ADMISSION = ("always() && !cancelled() && (needs.runner-select.result == 'success' "
+                          "|| github.event.pull_request.draft == true)")
 SELECT_SCRIPT = ROOT / "scripts/ci/select-gate-runner.sh"
 AWS_STUB = """#!/usr/bin/env bash
 echo "$*" >> "$AWS_STUB_LOG"
@@ -72,13 +75,13 @@ class PrGateRunnerRoutingTests(unittest.TestCase):
     def setUpClass(cls):
         cls.jobs = yaml.safe_load((ROOT / ".github/workflows/pr-gate.yml").read_text())["jobs"]
 
-    def test_selected_jobs_follow_runner_select_without_a_job_condition(self):
+    def test_selected_jobs_follow_runner_select_and_only_format_admits_drafts(self):
         for name in PR_GATE_SELECTED_JOBS:
             with self.subTest(job=name):
                 job = self.jobs[name]
                 self.assertEqual(job["runs-on"], SELECTED_RUNNER)
                 self.assertEqual(job["needs"], "runner-select")
-                self.assertNotIn("if", job)
+                self.assertEqual(job.get("if"), DRAFT_FORMAT_ADMISSION if name == "format" else None)
 
     def test_selection_and_every_other_job_stay_hosted(self):
         for name in set(self.jobs) - PR_GATE_SELECTED_JOBS:
@@ -87,7 +90,7 @@ class PrGateRunnerRoutingTests(unittest.TestCase):
 
     def test_selection_cannot_fail_and_is_inert_without_the_variable_or_in_enforce_mode(self):
         select = self.jobs["runner-select"]
-        self.assertNotIn("if", select)
+        self.assertEqual(select["if"], READY_ONLY)
         self.assertEqual(select["outputs"]["runner"], "${{ steps.select.outputs.runner || 'ubuntu-latest' }}")
         self.assertEqual(select["permissions"], {"contents": "read", "id-token": "write"})
         for step in select["steps"]:

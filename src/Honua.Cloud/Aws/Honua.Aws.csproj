@@ -42,6 +42,7 @@
     <PackageReference Include="AWSSDK.SecretsManager" />
     <PackageReference Include="AWSSDK.SimpleNotificationService" />
     <PackageReference Include="AWSSDK.SQS" />
+    <PackageReference Include="System.Formats.Cbor" NoWarn="NU1510" />
   </ItemGroup>
 
   <ItemGroup>
