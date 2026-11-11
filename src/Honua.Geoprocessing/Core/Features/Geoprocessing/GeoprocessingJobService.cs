@@ -1053,7 +1053,10 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     // The workload's supported timeout policy must be durable on the job
                     // record. Workers and reconciliation then share the same deadline after
                     // claiming, restart, or a serving-node handoff.
-                    TimeoutPolicy = GpResourceProfile.ResolveTimeoutPolicy(spec.Parameters)
+                    TimeoutPolicy = GpResourceProfile.ResolveTimeoutPolicy(spec.Parameters),
+                    AdmissionRatePrincipal = admission is null
+                        ? null
+                        : ExecutionAdmissionIdentity.ResolveRatePrincipal(ownerId, partitionKey)
                 };
 
                 // A lease that expired while this node was paused may already be held by another

@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Npgsql;
 using NpgsqlTypes;
@@ -128,6 +129,30 @@ internal sealed partial class PostgresExecutionJobStore
                 }
 
                 return operationIds;
+            },
+            StatementRepeat.SafeToRepeat,
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task<int> CountAsync(AdmissionSubmissionWindow window, CancellationToken cancellationToken = default)
+        => await _database.ExecuteAsync(
+            async (connection, _, token) =>
+            {
+                await using var command = new NpgsqlCommand(
+                    $"""
+                    SELECT count(*)::int FROM (
+                        SELECT 1 FROM {_jobs}
+                        WHERE kind = @kind AND lookup_keys @> @rate_key AND created_at > @since
+                        LIMIT @cap) AS charged
+                    """,
+                    connection);
+                command.Parameters.Add(new NpgsqlParameter("kind", NpgsqlDbType.Text) { Value = window.Kind.ToString() });
+                command.Parameters.Add(new NpgsqlParameter("rate_key", NpgsqlDbType.Array | NpgsqlDbType.Text)
+                {
+                    Value = new[] { ExecutionJobRow.LookupKey(ExecutionJobLookupDimensions.AdmissionRate, window.RatePrincipal) }
+                });
+                command.Parameters.Add(ExecutionJobRow.Timestamp("since", window.Since));
+                command.Parameters.Add(new NpgsqlParameter("cap", NpgsqlDbType.Integer) { Value = window.CountCap });
+                return (int)(await command.ExecuteScalarAsync(token).ConfigureAwait(false))!;
             },
             StatementRepeat.SafeToRepeat,
             cancellationToken).ConfigureAwait(false);
