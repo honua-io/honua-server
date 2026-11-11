@@ -80,7 +80,9 @@ public sealed class UniversalImportJobServiceTests
         using var stream = new MemoryStream([1]);
         var id = await service.QueueImportAsync(new ImportRequest
         {
-            FileStream = stream, FileName = "widgets.geojson", TableName = "widgets"
+            FileStream = stream,
+            FileName = "widgets.geojson",
+            TableName = "widgets"
         }, 1);
         try
         {
