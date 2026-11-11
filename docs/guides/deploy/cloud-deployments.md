@@ -124,6 +124,17 @@ excluded until it is re-established on a live Fargate task (honua-release#98).
 - Use the generic web image at the release digest (mirrored to ECR if your account requires it), with the task definition's `runtimePlatform.cpuArchitecture` set to `X86_64`; container ports 8080 (HTTP) and 8081 (h2c gRPC).
 - Health checks: ALB target group on `/healthz/ready`; container health on `/healthz/live`.
 - Inject secrets via ECS task-definition `secrets` from Secrets Manager or SSM Parameter Store.
+- Supply the operation key-ring certificate: any deployment with a database outside Development and Test refuses to start without `Operations__SecretChannel__KeyRingCertificatePath` (a mounted PKCS#12), or `Operations__SecretChannel__KeyRingCertificatePkcs12` set to a Secrets Manager reference when the task cannot mount the file.
+- Behind CloudFront with a VPC origin to an internal ALB over HTTP, the ALB overwrites `X-Forwarded-Proto` with `http` for its own hop, so token issuance and other HTTPS-only surfaces refuse requests. Forward the `CloudFront-Forwarded-Proto` header in the origin request policy, and trust it only from the VPC:
+
+  ```bash
+  ForwardedHeaders__Enabled=true
+  ForwardedHeaders__ForwardLimit=1
+  ForwardedHeaders__ProtoHeaderName=CloudFront-Forwarded-Proto
+  ForwardedHeaders__KnownNetworks__0=10.0.0.0/16   # the VPC CIDR; ALB node addresses change
+  ```
+
+  Do not set `ASPNETCORE_FORWARDEDHEADERS_ENABLED`: it trusts forwarded headers from every peer and reads the ALB's `X-Forwarded-Proto`.
 - Canary rollouts: provision a stable and a canary ECS service on two ALB target groups, then drive weighted traffic shifts through Honua's deploy API (backend `honua-aws-ecs-alb`) with an automatic telemetry gate — see [Upgrade and roll back](upgrade-and-rollback.md).
 
 ```bash
@@ -340,7 +351,7 @@ az functionapp config container set --name honua-prod --resource-group honua \
 
 **Redis is a hard dependency for the ops control plane.** Durable jobs, queued imports, deploy workflows, and the operation gateway are all backed by Redis (ElastiCache / Azure Cache for Redis). Without it these surfaces fail closed — job/import/workflow endpoints return `503` rather than silently running node-local work — and the ops-findings recommended-action gateway reports a degraded, unavailable state. Provision Redis for any environment that runs jobs, imports, workflows, or the deploy control plane; single-host dev/test via Docker Compose is the only tier where you can skip it.
 
-**Managed Redis is supported: AWS ElastiCache, Amazon MemoryDB and Azure Cache for Redis.** Honua needs Redis to be reachable and working. A particular persistence policy is not required (owner ruling, 2026-10-10). On ECS and Lambda, point `ConnectionStrings__redis` at the ElastiCache or MemoryDB endpoint, with TLS and auth as the cluster requires. Also supply the operation key-ring certificate, which every Redis-backed non-development deployment needs (`Operations__SecretChannel__KeyRingCertificatePath`, or `Operations__SecretChannel__KeyRingCertificatePkcs12` from Secrets Manager on Lambda).
+**Managed Redis is supported: AWS ElastiCache, Amazon MemoryDB and Azure Cache for Redis.** Honua needs Redis to be reachable and working. A particular persistence policy is not required (owner ruling, 2026-10-10). On ECS and Lambda, point `ConnectionStrings__redis` at the ElastiCache or MemoryDB endpoint, with TLS and auth as the cluster requires.
 
 **Durability is a property of your Redis deployment.** Choose it to match how much acknowledged job and proposal state you can afford to lose:
 
