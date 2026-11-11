@@ -41,10 +41,10 @@ internal sealed class SaveStudioVersionTool(IGeoprocessingJobService jobService,
     {
         Name = Name,
         Title = "Save Studio version",
-        Description = "Save the current Studio draft generation as an immutable version through the governed Studio runtime. "
-            + "Use the returned version.itemId, version.versionId and version.contentHash for publication or reopen. "
-            + "Read the draft again before editing it further because saving refreshes its generation. "
-            + "An approval-required operation has no saved version yet; follow its proposal before continuing.",
+        Description =
+            "Save the draft generation as an immutable version through governed Studio. Use returned "
+            + "version.itemId/versionId/contentHash for publication or reopen. Saving refreshes generation: re-read "
+            + "before editing. Approval-required has no saved version yet; follow its proposal.",
         InputSchema = StudioMcpSchemas.SaveVersionArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioVersionMutationOutputSchema,
         Annotations = McpToolAnnotationSets.Write("Save Studio version", destructive: false, idempotent: false),
@@ -98,8 +98,9 @@ internal sealed class ReopenStudioVersionTool(IGeoprocessingJobService jobServic
     {
         Name = Name,
         Title = "Reopen Studio version",
-        Description = "Create an editable Studio draft from a saved version through the governed Studio runtime. "
-            + "Use its draftId and generation for subsequent edits. An approval-required operation has no reopened draft yet.",
+        Description =
+            "Reopen a saved version as a draft through governed Studio. Use draftId/generation for edits. "
+            + "Approval-required has no reopened draft yet.",
         InputSchema = StudioMcpSchemas.ReopenVersionArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftMutationOutputSchema,
         Annotations = McpToolAnnotationSets.Write("Reopen Studio version", destructive: false, idempotent: false),
@@ -145,8 +146,9 @@ internal sealed class GetStudioVersionTool(IGeoprocessingJobService jobService, 
     {
         Name = Name,
         Title = "Get Studio version",
-        Description = "Read one saved Studio version by itemId and versionId. Returns versionId and contentHash "
-            + "at the top level. Missing versions are not_found. Does not advance the draft generation.",
+        Description =
+            "Read a saved version by itemId/versionId; returns top-level versionId/contentHash. not_found: missing "
+            + "version. Draft generation is unchanged.",
         InputSchema = StudioMcpSchemas.GetVersionArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioGetVersionOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Get Studio version"),

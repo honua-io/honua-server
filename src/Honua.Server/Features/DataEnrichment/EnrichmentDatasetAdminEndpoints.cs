@@ -28,7 +28,11 @@ internal static partial class EnrichmentDatasetAdminEndpoints
 
         var group = endpoints.MapGroup("/api/enrich/datasets")
             .WithTags(TagAdmin, TagEnrichment)
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .AddEndpointFilter(static async (invocation, next) =>
+                DataEnrichmentRequestHandlers.RequireEnrichmentEntitlement(invocation.HttpContext)
+                    ?? await next(invocation).ConfigureAwait(false))
+            .ProducesProblem(StatusCodes.Status402PaymentRequired);
 
         _ = group.MapPost("/", HandleRegister)
             .WithName("RegisterEnrichmentDataset")

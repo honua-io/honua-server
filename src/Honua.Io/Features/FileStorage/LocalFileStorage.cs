@@ -200,6 +200,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                 ExpiresAt = expiresAt,
                 ContentHash = contentHash,
                 ETag = generationId,
+                CacheControl = StoredObjectCacheControl.For(request.CachePolicy),
                 Metadata = request.Metadata.Add("UploadId", uploadId),
                 Provider = CloudStorageProvider.Local
             };

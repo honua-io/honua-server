@@ -210,15 +210,14 @@ public sealed class ProviderRoutedTileAndH3EndpointTests :
     [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.GetTile)]
     [Endpoint("GET /tiles/{layerId}/h3/{z}/{x}/{y}.mvt")]
-    public async Task H3Tile_EmptyRoutedTile_PreservesCacheHeaders()
+    public async Task H3Tile_EmptyRoutedTile_IsNeverStoredForACredentialedCaller()
     {
         var response = await _fixture.App.Client.GetAsync("/tiles/0/h3/1/1/1.mvt?resolution=5");
 
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
         response.Headers.CacheControl.Should().NotBeNull();
         response.Headers.CacheControl!.Private.Should().BeTrue();
-        response.Headers.CacheControl.MaxAge.Should().BeGreaterThan(TimeSpan.Zero);
-        response.Headers.Vary.Should().Contain("Authorization");
+        response.Headers.CacheControl.NoStore.Should().BeTrue();
     }
 
     private static void AssertControlledCell(JsonElement root, string attributesProperty)

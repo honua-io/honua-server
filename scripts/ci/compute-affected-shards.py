@@ -84,6 +84,12 @@ ORDERING ("largest-impact first")
          near one shard of wall clock.
       5. Shard name, so the selection is deterministic.
 
+    Numbered children of a shard split for capacity ("WFS 1" .. "WFS 9") are
+    one family. Among candidates that tie on the first three terms, each
+    family's first child ranks before any family's second child, so a change to
+    a class split across many children cannot spend the whole cap and time
+    budget on that one class while another changed test's owner waits.
+
     `path_hits` is computed here with the same `startswith` prefix test the
     router's jq uses. Both it and `test_class_hits` are RANKING inputs only --
     membership of the candidate set always comes from the router's own answer --
@@ -123,12 +129,14 @@ def _load_sibling(name: str) -> Any:
     return module
 
 
+shard_projects = _load_sibling("shard_projects").shard_projects
 time_budget = _load_sibling("shard_time_budget")
 apply_time_budget = time_budget.apply_time_budget
 
 
 CONTRACT = "honua.pr-gate-affected-shards/v1"
 DEFAULT_CAP = 6
+SPLIT_CHILD_SUFFIX = re.compile(r" \d+$")
 DEFAULT_CONFIG = ".github/ci-shards.json"
 DEFAULT_ROUTER = "scripts/ci/honua-server-targeted-tests.sh"
 DEFAULT_PROJECTS_SCRIPT = "scripts/ci/compute-affected-projects.sh"
@@ -303,7 +311,7 @@ def run_affected_projects(root: Path, script: str, base: str, head: str) -> list
 
 
 def shard_test_project(shard: dict[str, Any]) -> str:
-    return shard.get("csproj") or DEFAULT_TEST_PROJECT
+    return "" if shard.get("csprojs") else shard.get("csproj") or DEFAULT_TEST_PROJECT
 
 
 @functools.lru_cache(maxsize=1)
@@ -475,11 +483,11 @@ def count_test_class_hits(
             for fqn, entry in declared.get(changed, ())
         }
         for shard in config["shards"]:
-            project = shard_test_project(shard)
+            projects = shard_projects(shard)
             count = 0
             for changed in test_files:
                 for fqn, entry in declared.get(changed, ()):
-                    if entry["csproj"] != project:
+                    if entry["csproj"] not in projects:
                         continue
                     if any(
                         coverage.shard_claims(shard["filter"], f"{entry.get('fqn', fqn)}.{method}")
@@ -559,7 +567,7 @@ def select(
         # it must not be read as "this shard is unaffected".
         if project_scope in ("unknown", "all"):
             return True
-        return shard_test_project(shard) in closure
+        return any(project in closure for project in shard_projects(shard))
 
     router_run_all = bool(descriptor.get("run_all"))
     router_shards = [name for name in descriptor.get("shards") or [] if name in shards_by_name]
@@ -631,6 +639,7 @@ def select(
                 "timeout_minutes": shard.get("timeout_minutes"),
                 "test_timeout_minutes": shard.get("test_timeout_minutes"),
                 "test_project": shard_test_project(shard),
+                "test_projects": shard_projects(shard),
             }
         )
     ranked.sort(
@@ -642,6 +651,7 @@ def select(
             entry["name"],
         )
     )
+    ranked = interleave_split_families(ranked)
 
     selected = ranked[:cap]
     dropped = [entry["name"] for entry in ranked[cap:]]
@@ -679,6 +689,22 @@ def select(
     return result
 
 
+def interleave_split_families(ranked: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Within each tie on the routing signals, take one child per split family per round."""
+    rounds: dict[tuple[Any, ...], int] = {}
+
+    def round_of(entry: dict[str, Any]) -> int:
+        family = (tie(entry), SPLIT_CHILD_SUFFIX.sub("", entry["name"]))
+        rounds[family] = rounds.get(family, 0) + 1
+        return rounds[family]
+
+    def tie(entry: dict[str, Any]) -> tuple[Any, ...]:
+        return (-entry["test_class_hits"], -entry["path_hits"], not entry["project_affected"])
+
+    keyed = [(tie(entry), round_of(entry), position, entry) for position, entry in enumerate(ranked)]
+    return [entry for *_, entry in sorted(keyed, key=lambda item: item[:3])]
+
+
 def skipped(reason: str, *, cap: int, changed_file_count: int = 0, **extra: Any) -> dict[str, Any]:
     result = {
         "contract": CONTRACT,
@@ -711,7 +737,9 @@ def matrix_include(result: dict[str, Any], config: dict[str, Any]) -> list[dict[
     for name in result["shards"]:
         shard = shards_by_name[name]
         entry = {field: shard.get(field, "") for field in MATRIX_FIELDS}
-        entry["csproj"] = shard_test_project(shard)
+        entry["csproj"] = shard.get("csproj") or ("" if "csprojs" in shard else DEFAULT_TEST_PROJECT)
+        if "csprojs" in shard:
+            entry["csprojs"] = shard_projects(shard)
         entry["dispatch_rank"] = shard.get("dispatch_rank")
         entries.append(entry)
     entries.sort(key=lambda entry: -(entry["dispatch_rank"] or 0.0))
@@ -773,6 +801,8 @@ def append_github_output(result: dict[str, Any], include: list[dict[str, Any]]) 
         handle.write(f"reason={result['reason']}\n")
         handle.write(f"selected_count={len(result['shards'])}\n")
         handle.write(f"matrix_include={json.dumps(include, separators=(',', ':'))}\n")
+        receipt_matrix = [{"shard_name": entry["shard_name"]} for entry in include]
+        handle.write(f"receipt_matrix={json.dumps(receipt_matrix, separators=(',', ':'))}\n")
         deferred_names = [entry["name"] for entry in result["deferred_to_trunk"]]
         handle.write(f"deferred_to_trunk={json.dumps(deferred_names, separators=(',', ':'))}\n")
 

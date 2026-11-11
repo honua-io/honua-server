@@ -32,7 +32,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 ROSTER_HOME="$REPO_ROOT/certification/bounded-roster"
 cd "$REPO_ROOT"
 
-if ! git diff --quiet HEAD -- certification tests/python/shared tests/seed docker/client-compat docker/cng; then
+if ! git diff --quiet HEAD -- certification tests/python/shared tests/seed docker/client-compat docker/cng scripts/certification/record_roster_verdicts.sh; then
   echo "producer inputs have uncommitted changes; commit them so producer_source_sha names the harness that ran" >&2
   exit 2
 fi
@@ -199,18 +199,24 @@ python3 "$ROSTER_HOME/lib/emit_receipts.py" --run-dir "$ROSTER_RUN_DIR" \
   --producer-source-sha "$PRODUCER_SHA" --out "$EVIDENCE/receipts"
 
 log "release-mode verdict"
-set +e
-python3 scripts/certification/verify-client-certification-receipts.py --mode release \
-  --receipts "$EVIDENCE/receipts" --source-sha "$SOURCE_SHA" --image-digest "$INDEX_DIGEST" \
-  --cut-at "$IMAGE_CREATED" --producer-source-sha "$PRODUCER_SHA" \
-  --output "$EVIDENCE/verdict.release.json" | tee "$EVIDENCE/verdict.release.txt"
-python3 scripts/certification/verify-client-certification-receipts.py \
-  --output "$EVIDENCE/verdict.contract.json" > "$EVIDENCE/verdict.contract.txt"
-set -e
+# shellcheck source=../../scripts/certification/record_roster_verdicts.sh
+source "$REPO_ROOT/scripts/certification/record_roster_verdicts.sh"
+declare -A roster_candidate=(
+  [source_sha]="$SOURCE_SHA"
+  [image_digest]="$INDEX_DIGEST"
+  [cut_at]="$IMAGE_CREATED"
+  [producer_sha]="$PRODUCER_SHA"
+)
+verdict_failed=0
+record_verdicts "$EVIDENCE" roster_candidate || verdict_failed=1
 
 mkdir -p "$EVIDENCE/run"
 cp "$ROSTER_RUN_DIR"/{candidate.json,fixture.json,lanes.json,fixture-artifacts.json} "$EVIDENCE/run/"
 cp -r "$ROSTER_RUN_DIR/observations" "$EVIDENCE/run/"
 gzip -9 -c "$ROSTER_RUN_DIR/wire/wire.jsonl" > "$EVIDENCE/run/wire.jsonl.gz"
 sha256sum "$ROSTER_RUN_DIR/wire/wire.jsonl" | awk '{print $1 "  wire.jsonl"}' > "$EVIDENCE/run/wire.jsonl.sha256"
+if [[ "$verdict_failed" -ne 0 ]]; then
+  echo "roster verdict failed; evidence retained at $EVIDENCE" >&2
+  exit 1
+fi
 log "done: $EVIDENCE (raw run directory $ROSTER_RUN_DIR)"

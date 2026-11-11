@@ -56,6 +56,13 @@ class PlanTests(unittest.TestCase):
         self.assertEqual("F=2", plan["baseline"][1]["filter"])
         self.assertEqual(["one", "two"], [item["identity"] for item in plan["reused_consumers"]])
 
+    def test_group_expands_each_assembly_with_unique_identity(self):
+        shards = {"shards": [{"artifact_suffix": "group", "csprojs": [SERVER, GEO], "filter": "F=1"}]}
+        plan = MODULE.build_plan({"contract_version": 1}, shards, registry(), "observed-full")
+        self.assertEqual([SERVER, GEO], [item["project"] for item in plan["baseline"]])
+        self.assertEqual(["group-server", "group-geo"], [item["identity"] for item in plan["baseline"]])
+        self.assertEqual(["F=1", "F=1"], [item["filter"] for item in plan["baseline"]])
+
     def test_matrix_capacity_matches_github_job_limit(self) -> None:
         for mode in ("core", "observed-full"):
             for count in (0, 256, 257):

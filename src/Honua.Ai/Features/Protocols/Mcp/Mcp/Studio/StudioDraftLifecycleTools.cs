@@ -37,10 +37,9 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
         Name = ToolName,
         Title = "Create Studio draft",
         Description =
-            "Create a mutable Studio package lifecycle draft (query, analysis, map, dashboard, report, form, app, workflow, gp, or etl family). "
-            + "The composition a user and agent build IS this draft (AD-8): the returned draft's generation must be passed as `generation` on "
-            + "every subsequent honua_studio_update_draft / composition-mutation call for optimistic concurrency. "
-            + "The optional `ownerId` field is admin-only; non-admin callers must omit it and become the owner automatically.",
+            "Create a mutable query/analysis/map/dashboard/report/form/app/workflow/gp/etl draft. The composition IS "
+            + "the draft. Pass returned generation on every update/composition mutation for optimistic concurrency. "
+            + "ownerId is admin-only; omit it as a non-admin to own the draft.",
         InputSchema = StudioMcpSchemas.CreateDraftArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftMutationOutputSchema,
         // Write tool: it authors a new draft. Not destructive; not idempotent
@@ -221,7 +220,8 @@ internal sealed class GetStudioDraftTool : StudioDraftToolBase, IMcpTool
     {
         Name = ToolName,
         Title = "Get Studio draft",
-        Description = "Read a Studio package lifecycle draft by id, including its current generation for the next optimistic-concurrency call.",
+        Description =
+            "Read a draft and its current generation for the next optimistic-concurrency call.",
         InputSchema = StudioMcpSchemas.DraftIdArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Get Studio draft")
@@ -282,11 +282,9 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
         Name = ToolName,
         Title = "Update Studio draft",
         Description =
-            "Replace a Studio package lifecycle draft's editable fields (packageKey, workspaceId, ownerId, schemaVersion, format, body) "
-            + "with optimistic-generation checking. Pass the `generation` last read from honua_studio_get_draft/honua_studio_create_draft; "
-            + "a stale generation returns a failed_precondition error — re-fetch and retry rather than blindly resubmitting. "
-            + "The optional `ownerId` field is admin-only; non-admin callers must omit it. "
-            + "Does not accept publicationIntent: use honua_studio_propose_publication to record publish intent.",
+            "Replace editable draft fields (packageKey, workspaceId, ownerId, schemaVersion, format, body). Pass the "
+            + "last read generation; failed_precondition means re-fetch and retry. ownerId is admin-only; non-admins must "
+            + "omit it. Use honua_studio_propose_publication for publicationIntent.",
         InputSchema = StudioMcpSchemas.UpdateDraftArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         // Write tool: mutates existing state (not destructive of the item —
@@ -409,10 +407,9 @@ internal sealed class ValidateStudioDraftTool : StudioDraftToolBase, IMcpTool
         Name = ToolName,
         Title = "Validate Studio draft",
         Description =
-            "Validate a Studio package lifecycle draft's current envelope and return the structural validation summary. "
-            + "This does not query sources, verify their current access, or render the Studio canvas. "
-            + "Genuinely read-only: it does NOT persist the result onto the draft or change its generation "
-            + "(unlike the REST admin POST .../validate endpoint), so it is always safe to call between composition-mutation calls.",
+            "Validate the current draft envelope structurally without querying sources, checking access or rendering. "
+            + "Unlike REST admin POST .../validate, this never persists validation or changes generation; safe between "
+            + "mutations.",
         InputSchema = StudioMcpSchemas.DraftIdArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioValidationOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Validate Studio draft")
@@ -475,11 +472,9 @@ internal sealed class PreviewStudioDraftTool : StudioDraftToolBase, IMcpTool
         Name = ToolName,
         Title = "Preview Studio draft",
         Description =
-            "Build a read-only preview plan for a Studio package lifecycle draft's current envelope. "
-            + "This is planning only for every family: it does not query sources or render a map. "
-            + "Genuinely read-only: it does NOT persist a validation summary or change the draft's generation "
-            + "(unlike the REST admin POST .../preview-plan endpoint). "
-            + "For job-backed families (gp, etl, workflow) the plan is planning-only — it does not submit or execute a job.",
+            "Plan a preview of the current draft envelope without querying sources or rendering. Unlike REST admin POST "
+            + ".../preview-plan, this never persists validation or changes generation. For gp/etl/workflow, planning "
+            + "never submits or executes jobs.",
         InputSchema = StudioMcpSchemas.DraftIdArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioPreviewPlanOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Preview Studio draft")

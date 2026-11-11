@@ -12,7 +12,7 @@ dotnet build Honua.sln --no-restore --configuration Release /p:TreatWarningsAsEr
 dotnet format Honua.sln --verify-no-changes
 scripts/ci/pre-pr-check.sh --dry-run          # what a run would build/test; zero cost
 scripts/ci/pre-pr-check.sh --unit-only        # fast in-process feedback
-scripts/ci/pre-pr-check.sh --affected-tests   # provider/HTTP changes (Docker required)
+scripts/ci/pre-pr-check.sh --affected-tests   # units; --integration adds Docker tests
 scripts/ci/pre-pr-check.sh                    # pre-PR gate; tick the PR box only after it passes
 dotnet test tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj
 dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj

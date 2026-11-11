@@ -189,22 +189,22 @@ jobs:
           --image honua-worker-gdal:boundary --source-sha "${{ steps.source.outputs.source_sha }}"
           --output artifacts/test-results/native-entry-image.json
 
-      - name: Start attested Redis for worker smoke test
+      - name: Start PostgreSQL for worker smoke test
         run: >-
-          docker run --detach --name worker-redis --network host redis:7.2-alpine
-          redis-server --appendonly yes --appendfsync always --save ""
-          --maxmemory-policy noeviction
+          docker run --detach --name worker-postgres --network host
+          --env POSTGRES_PASSWORD=worker-smoke
+          mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
 
-      - name: Wait for attested Redis
+      - name: Wait for PostgreSQL
         run: >-
-          timeout 30 sh -c
-          'until docker exec worker-redis redis-cli ping; do sleep 1; done'
+          timeout 60 sh -c
+          'until docker exec worker-postgres pg_isready --username postgres; do sleep 1; done'
 
       - name: Verify native tools and smoke the real worker entrypoint
         run: >-
           python3 scripts/ci/verify-serving-image-boundary.py
           --worker-image honua-worker-gdal:boundary
-          --worker-redis 127.0.0.1:6379
+          --worker-database "Host=127.0.0.1;Database=postgres;Username=postgres;Password=worker-smoke"
 
       - name: Certify production worker queue handoff
         id: worker-handoff

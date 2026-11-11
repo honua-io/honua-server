@@ -5,8 +5,8 @@ on:
   schedule:
     # Full integration lane. PR CI is selective; release workflows own
     # packaging/publishing smoke.
-    - cron: '0 9 * * *'
-    - cron: '0 21 * * *'
+    - cron: '23 9 * * *'
+    - cron: '23 21 * * *'
   # Per-PR verification lives in pr-gate.yml. Full CI runs on trunk twice
   # daily or by dispatch, keeping runtime proofs and protocol builds off the
   # per-push critical path while preserving complete integration coverage.
@@ -26,7 +26,12 @@ on:
         type: boolean
         default: false
       selective_base:
-        description: 'Trailing-verification mode: full SHA of a trunk ancestor (typically the last matrix-green head). The run diffs selective_base...HEAD and gates only the shards/lanes that diff touches. Empty = full lane. Overridden by full_ci=true.'
+        description: 'Trailing-verification mode: full SHA of a trunk ancestor (typically the latest completed CI head). The run diffs selective_base...HEAD and gates only the shards/lanes that diff touches. Empty = full lane. Overridden by full_ci=true.'
+        required: false
+        type: string
+        default: ''
+      investigation_base:
+        description: 'Last green trunk ancestor for the CI doctor suspect range; independent of selective execution scope. Empty = unknown.'
         required: false
         type: string
         default: ''
@@ -73,6 +78,7 @@ env:
   CERTIFICATION_LANE_JOBS: 'build dotnet-foundation-tests python-integration-tests test-all ci-gate'
 
 permissions:
+  issues: read
   contents: read
   packages: read
 
@@ -307,6 +313,7 @@ jobs:
       integration_reason: ${{ steps.filter.outputs.integration_reason }}
       full_ci: ${{ steps.filter.outputs.full_ci }}
       postgres_matrix: ${{ steps.filter.outputs.postgres_matrix }}
+      specialized_lanes: ${{ steps.specialized.outputs.lanes }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -331,7 +338,7 @@ jobs:
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ] &&
                [[ "${SELECTIVE_BASE}" =~ ^[0-9a-f]{40}$ ]] &&
                [ "${FULL_CI_INPUT}" != "true" ]; then
-            # Trailing-verification dispatch: diff against the last verified
+            # Trailing-verification dispatch: diff against the latest completed
             # trunk head so only landings since then gate lanes/shards. The
             # SHA regex is the injection guard; an unknown SHA fails safe to
             # the full trunk range below.
@@ -353,8 +360,14 @@ jobs:
       - name: Record suspect merge range
         if: steps.diff.outputs.trailing_selective == 'true'
         env:
-          SELECTIVE_BASE: ${{ inputs.selective_base }}
-        run: scripts/ci/trunk-suspect-range.sh "${SELECTIVE_BASE}" "${GITHUB_SHA}" | tee -a "$GITHUB_STEP_SUMMARY"
+          INVESTIGATION_BASE: ${{ inputs.investigation_base }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INVESTIGATION_BASE}" ]; then
+            scripts/ci/trunk-suspect-range.sh "${INVESTIGATION_BASE}" "${GITHUB_SHA}" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Last green trunk ancestor unknown; no bounded culprit range is available." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Check for non-test changes
         id: filter
@@ -481,16 +494,6 @@ jobs:
                 | sed '/^$/d' || true
             )
 
-            # A trailing run is selective across a range of already-landed commits,
-            # but the compatibility jobs below are currently routed by full_ci rather
-            # than by individual path selectors. Keep docs/CI-only ranges cheap; when
-            # the range contains runtime or test changes, run those compatibility
-            # lanes instead of silently suppressing them.
-            if [ "${{ steps.diff.outputs.trailing_selective }}" = "true" ] &&
-               [ -n "$INTEGRATION_FILES" ]; then
-              FULL_CI=true
-            fi
-
             if [ "${FULL_CI}" = "true" ]; then
               echo "build_changes=true" >> "$GITHUB_OUTPUT"
               echo "integration_changes=true" >> "$GITHUB_OUTPUT"
@@ -529,6 +532,13 @@ jobs:
           echo "Full CI:"
           echo "${FULL_CI:-true}"
 
+      - name: Select expensive affected lanes
+        id: specialized
+        env:
+          DIFF_RANGE: ${{ steps.diff.outputs.range }}
+          SELECTIVE: ${{ steps.diff.outputs.trailing_selective == 'true' && steps.filter.outputs.full_ci != 'true' && 'true' || 'false' }}
+        run: python3 scripts/ci/affected-ci-lanes.py --range "$DIFF_RANGE" --selective "$SELECTIVE" >> "$GITHUB_OUTPUT"
+
   # Compute the server-tests shard subset for this PR. Scheduled/manual full
   # integration runs execute every shard. See ADR-0037.
   # Per ADR-0037 .github/ci-shards.json is the single source of truth for both
@@ -550,6 +560,7 @@ jobs:
     outputs:
       descriptor: ${{ steps.compute.outputs.descriptor }}
       matrix_include: ${{ steps.compute.outputs.matrix_include }}
+      matrix_artifact: ${{ steps.compute.outputs.matrix_artifact }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -622,6 +633,7 @@ jobs:
                 upload_odata_evidence,
                 filter,
                 csproj: (.csproj // ""),
+                csprojs: (.csprojs // null),
                 advisory: (.advisory // false)
               })
             | sort_by(-.dispatch_rank)
@@ -632,9 +644,18 @@ jobs:
             echo "::error::matrix_include is empty — targeted-shards selected no shards"
             exit 1
           fi
-          echo "matrix_include: ${matrix_include}"
+          printf '%s\n' "${matrix_include}" > "${RUNNER_TEMP}/managed-matrix.json"
           echo "descriptor=${descriptor}" >> "$GITHUB_OUTPUT"
           echo "matrix_include=${matrix_include}" >> "$GITHUB_OUTPUT"
+          echo "matrix_artifact=selected-server-test-matrix-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload selected shard matrix
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: selected-server-test-matrix-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/managed-matrix.json
+          if-no-files-found: error
+          retention-days: 7
 
   ci-router-validation:
     name: CI Router Validation
@@ -680,6 +701,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Canonical Instruction Check
         run: bash scripts/ci/check-instructions-sync.sh
@@ -707,15 +730,18 @@ jobs:
         # affected by this PR + their reverse-dependency closure. Force-fulls
         # whenever shared infra changes (Directory.Packages.props, Honua.sln,
         # .github/, scripts/ci/) so a graph change cannot bypass the gate.
-        # The trunk-merge build is unaffected: push events resolve to BASE_REF
-        # 'origin/trunk' against HEAD 'HEAD'; on trunk that diff is empty so
-        # the script emits nothing and the build step short-circuits — meaning
-        # the canonical correctness gate is the PR check that landed it.
+        # Trailing dispatches use the verified range base, rather than comparing
+        # trunk to itself and unnecessarily rebuilding the entire solution.
         env:
-          BASE_REF: ${{ github.event.pull_request.base.sha || 'origin/trunk' }}
+          FULL_CI: ${{ needs.changes.outputs.full_ci }}
+          BASE_REF: ${{ github.event.pull_request.base.sha || inputs.selective_base || 'origin/trunk' }}
           HEAD_REF: ${{ github.event.pull_request.head.sha || 'HEAD' }}
         run: |
-          affected="$(scripts/ci/compute-affected-projects.sh)"
+          if [[ "${FULL_CI}" == true ]]; then
+            affected=ALL
+          else
+            affected="$(scripts/ci/compute-affected-projects.sh)"
+          fi
           if [[ -z "${affected}" || "${affected}" == "ALL" ]]; then
             mode="full"
             projects=""
@@ -734,22 +760,28 @@ jobs:
           python3 scripts/ci/protocol-profile-selection.py --dry-run --changed-from-git > "${RUNNER_TEMP}/protocol-profiles.json"
           cat "${RUNNER_TEMP}/protocol-profiles.json"
 
+      - name: Download selected shard matrix
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.targeted-shards.outputs.matrix_artifact }}
+          path: ${{ runner.temp }}
+
       - name: Select managed producer outputs and build graph
         id: managed-plan
         env:
-          SELECTED_MATRIX: ${{ needs.targeted-shards.outputs.matrix_include }}
           AFFECTED_MODE: ${{ steps.affected.outputs.mode }}
           AFFECTED_PROJECTS: ${{ steps.affected.outputs.projects }}
         run: |
-          printf '%s' "${SELECTED_MATRIX:-[]}" > "${RUNNER_TEMP}/managed-matrix.json"
           python3 scripts/ci/managed-test-build.py projects --lane ci \
             --matrix-file "${RUNNER_TEMP}/managed-matrix.json" --output "${RUNNER_TEMP}/managed-projects.json"
           target=Honua.sln
+          echo '[]' > "${RUNNER_TEMP}/standalone-projects.json"
           if [[ "${AFFECTED_MODE}" == affected ]]; then
             python3 -c 'import json,os; json.dump({"solution":{"path":"Honua.sln","projects":os.environ["AFFECTED_PROJECTS"].split()}},open(os.environ["RUNNER_TEMP"]+"/affected-base.slnf","w"))'
             target="${RUNNER_TEMP}/managed-build.slnf"
             python3 scripts/ci/managed-test-build.py filter --projects-file "${RUNNER_TEMP}/managed-projects.json" \
-              --base-filter "${RUNNER_TEMP}/affected-base.slnf" --output "${target}"
+              --base-filter "${RUNNER_TEMP}/affected-base.slnf" --output "${target}" \
+              --standalone-output "${RUNNER_TEMP}/standalone-projects.json"
           fi
           echo "target=${target}" >> "$GITHUB_OUTPUT"
 
@@ -762,6 +794,11 @@ jobs:
         env:
           BUILD_TARGET: ${{ steps.managed-plan.outputs.target }}
         run: dotnet build "${BUILD_TARGET}" --no-restore --configuration Release -graphBuild -p:TreatWarningsAsErrors=true -p:RunAnalyzers=true -p:UseSharedCompilation=false
+
+      - name: Build selected standalone tooling projects
+        run: >-
+          python3 scripts/ci/managed-test-build.py standalone
+          --projects-file "${RUNNER_TEMP}/standalone-projects.json"
 
       - name: Build selected protocol profiles
         run: python3 scripts/ci/build-selected-protocol-profiles.py --selection "${RUNNER_TEMP}/protocol-profiles.json"
@@ -945,11 +982,19 @@ jobs:
           bash scripts/ci/regenerate-generated-files.sh --configuration Release --no-build --no-restore
           bash scripts/ci/report-generated-file-drift.sh
 
+      - name: Load validated flaky-test quarantine
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HONUA_TEST_QUARANTINE_FILE: ${{ runner.temp }}/honua-flake-quarantine.json
+        run: |
+          python3 scripts/ci/quarantine-issues.py snapshot --output "${HONUA_TEST_QUARANTINE_FILE}"
+          echo "HONUA_TEST_QUARANTINE_FILE=${HONUA_TEST_QUARANTINE_FILE}" >> "${GITHUB_ENV}"
+
       - name: Run source architecture after projection regeneration
         if: matrix.family == 'server'
         timeout-minutes: 15
         run: >-
-          dotnet test tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj
+          python3 scripts/ci/run-quarantine-filtered-tests.py dotnet test tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj
           --configuration Release --no-build --no-restore
           --logger "trx;LogFileName=source-architecture-tests.trx" --results-directory ./artifacts/test-results
 
@@ -1156,7 +1201,8 @@ jobs:
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
-      max-parallel: 24
+      # Bound trailing shard fanout so PR Gate can obtain runners. Full runs retain their budget.
+      max-parallel: ${{ inputs.selective_base && needs.changes.outputs.full_ci != 'true' && 6 || 24 }}
       matrix:
         include: ${{ fromJson(needs.targeted-shards.outputs.matrix_include) }}
     env:
@@ -1182,6 +1228,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Load validated flaky-test quarantine
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HONUA_TEST_QUARANTINE_FILE: ${{ runner.temp }}/honua-flake-quarantine.json
+        run: |
+          python3 scripts/ci/quarantine-issues.py snapshot --output "${HONUA_TEST_QUARANTINE_FILE}"
+          echo "HONUA_TEST_QUARANTINE_FILE=${HONUA_TEST_QUARANTINE_FILE}" >> "${GITHUB_ENV}"
+
       # Reclaim runner disk while .NET setup and cache planning run. The
       # modular topology (8 protocol
       # assemblies + native packages such as ParquetSharp/Apache.Arrow/SkiaSharp
@@ -1200,9 +1254,10 @@ jobs:
       - name: Select shard managed outputs
         env:
           SHARD_CSPROJ: ${{ matrix.csproj }}
+          SHARD_CSPROJS: ${{ toJSON(matrix.csprojs) }}
         run: |
           python3 scripts/ci/managed-test-build.py projects --lane shard \
-            --project "${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}" \
+            --project "${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}" --projects-json "${SHARD_CSPROJS}" \
             --output "${RUNNER_TEMP}/shard-projects.json"
 
       - name: Restore package prerequisites before shard materialization
@@ -1225,16 +1280,24 @@ jobs:
         id: managed-status
         env:
           RESTORED_PROJECTS: ${{ steps.managed-consume.outputs.restored-projects-file }}
-        run: echo "restored=$(jq -r 'length > 0' "${RESTORED_PROJECTS}")" >> "$GITHUB_OUTPUT"
+        run: |
+          restored="$(jq -r --slurpfile requested "${RUNNER_TEMP}/shard-projects.json" \
+            '($requested[0] - .) | length == 0' "${RESTORED_PROJECTS}")"
+          echo "restored=${restored}" >> "$GITHUB_OUTPUT"
+
+      - name: Download selected shard matrix
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.targeted-shards.outputs.matrix_artifact }}
+          path: ${{ runner.temp }}
 
       - name: Plan shard-local exact-head cache
         id: shard-cache-plan
-        if: steps.managed-status.outputs.restored != 'true'
+        if: steps.managed-status.outputs.restored != 'true' && matrix.csprojs == null
         shell: bash
         env:
           SHARD_NAME: ${{ matrix.shard_name }}
           SHARD_CSPROJ: ${{ matrix.csproj }}
-          SELECTED_SHARDS_JSON: ${{ needs.targeted-shards.outputs.matrix_include }}
           # Attempt-1 opportunistic reuse (#3213). Contract, fail-open behaviour
           # and rollback: docs/internal/ci/server-test-binary-artifacts.md.
           # The raw repository variable is forwarded verbatim; the single
@@ -1244,7 +1307,7 @@ jobs:
           scripts/ci/server-test-shard-cache.sh plan \
             --shard "${SHARD_NAME}" \
             --project "${SHARD_CSPROJ}" \
-            --matrix-json "${SELECTED_SHARDS_JSON}" \
+            --matrix-file "${RUNNER_TEMP}/managed-matrix.json" \
             --source-sha '${{ github.sha }}' \
             --runner-os '${{ runner.os }}' \
             --sdk "$(dotnet --version)" \
@@ -1296,7 +1359,7 @@ jobs:
 
       - name: Verify and unpack exact-head shard cache
         id: shard-cache-materialize
-        if: steps.managed-status.outputs.restored != 'true'
+        if: steps.managed-status.outputs.restored != 'true' && matrix.csprojs == null
         shell: bash
         env:
           CACHE_HIT_FIRST: ${{ steps.shard-cache-download.outputs.cache-hit }}
@@ -1433,10 +1496,10 @@ jobs:
           # Only these current shard filters select explicit Redis fixtures.
           images=()
           case "${SERVER_SHARD}" in
-            'Admin & Infrastructure'| \
+            'Admin & Infrastructure '[0-9]*| \
             'Migration'| \
             'FeatureServer Editing and Relationships'| \
-            'FeatureServer Query Services and Replication'| \
+            'FeatureServer Query Services and Replication '[0-9]*| \
             'OGC API Tiles Coverages and Processes'| \
             'GeoServices GPServer and NAServer'| \
             'Caching File Storage Styling and Infrastructure'| \
@@ -1447,7 +1510,7 @@ jobs:
             'Server Features Admin Authorization'| \
             'Server Features Admin Authorization Matrix'| \
             'Server Features Admin Network and Jobs'| \
-            'Server Features Admin Integrations and Automation'| \
+            'Server Features Admin Integrations and Automation '[0-9]*| \
             'Server Features Admin Alert Endpoints'| \
             'Server Features Streaming Snapshot and Conformance'| \
             'Server Features Data Enrichment and Capabilities'| \
@@ -1480,6 +1543,7 @@ jobs:
           # assembly; the shard script defaults to Honua.Server.Tests.csproj
           # when this env var is empty so legacy shards keep working unchanged.
           HONUA_SERVER_TEST_CSPROJ: ${{ matrix.csproj }}
+          HONUA_SERVER_TEST_CSPROJS: ${{ toJSON(matrix.csprojs) }}
         run: |
           scripts/ci/run-server-test-shard.sh
 
@@ -1653,11 +1717,19 @@ jobs:
         timeout-minutes: 12
         run: scripts/ci/prepare-testcontainer-images.sh ryuk postgis18 redis
 
+      - name: Load validated flaky-test quarantine
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HONUA_TEST_QUARANTINE_FILE: ${{ runner.temp }}/honua-flake-quarantine.json
+        run: |
+          python3 scripts/ci/quarantine-issues.py snapshot --output "${HONUA_TEST_QUARANTINE_FILE}"
+          echo "HONUA_TEST_QUARANTINE_FILE=${HONUA_TEST_QUARANTINE_FILE}" >> "${GITHUB_ENV}"
+
       - name: Run Worker GDAL tests
         id: run-tests
         timeout-minutes: 10
         run: |
-          dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
+          python3 scripts/ci/run-quarantine-filtered-tests.py dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
             --no-build \
             --configuration Release \
             --logger "trx;LogFileName=worker-gdal-tests.trx" \
@@ -1787,7 +1859,7 @@ jobs:
 
   python-integration-tests:
     name: Python Integration Tests
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && (needs.changes.outputs.full_ci == 'true' || (inputs.selective_base && fromJson(needs.changes.outputs.specialized_lanes).python)) }}
     runs-on: ubuntu-24.04
     needs: changes
     timeout-minutes: 25
@@ -1929,6 +2001,13 @@ jobs:
           path: artifacts/server-shard-results
           merge-multiple: true
 
+      - name: Download selected shard matrix
+        if: always() && needs.changes.outputs.integration_changes == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.targeted-shards.outputs.matrix_artifact }}
+          path: ${{ runner.temp }}
+
       - name: Verify server shard execution receipts
         if: always() && needs.changes.outputs.integration_changes == 'true'
         env:
@@ -1936,12 +2015,11 @@ jobs:
           SELECT_RESULT: ${{ needs.targeted-shards.result }}
           SELECT_SKIP: 'false'
           SELECT_REASON: selected_server_shards
-          SELECT_MATRIX: ${{ needs.targeted-shards.outputs.matrix_include }}
           SHARDS_RESULT: ${{ needs.server-tests.result }}
         run: |
           export SELECT_COUNT
-          SELECT_COUNT=$(jq 'length' <<< "${SELECT_MATRIX}")
-          python3 scripts/ci/affected-shard-verdict.py --timings artifacts/server-shard-results --receipt artifacts/server-shard-verdict.json
+          SELECT_COUNT=$(jq 'length' "${RUNNER_TEMP}/managed-matrix.json")
+          python3 scripts/ci/affected-shard-verdict.py --matrix-file "${RUNNER_TEMP}/managed-matrix.json" --timings artifacts/server-shard-results --receipt artifacts/server-shard-verdict.json
 
       - name: Check required test job results
         env:
@@ -1968,7 +2046,7 @@ jobs:
 
   js-integration-tests:
     name: JavaScript Integration Tests
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && (needs.changes.outputs.full_ci == 'true' || (inputs.selective_base && fromJson(needs.changes.outputs.specialized_lanes).browser)) }}
     runs-on: ubuntu-24.04
     needs: changes
     timeout-minutes: 15
@@ -2108,7 +2186,7 @@ jobs:
 
   esri-leaflet-browser-tests:
     name: Esri Leaflet Browser Tests
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && (needs.changes.outputs.full_ci == 'true' || (inputs.selective_base && fromJson(needs.changes.outputs.specialized_lanes).browser)) }}
     runs-on: ubuntu-24.04
     needs: changes
     timeout-minutes: 15
@@ -2224,7 +2302,7 @@ jobs:
 
   maplibre-compat:
     name: MapLibre GL JS Browser Compatibility
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && (needs.changes.outputs.full_ci == 'true' || (inputs.selective_base && fromJson(needs.changes.outputs.specialized_lanes).browser)) }}
     runs-on: ubuntu-24.04
     needs: changes
     timeout-minutes: 15
@@ -2346,7 +2424,7 @@ jobs:
 
   mcp-certification:
     name: MCP Certification (${{ matrix.transport }})
-    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
+    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && (needs.changes.outputs.full_ci == 'true' || (inputs.selective_base && fromJson(needs.changes.outputs.specialized_lanes).mcp)) }}
     runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: [build, changes, core-package-compatibility, postgres-compat]
     timeout-minutes: 15
@@ -2556,7 +2634,7 @@ jobs:
 
   postgres-compat:
     name: Postgres Compatibility (${{ matrix.pg_image }})
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && fromJson(needs.changes.outputs.specialized_lanes).postgres }}
     runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: changes
     timeout-minutes: 40
@@ -2608,6 +2686,14 @@ jobs:
         timeout-minutes: 8
         run: scripts/ci/prepare-testcontainer-images.sh ryuk postgres16
 
+      - name: Load validated flaky-test quarantine
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HONUA_TEST_QUARANTINE_FILE: ${{ runner.temp }}/honua-flake-quarantine.json
+        run: |
+          python3 scripts/ci/quarantine-issues.py snapshot --output "${HONUA_TEST_QUARANTINE_FILE}"
+          echo "HONUA_TEST_QUARANTINE_FILE=${HONUA_TEST_QUARANTINE_FILE}" >> "${GITHUB_ENV}"
+
       - name: Run Postgres compatibility tests
         env:
           HONUA_TEST_DB_URL: "Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=honua"
@@ -2632,6 +2718,7 @@ jobs:
           TEST_TIMEOUT_MINUTES: ${{ matrix.collect_coverage && '20' || '10' }}
         run: |
           test_args=(
+            python3 scripts/ci/run-quarantine-filtered-tests.py
             dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj
             --configuration Release
             --no-build
@@ -2800,7 +2887,7 @@ jobs:
     # builds per review-fix push. It runs alongside the shard matrix (p90 88.6m)
     # under a 45-minute ceiling, so it is not expected to extend the batch
     # critical path.
-    if: ${{ success() && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
+    if: ${{ success() && needs.changes.outputs.integration_changes == 'true' && fromJson(needs.changes.outputs.specialized_lanes).aot && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: [build, changes, core-package-compatibility, postgres-compat]
     timeout-minutes: 45
@@ -2851,7 +2938,7 @@ jobs:
 
   docker-build:
     name: Docker Build & Integration Test
-    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
+    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.full_ci == 'true' || (inputs.selective_base && fromJson(needs.changes.outputs.specialized_lanes).docker)) && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: changes
     # A cold BuildKit build consumed 13m45s in run 29088883576, leaving no
@@ -3035,7 +3122,7 @@ jobs:
 
   quickstart-console-smoke:
     name: Quickstart Console Compose Smoke
-    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
+    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.full_ci == 'true' || (inputs.selective_base && fromJson(needs.changes.outputs.specialized_lanes).quickstart)) && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: changes
     timeout-minutes: 30
@@ -3403,3 +3490,25 @@ jobs:
             exit 1
           fi
           echo "All required CI jobs passed."
+
+  # workflow_run notifications from workflow-token dispatches can be suppressed.
+  # Explicit workflow_dispatch is exempt from that token recursion restriction.
+  doctor-notify:
+    name: Notify CI doctor of trunk failure
+    needs: ci-gate
+    if: ${{ always() && needs.ci-gate.result == 'failure' && github.ref == 'refs/heads/trunk' && github.repository == 'honua-io/honua-server' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              ...context.repo,
+              workflow_id: 'ci-doctor-triage.lock.yml',
+              ref: context.payload.repository.default_branch,
+              inputs: { source_run_id: String(context.runId) }
+            });
+            core.info(`Notified CI doctor triage of failed CI run ${context.runId}`);
