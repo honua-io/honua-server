@@ -347,7 +347,7 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
     [Endpoint("POST /services/{serviceName}/ImageServer")]
     public async Task PostSoapCatalog_GetServiceDescriptions_AdvertisesImageServer()
     {
-        var fixture = await _soapRasterFixture.GetAsync();
+        var fixture = await _soapRasterFixture.GetHostAsync();
         const string soapRequest = """
             <?xml version="1.0" encoding="utf-8"?>
             <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
@@ -534,7 +534,7 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_GeoServicesPro37LegacyNamespace_EchoesNegotiatedNamespace()
     {
-        var fixture = await _soapRasterFixture.GetAsync();
+        var fixture = await _soapRasterFixture.GetHostAsync();
         const string operation =
             "<GetVersion xmlns=\"http://www.esri.com/schemas/ArcGIS/9.0\" />";
         using var response = await PostSoapOperationAsync(
@@ -1162,7 +1162,7 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_MetadataFieldsAndVersion_AreGeoServicesShaped()
     {
-        var fixture = await _soapRasterFixture.GetAsync();
+        var fixture = await _soapRasterFixture.GetHostAsync();
         using var metadata = await PostSoapAsync(
             fixture.Client,
             $"/services/{WebAppFixture.TestServiceId}/ImageServer",
