@@ -193,8 +193,11 @@ LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.revision="${HONUA_GIT_SHA}"
 ENV HONUA_GIT_SHA=${HONUA_GIT_SHA}
 
-ENV HOME=/tmp \
-    XDG_CACHE_HOME=/tmp/honua-cache \
+ENV HOME=/tmp/honua \
+    TMPDIR=/tmp/honua \
+    XDG_CACHE_HOME=/tmp/honua/cache \
+    TemporaryFiles__StorageDirectory=/tmp/honua/temp \
+    FileStorage__LocalStorage__BasePath=/tmp/honua/storage \
     ASPNETCORE_ENVIRONMENT=Production \
     HONUA_DEFAULT_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
     ASPNETCORE_HTTP_PORTS= \

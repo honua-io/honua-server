@@ -29,10 +29,8 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     tmpfs:
-      - /tmp:rw,noexec,nosuid,size=512m,mode=1777
+      - /tmp/honua:rw,noexec,nosuid,size=512m,uid=1001,gid=1001,mode=750
     environment:
-      HOME: /tmp
-      XDG_CACHE_HOME: /tmp/honua-cache
       TZ: Pacific/Honolulu
 EOF
 export HONUA_CNG_SERVER_PORT="$PORT" HONUA_CNG_POSTGRES_PORT="$PG_PORT"
@@ -50,7 +48,7 @@ if [[ "$(docker image inspect "$IMAGE" --format '{{ index .Config.Labels "honua.
   docker buildx build --target runtime-probe --output "type=local,dest=$work/probe" -f "$REPO_ROOT/Dockerfile" "$REPO_ROOT"
   chmod -R a+rX "$work/probe"
   docker run --rm --read-only --user 1001:1001 --cap-drop ALL --security-opt no-new-privileges \
-    --tmpfs /tmp:rw,noexec,nosuid,size=16m,mode=1777 --env TZ=Pacific/Honolulu \
+    --tmpfs /tmp/honua:rw,noexec,nosuid,size=16m,uid=1001,gid=1001,mode=750 --env TZ=Pacific/Honolulu \
     --mount "type=bind,src=$work/probe,dst=/probe,readonly" --entrypoint dotnet \
     "$IMAGE" /probe/RuntimeProbe.dll > "$OUT/runtime-environment.txt"
 fi

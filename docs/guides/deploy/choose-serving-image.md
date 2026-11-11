@@ -59,36 +59,44 @@ together. Older images lack this executable and must retain their existing
 probe until upgraded. Pull-only Compose installations inherit the pinned
 image's health check.
 
-## Read-only runtime and writable paths
+## Writable paths with a read-only root
 
-Run as UID/GID `1001:1001`, with a read-only root filesystem and a writable
-`/tmp` tmpfs (`mode=1777`, `nosuid`, `noexec`). Set mount ownership to `1001:1001`
-for persistent directories. The image has no shell or package manager. Its
-exec-form health check uses the compiled probe; ECS can use the load balancer's
-`/healthz/ready` directly.
+The chiseled serving images run as UID/GID `1001:1001`. Their default writable
+root is `/tmp/honua`; mount it as a writable volume owned by that user, or as
+`--tmpfs /tmp/honua:rw,noexec,nosuid,size=512m,uid=1001,gid=1001,mode=750`.
+The image pre-creates its writable directories. A mounted empty root must permit
+UID 1001 to create child directories. Capacity depends on concurrent import and
+geoprocessing workloads; 512 MiB is the smoke-test allocation.
 
-| Writes | Default location | Configuration or mount |
-|---|---|---|
-| Import/export staging, native reader scratch, GP spills, materialized operation certificates, ASP.NET request buffering | `/tmp` and `honua-*` children | `TMPDIR`; mount a writable tmpfs there |
-| Temporary-file service | `/tmp/honua-temp` | `TemporaryFiles__StorageDirectory` |
-| Local file storage | `/tmp/honua-storage`; Compose uses `/var/lib/honua/storage` | `FileStorage__LocalStorage__BasePath`; persistent volume for retained files |
-| GP output and import staging | `/tmp/honua-geoprocessing-outputs`, `/tmp/honua-import-staging` | `Geoprocessing__Executors__OutputRootDirectory`, `Geoprocessing__Executors__ImportStagingDirectory` |
-| Native/user caches | `/tmp/honua-cache` | `XDG_CACHE_HOME` |
-| ASP.NET data protection without the durable Redis channel | `/tmp/.aspnet/DataProtection-Keys` | `HOME=/tmp`; mount the key directory persistently and share it across replicas |
-| Durable operation-channel data protection | Redis | Existing Redis connection and `Operations__SecretChannel__KeyRingCertificatePath`; mount the certificate read-only |
-| Logs | stdout/stderr | Container log driver; `/tmp/honua-logs` is reserved for an explicitly configured file sink |
-| Optional .NET diagnostic sockets | disabled by default; under `TMPDIR` if enabled | `DOTNET_EnableDiagnostics`; explicitly mounted `DOTNET_DiagnosticPorts` if used |
+| Writes | Image default | Configuration |
+| --- | --- | --- |
+| Import staging, format extraction, spooling, materialized operation certificates, request buffering and other temporary files | `/tmp/honua` and `honua-*` children | `TMPDIR` (used by .NET `Path.GetTempPath()`) |
+| Temporary-file service | `/tmp/honua/temp` | `TemporaryFiles__StorageDirectory` |
+| Local file storage | `/tmp/honua/storage` | `FileStorage__LocalStorage__BasePath` |
+| Geoprocessing output | `/tmp/honua/honua-geoprocessing-outputs` | `Geoprocessing__Executors__OutputRootDirectory`; defaults under `TMPDIR` |
+| Geoprocessing import staging | `/tmp/honua/honua-import-staging` | `Geoprocessing__Executors__ImportStagingDirectory`; defaults under `TMPDIR` |
+| Native/user caches | `/tmp/honua/cache` | `XDG_CACHE_HOME` |
+| User home and fallback data-protection keys | `/tmp/honua/.aspnet/DataProtection-Keys` | `HOME`; Redis-backed deployments use the shared Redis key repository |
+| Logs | Standard output/error | An operator-added file sink must use a separately configured writable path |
 
-Do not retain keys or durable file storage only in tmpfs. For multiple replicas,
-use the configured shared stores. Overriding `TMPDIR` does not change explicit
-paths in configuration; set the corresponding options too.
+When moving the root, set `HOME`, `TMPDIR`, `XDG_CACHE_HOME`,
+`TemporaryFiles__StorageDirectory` and `FileStorage__LocalStorage__BasePath`
+together. Explicit geoprocessing overrides must point at writable paths too.
+Local file storage and fallback data-protection keys need durable storage across
+restarts; a tmpfs is suitable only for disposable data. The versioned Compose
+configuration overrides Local storage to its persistent `/var/lib/honua/storage`
+volume. Diagnostics are disabled by default; enabling .NET diagnostic sockets
+requires a writable `TMPDIR` or an explicit writable diagnostic socket path.
+
+The image health check executes `/app/honua-healthcheck --ready` directly and
+requires no shell. ECS can use its load balancer's `/healthz/ready` probe.
+`scripts/ci/smoke-serving-formats.sh` starts the server with a read-only root,
+mounts only `/tmp/honua`, and imports fixture files through the upload API.
 
 The `chiseled-extra` base retains certificates, ICU and time-zone data. The image
-adds DejaVu Sans and the GSSAPI dependency closure. Only AOT stages libatomic.
-The image smoke exercises legend label glyphs, German ICU number formatting,
-Honolulu's UTC offset and New York's winter/summer offsets in the built JIT
-runtime. The same smoke runs import/export and rendering as a non-root process
-with a read-only root and writable `/tmp`.
+adds DejaVu Sans, the GSSAPI dependency closure and libatomic for Parquet.
+The smoke exercises legend label glyphs, German ICU number formatting,
+Honolulu's UTC offset and New York's winter/summer offsets in the built JIT runtime.
 
 ## Troubleshooting
 

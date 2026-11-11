@@ -37,6 +37,15 @@ cc -O2 -Wall -Wextra -Werror -fPIE -pie -Wl,-z,relro,-z,now \
     docker/runtime/health-probe.c -o "$additions/app/honua-healthcheck"
 cc -O2 -Wall -Wextra -Werror -fPIE -pie -Wl,-z,relro,-z,now \
     docker/runtime/secret-entrypoint.c -o "$additions/app/honua-entrypoint"
+# The serving image needs only this root mounted when its filesystem is read-only.
+mkdir -p "$additions/tmp/honua/cache" "$additions/tmp/honua/temp" \
+    "$additions/tmp/honua/storage" "$additions/tmp/honua/.aspnet/DataProtection-Keys" \
+    "$additions/tmp/honua/honua-import-staging" \
+    "$additions/tmp/honua/honua-geoprocessing-outputs" \
+    "$additions/tmp/honua/honua-shapefile" "$additions/tmp/honua/honua-geopackage" \
+    "$additions/tmp/honua/honua-kmz" "$additions/tmp/honua/honua-filegdb" \
+    "$additions/tmp/honua/honua-ogc-coverage-import"
+# Existing Compose volumes retain their versioned mount points.
 mkdir -p "$additions/tmp/honua-logs" "$additions/tmp/honua-cache" \
     "$additions/tmp/dotnet-diagnostics" "$additions/tmp/honua-temp" \
     "$additions/tmp/honua-storage" "$additions/var/lib/honua/storage"

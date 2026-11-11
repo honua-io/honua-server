@@ -30,7 +30,13 @@ int main(int argc, char **argv)
         if (getuid() != 1001 || getgid() != 1001 ||
             statvfs("/", &root) != 0 || !(root.f_flag & ST_RDONLY))
             return 1;
-        char temporary[] = "/tmp/honua-security-XXXXXX";
+        const char *temporary_root = getenv("TMPDIR");
+        if (temporary_root == NULL || temporary_root[0] == '\0')
+            temporary_root = "/tmp";
+        char temporary[4096];
+        int length = snprintf(temporary, sizeof(temporary), "%s/honua-security-XXXXXX", temporary_root);
+        if (length < 0 || (size_t)length >= sizeof(temporary))
+            return 1;
         int file = mkstemp(temporary);
         if (file < 0)
             return 1;

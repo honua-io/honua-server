@@ -236,7 +236,12 @@ LABEL org.opencontainers.image.revision="${HONUA_GIT_SHA}"
 ENV HONUA_GIT_SHA=${HONUA_GIT_SHA}
 
 # Security: Minimal environment variables
-ENV ASPNETCORE_ENVIRONMENT=Production \
+ENV HOME=/tmp/honua \
+    TMPDIR=/tmp/honua \
+    XDG_CACHE_HOME=/tmp/honua/cache \
+    TemporaryFiles__StorageDirectory=/tmp/honua/temp \
+    FileStorage__LocalStorage__BasePath=/tmp/honua/storage \
+    ASPNETCORE_ENVIRONMENT=Production \
     ASPNETCORE_HTTP_PORTS= \
     Kestrel__Endpoints__Http__Url=http://+:8080 \
     Kestrel__Endpoints__Http__Protocols=Http1 \
