@@ -37,12 +37,12 @@ internal static class ImportExportTileOperationsRegistration
         IConfiguration configuration)
     {
         // Universal progress store backs every import/export/tile-operation job manager below.
+        // A host with no system database (a unit-level host) keeps progress in its own memory.
+        services.AddPostgresSharedState(configuration);
         services.AddSingleton<IUniversalProgressStore>(sp =>
-            new UniversalProgressStore(
-                sp.GetService<IDistributedCache>(),
-                sp.GetRequiredService<ILogger<UniversalProgressStore>>(),
-                sp.GetService<IConnectionMultiplexer>(),
-                sp.GetService<Microsoft.Extensions.Options.IOptions<Microsoft.Extensions.Caching.StackExchangeRedis.RedisCacheOptions>>()));
+            sp.GetService<Npgsql.NpgsqlDataSource>() is not null
+                ? sp.GetRequiredService<Honua.Server.Features.Infrastructure.Progress.PostgresUniversalProgressStore>()
+                : new UniversalProgressStore(sp.GetService<IDistributedCache>(), sp.GetRequiredService<ILogger<UniversalProgressStore>>()));
 
         services.Configure<FileUploadOptions>(
             configuration.GetSection(FileUploadOptions.SectionName));

@@ -106,12 +106,7 @@ public sealed class GeoprocessingArtifactPersistenceTests
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(
-            string operationId,
-            IOperationProgress progress,
-            OperationStatus expectedStatus,
-            TimeSpan? ttl = null,
-            CancellationToken cancellationToken = default)
+        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(OperationProgressWrite write, OperationStatus expectedStatus, CancellationToken cancellationToken = default)
             => Task.FromResult(ProgressCompareAndSetResult.NotFound);
 
         public Task<TProgress?> GetProgressAsync<TProgress>(

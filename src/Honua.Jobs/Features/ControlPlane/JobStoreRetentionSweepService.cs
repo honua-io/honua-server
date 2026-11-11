@@ -6,16 +6,44 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 namespace Honua.ControlPlane;
 
 // Drives the sweep where no in-process timer runs, such as a serverless host.
-internal sealed class JobStoreRetentionScheduledTickHandler(JobStoreRetentionSweeper sweeper) : IScheduledTickHandler
+internal sealed class JobStoreRetentionScheduledTickHandler(
+    JobStoreRetentionSweeper sweeper,
+    SharedStateRetentionSweeper sharedState) : IScheduledTickHandler
 {
     public ScheduledTickKind Kind => ScheduledTickKind.JobStoreRetention;
 
-    public Task RunTickAsync(CancellationToken cancellationToken = default)
-        => sweeper.SweepAsync(cancellationToken);
+    public async Task RunTickAsync(CancellationToken cancellationToken = default)
+    {
+        await sweeper.SweepAsync(cancellationToken).ConfigureAwait(false);
+        await sharedState.SweepAsync(cancellationToken).ConfigureAwait(false);
+    }
+}
+
+// Deletes expired rows from every shared-state store, one bounded batch at a time.
+internal sealed class SharedStateRetentionSweeper(IEnumerable<IExpiredRowSweep> stores, IOptions<JobStoreOptions> options)
+{
+    public async Task<long> SweepAsync(CancellationToken cancellationToken)
+    {
+        var batchSize = Math.Max(1, options.Value.RetentionSweepBatchSize);
+        long removed = 0;
+        foreach (var store in stores)
+        {
+            int removedInBatch;
+            do
+            {
+                removedInBatch = await store.DeleteExpiredAsync(batchSize, cancellationToken).ConfigureAwait(false);
+                removed += removedInBatch;
+            }
+            while (removedInBatch == batchSize);
+        }
+
+        return removed;
+    }
 }
 
 internal sealed partial class JobStoreRetentionSweepService(
     JobStoreRetentionSweeper sweeper,
+    SharedStateRetentionSweeper sharedState,
     IOptions<JobStoreOptions> options,
     ILogger<JobStoreRetentionSweepService> logger) : BackgroundService
 {
@@ -45,6 +73,12 @@ internal sealed partial class JobStoreRetentionSweepService(
             {
                 LogSweepRemoved(logger, removed.Jobs, removed.LogStreams, removed.ResultPackages, removed.Leases);
             }
+
+            var sharedStateRows = await sharedState.SweepAsync(stoppingToken).ConfigureAwait(false);
+            if (sharedStateRows > 0)
+            {
+                LogSharedStateRemoved(logger, sharedStateRows);
+            }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -56,6 +90,9 @@ internal sealed partial class JobStoreRetentionSweepService(
             LogSweepFailed(logger, exception);
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Retention sweep removed {Rows} expired shared state row(s).")]
+    private static partial void LogSharedStateRemoved(ILogger logger, long rows);
 
     [LoggerMessage(
         Level = LogLevel.Information,

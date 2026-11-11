@@ -12,7 +12,7 @@ namespace Honua.Server.Features.Admin.Services;
 internal sealed class PostgresAdminApiKeyStore(
     NpgsqlDataSource dataSource,
     TimeProvider? timeProvider = null,
-    string? schema = null) : IAdminApiKeyStore
+    string? schema = null) : IAdminApiKeyStore, Honua.ControlPlane.IExpiredRowSweep
 {
     internal const string TableName = "admin_api_keys";
 
@@ -95,6 +95,23 @@ internal sealed class PostgresAdminApiKeyStore(
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         return await ReadOneAsync(connection, id, cancellationToken).ConfigureAwait(false);
+    }
+
+    // An approved-operation credential is minted for one approved request and is useless once it
+    // expires. Other keys are kept after expiry so that their history stays listable.
+    public async Task<int> DeleteExpiredAsync(int batchSize, CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand($"""
+            WITH expired AS (
+                SELECT id FROM {_table}
+                WHERE expires_at <= now()
+                  AND EXISTS (SELECT 1 FROM unnest(permissions) AS permission WHERE permission LIKE @approved_operation_grants)
+                ORDER BY expires_at LIMIT @batch_size FOR UPDATE SKIP LOCKED)
+            DELETE FROM {_table} AS credential USING expired WHERE credential.id = expired.id
+            """);
+        command.Parameters.AddWithValue("approved_operation_grants", AdminApiKeyPermission.ApprovedOperationGrantPrefix + "%");
+        command.Parameters.AddWithValue("batch_size", batchSize);
+        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<AdminApiKeyCreateResult?> RotateAsync(Guid id, CancellationToken cancellationToken)
