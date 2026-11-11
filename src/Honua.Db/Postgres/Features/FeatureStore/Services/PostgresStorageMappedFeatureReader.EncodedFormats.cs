@@ -34,8 +34,14 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFlatGeobufFe
     {
         query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
         var features = await ExecuteFeatureQueryAsync(query, probeLimit: false, cancellationToken).ConfigureAwait(false);
-        return FlatGeobufFeatureWriter.Write(features, _resource, query,
-            ResolveAttributeFields(query), query.OutputSrid ?? _storageSrid, cancellationToken);
+        return FlatGeobufFeatureWriter.Write(features, new FlatGeobufFeatureWriter.ExportOptions
+        {
+            Resource = _resource,
+            Query = query,
+            ProjectedFields = ResolveAttributeFields(query),
+            OutputSrid = query.OutputSrid ?? _storageSrid,
+            ResolvedPrimaryIdName = _primaryIdFieldName
+        }, cancellationToken);
     }
 
     public async Task<byte[]?> QueryGeobufAsync(
@@ -76,7 +82,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFlatGeobufFe
         var indexArgument = includeIndex ? ", true" : string.Empty;
 
         sql.Append(CultureInfo.InvariantCulture, $"SELECT {encoderFunction}(q{indexArgument}, '{FeatureQueryEncoding.GeometryColumn}') FROM (SELECT ");
-        sql.Append(CultureInfo.InvariantCulture, $"{_primaryKeyColumn}::bigint AS {ValidateAndQuoteIdentifier(FieldNames.ObjectId)}");
+        sql.Append(CultureInfo.InvariantCulture, $"{_primaryKeyColumn}::bigint AS {ValidateAndQuoteIdentifier(_encodedPrimaryIdName)}");
         sql.Append(CultureInfo.InvariantCulture, $", {geometryExpression} AS {ValidateAndQuoteIdentifier(FeatureQueryEncoding.GeometryColumn)}");
         AppendEncodedBinaryAttributeColumns(sql, query);
         sql.Append(CultureInfo.InvariantCulture, $" FROM {BuildFeatureSource(query, sql)}");
@@ -96,11 +102,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFlatGeobufFe
 
         foreach (var field in ResolveAttributeFields(query))
         {
-            // The encoded row already projects the storage primary key under the
-            // canonical objectid name. Re-projecting a metadata field with that
-            // same name creates duplicate SELECT aliases and makes ORDER BY
-            // objectid ambiguous inside the aggregate subquery.
-            if (string.Equals(field.Name, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
+            // The encoded row already projects the resource's primary identifier.
+            if (string.Equals(field.Name, _encodedPrimaryIdName, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
