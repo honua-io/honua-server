@@ -7,9 +7,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.FeatureStore.Services;
 
-/// <summary>
-/// Process-local <see cref="IVersionJobStore"/> for a host with no system database, which has one node.
-/// </summary>
+// For a host with no system database, which runs one node.
 public sealed class InMemoryVersionJobStore : IVersionJobStore
 {
     private readonly ConcurrentDictionary<Guid, VersionJob> _jobs = new();

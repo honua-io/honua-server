@@ -5,11 +5,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.FeatureStore.Abstractions;
 
-/// <summary>
-/// Durable store for asynchronous branch-version reconcile/post jobs (#1553). Persists each job's
-/// lifecycle state so the job is pollable across requests and across replicas, and so a worker can
-/// resume/idempotently re-run a job that was interrupted by a restart.
-/// </summary>
+// Keeps branch-version reconcile and post jobs pollable from any replica and resumable after a restart.
 public interface IVersionJobStore
 {
     /// <summary>Inserts or replaces a job record.</summary>
