@@ -98,39 +98,18 @@ public sealed class SavedMapOperationAppendCoordinatorTests
     }
 
     [UnitTest]
-    public void CanAcceptEdits_MultiReplicaSharedLogWithoutDistributedOrdering_IsFalse()
+    public void CanAcceptEdits_MultiReplicaWithSharedLog_IsFalse()
     {
         var repository = Substitute.For<ISavedMapOperationLogRepository>();
         repository.SupportsReplicaSharedReplay.Returns(true);
-        var backplane = Substitute.For<ICollaborationSessionBackplane>();
-        backplane.SupportsCrossReplicaDelivery.Returns(true);
 
         using var coordinator = new SavedMapOperationAppendCoordinator(
             repository,
             CreateSessionService(),
-            SavedMapCollaborationTopology.ForMultiReplica(true),
-            backplane);
+            SavedMapCollaborationTopology.ForMultiReplica(true));
 
         coordinator.CanAcceptEdits.Should().BeFalse(
-            "pub/sub delivery cannot order cursor assignment and publication across replicas");
-    }
-
-    [UnitTest]
-    public void CanAcceptEdits_MultiReplicaWithDistributedOrdering_IsTrue()
-    {
-        var repository = Substitute.For<ISavedMapOperationLogRepository>();
-        repository.SupportsReplicaSharedReplay.Returns(true);
-        var backplane = Substitute.For<ICollaborationSessionBackplane>();
-        backplane.SupportsCrossReplicaDelivery.Returns(true);
-        backplane.SupportsOrderedOperationDelivery.Returns(true);
-
-        using var coordinator = new SavedMapOperationAppendCoordinator(
-            repository,
-            CreateSessionService(),
-            SavedMapCollaborationTopology.ForMultiReplica(true),
-            backplane);
-
-        coordinator.CanAcceptEdits.Should().BeTrue();
+            "committed operations reach only participants connected to the accepting node");
     }
 
     private static SavedMapOperationAppendCoordinator CreateCoordinator() => CreateCoordinator(out _);

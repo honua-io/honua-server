@@ -294,14 +294,11 @@ public sealed class InMemoryCollaborationSessionServiceTests
     public async Task PublishOperation_DeliversToEveryParticipantIncludingSubmitter()
     {
         var clock = new FakeCollaborationClock(FixedUtcNow());
-        var backplane = new RecordingBackplane();
-        var service = new InMemoryCollaborationSessionService(
-            new AllowSavedMapCollaborationAuthorizer(), clock, backplane);
+        var service = CreateService(clock);
         var alice = (await service.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Alice" }, Principal("alice"))).Response!;
         var bob = (await service.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Bob" }, Principal("bob"))).Response!;
         _ = service.DrainEvents(alice.SessionId);
         _ = service.DrainEvents(bob.SessionId);
-        backplane.Published.Clear();
 
         var operation = new CollaborationOperationWire
         {
@@ -314,69 +311,12 @@ public sealed class InMemoryCollaborationSessionServiceTests
             AuthorId = "alice",
             SubmittedAt = clock.UtcNow
         };
-        var envelope = service.PublishOperation("map-a", operation);
+        service.PublishOperation("map-a", operation);
 
-        envelope.Event.Type.Should().Be(CollaborationSessionEventTypes.OperationAppended);
         service.DrainEvents(alice.SessionId).Should().ContainSingle(e =>
             e.Event.Type == CollaborationSessionEventTypes.OperationAppended);
         service.DrainEvents(bob.SessionId).Should().ContainSingle(e =>
             e.Event.Operation != null && e.Event.Operation.Id == "op-1");
-        backplane.Published.Should().ContainSingle(e =>
-            e.Event.Type == CollaborationSessionEventTypes.OperationAppended);
-    }
-
-    [UnitTest]
-    public async Task UpdateCursor_PublishesEventToBackplane_ForCrossNodeFanOut()
-    {
-        var clock = new FakeCollaborationClock(FixedUtcNow());
-        var backplane = new RecordingBackplane();
-        var service = new InMemoryCollaborationSessionService(
-            new AllowSavedMapCollaborationAuthorizer(), clock, backplane);
-        var alice = (await service.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Alice" }, Principal("alice"))).Response!;
-        backplane.Published.Clear();
-
-        service.UpdateCursor(alice.SessionId, new CollaborationCursor { X = 1, Y = 2 });
-
-        backplane.Published.Should().ContainSingle(e => e.Event.Type == CollaborationSessionEventTypes.Cursor);
-    }
-
-    [UnitTest]
-    public async Task ApplyRemoteEvent_FromPeerNode_DeliversToLocalParticipantsExcludingOrigin()
-    {
-        var clock = new FakeCollaborationClock(FixedUtcNow());
-        var service = CreateService(clock);
-        var local = (await service.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Local" }, Principal("local"))).Response!;
-        _ = service.DrainEvents(local.SessionId);
-
-        // Simulate a cursor event produced by a participant on another node.
-        var remoteSession = Guid.NewGuid();
-        var remote = new CollaborationEventEnvelope
-        {
-            MapId = "map-a",
-            EventId = Guid.NewGuid().ToString("N"),
-            Sequence = 500,
-            Cursor = "500",
-            ServerTime = clock.UtcNow,
-            SessionId = remoteSession.ToString("N"),
-            ActorId = remoteSession.ToString("N"),
-            Event = new CollaborationSessionEvent
-            {
-                Type = CollaborationSessionEventTypes.Cursor,
-                ParticipantId = remoteSession.ToString("N"),
-                Cursor = new CollaborationCursor { X = -122.4, Y = 37.7 }
-            }
-        };
-        service.ApplyRemoteEvent(remote);
-
-        service.DrainEvents(local.SessionId).Should().ContainSingle(e =>
-            e.Event.Type == CollaborationSessionEventTypes.Cursor &&
-            e.Event.Cursor != null &&
-            Math.Abs(e.Event.Cursor.X - -122.4) < 1e-9);
-
-        // The local per-map sequence advances past the remote sequence so later local envelopes
-        // stay ahead of everything already observed by clients.
-        var next = service.UpdateCursor(local.SessionId, new CollaborationCursor { X = 0, Y = 0 });
-        next.Event.Sequence.Should().BeGreaterThan(500);
     }
 
     [UnitTest]
@@ -401,52 +341,6 @@ public sealed class InMemoryCollaborationSessionServiceTests
 
     private static InMemoryCollaborationSessionService CreateService(FakeCollaborationClock clock) =>
         new(new AllowSavedMapCollaborationAuthorizer(), clock);
-
-    private sealed class RecordingBackplane : ICollaborationSessionBackplane
-    {
-        public List<CollaborationEventEnvelope> Published { get; } = [];
-
-        // Stands in for a real cross-replica backplane: these tests exercise fan-out, which is
-        // exactly the capability the flag advertises.
-        public bool SupportsCrossReplicaDelivery => true;
-
-        public void Publish(CollaborationEventEnvelope ev) => Published.Add(ev);
-    }
-
-    [UnitTest]
-    public async Task ApplyRemoteEvent_LowerOriginSequence_RestampsDestinationMonotonic()
-    {
-        var clock = new FakeCollaborationClock(FixedUtcNow());
-        var service = CreateService(clock);
-        var local = (await service.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Local" }, Principal("local"))).Response!;
-        _ = service.DrainEvents(local.SessionId);
-        var lastLocalSequence = service.GetSnapshot("map-a").Sequence;
-
-        // A remote node broadcast this operation with ITS node-local sequence (1), which is
-        // already far behind this node's stream; the v1 reducer would drop it un-restamped.
-        var remote = new CollaborationEventEnvelope
-        {
-            MapId = "map-a",
-            EventId = Guid.NewGuid().ToString("N"),
-            Sequence = 1,
-            Cursor = "1",
-            ServerTime = FixedUtcNow(),
-            ActorId = "peer",
-            Event = new CollaborationSessionEvent
-            {
-                Type = CollaborationSessionEventTypes.OperationAppended,
-                Operation = CreateWireOperation("map-a", cursor: 1)
-            }
-        };
-
-        service.ApplyRemoteEvent(remote);
-
-        var delivered = service.DrainEvents(local.SessionId).Should().ContainSingle().Subject;
-        delivered.Event.Type.Should().Be(CollaborationSessionEventTypes.OperationAppended);
-        delivered.Sequence.Should().BeGreaterThan(lastLocalSequence);
-        // The authoritative op-log cursor inside the event payload is preserved unchanged.
-        delivered.Event.Operation!.Cursor.Should().Be("1");
-    }
 
     [UnitTest]
     public async Task PublishOperation_OperationEvictedFromFullOutbox_EmitsResyncRequired()

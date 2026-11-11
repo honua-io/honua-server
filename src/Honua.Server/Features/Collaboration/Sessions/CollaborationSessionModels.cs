@@ -309,13 +309,6 @@ internal sealed record CollaborationFanOutResult
     public required int DeliveredCount { get; init; }
 }
 
-internal sealed record CollaborationBackplaneMessage
-{
-    public required string OriginInstanceId { get; init; }
-
-    public required CollaborationEventEnvelope Event { get; init; }
-}
-
 internal sealed record CollaborationClientFrame
 {
     public string? Type { get; init; }

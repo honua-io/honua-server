@@ -61,20 +61,14 @@ internal static class SavedMapOperationEndpoints
             return authorizationError;
         }
 
-        // Same fail-closed continuity rule as the checkpoint surface (honua-server#2999
-        // review): in a declared multi-replica deployment with a process-local op log, two
-        // replicas would each run an independent per-map cursor sequence — both could accept
-        // "cursor 1" and broadcast conflicting committed operations that can never be
-        // reconciled. Reject the edit honestly instead of accepting state the deployment cannot
-        // make authoritative. A single instance (even one using Redis for cache/jobs) is
-        // authoritative over its own log and is unaffected.
+        // Committed operations reach only participants connected to the accepting node, so a
+        // declared multi-replica deployment refuses edits rather than let replicas diverge.
         if (!coordinator.CanAcceptEdits)
         {
             return StandardErrorHelpers.CreateServiceUnavailable(
                 context,
-                "Saved-map collaborative edits are unavailable in multi-replica deployments " +
-                "until the collaboration operation log is backed by a replica-shared store; a " +
-                "process-local log cannot assign authoritative operation cursors across replicas.");
+                "Saved-map collaborative edits are unavailable in multi-replica deployments: " +
+                "live operations reach only participants connected to the same node.");
         }
 
         if (!TryValidate(request, out var validationError) ||

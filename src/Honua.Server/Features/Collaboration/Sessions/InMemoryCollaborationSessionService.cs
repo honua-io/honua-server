@@ -26,25 +26,21 @@ internal sealed class InMemoryCollaborationSessionService
     private readonly ConcurrentDictionary<Guid, string> _sessionMapIndex = new();
     private readonly ISavedMapCollaborationAuthorizer _authorizer;
     private readonly ICollaborationSessionClock _clock;
-    private readonly ICollaborationSessionBackplane _backplane;
     private readonly CollaborationCapabilitySource? _capabilities;
 
     public InMemoryCollaborationSessionService(
         ISavedMapCollaborationAuthorizer authorizer,
         ICollaborationSessionClock clock,
-        ICollaborationSessionBackplane? backplane = null,
         CollaborationCapabilitySource? capabilities = null)
     {
         _authorizer = authorizer ?? throw new ArgumentNullException(nameof(authorizer));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
-        _backplane = backplane ?? NullCollaborationSessionBackplane.Instance;
         // Advertised capabilities must match what the endpoints will actually accept: when the
         // deployment fails edits closed, the stream must not claim operations are available
         // (honua-server#2999 review).
         _capabilities = capabilities;
     }
 
-    // Read the flags on every access, because this service is constructed before the backplane marks itself active.
     public CollaborationCapabilities Capabilities => _capabilities?.Current ?? CollaborationCapabilities.Default;
 
     public async ValueTask<CollaborationJoinResult> JoinAsync(
@@ -88,7 +84,6 @@ internal sealed class InMemoryCollaborationSessionService
         };
 
         CollaborationSnapshot snapshot;
-        CollaborationEventEnvelope joined;
         while (true)
         {
             var channel = _channels.GetOrAdd(mapId, static id => new MapChannel(id));
@@ -126,7 +121,7 @@ internal sealed class InMemoryCollaborationSessionService
                 channel.Participants.Add(sessionId, new ParticipantState(participant));
                 _sessionMapIndex[sessionId] = mapId;
 
-                joined = CreateEnvelopeLocked(
+                var joined = CreateEnvelopeLocked(
                     channel,
                     participant.SessionId,
                     participant.ParticipantId,
@@ -141,8 +136,6 @@ internal sealed class InMemoryCollaborationSessionService
                 break;
             }
         }
-
-        _backplane.Publish(joined);
 
         return new CollaborationJoinResult
         {
@@ -273,7 +266,7 @@ internal sealed class InMemoryCollaborationSessionService
                     }
                 });
             var delivered = FanOutLocked(channel, ev, excludeSessionId: sessionId);
-            return Publish(new CollaborationFanOutResult { Event = ev, DeliveredCount = delivered });
+            return new CollaborationFanOutResult { Event = ev, DeliveredCount = delivered };
         }
     }
 
@@ -311,7 +304,6 @@ internal sealed class InMemoryCollaborationSessionService
             return false;
         }
 
-        CollaborationEventEnvelope left;
         lock (channel.Sync)
         {
             if (requiredOwner is not null &&
@@ -339,7 +331,7 @@ internal sealed class InMemoryCollaborationSessionService
             _sessionMapIndex.TryRemove(sessionId, out _);
             var now = _clock.UtcNow;
             ClearFollowsTargetingLocked(channel, sessionId, now);
-            left = CreateEnvelopeLocked(
+            var left = CreateEnvelopeLocked(
                 channel,
                 state.Presence.SessionId,
                 state.Presence.ParticipantId,
@@ -353,8 +345,6 @@ internal sealed class InMemoryCollaborationSessionService
             FanOutLocked(channel, left, excludeSessionId: sessionId);
             RemoveChannelIfEmpty(mapId, channel);
         }
-
-        _backplane.Publish(left);
         return true;
     }
 
@@ -367,7 +357,6 @@ internal sealed class InMemoryCollaborationSessionService
 
         var now = _clock.UtcNow;
         var removed = 0;
-        var publishQueue = new List<CollaborationEventEnvelope>();
         foreach (var (mapId, channel) in _channels)
         {
             lock (channel.Sync)
@@ -402,60 +391,35 @@ internal sealed class InMemoryCollaborationSessionService
                             SessionId = state.Presence.SessionId.ToString("N")
                         });
                     FanOutLocked(channel, left, excludeSessionId: sessionId);
-                    publishQueue.Add(left);
                 }
 
                 RemoveChannelIfEmpty(mapId, channel);
             }
         }
 
-        foreach (var ev in publishQueue)
-        {
-            _backplane.Publish(ev);
-        }
-
         return removed;
     }
 
-    public CollaborationEventEnvelope PublishOperation(string mapId, CollaborationOperationWire operation)
+    public void PublishOperation(string mapId, CollaborationOperationWire operation)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(mapId);
         ArgumentNullException.ThrowIfNull(operation);
 
-        var now = _clock.UtcNow;
+        if (!_channels.TryGetValue(mapId, out var channel))
+        {
+            return;
+        }
+
         var ev = new CollaborationSessionEvent
         {
             Type = CollaborationSessionEventTypes.OperationAppended,
             Operation = operation
         };
-
-        CollaborationEventEnvelope envelope;
-        if (_channels.TryGetValue(mapId, out var channel))
+        lock (channel.Sync)
         {
-            lock (channel.Sync)
-            {
-                envelope = CreateEnvelopeLocked(channel, sessionId: null, operation.AuthorId, now, ev);
-                FanOutLocked(channel, envelope, excludeSessionId: Guid.Empty);
-            }
+            var envelope = CreateEnvelopeLocked(channel, sessionId: null, operation.AuthorId, _clock.UtcNow, ev);
+            FanOutLocked(channel, envelope, excludeSessionId: Guid.Empty);
         }
-        else
-        {
-            // No local participants: still broadcast for peer nodes, sequencing off the op-log
-            // cursor so the envelope remains ordered for any remote consumer.
-            envelope = new CollaborationEventEnvelope
-            {
-                MapId = mapId,
-                EventId = Guid.NewGuid().ToString("N"),
-                Sequence = operation.Sequence,
-                Cursor = operation.Cursor,
-                ServerTime = now,
-                ActorId = operation.AuthorId,
-                Event = ev
-            };
-        }
-
-        _backplane.Publish(envelope);
-        return envelope;
     }
 
     public CollaborationEventEnvelope StampEnvelope(
@@ -539,55 +503,6 @@ internal sealed class InMemoryCollaborationSessionService
         return TryResolveSession(sessionId, out _, out _);
     }
 
-    // Remote events are not re-published, and the envelope is re-stamped with this node's sequence before fan-out so a lower origin sequence is not dropped.
-    public void ApplyRemoteEvent(CollaborationEventEnvelope ev)
-    {
-        ArgumentNullException.ThrowIfNull(ev);
-        if (!_channels.TryGetValue(ev.MapId, out var channel))
-        {
-            // No local participants for this map on this node; nothing to deliver.
-            return;
-        }
-
-        var excludeSessionId = Guid.Empty;
-        if (ev.SessionId is { Length: > 0 } sessionText &&
-            Guid.TryParseExact(sessionText, "N", out var parsed))
-        {
-            excludeSessionId = parsed;
-        }
-
-        lock (channel.Sync)
-        {
-            if (channel.Removed)
-            {
-                return;
-            }
-
-            // Advance past BOTH streams before stamping: past this node's own sequence so local
-            // clients (already beyond their snapshot sequence) accept the event, and past the
-            // origin sequence so later local envelopes also stay ahead of anything a client may
-            // have observed with origin stamping.
-            var sequence = Math.Max(channel.LastSequence, ev.Sequence) + 1;
-            channel.LastSequence = sequence;
-            var restamped = ev with
-            {
-                Sequence = sequence,
-                Cursor = sequence.ToString(CultureInfo.InvariantCulture)
-            };
-            FanOutLocked(channel, restamped, excludeSessionId);
-        }
-    }
-
-    private CollaborationFanOutResult Publish(CollaborationFanOutResult result)
-    {
-        // Cross-node fan-out happens after the local outboxes have been written so a single-node
-        // deployment never pays for the backplane round-trip on its hot path. The backplane is
-        // best-effort: a Redis outage degrades to local-only delivery, mirroring the feature-stream
-        // cluster-broadcast contract.
-        _backplane.Publish(result.Event);
-        return result;
-    }
-
     private CollaborationFanOutResult UpdateParticipant(
         Guid sessionId,
         Func<CollaborationParticipantPresence, DateTimeOffset, CollaborationParticipantPresence> update,
@@ -616,7 +531,7 @@ internal sealed class InMemoryCollaborationSessionService
                 now,
                 createEvent(updatedPresence));
             var delivered = FanOutLocked(channel, ev, excludeSessionId: sessionId);
-            return Publish(new CollaborationFanOutResult { Event = ev, DeliveredCount = delivered });
+            return new CollaborationFanOutResult { Event = ev, DeliveredCount = delivered };
         }
     }
 

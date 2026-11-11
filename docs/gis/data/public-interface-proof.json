@@ -144,11 +144,11 @@
         },
         {
           "proofClass": "route-coverage",
-          "proofMechanism": "Authenticated WebSocket presence/cursor/selection/follow transport with Redis cross-node backplane; join authorized through the shared fail-closed saved-map collaboration authorizer. Integration tests assert connect+snapshot, cross-participant presence/cursor fan-out, and rejected unauthorized joins.",
+          "proofMechanism": "Authenticated WebSocket presence/cursor/selection/follow transport, delivered per node (Experimental: participants connected to another task do not see each other); join authorized through the shared fail-closed saved-map collaboration authorizer. Integration tests assert connect+snapshot, cross-participant presence/cursor fan-out, and rejected unauthorized joins.",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/Features/Collaboration/Sessions/CollaborationSessionStreamEndpoint.cs",
-            "src/Honua.Server/Features/Collaboration/Sessions/RedisCollaborationSessionBackplane.cs",
+            "src/Honua.Server/Features/Collaboration/Sessions/InMemoryCollaborationSessionService.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Collaboration/Sessions/CollaborationSessionStreamEndpointTests.cs"
           ],
           "ownerRepo": "honua-server",

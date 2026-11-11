@@ -26,7 +26,6 @@ namespace Honua.Server.Features.Collaboration.Sessions;
 [JsonSerializable(typeof(CollaborationCursor))]
 [JsonSerializable(typeof(CollaborationSelection))]
 [JsonSerializable(typeof(CollaborationFollowTarget))]
-[JsonSerializable(typeof(CollaborationBackplaneMessage))]
 [JsonSerializable(typeof(CollaborationClientFrame))]
 [JsonSerializable(typeof(ApiResponse<CollaborationJoinResponse>))]
 [JsonSerializable(typeof(ApiResponse<CollaborationLeaveResponse>))]

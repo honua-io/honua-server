@@ -6,7 +6,7 @@ using Honua.Server.Features.Collaboration.Sessions;
 
 namespace Honua.Server.Features.Collaboration.Operations;
 
-// Cursor assignment and fan-out share one per-map gate so a broadcast cannot invert the replay order, and a multi-replica deployment fails closed unless ordering is distributed.
+// Cursor assignment and fan-out share one per-map gate so a broadcast cannot invert the replay order, and a multi-replica deployment fails closed because operations reach only participants on this node.
 internal sealed class SavedMapOperationAppendCoordinator : IDisposable
 {
     private const int StripeCount = 64;
@@ -14,20 +14,17 @@ internal sealed class SavedMapOperationAppendCoordinator : IDisposable
     private readonly ISavedMapOperationLogRepository _repository;
     private readonly InMemoryCollaborationSessionService _sessions;
     private readonly SavedMapCollaborationTopology _topology;
-    private readonly ICollaborationSessionBackplane _backplane;
     private readonly SemaphoreSlim[] _stripes;
     private bool _disposed;
 
     public SavedMapOperationAppendCoordinator(
         ISavedMapOperationLogRepository repository,
         InMemoryCollaborationSessionService sessions,
-        SavedMapCollaborationTopology topology,
-        ICollaborationSessionBackplane? backplane = null)
+        SavedMapCollaborationTopology topology)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
         _topology = topology ?? throw new ArgumentNullException(nameof(topology));
-        _backplane = backplane ?? NullCollaborationSessionBackplane.Instance;
         _stripes = new SemaphoreSlim[StripeCount];
         for (var i = 0; i < StripeCount; i++)
         {
@@ -36,10 +33,7 @@ internal sealed class SavedMapOperationAppendCoordinator : IDisposable
         }
     }
 
-    public bool CanAcceptEdits => !_topology.IsMultiReplica ||
-        _repository.SupportsReplicaSharedReplay &&
-        _backplane.SupportsCrossReplicaDelivery &&
-        _backplane.SupportsOrderedOperationDelivery;
+    public bool CanAcceptEdits => !_topology.IsMultiReplica;
 
     public async Task<SavedMapOperationAppendResult> AppendAndPublishAsync(
         string canonicalMapId,
