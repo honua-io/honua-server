@@ -44,14 +44,17 @@ def pr_admissions():
                 yield path.name, definition.get("concurrency", job.get("concurrency", {}))
 
 
-def evaluate(condition, event, needs=None, cancelled=False):
+def evaluate(condition, event, needs=None, cancelled=False, env=None, steps=None):
     expression = condition.removeprefix("${{").removesuffix("}}").strip()
     expression = expression.replace("needs.runner-select", 'needs["runner-select"]')
-    probe = """const {expression, github, needs, cancelled} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
-process.stdout.write(JSON.stringify(new Function('github', 'needs', 'always', 'cancelled', 'inputs', 'vars', `return (${expression});`)(github, needs, () => true, () => cancelled, {server_image: '', existing_image: ''}, {GP_CANARY_URL: ''})));
+    for step_id in ("docs-only", "generated-only"):
+        expression = expression.replace(f"steps.{step_id}", f'steps["{step_id}"]')
+    probe = """const {expression, github, needs, cancelled, env, steps} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+process.stdout.write(JSON.stringify(new Function('github', 'needs', 'always', 'cancelled', 'inputs', 'vars', 'fromJSON', 'env', 'steps', `return (${expression});`)(github, needs, () => true, () => cancelled, {server_image: '', existing_image: ''}, {GP_CANARY_URL: ''}, JSON.parse, env, steps)));
 """
     result = subprocess.run(["node", "-e", probe], input=json.dumps({
         "expression": expression, "github": event, "needs": needs or {}, "cancelled": cancelled,
+        "env": env or {}, "steps": steps or {},
     }), text=True, capture_output=True, check=True, timeout=10)
     return json.loads(result.stdout)
 
@@ -141,6 +144,46 @@ class PullRequestLoadTests(unittest.TestCase):
         self.assertFalse(evaluate(condition, event, needs))
         needs["runner-select"]["result"] = "success"
         self.assertTrue(evaluate(condition, event, needs))
+
+    def test_draft_format_matrix_excludes_analyzers(self):
+        include = workflow("pr-gate.yml")["jobs"]["format"]["strategy"]["matrix"]["include"]
+        for draft in (True, False):
+            event = {"event_name": "pull_request", "event": {"pull_request": {"draft": draft}}}
+            rows = evaluate(include, event) if isinstance(include, str) else include
+            with self.subTest(draft=draft):
+                if draft:
+                    self.assertEqual([row["check"] for row in rows], ["Format"])
+                    self.assertEqual(rows[0]["format"], "true")
+                    self.assertEqual(rows[0]["analyzer-build"], "false")
+                else:
+                    self.assertIn("Format", [row["check"] for row in rows])
+                    self.assertEqual(
+                        {row["analyzer-partition"] for row in rows if row["analyzer-build"] == "true"},
+                        {"source", "tests"},
+                    )
+
+    def test_draft_format_steps_run_before_review_release(self):
+        format_steps = workflow("pr-gate.yml")["jobs"]["format"]["steps"]
+        env = {"REVIEW_FIRST_MODE": "enforce"}
+        steps = {key: {"outputs": {field: "false"}} for key, field in (
+            ("docs-only", "docs_only"), ("generated-only", "generated_only"),
+        )}
+        event = {"event_name": "pull_request", "run_attempt": 1,
+                 "event": {"pull_request": {"draft": True}}}
+        for draft, attempt in ((True, 1), (False, 1), (False, 2)):
+            event["event"]["pull_request"]["draft"] = draft
+            event["run_attempt"] = attempt
+            for step in format_steps:
+                name = step.get("name", "")
+                is_checkout = step.get("uses", "").startswith("actions/checkout@")
+                if name not in ("Await exact-head review", "Setup .NET", "Restore", "Format Check") and not is_checkout:
+                    continue
+                with self.subTest(step=name or "checkout", draft=draft, attempt=attempt):
+                    review_wait = not draft and attempt == 1
+                    self.assertEqual(
+                        evaluate(step.get("if", "true"), event, env=env, steps=steps),
+                        review_wait if name == "Await exact-head review" else not review_wait,
+                    )
 
     def test_optional_pr_jobs_refuse_drafts(self):
         for path in sorted(WORKFLOWS.glob("*.y*ml")):
