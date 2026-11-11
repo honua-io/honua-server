@@ -777,6 +777,19 @@ and Core Endpoint Mutations shards on selected PR runs and twice-daily full
 trunk runs. This changes no runner count, required check name, required
 aggregate dependency, workflow, or shard definition.
 
+### Feature stream default application lifetime
+
+FeatureStreamEndpointsTests creates the shared default application per case but
+starts it lazily: only cases that call `StartDefaultApplicationAsync()` start
+it, and only those cases dispose it. Cases that need a custom configuration
+build, start and dispose their own application inside the case, so they no
+longer pay for a default application they never use. Each case still gets its
+own isolated event store, sessions and credentials.
+All cases and assertions remain in the Server Features Streaming Transports and
+Server Features Streaming Endpoints 1, 2, and 4 shards on selected PR runs and
+twice-daily full trunk runs. This changes no runner count, required check name,
+required aggregate dependency, workflow, or shard definition.
+
 ## Trailing affected CI selection
 
 Trailing affected CI refreshes its completed-ancestor base when the selection job starts,
