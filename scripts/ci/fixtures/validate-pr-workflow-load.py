@@ -123,7 +123,10 @@ class PullRequestLoadTests(unittest.TestCase):
 
     def test_gate_heavy_jobs_refuse_drafts(self):
         jobs = workflow("pr-gate.yml")["jobs"]
-        for key in ("pr-gate", "fast-tests", "ci-router-validation", "n1-reader-compatibility"):
+        heavy = ["pr-gate", "fast-tests", "ci-router-validation", "n1-reader-compatibility"]
+        if "server-test-producer" in jobs:
+            heavy.append("server-test-producer")
+        for key in heavy:
             with self.subTest(job=key):
                 self.assertEqual(jobs[key]["if"], DRAFT_GUARD)
                 self.assertFalse(evaluate(jobs[key]["if"], {
