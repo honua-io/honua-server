@@ -26,12 +26,36 @@ Per-worktree ignored outputs survive synchronization, but a changing snapshot
 revision can still invalidate generated assembly metadata. Output retention
 alone is not proof that compilation was reused.
 
+The local transport now uses HEAD directly for clean trees and a deterministic
+snapshot revision for unchanged dirty trees. This removes timestamp-only
+revision churn from generated assembly metadata. A changed source tree still
+creates a different revision. Live repeats must verify unchanged intermediate
+and output timestamps before claiming compilation reuse.
+
 Six lane slots, each bounded to five .NET processors and five MSBuild workers,
 limit nominal lane demand to 30 processors. PR runner services share the host
 and bypass lane admission. This is not an operating-system CPU reservation or
 proof of no oversubscription. Measure simultaneous lane and PR workloads before
 raising concurrency. A global admission budget covering both classes is needed
 to make a total-host bound enforceable.
+
+## Post-merge queue baseline
+
+[Affected run 42929935484](https://github.com/honua-io/honua-server/actions/runs/42929935484)
+completed in 131.45 minutes. Admission before job creation took 36.65 minutes;
+job queue time, measured from job creation to its first step starting, had a
+36.03-minute median and 61.15-minute maximum. The run created 167 jobs and
+failed, so its elapsed time is not a successful affected-run latency target.
+The longest execution included AOT (34.80 minutes), the managed producer
+(26.50 minutes), and the Capabilities shard (26.63 minutes).
+
+This run predates the completed-run base selection and six-job affected cap.
+Those changes need a completed subsequent affected run before an after value
+can be reported. Full fallback retains complete coverage under the affected
+cap; scheduled full runs retain their separate concurrency budget. Existing
+selector guards determine expensive-suite eligibility, while descending shard
+rank starts estimated slow work first. Queue reduction must be assessed beside
+PR Gate queue times because moving the wait between workflows is not a gain.
 
 ## Why the local receipt cannot skip hosted tests
 
