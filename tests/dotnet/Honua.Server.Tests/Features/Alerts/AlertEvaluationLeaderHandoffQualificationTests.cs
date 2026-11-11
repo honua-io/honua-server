@@ -30,11 +30,9 @@ using Testcontainers.PostgreSql;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
-/// <summary>
-/// Two production evaluator replicas against Postgres: leader-lease handoff, a database
-/// restart while numbered generations are in flight, and replica restarts that keep the
-/// checkpoint and one event per generation.
-/// </summary>
+// Two production evaluator replicas against Postgres: leader-lease handoff, a database
+// restart while numbered generations are in flight, and replica restarts that keep the
+// checkpoint and one event per generation.
 [Protocol(ProtocolNames.Infrastructure)]
 [Operation(Operations.ContractTesting)]
 public sealed class AlertEvaluationLeaderHandoffQualificationTests

@@ -27,7 +27,7 @@ internal sealed partial class LeaseLeaderElectionStrategy : ILeaderElectionStrat
         _election = leases is null
             ? null
             : new LeaseLeaderElection(leases, LeadershipKey, options.Value.Evaluation.LeaderLeaseDuration);
-        InstanceId = _election?.InstanceId ?? $"{Environment.MachineName}-{Environment.ProcessId}";
+        InstanceId = _election?.InstanceId ?? LeaseLeaderElection.NodeId;
     }
 
     public bool IsLeader => _election?.IsLeader ?? false;

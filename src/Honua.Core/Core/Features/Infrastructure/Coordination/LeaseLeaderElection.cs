@@ -20,7 +20,9 @@ public sealed class LeaseLeaderElection(ILeaseStore leases, string leadershipKey
 
     public bool IsLeader => _isLeader;
 
-    public string InstanceId { get; } = $"{Environment.MachineName}-{Environment.ProcessId}-{Guid.NewGuid():N}";
+    public static string NodeId { get; } = $"{Environment.MachineName}-{Environment.ProcessId}";
+
+    public string InstanceId { get; } = $"{NodeId}-{Guid.NewGuid():N}";
 
     private LeaseClaim Claim => new(leadershipKey, InstanceId);
 
