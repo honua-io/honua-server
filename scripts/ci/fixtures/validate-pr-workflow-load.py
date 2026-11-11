@@ -129,12 +129,17 @@ class PullRequestLoadTests(unittest.TestCase):
         heavy = ["pr-gate", "fast-tests", "ci-router-validation", "n1-reader-compatibility"]
         if "server-test-producer" in jobs:
             heavy.append("server-test-producer")
+        draft = {"event_name": "pull_request", "event": {"pull_request": {"draft": True}}}
+        self.assertEqual(jobs["runner-select"]["if"], DRAFT_GUARD)
+        self.assertFalse(evaluate(DRAFT_GUARD, draft))
         for key in heavy:
             with self.subTest(job=key):
-                self.assertEqual(jobs[key]["if"], DRAFT_GUARD)
-                self.assertFalse(evaluate(jobs[key]["if"], {
-                    "event_name": "pull_request", "event": {"pull_request": {"draft": True}},
-                }))
+                # A job without its own condition is skipped when a needed job is
+                # skipped, so runner-selected jobs inherit the runner-select guard.
+                if "if" in jobs[key]:
+                    self.assertEqual(jobs[key]["if"], DRAFT_GUARD)
+                else:
+                    self.assertEqual(jobs[key]["needs"], "runner-select")
         for key in ("affected-shards-select", "affected-shard", "affected-shards"):
             self.assertIn("!github.event.pull_request.draft", jobs[key]["if"])
         self.assertEqual(jobs["required"]["if"], "always()")

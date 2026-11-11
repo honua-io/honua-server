@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Keep PR Gate contract checks unconditional within every admitted job.
+"""Assert the always-on PR Gate steps stay unconditional.
 
-These steps parse documents classified as safe or governed by the impact router.
-They must run on every ready PR head and manual dispatch, without step-level
-conditions or continue-on-error. Draft admission skips the heavy job; the required
-aggregate fails closed on its skipped dependencies.
+Both steps read documents that the PR Gate impact classifier treats as safe or
+as governed: `Verify review-first admission contract` parses
+`docs/internal/ci/gate-model.md` and `docs/internal/ci/workflow-inventory.md`,
+and `Verify .NET base-image security inventory` parses the code-scanning
+inventory. Their soundness argument depends on running unconditionally, so this
+asserts it structurally -- no step `if`, no `continue-on-error`, no job `if`,
+and the step still invokes its script -- rather than by matching workflow text.
 """
 
 from __future__ import annotations
@@ -21,7 +24,6 @@ REQUIRED_STEPS = {
 }
 FORBIDDEN_KEYS = ("if", "continue-on-error")
 JOB = "pr-gate"
-DRAFT_GUARD = "github.event_name != 'pull_request' || !github.event.pull_request.draft"
 
 
 class ContractError(Exception):
@@ -37,9 +39,9 @@ def validate_semantic(source: str) -> None:
     job = (document.get("jobs") or {}).get(JOB)
     if not isinstance(job, dict):
         raise ContractError(f"the required workflow no longer declares the {JOB!r} job")
-    if job.get("if") != DRAFT_GUARD:
+    if "if" in job:
         raise ContractError(
-            f"the {JOB!r} job must admit every ready PR and dispatch with only the draft guard"
+            f"the {JOB!r} job must not be conditional; a skipped required context blocks merge"
         )
     steps = job.get("steps")
     if not isinstance(steps, list):
@@ -64,9 +66,6 @@ def validate_textual(source: str) -> None:
     Stricter than the semantic path: it accepts only the canonical unquoted
     step-name spelling this repository uses.
     """
-    block = re.search(r"^  pr-gate:\n(.*?)(?=^  [\w-]+:|\Z)", source, re.M | re.S)
-    if not block or re.findall(r"^    if: (.*)$", block.group(1), re.M) != [DRAFT_GUARD]:
-        raise ContractError("the producer must use only the draft admission guard")
     for name, script in REQUIRED_STEPS.items():
         anchor = f"\n      - name: {name}\n"
         if anchor not in source:
@@ -109,7 +108,7 @@ def self_test() -> None:
             1,
         ),
         source.replace("scripts/ci/validate-review-first-dispatch.sh", "true", 1),
-        source.replace(f"  pr-gate:\n    if: {DRAFT_GUARD}", "  pr-gate:\n    if: false", 1),
+        source.replace("  pr-gate:\n", "  pr-gate:\n    if: false\n", 1),
     )
     for index, candidate in enumerate(injections):
         try:
