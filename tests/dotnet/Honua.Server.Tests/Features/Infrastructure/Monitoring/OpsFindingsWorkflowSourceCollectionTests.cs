@@ -20,8 +20,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
-using StackExchange.Redis;
-using Testcontainers.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
@@ -114,164 +112,24 @@ public sealed class OpsFindingsWorkflowSourceCollectionTests
     }
 }
 
-/// <summary>
-/// Real-Redis coverage for #4840. The workflow store is the production
-/// <see cref="RedisWorkflowOperationStore"/> over a Testcontainers Redis; no evidence envelope is
-/// injected. Proposal attempts go through both <see cref="OpsFindingsService.ProposeAsync"/> and the
-/// MCP finding-proposal adapter, and every negative step is bracketed by positive steps on the same
-/// finding id that do reach the gateway.
-/// </summary>
+// The workflow operations source over the production PostgreSQL workflow operation store; no
+// evidence envelope is injected.
 [Protocol(TestProtocols.TestQuality)]
-public sealed class OpsFindingsWorkflowSourceRedisTests
+public sealed class OpsFindingsWorkflowSourceStoreTests
 {
+    // a deploy parked in ManualInterventionRequired through the production store yields
+    // the manual-intervention finding with its rollback action, although the store keeps that status
+    // out of the active index. The finding clears when the operation is rolled back, or when a later
+    // deploy of the same target succeeds.
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task WorkflowOperationsSource_RedisStopsAndRestarts_CompleteThenUnavailableThenComplete()
+    public async Task DeployManualIntervention_PostgresStore_FiresUntilRolledBackOrSuperseded()
     {
-        // Docker can remap ephemeral host ports on restart; keep the endpoint stable so the same
-        // multiplexer (and the same store instance) recovers.
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var redisPort = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        await using var container = new RedisBuilder("redis:7.2-alpine")
-            .WithPortBinding(redisPort, 6379)
-            .WithCommand("redis-server", "--appendonly", "yes", "--appendfsync", "always", "--save", "")
-            .Build();
-        await container.StartAsync();
-        using var multiplexer = await ConnectionMultiplexer.ConnectAsync(OutageTolerant(container.GetConnectionString()));
-        // With AbortOnConnectFail=false ConnectAsync can return while the connection is still being
-        // established, and the fail-fast backlog would refuse the seed write (#5002).
-        await WaitForRedisAsync(multiplexer);
-        var store = new RedisWorkflowOperationStore(multiplexer, NullLogger<RedisWorkflowOperationStore>.Instance);
-        Assert.True(await store.TryCreateAsync(
-            WorkflowSourceFixture.SucceededDeploy(WorkflowSourceFixture.TargetA, WorkflowSourceFixture.PriorArtifact)));
-        var ledger = new OpsFindingsCollectionLedger();
-        var clock = new SettableClock(WorkflowSourceFixture.T0);
-        var options = WorkflowSourceFixture.DeclaredReleaseOptions(WorkflowSourceFixture.TargetA);
-
-        // Step 1: complete, clocked at the successful collection.
-        var firstCollection = WorkflowSourceFixture.T0;
-        var findingId = await WorkflowSourceFixture.AssertCompleteAndProposableAsync(store, options, ledger, clock, firstCollection);
-
-        // Step 2: backend loss, evaluated twice. Unavailable, the retained clocks stay at the step-1
-        // collection, and neither proposal surface reaches the gateway or the operation envelope.
-        var disconnected = ObserveInteractiveConnectionFailure(multiplexer);
-        await container.StopAsync();
-        // Evaluate only once the multiplexer has seen the loss, so every read fails fast instead of
-        // racing the stop.
-        await disconnected.WaitAsync(TimeSpan.FromSeconds(30));
-        foreach (var minutes in new[] { 1, 2 })
-        {
-            clock.Now = WorkflowSourceFixture.T0.AddMinutes(minutes);
-            var gateway = WorkflowSourceFixture.CreateGateway();
-            var service = WorkflowSourceFixture.CreateService(store, options, ledger, clock, gateway);
-
-            var evaluation = await service.EvaluateWithEvidenceAsync();
-
-            var source = WorkflowSourceFixture.WorkflowSource(evaluation);
-            Assert.Equal(EvidencePostureVocabulary.Completeness.Unavailable, source.Completeness);
-            Assert.Equal(firstCollection, source.ObservedAt);
-            Assert.Equal(firstCollection, source.LastSuccessfulAt);
-            Assert.Null(source.ValidUntil);
-            Assert.Equal([EvidencePostureVocabulary.ReasonCodes.SourceUnavailable], source.ReasonCodes);
-            Assert.DoesNotContain(evaluation.Findings, f => f.Id == findingId);
-
-            Assert.Equal(OpsFindingProposalStatus.FindingNotFound, (await service.ProposeAsync(findingId)).Status);
-            using var services = McpPlatformOpsReaderTests.CreateServices(gateway, findings: service);
-            var reader = McpPlatformOpsReaderTests.CreateReader(services: services);
-            await Assert.ThrowsAsync<Honua.Geoprocessing.GeoprocessingNotFoundException>(() => reader.ProposeFindingAsync(
-                McpPlatformOpsReaderTests.CreatePrincipal(),
-                new McpProposeFindingArgument { FindingId = findingId, CandidateId = WorkflowSourceFixture.TargetA },
-                CancellationToken.None));
-            Assert.Empty(gateway.ReceivedCalls());
-            await services.GetRequiredService<IOperationEnvelopeFactory>().DidNotReceive().CreateAcceptedAsync(
-                Arg.Any<string>(), Arg.Any<OperationPolicyContext>(), Arg.Any<CancellationToken>());
-        }
-
-        // Step 3: recovery requires a new successful collection, which advances both clocks.
-        await container.StartAsync();
-        Assert.Equal(redisPort, container.GetMappedPublicPort(6379));
-        await WaitForRedisAsync(multiplexer);
-        var recoveredAt = WorkflowSourceFixture.T0.AddMinutes(3);
-        clock.Now = recoveredAt;
-        var recoveredId = await WorkflowSourceFixture.AssertCompleteAndProposableAsync(store, options, ledger, clock, recoveredAt);
-        Assert.Equal(findingId, recoveredId);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.TestInfrastructure)]
-    public async Task WorkflowOperationsSource_RedisDeniesOneTargetIndex_PublishesPartialAndBlocksBothProposalSurfaces()
-    {
-        await using var container = new RedisBuilder("redis:7.2-alpine").Build();
-        await container.StartAsync();
-        using var multiplexer = await ConnectionMultiplexer.ConnectAsync(container.GetConnectionString());
-        var store = new RedisWorkflowOperationStore(multiplexer, NullLogger<RedisWorkflowOperationStore>.Instance);
-        Assert.True(await store.TryCreateAsync(
-            WorkflowSourceFixture.SucceededDeploy(WorkflowSourceFixture.TargetA, WorkflowSourceFixture.PriorArtifact)));
-        var ledger = new OpsFindingsCollectionLedger();
-        var clock = new SettableClock(WorkflowSourceFixture.T0);
-        var options = WorkflowSourceFixture.DeclaredReleaseOptions();
-
-        // Keys stay readable for the active set, the terminal index, the seeded operation and target A's
-        // succeeded-deploy index; the server refuses target B's index, so the pass answers for A and not for B.
-        var denied = await container.ExecAsync(
-        [
-            "redis-cli", "ACL", "SETUSER", "default", "resetkeys",
-            "~controlplane:workflow:active*",
-            "~controlplane:workflow:terminal",
-            "~controlplane:workflow:op-4840-*",
-            $"~controlplane:workflow:deploy-succeeded:{WorkflowSourceFixture.TargetA}",
-        ]);
-        Assert.Equal("OK", denied.Stdout.Trim());
-        var gateway = WorkflowSourceFixture.CreateGateway();
-        var service = WorkflowSourceFixture.CreateService(store, options, ledger, clock, gateway);
-
-        var evaluation = await service.EvaluateWithEvidenceAsync();
-
-        WorkflowSourceFixture.AssertPartialTargetCoverage(WorkflowSourceFixture.WorkflowSource(evaluation), WorkflowSourceFixture.T0);
-        var finding = WorkflowSourceFixture.DivergenceFinding(evaluation, WorkflowSourceFixture.TargetA);
-        Assert.DoesNotContain(evaluation.Findings, f => f.Subject.TargetId == WorkflowSourceFixture.TargetB);
-        var proposed = await service.ProposeAsync(finding.Id);
-        Assert.Equal(OpsFindingProposalStatus.Blocked, proposed.Status);
-        Assert.Equal("evidencePostureNotActionable", proposed.Message);
-        using (var services = McpPlatformOpsReaderTests.CreateServices(gateway, findings: service))
-        {
-            var mcp = await McpPlatformOpsReaderTests.CreateReader(services: services).ProposeFindingAsync(
-                McpPlatformOpsReaderTests.CreatePrincipal(),
-                new McpProposeFindingArgument { FindingId = finding.Id, CandidateId = WorkflowSourceFixture.TargetA },
-                CancellationToken.None);
-            Assert.Equal("Blocked", mcp.Outcome);
-            Assert.Equal("evidencePostureNotActionable", mcp.Message);
-            await services.GetRequiredService<IOperationEnvelopeFactory>().DidNotReceive().CreateAcceptedAsync(
-                Arg.Any<string>(), Arg.Any<OperationPolicyContext>(), Arg.Any<CancellationToken>());
-        }
-
-        Assert.Empty(gateway.ReceivedCalls());
-
-        // Restoring key access is the only change, and the same finding becomes proposable again.
-        var restored = await container.ExecAsync(["redis-cli", "ACL", "SETUSER", "default", "resetkeys", "~*"]);
-        Assert.Equal("OK", restored.Stdout.Trim());
-        var restoredAt = WorkflowSourceFixture.T0.AddMinutes(1);
-        clock.Now = restoredAt;
-        var restoredId = await WorkflowSourceFixture.AssertCompleteAndProposableAsync(store, options, ledger, clock, restoredAt);
-        Assert.Equal(finding.Id, restoredId);
-    }
-
-    /// <summary>
-    /// #4938: a deploy parked in ManualInterventionRequired through the production Redis store yields
-    /// the manual-intervention finding with its rollback action, although the store keeps that status
-    /// out of the active index. The finding clears when the operation is rolled back, or when a later
-    /// deploy of the same target succeeds.
-    /// </summary>
-    [IntegrationTest]
-    [Operation(Operations.TestInfrastructure)]
-    public async Task DeployManualIntervention_RedisStore_FiresUntilRolledBackOrSuperseded()
-    {
-        await using var container = new RedisBuilder("redis:7.2-alpine").Build();
-        await container.StartAsync();
-        using var multiplexer = await ConnectionMultiplexer.ConnectAsync(container.GetConnectionString());
-        var store = new RedisWorkflowOperationStore(multiplexer, NullLogger<RedisWorkflowOperationStore>.Instance);
+        var database = new Honua.Server.Tests.Infrastructure.DatabaseFixtureAdapter();
+        await database.InitializeAsync();
+        await using var state = await Honua.Server.Tests.Features.Infrastructure.ControlPlane.ControlPlaneStateHarness
+            .CreateAsync(database, nameof(OpsFindingsWorkflowSourceStoreTests));
+        var store = state.CreateWorkflowOperationStore();
         var stuckAt = DateTimeOffset.UtcNow.AddMinutes(-10);
         var stuckA = WorkflowSourceFixture.StuckDeploy(WorkflowSourceFixture.TargetA, stuckAt);
         var stuckB = WorkflowSourceFixture.StuckDeploy(WorkflowSourceFixture.TargetB, stuckAt);
@@ -322,49 +180,6 @@ public sealed class OpsFindingsWorkflowSourceRedisTests
             EvidencePostureVocabulary.Completeness.Complete,
             WorkflowSourceFixture.WorkflowSource(resolved).Completeness);
         Assert.DoesNotContain(resolved.Findings, f => f.Rule == OpsFindingsService.RuleDeployManualIntervention);
-    }
-
-    private static ConfigurationOptions OutageTolerant(string connectionString)
-    {
-        var configuration = ConfigurationOptions.Parse(connectionString);
-        configuration.AbortOnConnectFail = false;
-        // The outage phase fails fast through the backlog policy once the loss is observed, so the
-        // timeouts only need to bound the healthy phases, and those run on busy shared runners (#5002).
-        configuration.AsyncTimeout = 10_000;
-        configuration.ConnectTimeout = 10_000;
-        configuration.BacklogPolicy = BacklogPolicy.FailFast;
-        configuration.ReconnectRetryPolicy = new ExponentialRetry(100);
-        return configuration;
-    }
-
-    private static Task ObserveInteractiveConnectionFailure(ConnectionMultiplexer multiplexer)
-    {
-        var failed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        multiplexer.ConnectionFailed += (_, args) =>
-        {
-            if (args.ConnectionType == ConnectionType.Interactive)
-            {
-                failed.TrySetResult();
-            }
-        };
-        return failed.Task;
-    }
-
-    private static async Task WaitForRedisAsync(ConnectionMultiplexer multiplexer)
-    {
-        using var recoveryTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        while (true)
-        {
-            try
-            {
-                await multiplexer.GetDatabase().PingAsync();
-                return;
-            }
-            catch (Exception ex) when (ex is RedisException or TimeoutException)
-            {
-                await Task.Delay(100, recoveryTimeout.Token);
-            }
-        }
     }
 }
 

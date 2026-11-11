@@ -8,6 +8,7 @@ using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Caching.Memory;
@@ -495,9 +496,8 @@ public sealed class PortalOAuthClientCredentialsTests
 
     private static (PortalOAuthTokenService Service, PortalOAuthStore Store) CreateCodeExchangeService()
     {
-        var memoryCache = new MemoryCache(new MemoryCacheOptions());
-        var issuer = new PortalTokenIssuer(memoryCache, NullLogger<PortalTokenIssuer>.Instance);
-        var store = new PortalOAuthStore(memoryCache, NullLogger<PortalOAuthStore>.Instance);
+        var issuer = new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<PortalTokenIssuer>.Instance);
+        var store = new PortalOAuthStore(new InMemorySecurityTokenStore(), NullLogger<PortalOAuthStore>.Instance);
         var options = Options.Create(new PortalTokenAuthenticationOptions
         {
             OAuth2 = new PortalOAuth2Options { RequirePkce = false },
@@ -537,9 +537,8 @@ public sealed class PortalOAuthClientCredentialsTests
             IHttpClientFactory? httpClientFactory = null,
             PortalOAuthClientCredentialsFederationOptions? federationOptions = null)
     {
-        var memoryCache = new MemoryCache(new MemoryCacheOptions());
-        var issuer = new PortalTokenIssuer(memoryCache, NullLogger<PortalTokenIssuer>.Instance);
-        var store = new PortalOAuthStore(memoryCache, NullLogger<PortalOAuthStore>.Instance);
+        var issuer = new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<PortalTokenIssuer>.Instance);
+        var store = new PortalOAuthStore(new InMemorySecurityTokenStore(), NullLogger<PortalOAuthStore>.Instance);
         var apiKeyStore = new InMemoryAdminApiKeyStore();
 
         var clientStore = new InMemoryOAuthClientStore();
@@ -634,8 +633,8 @@ public sealed class PortalOAuthClientCredentialsTests
             .AddSingleton<IAdminApiKeyStore>(apiKeyStore)
             .AddSingleton<IPortalTokenSourceValidator>(sp => new PortalTokenSourceValidator(memoryCache, options, sp))
             .BuildServiceProvider();
-        var issuer = new PortalTokenIssuer(memoryCache, NullLogger<PortalTokenIssuer>.Instance, serviceProvider: services);
-        var store = new PortalOAuthStore(memoryCache, NullLogger<PortalOAuthStore>.Instance);
+        var issuer = new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<PortalTokenIssuer>.Instance, serviceProvider: services);
+        var store = new PortalOAuthStore(new InMemorySecurityTokenStore(), NullLogger<PortalOAuthStore>.Instance);
 
         var clientStore = new InMemoryOAuthClientStore();
         var scopeCatalogue = new InMemoryOAuthScopeCatalogue();

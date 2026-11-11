@@ -12,6 +12,7 @@ using Honua.Core.Features.Tiles;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Progress;
 using Honua.Server.Features.Admin.TileOperations;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,7 +34,7 @@ public sealed class TileOperationJobServiceGenerationTests
     public async Task StartAsync_StampsGenerationId_AndRetryPreservesIt()
     {
         using var serviceProvider = CreateServiceProvider();
-        var progressStore = new InMemoryUniversalProgressStore();
+        var progressStore = new UnrecordedConditionalWriteProgressStore();
         var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
         var sut = CreateSut(progressStore, serviceProvider.GetRequiredService<IServiceScopeFactory>(), cache);
 
@@ -107,42 +108,5 @@ public sealed class TileOperationJobServiceGenerationTests
         services.AddSingleton<IMetadataV2GraphProvider>(new Honua.TestKit.Infrastructure.TestMetadataV2GraphBuilder().BuildProvider());
         services.AddSingleton(Substitute.For<ITileProvider>());
         return services.BuildServiceProvider();
-    }
-
-    private sealed class InMemoryUniversalProgressStore : IUniversalProgressStore
-    {
-        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, IOperationProgress> _entries = new(StringComparer.Ordinal);
-
-        public Task SetProgressAsync(string operationId, IOperationProgress progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
-        {
-            _entries[operationId] = progress;
-            return Task.CompletedTask;
-        }
-
-        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(string operationId, IOperationProgress progress, OperationStatus expectedStatus, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
-            => Task.FromResult(ProgressCompareAndSetResult.Updated);
-
-        public Task<TProgress?> GetProgressAsync<TProgress>(string operationId, CancellationToken cancellationToken = default)
-            where TProgress : class, IOperationProgress
-            => Task.FromResult(_entries.TryGetValue(operationId, out var p) && p is TProgress typed ? typed : null);
-
-        public Task<IOperationProgress?> GetProgressAsync(string operationId, CancellationToken cancellationToken = default)
-        {
-            _entries.TryGetValue(operationId, out var p);
-            return Task.FromResult(p);
-        }
-
-        public Task DeleteProgressAsync(string operationId, CancellationToken cancellationToken = default)
-        {
-            _entries.TryRemove(operationId, out _);
-            return Task.CompletedTask;
-        }
-
-        public Task<IReadOnlyList<string>> GetActiveOperationIdsAsync(OperationType? operationType = null, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<string>>([.. _entries.Keys]);
-
-        public Task<IReadOnlyList<TProgress>> GetActiveOperationsAsync<TProgress>(OperationType operationType, CancellationToken cancellationToken = default)
-            where TProgress : class, IOperationProgress
-            => Task.FromResult<IReadOnlyList<TProgress>>([.. _entries.Values.OfType<TProgress>()]);
     }
 }

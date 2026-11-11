@@ -195,6 +195,19 @@ Unpartitioned callers default to
 an independent full-solution format job; `CI Gate` requires it when build inputs
 are selected, without making test consumers wait for formatting.
 
+**Fast-test selection.** The four existing fast-test check names remain present.
+Before setup or compilation, each uses `compute-fast-test-selection.py` to read
+`compute-affected-projects.sh` at the PR merge checkout (`HEAD^1..HEAD`) and
+intersect its reverse-dependency closure with the group's existing test roots.
+Empty closures skip all four builds and tests only after positive governed-docs proof;
+a nonempty managed closure retains architecture and Server governance checks as well as every affected
+group. Unknown projects, invalid roots, missing history, selector errors and
+non-PR events retain every group. Existing docs/generated-only classification
+and exact-head review admission still apply. A skipped test body completes its
+matrix row successfully, preserving the required aggregate's needs contract.
+Drafts instantiate only the Format matrix row; ready PRs retain both analyzer
+partitions and Format.
+
 **Governance and runtime proofs.** The independent PR Fast job retains the
 complete `Category=Architecture` governance set in `Honua.Server.Tests`, the real
 store-gated host and Testcontainers PostgreSQL, source architecture and the full
@@ -620,6 +633,11 @@ fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
 
+The PR managed producer compiles `Honua.Server.Tests` in a parallel, review-admitted job. The main producer excludes that project while preserving every other selected compile root; a reverse project reference to Server.Tests rejects this partition. Each producer publishes only the assemblies consumed by selected shards. The affected-shards aggregate requires the parallel producer to succeed even for an empty shard matrix, retaining the required aggregate dependency contract. Only the affected-shard matrix cancels sibling shards after a failure; fast-test and analyzer matrices retain every result.
+Fast-test selection retains every group for linked cross-project inputs and for empty closures unless the governed docs classifier positively proves the diff safe.
+
+Review revalidation shares `.github/scripts/revalidate-exact-head-review.cjs` across producer, fast-test and aggregate jobs. The aggregate checks out code only for enforced attempt-2 review validation. Generated-output classification shares `scripts/ci/classify-generated-output.sh`; executable skip policy still comes from the immutable PR base, and uncertainty preserves all checks.
+
 Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. Missing envelopes from ordinary producers remain errors.
 
 ### Governance capacity split
@@ -652,3 +670,29 @@ the five-run cache observation, and the protected issuer requirements for any
 future gate skip. Local receipts do not currently skip hosted tests. Compiled
 output caching remains opt-in; no cross-phase promotion is authorized by the
 observational sample.
+
+Each affected shard selects the SDK and workflow-attempt identity exported by its own managed producer. A shard spanning both producers rebuilds its projects locally instead of combining independently resolved SDK outputs. Fast-test selection reads imported build documents through the shared project parser; unresolved imports or linked inputs retain all four groups.
+
+### Optional PR workflow input boundaries
+
+Capability Impact Comparison keeps its PR observation report, scoped to runtime
+source, .NET proving tests, compatibility baselines, capability data, the shard
+map and the selector/report tools. Unrelated prose and workflow edits no longer
+start it. It is currently disabled in repository settings; this filter makes
+re-enabling it safe. Capability Matrix Aggregation and OpenAPI Contract
+Governance already enumerate their generator/contract inputs and retain those
+filters. GeoArrow now also watches global.json and NuGet.config; GeoParquet
+retains its existing serializer/query/import/build-input boundary.
+
+Docs Link Gate retains its complete PR suite for documentation, skills, checker
+and manifest edits. Source/docker/eng-only edits instead run the link checker and
+its adversarial fixtures in the existing ci.yml CI Router Validation job on affected trunk
+runs and twice-daily full runs. That job already participates in CI Gate; no
+required check name or aggregate dependency changes. The runtime URL scan still
+runs and fails the trunk gate when a source/config link breaks.
+
+Derived Artifact Normalization watches .NET generator/proving-test code and
+client compatibility receipts instead of every test language, and GIS data
+instead of GIS prose. Runtime source, generator scripts, CITE status and all
+existing build/setup inputs remain covered. Its producer/consumer security
+boundary and deterministic replay are unchanged.

@@ -39,12 +39,15 @@ fi
 # binary, not this wrapper function.
 source "${SCRIPT_DIR}/lib/jq-cr-safe.sh"
 
+node --test .github/scripts/revalidate-exact-head-review.test.cjs
+
 echo "Validating review-first PR Gate transition..."
 scripts/ci/validate-review-first-dispatch.sh
 
 echo "Validating PR Gate impact observation..."
 if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-workflow-load.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-optional-pr-inputs.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-testcontainer-images.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-heavy-runners.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-trunk-affected.py
@@ -150,6 +153,8 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-managed-test-build.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-artifact-install-cancellation.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-managed-ci-workflow.py
+"${PYTHON_BIN}" scripts/ci/fixtures/validate-fast-test-selection.py
+"${PYTHON_BIN}" scripts/ci/fixtures/validate-partition-managed-producer.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-matrix-file-transport.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-managed-build.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-managed-sdk-selection.py

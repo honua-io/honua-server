@@ -1026,16 +1026,11 @@ public sealed class ExportJobServiceTests
             return Task.CompletedTask;
         }
 
-        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(
-            string operationId,
-            IOperationProgress progress,
-            OperationStatus expectedStatus,
-            TimeSpan? ttl = null,
-            CancellationToken cancellationToken = default)
+        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(OperationProgressWrite write, OperationStatus expectedStatus, CancellationToken cancellationToken = default)
         {
             while (true)
             {
-                if (!_entries.TryGetValue(operationId, out var current))
+                if (!_entries.TryGetValue(write.OperationId, out var current))
                 {
                     return Task.FromResult(ProgressCompareAndSetResult.NotFound);
                 }
@@ -1045,9 +1040,9 @@ public sealed class ExportJobServiceTests
                     return Task.FromResult(ProgressCompareAndSetResult.StatusMismatch(current));
                 }
 
-                if (_entries.TryUpdate(operationId, progress, current))
+                if (_entries.TryUpdate(write.OperationId, write.Progress, current))
                 {
-                    AfterUpdate?.Invoke(progress);
+                    AfterUpdate?.Invoke(write.Progress);
                     return Task.FromResult(ProgressCompareAndSetResult.Updated);
                 }
             }
@@ -1115,12 +1110,7 @@ public sealed class ExportJobServiceTests
             return Task.CompletedTask;
         }
 
-        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(
-            string operationId,
-            IOperationProgress progress,
-            OperationStatus expectedStatus,
-            TimeSpan? ttl = null,
-            CancellationToken cancellationToken = default)
+        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(OperationProgressWrite write, OperationStatus expectedStatus, CancellationToken cancellationToken = default)
             => Task.FromResult(ProgressCompareAndSetResult.NotFound);
 
         public Task<TProgress?> GetProgressAsync<TProgress>(string operationId, CancellationToken cancellationToken = default)
