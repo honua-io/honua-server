@@ -292,7 +292,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
                     distributedCache,
                     sp.GetRequiredService<ILogger<GeoServerImportJobManager>>(),
                     new StaticHostEnvironment("Production"),
-                    redis));
+                    new ImportCoordinationStores(redis, new InMemoryLeaseStore())));
             });
 
         try
@@ -379,7 +379,6 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
         finally
         {
             await isolatedFixture.DisposeAsync();
-            ((IDisposable)coordination.JobManager).Dispose();
         }
     }
 
@@ -541,7 +540,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
         var store = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
         var environment = Substitute.For<IHostEnvironment>();
         environment.EnvironmentName.Returns("Development");
-        using var manager = new GeoServerImportJobManager(store, null,
+        var manager = new GeoServerImportJobManager(store, null,
             NullLogger<GeoServerImportJobManager>.Instance, environment);
         const string jobId = "cancelled-stale-worker";
         var queued = GeoServerImportProgress.CreateInitial(jobId,

@@ -16,7 +16,7 @@ namespace Honua.Migration;
 /// <remarks>
 /// Advancing is idempotent and gated by the shared import leader election so
 /// exactly one node advances a batch at a time. When leadership is unavailable
-/// (no Redis, dev profile) the local fallback leader still advances batches.
+/// (no lease store, dev profile) the node-local leader still advances batches.
 /// </remarks>
 internal sealed partial class MigrationBatchBackgroundService : BackgroundService
 {
@@ -73,7 +73,7 @@ internal sealed partial class MigrationBatchBackgroundService : BackgroundServic
             // ImportBackgroundServiceCoordinator. This service shares the import leader
             // election instance, so releasing here removes the implicit dependency on the
             // import worker coordinator releasing the lease and lets a successor take over
-            // without waiting for the Redis lease TTL to expire.
+            // without waiting for the lease to expire.
             await _jobManager.LeaderElection.ReleaseLeadershipAsync(CancellationToken.None).ConfigureAwait(false);
         }
 

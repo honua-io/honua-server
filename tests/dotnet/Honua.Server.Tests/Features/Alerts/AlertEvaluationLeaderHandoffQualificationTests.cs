@@ -11,10 +11,13 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Alerts;
+using Honua.ControlPlane;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Db.Postgres.Features.Alerts;
+using Honua.Server.Features.Infrastructure.Coordination;
+using Honua.TestKit;
 using Honua.Server.Tests.Infrastructure.Telemetry;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -28,9 +31,9 @@ using Testcontainers.PostgreSql;
 namespace Honua.Server.Tests.Features.Alerts;
 
 /// <summary>
-/// Two production evaluator replicas against Postgres: advisory-lock handoff, a database
+/// Two production evaluator replicas against Postgres: leader-lease handoff, a database
 /// restart while numbered generations are in flight, and replica restarts that keep the
-/// checkpoint and one event per generation (#3863).
+/// checkpoint and one event per generation.
 /// </summary>
 [Protocol(ProtocolNames.Infrastructure)]
 [Operation(Operations.ContractTesting)]
@@ -40,6 +43,7 @@ public sealed class AlertEvaluationLeaderHandoffQualificationTests
     private static readonly TimeSpan LeaderLease = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan NoLeaderThreshold = TimeSpan.FromMilliseconds(400);
     private const string WorkerName = "evaluator";
+    private const string SystemSchema = "honua";
 
     [IntegrationTest(Timeout = 180000)]
     public async Task TwoReplicas_HandoffRestartAndRecovery_KeepOneEventPerGeneration()
@@ -124,11 +128,8 @@ public sealed class AlertEvaluationLeaderHandoffQualificationTests
             DateTimeOffset lostAt;
             try
             {
-                var leaderPid = await ReadLockPidAsync(dataSource);
-                leaderPid.Should().BeGreaterThan(0);
                 lostAt = DateTimeOffset.UtcNow;
-                await TerminateBackendAsync(dataSource, leaderPid);
-                Note(timeline, $"severed advisory-lock backend {leaderPid} of {firstLeader.Name}");
+                Note(timeline, $"{firstLeader.Name} stopped renewing its leader lease");
                 await PublishAsync(dataSource, 2);
                 await WaitUntilAsync(() => attempts.Any(attempt =>
                     attempt.Generation == 2 && attempt.Wrote && attempt.Replica == firstFollower.Name));
@@ -347,10 +348,14 @@ public sealed class AlertEvaluationLeaderHandoffQualificationTests
         ConcurrentBag<EvaluationAttempt> attempts)
     {
         var optionValues = Options.Create(options);
-        var strategy = new PostgresAdvisoryLockLeaderElectionStrategy(
-            dataSource,
-            NullLogger<PostgresAdvisoryLockLeaderElectionStrategy>.Instance,
-            optionValues);
+        var leases = new PostgresLeaseStore(new PostgresExecutionJobStore(
+            new JobStoreDatabase(dataSource, SystemSchema),
+            Options.Create(new JobStoreOptions()),
+            NullLogger<PostgresExecutionJobStore>.Instance));
+        var strategy = new LeaseLeaderElectionStrategy(
+            leases,
+            optionValues,
+            NullLogger<LeaseLeaderElectionStrategy>.Instance);
         var gate = new GatedLeaderStrategy(strategy);
         var pipeline = new NumberedGenerationPipeline(dataSource, name, attempts);
         var services = new ServiceCollection();
@@ -364,7 +369,16 @@ public sealed class AlertEvaluationLeaderHandoffQualificationTests
             TestTelemetry.CreateAlertPipelineMetrics(),
             NullLogger<AlertEvaluationBackgroundService>.Instance);
         var health = new AlertEvaluationHealthCheck(service, optionValues);
-        return new Replica(name, service, strategy, gate, provider, health, pipeline);
+        return new Replica(name, service, gate, provider, health, pipeline);
+    }
+
+    private static string ReadJobSubstrateMigration()
+    {
+        using var stream = typeof(PostgresFixture).Assembly.GetManifestResourceStream("Honua.Server.Migrations.147_CreateJobSubstrate.sql")
+            ?? throw new InvalidOperationException("The job substrate migration is not embedded.");
+        using var reader = new StreamReader(stream);
+        return $"CREATE SCHEMA IF NOT EXISTS {SystemSchema};\n"
+            + reader.ReadToEnd().Replace("$HonuaSchema$", SystemSchema, StringComparison.Ordinal);
     }
 
     private static HealthCheckResult HealthOf(Replica replica) => replica.Health.Evaluate(DateTimeOffset.UtcNow);
@@ -385,9 +399,13 @@ public sealed class AlertEvaluationLeaderHandoffQualificationTests
     private static async Task InitializeSchemaAsync(NpgsqlDataSource dataSource)
     {
         await using var connection = await dataSource.OpenConnectionAsync();
+        await using (var jobSubstrate = new NpgsqlCommand(ReadJobSubstrateMigration(), connection))
+        {
+            await jobSubstrate.ExecuteNonQueryAsync();
+        }
+
         await using var command = new NpgsqlCommand(
             """
-            CREATE SCHEMA IF NOT EXISTS honua;
             CREATE TABLE IF NOT EXISTS honua.alert_worker_checkpoint (
                 worker_name TEXT PRIMARY KEY,
                 last_generation BIGINT NOT NULL DEFAULT 0,
@@ -473,35 +491,6 @@ public sealed class AlertEvaluationLeaderHandoffQualificationTests
         return value;
     }
 
-    private static async Task<int> ReadLockPidAsync(NpgsqlDataSource dataSource)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync();
-        await using var command = new NpgsqlCommand(
-            """
-            SELECT pid
-            FROM pg_locks
-            WHERE locktype = 'advisory'
-              AND granted
-              AND objsubid = 1
-              AND classid::bigint = @class_id
-              AND objid::bigint = @obj_id;
-            """,
-            connection);
-        command.Parameters.AddWithValue("class_id", (long)PostgresAdvisoryLockLeaderElectionStrategy.LockClassId);
-        command.Parameters.AddWithValue("obj_id", (long)PostgresAdvisoryLockLeaderElectionStrategy.LockObjectId);
-        var pid = await command.ExecuteScalarAsync();
-        return pid is int value ? value : 0;
-    }
-
-    private static async Task TerminateBackendAsync(NpgsqlDataSource dataSource, int pid)
-    {
-        await using var connection = await dataSource.OpenConnectionAsync();
-        await using var command = new NpgsqlCommand("SELECT pg_terminate_backend(@pid);", connection);
-        command.Parameters.AddWithValue("pid", pid);
-        var terminated = (bool?)await command.ExecuteScalarAsync() ?? false;
-        terminated.Should().BeTrue();
-    }
-
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
@@ -574,7 +563,7 @@ public sealed class AlertEvaluationLeaderHandoffQualificationTests
         return "unknown";
     }
 
-    // Pause only the old leader's acquisition calls while its session is severed.
+    // Pause only the old leader's acquisition calls, so it stops renewing its lease.
     // The real strategy still performs every acquisition and health decision.
     private sealed class GatedLeaderStrategy(ILeaderElectionStrategy inner) : ILeaderElectionStrategy
     {
@@ -622,7 +611,6 @@ public sealed class AlertEvaluationLeaderHandoffQualificationTests
     private sealed record Replica(
         string Name,
         AlertEvaluationBackgroundService Service,
-        PostgresAdvisoryLockLeaderElectionStrategy Strategy,
         GatedLeaderStrategy Gate,
         ServiceProvider Provider,
         AlertEvaluationHealthCheck Health,
@@ -639,7 +627,6 @@ public sealed class AlertEvaluationLeaderHandoffQualificationTests
                 // Stopping a replica whose database session is already gone still has to release the process.
             }
 
-            await Strategy.DisposeAsync();
             await Provider.DisposeAsync();
         }
     }

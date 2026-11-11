@@ -71,6 +71,10 @@ internal static class PostgresSharedStateRegistration
         return services;
     }
 
+    // The lease store needs the system database; a host without one has no shared leases.
+    public static ILeaseStore? SharedLeaseStore(this IServiceProvider provider)
+        => provider.GetService<NpgsqlDataSource>() is null ? null : provider.GetService<ILeaseStore>();
+
     // The shared store on a host with a system database, a process-local one otherwise.
     private static void AddSharedOrLocal<TService, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TShared>(
         this IServiceCollection services, Func<TService> local)

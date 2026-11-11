@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
-using System.Reflection;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Import.Domain;
@@ -49,136 +48,6 @@ public sealed class RedisImportJobManagerAtomicityTests
             .ListRemoveAsync($"{queueKey}:processing", Arg.Any<RedisValue>(), 1, Arg.Any<CommandFlags>());
         await database.DidNotReceive()
             .ListLeftPushAsync(queueKey, Arg.Any<RedisValue>(), Arg.Any<When>(), Arg.Any<CommandFlags>());
-    }
-
-    [UnitTest]
-    public async Task TryAcquireLeadershipAsync_WhenConfiguredRedisIsUnavailable_DoesNotPromoteLocalFallbackLeadership()
-    {
-        const string leaderKey = "test:leader:unavailable";
-        const string instanceId = "instance-a";
-
-        var database = Substitute.For<IDatabase>();
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-        database.LockTakeAsync(leaderKey, instanceId, Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
-            .Returns(Task.FromException<bool>(new RedisConnectionException(ConnectionFailureType.SocketFailure, "simulated outage")));
-
-        using var election = new RedisLeaderElection(redis, NullLogger.Instance, leaderKey, instanceId);
-
-        (await election.TryAcquireLeadershipAsync()).Should().BeFalse();
-        election.IsLeader.Should().BeFalse();
-        election.IsUsingFallback.Should().BeFalse();
-    }
-
-    [UnitTest]
-    public async Task HeartbeatAsync_WhenRedisBackedLeaderLosesRedisConnection_DropsLeadershipWithoutFallback()
-    {
-        const string leaderKey = "test:leader:heartbeat-outage";
-        const string instanceId = "instance-a";
-
-        var database = Substitute.For<IDatabase>();
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-        database.LockTakeAsync(leaderKey, instanceId, Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
-            .Returns(Task.FromResult(true));
-        database.LockExtendAsync(leaderKey, instanceId, Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
-            .Returns(Task.FromException<bool>(new RedisConnectionException(ConnectionFailureType.SocketFailure, "simulated outage")));
-
-        using var election = new RedisLeaderElection(redis, NullLogger.Instance, leaderKey, instanceId);
-
-        (await election.TryAcquireLeadershipAsync()).Should().BeTrue();
-        election.IsLeader.Should().BeTrue();
-        election.IsUsingFallback.Should().BeFalse();
-
-        (await election.HeartbeatAsync()).Should().BeFalse();
-        election.IsLeader.Should().BeFalse();
-        election.IsUsingFallback.Should().BeFalse();
-    }
-
-    [UnitTest]
-    public async Task TryAcquireLeadershipAsync_WhenRedisRecoversAfterOutage_ReacquiresLeadershipThroughRedisWithoutFallback()
-    {
-        const string leaderKey = "test:leader:restore";
-        const string instanceId = "instance-a";
-
-        var database = Substitute.For<IDatabase>();
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-        database.LockTakeAsync(leaderKey, instanceId, Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
-            .Returns(
-                Task.FromException<bool>(new RedisConnectionException(ConnectionFailureType.SocketFailure, "simulated outage")),
-                Task.FromResult(true));
-        database.PingAsync(Arg.Any<CommandFlags>())
-            .Returns(Task.FromResult(TimeSpan.Zero));
-
-        using var election = new RedisLeaderElection(redis, NullLogger.Instance, leaderKey, instanceId);
-
-        (await election.TryAcquireLeadershipAsync()).Should().BeFalse();
-        election.IsLeader.Should().BeFalse();
-        election.IsUsingFallback.Should().BeFalse();
-        ExpireRedisRetryWindow(election);
-
-        (await election.TryAcquireLeadershipAsync()).Should().BeTrue();
-        election.IsLeader.Should().BeTrue();
-        election.IsUsingFallback.Should().BeFalse();
-    }
-
-    [UnitTest]
-    public async Task Dispose_WhenReleaseHangs_ReturnsPromptlyWithoutBlocking()
-    {
-        // Audit fix: synchronous Dispose() must not block on Redis/network; it schedules
-        // a best-effort release on a background task with a bounded timeout.
-        const string leaderKey = "test:leader:dispose-hang";
-        const string instanceId = "instance-a";
-
-        var database = Substitute.For<IDatabase>();
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-        database.LockTakeAsync(leaderKey, instanceId, Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
-            .Returns(Task.FromResult(true));
-
-        var hangingRelease = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        database.LockReleaseAsync(leaderKey, instanceId, Arg.Any<CommandFlags>())
-            .Returns(_ => hangingRelease.Task);
-
-        var election = new RedisLeaderElection(redis, NullLogger.Instance, leaderKey, instanceId);
-
-        (await election.TryAcquireLeadershipAsync()).Should().BeTrue();
-
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        election.Dispose();
-        stopwatch.Stop();
-
-        stopwatch.Elapsed.Should().BeLessThan(
-            TimeSpan.FromSeconds(2),
-            "Dispose must not block synchronously on a hanging Redis release");
-
-        // Let background timeout fire so the hanging task is observed.
-        hangingRelease.TrySetResult(true);
-        await Task.Delay(50);
-    }
-
-    [UnitTest]
-    public async Task DisposeAsync_AwaitsBoundedRelease()
-    {
-        const string leaderKey = "test:leader:dispose-async";
-        const string instanceId = "instance-a";
-
-        var database = Substitute.For<IDatabase>();
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-        database.LockTakeAsync(leaderKey, instanceId, Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
-            .Returns(Task.FromResult(true));
-        database.LockReleaseAsync(leaderKey, instanceId, Arg.Any<CommandFlags>())
-            .Returns(Task.FromResult(true));
-
-        var election = new RedisLeaderElection(redis, NullLogger.Instance, leaderKey, instanceId);
-        (await election.TryAcquireLeadershipAsync()).Should().BeTrue();
-
-        await election.DisposeAsync();
-
-        election.IsLeader.Should().BeFalse();
-        await database.Received().LockReleaseAsync(leaderKey, instanceId, Arg.Any<CommandFlags>());
     }
 
     [UnitTest]
@@ -233,13 +102,6 @@ public sealed class RedisImportJobManagerAtomicityTests
             TableName = "geoservices_atomicity_test",
             AutoPublish = false
         };
-
-    private static void ExpireRedisRetryWindow(RedisLeaderElection election)
-    {
-        var retryField = typeof(RedisLeaderElection).GetField("_lastRedisFailure", BindingFlags.Instance | BindingFlags.NonPublic);
-        retryField.Should().NotBeNull();
-        retryField!.SetValue(election, DateTime.UtcNow - TimeSpan.FromMinutes(1));
-    }
 
     private sealed class RedisProgressHarness
     {
