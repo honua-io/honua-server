@@ -52,7 +52,10 @@ public sealed class FeatureServerServiceRbacTests : IClassFixture<FeatureServerS
         _fixture = fixture;
     }
 
-    // Rejected requests cannot change the shared application; successful writes stay isolated.
+    /// <summary>
+    /// Shares the application for rejected requests, which cannot change its state;
+    /// successful writes keep isolated applications.
+    /// </summary>
     public sealed class Fixture : IDisposable
     {
         public WebApplicationFactory<Program> Application { get; } = ServiceRbacTestFixture.CreateFactory();
