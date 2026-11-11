@@ -766,6 +766,20 @@ selected PR runs and twice-daily full trunk runs. This changes no runner count,
 required check name, required aggregate dependency, workflow, or shard
 definition.
 
+### ImageServer raw pixel export database lifetime
+
+`ImageServerRawPixelExportTests` holds an `IClassFixture<PostgresFixture>`
+reference, so the shared PostgreSQL infrastructure starts once per class and
+stays up across its integration cases instead of restarting for each one. Each
+case still creates its own `WebAppFixture` host and isolated schema, and seeds
+the raster under the schema-mutation lock. The pure LERC/BIP encoder unit tests
+live in `ImageServerPixelBlockEncoderTests`, which has no fixture, so running
+only unit tests never starts a database.
+All cases and assertions remain in the GeoServices ImageServer Raster Rendering
+and GeoServices ImageServer Rendering and Support shards on selected PR runs and
+twice-daily full trunk runs. This changes no runner count, required check name,
+required aggregate dependency, workflow, or shard definition.
+
 ## Trailing affected CI selection
 
 Trailing affected CI refreshes its completed-ancestor base when the selection job starts,
