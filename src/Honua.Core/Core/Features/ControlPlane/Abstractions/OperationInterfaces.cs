@@ -172,6 +172,8 @@ public interface IWorkflowOperationStore : IOperationStore
         => Task.FromResult<bool?>(null);
 }
 
+public readonly record struct OwnedJobLease(string LeaseOperationId, string OwnerId);
+
 /// <summary>
 /// Durable store for run-to-completion execution jobs such as geoprocessing and ETL.
 /// </summary>
@@ -225,21 +227,11 @@ public interface IExecutionJobStore : IOperationStore
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Atomically persists the execution job record only when both its version and the specified
-    /// distributed lease owner still match. Stores that cannot provide a single atomic operation
-    /// fail closed.
-    /// </summary>
-    /// <param name="job">Execution job record with the expected version.</param>
-    /// <param name="leaseOperationId">Operation identifier used to derive the lease key.</param>
-    /// <param name="leaseOwnerId">Expected current lease owner.</param>
-    /// <param name="ttl">Optional retention period.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>True when updated while the lease was owned; otherwise false.</returns>
+    // Atomically persists the execution job record only when both its version and the lease owner
+    // still match. A store that cannot do both in one atomic operation fails closed.
     Task<bool> TrySetIfLeaseOwnedAsync(
         ExecutionJobRecord job,
-        string leaseOperationId,
-        string leaseOwnerId,
+        OwnedJobLease lease,
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default)
         => Task.FromResult(false);
