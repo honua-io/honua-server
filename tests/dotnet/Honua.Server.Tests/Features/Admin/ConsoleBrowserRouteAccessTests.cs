@@ -16,11 +16,9 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// The static Console calls the native data routes directly from the browser: same-origin with the
-/// session cookie, or from another origin with the operator bearer. Both credentials must reach the
-/// same authorization and tenant outcome on every route the Console used to proxy.
-/// </summary>
+// The static Console calls the native data routes directly from the browser: same-origin with the
+// session cookie, or from another origin with the operator bearer. Both credentials must reach the
+// same authorization and tenant outcome on every route the Console used to proxy.
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]
@@ -76,6 +74,43 @@ public sealed class ConsoleBrowserRouteAccessTests : IAsyncLifetime
         sessionResponse.StatusCode.Should().NotBeOneOf(CredentialDenials);
         bearerResponse.StatusCode.Should().Be(sessionResponse.StatusCode);
         (await ReadsAsEsriTokenDenialAsync(bearerResponse)).Should().BeFalse();
+        if (sessionResponse.StatusCode == HttpStatusCode.OK)
+        {
+            (await bearerResponse.Content.ReadAsStringAsync()).Should()
+                .Be(await sessionResponse.Content.ReadAsStringAsync());
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /mcp")]
+    public async Task McpFromConsoleOrigin_PreflightAllowsAndResponseExposesSessionHeader()
+    {
+        using var bearer = await SignInCrossOriginAsync();
+        using var preflight = new HttpRequestMessage(HttpMethod.Options, "/mcp");
+        preflight.Headers.Add("Access-Control-Request-Method", "POST");
+        preflight.Headers.Add("Access-Control-Request-Headers", "authorization, content-type, mcp-session-id, idempotency-key");
+
+        using var preflightResponse = await bearer.SendAsync(preflight);
+        using var initialized = await bearer.PostAsJsonAsync("/mcp", new
+        {
+            jsonrpc = "2.0",
+            id = 1,
+            method = "initialize",
+            @params = new
+            {
+                protocolVersion = "2025-06-18",
+                capabilities = new { },
+                clientInfo = new { name = "console-spa-test", version = "1.0" }
+            }
+        });
+
+        preflightResponse.Headers.GetValues("Access-Control-Allow-Origin").Should().Equal(ConsoleOrigin);
+        string.Join(',', preflightResponse.Headers.GetValues("Access-Control-Allow-Headers")).Should()
+            .ContainEquivalentOf("mcp-session-id").And.ContainEquivalentOf("idempotency-key");
+        initialized.StatusCode.Should().Be(HttpStatusCode.OK);
+        initialized.Headers.Contains("Mcp-Session-Id").Should().BeTrue();
+        string.Join(',', initialized.Headers.GetValues("Access-Control-Expose-Headers")).Should()
+            .ContainEquivalentOf("Mcp-Session-Id");
     }
 
     [IntegrationTest]

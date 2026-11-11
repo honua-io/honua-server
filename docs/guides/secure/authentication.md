@@ -225,6 +225,15 @@ is bounded by the configured operator bearer maximum and 30 minutes. Sign in aga
 after expiry. Credentialed CORS never expands wildcard origins. Cookies remain
 same-origin; CORS does not authorize cross-origin cookie writes.
 
+The operator bearer carries the administrator session's claims and reaches the
+same data routes as the session cookie, including MCP (send `Mcp-Session-Id`
+back on follow-up calls). Without a tenant claim it resolves the configured
+`MultiTenancy:DefaultTenantId`, as the cookie does; with no default tenant it is
+limited to tenant-independent administration routes. The bearer is stateless:
+signing out ends the cookie session but not a bearer already issued, which stays
+valid until it expires. Keep `Authentication:OperatorBearer:MaxLifetimeMinutes`
+short and rotate the signing key to revoke every outstanding bearer.
+
 Separate-origin OIDC requires a public SPA client registered with the provider.
 Use authorization code with PKCE and an API-audience access token accepted by the
 server's configured JWT validation. Configure the provider's SPA redirect and

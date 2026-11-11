@@ -215,6 +215,42 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task Post_TenantlessOperatorBearerToolCall_UsesDefaultTenantAndSucceeds()
+    {
+        using var request = BuildRpc(
+            """{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"honua_list_capabilities","arguments":{}}}""",
+            sessionId: null,
+            bearer: CreateOperatorToken(tenantId: null));
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        document.RootElement.GetProperty("result").GetProperty("isError").GetBoolean().Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task Post_TenantlessOperatorBearerToolCall_WithoutDefaultTenant_IsDeniedBeforeToolExecution()
+    {
+        await using var fixture = CreateOperatorOnlyFixture(oidcEnabled: false)
+            .ConfigureWebHost(builder => builder.UseSetting("MultiTenancy:DefaultTenantId", ""));
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateClient();
+        using var request = BuildRpc(
+            """{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"honua_list_capabilities","arguments":{}}}""",
+            sessionId: null,
+            bearer: CreateOperatorToken(tenantId: null));
+
+        var response = await client.SendAsync(request);
+
+        await AssertTenantAuthenticationRequiredAsync(response);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /mcp")]
     public async Task Post_BearerUnauthorizedTenantOverride_FailsBeforeEndpointExecution()
     {
         var token = CreateToken("operator-123", additionalClaims:
@@ -1276,8 +1312,10 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
 
     private static string CreateOperatorToken(
         string signingKey = OperatorSigningKey,
-        int expiresInMinutes = 10)
+        int expiresInMinutes = 10,
+        string? tenantId = "tenant-a")
     {
+        Claim[] tenantClaims = tenantId is null ? [] : [new Claim("tid", tenantId)];
         var credentials = new SigningCredentials(
             new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
             SecurityAlgorithms.HmacSha256);
@@ -1287,7 +1325,7 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
             claims:
             [
                 new Claim("sub", "operator-1"),
-                new Claim("tid", "tenant-a"),
+                .. tenantClaims,
                 new Claim("roles", "admin"),
                 new Claim("scope", "honua.mcp.full"),
             ],

@@ -240,21 +240,37 @@ public class TenantContextMiddlewareTests
         Assert.Equal("public|public", binding);
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData(null)]
+    [InlineData("   ")]
     [Operation(Operations.Security)]
     [Endpoint("GET /tenant")]
-    public async Task OperatorBearerWithoutTenantClaim_NoDefaultTenant_TenantBoundRouteIsRejected()
+    public async Task OperatorBearerWithoutTenantClaim_NoDefaultTenant_TenantBoundRouteIsRejected(string? defaultTenantId)
     {
         var principal = AuthenticatedPrincipal(
             claims: (ClaimTypes.Name, "operator"),
             authenticationType: "OperatorBearer");
 
-        var client = await CreateAppAsync(principal, options => options.DefaultTenantId = null);
+        var client = await CreateAppAsync(principal, options => options.DefaultTenantId = defaultTenantId);
         var response = await client.GetAsync("/tenant");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal("authentication_required", document.RootElement.GetProperty("code").GetString());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /tenant")]
+    public async Task OperatorBearerWithTenantClaim_ClaimWinsOverDefaultTenant()
+    {
+        var principal = AuthenticatedPrincipal(
+            claims: ("tid", "tenant-a"),
+            authenticationType: "OperatorBearer");
+
+        var client = await CreateAppAsync(principal);
+
+        Assert.Equal("Claim:tenant-a", await client.GetStringAsync("/tenant"));
     }
 
     [IntegrationTest]
