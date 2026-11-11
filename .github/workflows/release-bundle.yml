@@ -365,8 +365,8 @@ jobs:
   ogc-conformance:
     name: Qualify OGC release candidate
     needs: [release-context, rc-image]
-    # Only a candidate run can be promoted by aggregate, so non-candidate
-    # rc dispatches do not spend the full OGC qualification.
+    # Only candidate runs reach aggregate, so non-candidate rc dispatches
+    # skip the full OGC qualification.
     if: ${{ github.event.inputs.channel == 'rc' && needs.release-context.outputs.candidate == 'true' }}
     uses: ./.github/workflows/ogc-rc-conformance.yml
     permissions:

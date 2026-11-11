@@ -38,8 +38,6 @@ class OgcReleaseCandidateTests(unittest.TestCase):
         jobs = workflow("release-bundle.yml")["jobs"]
         call = jobs["ogc-conformance"]
         self.assertEqual(call["needs"], ["release-context", "rc-image"])
-        # Only a candidate run can be promoted by aggregate, so non-candidate
-        # rc dispatches do not spend the full OGC qualification.
         self.assertEqual(call["if"], "${{ github.event.inputs.channel == 'rc' && needs.release-context.outputs.candidate == 'true' }}")
         self.assertNotIn("run_integration", call["if"])
         self.assertEqual(call["with"]["server_image"], "${{ needs.rc-image.outputs.image_digest_ref }}")

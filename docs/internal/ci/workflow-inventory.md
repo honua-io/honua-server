@@ -442,7 +442,7 @@ which is why both the run count and exact observed span are recorded.
 | `cite-evidence-report.yml` | CITE Evidence Report | `workflow_dispatch`, RC `workflow_call` | Runs the public CITE suite set and builds `artifacts/cite-evidence/` (summary JSON, badge SVG, static index, full TeamEngine HTML) with optional Pages deployment. Also asserts `docs/cite-status.md` freshness and blocks RC qualification when the reviewed snapshot is >14 days stale (#2944); refresh the reviewed snapshot manually before cutting an RC. |
 | `cite-certification.yml` | Exact-candidate CITE protocol certification | `workflow_dispatch` | Release-only producer that runs the full CITE inventory against a canonical immutable GHCR digest, verifies its OCI source revision, and emits post-cut normalized certification observations for the governed release denominator (#3382). |
 
-External OGC conformance runs after the immutable image is built for channel `rc`, through
+External OGC conformance runs after the immutable image is built for a candidate `rc` run, through
 `ogc-rc-conformance.yml`. Weekly schedules and the Building-Block PR trigger are removed.
 These suites are absent from both the affected post-merge run and the existing full `ci.yml`
 run; GeoServices REST checks retain their PR admission. The RC aggregate requires every
