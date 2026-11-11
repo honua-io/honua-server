@@ -563,14 +563,10 @@ internal sealed class BindStudioInteractionTool : StudioCompositionToolBase, IMc
         Name = ToolName,
         Title = "Bind Studio interaction",
         Description =
-            "Add or replace (by id) one declarative event→action binding in a map/app/dashboard-family Studio draft's "
-            + "composition, with optimistic-generation checking. Bindings are data, not code: arguments are static "
-            + "JSON plus '$event.' path substitution, and actions never emit events, so bindings cannot cascade. "
-            + "Fails with invalid_argument when the event/verb is outside the closed sets, when on.ref/do.ref does "
-            + "not resolve to a component declared in the same document (a 'control:{id}' ref resolves against the "
-            + "document's controls collection — add it with honua_studio_add_control first), or when "
-            + "the binding would push a single (on.ref, on.event) source past "
-            + $"{StudioInteractionVocabulary.MaxInteractionsPerEventSource} interactions.",
+            "Add/replace a map/app/dashboard draft event→action binding by id with generation checking. Arguments are "
+            + "static JSON plus '$event.' paths; actions emit no events, preventing cascades. invalid_argument: "
+            + "unknown event/verb, on.ref/do.ref absent from this document, or too many bindings per (on.ref, on.event): "
+            + $"{StudioInteractionVocabulary.MaxInteractionsPerEventSource}. Add control refs with honua_studio_add_control first.",
         InputSchema = StudioMcpSchemas.BindInteractionArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         // Re-binding the same id with the same body is idempotent; the tool never
@@ -785,12 +781,10 @@ internal sealed class AddStudioControlTool : StudioCompositionToolBase, IMcpTool
         Name = ToolName,
         Title = "Add Studio control",
         Description =
-            "Add or replace (by id) one control in a map/app/dashboard-family Studio draft's composition, with "
-            + "optimistic-generation checking. Controls are input affordances (chrome), not layout grid items, and "
-            + "are what 'control:{id}' interaction references resolve against. Fails with invalid_argument when the "
-            + "kind is outside the closed vocabulary ("
-            + $"{string.Join(", ", StudioInteractionVocabulary.ControlKinds)}), when a supplied sourceId does not "
-            + "resolve to a layer or datasource declared in the same document, or when the draft's family is not map/app/dashboard.",
+            "Add/replace a map/app/dashboard draft control by id with generation checking. Controls are input chrome, "
+            + "not grid items; 'control:{id}' references resolve here. invalid_argument: wrong family, sourceId absent "
+            + "from this document's layers/datasources, or kind outside: "
+            + $"{string.Join(", ", StudioInteractionVocabulary.ControlKinds)}.",
         InputSchema = StudioMcpSchemas.AddControlArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         // Re-adding the same id with the same body is idempotent; the tool never

@@ -19,6 +19,18 @@ namespace Honua.Ai.Protocols.Mcp.Studio;
 /// </summary>
 internal static class StudioMcpSchemas
 {
+    public static readonly JsonElement ListItemsArgumentSchema = Parse("""
+        {"type":"object","additionalProperties":false,"properties":{
+        "q":{"type":"string","maxLength":200},"cursor":{"type":"string","maxLength":2000},
+        "limit":{"type":"integer","minimum":1,"maximum":100,"default":25}}}
+        """);
+
+    public static readonly JsonElement ListVersionsArgumentSchema = Parse("""
+        {"type":"object","required":["itemId"],"additionalProperties":false,"properties":{
+        "itemId":{"type":"string","format":"uuid"},"beforeVersionNumber":{"type":"integer","minimum":1},
+        "limit":{"type":"integer","minimum":1,"maximum":100,"default":25}}}
+        """);
+
     public static readonly JsonElement SaveVersionArgumentSchema = Parse("""
         {"type":"object","required":["draftId","generation"],"additionalProperties":false,"properties":{
           "draftId":{"type":"string","format":"uuid","description":"Draft id from honua_studio_create_draft or honua_studio_get_draft."},
@@ -408,7 +420,7 @@ internal static class StudioMcpSchemas
             "versionId": { "type": "string", "format": "uuid", "description": "version.versionId from honua_studio_save_version." },
             "contentHash": { "type": "string", "minLength": 1, "maxLength": 128, "description": "version.contentHash from honua_studio_save_version." },
             "route": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Caller-supplied. Requested target route key." },
-            "visibility": { "type": "string", "minLength": 1, "maxLength": 100, "description": "Caller-supplied. Requested visibility target." },
+            "visibility": { "type": "string", "enum": ["personal", "team", "organization", "public"], "description": "Caller-supplied. personal: owner only; team and organization: signed-in callers in the item tenant; public: anonymous readers. Team uses the same tenant audience as organization." },
             "note": { "type": "string", "maxLength": 2000, "description": "Human-readable rationale recorded for reviewer context." }
           }
         }
