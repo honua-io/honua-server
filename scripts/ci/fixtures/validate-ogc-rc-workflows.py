@@ -11,11 +11,11 @@ WORKFLOWS = ROOT / ".github/workflows"
 class UniqueKeyLoader(yaml.BaseLoader):
     """Reject duplicate keys that GitHub would reject rather than silently replacing."""
 
-    def construct_mapping(self, node, deep=False):
-        keys = [self.construct_object(key, deep=deep) for key, _ in node.value]
+    def construct_mapping(self, node, **options):
+        keys = [self.construct_object(key, **options) for key, _ in node.value]
         if len(keys) != len(set(keys)):
             raise ValueError(f"Duplicate YAML key in {node.start_mark}")
-        return super().construct_mapping(node, deep=deep)
+        return super().construct_mapping(node, **options)
 
 
 def workflow(name):
