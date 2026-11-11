@@ -26,7 +26,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// </summary>
 [Collection("Database")]
 [Protocol(ProtocolNames.TestQuality)]
-public sealed class ImportTypedColumnTests(PostgresFixture fixture)
+public sealed partial class ImportTypedColumnTests(PostgresFixture fixture)
 {
     [IntegrationTest]
     [Operation(Operations.Import)]
