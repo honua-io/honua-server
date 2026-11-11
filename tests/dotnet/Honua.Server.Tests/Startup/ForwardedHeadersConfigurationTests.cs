@@ -15,10 +15,13 @@ namespace Honua.Server.Tests.Startup;
 public sealed class ForwardedHeadersConfigurationTests
 {
     private const string LoadBalancerAddress = "10.20.3.17";
+    private const string ViewerAddress = "198.51.100.7";
+    private const string VpcOriginInterfaceAddress = "10.20.9.4";
 
     private static readonly Dictionary<string, string?> CloudFrontBehindLoadBalancer = new()
     {
         ["ForwardedHeaders:Enabled"] = "true",
+        ["ForwardedHeaders:ForwardLimit"] = "2",
         ["ForwardedHeaders:ProtoHeaderName"] = "CloudFront-Forwarded-Proto",
         ["ForwardedHeaders:KnownNetworks:0"] = "10.20.0.0/16",
     };
@@ -28,9 +31,30 @@ public sealed class ForwardedHeadersConfigurationTests
     [Trait("Tier", "Fast")]
     public async Task ConfigureForwardedHeaders_PeerInsideKnownNetworkWithConfiguredProtoHeader_RequestIsHttps()
     {
-        var isHttps = await SendThroughLoadBalancerAsync(CloudFrontBehindLoadBalancer, LoadBalancerAddress);
+        var seen = await SendThroughLoadBalancerAsync(CloudFrontBehindLoadBalancer, LoadBalancerAddress);
 
-        isHttps.Should().BeTrue();
+        seen.Scheme.Should().Be("https");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task ConfigureForwardedHeaders_TwoTrustedHops_ResolvesTheViewerAddress()
+    {
+        var seen = await SendThroughLoadBalancerAsync(CloudFrontBehindLoadBalancer, LoadBalancerAddress);
+
+        seen.RemoteAddress.Should().Be(ViewerAddress);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task ConfigureForwardedHeaders_ViewerSuppliedForwardedFor_IsNotTrusted()
+    {
+        var seen = await SendThroughLoadBalancerAsync(
+            CloudFrontBehindLoadBalancer, LoadBalancerAddress, viewerSuppliedForwardedFor: "192.0.2.200");
+
+        seen.RemoteAddress.Should().Be(ViewerAddress);
     }
 
     [Fact]
@@ -38,9 +62,10 @@ public sealed class ForwardedHeadersConfigurationTests
     [Trait("Tier", "Fast")]
     public async Task ConfigureForwardedHeaders_PeerOutsideKnownNetworks_IgnoresForwardedScheme()
     {
-        var isHttps = await SendThroughLoadBalancerAsync(CloudFrontBehindLoadBalancer, "192.0.2.44");
+        var seen = await SendThroughLoadBalancerAsync(CloudFrontBehindLoadBalancer, "192.0.2.44");
 
-        isHttps.Should().BeFalse();
+        seen.Scheme.Should().Be("http");
+        seen.RemoteAddress.Should().Be("192.0.2.44");
     }
 
     [Fact]
@@ -51,9 +76,9 @@ public sealed class ForwardedHeadersConfigurationTests
         var settings = new Dictionary<string, string?>(CloudFrontBehindLoadBalancer);
         settings.Remove("ForwardedHeaders:ProtoHeaderName");
 
-        var isHttps = await SendThroughLoadBalancerAsync(settings, LoadBalancerAddress);
+        var seen = await SendThroughLoadBalancerAsync(settings, LoadBalancerAddress);
 
-        isHttps.Should().BeFalse();
+        seen.Scheme.Should().Be("http");
     }
 
     [Fact]
@@ -74,9 +99,12 @@ public sealed class ForwardedHeadersConfigurationTests
             .WithMessage("*ForwardedHeaders:KnownNetworks*10.20.0.0/40*");
     }
 
-    private static async Task<bool> SendThroughLoadBalancerAsync(
+    private sealed record ServerView(string Scheme, string RemoteAddress);
+
+    private static async Task<ServerView> SendThroughLoadBalancerAsync(
         Dictionary<string, string?> settings,
-        string peerAddress)
+        string peerAddress,
+        string? viewerSuppliedForwardedFor = null)
     {
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseTestServer();
@@ -90,15 +118,19 @@ public sealed class ForwardedHeadersConfigurationTests
             return next(context);
         });
         app.UseForwardedHeaders();
-        app.MapGet("/scheme", (HttpContext context) => context.Request.IsHttps ? "https" : "http");
+        app.MapGet("/seen", (HttpContext context) => $"{context.Request.Scheme} {context.Connection.RemoteIpAddress}");
         await app.StartAsync();
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/scheme");
-        request.Headers.Add("X-Forwarded-For", "198.51.100.7, 203.0.113.9");
+        var forwardedFor = viewerSuppliedForwardedFor is null
+            ? $"{ViewerAddress}, {VpcOriginInterfaceAddress}"
+            : $"{viewerSuppliedForwardedFor}, {ViewerAddress}, {VpcOriginInterfaceAddress}";
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/seen");
+        request.Headers.Add("X-Forwarded-For", forwardedFor);
         request.Headers.Add("X-Forwarded-Proto", "http");
         request.Headers.Add("CloudFront-Forwarded-Proto", "https");
         using var response = await app.GetTestClient().SendAsync(request);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync() == "https";
+        var parts = (await response.Content.ReadAsStringAsync()).Split(' ');
+        return new ServerView(parts[0], parts[1]);
     }
 }

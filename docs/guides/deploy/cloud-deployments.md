@@ -129,10 +129,12 @@ excluded until it is re-established on a live Fargate task (honua-release#98).
 
   ```bash
   ForwardedHeaders__Enabled=true
-  ForwardedHeaders__ForwardLimit=1
+  ForwardedHeaders__ForwardLimit=2
   ForwardedHeaders__ProtoHeaderName=CloudFront-Forwarded-Proto
   ForwardedHeaders__KnownNetworks__0=10.0.0.0/16   # the VPC CIDR; ALB node addresses change
   ```
+
+  The limit is two hops because the ALB appends the private address of the CloudFront VPC origin interface after the viewer address CloudFront wrote; both of those addresses come from the VPC, so the server resolves the viewer and ignores any addresses the viewer sent itself.
 
   Do not set `ASPNETCORE_FORWARDEDHEADERS_ENABLED`: it trusts forwarded headers from every peer and reads the ALB's `X-Forwarded-Proto`.
 - Canary rollouts: provision a stable and a canary ECS service on two ALB target groups, then drive weighted traffic shifts through Honua's deploy API (backend `honua-aws-ecs-alb`) with an automatic telemetry gate — see [Upgrade and roll back](upgrade-and-rollback.md).
