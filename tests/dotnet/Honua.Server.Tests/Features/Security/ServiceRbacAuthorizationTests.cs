@@ -996,8 +996,23 @@ public sealed class OgcServiceAccessPolicyTests
     }
 }
 
-public sealed partial class ODataServiceRbacTests
+public sealed partial class ODataServiceRbacTests : IClassFixture<ODataServiceRbacTests.DeniedRequestFixture>
 {
+    private readonly DeniedRequestFixture _fixture;
+
+    public ODataServiceRbacTests(DeniedRequestFixture fixture)
+    {
+        _fixture = fixture;
+    }
+
+    // Denials cannot mutate the shared catalog; successful edits and custom policies require isolated hosts.
+    public sealed class DeniedRequestFixture : IDisposable
+    {
+        public WebApplicationFactory<Program> Application { get; } = ServiceRbacTestFixture.CreateFactory();
+
+        public void Dispose() => Application.Dispose();
+    }
+
     [IntegrationTest]
     [Protocol(TestProtocols.ODataV4)]
     [Operation(Operations.Create)]
@@ -1020,8 +1035,7 @@ public sealed partial class ODataServiceRbacTests
     [Endpoint("POST /odata/Layers({layerId})/Features")]
     public async Task CreateFeature_WithScopedDataEditor_DeniesOtherService()
     {
-        using var factory = ServiceRbacTestFixture.CreateFactory();
-        using var client = ServiceRbacTestFixture.CreateClient(factory, $"data-editor:{ServiceRbacTestFixture.AlphaService}");
+        using var client = ServiceRbacTestFixture.CreateClient(_fixture.Application, $"data-editor:{ServiceRbacTestFixture.AlphaService}");
 
         var response = await client.PostAsync(
             $"/odata/Layers({ServiceRbacTestFixture.BetaLayerId})/Features",
@@ -1052,8 +1066,7 @@ public sealed partial class ODataServiceRbacTests
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithScopedDataEditor_DeniesOtherService()
     {
-        using var factory = ServiceRbacTestFixture.CreateFactory();
-        using var client = ServiceRbacTestFixture.CreateClient(factory, $"data-editor:{ServiceRbacTestFixture.AlphaService}");
+        using var client = ServiceRbacTestFixture.CreateClient(_fixture.Application, $"data-editor:{ServiceRbacTestFixture.AlphaService}");
 
         var batchRequest = new ODataBatchRequest
         {
@@ -1130,8 +1143,7 @@ public sealed partial class ODataServiceRbacTests
     [Endpoint("GET /odata/Features({layerId})?$search")]
     public async Task Search_WithAnonymousClient_ReturnsUnauthorized()
     {
-        using var factory = ServiceRbacTestFixture.CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         var response = await client.GetAsync(
             $"/odata/Features({ServiceRbacTestFixture.AlphaLayerId})?$search=RBAC");
@@ -1145,8 +1157,7 @@ public sealed partial class ODataServiceRbacTests
     [Endpoint("GET /odata/Features({layerId})?$apply")]
     public async Task Apply_WithAnonymousClient_ReturnsUnauthorized()
     {
-        using var factory = ServiceRbacTestFixture.CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         var response = await client.GetAsync(
             $"/odata/Features({ServiceRbacTestFixture.AlphaLayerId})?$apply=aggregate(ObjectId with countdistinct as Total)");
@@ -1160,8 +1171,7 @@ public sealed partial class ODataServiceRbacTests
     [Endpoint("GET /odata/Features?$search")]
     public async Task Search_AllLayersRoute_WithAnonymousClient_ReturnsUnauthorized()
     {
-        using var factory = ServiceRbacTestFixture.CreateFactory();
-        using var client = factory.CreateClient();
+        using var client = _fixture.Application.CreateClient();
 
         var response = await client.GetAsync(
             $"/odata/Features?$search=RBAC&$filter=LayerId eq {ServiceRbacTestFixture.AlphaLayerId}");
