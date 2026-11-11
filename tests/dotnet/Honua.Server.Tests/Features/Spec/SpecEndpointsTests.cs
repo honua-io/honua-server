@@ -34,10 +34,7 @@ public sealed class SpecEndpointsTests : IClassFixture<SpecEndpointsTests.Fixtur
         _fixture = fixture;
     }
 
-    /// <summary>
-    /// Owns the application used by validation, planning, and rejected requests.
-    /// Successful applies and configuration variants retain their own hosts and stores.
-    /// </summary>
+    // Share the application for read-only requests; successful applies keep isolated hosts and stores.
     public sealed class Fixture : IDisposable
     {
         public WebApplicationFactory<Program> Application { get; } = CreateFactory();
