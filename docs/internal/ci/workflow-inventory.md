@@ -714,4 +714,4 @@ revocation: a human or drain lane owns any manually armed dependency PR.
 If mergeability becomes clean between the live query and enable mutation, only
 GitHub's specific clean-status response ends neutrally; other API errors fail.
 
-PR Gate and native-image impact observers record `source-run-draft-admission` when the latest `PR Gate / Build and tests` outcome at or before the source attempt was skipped (a partial rerun keeps the earlier outcome); these attempts emit no promotion receipt. Ready-run failures remain observable.
+PR Gate and native-image impact observers record `source-run-draft-admission` when the latest `PR Gate / Runner select` and `PR Gate / Build and tests` outcomes at or before the source attempt were both skipped (a partial rerun keeps earlier outcomes); these attempts emit no promotion receipt. Ready-run failures remain observable.

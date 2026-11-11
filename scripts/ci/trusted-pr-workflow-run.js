@@ -298,33 +298,45 @@ async function resolveForObservation({ core, label, markerPath, fs, ...options }
   return null;
 }
 
+/**
+ * The latest completed attempt of one canonical PR Gate job at or before the
+ * source attempt. A partial rerun keeps a job's earlier outcome without
+ * re-executing it, so the deciding attempt can precede the source attempt.
+ */
+function latestSourceJob(jobs, run, name) {
+  const candidates = jobs.filter((job) =>
+    job.name === name &&
+    job.run_id === run.id &&
+    job.run_attempt <= run.run_attempt &&
+    job.workflow_name === 'PR Gate' &&
+    job.head_sha === run.head_sha &&
+    job.status === 'completed' && TERMINAL_CONCLUSIONS.has(job.conclusion),
+  );
+  const latestAttempt = Math.max(...candidates.map((job) => job.run_attempt));
+  const latest = candidates.filter((job) => job.run_attempt === latestAttempt);
+  if (latest.length !== 1) {
+    throw new Error(`source run does not identify exactly one canonical ${name} job`);
+  }
+  return latest[0];
+}
+
 async function resolvePrGateForObservation(options) {
   const resolved = await resolveForObservation(options);
   if (!resolved) return null;
   const { github, owner, repo } = options;
-  // A partial rerun keeps the heavy job's earlier outcome without re-executing
-  // it, so the evidence is the latest heavy attempt at or before the source.
   const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
     owner, repo, run_id: resolved.run.id, filter: 'all', per_page: 100,
   });
-  const heavyJobs = jobs.filter((job) =>
-    job.name === 'PR Gate / Build and tests' &&
-    job.run_id === resolved.run.id &&
-    job.run_attempt <= resolved.run.run_attempt &&
-    job.workflow_name === 'PR Gate' &&
-    job.head_sha === resolved.run.head_sha &&
-    job.status === 'completed' && TERMINAL_CONCLUSIONS.has(job.conclusion),
-  );
-  const latestAttempt = Math.max(...heavyJobs.map((job) => job.run_attempt));
-  const latestHeavyJobs = heavyJobs.filter((job) => job.run_attempt === latestAttempt);
-  if (latestHeavyJobs.length !== 1) {
-    throw new Error('source run does not identify exactly one canonical heavy job');
-  }
-  if (latestHeavyJobs[0].conclusion !== 'skipped') return resolved;
+  // A skipped heavy job alone is not draft evidence: a failed runner selection
+  // also skips it. Runner select has no dependencies, so its draft guard is the
+  // only way it is skipped.
+  const heavy = latestSourceJob(jobs, resolved.run, 'PR Gate / Build and tests');
+  const runnerSelect = latestSourceJob(jobs, resolved.run, 'PR Gate / Runner select');
+  if (heavy.conclusion !== 'skipped' || runnerSelect.conclusion !== 'skipped') return resolved;
   recordObservationSkip({
     ...options,
     code: 'source-run-draft-admission',
-    reason: 'the exact source attempt did not admit the heavy PR gate',
+    reason: 'the source run did not admit the heavy PR gate',
     source: options,
   });
   return null;
