@@ -8,6 +8,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Extensions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -30,7 +31,7 @@ public sealed class McpJobToolsInstalledClientTests
     {
         await using var redis = new RedisFixture();
         await redis.InitializeAsync();
-        await using var fixture = new WebAppFixture().UseKestrel().WithTestLicense(HonuaEdition.Pro)
+        await using var fixture = new WebAppFixture().WithProductionJobSubstrate().UseKestrel().WithTestLicense(HonuaEdition.Pro)
             .ConfigureWebHost(builder =>
             {
                 builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);

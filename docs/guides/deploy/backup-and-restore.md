@@ -10,7 +10,7 @@ Inventory the deployment's durable state, take a PostGIS backup, and plan a
 restore that accounts for Redis and referenced file/object bytes as well.
 
 > **2026.1 boundary:** Full-platform recovery for a topology with durable Redis
-> jobs/workflows is **not a qualified procedure in 2026.1**. The PostgreSQL and
+> workflows or proposals is **not a qualified procedure in 2026.1**. The PostgreSQL and
 > file-storage commands on this page are component procedures, not proof of
 > complete platform recovery, and a same-container restart test does not
 > establish recovery after primary Redis storage is destroyed.
@@ -23,9 +23,9 @@ restore that accounts for Redis and referenced file/object bytes as well.
 
 | Store | Contents | Backup need |
 |---|---|---|
-| PostGIS database | Features, layers, service metadata, connections, roles, database-backed audit data, migration journal and enabled transactional outbox rows | Dump/PITR plus the matching restore point for every other enabled store; PostgreSQL is not the only durable substrate |
+| PostGIS database | Features, layers, service metadata, connections, roles, database-backed audit data, migration journal, enabled transactional outbox rows, and background jobs with their queue, logs and geoprocessing result packages | Dump/PITR plus the matching restore point for every other enabled store; PostgreSQL is not the only durable substrate |
 | File storage (`FileStorage__Provider`) and other configured output stores | Uploaded files, attachments and job/workflow output bytes referenced by database or Redis records; local volumes or object storage | Preserve the actual referenced bytes and object versions, including outputs outside the default file-storage volume; replication alone is not a historical recovery point |
-| Redis durable state | Enabled execution-job records and queue membership, execution logs, version reconcile/post job status, workflow definitions/runs/watermarks, proposals, operation state and GP result packages/references | Include every configured Redis database/namespace in the recovery inventory. Persist and back up durable state; do not omit it or flush a mixed cache/job instance |
+| Redis durable state | Version reconcile/post job status, workflow definitions/runs/watermarks, proposals and operation state | Include every configured Redis database/namespace in the recovery inventory. Persist and back up durable state; do not omit it or flush a mixed cache/job instance |
 | Redis disposable cache | Reconstructible cache entries only, where the deployment inventory proves they share no required durable state | May be rebuilt after restore; exclude only the explicitly identified disposable state, never Redis as a whole |
 | Deployment configuration and recovery keys | Store locations, namespaces, image/config versions and access to encryption/signing keys and secrets needed to read restored state | Retain versioned configuration and a tested secret-manager recovery/access procedure; do not put plaintext credentials in the backup manifest |
 
