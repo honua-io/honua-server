@@ -112,24 +112,8 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             services.AddScoped<IAlertAdminStore, NullAlertAdminStore>();
             services.RemoveAll<IAuditLog>();
             services.AddSingleton<IAuditLog>(NullAuditLog.Instance);
-            // Authentication state belongs to this database-free host, including when
-            // a test selects Production to exercise its authentication policy.
-            services.RemoveAll<IAdminApiKeyStore>();
-            services.AddSingleton<IAdminApiKeyStore, InMemoryAdminApiKeyStore>();
-            services.RemoveAll<ITokenReplayStore>();
-            services.AddSingleton<ITokenReplayStore, InMemoryTokenReplayStore>();
-            services.RemoveAll<ISecurityTokenStore>();
-            services.AddSingleton<ISecurityTokenStore, InMemorySecurityTokenStore>();
-            // Production-mode authentication tests still use this database-free fixture.
-            // Durable operation startup checks and reconcilers require real persistence.
-            foreach (var descriptor in services.Where(descriptor =>
-                         descriptor.ServiceType == typeof(IHostedService) &&
-                         (descriptor.ImplementationType == typeof(OperationRuntimeStartupValidator) ||
-                          descriptor.ImplementationType == typeof(PlannedProposalReconciler) ||
-                          descriptor.ImplementationType == typeof(QueuedOperationReconciler))).ToArray())
-            {
-                services.Remove(descriptor);
-            }
+            UseInMemoryAuthenticationState(services);
+            RemoveDurableOperationHostedServices(services);
             services.AddScoped<ISqlFilterTranslator, AllowAllSqlFilterTranslator>();
         });
         builder.ConfigureAppConfiguration((context, configBuilder) =>
@@ -152,6 +136,31 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                 ["FileStorage:LocalStorage:CreateDirectoryIfNotExists"] = "true"
             });
         });
+    }
+
+    // Authentication state belongs to this database-free host, including when
+    // a test selects Production to exercise its authentication policy.
+    private static void UseInMemoryAuthenticationState(IServiceCollection services)
+    {
+        services.RemoveAll<IAdminApiKeyStore>();
+        services.AddSingleton<IAdminApiKeyStore, InMemoryAdminApiKeyStore>();
+        services.RemoveAll<ITokenReplayStore>();
+        services.AddSingleton<ITokenReplayStore, InMemoryTokenReplayStore>();
+        services.RemoveAll<ISecurityTokenStore>();
+        services.AddSingleton<ISecurityTokenStore, InMemorySecurityTokenStore>();
+    }
+
+    // Durable operation startup checks and reconcilers require real persistence.
+    private static void RemoveDurableOperationHostedServices(IServiceCollection services)
+    {
+        Type[] durableOperationServices =
+            [typeof(OperationRuntimeStartupValidator), typeof(PlannedProposalReconciler), typeof(QueuedOperationReconciler)];
+        foreach (var descriptor in services.Where(descriptor =>
+                     descriptor.ServiceType == typeof(IHostedService) &&
+                     durableOperationServices.Contains(descriptor.ImplementationType)).ToArray())
+        {
+            services.Remove(descriptor);
+        }
     }
 
     private sealed class NullSecureConnectionRegistry : ISecureConnectionRegistry
