@@ -19,14 +19,20 @@ namespace Honua.Server.Tests.Features.Security;
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
-public sealed class InputValidationIntegrationTests : IAsyncLifetime
+public sealed class InputValidationIntegrationTests : IClassFixture<InputValidationIntegrationTests.ProductionApplication>
 {
     private const string AdminPassword = "Valid-Test-Key123!";
     private readonly WebAppFixture _fixture;
 
-    public InputValidationIntegrationTests()
+    public InputValidationIntegrationTests(ProductionApplication application)
     {
-        _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
+        _fixture = application.Fixture;
+    }
+
+    // Edits add uniquely named features and no case asserts on unfiltered counts, so one host serves the class.
+    public sealed class ProductionApplication : IAsyncLifetime
+    {
+        public WebAppFixture Fixture { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .UseSeed("tests/seed/server.yaml")
             .UseEnvironment(Environments.Production)
             .ConfigureWebHost(builder =>
@@ -34,17 +40,17 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
             });
-    }
 
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-        _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Create", "Update", "Delete"]);
-        // Production ignores test schema headers; this isolated host reads the baseline graph.
-        _fixture.GetService<TestMetadataV2GraphProvider>().SetGraph(_fixture.GetCurrentV2GraphSnapshot().Graph);
-    }
+        public async Task InitializeAsync()
+        {
+            await Fixture.InitializeAsync();
+            Fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Create", "Update", "Delete"]);
+            // Production ignores test schema headers; this isolated host reads the baseline graph.
+            Fixture.GetService<TestMetadataV2GraphProvider>().SetGraph(Fixture.GetCurrentV2GraphSnapshot().Graph);
+        }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
 
     [IntegrationTest]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
