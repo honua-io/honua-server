@@ -22,7 +22,8 @@ jobs:
     timeout-minutes: 15
     concurrency:
       group: review-event-bridge-pr-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
+      cancel-in-progress: false
+      queue: max
     steps:
       - name: Shed superseded review event
         id: stale
@@ -34,13 +35,7 @@ jobs:
               core.summary.addRaw(`Shed superseded review event: ${reason}`, true);
               await core.summary.write();
               core.setOutput('superseded', 'true');
-              // workflow_run consumers cannot read step outputs, and GitHub offers
-              // no conclusion filter on the `workflow_run` trigger. A non-success
-              // conclusion is the only signal review-gate.yml's job-level `if` can
-              // read, so this stays `setFailed` rather than a neutral exit. The
-              // bridge is inert and read-only; a red run here withholds a latency
-              // hint and nothing else.
-              core.setFailed('Superseded review event; trusted notification suppressed.');
+              // Completion is only a hint; the trusted gate re-reads live evidence.
             };
 
             const prNumber = context.payload.pull_request.number;
@@ -49,8 +44,8 @@ jobs:
             const { data: pull } = await github.rest.pulls.get({
               ...context.repo, pull_number: prNumber,
             });
-            // Shed the closed subject one hop earlier than review-gate.yml does, so
-            // a review comment on a merged pull request never creates a trusted run.
+            // Shed closed subjects before recording a bridge event. The successful
+            // completion can wake the trusted resolver, which rechecks live state.
             if (pull.state !== 'open') {
               return shed(`PR #${prNumber} is ${pull.state}; the trusted gate has nothing left to attest`);
             }

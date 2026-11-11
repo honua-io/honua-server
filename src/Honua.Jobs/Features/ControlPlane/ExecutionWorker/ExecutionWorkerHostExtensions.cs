@@ -17,7 +17,7 @@ internal static class ExecutionWorkerHostExtensions
         {
             throw new InvalidOperationException(
                 $"Execution worker for operation '{launch.OperationId}' requires a durable job store. "
-                + "Configure ConnectionStrings:redis to use the serving host's store.");
+                + "Configure ConnectionStrings:DefaultConnection to use the serving host's system database.");
         }
 
         for (var index = services.Count - 1; index >= 0; index--)
@@ -32,7 +32,7 @@ internal static class ExecutionWorkerHostExtensions
         }
 
         services.RemoveAll<IJobQueue>();
-        services.RemoveAll<RedisJobQueue>();
+        services.RemoveAll<PostgresJobQueue>();
         services.RemoveAll<IQueueClaimReconciler>();
         services.AddSingleton(launch);
         services.AddSingleton<ExecutionWorkerExitState>();

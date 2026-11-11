@@ -19,6 +19,7 @@ public sealed class AdoptedLifecycleDefaultsTests
         { "scene.bim-ingest", CapabilityMaturity.Experimental },
         { "scene.pointcloud-ingest", CapabilityMaturity.Experimental },
         { "alerts.geofence", CapabilityMaturity.Preview },
+        { "realtime.feature-streams", CapabilityMaturity.Experimental },
         { "sync.offline", CapabilityMaturity.Preview },
         { "admin.multi-tenancy", CapabilityMaturity.Internal },
     };

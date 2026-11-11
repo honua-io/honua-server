@@ -678,7 +678,7 @@ internal sealed partial class ODataBatchOperationHandler(
             var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
             if (cacheInvalidator != null)
             {
-                await cacheInvalidator.InvalidateOgcMetadataAsync(cancellationToken);
+                await cacheInvalidator.InvalidateEditedOgcMetadataAsync(cancellationToken);
             }
         }
     }

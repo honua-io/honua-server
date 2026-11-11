@@ -105,10 +105,13 @@ public sealed partial class PublishedOperationToolTests
     {
         public int Calls { get; private set; }
         public OperationPolicyContext? Context { get; private set; }
+        public OperationRequest? Request { get; private set; }
         public Task<OperationApprovalBridgeResult> CreateProposalAsync(IOperationDescriptor descriptor, OperationRequest request,
             OperationPolicyContext context, PolicyDecision decision, CancellationToken cancellationToken = default)
         {
-            Calls++; Context = context;
+            Calls++;
+            Context = context;
+            Request = request;
             return Task.FromResult(new OperationApprovalBridgeResult { IsDurable = true, ProposalId = "proposal-6662", AuditId = "audit-6662" });
         }
     }

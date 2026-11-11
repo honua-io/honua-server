@@ -10,20 +10,17 @@ using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Geoprocessing;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
 using Honua.Routing.Features.Routing.Providers;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Configuration;
+using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Routing;
 
@@ -38,7 +35,7 @@ namespace Honua.Server.Tests.Routing;
 /// Opt-in only: set <c>HONUA_ROUTING_TEST=1</c>. The seeded graph is the same 3x3
 /// lattice as <see cref="NAServerPgRoutingEndToEndTests"/> (edge cost 1, walking cost 2).
 /// </remarks>
-[Collection(RedisFixture.CollectionName)]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixture>, IAsyncLifetime
 {
     private const string ServiceId = WebAppFixture.TestServiceId;
@@ -60,29 +57,27 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
     private static readonly TimeSpan StallTolerance = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan SuccessBudget = StallTolerance + (JobExecutionService.PollInterval * 6);
 
-    private readonly RedisFixture _redis;
+    private readonly DatabaseFixtureAdapter _database;
     private readonly PgRoutingFixture _routing;
     private readonly WebAppFixture _host;
-    private readonly string _redisConnection;
 
-    public RoutingPgRoutingQueuedJobTests(RedisFixture redis, PgRoutingFixture routing)
+    public RoutingPgRoutingQueuedJobTests(DatabaseFixtureAdapter database, PgRoutingFixture routing)
     {
-        _redis = redis;
+        _database = database;
         _routing = routing;
-        _redisConnection = DurableConnection(redis.ConnectionString, database: null);
-        _host = CreateHost(_redisConnection, new ProfiledNetworkDatasetResolver(), routing);
+        _host = CreateHost(new ProfiledNetworkDatasetResolver(), routing);
     }
 
     public async Task InitializeAsync()
     {
-        await DeleteControlPlaneKeysAsync(_redisConnection, database: 0);
+        await _database.DataSource.ClearJobSubstrateAsync();
         await _host.InitializeAsync();
     }
 
     public async Task DisposeAsync()
     {
         await _host.DisposeAsync();
-        await DeleteControlPlaneKeysAsync(_redisConnection, database: 0);
+        await _database.DataSource.ClearJobSubstrateAsync();
     }
 
     [RoutingTest("HONUA_ROUTING_TEST")]
@@ -426,9 +421,14 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
     [RoutingTest("HONUA_ROUTING_TEST")]
     public async Task ProviderFailure_FailsDurablyWithoutPartialResults()
     {
-        var connection = DurableConnection(_redis.ConnectionString, database: 1);
-        await DeleteControlPlaneKeysAsync(connection, database: 1);
-        await using var host = CreateHost(connection, new MissingTableNetworkDatasetResolver(), _routing);
+        // Two live hosts on the same job tables would claim each other's jobs, so this host gets job tables of its own.
+        await using var isolatedJobs = await PostgresJobSubstrateHarness.CreateAsync(_database, nameof(RoutingPgRoutingQueuedJobTests));
+        await using var host = CreateHost(new MissingTableNetworkDatasetResolver(), _routing)
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<JobStoreDatabase>();
+                services.AddSingleton(isolatedJobs.Database);
+            });
         await host.InitializeAsync();
         using var client = Client(host);
         client.Timeout = TimeSpan.FromMinutes(5);
@@ -441,46 +441,38 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
             ("SolveLocationAllocation", "Facilities", "Demand_Points", "Output_Allocation_Lines"),
         };
 
-        try
+        foreach (var failure in cases)
         {
-            foreach (var failure in cases)
+            var inputs = new Dictionary<string, string>
             {
-                var inputs = new Dictionary<string, string>
-                {
-                    [failure.First] = PointSet((0, 0, 0, "A", null)),
-                    [failure.Second] = PointSet((0.01, 0, 17, "B", failure.Task == "SolveLocationAllocation" ? 1 : null)),
-                };
-                if (failure.Task == "SolveLocationAllocation")
-                {
-                    inputs["Problem_Type"] = "Minimize Facilities";
-                    inputs["Default_Measurement_Cutoff"] = "2";
-                }
-
-                var jobId = await SubmitAsync(client, failure.Task, inputs);
-                using var terminal = await UntilTerminalAsync(client, failure.Task, jobId, "GPServer", budget);
-                var body = terminal.RootElement.GetRawText();
-                terminal.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobFailed", body);
-                AssertNoProviderLeak(body);
-                var durable = (await host.GetService<IExecutionJobStore>().GetAsync(jobId))!;
-                durable.Status.Should().Be(ExecutionJobStatus.Failed);
-                durable.AttemptCount.Should().Be(retry.MaxAttempts);
-                durable.ErrorMessage.Should().Be("Job execution failed.");
-                durable.CurrentPhase.Should().Be("Failed (abandoned)");
-                durable.ArtifactReferences.Should().BeEmpty();
-                AssertNoProviderLeak(durable.ErrorMessage);
-                await AssertResultIsErrorAsync(client, failure.Task, jobId, failure.Output);
+                [failure.First] = PointSet((0, 0, 0, "A", null)),
+                [failure.Second] = PointSet((0.01, 0, 17, "B", failure.Task == "SolveLocationAllocation" ? 1 : null)),
+            };
+            if (failure.Task == "SolveLocationAllocation")
+            {
+                inputs["Problem_Type"] = "Minimize Facilities";
+                inputs["Default_Measurement_Cutoff"] = "2";
             }
-        }
-        finally
-        {
-            await DeleteControlPlaneKeysAsync(connection, database: 1);
+
+            var jobId = await SubmitAsync(client, failure.Task, inputs);
+            using var terminal = await UntilTerminalAsync(client, failure.Task, jobId, "GPServer", budget);
+            var body = terminal.RootElement.GetRawText();
+            terminal.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobFailed", body);
+            AssertNoProviderLeak(body);
+            var durable = (await host.GetService<IExecutionJobStore>().GetAsync(jobId))!;
+            durable.Status.Should().Be(ExecutionJobStatus.Failed);
+            durable.AttemptCount.Should().Be(retry.MaxAttempts);
+            durable.ErrorMessage.Should().Be("Job execution failed.");
+            durable.CurrentPhase.Should().Be("Failed (abandoned)");
+            durable.ArtifactReferences.Should().BeEmpty();
+            AssertNoProviderLeak(durable.ErrorMessage);
+            await AssertResultIsErrorAsync(client, failure.Task, jobId, failure.Output);
         }
     }
 
-    private static WebAppFixture CreateHost(string redisConnection, INetworkDatasetResolver resolver, PgRoutingFixture routing)
+    private static WebAppFixture CreateHost(INetworkDatasetResolver resolver, PgRoutingFixture routing)
         => new WebAppFixture()
-            .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
-                new Dictionary<string, string?> { ["ConnectionStrings:redis"] = redisConnection })))
+            .WithProductionJobSubstrate()
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IRoutingProvider>();
@@ -491,31 +483,6 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
                     resolver,
                     Options.Create(new RoutingConfiguration()),
                     new RoutingSolveCapacityLimiter()));
-                services.RemoveAll<IConnectionMultiplexer>();
-                services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnection));
-                services.RemoveAll<IExecutionJobStore>();
-                services.AddSingleton<IExecutionJobStore>(sp => new RedisExecutionJobStore(
-                    sp.GetRequiredService<IConnectionMultiplexer>(),
-                    sp.GetRequiredService<ILogger<RedisExecutionJobStore>>()));
-                services.RemoveAll<IGeoprocessingResultPackageStore>();
-                services.AddSingleton<IGeoprocessingResultPackageStore>(sp => new RedisGeoprocessingResultPackageStore(
-                    sp.GetRequiredService<IConnectionMultiplexer>(),
-                    sp.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>(),
-                    sp.GetRequiredService<ILogger<RedisGeoprocessingResultPackageStore>>()));
-                services.RemoveAll<RedisJobQueue>();
-                services.RemoveAll<IJobQueue>();
-                services.RemoveAll<IQueueClaimReconciler>();
-                services.AddSingleton<RedisJobQueue>(sp => new RedisJobQueue(
-                    sp.GetRequiredService<IConnectionMultiplexer>(),
-                    sp.GetRequiredService<IExecutionJobStore>(),
-                    sp.GetRequiredService<ILogger<RedisJobQueue>>()));
-                services.AddSingleton<IJobQueue>(sp => sp.GetRequiredService<RedisJobQueue>());
-                services.AddSingleton<IQueueClaimReconciler>(sp => sp.GetRequiredService<RedisJobQueue>());
-                services.RemoveAll<IExecutionLogStore>();
-                services.AddSingleton<IExecutionLogStore>(sp => new RedisExecutionLogStore(
-                    sp.GetRequiredService<IConnectionMultiplexer>(),
-                    sp.GetRequiredService<ILogger<RedisExecutionLogStore>>()));
-                services.AddJobWorker();
             });
 
     private sealed class MissingTableNetworkDatasetResolver : INetworkDatasetResolver
@@ -541,24 +508,6 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
         return client;
     }
 
-    private static string DurableConnection(string connectionString, int? database)
-    {
-        var connection = connectionString + ",syncTimeout=30000,asyncTimeout=30000";
-        return database is { } index
-            ? connection + ",defaultDatabase=" + index.ToString(CultureInfo.InvariantCulture)
-            : connection;
-    }
-
-    private static async Task DeleteControlPlaneKeysAsync(string connectionString, int database)
-    {
-        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(connectionString);
-        var server = multiplexer.GetServer(multiplexer.GetEndPoints()[0]);
-        var keys = server.Keys(database: database, pattern: "controlplane:*").ToArray();
-        if (keys.Length > 0)
-        {
-            await multiplexer.GetDatabase(database).KeyDeleteAsync(keys);
-        }
-    }
 
     private static async Task<string> SubmitAsync(
         HttpClient client, string task, Dictionary<string, string> inputs, string family = "GPServer")
