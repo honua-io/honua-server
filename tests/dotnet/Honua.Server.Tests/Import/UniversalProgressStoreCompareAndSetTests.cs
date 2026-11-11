@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Migration;
 using Honua.Infrastructure.Progress;
@@ -31,7 +32,7 @@ public sealed class UniversalProgressStoreCompareAndSetTests
         await store.SetProgressAsync("print-lease", original);
         await Task.Delay(10);
         var refreshed = original with { HeartbeatAt = DateTimeOffset.UtcNow };
-        (await store.TryReplaceProgressAsync("print-lease", refreshed, original)).Outcome
+        (await store.TryReplaceProgressAsync(new OperationProgressWrite("print-lease", refreshed), original)).Outcome
             .Should().Be(ProgressCompareAndSetOutcome.Updated);
         (await store.GetProgressAsync<PrintProgress>("print-lease"))!.HeartbeatAt.Should().Be(refreshed.HeartbeatAt);
     }
@@ -43,9 +44,9 @@ public sealed class UniversalProgressStoreCompareAndSetTests
         var original = CreateProgress("lease", OperationStatus.Processing);
         await store.SetProgressAsync("lease", original);
         var refreshed = original with { BytesUploaded = 30 };
-        (await store.TryReplaceProgressAsync("lease", refreshed, original)).Outcome
+        (await store.TryReplaceProgressAsync(new OperationProgressWrite("lease", refreshed), original)).Outcome
             .Should().Be(ProgressCompareAndSetOutcome.Updated);
-        (await store.TryReplaceProgressAsync("lease", original with { Status = OperationStatus.Failed }, original)).Outcome
+        (await store.TryReplaceProgressAsync(new OperationProgressWrite("lease", original with { Status = OperationStatus.Failed }), original)).Outcome
             .Should().Be(ProgressCompareAndSetOutcome.StatusMismatch);
         (await store.GetProgressAsync<UploadProgress>("lease"))!.PercentComplete.Should().Be(30);
     }
@@ -56,8 +57,7 @@ public sealed class UniversalProgressStoreCompareAndSetTests
         var store = CreateInMemoryStore();
         await store.SetProgressAsync("op-1", CreateProgress("op-1", OperationStatus.Processing));
 
-        var result = await store.TrySetProgressAsync(
-            "op-1", CreateProgress("op-1", OperationStatus.Cancelled), OperationStatus.Processing);
+        var result = await store.TrySetProgressAsync(new OperationProgressWrite("op-1", CreateProgress("op-1", OperationStatus.Cancelled)), OperationStatus.Processing);
 
         result.Outcome.Should().Be(ProgressCompareAndSetOutcome.Updated);
         var stored = await store.GetProgressAsync("op-1");
@@ -71,8 +71,7 @@ public sealed class UniversalProgressStoreCompareAndSetTests
         var store = CreateInMemoryStore();
         await store.SetProgressAsync("op-1", CreateProgress("op-1", OperationStatus.Completed));
 
-        var result = await store.TrySetProgressAsync(
-            "op-1", CreateProgress("op-1", OperationStatus.Cancelled), OperationStatus.Processing);
+        var result = await store.TrySetProgressAsync(new OperationProgressWrite("op-1", CreateProgress("op-1", OperationStatus.Cancelled)), OperationStatus.Processing);
 
         result.Outcome.Should().Be(ProgressCompareAndSetOutcome.StatusMismatch);
         result.CurrentProgress.Should().NotBeNull();
@@ -87,8 +86,7 @@ public sealed class UniversalProgressStoreCompareAndSetTests
     {
         var store = CreateInMemoryStore();
 
-        var result = await store.TrySetProgressAsync(
-            "missing", CreateProgress("missing", OperationStatus.Cancelled), OperationStatus.Processing);
+        var result = await store.TrySetProgressAsync(new OperationProgressWrite("missing", CreateProgress("missing", OperationStatus.Cancelled)), OperationStatus.Processing);
 
         result.Outcome.Should().Be(ProgressCompareAndSetOutcome.NotFound);
         result.CurrentProgress.Should().BeNull();
@@ -102,8 +100,7 @@ public sealed class UniversalProgressStoreCompareAndSetTests
             "op-1", CreateProgress("op-1", OperationStatus.Processing), TimeSpan.FromMilliseconds(1));
         await Task.Delay(50);
 
-        var result = await store.TrySetProgressAsync(
-            "op-1", CreateProgress("op-1", OperationStatus.Cancelled), OperationStatus.Processing);
+        var result = await store.TrySetProgressAsync(new OperationProgressWrite("op-1", CreateProgress("op-1", OperationStatus.Cancelled)), OperationStatus.Processing);
 
         result.Outcome.Should().Be(ProgressCompareAndSetOutcome.NotFound);
     }
@@ -115,10 +112,7 @@ public sealed class UniversalProgressStoreCompareAndSetTests
         await store.SetProgressAsync("op-1", CreateProgress("op-1", OperationStatus.Processing));
 
         var results = await Task.WhenAll(Enumerable.Range(0, 16).Select(i => Task.Run(() =>
-            store.TrySetProgressAsync(
-                "op-1",
-                CreateProgress("op-1", i % 2 == 0 ? OperationStatus.Completed : OperationStatus.Cancelled),
-                OperationStatus.Processing))));
+            store.TrySetProgressAsync(new OperationProgressWrite("op-1", CreateProgress("op-1", i % 2 == 0 ? OperationStatus.Completed : OperationStatus.Cancelled)), OperationStatus.Processing))));
 
         results.Count(r => r.Outcome == ProgressCompareAndSetOutcome.Updated)
             .Should().Be(1, "compare-and-set must admit exactly one terminal transition from Processing");
@@ -138,8 +132,7 @@ public sealed class UniversalProgressStoreCompareAndSetTests
         var store = CreateInMemoryStore();
         await store.SetProgressAsync("op-1", CreateProgress("op-1", OperationStatus.Processing));
 
-        var cancel = await store.TrySetProgressAsync(
-            "op-1", CreateProgress("op-1", OperationStatus.Cancelled), OperationStatus.Processing);
+        var cancel = await store.TrySetProgressAsync(new OperationProgressWrite("op-1", CreateProgress("op-1", OperationStatus.Cancelled)), OperationStatus.Processing);
         cancel.Outcome.Should().Be(ProgressCompareAndSetOutcome.Updated);
 
         await store.SetProgressAsync("op-1", CreateProgress("op-1", OperationStatus.Completed));

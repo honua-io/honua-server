@@ -360,12 +360,7 @@ internal static class ReflectionDisabledAotJsonProbe
         public Task SetProgressAsync(string operationId, IOperationProgress progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(
-            string operationId,
-            IOperationProgress progress,
-            OperationStatus expectedStatus,
-            TimeSpan? ttl = null,
-            CancellationToken cancellationToken = default)
+        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(OperationProgressWrite write, OperationStatus expectedStatus, CancellationToken cancellationToken = default)
             => Task.FromResult(ProgressCompareAndSetResult.Updated);
 
         public Task<TProgress?> GetProgressAsync<TProgress>(string operationId, CancellationToken cancellationToken = default)

@@ -23,21 +23,18 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Issue #4187 acceptance evidence. Drives the production dispatcher, approval bridge, gateway and
-/// executor over the real Redis-backed instance, proposal and secret stores, then sweeps every key
-/// the run wrote — plus every audit event the dispatcher recorded — for the plaintext credential.
-/// The sweep reads raw Redis values rather than the typed models, so a leak through any field,
-/// index or nested payload fails the test.
-/// </summary>
-[Collection(RedisFixture.CollectionName)]
+// Drives the production dispatcher, approval bridge, gateway and
+// executor over the real PostgreSQL instance, proposal and secret stores, then scans every stored row
+// the run wrote — plus every audit event the dispatcher recorded — for the plaintext credential.
+// The scan reads stored rows as text rather than the typed models, so a leak through any field,
+// index or nested payload fails the test.
+[Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.TestInfrastructure)]
-public sealed partial class OperationSecretDurableStoreEvidenceTests(RedisFixture redis)
+public sealed partial class OperationSecretDurableStoreEvidenceTests
 {
     /// <summary>Secret-returning access operations and the response field carrying the one-time value.</summary>
     private static readonly string RotateKeyId = Guid.NewGuid().ToString();
@@ -50,16 +47,15 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests(RedisFixtur
     ];
 
     [IntegrationTest]
-    public async Task ActuatedSecretOutput_LeavesNoPlaintext_InRedisInstanceStoreOrAuditLog()
+    public async Task ActuatedSecretOutput_LeavesNoPlaintext_InTheInstanceStoreOrAuditLog()
     {
-        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var state = await SharedControlPlaneState.GetAsync();
         foreach (var (operationId, secretField, routeId) in SecretOutputOperations)
         {
             var secret = $"plaintext-{Guid.NewGuid():N}";
-            var instanceStore = new RedisOperationInstanceStore(multiplexer);
-            var secretStore = BuildRedisSecretStore(multiplexer);
+            var instanceStore = state.CreateInstanceStore();
+            var secretStore = BuildSecretStore(state);
             var audit = new RecordingAuditLog();
-            var keysBefore = SnapshotKeys(multiplexer);
 
             using var client = new HttpClient(new StubAdminApi(secret, secretField));
             var executor = BuildAccessExecutor(operationId, client, secretStore);
@@ -91,22 +87,22 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests(RedisFixtur
             var reference = persisted!.Result!.SecretReferences.Should().ContainSingle().Subject;
             reference.Name.Should().Be(secretField);
 
-            AssertNoPlaintextInNewRedisKeys(multiplexer, keysBefore, secret);
+            await AssertNoStoredPlaintextAsync(state, secret);
             audit.Events.Should().NotBeEmpty();
             JsonSerializer.Serialize(audit.Events).Should().NotContain(secret);
 
             // The one-time channel still delivers the credential exactly once, then fails closed.
-            secretStore.Consume(reference, handle.OperationInstanceId, operationId, "principal-4187", "tenant-4187")
+            secretStore.Consume(reference, new OperationSecretBinding(handle.OperationInstanceId, operationId, "principal-4187", "tenant-4187"))
                 .Should().Be(secret);
-            secretStore.Consume(reference, handle.OperationInstanceId, operationId, "principal-4187", "tenant-4187")
+            secretStore.Consume(reference, new OperationSecretBinding(handle.OperationInstanceId, operationId, "principal-4187", "tenant-4187"))
                 .Should().BeNull();
         }
     }
 
     [IntegrationTest]
-    public async Task ApprovedSecretInput_LeavesNoPlaintext_InRedisProposalStoreOrAuditLog()
+    public async Task ApprovedSecretInput_LeavesNoPlaintext_InTheProposalStoreOrAuditLog()
     {
-        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var state = await SharedControlPlaneState.GetAsync();
         foreach (var (operationId, routeId) in new[]
                  {
                      ("admin.oidc-provider.create", (string?)null),
@@ -114,18 +110,15 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests(RedisFixtur
                  })
         {
             var secret = $"plaintext-{Guid.NewGuid():N}";
-            var proposalStore = new RedisOperationProposalStore(
-                multiplexer,
-                NullLogger<RedisOperationProposalStore>.Instance);
-            var secretStore = BuildRedisSecretStore(multiplexer);
+            var proposalStore = state.CreateProposalStore();
+            var secretStore = BuildSecretStore(state);
             var audit = new RecordingAuditLog();
             var definition = AdminAccessOperationCatalog.Definitions.Single(item => item.OperationId == operationId);
             var descriptor = AdminAccessOperationCatalog.Descriptors.Single(item => item.OperationId == operationId);
-            var keysBefore = SnapshotKeys(multiplexer);
 
             // The gateway resolves its audit sink from this scope, so the recorder captures every
             // audit event the proposal path writes.
-            var instanceStore = new RedisOperationInstanceStore(multiplexer);
+            var instanceStore = state.CreateInstanceStore();
             var services = new ServiceCollection();
             services.AddLogging();
             services.AddSingleton<IAuditLog>(audit);
@@ -169,7 +162,7 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests(RedisFixtur
             }
 
             // Production mapper decides what a proposal carries; the production gateway seals and
-            // persists it through the real 30-day Redis proposal store.
+            // persists it through the real proposal store.
             var gatewayRequest = new AdminOperateOperationApprovalRequestMapper(definition, secretStore).Map(
                 descriptor,
                 new OperationRequest { OperationId = operationId, Parameters = parameters },
@@ -192,19 +185,17 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests(RedisFixtur
             proposal.Should().NotBeNull();
             JsonSerializer.Serialize(proposal).Should().NotContain(secret);
 
-            AssertNoPlaintextInNewRedisKeys(multiplexer, keysBefore, secret);
+            await AssertNoStoredPlaintextAsync(state, secret);
             audit.Events.Should().NotBeEmpty();
             JsonSerializer.Serialize(audit.Events).Should().NotContain(secret);
         }
     }
 
-    private static RedisOperationSecretStore BuildRedisSecretStore(ConnectionMultiplexer multiplexer)
+    private static PostgresOperationSecretStore BuildSecretStore(ControlPlaneStateHarness state)
     {
         var services = new ServiceCollection();
         services.AddDataProtection().SetApplicationName("Honua.Tests.OperationSecretEvidence");
-        return new RedisOperationSecretStore(
-            multiplexer,
-            services.BuildServiceProvider().GetRequiredService<IDataProtectionProvider>());
+        return state.CreateSecretStore(services.BuildServiceProvider().GetRequiredService<IDataProtectionProvider>());
     }
 
     private static AdminOperateOperationExecutor BuildAccessExecutor(
@@ -233,42 +224,11 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests(RedisFixtur
             secretStore);
     }
 
-    private static HashSet<string> SnapshotKeys(ConnectionMultiplexer multiplexer)
+    private static async Task AssertNoStoredPlaintextAsync(ControlPlaneStateHarness state, string secret)
     {
-        var server = multiplexer.GetServer(multiplexer.GetEndPoints().Single());
-        return server.Keys(pattern: "*").Select(key => key.ToString()).ToHashSet(StringComparer.Ordinal);
-    }
-
-    /// <summary>
-    /// Reads every key this run created straight out of Redis and fails on any raw occurrence of the
-    /// credential, regardless of which model or index wrote it.
-    /// </summary>
-    private static void AssertNoPlaintextInNewRedisKeys(
-        ConnectionMultiplexer multiplexer,
-        HashSet<string> keysBefore,
-        string secret)
-    {
-        var server = multiplexer.GetServer(multiplexer.GetEndPoints().Single());
-        var database = multiplexer.GetDatabase();
-        var inspected = 0;
-        foreach (var key in server.Keys(pattern: "*").Where(key => !keysBefore.Contains(key.ToString())))
-        {
-            inspected++;
-            var values = database.KeyType(key) switch
-            {
-                RedisType.Hash => database.HashGetAll(key).Select(entry => entry.Value.ToString()),
-                RedisType.List => database.ListRange(key).Select(value => value.ToString()),
-                RedisType.Set => database.SetMembers(key).Select(value => value.ToString()),
-                RedisType.SortedSet => database.SortedSetRangeByRank(key).Select(value => value.ToString()),
-                _ => [database.StringGet(key).ToString()],
-            };
-            foreach (var value in values)
-            {
-                value.Should().NotContain(secret, $"durable key '{key}' must not retain secret material");
-            }
-        }
-
-        inspected.Should().BeGreaterThan(0, "the run must have written durable state to sweep");
+        var scan = await state.ScanApprovalTablesForAsync(secret);
+        scan.RowsScanned.Should().BeGreaterThan(0, "the run must have written durable state to scan");
+        scan.RowsContainingText.Should().Be(0, "no stored row may retain secret material");
     }
 
     private sealed class StubAdminApi(string secret, string secretField) : HttpMessageHandler

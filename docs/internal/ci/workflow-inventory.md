@@ -644,6 +644,9 @@ managed outputs are published. Restore and build failures remain gating, with
 the same warnings, analyzers and graph-build settings as the solution build.
 Unknown projects outside the solution still fail planning; test selection is unchanged.
 
+Optional PR workflow filters and retained post-merge coverage are documented in
+[optional PR input boundaries](gate-model.md#optional-pr-workflow-input-boundaries).
+
 ## Lane publication and cancellation budget
 
 `python3 scripts/ci/push-ready-pr.py` is an opt-in lane publication command,
