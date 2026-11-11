@@ -800,3 +800,10 @@ its configured application, isolated schema, and raster substitutes; the class
 fixture releases the infrastructure after the last case. Pure capability XML
 coverage lives in `ImageServerWmtsCapabilitiesTests` without a database fixture.
 Full trunk runs include every case; PR routing selects affected ImageServer shards.
+
+### Geocoding response fixture lifetime
+
+`GeocodingEndpointTests` uses one class-lifetime Community application for
+request-derived default-provider responses. Each case owns its HTTP client.
+Request-capture, custom-provider and Enterprise configurations own separate
+applications. Full trunk runs include every case; PR routing selects affected geocoding shards.
