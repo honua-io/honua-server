@@ -2,13 +2,13 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Infrastructure.Progress;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using System.Runtime.CompilerServices;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -19,7 +19,7 @@ public sealed class TileCacheWarmingHostedServiceTests
     [UnitTest]
     public async Task StartAsync_WhenEnabled_QueuesConfiguredSeedAndWarmTargets()
     {
-        var jobService = new RecordingTileOperationJobService();
+        var jobService = new RecordingTileCacheJobService();
         var options = Options.Create(new TileCacheWarmingOptions
         {
             Enabled = true,
@@ -64,7 +64,7 @@ public sealed class TileCacheWarmingHostedServiceTests
     [UnitTest]
     public async Task StartAsync_WhenCommunityDefaultDisabled_DoesNotQueueJobs()
     {
-        var jobService = new RecordingTileOperationJobService();
+        var jobService = new RecordingTileCacheJobService();
         var service = new TileCacheWarmingHostedService(
             jobService,
             Options.Create(new TileCacheWarmingOptions()),
@@ -75,15 +75,19 @@ public sealed class TileCacheWarmingHostedServiceTests
         jobService.Requests.Should().BeEmpty();
     }
 
-    private sealed class RecordingTileOperationJobService : ITileOperationJobService
+    private sealed class RecordingTileCacheJobService : ITileCacheJobService
     {
         public List<TileOperationStartRequest> Requests { get; } = [];
 
-        public Task<string> StartAsync(
+        public Task<string> SubmitAsync(
             TileOperationStartRequest request,
+            JobSecurityContext submitter,
             string? schemaName = null,
             string? tenantScope = null,
             CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("Scheduled tile operations submit as the tile-cache scheduler.");
+
+        public Task<string> SubmitScheduledAsync(TileOperationStartRequest request, CancellationToken cancellationToken = default)
         {
             Requests.Add(request);
             return Task.FromResult($"job-{Requests.Count}");
@@ -100,14 +104,5 @@ public sealed class TileCacheWarmingHostedServiceTests
 
         public Task<string?> RetryAsync(string jobId, CancellationToken cancellationToken = default)
             => Task.FromResult<string?>(null);
-
-        public async IAsyncEnumerable<string> ReadQueuedJobIdsAsync([EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            await Task.CompletedTask;
-            yield break;
-        }
-
-        public Task ProcessQueuedJobAsync(string jobId, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
     }
 }

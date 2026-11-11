@@ -7,9 +7,11 @@ using Honua.Infrastructure.Progress;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Tiles;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
@@ -187,7 +189,7 @@ internal static class TileOperationsEndpoints
     private static async Task<Results<JsonHttpResult<TileOperationStartResponse>, JsonHttpResult<ProblemDetailsResponse>>> HandleStartJob(
         TileOperationStartRequest request,
         HttpContext context,
-        [FromServices] ITileOperationJobService jobService,
+        [FromServices] ITileCacheJobService jobService,
         CancellationToken cancellationToken)
     {
         var validationError = ValidateStartRequest(context, request);
@@ -205,13 +207,11 @@ internal static class TileOperationsEndpoints
             var schemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
             var tenantScope = TileCacheTenantScope.Resolve(context.RequestServices);
 
-            // Config-driven dispatch: when a batch backend is configured (issue #1697)
-            // submit through the execution-job → batch path; otherwise fall back to the
-            // in-process channel worker, preserving the default single-pod behavior.
-            var batchService = context.RequestServices.GetService<ITileCacheJobService>();
-            var jobId = batchService is { IsEnabled: true }
-                ? await batchService.SubmitAsync(request, schemaName, tenantScope, cancellationToken).ConfigureAwait(false)
-                : await jobService.StartAsync(request, schemaName, tenantScope, cancellationToken).ConfigureAwait(false);
+            var submitter = JobSecurityContextCapture.Capture(
+                context.User,
+                context.RequestServices.GetRequiredService<IOptions<RbacOptions>>().Value,
+                context.RequestServices.GetService<ITenantContext>());
+            var jobId = await jobService.SubmitAsync(request, submitter, schemaName, tenantScope, cancellationToken).ConfigureAwait(false);
             var response = new TileOperationStartResponse
             {
                 JobId = jobId,
@@ -233,12 +233,23 @@ internal static class TileOperationsEndpoints
                 statusCode: StatusCodes.Status400BadRequest,
                 contentType: ProblemDetailsHelpers.ContentType);
         }
+        catch (InvalidOperationException ex) when (string.Equals(
+            ex.Message,
+            TileCacheJobService.JobStoreUnavailableMessage,
+            StringComparison.Ordinal))
+        {
+            return TypedResults.Json(
+                ProblemDetailsHelpers.CreateAdminProblemDetails(context, StatusCodes.Status503ServiceUnavailable, ex.Message),
+                ProblemJsonContext.Default.ProblemDetailsResponse,
+                statusCode: StatusCodes.Status503ServiceUnavailable,
+                contentType: ProblemDetailsHelpers.ContentType);
+        }
     }
 
     private static async Task<IResult> HandleGetJobStatus(
         string jobId,
         HttpContext context,
-        [FromServices] ITileOperationJobService jobService,
+        [FromServices] ITileCacheJobService jobService,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(jobId))
@@ -256,7 +267,7 @@ internal static class TileOperationsEndpoints
     }
 
     private static async Task<IResult> HandleListJobs(
-        [FromServices] ITileOperationJobService jobService,
+        [FromServices] ITileCacheJobService jobService,
         bool activeOnly = true,
         CancellationToken cancellationToken = default)
     {
@@ -273,7 +284,7 @@ internal static class TileOperationsEndpoints
     private static async Task<IResult> HandleCancelJob(
         string jobId,
         HttpContext context,
-        [FromServices] ITileOperationJobService jobService,
+        [FromServices] ITileCacheJobService jobService,
         CancellationToken cancellationToken)
     {
         var progress = await jobService.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
@@ -282,17 +293,7 @@ internal static class TileOperationsEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Tile job '{jobId}' not found.");
         }
 
-        // Batch-dispatched jobs are owned by the execution-job substrate, not the
-        // in-process channel; route cancellation through the batch service first when
-        // enabled, then fall back to the in-process token-signal path.
-        var batchService = context.RequestServices.GetService<ITileCacheJobService>();
-        var cancelled = batchService is { IsEnabled: true }
-            && await batchService.CancelAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if (!cancelled)
-        {
-            cancelled = await jobService.CancelAsync(jobId, cancellationToken).ConfigureAwait(false);
-        }
-
+        var cancelled = await jobService.CancelAsync(jobId, cancellationToken).ConfigureAwait(false);
         if (!cancelled)
         {
             return StandardErrorHelpers.CreateBadRequest(context, "Tile job cannot be cancelled in its current state.");
@@ -309,7 +310,7 @@ internal static class TileOperationsEndpoints
     private static async Task<IResult> HandleRetryJob(
         string jobId,
         HttpContext context,
-        [FromServices] ITileOperationJobService jobService,
+        [FromServices] ITileCacheJobService jobService,
         CancellationToken cancellationToken)
     {
         var retryJobId = await jobService.RetryAsync(jobId, cancellationToken).ConfigureAwait(false);
@@ -466,7 +467,6 @@ internal sealed record TileCacheEvictionResponse
 
 [System.Text.Json.Serialization.JsonSourceGenerationOptions(System.Text.Json.JsonSerializerDefaults.General)]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationStartRequest))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(PersistedTileOperationRequest))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationProgress[]))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationStartResponse))]

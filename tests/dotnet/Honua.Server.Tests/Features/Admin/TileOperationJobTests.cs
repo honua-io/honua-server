@@ -2,13 +2,16 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.ControlPlane;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Progress;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.TestKit.Attributes;
@@ -22,13 +25,16 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Admin;
 
 /// <summary>
-/// Unit coverage for batch-dispatched tile-cache job submission and cancellation
-/// (issue #1697). Exercises the canonical submission flow against the in-process
-/// <see cref="LocalBatchComputeBackend"/> (durable record + queue enqueue) and a
-/// remote stub backend (provider submission), plus cancellation through the backend.
+/// Every tile operation is a TileCache execution job (issue #1697, honua-server#7354). Exercises
+/// submission against the <see cref="LocalBatchComputeBackend"/> (durable record + queue enqueue)
+/// and a remote stub backend (provider submission), cancellation through the backend, retry, and
+/// the terminal projection onto the tile progress.
 /// </summary>
-public sealed class TileCacheJobServiceTests
+public sealed class TileOperationJobTests
 {
+    private static readonly JobSecurityContext Submitter =
+        new("admin-a", "tenant-a", [new JobSecurityClaim(ClaimTypes.Role, "admin")], ClaimTypes.Role);
+
     private static TileOperationStartRequest SeedRequest() => new()
     {
         Operation = "seed",
@@ -51,6 +57,7 @@ public sealed class TileCacheJobServiceTests
             backends,
             new StaticOptionsMonitor<TileCacheBatchOptions>(options),
             ScopeFactoryFor(graphProvider ?? Substitute.For<IMetadataV2GraphProvider>()),
+            Options.Create(new RbacOptions()),
             NullLogger<TileCacheJobService>.Instance,
             jobQueue);
 
@@ -71,6 +78,137 @@ public sealed class TileCacheJobServiceTests
     }
 
     [UnitTest]
+    public async Task Start_AlwaysCreatesAnExecutionJob()
+    {
+        var jobStore = new InMemoryExecutionJobStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
+        var jobQueue = Substitute.For<IJobQueue>();
+        var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
+        var service = CreateService(jobStore, progressStore, [backend], new TileCacheBatchOptions(), jobQueue);
+
+        var jobId = await service.SubmitAsync(SeedRequest(), Submitter);
+
+        var record = await jobStore.GetAsync(jobId);
+        record.Should().NotBeNull("an unconfigured host still records the operation as an execution job");
+        record!.Status.Should().Be(ExecutionJobStatus.Queued);
+        record.Spec.Kind.Should().Be(ExecutionJobKind.TileCache);
+        record.Spec.Backend.Should().Be(LocalBatchComputeBackend.BackendId);
+        record.Spec.Parameters[TileCacheJobParameterKeys.GenerationId].Should().Be(
+            jobId,
+            "the first submission names the resumable generation after its own job");
+        record.Audit.SubmitterSecurityContext.Should().BeEquivalentTo(
+            Submitter,
+            "the worker reads the layer as the submitter and refuses a job without one");
+        await jobQueue.Received(1).EnqueueAsync(jobId, Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>());
+        (await service.GetAsync(jobId))!.Status.Should().Be(OperationStatus.Queued);
+    }
+
+    [UnitTest]
+    public async Task SubmitScheduled_RunsAsTheTileCacheScheduler()
+    {
+        var jobStore = new InMemoryExecutionJobStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
+        var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
+        var service = CreateService(jobStore, progressStore, [backend], new TileCacheBatchOptions(), Substitute.For<IJobQueue>());
+
+        var jobId = await service.SubmitScheduledAsync(SeedRequest());
+
+        var submitter = (await jobStore.GetAsync(jobId))!.Audit.SubmitterSecurityContext;
+        submitter.Should().NotBeNull();
+        submitter!.PrincipalId.Should().Be(TileCacheJobService.SchedulerIdentityName);
+        submitter.Claims.Should().Contain(claim => claim.Value == "admin");
+    }
+
+    [UnitTest]
+    public async Task Start_WithoutAJobStore_IsRefused()
+    {
+        var progressStore = new AcceptingInMemoryProgressStore();
+        var service = new TileCacheJobService(
+            null,
+            progressStore,
+            [],
+            new StaticOptionsMonitor<TileCacheBatchOptions>(new TileCacheBatchOptions()),
+            ScopeFactoryFor(Substitute.For<IMetadataV2GraphProvider>()),
+            Options.Create(new RbacOptions()),
+            NullLogger<TileCacheJobService>.Instance);
+
+        var submit = () => service.SubmitAsync(SeedRequest(), Submitter);
+
+        await submit.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage(TileCacheJobService.JobStoreUnavailableMessage);
+        (await progressStore.GetActiveOperationIdsAsync()).Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task Retry_FailedJob_SubmitsANewJobThatResumesTheSameGeneration()
+    {
+        var jobStore = new InMemoryExecutionJobStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
+        var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
+        var service = CreateService(jobStore, progressStore, [backend], new TileCacheBatchOptions(), Substitute.For<IJobQueue>());
+        var failedJobId = await service.SubmitAsync(SeedRequest(), Submitter, schemaName: "tenant_a", tenantScope: "public");
+        var failed = (await service.GetAsync(failedJobId))! with { Status = OperationStatus.Failed };
+        await progressStore.SetProgressAsync(failedJobId, failed);
+
+        var retryJobId = await service.RetryAsync(failedJobId);
+
+        retryJobId.Should().NotBeNullOrWhiteSpace().And.NotBe(failedJobId);
+        var retry = (await jobStore.GetAsync(retryJobId!))!;
+        retry.Spec.Kind.Should().Be(ExecutionJobKind.TileCache);
+        retry.Spec.Parameters[TileCacheJobParameterKeys.GenerationId].Should().Be(
+            failedJobId,
+            "a retry resumes the original generation checkpoint rather than restarting the grid");
+        retry.Spec.Parameters[TileCacheJobParameterKeys.SchemaName].Should().Be("tenant_a");
+        retry.Spec.Parameters[TileCacheJobParameterKeys.TenantScope].Should().Be("public");
+    }
+
+    [UnitTest]
+    public async Task Retry_ActiveJob_ReturnsNull()
+    {
+        var jobStore = new InMemoryExecutionJobStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
+        var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
+        var service = CreateService(jobStore, progressStore, [backend], new TileCacheBatchOptions(), Substitute.For<IJobQueue>());
+        var jobId = await service.SubmitAsync(SeedRequest(), Submitter);
+
+        (await service.RetryAsync(jobId)).Should().BeNull();
+    }
+
+    [UnitTheory]
+    [InlineData(ExecutionJobStatus.Failed, OperationStatus.Failed)]
+    [InlineData(ExecutionJobStatus.Cancelled, OperationStatus.Cancelled)]
+    public async Task TerminalCallback_JobEndedByTheWorker_ClosesTheTileProgress(
+        ExecutionJobStatus jobStatus,
+        OperationStatus expected)
+    {
+        var progressStore = new ComparingInMemoryProgressStore();
+        var running = TileOperationProgress.CreateInitial("tile-1", "seed", null, 1, "WebMercatorQuad")
+            with { Status = OperationStatus.Processing };
+        await progressStore.SetProgressAsync("tile-1", running);
+        var callback = new TileCacheJobTerminalCallback(progressStore, NullLogger<TileCacheJobTerminalCallback>.Instance);
+        var now = DateTimeOffset.UtcNow;
+
+        await callback.OnTerminalAsync(new ExecutionJobRecord
+        {
+            OperationId = "tile-1",
+            Status = jobStatus,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CompletedAt = now,
+            ErrorMessage = "license expired",
+            Spec = TileCacheExecutionSpecBuilder.Build(SeedRequest(), null, new TileCacheBatchOptions()),
+        }, CancellationToken.None);
+
+        var closed = (await progressStore.GetProgressAsync<TileOperationProgress>("tile-1"))!;
+        closed.Status.Should().Be(expected);
+        closed.CompletedAt.Should().Be(now);
+        if (expected == OperationStatus.Failed)
+        {
+            closed.ErrorMessage.Should().Be("license expired");
+        }
+    }
+
+    [UnitTest]
     public async Task SubmitAsync_ServiceAndStorageLayerAliases_SharePartition()
     {
         var graph = new TestMetadataV2GraphBuilder()
@@ -83,7 +221,7 @@ public sealed class TileCacheJobServiceTests
         var jobStore = new InMemoryExecutionJobStore();
         var progressStore = new AcceptingInMemoryProgressStore();
         var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
-        var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
+        var options = new TileCacheBatchOptions { Backend = LocalBatchComputeBackend.BackendId };
         var service = CreateService(jobStore, progressStore, [backend], options, graphProvider: graphProvider);
 
         var byService = await service.SubmitAsync(new TileOperationStartRequest
@@ -92,14 +230,14 @@ public sealed class TileCacheJobServiceTests
             ServiceId = "service",
             TileMatrixSetId = "Web/MercatorQuad",
             Style = "a/b"
-        }, schemaName: null);
+        }, Submitter, schemaName: null);
         var byLayer = await service.SubmitAsync(new TileOperationStartRequest
         {
             Operation = "delete",
             LayerId = 42,
             TileMatrixSetId = "Web_MercatorQuad",
             Style = "a_b"
-        }, schemaName: null);
+        }, Submitter, schemaName: null);
 
         var servicePartition = (await jobStore.GetAsync(byService))!.Concurrency!.PartitionKey;
         var layerPartition = (await jobStore.GetAsync(byLayer))!.Concurrency!.PartitionKey;
@@ -114,12 +252,13 @@ public sealed class TileCacheJobServiceTests
         var progressStore = new AcceptingInMemoryProgressStore();
         var jobQueue = Substitute.For<IJobQueue>();
         var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
-        var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
+        var options = new TileCacheBatchOptions { Backend = LocalBatchComputeBackend.BackendId };
 
         var service = CreateService(jobStore, progressStore, [localBackend], options, jobQueue);
 
         var jobId = await service.SubmitAsync(
             SeedRequest(),
+            Submitter,
             schemaName: null,
             tenantScope: "public");
 
@@ -144,7 +283,7 @@ public sealed class TileCacheJobServiceTests
         var jobStore = new InMemoryExecutionJobStore();
         var progressStore = new AcceptingInMemoryProgressStore();
         var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
-        var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
+        var options = new TileCacheBatchOptions { Backend = LocalBatchComputeBackend.BackendId };
         var service = CreateService(jobStore, progressStore, [backend], options);
 
         var jobId = await service.SubmitAsync(SeedRequest() with
@@ -152,7 +291,7 @@ public sealed class TileCacheJobServiceTests
             Operation = " DELETE ",
             TileMatrixSetId = " WebMercatorQuad ",
             Style = " default ",
-        }, schemaName: null);
+        }, Submitter, schemaName: null);
 
         var record = (await jobStore.GetAsync(jobId))!;
         record.Spec.Parameters[TileCacheJobParameterKeys.Operation].Should().Be("delete");
@@ -170,7 +309,6 @@ public sealed class TileCacheJobServiceTests
         var remote = new StubBatchComputeBackend("honua-aws-batch", BatchComputeTargetKind.AwsBatch);
         var options = new TileCacheBatchOptions
         {
-            Enabled = true,
             Backend = "honua-aws-batch",
             TargetKind = BatchComputeTargetKind.AwsBatch,
             Parameters = { ["batch.job_definition_arn"] = "arn:jd", ["batch.job_queue_arn"] = "arn:jq" }
@@ -178,7 +316,7 @@ public sealed class TileCacheJobServiceTests
 
         var service = CreateService(jobStore, progressStore, [remote], options, jobQueue);
 
-        var jobId = await service.SubmitAsync(SeedRequest(), schemaName: null);
+        var jobId = await service.SubmitAsync(SeedRequest(), Submitter, schemaName: null);
 
         remote.StartCalls.Should().Be(1);
         remote.LastStartedSpec!.Backend.Should().Be("honua-aws-batch");
@@ -198,7 +336,6 @@ public sealed class TileCacheJobServiceTests
         var progressStore = new AcceptingInMemoryProgressStore();
         var options = new TileCacheBatchOptions
         {
-            Enabled = true,
             Backend = "missing-backend",
             TargetKind = BatchComputeTargetKind.AwsBatch
         };
@@ -207,7 +344,7 @@ public sealed class TileCacheJobServiceTests
         var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
         var service = CreateService(jobStore, progressStore, [localBackend], options);
 
-        var act = async () => await service.SubmitAsync(SeedRequest(), schemaName: null);
+        var act = async () => await service.SubmitAsync(SeedRequest(), Submitter, schemaName: null);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
@@ -222,10 +359,10 @@ public sealed class TileCacheJobServiceTests
         var progressStore = new AcceptingInMemoryProgressStore();
         var jobQueue = Substitute.For<IJobQueue>();
         var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
-        var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
+        var options = new TileCacheBatchOptions { Backend = LocalBatchComputeBackend.BackendId };
 
         var service = CreateService(jobStore, progressStore, [localBackend], options, jobQueue);
-        var jobId = await service.SubmitAsync(SeedRequest(), schemaName: null);
+        var jobId = await service.SubmitAsync(SeedRequest(), Submitter, schemaName: null);
         var job = (await jobStore.GetAsync(jobId))!;
 
         // Worker reports in-flight progress.
@@ -258,10 +395,10 @@ public sealed class TileCacheJobServiceTests
         var progressStore = new AcceptingInMemoryProgressStore();
         var jobQueue = Substitute.For<IJobQueue>();
         var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
-        var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
+        var options = new TileCacheBatchOptions { Backend = LocalBatchComputeBackend.BackendId };
 
         var service = CreateService(jobStore, progressStore, [localBackend], options, jobQueue);
-        var jobId = await service.SubmitAsync(SeedRequest(), schemaName: null);
+        var jobId = await service.SubmitAsync(SeedRequest(), Submitter, schemaName: null);
 
         // Promote to Running so cancellation is meaningful (not a pre-pickup queued cancel).
         var queued = await jobStore.GetAsync(jobId);
@@ -280,10 +417,10 @@ public sealed class TileCacheJobServiceTests
         var jobStore = new InMemoryExecutionJobStore();
         var progressStore = new AcceptingInMemoryProgressStore();
         var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
-        var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
+        var options = new TileCacheBatchOptions { Backend = LocalBatchComputeBackend.BackendId };
 
         var service = CreateService(jobStore, progressStore, [localBackend], options, Substitute.For<IJobQueue>());
-        var jobId = await service.SubmitAsync(SeedRequest(), schemaName: null);
+        var jobId = await service.SubmitAsync(SeedRequest(), Submitter, schemaName: null);
 
         var queued = await jobStore.GetAsync(jobId);
         await jobStore.SetAsync(queued! with { Status = ExecutionJobStatus.Succeeded });
@@ -299,7 +436,7 @@ public sealed class TileCacheJobServiceTests
         var jobStore = new InMemoryExecutionJobStore();
         var progressStore = new AcceptingInMemoryProgressStore();
         var localBackend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
-        var options = new TileCacheBatchOptions { Enabled = true, Backend = LocalBatchComputeBackend.BackendId };
+        var options = new TileCacheBatchOptions { Backend = LocalBatchComputeBackend.BackendId };
 
         var service = CreateService(jobStore, progressStore, [localBackend], options, Substitute.For<IJobQueue>());
 

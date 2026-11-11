@@ -20041,7 +20041,7 @@
           "Tile Operations"
         ],
         "summary": "Start Tile Operation Job",
-        "description": "Queues a tile operation for asynchronous execution and returns 202 with the job id and status/cancel URLs. `operation` is required; `seed`/`warm` require `layerId` or `serviceId`; `archive` and `publish` require `layerId`; `bbox`, when supplied, must contain exactly four values `[minLon, minLat, maxLon, maxLat]` and `minZoom` must not exceed `maxZoom`. When a batch tile-cache backend is configured the job is submitted through the execution-job/batch path, otherwise through the in-process worker. Response property names are PascalCase.",
+        "description": "Queues a tile operation for asynchronous execution and returns 202 with the job id and status/cancel URLs. `operation` is required; `seed`/`warm` require `layerId` or `serviceId`; `archive` and `publish` require `layerId`; `bbox`, when supplied, must contain exactly four values `[minLon, minLat, maxLon, maxLat]` and `minZoom` must not exceed `maxZoom`. Every operation is submitted as a TileCache execution job, run once by whichever node claims it, on the configured batch backend or the `local` job worker. Response property names are PascalCase.",
         "operationId": "startTileOperationJob",
         "requestBody": {
           "required": true,
@@ -20072,6 +20072,16 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "This host has no system database job store, so no tile operation is accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }

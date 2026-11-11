@@ -2,14 +2,13 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Infrastructure.Progress;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
-using System.Runtime.CompilerServices;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -20,7 +19,7 @@ public sealed class TileCacheExpiryHostedServiceTests
     [UnitTest]
     public async Task SweepAsync_WhenEnabled_QueuesInvalidateJobForEachTarget()
     {
-        var jobService = new RecordingTileOperationJobService();
+        var jobService = new RecordingTileCacheJobService();
         var options = Options.Create(new TileCacheExpiryOptions
         {
             Enabled = true,
@@ -56,7 +55,7 @@ public sealed class TileCacheExpiryHostedServiceTests
     [UnitTest]
     public async Task SweepAsync_SkipsTargetWithoutServiceOrLayer()
     {
-        var jobService = new RecordingTileOperationJobService();
+        var jobService = new RecordingTileCacheJobService();
         var options = Options.Create(new TileCacheExpiryOptions
         {
             Enabled = true,
@@ -80,7 +79,7 @@ public sealed class TileCacheExpiryHostedServiceTests
     [UnitTest]
     public async Task ExecuteAsync_WhenDisabled_QueuesNothing()
     {
-        var jobService = new RecordingTileOperationJobService();
+        var jobService = new RecordingTileCacheJobService();
         var service = new TileCacheExpiryHostedService(
             jobService,
             Options.Create(new TileCacheExpiryOptions()),
@@ -96,7 +95,7 @@ public sealed class TileCacheExpiryHostedServiceTests
     [UnitTest]
     public async Task ExecuteAsync_WhenSweepThrows_RetriesOnNextTick()
     {
-        var jobService = new ThrowingTileOperationJobService();
+        var jobService = new ThrowingTileCacheJobService();
         var clock = new ManualTimeProvider();
         var service = new TileCacheExpiryHostedService(
             jobService,
@@ -137,25 +136,21 @@ public sealed class TileCacheExpiryHostedServiceTests
         }
     }
 
-    private sealed class ThrowingTileOperationJobService : RecordingTileOperationJobService
+    private sealed class ThrowingTileCacheJobService : RecordingTileCacheJobService
     {
         private int _calls;
 
         public int Calls => Volatile.Read(ref _calls);
 
-        public override Task<string> StartAsync(
-            TileOperationStartRequest request,
-            string? schemaName = null,
-            string? tenantScope = null,
-            CancellationToken cancellationToken = default)
+        public override Task<string> SubmitScheduledAsync(TileOperationStartRequest request, CancellationToken cancellationToken = default)
         {
             var call = Interlocked.Increment(ref _calls);
             if (call == 1)
             {
-                throw new RedisTimeoutException("Timeout awaiting response, command=GET", CommandStatus.Sent);
+                throw new TimeoutException("Simulated job-store timeout.");
             }
 
-            return base.StartAsync(request, schemaName, tenantScope, cancellationToken);
+            return base.SubmitScheduledAsync(request, cancellationToken);
         }
     }
 
@@ -223,15 +218,19 @@ public sealed class TileCacheExpiryHostedServiceTests
         }
     }
 
-    private class RecordingTileOperationJobService : ITileOperationJobService
+    private class RecordingTileCacheJobService : ITileCacheJobService
     {
         public List<TileOperationStartRequest> Requests { get; } = [];
 
-        public virtual Task<string> StartAsync(
+        public Task<string> SubmitAsync(
             TileOperationStartRequest request,
+            JobSecurityContext submitter,
             string? schemaName = null,
             string? tenantScope = null,
             CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("Scheduled tile operations submit as the tile-cache scheduler.");
+
+        public virtual Task<string> SubmitScheduledAsync(TileOperationStartRequest request, CancellationToken cancellationToken = default)
         {
             Requests.Add(request);
             return Task.FromResult($"job-{Requests.Count}");
@@ -248,14 +247,5 @@ public sealed class TileCacheExpiryHostedServiceTests
 
         public Task<string?> RetryAsync(string jobId, CancellationToken cancellationToken = default)
             => Task.FromResult<string?>(null);
-
-        public async IAsyncEnumerable<string> ReadQueuedJobIdsAsync([EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            await Task.CompletedTask;
-            yield break;
-        }
-
-        public Task ProcessQueuedJobAsync(string jobId, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
     }
 }

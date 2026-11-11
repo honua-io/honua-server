@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics;
+using Honua.ControlPlane;
 using Honua.Core.Configuration;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -15,9 +17,12 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
-// The serving-process tile cap is lifted here because the work runs on dedicated compute.
 internal sealed partial class TileCacheJobExecutor : IJobExecutor
 {
+    // The local backend runs the job inside a serving process, so it keeps that process's tile ceiling;
+    // a remote backend runs on dedicated compute and is bounded by TileCacheBatchOptions.MaxTiles.
+    internal const int LocalMaxTiles = 5_000;
+
     private readonly IUniversalProgressStore _progressStore;
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly IOptions<TileOptions> _tileOptions;
@@ -61,7 +66,7 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
                 out var parseError))
         {
             Log.InvalidSpec(_logger, job.OperationId, parseError);
-            return JobExecutionResult.Failed($"Invalid tile-cache job spec: {parseError}");
+            return JobExecutionResult.Failed($"Invalid tile-cache job spec: {parseError}") with { IsRetryable = false };
         }
 
         // Anchor the resumable generation (issue #2661) to the execution job's operation id when
@@ -74,8 +79,7 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
 
         await context.ReportProgressAsync(0, $"Starting {request.Operation}", cancellationToken).ConfigureAwait(false);
 
-        // Seed a TileOperationProgress so GET /admin/tile-operations/jobs/{id} returns
-        // the rich tile-shaped status for batch jobs exactly as for in-process jobs.
+        // GET /admin/tile-operations/jobs/{id} reads the tile-shaped progress, not the job record.
         var started = TileOperationProgress.CreateInitial(
             job.OperationId,
             request.Operation,
@@ -88,7 +92,15 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
         };
         await _progressStore.SetProgressAsync(job.OperationId, started, ProgressRetention, cancellationToken).ConfigureAwait(false);
 
-        var maxTilesCeiling = Math.Max(1, _batchOptions.CurrentValue.MaxTiles);
+        var maxTilesCeiling = string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
+            ? LocalMaxTiles
+            : Math.Max(1, _batchOptions.CurrentValue.MaxTiles);
+        if (job.AttemptCount <= 1)
+        {
+            TileOperationMetrics.QueueDepth.Add(-1, new TagList { { "operation", request.Operation } });
+        }
+
+        var stopwatch = Stopwatch.StartNew();
 
         TileOperationProgress finalProgress;
         using var scope = _serviceScopeFactory.CreateScope();
@@ -146,6 +158,16 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
 
         await _progressStore.SetProgressAsync(job.OperationId, finalProgress, ProgressRetention, cancellationToken)
             .ConfigureAwait(false);
+        TileOperationMetrics.JobDurationMs.Record(
+            stopwatch.Elapsed.TotalMilliseconds,
+            new TagList { { "operation", request.Operation } });
+        TileOperationMetrics.JobCount.Add(
+            1,
+            new TagList
+            {
+                { "operation", request.Operation },
+                { "status", finalProgress.Status.ToString().ToLowerInvariant() }
+            });
 
         var percent = finalProgress.PercentComplete;
         await context.ReportProgressAsync(percent, finalProgress.CurrentPhase, cancellationToken).ConfigureAwait(false);
@@ -164,9 +186,10 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
             return JobExecutionResult.Succeeded(finalProgress.Warnings);
         }
 
+        // The failure is already reported on the tile progress; an operator retries it explicitly.
         return JobExecutionResult.Failed(
             finalProgress.ErrorMessage ?? "Tile operation failed.",
-            finalProgress.Warnings);
+            finalProgress.Warnings) with { IsRetryable = false };
     }
 
     private static partial class Log

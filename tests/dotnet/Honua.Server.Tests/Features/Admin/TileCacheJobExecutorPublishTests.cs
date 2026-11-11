@@ -7,9 +7,12 @@ using System.IO.Compression;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Configuration;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.TestKit.Attributes;
 using Honua.TestKit.Formats;
 using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -19,8 +22,6 @@ using Honua.Core.Features.Tiles.PMTiles;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Progress;
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -28,9 +29,9 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-public sealed class TileOperationJobServicePublishTests
+public sealed class TileCacheJobExecutorPublishTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData("archive", true, 7)]
     [InlineData("publish", true, 7)]
     [InlineData("archive", true, null)]
@@ -141,7 +142,7 @@ public sealed class TileOperationJobServicePublishTests
         }
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Publish_WhenStorageMissing_FailsWithMessage()
     {
         var stub = new StubCloudStorage();
@@ -165,7 +166,7 @@ public sealed class TileOperationJobServicePublishTests
         progress.ErrorMessage.Should().Contain("Cloud storage is not configured");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Archive_MaxTiles_ReportsTruncationAndStampsActualCoverage()
     {
         var stub = new StubCloudStorage();
@@ -195,7 +196,7 @@ public sealed class TileOperationJobServicePublishTests
         header.MaxZoom.Should().Be(1, "the selected two tiles only reach zoom 1");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Publish_MaxTiles_ReportsTruncationAndStampsActualCoverage()
     {
         var stub = new StubCloudStorage();
@@ -222,7 +223,7 @@ public sealed class TileOperationJobServicePublishTests
         PMTilesHeader.ReadFrom(stub.LastUploadBytes!).MaxZoom.Should().Be(1);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Publish_SignedUrlStrategy_PopulatesDescriptorWithSignedUrl()
     {
         var stub = new StubCloudStorage();
@@ -272,7 +273,7 @@ public sealed class TileOperationJobServicePublishTests
         stub.LastUpload.ObjectKeyOverride.Should().Be(descriptor.ObjectKey);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Publish_RangeProxyStrategy_BuildsRelativeProxyUrl()
     {
         var stub = new StubCloudStorage();
@@ -301,7 +302,7 @@ public sealed class TileOperationJobServicePublishTests
         descriptor.AccessUrlExpiresAt.Should().BeNull();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Publish_PublicUrlStrategy_BuildsPublicUrlFromConfig()
     {
         var stub = new StubCloudStorage();
@@ -332,7 +333,7 @@ public sealed class TileOperationJobServicePublishTests
         descriptor.AccessUrlExpiresAt.Should().BeNull();
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Publish_PublicUrlStrategy_WithoutBaseUrl_FailsJob()
     {
         var stub = new StubCloudStorage();
@@ -362,7 +363,7 @@ public sealed class TileOperationJobServicePublishTests
         stub.LastUpload.Should().BeNull("misconfigured PublicUrl must fail before upload to avoid orphan artifacts");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Publish_SignedUrlFailure_RollsBackUploadedArtifact()
     {
         var stub = new StubCloudStorage(presignedUrlOverride: _ => null); // simulate provider returning no presigned URL
@@ -397,7 +398,7 @@ public sealed class TileOperationJobServicePublishTests
         orphanLookup.Should().BeNull("the orphan artifact must no longer be present in storage");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Publish_AccessUrlFailure_DoesNotLeakProviderExceptionMessage()
     {
         const string sensitive = "AWS:AccessDenied User: arn:aws:iam::123456789012:user/secret-name";
@@ -433,7 +434,7 @@ public sealed class TileOperationJobServicePublishTests
         stub.DeletedFileIds.Should().Contain(stub.LastUpload!.ObjectKeyOverride!);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Publish_RollbackDelete_WhenProviderReturnsFalse_StillFailsJobWithoutLeakingException()
     {
         var stub = new StubCloudStorage(
@@ -469,7 +470,7 @@ public sealed class TileOperationJobServicePublishTests
         stub.DeletedFileIds.Should().Contain(stub.LastUpload!.ObjectKeyOverride!);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Publish_AccessUrlFailure_OnRepublish_PreservesPriorArtifactAtSameKey()
     {
         var presignCalls = 0;
@@ -521,7 +522,7 @@ public sealed class TileOperationJobServicePublishTests
         stillExists.Should().NotBeNull("the artifact bytes at the deterministic key must remain so clients still see PMTiles content while the operator addresses the URL failure");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Publish_PartialTileFailure_DoesNotUploadOrOverwriteDeterministicKey()
     {
         // Background: BuildPMTilesArchiveAsync swallows per-tile exceptions and
@@ -586,7 +587,7 @@ public sealed class TileOperationJobServicePublishTests
             "the partial archive must not be uploaded — that would silently overwrite the prior good artifact at the deterministic key");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Publish_DeterministicKey_OverwritesPreviousArtifact()
     {
         var stub = new StubCloudStorage();
@@ -621,7 +622,7 @@ public sealed class TileOperationJobServicePublishTests
         secondDescriptor.ObjectKey.Should().Be(firstDescriptor.ObjectKey);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Publish_ProviderKeyPrefix_IsAppliedToObjectKey()
     {
         var stub = new StubCloudStorage(provider: CloudStorageProvider.AwsS3);
@@ -660,7 +661,7 @@ public sealed class TileOperationJobServicePublishTests
         descriptor.StorageProvider.Should().Be(CloudStorageProvider.AwsS3);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Publish_AzureBlob_BucketIsContainerName()
     {
         var stub = new StubCloudStorage(provider: CloudStorageProvider.AzureBlob);
@@ -699,7 +700,7 @@ public sealed class TileOperationJobServicePublishTests
         descriptor.StorageProvider.Should().Be(CloudStorageProvider.AzureBlob);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task NormalizeRequest_RejectsUnknownOperation()
     {
         Func<Task> act = async () =>
@@ -712,26 +713,7 @@ public sealed class TileOperationJobServicePublishTests
             .WithMessage("*publish*");
     }
 
-    private static TileOperationJobService CreateSut(ServiceProvider serviceProvider)
-    {
-        var progressStore = new InMemoryUniversalProgressStore();
-        var cacheInvalidationService = new OutputCacheInvalidationService(
-            cacheStore: null,
-            responseCache: null,
-            metadataCache: null,
-            scopeFactory: serviceProvider.GetRequiredService<IServiceScopeFactory>(),
-            refreshCoordinator: null,
-            logger: NullLogger<OutputCacheInvalidationService>.Instance);
-
-        return new TileOperationJobService(
-            progressStore,
-            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
-            cacheInvalidationService,
-            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
-            Options.Create(new TileOptions()),
-            Options.Create(new LimitsOptions()),
-            NullLogger<TileOperationJobService>.Instance);
-    }
+    private static TileCacheJobRunner CreateSut(ServiceProvider serviceProvider) => new(serviceProvider);
 
     /// <summary>
     /// Harness accessor for <see cref="TileCacheSeedCoverageTests"/>, which drives the same job
@@ -743,8 +725,51 @@ public sealed class TileOperationJobServicePublishTests
         => BuildScope(stub, includeCloudStorage: true, configureTileProvider: configureTileProvider);
 
     /// <summary>Harness accessor for <see cref="TileCacheSeedCoverageTests"/>.</summary>
-    internal static TileOperationJobService CreateSutForSeed(ServiceProvider serviceProvider)
+    internal static TileCacheJobRunner CreateSutForSeed(ServiceProvider serviceProvider)
         => CreateSut(serviceProvider);
+
+    /// <summary>
+    /// Runs a tile operation the way the job worker does: the request travels as TileCache job
+    /// parameters on the local backend and <see cref="TileCacheJobExecutor"/> executes it.
+    /// </summary>
+    internal sealed class TileCacheJobRunner(ServiceProvider serviceProvider)
+    {
+        private readonly InMemoryUniversalProgressStore _progressStore = new();
+        private readonly Dictionary<string, ExecutionJobRecord> _jobs = new(StringComparer.Ordinal);
+
+        public Task<string> StartAsync(TileOperationStartRequest request)
+        {
+            var jobId = $"tile-{Guid.NewGuid():N}";
+            var now = DateTimeOffset.UtcNow;
+            _jobs[jobId] = new ExecutionJobRecord
+            {
+                OperationId = jobId,
+                Status = ExecutionJobStatus.Running,
+                AttemptCount = 1,
+                CreatedAt = now,
+                UpdatedAt = now,
+                Spec = TileCacheExecutionSpecBuilder.Build(request, schemaName: null, new TileCacheBatchOptions()),
+            };
+            return Task.FromResult(jobId);
+        }
+
+        public Task ProcessQueuedJobAsync(string jobId)
+        {
+            var batchOptions = Substitute.For<IOptionsMonitor<TileCacheBatchOptions>>();
+            batchOptions.CurrentValue.Returns(new TileCacheBatchOptions());
+            var executor = new TileCacheJobExecutor(
+                _progressStore,
+                serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+                Options.Create(new TileOptions()),
+                Options.Create(new LimitsOptions()),
+                batchOptions,
+                NullLogger<TileCacheJobExecutor>.Instance);
+            return executor.ExecuteAsync(_jobs[jobId], Substitute.For<IJobExecutionContext>(), CancellationToken.None);
+        }
+
+        public Task<TileOperationProgress?> GetAsync(string jobId)
+            => _progressStore.GetProgressAsync<TileOperationProgress>(jobId);
+    }
 
     /// <summary>
     /// Storage layers the unscoped publish and archive tests address by a bare layer id.
@@ -838,6 +863,13 @@ public sealed class TileOperationJobServicePublishTests
         };
 
         services.AddSingleton(Options.Create(resolvedOptions));
+        services.AddSingleton(sp => new OutputCacheInvalidationService(
+            cacheStore: null,
+            responseCache: null,
+            metadataCache: null,
+            scopeFactory: sp.GetRequiredService<IServiceScopeFactory>(),
+            refreshCoordinator: null,
+            logger: NullLogger<OutputCacheInvalidationService>.Instance));
 
         return services.BuildServiceProvider();
     }

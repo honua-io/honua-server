@@ -33,10 +33,9 @@ internal sealed partial class TileOperationExecutionCore
             throw new NotSupportedException("Only TileMatrixSetId 'WebMercatorQuad' is currently supported.");
         }
 
-        // Refuse an unscoped destructive window here, not only at the HTTP validator. This is the
-        // one place every expire/delete arrives (in-process worker and durable TileCacheJobExecutor
-        // alike), and a request with no layer and no service would otherwise select every tracked
-        // tile in the tenant.
+        // Refuse an unscoped destructive window here, not only at the HTTP validator. The
+        // TileCacheJobExecutor rebuilds the request from job parameters, and a request with no
+        // layer and no service would otherwise select every tracked tile in the tenant.
         if (!request.LayerId.HasValue && string.IsNullOrWhiteSpace(request.ServiceId))
         {
             return progress with

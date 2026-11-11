@@ -6,11 +6,11 @@ using Microsoft.Extensions.Options;
 namespace Honua.Server.Features.Admin.TileOperations;
 
 internal sealed partial class TileCacheWarmingHostedService(
-    ITileOperationJobService jobService,
+    ITileCacheJobService jobService,
     IOptions<TileCacheWarmingOptions> options,
     ILogger<TileCacheWarmingHostedService> logger) : IHostedService
 {
-    private readonly ITileOperationJobService _jobService = jobService ?? throw new ArgumentNullException(nameof(jobService));
+    private readonly ITileCacheJobService _jobService = jobService ?? throw new ArgumentNullException(nameof(jobService));
     private readonly TileCacheWarmingOptions _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     private readonly ILogger<TileCacheWarmingHostedService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -50,7 +50,7 @@ internal sealed partial class TileCacheWarmingHostedService(
                 MaxTiles = target.MaxTiles
             };
 
-            var jobId = await _jobService.StartAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var jobId = await _jobService.SubmitScheduledAsync(request, cancellationToken).ConfigureAwait(false);
             Log.WarmTargetQueued(_logger, jobId, operation, target.ServiceId, target.LayerId, target.MinZoom, target.MaxZoom);
         }
     }

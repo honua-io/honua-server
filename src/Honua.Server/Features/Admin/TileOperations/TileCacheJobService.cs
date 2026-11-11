@@ -1,11 +1,15 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics;
+using System.Security.Claims;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Progress;
 using Honua.ControlPlane;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,47 +20,65 @@ namespace Honua.Server.Features.Admin.TileOperations;
 // This singleton resolves the scoped database provider inside a per-submission scope so host startup validation does not fail.
 internal sealed partial class TileCacheJobService : ITileCacheJobService
 {
-    private readonly IExecutionJobStore _jobStore;
+    internal const string JobStoreUnavailableMessage = "Tile operations require the system database job store.";
+    internal const string SchedulerIdentityName = "honua/tile-cache-scheduler";
+
+    private readonly IExecutionJobStore? _jobStore;
     private readonly IUniversalProgressStore _progressStore;
     private readonly IJobQueue? _jobQueue;
     private readonly IReadOnlyList<IBatchComputeBackend> _backends;
     private readonly IOptionsMonitor<TileCacheBatchOptions> _options;
     private readonly ILogger<TileCacheJobService> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly RbacOptions _rbacOptions;
 
     private static readonly TimeSpan ProgressRetention = TimeSpan.FromHours(24);
 
+    private static readonly OperationType[] TileOperationTypes =
+        [OperationType.TileCache, OperationType.PMTilesArchive, OperationType.PMTilesPublish];
+
     public TileCacheJobService(
-        IExecutionJobStore jobStore,
+        IExecutionJobStore? jobStore,
         IUniversalProgressStore progressStore,
         IEnumerable<IBatchComputeBackend> backends,
         IOptionsMonitor<TileCacheBatchOptions> options,
         IServiceScopeFactory scopeFactory,
+        IOptions<RbacOptions> rbacOptions,
         ILogger<TileCacheJobService> logger,
         IJobQueue? jobQueue = null)
     {
-        _jobStore = jobStore ?? throw new ArgumentNullException(nameof(jobStore));
+        _jobStore = jobStore;
         _progressStore = progressStore ?? throw new ArgumentNullException(nameof(progressStore));
         _backends = (backends ?? throw new ArgumentNullException(nameof(backends))).ToArray();
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+        _rbacOptions = (rbacOptions ?? throw new ArgumentNullException(nameof(rbacOptions))).Value;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _jobQueue = jobQueue;
     }
 
-    public bool IsEnabled => _options.CurrentValue.Enabled;
-
     public async Task<string> SubmitAsync(
         TileOperationStartRequest request,
-        string? schemaName,
+        JobSecurityContext submitter,
+        string? schemaName = null,
         string? tenantScope = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(submitter);
         request = TileCacheExecutionSpecBuilder.NormalizeRequest(request);
+        var jobStore = _jobStore ?? throw new InvalidOperationException(JobStoreUnavailableMessage);
 
         var options = _options.CurrentValue;
         var jobId = $"tile-{Guid.NewGuid():N}";
+
+        // The first submission names the resumable generation; a retry forwards it unchanged so the
+        // new job resumes the same generation instead of starting a fresh full-grid pass.
+        if (string.IsNullOrWhiteSpace(request.GenerationId))
+        {
+            request = request with { GenerationId = jobId };
+        }
+
         var now = DateTimeOffset.UtcNow;
         var spec = TileCacheExecutionSpecBuilder.Build(request, schemaName, tenantScope, options);
         var targetLayerIds = await ResolveTargetLayerIdsAsync(request, cancellationToken).ConfigureAwait(false);
@@ -68,6 +90,12 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             CreatedAt = now,
             UpdatedAt = now,
             CurrentPhase = "Queued",
+            // The worker reads the layer as this identity; a job without one is refused at the read seam.
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = submitter.PrincipalId,
+                SubmitterSecurityContext = submitter
+            },
             // Replica safety (issue #2661): serialize concurrent generations of the same
             // (service, gridset, style) window under an exclusive lease so two backend workers
             // never seed/expire/delete the same key window at once.
@@ -79,7 +107,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             Spec = spec
         };
 
-        var created = await _jobStore.TryCreateAsync(jobRecord, cancellationToken: cancellationToken)
+        var created = await jobStore.TryCreateAsync(jobRecord, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
         if (!created)
         {
@@ -108,13 +136,13 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             }
             else
             {
-                await SubmitToRemoteBackendAsync(jobRecord, cancellationToken).ConfigureAwait(false);
+                await SubmitToRemoteBackendAsync(jobStore, jobRecord, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (Exception) when (!cancellationToken.IsCancellationRequested)
         {
             await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
-                _jobStore,
+                jobStore,
                 jobId,
                 progressStore: _progressStore,
                 progressRetention: ProgressRetention,
@@ -123,13 +151,58 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             throw;
         }
 
+        TileOperationMetrics.QueueDepth.Add(1, new TagList { { "operation", request.Operation } });
         Log.JobSubmitted(_logger, jobId, request.Operation, spec.Backend);
         return jobId;
     }
 
+    // Warming targets and the expiry sweep have no caller; they run as the tile-cache scheduler, an
+    // administrator, because the cache they fill is served to every reader of the layer.
+    public Task<string> SubmitScheduledAsync(TileOperationStartRequest request, CancellationToken cancellationToken = default)
+    {
+        var scheduler = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, SchedulerIdentityName),
+                new Claim(_rbacOptions.EffectiveRoleClaimType, "admin")
+            ],
+            authenticationType: SchedulerIdentityName,
+            nameType: ClaimTypes.Name,
+            roleType: _rbacOptions.EffectiveRoleClaimType));
+        return SubmitAsync(request, JobSecurityContextCapture.Capture(scheduler, _rbacOptions), cancellationToken: cancellationToken);
+    }
+
+    public Task<TileOperationProgress?> GetAsync(string jobId, CancellationToken cancellationToken = default)
+        => _progressStore.GetProgressAsync<TileOperationProgress>(jobId, cancellationToken);
+
+    public async Task<IReadOnlyList<TileOperationProgress>> ListAsync(bool activeOnly, CancellationToken cancellationToken = default)
+    {
+        var operationIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var type in TileOperationTypes)
+        {
+            operationIds.UnionWith(await _progressStore.GetActiveOperationIdsAsync(type, cancellationToken).ConfigureAwait(false));
+        }
+
+        var result = new List<TileOperationProgress>(operationIds.Count);
+        foreach (var operationId in operationIds)
+        {
+            var progress = await _progressStore.GetProgressAsync<TileOperationProgress>(operationId, cancellationToken).ConfigureAwait(false);
+            if (progress == null
+                || (activeOnly && progress.Status is not (OperationStatus.Queued or OperationStatus.Processing)))
+            {
+                continue;
+            }
+
+            result.Add(progress);
+        }
+
+        return result
+            .OrderByDescending(static item => item.StartedAt)
+            .ToArray();
+    }
+
     public async Task<bool> CancelAsync(string jobId, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(jobId))
+        if (string.IsNullOrWhiteSpace(jobId) || _jobStore == null)
         {
             return false;
         }
@@ -178,7 +251,34 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         return true;
     }
 
-    private async Task SubmitToRemoteBackendAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+    public async Task<string?> RetryAsync(string jobId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(jobId) || _jobStore == null)
+        {
+            return null;
+        }
+
+        var progress = await _progressStore.GetProgressAsync<TileOperationProgress>(jobId, cancellationToken).ConfigureAwait(false);
+        if (progress == null || progress.Status is not (OperationStatus.Failed or OperationStatus.Cancelled))
+        {
+            return null;
+        }
+
+        var job = await _jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+        if (job?.Audit.SubmitterSecurityContext is not { } submitter
+            || job.Spec.Kind != ExecutionJobKind.TileCache
+            || !TileCacheExecutionSpecBuilder.TryParse(job.Spec.Parameters, out var request, out var schemaName, out var tenantScope, out _))
+        {
+            return null;
+        }
+
+        return await SubmitAsync(request, submitter, schemaName, tenantScope, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task SubmitToRemoteBackendAsync(
+        IExecutionJobStore jobStore,
+        ExecutionJobRecord job,
+        CancellationToken cancellationToken)
     {
         var backend = _backends.Resolve(job.Spec.Backend, job.Spec.TargetKind);
         if (backend == null)
@@ -190,7 +290,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         await ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync(
             job,
             backend,
-            _jobStore,
+            jobStore,
             _progressStore,
             ProgressRetention,
             _logger,
@@ -232,13 +332,20 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
 
 internal interface ITileCacheJobService
 {
-    bool IsEnabled { get; }
-
     Task<string> SubmitAsync(
         TileOperationStartRequest request,
-        string? schemaName,
+        JobSecurityContext submitter,
+        string? schemaName = null,
         string? tenantScope = null,
         CancellationToken cancellationToken = default);
 
+    Task<string> SubmitScheduledAsync(TileOperationStartRequest request, CancellationToken cancellationToken = default);
+
+    Task<TileOperationProgress?> GetAsync(string jobId, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<TileOperationProgress>> ListAsync(bool activeOnly, CancellationToken cancellationToken = default);
+
     Task<bool> CancelAsync(string jobId, CancellationToken cancellationToken = default);
+
+    Task<string?> RetryAsync(string jobId, CancellationToken cancellationToken = default);
 }

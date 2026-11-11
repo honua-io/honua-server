@@ -16,14 +16,14 @@ internal sealed class TileCacheExpiryScheduledTickHandler(TileCacheExpiryHostedS
 }
 
 internal sealed partial class TileCacheExpiryHostedService(
-    ITileOperationJobService jobService,
+    ITileCacheJobService jobService,
     IOptions<TileCacheExpiryOptions> options,
     ILogger<TileCacheExpiryHostedService> logger,
     TimeProvider? timeProvider = null) : BackgroundService
 {
     internal const int MinIntervalSeconds = 60;
 
-    private readonly ITileOperationJobService _jobService = jobService ?? throw new ArgumentNullException(nameof(jobService));
+    private readonly ITileCacheJobService _jobService = jobService ?? throw new ArgumentNullException(nameof(jobService));
     private readonly TileCacheExpiryOptions _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     private readonly ILogger<TileCacheExpiryHostedService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
@@ -50,7 +50,7 @@ internal sealed partial class TileCacheExpiryHostedService(
                 {
                     throw;
                 }
-                // A Redis or progress-store fault must not stop the host. Log and retry next tick.
+                // A job-store or progress-store fault must not stop the host. Log and retry next tick.
                 catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     Log.ExpirySweepFailed(_logger, ex);
@@ -83,7 +83,7 @@ internal sealed partial class TileCacheExpiryHostedService(
                 TileMatrixSetId = target.TileMatrixSetId
             };
 
-            var jobId = await _jobService.StartAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var jobId = await _jobService.SubmitScheduledAsync(request, cancellationToken).ConfigureAwait(false);
             Log.ExpiryTargetQueued(_logger, jobId, target.ServiceId, target.LayerId);
         }
     }
