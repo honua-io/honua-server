@@ -41,7 +41,9 @@ Disabling licensing grants entitlements only. Authentication, authorization and
 tenant isolation still apply; features still require their runtime configuration
 and dependencies. Preview and Experimental opt-ins and the release manifest's
 `experimental:` exclusions remain in effect. Alerting and offline sync remain
-Preview; all four cloud-native formats and the whole GA process catalog
+Preview. Realtime feature streams and map collaboration sessions are
+Experimental: they work on a single node, and delivery across several nodes
+needs an optional Redis add-on. All four cloud-native formats and the whole GA process catalog
 retain their release scope. `Licensing__DevGrantEdition` remains a development-only
 override and is refused in Production, including when Mode is Disabled.
 
@@ -81,6 +83,8 @@ Edition entitlement and release maturity are separate axes: paying for a capabil
 | Capability | Edition | 2026.1 boundary |
 |---|---|---|
 | Core branch versioning | Pro | Preview; existing experimental runtime opt-in still applies |
+| Realtime feature streams | Pro | Experimental; they work on a single node, and delivery across several nodes needs an optional Redis add-on |
+| Map collaboration sessions | Community | Experimental, for the same reason |
 | Organisational approval and policy controls | Enterprise | Paid governance around the core versioning/operation workflow |
 | Existing 3D Tiles serving, scene discovery, elevation, and generation from feature layers | Community | 3D remains Experimental; this does not expand the supported release surface |
 | Specialised CityGML/BIM and point-cloud ingest; I3S | Enterprise | Remain Experimental; no tier expansion without a specific commercial decision |

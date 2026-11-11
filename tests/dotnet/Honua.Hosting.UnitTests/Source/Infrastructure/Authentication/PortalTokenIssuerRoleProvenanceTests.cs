@@ -7,6 +7,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Caching.Memory;
@@ -85,6 +86,6 @@ public sealed class PortalTokenIssuerRoleProvenanceTests
                 provider.GetRequiredService<IOptions<PortalTokenAuthenticationOptions>>(),
                 provider))
             .BuildServiceProvider();
-        return new PortalTokenIssuer(memoryCache, NullLogger<PortalTokenIssuer>.Instance, serviceProvider: services);
+        return new PortalTokenIssuer(new InMemorySecurityTokenStore(), NullLogger<PortalTokenIssuer>.Instance, serviceProvider: services);
     }
 }

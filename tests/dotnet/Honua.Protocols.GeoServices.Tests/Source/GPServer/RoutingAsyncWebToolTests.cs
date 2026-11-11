@@ -5,11 +5,9 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
-using Honua.Geoprocessing;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
 using Honua.TestKit;
@@ -18,17 +16,14 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using NSubstitute;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
 /// <summary>Exercises routing GP aliases through the real durable worker and canonical provider.</summary>
-[Collection("Redis")]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.GPServer)]
-public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetime
+public sealed class RoutingAsyncWebToolTests
 {
     private const string ServiceId = WebAppFixture.TestServiceId;
     private const string FirstPoint = """
@@ -38,19 +33,6 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
         {"geometryType":"esriGeometryPoint","spatialReference":{"wkid":4326},"features":[{"geometry":{"x":-121,"y":38},"attributes":{"OBJECTID":17,"Name":"Second","Weight":3}}]}
         """;
     private const string RouteGeometry = """{"type":"LineString","coordinates":[[-122,37],[-121,38]]}""";
-
-    public Task InitializeAsync() => DeleteControlPlaneKeysAsync();
-    public Task DisposeAsync() => DeleteControlPlaneKeysAsync();
-
-    private async Task DeleteControlPlaneKeysAsync()
-    {
-        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(GPServerRedisTestConnection.For(redis));
-        var keys = multiplexer.GetServer(multiplexer.GetEndPoints()[0]).Keys(pattern: "controlplane:*").ToArray();
-        if (keys.Length > 0)
-        {
-            await multiplexer.GetDatabase().KeyDeleteAsync(keys);
-        }
-    }
 
     [IntegrationTheory]
     [InlineData("FindClosestFacilities", "Incidents", "Facilities", "Output_Routes", "IncidentID", "FacilityID", "GPServer")]
@@ -71,7 +53,7 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
     {
         var provider = Provider();
         await using var fixture = Fixture(provider);
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         using var client = fixture.CreateAdminClient();
         client.Timeout = GPServerJobWait.RequestTimeout;
         var jobId = await SubmitAsync(client, task, new() { [first] = FirstPoint, [second] = SecondPoint }, family);
@@ -124,7 +106,7 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
     public async Task TaskInfo_PublishesAsyncPointSchemaAndDocumentedOutputs(string task, string points, string output, string units)
     {
         await using var fixture = Fixture(Provider());
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         using var client = fixture.CreateAdminClient();
         using var response = await client.GetAsync($"/rest/services/{ServiceId}/GPServer/{task}?f=json");
         using var alias = await client.GetAsync($"/rest/services/{ServiceId}/NAServer/{task}?f=json");
@@ -162,7 +144,7 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
     {
         var provider = Provider();
         await using var fixture = Fixture(provider);
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         using var client = fixture.CreateAdminClient();
         var defaults = FirstPoint.Replace("\"Name\":\"First\"", "\"Name\":\"First\",\"FacilityType\":0,\"AdditionalTime\":null,\"AdditionalDistance\":0,\"AdditionalCost\":null,\"CurbApproach\":null,\"Cutoff\":0,\"Capacity\":null,\"TargetFacilityCount\":null,\"TargetDestinationCount\":null", StringComparison.Ordinal);
         var jobId = await SubmitAsync(client, task, new() { [first] = defaults, [second] = SecondPoint });
@@ -181,7 +163,7 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
     {
         var provider = Provider();
         await using var fixture = Fixture(provider);
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         using var client = fixture.CreateAdminClient();
         const string mode = """{"name":"driving","id":"stable-profile-id","type":"CAR","impedanceAttributeName":"TravelTime","timeAttributeName":"TravelTime","distanceAttributeName":"Kilometers","restrictionAttributeNames":[],"attributeParameterValues":[],"useHierarchy":false,"uturnAtJunctions":"esriNFSBAllowBacktrack","simplificationTolerance":10,"simplificationToleranceUnits":"esriMeters"}""";
         var jobId = await SubmitAsync(client, task, new() { [first] = FirstPoint, [second] = SecondPoint, ["Travel_Mode"] = mode });
@@ -211,7 +193,7 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
     {
         var provider = Provider();
         await using var fixture = Fixture(provider);
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         using var client = fixture.CreateAdminClient();
         var jobId = await SubmitAsync(client, task, new() { [first] = FirstPoint, [second] = SecondPoint, ["Travel_Mode"] = mode });
         using var terminal = await GPServerJobWait.UntilRestTerminalAsync(client, JobPath(task, jobId), jobId,
@@ -230,7 +212,7 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
     {
         var provider = Provider();
         await using var fixture = Fixture(provider);
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         using var client = fixture.CreateAdminClient();
         var jobId = await SubmitAsync(client, "FindClosestFacilities", new()
         {
@@ -257,7 +239,7 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
     {
         var provider = Provider();
         await using var fixture = Fixture(provider);
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         using var client = fixture.CreateAdminClient();
         var inputs = new Dictionary<string, string>
         {
@@ -302,7 +284,7 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
         var provider = Provider();
         provider.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new RoutingProviderCapabilities());
         await using var fixture = Fixture(provider);
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         using var client = fixture.CreateAdminClient();
         var jobId = await SubmitAsync(client, task, new() { [first] = FirstPoint, [second] = SecondPoint });
         using var terminal = await GPServerJobWait.UntilRestTerminalAsync(client, JobPath(task, jobId), jobId,
@@ -326,7 +308,7 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
     {
         var provider = Provider();
         await using var fixture = Fixture(provider);
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         using var client = fixture.CreateAdminClient();
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -357,7 +339,7 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
         provider.SolveLocationAllocationAsync(Arg.Any<LocationAllocationSolveRequest>(), Arg.Any<CancellationToken>())
             .Returns(new LocationAllocationSolveResult([], [], 0, 0));
         await using var fixture = Fixture(provider);
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         using var client = fixture.CreateAdminClient();
         var jobId = await SubmitAsync(client, task, new() { [first] = FirstPoint, [second] = SecondPoint });
         using var terminal = await GPServerJobWait.UntilRestSucceededAsync(client, JobPath(task, jobId), jobId,
@@ -385,7 +367,7 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
         provider.SolveLocationAllocationAsync(Arg.Any<LocationAllocationSolveRequest>(), Arg.Any<CancellationToken>())
             .Returns<Task<LocationAllocationSolveResult>>(_ => throw new InvalidOperationException("fixture routing failure"));
         await using var fixture = Fixture(provider);
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         using var client = fixture.CreateAdminClient();
         var jobId = await SubmitAsync(client, task, new() { [first] = FirstPoint, [second] = SecondPoint });
         // The default policy retries after 30 s and 60 s. Retain the original
@@ -413,7 +395,7 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
     {
         var provider = Provider();
         await using var fixture = Fixture(provider);
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         using var client = fixture.CreateAdminClient();
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -442,7 +424,7 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
         provider.SolveLocationAllocationAsync(Arg.Any<LocationAllocationSolveRequest>(), Arg.Any<CancellationToken>())
             .Returns(new LocationAllocationSolveResult([0], [new(0, 0, 3, 2), new(1, -1, 4, double.PositiveInfinity)], 6, 3));
         await using var fixture = Fixture(provider);
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         using var client = fixture.CreateAdminClient();
         var jobId = await SubmitAsync(client, "SolveLocationAllocation", new()
         {
@@ -485,7 +467,7 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
             : FirstPoint.Replace("{\"wkid\":4326}", reference, StringComparison.Ordinal);
         var provider = Provider();
         await using var fixture = Fixture(provider);
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         using var client = fixture.CreateAdminClient();
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -509,7 +491,7 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
     public async Task SubmitJob_NaServerGetAlias_UsesTheSameDurableJobAndResults(string task, string first, string second, string output)
     {
         await using var fixture = Fixture(Provider());
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         using var client = fixture.CreateAdminClient();
         var query = $"f=json&{first}={Uri.EscapeDataString(FirstPoint)}&{second}={Uri.EscapeDataString(SecondPoint)}";
         using var response = await client.GetAsync($"/rest/services/{ServiceId}/NAServer/{task}/submitJob?{query}");
@@ -538,7 +520,7 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
     public async Task SubmitJob_NaServerAliases_ExposeDurableStatusAndNamedResults()
     {
         await using var fixture = Fixture(Provider());
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         using var client = fixture.CreateAdminClient();
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -601,7 +583,7 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
                     return provider;
                 });
             });
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         fixture.GetService<IWebHostEnvironment>().EnvironmentName.Should().Be("Development");
         fixture.GetService<IConfiguration>()["HONUA_DEV_AUTH"].Should().Be("false");
         var client = fixture.CreateAdminClient();
@@ -651,33 +633,11 @@ public sealed class RoutingAsyncWebToolTests(RedisFixture redis) : IAsyncLifetim
         return provider;
     }
 
-    private WebAppFixture Fixture(IRoutingProvider provider) => new WebAppFixture()
-        .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
-            new Dictionary<string, string?> { ["ConnectionStrings:redis"] = GPServerRedisTestConnection.For(redis) })))
+    private static WebAppFixture Fixture(IRoutingProvider provider) => NoRedisJobHost.Create()
         .ConfigureServices(services =>
         {
             services.RemoveAll<IRoutingProvider>();
             services.AddSingleton(provider);
-            services.RemoveAll<IConnectionMultiplexer>();
-            services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(GPServerRedisTestConnection.For(redis)));
-            services.RemoveAll<IExecutionJobStore>();
-            services.AddSingleton<IExecutionJobStore>(sp => new RedisExecutionJobStore(sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<ILogger<RedisExecutionJobStore>>()));
-            services.RemoveAll<IGeoprocessingResultPackageStore>();
-            services.AddSingleton<IGeoprocessingResultPackageStore>(sp => new RedisGeoprocessingResultPackageStore(
-                sp.GetRequiredService<IConnectionMultiplexer>(), sp.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>(),
-                sp.GetRequiredService<ILogger<RedisGeoprocessingResultPackageStore>>()));
-            services.RemoveAll<RedisJobQueue>();
-            services.RemoveAll<IJobQueue>();
-            services.RemoveAll<IQueueClaimReconciler>();
-            services.AddSingleton<RedisJobQueue>(sp => new RedisJobQueue(sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<IExecutionJobStore>(), sp.GetRequiredService<ILogger<RedisJobQueue>>()));
-            services.AddSingleton<IJobQueue>(sp => sp.GetRequiredService<RedisJobQueue>());
-            services.AddSingleton<IQueueClaimReconciler>(sp => sp.GetRequiredService<RedisJobQueue>());
-            services.RemoveAll<IExecutionLogStore>();
-            services.AddSingleton<IExecutionLogStore>(sp => new RedisExecutionLogStore(sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<ILogger<RedisExecutionLogStore>>()));
-            services.AddJobWorker();
         });
 
     private static string JobPath(string task, string jobId, string family = "GPServer") => $"/rest/services/{ServiceId}/{family}/{task}/jobs/{jobId}?f=json";

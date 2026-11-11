@@ -78,12 +78,16 @@ class PullRequestLoadTests(unittest.TestCase):
                 types = workflow(name)["on"]["pull_request"].get("types", [])
                 self.assertTrue(expected <= set(types), types)
 
-    def test_each_pr_workflow_cancels_admission_by_pr_number(self):
+    def test_each_pr_workflow_scopes_admission_by_pr_number(self):
         for name, concurrency in pr_admissions():
             with self.subTest(workflow=name):
                 self.assertIn("github.event.pull_request.number", concurrency.get("group", ""))
                 cancellation = concurrency.get("cancel-in-progress")
-                self.assertIn(cancellation, ("true", "${{ github.event_name == 'pull_request' }}"))
+                if name in ("review-gate.yml", "review-event-bridge.yml", "pr-review-doctor.lock.yml", "normalize-derived-artifacts.yml", "auto-merge-ready.yml"):
+                    self.assertEqual(cancellation, "false")
+                    self.assertEqual(concurrency.get("queue"), "max")
+                else:
+                    self.assertIn(cancellation, ("true", "${{ github.event_name == 'pull_request' }}"))
 
     def test_doctor_submitted_reviews_do_not_cancel_paid_work(self):
         triage = workflow("pr-review-doctor-triage.lock.yml")

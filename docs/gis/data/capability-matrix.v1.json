@@ -29,12 +29,11 @@
       "category": "ControlPlane",
       "edition": "Community",
       "status": null,
-      "entryCount": 401,
-      "provingTestCount": 1638,
+      "entryCount": 406,
+      "provingTestCount": 1670,
       "maturity": {
-        "implemented": 398,
-        "preview": 2,
-        "experimental": 1
+        "implemented": 403,
+        "experimental": 3
       },
       "noSurface": null,
       "cite": [],
@@ -672,11 +671,11 @@
       "displayName": "Map Collaboration Sessions",
       "category": "Collaboration",
       "edition": "Community",
-      "status": null,
+      "status": "experimental",
       "entryCount": 9,
       "provingTestCount": 67,
       "maturity": {
-        "implemented": 9
+        "experimental": 9
       },
       "noSurface": null,
       "cite": [],
@@ -1374,7 +1373,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 18,
-      "provingTestCount": 244,
+      "provingTestCount": 248,
       "maturity": {
         "preview": 18
       },
@@ -1696,7 +1695,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 49,
-      "provingTestCount": 586,
+      "provingTestCount": 593,
       "maturity": {
         "implemented": 49
       },
@@ -1937,7 +1936,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 9,
-      "provingTestCount": 39,
+      "provingTestCount": 42,
       "maturity": {
         "implemented": 9
       },
@@ -2290,7 +2289,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 7,
-      "provingTestCount": 58,
+      "provingTestCount": 62,
       "maturity": {
         "implemented": 7
       },
@@ -2622,12 +2621,11 @@
       "displayName": "Real-Time Feature Streams",
       "category": "Streaming",
       "edition": "Pro",
-      "status": null,
+      "status": "experimental",
       "entryCount": 5,
       "provingTestCount": 127,
       "maturity": {
-        "implemented": 3,
-        "preview": 2
+        "experimental": 5
       },
       "noSurface": null,
       "cite": [],

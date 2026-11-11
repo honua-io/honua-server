@@ -7,7 +7,6 @@ using Honua.Server.Features.Admin.Share;
 using Honua.Geoprocessing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using StackExchange.Redis;
 
 namespace Honua.ControlPlane;
 
@@ -21,8 +20,8 @@ internal static class JobOrchestrationServiceCollectionExtensions
         // worker-only one: a terminal transition also happens API-side when an operator cancels a
         // queued export through ConsoleJobService, and that path must still move the Share run to its
         // terminal state. It is a cheap singleton whose dependencies are always registered, so it
-        // registers independently of the Redis-backed queue below. (The geoprocessing terminal
-        // callback stays worker-side in AddJobWorker because it depends on the Redis-gated
+        // registers independently of the job queue below. (The geoprocessing terminal
+        // callback stays worker-side in AddJobWorker because it depends on the
         // result-package store; its API-side cancel reconciliation is a separate follow-on.)
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IJobTerminalCallback, ShareExportJobTerminalCallback>());
 
@@ -31,28 +30,7 @@ internal static class JobOrchestrationServiceCollectionExtensions
         // loop (worker and API-side cancel); no-ops when ops notifications are disabled.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IJobTerminalCallback, Honua.Alerts.Ops.OpsJobTerminalCallback>());
 
-        // Job store is already registered by AddGeoprocessing; guard for idempotency.
-        // Queue and log store require Redis.
-        if (!services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer))
-            || !services.Any(d => d.ServiceType == typeof(IExecutionJobStore)))
-        {
-            return services;
-        }
-
-        services.TryAddSingleton<RedisJobQueue>(sp =>
-            new RedisJobQueue(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<IExecutionJobStore>(),
-                sp.GetRequiredService<ILogger<RedisJobQueue>>()));
-
-        services.TryAddSingleton<IJobQueue>(sp => sp.GetRequiredService<RedisJobQueue>());
-        services.TryAddSingleton<IQueueClaimReconciler>(sp => sp.GetRequiredService<RedisJobQueue>());
-
-        services.TryAddSingleton<IExecutionLogStore>(sp =>
-            new RedisExecutionLogStore(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<ILogger<RedisExecutionLogStore>>()));
-
+        services.TryAddPostgresJobQueueAndLogStore();
         return services;
     }
 
@@ -75,7 +53,7 @@ internal static class JobOrchestrationServiceCollectionExtensions
         services.AddSingleton<IJobCancellationNotifier>(
             sp => sp.GetRequiredService<ExecutionJobCancellationTokens>());
 
-        // The geoprocessing terminal callback depends on the Redis-gated result-package store, so it
+        // The geoprocessing terminal callback depends on the result-package store, so it
         // remains worker-side where that store is present. (The Share callback is registered by
         // AddJobOrchestration because it must also fire on API-side operator cancel.)
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IJobTerminalCallback, GeoprocessingJobTerminalCallback>());

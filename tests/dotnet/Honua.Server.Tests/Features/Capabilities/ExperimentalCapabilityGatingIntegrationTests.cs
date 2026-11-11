@@ -63,6 +63,8 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
         // temporal.* promoted to GA (Implemented) in #2429 — no longer experimental-gated.
         // sync.offline promoted to GA (Implemented) in #2430 — no longer experimental-gated.
         // alerts.geofence is Preview in 2026.1 and is asserted separately below.
+        // Realtime feature streams are Experimental: delivery across nodes needs an optional Redis add-on.
+        "realtime.feature-streams",
         // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
         "versioning.branch",
         // security.mtls was promoted to GA in #2431, then DEMOTED back to experimental in
@@ -102,8 +104,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
             }
 
             // codeql[cs/linq/missed-select]: asserts each opt-in preview capability stayed disabled
-            foreach (var previewId in new[] { "alerts.geofence", "sync.offline", "realtime.feature-streams", "serve.sensorthings",
-                "serve.ogc-api-edr" })
+            foreach (var previewId in new[] { "alerts.geofence", "sync.offline", "serve.sensorthings", "serve.ogc-api-edr" })
             {
                 var preview = GetCapability(root, previewId);
                 preview.GetProperty("lifecycle").GetString().Should().Be("preview");
@@ -200,8 +201,12 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
                 var capability = document.RootElement.GetProperty("capabilities")
                     .EnumerateArray()
                     .Single(item => item.GetProperty("id").GetString() == id);
-                capability.GetProperty("lifecycle").GetString().Should().Be(
-                    id is "serve.geoservices-imageserver" ? "implemented" : "preview");
+                capability.GetProperty("lifecycle").GetString().Should().Be(id switch
+                {
+                    "serve.geoservices-imageserver" => "implemented",
+                    "realtime.feature-streams" => "experimental",
+                    _ => "preview",
+                });
                 capability.GetProperty("optInRequired").GetBoolean().Should().Be(
                     id is not ("serve.geoservices-imageserver" or "serve.wmts" or "serve.ogc-api-coverages"));
             }
