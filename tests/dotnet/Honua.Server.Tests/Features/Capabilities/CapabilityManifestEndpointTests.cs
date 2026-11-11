@@ -31,6 +31,7 @@ using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Stac.Models;
 using Honua.TestKit.Helpers;
 using Honua.TestKit;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
@@ -1175,6 +1176,33 @@ public sealed partial class CapabilityManifestEndpointTests : IAsyncLifetime
         var proposals = GetCapability(document.RootElement, "operations.proposals");
         proposals.GetProperty("available").GetBoolean().Should().BeFalse();
         proposals.GetProperty("reasonCode").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_WithNoRedis_ReportsProposalsAvailable()
+    {
+        var fixture = CreateManifestFixture().WithProductionJobSubstrate();
+        await fixture.InitializeAsync();
+
+        try
+        {
+            fixture.GetService<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>()
+                .Should().BeOfType<Honua.ControlPlane.PostgresOperationProposalStore>();
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = await ReadDocumentAsync(response);
+            var proposals = GetCapability(document.RootElement, "operations.proposals");
+            proposals.GetProperty("available").GetBoolean().Should().BeTrue(
+                "proposals live in the system database, so approvals work without Redis");
+            GetCapability(document.RootElement, "jobs.runner").GetProperty("available").GetBoolean().Should().BeTrue();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]

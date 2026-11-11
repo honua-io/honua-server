@@ -359,13 +359,7 @@ public sealed class OperationsEndpointsTests
 
         // Bound to a principal that is not the caller, so the first redemption must fail closed.
         var otherPrincipalSecret = Guid.NewGuid().ToString("N");
-        var otherPrincipalReference = secretStore.Store(
-            operationInstanceId,
-            "admin.api-key.create",
-            principalId: $"someone-else-{Guid.NewGuid():N}",
-            tenantId: $"other-tenant-{Guid.NewGuid():N}",
-            "key",
-            otherPrincipalSecret);
+        var otherPrincipalReference = secretStore.Store(new OperationSecretBinding(operationInstanceId, "admin.api-key.create", PrincipalId: $"someone-else-{Guid.NewGuid():N}", TenantId: $"other-tenant-{Guid.NewGuid():N}"), "key", otherPrincipalSecret);
         var handle = new OperationHandle
         {
             OperationInstanceId = operationInstanceId,
@@ -408,13 +402,7 @@ public sealed class OperationsEndpointsTests
             secretStore.LastConsumeIdentity.Should().NotBeNull();
             var caller = secretStore.LastConsumeIdentity!.Value;
             var secret = Guid.NewGuid().ToString("N");
-            var reference = secretStore.Store(
-                operationInstanceId,
-                "admin.api-key.create",
-                caller.PrincipalId,
-                caller.TenantId,
-                "key",
-                secret);
+            var reference = secretStore.Store(new OperationSecretBinding(operationInstanceId, "admin.api-key.create", caller.PrincipalId, caller.TenantId), "key", secret);
             await instanceStore.SetAsync(handle with
             {
                 Result = handle.Result! with { SecretReferences = [reference] },
@@ -449,13 +437,7 @@ public sealed class OperationsEndpointsTests
         var secretStore = new VolatileOperationSecretStore();
         var operationInstanceId = $"opinst-{Guid.NewGuid():N}";
         var secret = Guid.NewGuid().ToString("N");
-        var reference = secretStore.Store(
-            operationInstanceId,
-            "admin.api-key.create",
-            principalId: null,
-            tenantId: null,
-            "key",
-            secret);
+        var reference = secretStore.Store(new OperationSecretBinding(operationInstanceId, "admin.api-key.create", PrincipalId: null, TenantId: null), "key", secret);
         var handle = new OperationHandle
         {
             OperationInstanceId = operationInstanceId,
@@ -586,7 +568,6 @@ public sealed class OperationsEndpointsTests
         }
     }
 
-    /// <summary>Volatile secret channel that records the identity the endpoint redeems against.</summary>
     private sealed class CapturingOperationSecretStore : IOperationSecretStore
     {
         private readonly VolatileOperationSecretStore _inner = new();
@@ -595,25 +576,13 @@ public sealed class OperationsEndpointsTests
 
         public bool IsAvailable => _inner.IsAvailable;
 
-        public OperationSecretReference Store(
-            string operationInstanceId,
-            string operationId,
-            string? principalId,
-            string? tenantId,
-            string name,
-            string value,
-            TimeSpan? ttl = null)
-            => _inner.Store(operationInstanceId, operationId, principalId, tenantId, name, value, ttl);
+        public OperationSecretReference Store(OperationSecretBinding binding, string name, string value, TimeSpan? ttl = null)
+            => _inner.Store(binding, name, value, ttl);
 
-        public string? Consume(
-            OperationSecretReference reference,
-            string operationInstanceId,
-            string operationId,
-            string? principalId,
-            string? tenantId)
+        public string? Consume(OperationSecretReference reference, OperationSecretBinding binding)
         {
-            LastConsumeIdentity = (principalId, tenantId);
-            return _inner.Consume(reference, operationInstanceId, operationId, principalId, tenantId);
+            LastConsumeIdentity = (binding.PrincipalId, binding.TenantId);
+            return _inner.Consume(reference, binding);
         }
     }
 }

@@ -5,7 +5,6 @@ using System.Net;
 using System.Text;
 using FluentAssertions;
 using Honua.ControlPlane;
-using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -21,15 +20,8 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Host composition for a control-plane event Lambda on a Redis-off cell: the real composition root
-/// booted in <c>Production</c> with <c>HONUA_CONTROL_PLANE_LAMBDA_HANDLER</c> set,
-/// <c>ControlPlane:TriggerMode=Event</c>, and no Redis. On honua-release run 38242272260
-/// (aws-serverless, Redis-off) the cp-backstop and cp-tick functions answered every
-/// <c>POST /events</c> with 500 because <see cref="IControlPlaneLambdaEventTargets"/> was registered
-/// only with Redis. Owner decision 3: a Redis-off cell's event functions run the Redis-independent
-/// work and refuse the rest with a typed 503, never an unhandled 500.
-/// </summary>
+// A control-plane event Lambda booted in Production with no Redis: the system database carries the
+// control plane, so every handler runs or refuses with a typed 503, never an unhandled 500.
 [Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.TestInfrastructure)]
@@ -46,7 +38,6 @@ public sealed class ControlPlaneLambdaEventRedisOffHostTests(ITestOutputHelper o
             .UseEnvironment(Environments.Production)
             .ConfigureWebHost(builder =>
             {
-                // Deliberately no ConnectionStrings:redis.
                 builder.UseSetting("Licensing:Mode", "Disabled");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
@@ -68,7 +59,7 @@ public sealed class ControlPlaneLambdaEventRedisOffHostTests(ITestOutputHelper o
 
         targets.Should().NotBeNull("the /events route is mapped whenever the handler selector is set");
         ((ControlPlaneLambdaEventTargets)targets!).DurableControlPlaneComposed
-            .Should().BeFalse("the host under test has no Redis-backed control plane");
+            .Should().BeTrue("the system database carries the control plane");
         _fixture.Services.GetService<IScheduledTickDispatcher>().Should().NotBeNull();
     }
 
@@ -92,14 +83,8 @@ public sealed class ControlPlaneLambdaEventRedisOffHostTests(ITestOutputHelper o
             answer => answer.Status == HttpStatusCode.OK || answer.Status == HttpStatusCode.ServiceUnavailable,
             report);
 
-        foreach (var kind in ControlPlaneLambdaEventTargets.DurableStoreTickKinds)
-        {
-            var answer = answers.Single(candidate => candidate.Kind == kind);
-            answer.Status.Should().Be(HttpStatusCode.ServiceUnavailable, report);
-            answer.Body.Should().Contain("\"missingDependency\":\"redis\"", report);
-        }
+        answers.Should().NotContain(answer => answer.Body.Contains("redis", StringComparison.OrdinalIgnoreCase), report);
 
-        // Temporary-file cleanup is composed on every host and needs no Redis.
         answers.Single(answer => answer.Kind == ScheduledTickKind.TemporaryFileCleanup)
             .Status.Should().Be(HttpStatusCode.OK, report);
     }
@@ -107,7 +92,7 @@ public sealed class ControlPlaneLambdaEventRedisOffHostTests(ITestOutputHelper o
     [IntegrationTheory]
     [InlineData("batch-event", """{"source":"aws.batch","detail-type":"Batch Job State Change","detail":{"jobId":"batch-job-s38"}}""")]
     [InlineData("backstop", "{}")]
-    public async Task RedisOffEventHost_DurableStoreHandlers_AnswerTyped503(string selector, string payload)
+    public async Task RedisOffEventHost_DurableStoreHandlers_Run(string selector, string payload)
     {
         // The host's own selector is scheduled-tick; the other two handlers run through the same
         // dispatch against the host's real services with their selector.
@@ -138,14 +123,11 @@ public sealed class ControlPlaneLambdaEventRedisOffHostTests(ITestOutputHelper o
         context.Response.Body.Position = 0;
         using var reader = new StreamReader(context.Response.Body);
         var body = await reader.ReadToEndAsync();
-        context.Response.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable, body);
-        body.Should().Contain("\"missingDependency\":\"redis\"")
-            .And.Contain($"\"code\":\"{CapabilityUnavailableCodes.ErrorCode}\"");
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK, body);
+        body.Should().Contain("\"status\":\"ran\"");
     }
 
-    /// <summary>
-    /// Makes each in-process request look like the Lambda Web Adapter's: loopback at both ends.
-    /// </summary>
+    // Makes each in-process request look like the Lambda Web Adapter's: loopback at both ends.
     private sealed class LoopbackStartupFilter : IStartupFilter
     {
         public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)

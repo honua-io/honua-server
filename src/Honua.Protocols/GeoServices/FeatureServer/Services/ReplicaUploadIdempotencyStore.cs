@@ -5,8 +5,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Infrastructure.Security;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
-using Microsoft.Extensions.Caching.Distributed;
-using StackExchange.Redis;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
@@ -71,13 +69,11 @@ internal sealed class DistributedReplicaUploadIdempotencyStore : IReplicaUploadI
     private readonly ILogger<DistributedReplicaUploadIdempotencyStore> _logger;
 
     public DistributedReplicaUploadIdempotencyStore(
-        IConnectionMultiplexer? multiplexer,
-        IDistributedCache? cache,
+        IIdempotencyReservationStore reservations,
         ILogger<DistributedReplicaUploadIdempotencyStore> logger,
-        TimeSpan? reservationWindow = null,
-        TimeProvider? timeProvider = null)
+        TimeSpan? reservationWindow = null)
     {
-        _payloads = new IdempotencyPayloadStore(multiplexer, cache, timeProvider);
+        _payloads = new IdempotencyPayloadStore(reservations);
         _reservationWindow = reservationWindow is { } window && window > IdempotencyPayloadStore.ReservationWindow
             ? window
             : IdempotencyPayloadStore.ReservationWindow;
@@ -124,15 +120,14 @@ internal sealed class DistributedReplicaUploadIdempotencyStore : IReplicaUploadI
     {
         ArgumentNullException.ThrowIfNull(record);
         return _payloads.SetIfAbsentOrOwnedAsync(
-            BuildKey(scope),
-            reservationToken,
+            new IdempotencyReservation(BuildKey(scope), reservationToken),
             JsonSerializer.SerializeToUtf8Bytes(record, FeatureServerJsonContext.Default.ReplicaUploadRecord),
             ex => LogUnavailable(scope, ex),
             CancellationToken.None);
     }
 
     public Task ReleaseAsync(ReplicaUploadIdempotencyScope scope, string reservationToken)
-        => _payloads.ReleaseAsync(BuildKey(scope), reservationToken, ex => LogUnavailable(scope, ex));
+        => _payloads.ReleaseAsync(new IdempotencyReservation(BuildKey(scope), reservationToken), ex => LogUnavailable(scope, ex));
 
     private void LogUnavailable(ReplicaUploadIdempotencyScope scope, Exception exception)
         => FeatureServerLog.ReplicaUploadIdempotencyStoreUnavailable(_logger, scope.ServiceId, scope.ReplicaId, exception);
