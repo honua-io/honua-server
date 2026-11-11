@@ -644,8 +644,5 @@ managed outputs are published. Restore and build failures remain gating, with
 the same warnings, analyzers and graph-build settings as the solution build.
 Unknown projects outside the solution still fail planning; test selection is unchanged.
 
-The GeoServices catalog selections run SOAP coverage with fresh HTTP clients. Catalog directory
-and catalog fault cases reuse the host with request-scoped raster overrides, preserving fixture
-schemas and mock histories. SOAP ImageServer cases retain full service replacement. See
-[catalog SOAP test isolation](gate-model.md#catalog-soap-test-isolation) for application reuse
-boundaries. Required checks, aggregate dependencies and runner selections are unchanged.
+Optional PR workflow filters and retained post-merge coverage are documented in
+[optional PR input boundaries](gate-model.md#optional-pr-workflow-input-boundaries).
