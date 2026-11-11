@@ -19,15 +19,13 @@ namespace Honua.Server.Tests.Features.Caching;
 public sealed class CacheRefreshBackoffTests
 {
     [UnitTheory]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    [InlineData(true, true)]
+    [InlineData(false)]
+    [InlineData(true)]
     [Operation(Operations.Cache)]
-    public async Task Worker_IdleAfterDistinctFailures_ReclaimsExpiredKeys(bool distributed, bool timeout)
+    public async Task Worker_IdleAfterDistinctFailures_ReclaimsExpiredKeys(bool timeout)
     {
         var clock = new CleanupTimeProvider();
-        using var service = CreateService(distributed, clock);
+        using var service = CreateService(clock);
         var coordinator = (ICacheRefreshCoordinator)service;
         var backoff = GetBackoff(service);
         for (var index = 0; index < 100; index++)
@@ -57,14 +55,12 @@ public sealed class CacheRefreshBackoffTests
         Assert.Equal(0, clock.ActiveTimers);
     }
 
-    [UnitTheory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [UnitTest]
     [Operation(Operations.Cache)]
-    public async Task Worker_UnrelatedTraffic_ReclaimsOldKeysAndPreservesRecentBackoff(bool distributed)
+    public async Task Worker_UnrelatedTraffic_ReclaimsOldKeysAndPreservesRecentBackoff()
     {
         var clock = new CleanupTimeProvider();
-        using var service = CreateService(distributed, clock);
+        using var service = CreateService(clock);
         var coordinator = (ICacheRefreshCoordinator)service;
         await service.StartAsync(CancellationToken.None);
         try
@@ -94,14 +90,12 @@ public sealed class CacheRefreshBackoffTests
         }
     }
 
-    [UnitTheory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [UnitTest]
     [Operation(Operations.Cache)]
-    public async Task NotifyInvalidation_RecentFailure_AllowsImmediateRetry(bool distributed)
+    public async Task NotifyInvalidation_RecentFailure_AllowsImmediateRetry()
     {
         var clock = new CleanupTimeProvider();
-        using var service = CreateService(distributed, clock);
+        using var service = CreateService(clock);
         var coordinator = (ICacheRefreshCoordinator)service;
         await service.StartAsync(CancellationToken.None);
         try
@@ -120,15 +114,13 @@ public sealed class CacheRefreshBackoffTests
     }
 
     [UnitTheory]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    [InlineData(true, true)]
+    [InlineData(false)]
+    [InlineData(true)]
     [Operation(Operations.Cache)]
-    public async Task Worker_StopOrDispose_DisposesCleanupTimer(bool distributed, bool dispose)
+    public async Task Worker_StopOrDispose_DisposesCleanupTimer(bool dispose)
     {
         var clock = new CleanupTimeProvider();
-        using var service = CreateService(distributed, clock);
+        using var service = CreateService(clock);
         await service.StartAsync(CancellationToken.None);
         await WaitUntilAsync(() => clock.ActiveTimers == 1);
         var backoff = GetBackoff(service);
@@ -153,14 +145,12 @@ public sealed class CacheRefreshBackoffTests
         Assert.Equal(callbacks, clock.CallbackCount);
     }
 
-    [UnitTheory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [UnitTest]
     [Operation(Operations.Cache)]
-    public async Task Worker_CallbackFailsAfterStop_DoesNotRetainBackoff(bool distributed)
+    public async Task Worker_CallbackFailsAfterStop_DoesNotRetainBackoff()
     {
         var clock = new CleanupTimeProvider();
-        using var service = CreateService(distributed, clock);
+        using var service = CreateService(clock);
         var coordinator = (ICacheRefreshCoordinator)service;
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -187,14 +177,12 @@ public sealed class CacheRefreshBackoffTests
         }
     }
 
-    [UnitTheory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [UnitTest]
     [Operation(Operations.Cache)]
-    public async Task Worker_Disabled_DoesNotCreateCleanupTimer(bool distributed)
+    public async Task Worker_Disabled_DoesNotCreateCleanupTimer()
     {
         var clock = new CleanupTimeProvider();
-        using var service = CreateService(distributed, clock, enabled: false);
+        using var service = CreateService(clock, enabled: false);
         await service.StartAsync(CancellationToken.None);
         await service.ExecuteTask!;
         Assert.Equal(0, clock.CreatedTimers);
@@ -256,7 +244,7 @@ public sealed class CacheRefreshBackoffTests
         Assert.Equal(0, backoff.Count);
     }
 
-    private static BackgroundService CreateService(bool distributed, TimeProvider clock, bool enabled = true)
+    private static CacheRefreshCoordinator CreateService(TimeProvider clock, bool enabled = true)
     {
         var options = Options.Create(new CacheOptions
         {
@@ -265,11 +253,7 @@ public sealed class CacheRefreshBackoffTests
             RefreshTimeoutSeconds = 5
         });
         var monitor = Substitute.For<IPerformanceMonitor>();
-#pragma warning disable CS0618 // Both retained coordinator implementations own retry-backoff state.
-        return distributed
-            ? new DistributedCacheRefreshCoordinator(options, monitor, NullLogger<DistributedCacheRefreshCoordinator>.Instance, timeProvider: clock)
-            : new CacheRefreshCoordinator(options, monitor, NullLogger<CacheRefreshCoordinator>.Instance, clock);
-#pragma warning restore CS0618
+        return new CacheRefreshCoordinator(options, monitor, NullLogger<CacheRefreshCoordinator>.Instance, clock);
     }
 
     private static CacheRefreshBackoff GetBackoff(BackgroundService service) =>

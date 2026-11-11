@@ -22,13 +22,12 @@ internal static class ObservabilityServiceCollectionExtensions
 {
     public static IServiceCollection AddObservability(
         this IServiceCollection services,
-        IConfiguration configuration,
-        bool redisCacheEntitled = false)
+        IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        ConfigureOutputCaching(services, configuration, redisCacheEntitled);
+        ConfigureOutputCaching(services, configuration);
         services.AddSingleton<OutputCacheInvalidationService>();
         services.AddSingleton<IQueryResponseCacheInvalidator>(sp =>
             sp.GetRequiredService<OutputCacheInvalidationService>());
@@ -139,7 +138,7 @@ internal static class ObservabilityServiceCollectionExtensions
     }
 
     internal static void ConfigureOutputCaching(IServiceCollection services, IConfiguration configuration, bool redisCacheEntitled = false)
-        => OutputCachingRegistration.ConfigureOutputCaching(services, configuration, redisCacheEntitled);
+        => OutputCachingRegistration.ConfigureOutputCaching(services, configuration);
 
     internal static bool ShouldUseRedisOutputCache(bool redisCacheEntitled, string? redisConnectionString)
         => OutputCachingRegistration.ShouldUseRedisOutputCache(redisCacheEntitled, redisConnectionString);
