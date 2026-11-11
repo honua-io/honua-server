@@ -457,6 +457,11 @@ git. `validate-single-merge-authority.sh` cannot see runtime API calls, so this
 allowlist is the control, and `scripts/ci/claude-review-lane.test.js` asserts it.
 The workflow's own `GITHUB_TOKEN` stays read-only.
 
+Both reviewer invocations admit only `dependabot[bot]`, `github-actions[bot]`,
+and `honua-io-bot` as automation actors. Bot-triggered runs still pass the same
+trusted default-branch and exact-head resolver; the fallback uses the same actor
+allowlist as the primary review.
+
 **It only ever posts comments — never a review verdict.** A
 `CHANGES_REQUESTED` is identity-scoped and is cleared only by a *newer positive
 from the same identity*; an optional reviewer that later stops running (secret
