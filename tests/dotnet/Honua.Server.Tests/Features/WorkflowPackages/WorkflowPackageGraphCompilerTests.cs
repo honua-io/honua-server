@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Server.Features.WorkflowPackages;
 using Honua.TestKit.Attributes;
@@ -124,7 +125,14 @@ public sealed class WorkflowPackageGraphCompilerTests
                 new WorkflowEdge { SourceNodeId = "source", TargetNodeId = "sink" }
             ]);
 
-        var paths = WorkflowPackageGraphCompiler.BuildDataBoundInputFieldPaths(graph);
+        var plan = new AnalysisPlan
+        {
+            PlanId = "bound",
+            IntentId = "bound",
+            Outputs = [ArtifactKind.File],
+            Steps = [new AnalysisPlanStep { StepId = "sink", Kind = AnalysisPlanStepKind.Geoprocess, ProcessId = "test.echo" }]
+        };
+        var paths = WorkflowPackageGraphCompiler.BuildDataBoundInputFieldPaths(graph, plan);
 
         paths.Should().ContainSingle().Which.Should().Be("steps[sink].inputs.wkb");
     }
