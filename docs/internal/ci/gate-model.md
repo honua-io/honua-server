@@ -724,6 +724,27 @@ instead of GIS prose. Runtime source, generator scripts, CITE status and all
 existing build/setup inputs remain covered. Its producer/consumer security
 boundary and deterministic replay are unchanged.
 
+## Server test fixture lifetimes
+
+Class-scoped test applications and database infrastructure that shorten server
+test shards without changing what they run.
+
+### WFS 2.0 endpoint fixture lifetime
+
+Wfs20EndpointsTests shares one seeded Community-licensed WFS 2.0 application for
+the lifetime of the sequential test class, used by every read-only case:
+capabilities, DescribeFeatureType, GetFeature, GetPropertyValue, stored-query
+listing and description, and error-report checks. Cases that send a WFS
+Transaction, create or drop stored queries, or write features or resource
+metadata through the fixture start their own application within the case.
+Managed stored queries are held process-wide rather than per application, so a
+stored query created by one case stays visible to later cases; no case asserts
+an exact stored-query count. Cases with custom metadata providers, licenses, or
+service replacements also keep their own per-case applications.
+All cases and assertions remain in the WFS Endpoints shard on selected PR runs
+and twice-daily full trunk runs. This changes no runner count, required check
+name, required aggregate dependency, workflow, or shard definition.
+
 ## Trailing affected CI selection
 
 Trailing affected CI refreshes its completed-ancestor base when the selection job starts,
