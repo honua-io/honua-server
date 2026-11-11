@@ -6,6 +6,7 @@ using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Coordination;
+using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Infrastructure.Security;
@@ -50,6 +51,7 @@ internal static class PostgresSharedStateRegistration
             provider.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>()));
         services.TryAddSingleton<PostgresUniversalProgressStore>();
         services.TryAddSingleton<PostgresVersionJobStore>();
+        services.TryAddSingleton<PostgresTileCacheGenerationCheckpointStore>();
         services.TryAddSingleton(provider => new PostgresTokenReplayStore(
             provider.GetRequiredService<NpgsqlDataSource>(),
             provider.GetRequiredService<JobStoreDatabase>()));
@@ -67,6 +69,7 @@ internal static class PostgresSharedStateRegistration
         services.AddRetentionSweep<PostgresOperationSecretStore>();
         services.AddRetentionSweep<PostgresUniversalProgressStore>();
         services.AddRetentionSweep<PostgresVersionJobStore>();
+        services.AddRetentionSweep<PostgresTileCacheGenerationCheckpointStore>();
         services.AddRetentionSweep<PostgresSecurityTokenStore>();
         services.AddRetentionSweep<PostgresTokenReplayStore>();
         services.AddRetentionSweep<PostgresIdempotencyReservationStore>();

@@ -4,6 +4,7 @@
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Coordination;
+using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Server.Features.Operations;
@@ -92,6 +93,9 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
     public PostgresUniversalProgressStore CreateProgressStore() => new(_jobs.Database);
 
     public PostgresVersionJobStore CreateVersionJobStore() => new(_jobs.Database);
+
+    public PostgresTileCacheGenerationCheckpointStore CreateTileCheckpointStore()
+        => new(_jobs.Database, NullLogger<PostgresTileCacheGenerationCheckpointStore>.Instance);
 
     // Every stored column of the approval tables as text, so a leak through any field is seen.
     public async Task<StoredTextScan> ScanApprovalTablesForAsync(string text)
