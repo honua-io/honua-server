@@ -706,6 +706,9 @@ and shard definitions are unchanged.
 The `GeoServices GPServer and NAServer` shard includes the
 [routing integration isolation contract](gate-model.md#routing-integration-isolation-contract).
 
+Raw pixel export test database lifecycle is documented in the
+[gate model](gate-model.md#raw-pixel-export-database-lifetime).
+
 ## Automatic merge admission
 
 `auto-merge-ready.yml` reconciles same-repository trunk PRs using the repository-scoped

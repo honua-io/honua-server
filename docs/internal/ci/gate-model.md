@@ -751,6 +751,18 @@ schema, provider substitute and durable worker for each case. PostgreSQL job
 tables are cleared at each case start. Process-wide PostgreSQL infrastructure
 may be reused across cases; application and worker state must not be shared.
 
+### Raw pixel export database lifetime
+
+`ImageServerRawPixelExportTests` retains the reference-counted PostgreSQL infrastructure
+for its class lifetime, initialized only when an integration case needs it. Pure pixel-format
+cases do not start PostgreSQL. Each integration case creates and disposes its
+application and schema, reseeds its raster, and holds the existing schema-mutation
+advisory lock through seeding and every request because `honua.raster_data` is
+process-global. This avoids repeated database bootstrap while preserving the
+existing application fixture lifecycle and raster isolation. Every assertion remains
+in the existing selected PR and twice-daily full trunk runs; required checks, aggregate
+needs, runner counts, workflows, and shard definitions are unchanged.
+
 ## Automatic merge admission
 
 [Automatic merge admission](workflow-inventory.md#automatic-merge-admission) uses

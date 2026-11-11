@@ -23,8 +23,27 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 /// </summary>
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
-public sealed class ImageServerRawPixelExportTests
+public sealed class ImageServerRawPixelExportTests : IClassFixture<ImageServerRawPixelExportTests.RetainedDatabase>
 {
+    private readonly RetainedDatabase _retainedDatabase;
+
+    public ImageServerRawPixelExportTests(RetainedDatabase retainedDatabase)
+    {
+        _retainedDatabase = retainedDatabase;
+    }
+
+    // Retain PostgreSQL only for integration cases; pure pixel-format cases need no database.
+    public sealed class RetainedDatabase : IAsyncLifetime
+    {
+        private readonly PostgresFixture _database = new();
+
+        public Task InitializeAsync() => Task.CompletedTask;
+
+        public Task DisposeAsync() => _database.DisposeAsync();
+
+        public Task EnsureStartedAsync() => _database.InitializeAsync();
+    }
+
     // A 3-band U8 service over the issue's extent, one stored pixel per output pixel at 64 x 64.
     private const int Size = 64;
     private const int BandCount = 3;
@@ -890,8 +909,9 @@ public sealed class ImageServerRawPixelExportTests
     private static string Child(XElement element, string localName)
         => element.Elements().Single(child => child.Name.LocalName == localName).Value;
 
-    private static async Task RunWithFixtureRasterAsync(Func<WebAppFixture, Task> action)
+    private async Task RunWithFixtureRasterAsync(Func<WebAppFixture, Task> action)
     {
+        await _retainedDatabase.EnsureStartedAsync();
         var fixture = new WebAppFixture();
         await fixture.InitializeAsync();
         try
