@@ -89,6 +89,8 @@
   - [Design a map application through prompt and preview](guides/workflows/design-studio.md)
 - Publish data
   - [Import files](guides/publish/import-files.md)
+  - [Keep or reproject an import's coordinate system](guides/publish/choose-import-coordinate-system.md)
+  - [Organize services in folders](guides/publish/organize-services-in-folders.md)
   - [Import from object storage](guides/publish/import-from-object-storage.md)
   - [Import from GeoServices REST services](guides/publish/import-from-geoservices-rest.md)
   - [Serve existing databases](guides/publish/serve-existing-databases.md)
@@ -123,6 +125,7 @@
   - [What an agent can do in each edition](guides/connect/agent-capabilities-and-editions.md)
 - Honua Studio (preview)
   - [Honua Studio](studio/README.md)
+  - [New map to release](studio/new-map-to-release.md)
   - [Run standalone](studio/run-standalone.md)
   - [Embed Studio](studio/embed.md)
   - [Bring your own model](studio/byom.md)
@@ -138,6 +141,7 @@
   - [Referenced GP output persistence](user/gp-output-store-attestation.md)
 - Secure
   - [Authentication](guides/secure/authentication.md)
+  - [Approve agent-proposed changes](guides/secure/approve-agent-changes.md)
   - [Access control](guides/secure/access-control.md)
   - [TLS & mTLS](guides/secure/tls-and-mtls.md)
   - [Production checklist](guides/secure/production-checklist.md)
@@ -148,6 +152,7 @@
   - [Operate metrics and recovery evidence](guides/operate/metrics.md)
   - [Ops evidence posture](guides/operate/evidence-posture.md)
   - [Docker Compose](guides/deploy/docker-compose.md)
+  - [Choose the default or full image](guides/deploy/choose-serving-image.md)
   - [Studio assistant on Bedrock](guides/deploy/studio-assistant-bedrock.md)
   - [Pilot onboarding runbook](guides/deploy/pilot-onboarding-runbook.md)
   - [Kubernetes](guides/deploy/kubernetes.md)

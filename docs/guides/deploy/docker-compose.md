@@ -5,6 +5,10 @@ description: "Take a single-node Compose install to production: a TLS edge, back
 ---
 # Deploy with Docker Compose
 
+Before choosing an image, review [default and full serving images](choose-serving-image.md).
+That guide distinguishes the planned rc.2 store variants from older published
+images and explains when the deployment health probe must change with the image.
+
 This is the **single-node** path: one host you administer, running Compose. It
 covers what the quickstart leaves out — terminating TLS in front of it, taking
 backups you have actually restored from, and upgrading without losing the

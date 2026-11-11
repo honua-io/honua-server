@@ -3005,6 +3005,25 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "get-api-v1-admin-metadata-layers-layerid-display",
+      "route": "/api/v1/admin/metadata/layers/{layerId}/display",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.Display_FieldCasingOrWhitespace_PersistsCanonicalNameOrNull",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.Display_Update_RoundTripsAndChangesProtocolMetadata",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.Get_AnonymousCaller_RequiresAuthentication",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.LayerConfiguration_AmbiguousLayer_ReturnsConflictWithoutMutation",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.LayerConfiguration_UnpublishedLayer_ReturnsNotFoundWithoutMutation",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.Metadata_AuthenticatedReader_IsForbidden"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "get-api-v1-admin-metadata-layers-layerid-drawing-info",
       "route": "/api/v1/admin/metadata/layers/{layerId}/drawing-info",
       "method": "GET",
@@ -3073,6 +3092,24 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutRelationships_ThenGet_RoundTripsRelationship"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "get-api-v1-admin-metadata-layers-layerid-spatial",
+      "route": "/api/v1/admin/metadata/layers/{layerId}/spatial",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.Get_AnonymousCaller_RequiresAuthentication",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.LayerConfiguration_AmbiguousLayer_ReturnsConflictWithoutMutation",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.LayerConfiguration_UnpublishedLayer_ReturnsNotFoundWithoutMutation",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.Metadata_AuthenticatedReader_IsForbidden",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.Spatial_Update_RoundTripsAndPreservesOtherResourceFields"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -4486,6 +4523,24 @@
         "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_WithOutFields_ReturnsSelectedAttributes",
         "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_WithOutSR_ReprojectsCoordinates",
         "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_WithWhereClause_ReturnsFilteredFeatures"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "get-api-v1-admin-services-servicename-layers-layerid-metadata",
+      "route": "/api/v1/admin/services/{serviceName}/layers/{layerId}/metadata",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.Get_AnonymousCaller_RequiresAuthentication",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.LayerConfiguration_AmbiguousLayer_ReturnsConflictWithoutMutation",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.LayerConfiguration_UnpublishedLayer_ReturnsNotFoundWithoutMutation",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.LayerMetadata_Get_ReturnsPreviouslyWrittenGovernance",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.Metadata_AuthenticatedReader_IsForbidden"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -6128,11 +6183,16 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.StreamingEndpoint_WhenPreviewDisabled_Returns404ExperimentalDisabled",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamConformanceEndpointsTests.Capabilities_AdvertiseTheConformanceContractAndTheImmutableRevision",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_BaselineProbeExceedsLookupBudget_ReportsUnknown",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_BaselineReaderUnavailable_ReportsUnknown",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_BaselineSize_ReportsOnlyProvenOverLimit",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_CommunityEdition_DisablesStreamingMetadata",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_ConnectionKindOrLifecycleUnrecognized_OmitsUnsupportedBinding",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_LargeFeatureCap_KeepsProbeBoundedAndUnknown",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_OmitsLayersTheCallerCannotAccess",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_OmitsLayersWhoseServicePolicyDenies",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_ProEdition_AdvertisesTransportsFiltersAndLayers",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_StreamingDisabled_DoesNotProbeBaseline",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_UnsupportedOwner_OmitsLayer",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Capabilities_AdvertisesSnapshotModeSequenceAndDeploymentRevision"
       ],
@@ -7438,6 +7498,7 @@
         "Honua.Server.Tests.Features.API.EndpointCoverageTests.OgcApi_GetLandingPage_ShouldReturnApiInfo",
         "Honua.Server.Tests.Features.Infrastructure.EmptyServerCatalogEndpointTests.GetOgcFeaturesLandingPage_FreshServer_Returns200WithValidLinks",
         "Honua.Server.Tests.Features.Ogc.OpenApiSpecNegotiationTests.GetLandingPage_WithOnlyZeroQualityAcceptHeader_ReturnsNotAcceptable",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.FolderProtocolEndpointTests.PublicEndpoint_FolderPublication_ResolvesAtBothMounts",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetLandingPage_IncludesDatasetMapLink",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetLandingPage_WithContentNegotiation_ReturnsCorrectFormat",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesHostHeaderTests.LandingPage_WithForgedHostHeader_DoesNotReflectAttackerHostInLinks",
@@ -10639,6 +10700,7 @@
         "Honua.Server.Tests.FeatureServerEndpointTests.GetServiceMetadata_WithUnsupportedFormat_Returns400",
         "Honua.Server.Tests.FeatureServerEndpointTests.GetServiceMetadata_WithValidServiceId_ReturnsServiceInfo",
         "Honua.Server.Tests.FeatureServerEndpointTests.GetServiceMetadata_WithWrongHttpMethod_Returns405",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.Display_Update_RoundTripsAndChangesProtocolMetadata",
         "Honua.Server.Tests.Features.Admin.FolderPersistenceTests.FolderMove_AfterRestart_PreservesMembershipAndServicePaths",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogGeocodeServerTests.Catalogs_PublicLocatorAndRestrictedFeatures_ExposeOnlyLocatorToAnonymousCaller",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_AdminAndRoleControlsAgreeWithServiceAndLayerHandoffs",
@@ -10930,6 +10992,7 @@
         "Honua.Server.Tests.FeatureServerEndpointTests.GetLayerMetadata_WithValidLayerId_ReturnsLayerInfo",
         "Honua.Server.Tests.FeatureServerEndpointTests.GetLayerMetadata_WithWrongHttpMethod_Returns405",
         "Honua.Server.Tests.FeatureServerEndpointTests.GetLayerMetadata_WithoutSavedStyle_SynthesizesDefaultRenderer",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.Display_Update_RoundTripsAndChangesProtocolMetadata",
         "Honua.Server.Tests.Features.Admin.LayerFieldConfigurationEndpointsTests.UpdateLayerFields_WithAliasDomainAndHiddenField_PersistsAndHydratesCatalog",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsAttachmentAuthoringTests.AttachmentIntent_RoundTripsWithoutChangingOtherMetadata_AndInvalidatesAliases",
         "Honua.Server.Tests.Features.Infrastructure.LayerEnablementIntegrationTests.DisabledLayer_ReturnsNotFoundAcrossProtocols",
@@ -15260,6 +15323,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.ConfiguredProfile_ReportsAndEnforcesExactHttpSurface",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.FolderProtocolEndpointTests.PublicEndpoint_FolderPublication_ResolvesAtBothMounts",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_DescribeFeatureType_LayerWithGeometryTypeButNoGeometryField_IncludesGeometryElement",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_DescribeFeatureType_MapsEveryDeclaredAttributeTypeToConcreteXsdType",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_DescribeFeatureType_UnsupportedOutputFormat_ReturnsExceptionReport",
@@ -25595,6 +25659,25 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "put-api-v1-admin-metadata-layers-layerid-display",
+      "route": "/api/v1/admin/metadata/layers/{layerId}/display",
+      "method": "PUT",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.Display_FieldCasingOrWhitespace_PersistsCanonicalNameOrNull",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.Display_Update_RoundTripsAndChangesProtocolMetadata",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.LayerConfiguration_AmbiguousLayer_ReturnsConflictWithoutMutation",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.LayerConfiguration_UnpublishedLayer_ReturnsNotFoundWithoutMutation",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.Update_AuthenticatedReader_IsForbidden",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.Update_InvalidValue_RejectsWithoutMutation"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "put-api-v1-admin-metadata-layers-layerid-drawing-info",
       "route": "/api/v1/admin/metadata/layers/{layerId}/drawing-info",
       "method": "PUT",
@@ -25673,6 +25756,24 @@
         "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutRelationshipBatch_OneSidedComposite_IsRejectedThroughBothAuthoringRoutes",
         "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutRelationships_ThenGet_RoundTripsRelationship",
         "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutRelationships_WithUnknownOriginField_ReturnsBadRequest"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "put-api-v1-admin-metadata-layers-layerid-spatial",
+      "route": "/api/v1/admin/metadata/layers/{layerId}/spatial",
+      "method": "PUT",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.LayerConfiguration_AmbiguousLayer_ReturnsConflictWithoutMutation",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.LayerConfiguration_UnpublishedLayer_ReturnsNotFoundWithoutMutation",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.Spatial_Update_RoundTripsAndPreservesOtherResourceFields",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.Update_AuthenticatedReader_IsForbidden",
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.Update_InvalidValue_RejectsWithoutMutation"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -25932,6 +26033,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.LayerMetadata_Get_ReturnsPreviouslyWrittenGovernance",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsAttachmentAuthoringTests.AttachmentIntent_InvalidBoolean_IsRejectedWithoutMutation",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsAttachmentAuthoringTests.AttachmentIntent_OmittedOrNullPreservesLegacyMetadata_ExplicitValueUsesCanonicalDefaults",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsAttachmentAuthoringTests.AttachmentIntent_RoundTripsWithoutChangingOtherMetadata_AndInvalidatesAliases",
