@@ -14,13 +14,6 @@ internal static class TileCacheExecutionSpecBuilder
         TileOperationStartRequest request,
         string? schemaName,
         TileCacheBatchOptions options)
-        => Build(request, schemaName, tenantScope: null, options);
-
-    public static ExecutionJobSpec Build(
-        TileOperationStartRequest request,
-        string? schemaName,
-        string? tenantScope,
-        TileCacheBatchOptions options)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(options);
@@ -91,11 +84,6 @@ internal static class TileCacheExecutionSpecBuilder
             parameters[TileCacheJobParameterKeys.SchemaName] = schemaName;
         }
 
-        if (!string.IsNullOrWhiteSpace(tenantScope))
-        {
-            parameters[TileCacheJobParameterKeys.TenantScope] = tenantScope;
-        }
-
         // Backend-specific coordinates (AWS Batch job-definition/queue ARNs,
         // Kubernetes namespace/image overrides, target artifact bucket) are merged
         // last so an operator can pin them per deployment without changing code.
@@ -137,7 +125,6 @@ internal static class TileCacheExecutionSpecBuilder
 
         request = null!;
         schemaName = null;
-        tenantScope = null;
         error = string.Empty;
 
         if (!parameters.TryGetValue(TileCacheJobParameterKeys.Operation, out var operation)
@@ -234,12 +221,6 @@ internal static class TileCacheExecutionSpecBuilder
             schemaName = schema;
         }
 
-        if (parameters.TryGetValue(TileCacheJobParameterKeys.TenantScope, out var scope)
-            && !string.IsNullOrWhiteSpace(scope))
-        {
-            tenantScope = scope;
-        }
-
         var parsedRequest = new TileOperationStartRequest
         {
             Operation = operation,
@@ -292,10 +273,10 @@ internal static class TileCacheExecutionSpecBuilder
     private static string NormalizeOperation(string? operation)
     {
         var normalized = operation?.Trim().ToLowerInvariant();
-        if (normalized is not ("seed" or "warm" or "invalidate" or "purge" or "archive" or "publish" or "expire" or "delete"))
+        if (normalized is not ("seed" or "warm" or "invalidate" or "purge" or "archive" or "publish"))
         {
             throw new ArgumentException(
-                "Operation must be one of: seed, warm, invalidate, purge, archive, publish, expire, delete.",
+                "Operation must be one of: seed, warm, invalidate, purge, archive, publish.",
                 nameof(operation));
         }
 

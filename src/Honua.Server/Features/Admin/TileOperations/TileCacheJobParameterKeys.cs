@@ -23,8 +23,6 @@ internal static class TileCacheJobParameterKeys
 
     public const string SchemaName = "honua.tilecache.schema_name";
 
-    public const string TenantScope = "honua.tilecache.tenant_scope";
-
     public const string Compression = "honua.tilecache.compression";
 
     public const string Style = "honua.tilecache.style";

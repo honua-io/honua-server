@@ -40,13 +40,6 @@ public enum ScheduledTickKind
     TileCacheExpiry,
 
     /// <summary>
-    /// Live size-quota / LRU tile-cache eviction sweep
-    /// (<c>TileCacheEvictionService.SweepAsync</c>). Cadence minutes. Re-running re-evaluates the
-    /// current key index against the quota; a no-op when nothing exceeds it.
-    /// </summary>
-    TileCacheEviction,
-
-    /// <summary>
     /// Geoprocessing workspace cleanup sweep (<c>WorkspaceCleanupService.RunCleanupAsync</c>).
     /// Cadence minutes-hours. Acts on TTL/expiry state, so re-running finds nothing new.
     /// </summary>
