@@ -59,7 +59,7 @@ public sealed class TileOperationJobTests
             ScopeFactoryFor(graphProvider ?? Substitute.For<IMetadataV2GraphProvider>()),
             Options.Create(new RbacOptions()),
             NullLogger<TileCacheJobService>.Instance,
-            jobQueue);
+            jobQueue ?? Substitute.For<IJobQueue>());
 
     /// <summary>
     /// Builds a real <see cref="IServiceScopeFactory"/> over a <em>scoped</em>
@@ -117,6 +117,28 @@ public sealed class TileOperationJobTests
         submitter.Should().NotBeNull();
         submitter!.PrincipalId.Should().Be(TileCacheJobService.SchedulerIdentityName);
         submitter.Claims.Should().Contain(claim => claim.Value == "admin");
+    }
+
+    [UnitTest]
+    public async Task Start_WithoutAJobQueue_IsRefused()
+    {
+        var jobStore = new InMemoryExecutionJobStore();
+        var progressStore = new AcceptingInMemoryProgressStore();
+        var backend = new LocalBatchComputeBackend(progressStore, [Substitute.For<IJobCancellationNotifier>()]);
+        var service = new TileCacheJobService(
+            jobStore,
+            progressStore,
+            [backend],
+            new StaticOptionsMonitor<TileCacheBatchOptions>(new TileCacheBatchOptions()),
+            ScopeFactoryFor(Substitute.For<IMetadataV2GraphProvider>()),
+            Options.Create(new RbacOptions()),
+            NullLogger<TileCacheJobService>.Instance);
+
+        var submit = () => service.SubmitAsync(SeedRequest(), Submitter);
+
+        await submit.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage(TileCacheJobService.JobStoreUnavailableMessage);
+        (await jobStore.QueryAsync(new ExecutionJobQuery())).Items.Should().BeEmpty();
     }
 
     [UnitTest]

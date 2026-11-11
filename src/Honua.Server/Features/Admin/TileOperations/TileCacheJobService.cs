@@ -68,6 +68,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         ArgumentNullException.ThrowIfNull(submitter);
         request = TileCacheExecutionSpecBuilder.NormalizeRequest(request);
         var jobStore = _jobStore ?? throw new InvalidOperationException(JobStoreUnavailableMessage);
+        var jobQueue = _jobQueue ?? throw new InvalidOperationException(JobStoreUnavailableMessage);
 
         var options = _options.CurrentValue;
         var jobId = $"tile-{Guid.NewGuid():N}";
@@ -125,30 +126,27 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         await _progressStore.SetProgressAsync(jobId, progress, ProgressRetention, cancellationToken)
             .ConfigureAwait(false);
 
-        try
+        if (string.Equals(spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
         {
-            if (string.Equals(spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
-            {
-                if (_jobQueue != null)
-                {
-                    await _jobQueue.EnqueueAsync(jobId, cancellationToken: cancellationToken).ConfigureAwait(false);
-                }
-            }
-            else
+            await EnqueueAsync(jobQueue, jobId, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            try
             {
                 await SubmitToRemoteBackendAsync(jobStore, jobRecord, cancellationToken).ConfigureAwait(false);
             }
-        }
-        catch (Exception) when (!cancellationToken.IsCancellationRequested)
-        {
-            await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
-                jobStore,
-                jobId,
-                progressStore: _progressStore,
-                progressRetention: ProgressRetention,
-                failureMessage: "Tile-cache submission failed.",
-                cancellationToken: CancellationToken.None).ConfigureAwait(false);
-            throw;
+            catch (Exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
+                    jobStore,
+                    jobId,
+                    progressStore: _progressStore,
+                    progressRetention: ProgressRetention,
+                    failureMessage: "Tile-cache submission failed.",
+                    cancellationToken: CancellationToken.None).ConfigureAwait(false);
+                throw;
+            }
         }
 
         TileOperationMetrics.QueueDepth.Add(1, new TagList { { "operation", request.Operation } });
@@ -275,6 +273,20 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         return await SubmitAsync(request, submitter, schemaName, tenantScope, cancellationToken).ConfigureAwait(false);
     }
 
+    // The record is durable, so the operation is accepted: the next reconciliation sweep queues a
+    // local job whose enqueue was lost.
+    private async Task EnqueueAsync(IJobQueue jobQueue, string jobId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await jobQueue.EnqueueAsync(jobId, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Log.EnqueueDeferredToDispatchRepair(_logger, jobId, ex);
+        }
+    }
+
     private async Task SubmitToRemoteBackendAsync(
         IExecutionJobStore jobStore,
         ExecutionJobRecord job,
@@ -323,6 +335,10 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         [LoggerMessage(9221, LogLevel.Information,
             "Tile-cache job {OperationId} cancellation requested on backend {Backend}")]
         public static partial void JobCancellationRequested(ILogger logger, string operationId, string backend);
+
+        [LoggerMessage(9223, LogLevel.Warning,
+            "Tile-cache job {OperationId} was accepted but could not be queued; the next reconciliation sweep queues it")]
+        public static partial void EnqueueDeferredToDispatchRepair(ILogger logger, string operationId, Exception exception);
 
         [LoggerMessage(9222, LogLevel.Warning,
             "Tile-cache job {OperationId} cannot be cancelled: backend {Backend} is not registered")]
