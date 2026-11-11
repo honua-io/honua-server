@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using Honua.Core.Exceptions;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.SharedCaching;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -13,7 +14,6 @@ using Honua.Core.Queries.Filters;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Net.Http.Headers;
 
 namespace Honua.Infrastructure.Rendering;
 
@@ -86,13 +86,13 @@ internal static partial class VectorTileExecution
         {
             activity?.SetStatus(ActivityStatusCode.Ok);
             activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, 0);
-            ApplyCacheHeaders(context, tileOptions, serviceId, layerId, storageLayerId, tileMatrixSetId);
+            UseTilesetLifetime(context, tileOptions, serviceId, layerId, storageLayerId, tileMatrixSetId);
             return Results.NoContent();
         }
 
         activity?.SetStatus(ActivityStatusCode.Ok);
         activity?.SetTag("honua.tile.bytes", tileData.Length);
-        ApplyCacheHeaders(context, tileOptions, serviceId, layerId, storageLayerId, tileMatrixSetId);
+        UseTilesetLifetime(context, tileOptions, serviceId, layerId, storageLayerId, tileMatrixSetId);
         return Results.Bytes(tileData, MvtContentType);
     }
 
@@ -134,7 +134,7 @@ internal static partial class VectorTileExecution
         long encodedBytes,
         long maxTileSize);
 
-    internal static void ApplyCacheHeaders(
+    internal static void UseTilesetLifetime(
         HttpContext context,
         TileOptions tileOptions,
         string? serviceId,
@@ -142,19 +142,10 @@ internal static partial class VectorTileExecution
         int storageLayerId,
         string? tileMatrixSetId = null)
     {
-        var ttlSeconds = TilesetTtlResolver.Resolve(
-            tileOptions,
+        var tileset = new TilesetAddress(
             serviceId ?? string.Empty,
             layerId ?? storageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
             tileMatrixSetId ?? DefaultTileMatrixSetId);
-        var credentialed = context.User.Identity?.IsAuthenticated == true
-            || context.Request.Headers.ContainsKey(HeaderNames.Authorization)
-            || context.Request.Headers.ContainsKey("X-API-Key");
-        context.Response.Headers[HeaderNames.CacheControl] =
-            $"{(credentialed ? "private" : "public")}, max-age={ttlSeconds}";
-        if (credentialed)
-        {
-            context.Response.Headers[HeaderNames.Vary] = "Authorization, X-API-Key";
-        }
+        SharedCacheResponse.UseTileset(context, tileOptions, tileset);
     }
 }

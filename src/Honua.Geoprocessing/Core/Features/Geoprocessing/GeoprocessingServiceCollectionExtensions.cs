@@ -16,7 +16,6 @@ using Honua.Infrastructure.Security.Admission;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 
 namespace Honua.Geoprocessing;
 
@@ -83,41 +82,9 @@ internal static class GeoprocessingServiceCollectionExtensions
         // process-local store the dispatcher records into and an admin view ranks.
         services.TryAddSingleton<IProcessUsageTelemetry, InMemoryProcessUsageTelemetry>();
 
-        // Execution job store (ticket #722).
-        //
-        // REGISTRATION CONTRACT (honua-server#4502): whenever the durable job substrate is
-        // ENTITLED and a Redis multiplexer is composed, IExecutionJobStore IS resolvable.
-        // Durability attestation decides what the server ADVERTISES, never whether the store
-        // exists. #4141 gated this block on the accepted RedisDurabilityAttestation while every
-        // consumer of IExecutionJobStore stayed registered alongside the multiplexer (the
-        // reconcilers, the backstop sweep, the event handler, the queue-depth collector, the
-        // metadata-release reconciler — the `connectedRedis != null` block in Program.cs), so a
-        // stock non-AOF Redis aborted ServiceProvider descriptor validation with 31
-        // unresolved-service failures and exit 139 before the server bound a port.
-        //
-        // A rejected attestation now degrades instead: the same Redis-backed store is composed,
-        // Program.cs logs one warning naming the typed cause and its consequence, the capability
-        // manifest reports that cause rather than advertising 'jobs.runner'
-        // (DurableJobSubstrateOptions.Classify), and only an explicit Jobs:RequireDurableStore=true
-        // may turn the rejection into a typed startup refusal.
-        //
-        // The entitlement marker is required SEPARATELY from the attestation and is not
-        // interchangeable with it. Infrastructure Redis is connected in non-Development/Test
-        // deployments even when unentitled (requiresDurableDistributedEvents forces it), so
-        // keying this on the multiplexer alone would compose — and, for a Redis that does attest,
-        // ADVERTISE — durable jobs for a deployment with no jobs entitlement.
-        if (services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer))
-            && services.Any(d => d.ServiceType == typeof(DurableJobSubstrateEntitlement)))
+        if (services.TryAddPostgresExecutionJobStore(configuration))
         {
-            services.TryAddSingleton<IExecutionJobStore>(sp =>
-                new RedisExecutionJobStore(
-                    sp.GetRequiredService<IConnectionMultiplexer>(),
-                    sp.GetRequiredService<ILogger<RedisExecutionJobStore>>()));
-            services.TryAddSingleton<IGeoprocessingResultPackageStore>(sp =>
-                new RedisGeoprocessingResultPackageStore(
-                    sp.GetRequiredService<IConnectionMultiplexer>(),
-                    sp.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>(),
-                    sp.GetRequiredService<ILogger<RedisGeoprocessingResultPackageStore>>()));
+            services.TryAddSingleton<IGeoprocessingResultPackageStore, PostgresGeoprocessingResultPackageStore>();
         }
 
         // Execution admission controls (ticket #739) — rate, concurrency, cost, backpressure
@@ -168,9 +135,6 @@ internal static class GeoprocessingServiceCollectionExtensions
         // tick dispatcher.
         services.AddGeoprocessingOutputStaging(configuration);
         services.TryAddSingleton<GeoprocessingRasterOutputRegistrar>();
-        // RedisExecutionJobStore is registered above before this check whenever
-        // IConnectionMultiplexer is present. AddJobOrchestration later composes the
-        // queue/log services around that existing store; it does not add the store.
         if (services.Any(d => d.ServiceType == typeof(IGeoprocessingOutputObjectStore))
             && services.Any(d => d.ServiceType == typeof(IExecutionJobStore)))
         {

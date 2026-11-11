@@ -10,6 +10,7 @@ using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Server.Features.Styling;
 
@@ -26,6 +27,7 @@ internal static class StyleEndpoints
             .WithDescription("DEPRECATED layerId-keyed alias. The canonical style identifier is styleId via GET /ogc/styles/{styleId} (ADR-0048); content negotiation there serves MapLibre and derived SLD. This endpoint keeps working as a back-compat alias and returns advisory Deprecation/Sunset response headers; it will be removed only after downstream styleId migration completes. Returns a MapLibre style JSON document for the requested layer. Pass ?theme=dark|colorblind-safe|print for theme transforms.")
             .WithTags("Styles")
             .CacheOutput("LayerStyle")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .WithETag()
             .Produces<JsonElement>(StatusCodes.Status200OK, MediaTypes.Json)
             .Produces(StatusCodes.Status400BadRequest)

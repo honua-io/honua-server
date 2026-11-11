@@ -13,6 +13,7 @@ using Honua.Server.Features.Styling;
 using Honua.Infrastructure.Validation;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Server.Features.Protocols.Tiles;
 
@@ -32,6 +33,7 @@ internal static class TileJsonEndpoints
             .WithDescription("Returns TileJSON 3.0 metadata for MapLibre client configuration")
             .WithTags("Tiles")
             .CacheOutput("TileJson")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .WithETag()
             .Produces<TileJsonResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status404NotFound)

@@ -531,7 +531,7 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
         AddExactFilter(sql, command, "requested_by", query.RequestedBy);
         AddExactFilter(sql, command, "correlation_id", query.CorrelationId);
         AddExactFilter(sql, command, "trace_id", query.TraceId);
-        // Mirror RedisExecutionJobStore.MatchesDefinition: match the definition id against both
+        // Mirror the job store: match the definition id against both
         // the DefinitionId and GeoprocessingPlanId parameters, case-insensitively. The
         // definition_id column stores DefinitionId ?? GeoprocessingPlanId, so the plan id is also
         // matched directly from record_json when a distinct DefinitionId is present.
@@ -551,7 +551,7 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
 
         if (!string.IsNullOrWhiteSpace(query.ResourceRef))
         {
-            // Case-insensitive membership to mirror RedisExecutionJobStore.MatchesAny, which
+            // Case-insensitive membership to mirror the job store, which
             // compares resource refs with OrdinalIgnoreCase rather than the exact ANY(...) match.
             sql.Append(" AND EXISTS (SELECT 1 FROM unnest(resource_refs) AS rref WHERE lower(rref) = lower(@resource_ref))");
             command.Parameters.Add(Parameter("resource_ref", NpgsqlDbType.Text, query.ResourceRef.Trim()));
