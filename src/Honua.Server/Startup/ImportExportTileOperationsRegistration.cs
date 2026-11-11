@@ -19,7 +19,6 @@ using Honua.Migration;
 using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
 using Honua.Infrastructure.Abstractions;
-using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -146,7 +145,6 @@ internal static class ImportExportTileOperationsRegistration
             sp.GetServices<IBatchComputeBackend>(),
             sp.GetRequiredService<IOptionsMonitor<TileCacheBatchOptions>>(),
             sp.GetRequiredService<IServiceScopeFactory>(),
-            sp.GetRequiredService<IOptions<RbacOptions>>(),
             sp.GetRequiredService<ILogger<TileCacheJobService>>(),
             sp.GetService<IJobQueue>()));
         services.TryAddEnumerable(

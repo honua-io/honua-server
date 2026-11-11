@@ -1,10 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Security.Claims;
 using FluentAssertions;
 using Honua.ControlPlane;
-using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -12,7 +10,6 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
-using Honua.Infrastructure.Authentication;
 using Honua.Io.Export;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Tests.Features.Export;
@@ -76,13 +73,12 @@ public sealed class LocalDispatchRepairTests(DatabaseFixtureAdapter database) : 
             [],
             StaticBatchOptions(),
             GraphScopeFactory(),
-            Options.Create(new RbacOptions()),
             NullLogger<TileCacheJobService>.Instance,
             FailingQueue());
 
-        var jobId = await service.SubmitAsync(
+        var jobId = await service.SubmitAsync(new TileOperationSubmission(
             new TileOperationStartRequest { Operation = "seed", LayerId = 1, MinZoom = 0, MaxZoom = 0 },
-            new JobSecurityContext("admin-a", null, [new JobSecurityClaim(ClaimTypes.Role, "admin")], ClaimTypes.Role));
+            "admin-a"));
         await harness.RunReconciliationSweepAsync(CancellationToken.None);
 
         (await harness.JobStore.GetAsync(jobId))!.Status.Should().Be(ExecutionJobStatus.Queued);

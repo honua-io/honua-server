@@ -4,14 +4,13 @@
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Progress;
+using Honua.Infrastructure.Security;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Tiles;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
@@ -207,11 +206,12 @@ internal static class TileOperationsEndpoints
             var schemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
             var tenantScope = TileCacheTenantScope.Resolve(context.RequestServices);
 
-            var submitter = JobSecurityContextCapture.Capture(
-                context.User,
-                context.RequestServices.GetRequiredService<IOptions<RbacOptions>>().Value,
-                context.RequestServices.GetService<ITenantContext>());
-            var jobId = await jobService.SubmitAsync(request, submitter, schemaName, tenantScope, cancellationToken).ConfigureAwait(false);
+            var submission = new TileOperationSubmission(
+                request,
+                JobOwnershipSecurity.ResolveOwner(context.User),
+                schemaName,
+                tenantScope);
+            var jobId = await jobService.SubmitAsync(submission, cancellationToken).ConfigureAwait(false);
             var response = new TileOperationStartResponse
             {
                 JobId = jobId,
@@ -313,7 +313,7 @@ internal static class TileOperationsEndpoints
         [FromServices] ITileCacheJobService jobService,
         CancellationToken cancellationToken)
     {
-        var retryJobId = await jobService.RetryAsync(jobId, cancellationToken).ConfigureAwait(false);
+        var retryJobId = await jobService.RetryAsync(jobId, JobOwnershipSecurity.ResolveOwner(context.User), cancellationToken).ConfigureAwait(false);
         if (retryJobId == null)
         {
             return StandardErrorHelpers.CreateBadRequest(

@@ -7,6 +7,8 @@ using System.IO.Compression;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -19,9 +21,13 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Tiles.PMTiles;
+using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Admin.TileOperations;
+using Honua.Core.Queries.Filters;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Progress;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -701,6 +707,74 @@ public sealed class TileCacheJobExecutorPublishTests
     }
 
     [UnitTest]
+    public async Task ScheduledSeed_ReadsTheLayerAsTheInProcessPathDid()
+    {
+        var policies = new InMemoryRlsPolicyStore();
+        await policies.CreatePolicyAsync(new RlsPolicy
+        {
+            Service = "*",
+            Role = "*",
+            Layer = "parcels",
+            Attribute = "region",
+            ClaimType = "region"
+        });
+        var parcels = new MetadataV2Resource { Metadata = new MetadataV2ObjectMetadata { Id = "parcels", Name = "parcels" } };
+        var filters = Substitute.For<IFilterExpressionService>();
+        filters.Normalize(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Resource>())
+            .Returns(call => call.ArgAt<FilterExpression>(0));
+        filters.Translate(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Resource>())
+            .Returns(call => FilterTranslationResult.Success(call.ArgAt<FilterExpression>(0), new SqlFragment("FALSE", [])));
+        RowLevelSecurityFilterSource? rowFilters = null;
+        var predicatesPerTile = new ConcurrentQueue<int>();
+        using var serviceProvider = BuildScope(new StubCloudStorage(), includeCloudStorage: true, configureTileProvider: provider =>
+            provider.GetMvtTileAsync(
+                    Arg.Any<int>(),
+                    Arg.Any<int>(),
+                    Arg.Any<int>(),
+                    Arg.Any<int>(),
+                    Arg.Any<Honua.Core.Features.FeatureStore.Domain.FeatureQuery?>(),
+                    Arg.Any<TileOptions>(),
+                    Arg.Any<TileLimits>(),
+                    Arg.Any<GridGeometry?>(),
+                    Arg.Any<CancellationToken>())
+                .Returns(async _ =>
+                {
+                    predicatesPerTile.Enqueue((await rowFilters!.ResolveExpressionsAsync(parcels)).Count);
+                    return (byte[]?)MvtTileBuilder.Canonical();
+                }));
+        rowFilters = new RowLevelSecurityFilterSource(
+            new HttpContextAccessor(),
+            policies,
+            serviceProvider.GetRequiredService<IMetadataV2GraphProvider>(),
+            filters,
+            Options.Create(new RbacOptions()),
+            NullLogger<RowLevelSecurityFilterSource>.Instance);
+        var request = new TileOperationStartRequest { Operation = "seed", LayerId = 7, MinZoom = 0, MaxZoom = 0, MaxTiles = 1 };
+
+        // The in-process path read the layer outside any job scope.
+        var inProcess = CreateSut(serviceProvider);
+        await inProcess.ProcessQueuedJobAsync(await inProcess.StartAsync(request));
+        var inProcessReads = predicatesPerTile.ToArray();
+        predicatesPerTile.Clear();
+
+        var jobStore = new Honua.TestKit.Helpers.InMemoryExecutionJobStore();
+        var progressStore = new InMemoryUniversalProgressStore();
+        var service = CreateJobService(jobStore, progressStore, serviceProvider);
+        var jobId = await service.SubmitAsync(new TileOperationSubmission(request, TileCacheJobService.SchedulerIdentityName));
+        var claimed = (await jobStore.GetAsync(jobId))! with { Status = ExecutionJobStatus.Running, AttemptCount = 1 };
+        // The worker runs every claimed job inside a job scope built from the record.
+        using (JobSecurityScope.Begin(claimed.Audit.SubmitterSecurityContext))
+        {
+            await CreateExecutor(progressStore, serviceProvider)
+                .ExecuteAsync(claimed, Substitute.For<IJobExecutionContext>(), CancellationToken.None);
+        }
+
+        inProcessReads.Should().Equal(0);
+        predicatesPerTile.Should().Equal(inProcessReads, "a scheduled seed fills the shared cache with the same rows the in-process path did");
+        (await progressStore.GetProgressAsync<TileOperationProgress>(jobId))!.SuccessfulTiles.Should().Be(1);
+    }
+
+    [UnitTest]
     public async Task NormalizeRequest_RejectsUnknownOperation()
     {
         Func<Task> act = async () =>
@@ -714,6 +788,35 @@ public sealed class TileCacheJobExecutorPublishTests
     }
 
     private static TileCacheJobRunner CreateSut(ServiceProvider serviceProvider) => new(serviceProvider);
+
+    private static TileCacheJobExecutor CreateExecutor(IUniversalProgressStore progressStore, ServiceProvider serviceProvider)
+        => new(
+            progressStore,
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            Options.Create(new TileOptions()),
+            Options.Create(new LimitsOptions()),
+            BatchOptions(),
+            NullLogger<TileCacheJobExecutor>.Instance);
+
+    private static TileCacheJobService CreateJobService(
+        IExecutionJobStore jobStore,
+        IUniversalProgressStore progressStore,
+        ServiceProvider serviceProvider)
+        => new(
+            jobStore,
+            progressStore,
+            [],
+            BatchOptions(),
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<TileCacheJobService>.Instance,
+            Substitute.For<IJobQueue>());
+
+    private static IOptionsMonitor<TileCacheBatchOptions> BatchOptions()
+    {
+        var options = Substitute.For<IOptionsMonitor<TileCacheBatchOptions>>();
+        options.CurrentValue.Returns(new TileCacheBatchOptions());
+        return options;
+    }
 
     /// <summary>
     /// Harness accessor for <see cref="TileCacheSeedCoverageTests"/>, which drives the same job
@@ -754,18 +857,8 @@ public sealed class TileCacheJobExecutorPublishTests
         }
 
         public Task ProcessQueuedJobAsync(string jobId)
-        {
-            var batchOptions = Substitute.For<IOptionsMonitor<TileCacheBatchOptions>>();
-            batchOptions.CurrentValue.Returns(new TileCacheBatchOptions());
-            var executor = new TileCacheJobExecutor(
-                _progressStore,
-                serviceProvider.GetRequiredService<IServiceScopeFactory>(),
-                Options.Create(new TileOptions()),
-                Options.Create(new LimitsOptions()),
-                batchOptions,
-                NullLogger<TileCacheJobExecutor>.Instance);
-            return executor.ExecuteAsync(_jobs[jobId], Substitute.For<IJobExecutionContext>(), CancellationToken.None);
-        }
+            => CreateExecutor(_progressStore, serviceProvider)
+                .ExecuteAsync(_jobs[jobId], Substitute.For<IJobExecutionContext>(), CancellationToken.None);
 
         public Task<TileOperationProgress?> GetAsync(string jobId)
             => _progressStore.GetProgressAsync<TileOperationProgress>(jobId);

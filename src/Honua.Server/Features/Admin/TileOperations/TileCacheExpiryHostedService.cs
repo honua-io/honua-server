@@ -83,7 +83,9 @@ internal sealed partial class TileCacheExpiryHostedService(
                 TileMatrixSetId = target.TileMatrixSetId
             };
 
-            var jobId = await _jobService.SubmitScheduledAsync(request, cancellationToken).ConfigureAwait(false);
+            var jobId = await _jobService.SubmitAsync(
+                    new TileOperationSubmission(request, TileCacheJobService.SchedulerIdentityName),
+                    cancellationToken).ConfigureAwait(false);
             Log.ExpiryTargetQueued(_logger, jobId, target.ServiceId, target.LayerId);
         }
     }

@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Authorization.Domain;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Infrastructure.Progress;
 using Honua.TestKit.Attributes;
@@ -46,6 +45,7 @@ public sealed class TileCacheExpiryHostedServiceTests
         await service.SweepAsync(CancellationToken.None);
 
         jobService.Requests.Should().HaveCount(2);
+        jobService.Submitters.Should().AllBe(TileCacheJobService.SchedulerIdentityName);
         jobService.Requests.Should().OnlyContain(request => request.Operation == "invalidate");
         jobService.Requests[0].ServiceId.Should().Be("parks");
         jobService.Requests[0].LayerId.Should().Be(3);
@@ -142,7 +142,7 @@ public sealed class TileCacheExpiryHostedServiceTests
 
         public int Calls => Volatile.Read(ref _calls);
 
-        public override Task<string> SubmitScheduledAsync(TileOperationStartRequest request, CancellationToken cancellationToken = default)
+        public override Task<string> SubmitAsync(TileOperationSubmission submission, CancellationToken cancellationToken = default)
         {
             var call = Interlocked.Increment(ref _calls);
             if (call == 1)
@@ -150,7 +150,7 @@ public sealed class TileCacheExpiryHostedServiceTests
                 throw new TimeoutException("Simulated job-store timeout.");
             }
 
-            return base.SubmitScheduledAsync(request, cancellationToken);
+            return base.SubmitAsync(submission, cancellationToken);
         }
     }
 
@@ -222,17 +222,12 @@ public sealed class TileCacheExpiryHostedServiceTests
     {
         public List<TileOperationStartRequest> Requests { get; } = [];
 
-        public Task<string> SubmitAsync(
-            TileOperationStartRequest request,
-            JobSecurityContext submitter,
-            string? schemaName = null,
-            string? tenantScope = null,
-            CancellationToken cancellationToken = default)
-            => throw new NotSupportedException("Scheduled tile operations submit as the tile-cache scheduler.");
+        public List<string?> Submitters { get; } = [];
 
-        public virtual Task<string> SubmitScheduledAsync(TileOperationStartRequest request, CancellationToken cancellationToken = default)
+        public virtual Task<string> SubmitAsync(TileOperationSubmission submission, CancellationToken cancellationToken = default)
         {
-            Requests.Add(request);
+            Requests.Add(submission.Request);
+            Submitters.Add(submission.RequestedBy);
             return Task.FromResult($"job-{Requests.Count}");
         }
 
@@ -245,7 +240,7 @@ public sealed class TileCacheExpiryHostedServiceTests
         public Task<bool> CancelAsync(string jobId, CancellationToken cancellationToken = default)
             => Task.FromResult(false);
 
-        public Task<string?> RetryAsync(string jobId, CancellationToken cancellationToken = default)
+        public Task<string?> RetryAsync(string jobId, string? requestedBy, CancellationToken cancellationToken = default)
             => Task.FromResult<string?>(null);
     }
 }

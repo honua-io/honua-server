@@ -2,14 +2,11 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Diagnostics;
-using System.Security.Claims;
-using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
-using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Progress;
 using Honua.ControlPlane;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,7 +27,6 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
     private readonly IOptionsMonitor<TileCacheBatchOptions> _options;
     private readonly ILogger<TileCacheJobService> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly RbacOptions _rbacOptions;
 
     private static readonly TimeSpan ProgressRetention = TimeSpan.FromHours(24);
 
@@ -43,7 +39,6 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         IEnumerable<IBatchComputeBackend> backends,
         IOptionsMonitor<TileCacheBatchOptions> options,
         IServiceScopeFactory scopeFactory,
-        IOptions<RbacOptions> rbacOptions,
         ILogger<TileCacheJobService> logger,
         IJobQueue? jobQueue = null)
     {
@@ -52,21 +47,14 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         _backends = (backends ?? throw new ArgumentNullException(nameof(backends))).ToArray();
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
-        _rbacOptions = (rbacOptions ?? throw new ArgumentNullException(nameof(rbacOptions))).Value;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _jobQueue = jobQueue;
     }
 
-    public async Task<string> SubmitAsync(
-        TileOperationStartRequest request,
-        JobSecurityContext submitter,
-        string? schemaName = null,
-        string? tenantScope = null,
-        CancellationToken cancellationToken = default)
+    public async Task<string> SubmitAsync(TileOperationSubmission submission, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(submitter);
-        request = TileCacheExecutionSpecBuilder.NormalizeRequest(request);
+        ArgumentNullException.ThrowIfNull(submission);
+        var request = TileCacheExecutionSpecBuilder.NormalizeRequest(submission.Request);
         var jobStore = _jobStore ?? throw new InvalidOperationException(JobStoreUnavailableMessage);
         var jobQueue = _jobQueue ?? throw new InvalidOperationException(JobStoreUnavailableMessage);
 
@@ -81,7 +69,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         }
 
         var now = DateTimeOffset.UtcNow;
-        var spec = TileCacheExecutionSpecBuilder.Build(request, schemaName, tenantScope, options);
+        var spec = TileCacheExecutionSpecBuilder.Build(request, submission.SchemaName, submission.TenantScope, options);
         var targetLayerIds = await ResolveTargetLayerIdsAsync(request, cancellationToken).ConfigureAwait(false);
 
         var jobRecord = new ExecutionJobRecord
@@ -91,12 +79,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             CreatedAt = now,
             UpdatedAt = now,
             CurrentPhase = "Queued",
-            // The worker reads the layer as this identity; a job without one is refused at the read seam.
-            Audit = new OperationAuditInfo
-            {
-                RequestedBy = submitter.PrincipalId,
-                SubmitterSecurityContext = submitter
-            },
+            Audit = new OperationAuditInfo { RequestedBy = submission.RequestedBy },
             // Replica safety (issue #2661): serialize concurrent generations of the same
             // (service, gridset, style) window under an exclusive lease so two backend workers
             // never seed/expire/delete the same key window at once.
@@ -152,21 +135,6 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         TileOperationMetrics.QueueDepth.Add(1, new TagList { { "operation", request.Operation } });
         Log.JobSubmitted(_logger, jobId, request.Operation, spec.Backend);
         return jobId;
-    }
-
-    // Warming targets and the expiry sweep have no caller; they run as the tile-cache scheduler, an
-    // administrator, because the cache they fill is served to every reader of the layer.
-    public Task<string> SubmitScheduledAsync(TileOperationStartRequest request, CancellationToken cancellationToken = default)
-    {
-        var scheduler = new ClaimsPrincipal(new ClaimsIdentity(
-            [
-                new Claim(ClaimTypes.Name, SchedulerIdentityName),
-                new Claim(_rbacOptions.EffectiveRoleClaimType, "admin")
-            ],
-            authenticationType: SchedulerIdentityName,
-            nameType: ClaimTypes.Name,
-            roleType: _rbacOptions.EffectiveRoleClaimType));
-        return SubmitAsync(request, JobSecurityContextCapture.Capture(scheduler, _rbacOptions), cancellationToken: cancellationToken);
     }
 
     public Task<TileOperationProgress?> GetAsync(string jobId, CancellationToken cancellationToken = default)
@@ -249,7 +217,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         return true;
     }
 
-    public async Task<string?> RetryAsync(string jobId, CancellationToken cancellationToken = default)
+    public async Task<string?> RetryAsync(string jobId, string? requestedBy, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(jobId) || _jobStore == null)
         {
@@ -263,14 +231,15 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         }
 
         var job = await _jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if (job?.Audit.SubmitterSecurityContext is not { } submitter
+        if (job is null
             || job.Spec.Kind != ExecutionJobKind.TileCache
             || !TileCacheExecutionSpecBuilder.TryParse(job.Spec.Parameters, out var request, out var schemaName, out var tenantScope, out _))
         {
             return null;
         }
 
-        return await SubmitAsync(request, submitter, schemaName, tenantScope, cancellationToken).ConfigureAwait(false);
+        return await SubmitAsync(new TileOperationSubmission(request, requestedBy, schemaName, tenantScope), cancellationToken)
+            .ConfigureAwait(false);
     }
 
     // The record is durable, so the operation is accepted: the next reconciliation sweep queues a
@@ -348,14 +317,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
 
 internal interface ITileCacheJobService
 {
-    Task<string> SubmitAsync(
-        TileOperationStartRequest request,
-        JobSecurityContext submitter,
-        string? schemaName = null,
-        string? tenantScope = null,
-        CancellationToken cancellationToken = default);
-
-    Task<string> SubmitScheduledAsync(TileOperationStartRequest request, CancellationToken cancellationToken = default);
+    Task<string> SubmitAsync(TileOperationSubmission submission, CancellationToken cancellationToken = default);
 
     Task<TileOperationProgress?> GetAsync(string jobId, CancellationToken cancellationToken = default);
 
@@ -363,5 +325,12 @@ internal interface ITileCacheJobService
 
     Task<bool> CancelAsync(string jobId, CancellationToken cancellationToken = default);
 
-    Task<string?> RetryAsync(string jobId, CancellationToken cancellationToken = default);
+    Task<string?> RetryAsync(string jobId, string? requestedBy, CancellationToken cancellationToken = default);
 }
+
+// RequestedBy records who asked for the operation; the warming targets and expiry sweep use SchedulerIdentityName.
+internal sealed record TileOperationSubmission(
+    TileOperationStartRequest Request,
+    string? RequestedBy,
+    string? SchemaName = null,
+    string? TenantScope = null);

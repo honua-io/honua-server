@@ -50,7 +50,9 @@ internal sealed partial class TileCacheWarmingHostedService(
                 MaxTiles = target.MaxTiles
             };
 
-            var jobId = await _jobService.SubmitScheduledAsync(request, cancellationToken).ConfigureAwait(false);
+            var jobId = await _jobService.SubmitAsync(
+                    new TileOperationSubmission(request, TileCacheJobService.SchedulerIdentityName),
+                    cancellationToken).ConfigureAwait(false);
             Log.WarmTargetQueued(_logger, jobId, operation, target.ServiceId, target.LayerId, target.MinZoom, target.MaxZoom);
         }
     }

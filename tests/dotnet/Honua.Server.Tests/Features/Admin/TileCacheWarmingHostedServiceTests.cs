@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Authorization.Domain;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Infrastructure.Progress;
 using Honua.TestKit.Attributes;
@@ -52,6 +51,7 @@ public sealed class TileCacheWarmingHostedServiceTests
         await service.StartAsync(CancellationToken.None);
 
         jobService.Requests.Should().HaveCount(2);
+        jobService.Submitters.Should().AllBe(TileCacheJobService.SchedulerIdentityName);
         jobService.Requests[0].Operation.Should().Be("seed");
         jobService.Requests[0].ServiceId.Should().Be("parks");
         jobService.Requests[0].LayerId.Should().Be(3);
@@ -79,17 +79,12 @@ public sealed class TileCacheWarmingHostedServiceTests
     {
         public List<TileOperationStartRequest> Requests { get; } = [];
 
-        public Task<string> SubmitAsync(
-            TileOperationStartRequest request,
-            JobSecurityContext submitter,
-            string? schemaName = null,
-            string? tenantScope = null,
-            CancellationToken cancellationToken = default)
-            => throw new NotSupportedException("Scheduled tile operations submit as the tile-cache scheduler.");
+        public List<string?> Submitters { get; } = [];
 
-        public Task<string> SubmitScheduledAsync(TileOperationStartRequest request, CancellationToken cancellationToken = default)
+        public Task<string> SubmitAsync(TileOperationSubmission submission, CancellationToken cancellationToken = default)
         {
-            Requests.Add(request);
+            Requests.Add(submission.Request);
+            Submitters.Add(submission.RequestedBy);
             return Task.FromResult($"job-{Requests.Count}");
         }
 
@@ -102,7 +97,7 @@ public sealed class TileCacheWarmingHostedServiceTests
         public Task<bool> CancelAsync(string jobId, CancellationToken cancellationToken = default)
             => Task.FromResult(false);
 
-        public Task<string?> RetryAsync(string jobId, CancellationToken cancellationToken = default)
+        public Task<string?> RetryAsync(string jobId, string? requestedBy, CancellationToken cancellationToken = default)
             => Task.FromResult<string?>(null);
     }
 }

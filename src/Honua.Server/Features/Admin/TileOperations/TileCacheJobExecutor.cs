@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using Honua.ControlPlane;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -103,6 +104,8 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
         var stopwatch = Stopwatch.StartNew();
 
         TileOperationProgress finalProgress;
+        // Generated tiles are served to every reader of the layer, so the layer is read as the system.
+        using var systemRead = JobSecurityScope.BeginSystem();
         using var scope = _serviceScopeFactory.CreateScope();
         var schemaContext = scope.ServiceProvider.GetService<SchemaContext>();
         var previousSchema = schemaContext?.CurrentSchema;
