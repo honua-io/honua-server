@@ -651,6 +651,15 @@ Review revalidation shares `.github/scripts/revalidate-exact-head-review.cjs` ac
 
 Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. Missing envelopes from ordinary producers remain errors.
 
+### Capability manifest endpoint fixture lifetime
+
+`CapabilityManifestEndpointTests` seeds and starts its read-only default application
+once per class. Anonymous and admin clients remain separate for each test, and
+scenarios with different licensing, tenant, registry, authentication or service
+configuration keep their own applications. Every existing case and assertion still
+runs in its selected PR shard and full trunk runs. Runner counts, required check
+names, aggregate dependencies, workflows and shard selection are unchanged.
+
 ### Authorization shard coverage
 
 The authorization matrix selects the live `AdminAuthorizationTests` class.
