@@ -213,8 +213,6 @@ class PullRequestLoadTests(unittest.TestCase):
                     self.assertFalse(evaluate(condition, event), condition)
 
     def test_auto_merge_control_admits_draft_cleanup_only(self):
-        if not (WORKFLOWS / "auto-merge-ready.yml").is_file():
-            self.skipTest("Auto-merge control workflow has not landed yet")
         condition = workflow("auto-merge-ready.yml")["jobs"]["enable"]["if"]
         event = {"repository": "owner/repo", "event": {
             "action": "synchronize", "pull_request": {
