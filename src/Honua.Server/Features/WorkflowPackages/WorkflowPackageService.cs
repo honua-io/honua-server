@@ -669,7 +669,7 @@ internal sealed class WorkflowPackageService(
                     cancellationToken).ConfigureAwait(false);
                 var plan = await CompileAnalysisPlanAsync(graph, hash, cancellationToken).ConfigureAwait(false);
                 var planValidation = geoprocessingJobService.ValidatePlan(plan, principal);
-                var dataBoundInputFieldPaths = WorkflowPackageGraphCompiler.BuildDataBoundInputFieldPaths(graph);
+                var dataBoundInputFieldPaths = WorkflowPackageGraphCompiler.BuildDataBoundInputFieldPaths(graph, plan);
                 warnings.AddRange(planValidation.Warnings);
                 failures.AddRange(planValidation.Violations
                     .Where(violation => !IsDataBoundInputTypeValidation(violation, dataBoundInputFieldPaths))
@@ -683,6 +683,11 @@ internal sealed class WorkflowPackageService(
                         Message = violation.Message,
                         FieldPath = violation.FieldPath
                     }));
+                if (failures.Count == 0 && graph.Nodes.Any(node => node.ForEach is not null))
+                {
+                    await geoprocessingJobService.EnsurePlanExecutionTierAuthorizedAsync(plan, principal, cancellationToken)
+                        .ConfigureAwait(false);
+                }
             }
             catch (WorkflowPackageValidationException ex)
             {
@@ -739,6 +744,8 @@ internal sealed class WorkflowPackageService(
             });
         }
 
+        ValidateExecutionTarget(graph, target.Value, failures);
+
         foreach (var node in graph.Nodes)
         {
             if (!definitions.TryGetValue(node.NodeTypeId, out var definition))
@@ -763,6 +770,24 @@ internal sealed class WorkflowPackageService(
                     FieldPath = $"graph.nodes[{node.NodeId}].nodeTypeId"
                 });
             }
+        }
+    }
+
+    private static void ValidateExecutionTarget(
+        WorkflowGraph graph,
+        WorkflowPublicationTarget target,
+        List<WorkflowPackageValidationFailure> failures)
+    {
+        if (target is WorkflowPublicationTarget.Job or WorkflowPublicationTarget.ProcessEndpoint
+            && (graph.Nodes.Any(node => node.HasExecutionSettings())
+                || graph.Edges.Any(edge => edge.Kind == WorkflowEdgeKind.Failure)))
+        {
+            failures.Add(new WorkflowPackageValidationFailure
+            {
+                Code = "UNSUPPORTED_EXECUTION_TARGET",
+                Message = $"Publication target '{target}' cannot honour node execution settings or Failure edges; use a Schedule target.",
+                FieldPath = "graph"
+            });
         }
     }
 
@@ -831,13 +856,13 @@ internal sealed class WorkflowPackageService(
                 WorkflowPackageValidationResult.Failed(failures, packageHash));
         }
 
-        return new AnalysisPlan
+        return WorkflowPackageGraphCompiler.ExpandForEachPlan(new AnalysisPlan
         {
             PlanId = $"workflow-package:{packageHash[..Math.Min(packageHash.Length, 16)]}",
             IntentId = "workflow-package",
             Steps = steps,
             Outputs = outputs.Count == 0 ? [ArtifactKind.File] : outputs.ToArray()
-        };
+        }, graph);
     }
 
     private async Task<WorkflowDefinition> CompileWorkflowDefinitionAsync(
@@ -890,13 +915,19 @@ internal sealed class WorkflowPackageService(
                     Outputs = outputs.Length == 0 ? [ArtifactKind.File] : outputs
                 },
                 DependsOn = version.Graph.Edges
-                    .Where(edge => edge.Kind != WorkflowEdgeKind.Failure &&
-                                   string.Equals(edge.TargetNodeId, node.NodeId, StringComparison.Ordinal))
+                    .Where(edge => string.Equals(edge.TargetNodeId, node.NodeId, StringComparison.Ordinal))
                     .Select(edge => edge.SourceNodeId)
                     .Distinct(StringComparer.Ordinal)
                     .ToArray(),
                 InputBindings = WorkflowPackageGraphCompiler.BuildStepInputBindings(version.Graph, node.NodeId),
-                FailurePolicy = WorkflowStepFailurePolicy.Fail
+                FailureDependsOn = version.Graph.Edges
+                    .Where(edge => edge.Kind == WorkflowEdgeKind.Failure && edge.TargetNodeId == node.NodeId)
+                    .Select(edge => edge.SourceNodeId).Distinct(StringComparer.Ordinal).ToArray(),
+                RetryPolicy = node.RetryPolicy,
+                FailurePolicy = node.FailurePolicy,
+                TimeoutSeconds = node.TimeoutSeconds,
+                Condition = node.Condition,
+                ForEach = node.ForEach
             });
         }
 
@@ -905,6 +936,8 @@ internal sealed class WorkflowPackageService(
             throw new WorkflowPackageValidationException(
                 WorkflowPackageValidationResult.Failed(failures, version.PackageHash));
         }
+
+        WorkflowPackageGraphCompiler.ValidateScheduledCatalogBindings(steps, version.PackageHash);
 
         var now = clock.GetUtcNow();
         return new WorkflowDefinition
