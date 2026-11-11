@@ -303,7 +303,8 @@ class WorkflowCompletion(unittest.TestCase):
         normal = yaml.safe_load((ROOT / '.github/workflows/normalize-derived-artifacts.yml').read_text())
         self.assertEqual(
             normal['jobs']['produce']['if'],
-            "needs.generate.result == 'success' && needs.generate.outputs.generated_only != 'true'")
+            "needs.generate.result == 'success' && needs.generate.outputs.superseded != 'true' "
+            "&& needs.generate.outputs.generated_only != 'true'")
         consumer = yaml.safe_load((ROOT / '.github/workflows/normalize-derived-artifacts-consumer.yml').read_text())
         steps = consumer['jobs']['validate']['steps']
         resolve = next(s for s in steps if s.get('id') == 'artifact')

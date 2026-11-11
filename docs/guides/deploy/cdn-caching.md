@@ -18,12 +18,11 @@ A response is public only when the route is a read of public content, the reques
 | Tile of a public layer | 60 s | 300 s | May be served stale for 60 s while it is refreshed, and for a day if the service is unreachable |
 | Feature query on a public layer | 0 s (revalidates) | 30 s | May be served stale for 30 s while it is refreshed, and for a day if the service is unreachable |
 | Capabilities and metadata documents, TileJSON, style documents | 30 s | 60 s | |
-| Static map image | 0 s (revalidates) | 60 s | |
 | Scene assets of a public scene | 60 s | 300 s | The scene's own cache setting replaces these values |
 | Anything requested with a credential, a secured layer, admin routes, edits | never | never | `private, no-store` |
 | Errors | never | never | `private, no-store` |
 
-WMS and WMTS key-value requests, OGC API Maps, exports, imported tile packages, and feature queries by an arbitrary extent or spatial predicate are not cached in this release.
+WMS and WMTS key-value requests, OGC API Maps, static map images, exports, imported tile packages, and feature queries by an arbitrary extent or spatial predicate are not cached in this release.
 
 A request counts as credentialed when it carries any of: the `Authorization`, `X-API-Key`, `X-Esri-Authorization`, `X-Honua-Embed-Key`, `X-Honua-Token`, `X-Honua-Tenant` or `X-Honua-Job-Id` header, a forwarded client certificate, an admin session cookie, or a `token` or `key` query parameter.
 

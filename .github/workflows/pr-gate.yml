@@ -23,6 +23,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  issues: read
   actions: read
   contents: read
   packages: read
@@ -214,6 +215,15 @@ jobs:
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Load validated flaky-test quarantine
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HONUA_TEST_QUARANTINE_FILE: ${{ runner.temp }}/honua-flake-quarantine.json
+        run: |
+          python3 scripts/ci/quarantine-issues.py snapshot --output "${HONUA_TEST_QUARANTINE_FILE}"
+          echo "HONUA_TEST_QUARANTINE_FILE=${HONUA_TEST_QUARANTINE_FILE}" >> "${GITHUB_ENV}"
+
 
       # This independent build avoids serializing Fast coverage behind the producer.
       - name: Lean gate (build and fast unit/architecture verification)
@@ -793,6 +803,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Load validated flaky-test quarantine
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HONUA_TEST_QUARANTINE_FILE: ${{ runner.temp }}/honua-flake-quarantine.json
+        run: |
+          python3 scripts/ci/quarantine-issues.py snapshot --output "${HONUA_TEST_QUARANTINE_FILE}"
+          echo "HONUA_TEST_QUARANTINE_FILE=${HONUA_TEST_QUARANTINE_FILE}" >> "${GITHUB_ENV}"
+
       - name: Start freeing disk space
         run: scripts/ci/server-test-shard-free-disk.sh
 
@@ -808,9 +826,10 @@ jobs:
       - name: Plan affected shard binary consumer
         env:
           SHARD_CSPROJ: ${{ matrix.csproj }}
+          SHARD_CSPROJS: ${{ toJSON(matrix.csprojs) }}
         run: |
           mkdir -p artifacts/pr-gate
-          python3 scripts/ci/managed-test-build.py projects --lane shard --project "${SHARD_CSPROJ}" --output "artifacts/pr-gate/managed-projects.json"
+          python3 scripts/ci/managed-test-build.py projects --lane shard --project "${SHARD_CSPROJ}" --projects-json "${SHARD_CSPROJS}" --output "artifacts/pr-gate/managed-projects.json"
 
       - name: Restore verified managed test outputs
         id: managed-consumer
@@ -841,6 +860,7 @@ jobs:
           HONUA_SERVER_TEST_RESULTS_DIR: ./artifacts/test-results
           HONUA_SERVER_TEST_CONFIGURATION: Release
           HONUA_SERVER_TEST_CSPROJ: ${{ matrix.csproj }}
+          HONUA_SERVER_TEST_CSPROJS: ${{ toJSON(matrix.csprojs) }}
         run: scripts/ci/run-server-test-shard.sh
 
       # The timing artifact run-server-test-shard.sh writes is what the

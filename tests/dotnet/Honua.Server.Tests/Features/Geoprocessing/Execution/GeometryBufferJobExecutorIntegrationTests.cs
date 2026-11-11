@@ -6,23 +6,16 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
-using Honua.ControlPlane;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
+using Honua.TestKit.Extensions;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
@@ -33,9 +26,9 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 /// tests below pin the new behaviour so a regression cannot re-introduce that
 /// failure mode.
 /// </summary>
-[Collection("Redis")]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.OgcApiProcesses)]
-public sealed class GeometryBufferJobExecutorIntegrationTests(RedisFixture redis)
+public sealed class GeometryBufferJobExecutorIntegrationTests(DatabaseFixtureAdapter database)
 {
     // POINT(0 0) in little-endian WKB: 01 01000000 + 16 zero bytes.
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
@@ -48,9 +41,9 @@ public sealed class GeometryBufferJobExecutorIntegrationTests(RedisFixture redis
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task BufferProcess_CompletesAndReturnsBufferedGeometry()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
 
-        var fixture = BuildFixture();
+        var fixture = new WebAppFixture().WithProductionJobSubstrate();
         await fixture.InitializeAsync();
         try
         {
@@ -96,68 +89,8 @@ public sealed class GeometryBufferJobExecutorIntegrationTests(RedisFixture redis
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await database.DataSource.ClearJobSubstrateAsync();
         }
-    }
-
-
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
-
-    private WebAppFixture BuildFixture()
-        => new WebAppFixture()
-            .ConfigureWebHost(builder =>
-            {
-                builder.ConfigureAppConfiguration((_, configBuilder) =>
-                {
-                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
-                    {
-                        ["ConnectionStrings:redis"] = redis.ConnectionString
-                    });
-                });
-            })
-            .ConfigureServices(WireDurableRuntime);
-
-    private void WireDurableRuntime(IServiceCollection services)
-    {
-        services.RemoveAll<IConnectionMultiplexer>();
-        services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redis.ConnectionString));
-
-        services.RemoveAll<IExecutionJobStore>();
-        services.AddSingleton<IExecutionJobStore>(sp =>
-            new RedisExecutionJobStore(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<ILogger<RedisExecutionJobStore>>()));
-
-        services.RemoveAll<IGeoprocessingResultPackageStore>();
-        services.AddSingleton<IGeoprocessingResultPackageStore>(sp =>
-            new RedisGeoprocessingResultPackageStore(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>(),
-                sp.GetRequiredService<ILogger<RedisGeoprocessingResultPackageStore>>()));
-
-        services.RemoveAll<RedisJobQueue>();
-        services.RemoveAll<IJobQueue>();
-        services.RemoveAll<IQueueClaimReconciler>();
-        services.AddSingleton<RedisJobQueue>(sp =>
-            new RedisJobQueue(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<IExecutionJobStore>(),
-                sp.GetRequiredService<ILogger<RedisJobQueue>>()));
-        services.AddSingleton<IJobQueue>(sp => sp.GetRequiredService<RedisJobQueue>());
-        services.AddSingleton<IQueueClaimReconciler>(sp => sp.GetRequiredService<RedisJobQueue>());
-
-        services.RemoveAll<IExecutionLogStore>();
-        services.AddSingleton<IExecutionLogStore>(sp =>
-            new RedisExecutionLogStore(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<ILogger<RedisExecutionLogStore>>()));
-
-        // Activate the worker host. The production GeometryBufferJobExecutor
-        // registered by AddGeoprocessing is intentionally not replaced here —
-        // it is the system-under-test.
-        services.AddJobWorker();
     }
 
     private static async Task<string> SubmitBufferJobAsync(HttpClient client, double distance)
@@ -207,23 +140,5 @@ public sealed class GeometryBufferJobExecutorIntegrationTests(RedisFixture redis
     {
         var reader = new GeoJsonReader();
         return reader.Read<Geometry>(geometryElement.GetRawText());
-    }
-
-    private static async Task DeleteControlPlaneKeysAsync(string redisConnectionString)
-    {
-        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redisConnectionString);
-        var database = multiplexer.GetDatabase();
-        var endpoints = multiplexer.GetEndPoints();
-        if (endpoints.Length == 0)
-        {
-            return;
-        }
-
-        var server = multiplexer.GetServer(endpoints[0]);
-        var keys = server.Keys(pattern: "controlplane:*").ToArray();
-        if (keys.Length > 0)
-        {
-            await database.KeyDeleteAsync(keys);
-        }
     }
 }

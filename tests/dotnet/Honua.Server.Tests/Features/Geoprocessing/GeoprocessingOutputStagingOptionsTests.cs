@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.FileStorage;
@@ -12,8 +11,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
-using NSubstitute;
-using StackExchange.Redis;
+using Npgsql;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
@@ -82,29 +80,13 @@ public sealed class GeoprocessingOutputStagingOptionsTests
     }
 
     [UnitTest]
-    public void AddGeoprocessing_StagingWithRedis_RegistersJobStoreAndSweeper()
+    public void AddGeoprocessing_StagingWithSystemDatabase_RegistersJobStoreAndSweeper()
     {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                [$"{GeoprocessingOutputStagingOptions.SectionName}:Enabled"] = "true",
-                [$"{GeoprocessingOutputStagingOptions.SectionName}:LocalRootPath"] = "staged-outputs",
-            })
-            .Build();
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton(Substitute.For<IConnectionMultiplexer>());
-        // The durable job substrate is composed only when it is ENTITLED; the attestation below
-        // decides what is advertised, not what exists (honua-server#4502).
-        services.AddSingleton(new DurableJobSubstrateEntitlement());
-        services.AddSingleton(new RedisDurabilityAttestation(
-            "redis.example.internal:6379",
-            "aof (appendonly=yes, aof_enabled=1)",
-            "appendfsync=always",
-            "noeviction",
-            DateTimeOffset.UtcNow));
+        services.AddSingleton(_ => NpgsqlDataSource.Create("Host=localhost;Database=unused"));
 
-        services.AddGeoprocessing(configuration);
+        services.AddGeoprocessing(EnabledStaging());
 
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IExecutionJobStore));
         services.Should().Contain(descriptor =>
@@ -114,4 +96,28 @@ public sealed class GeoprocessingOutputStagingOptionsTests
             && descriptor.ImplementationType == typeof(GeoprocessingOutputArtifactSweeperScheduledTickHandler));
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IHostedService));
     }
+
+    [UnitTest]
+    public void AddGeoprocessing_StagingWithoutSystemDatabase_RegistersNeitherJobStoreNorSweeper()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        services.AddGeoprocessing(EnabledStaging());
+
+        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IExecutionJobStore));
+        services.Should().NotContain(descriptor =>
+            descriptor.ServiceType == typeof(GeoprocessingOutputArtifactSweeper));
+        services.Should().NotContain(descriptor =>
+            descriptor.ImplementationType == typeof(GeoprocessingOutputArtifactSweeperScheduledTickHandler));
+    }
+
+    private static IConfiguration EnabledStaging()
+        => new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [$"{GeoprocessingOutputStagingOptions.SectionName}:Enabled"] = "true",
+                [$"{GeoprocessingOutputStagingOptions.SectionName}:LocalRootPath"] = "staged-outputs",
+            })
+            .Build();
 }
