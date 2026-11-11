@@ -101,6 +101,7 @@ jobs:
             -f ref=trunk \
             -F return_run_details=true \
             -f "inputs[selective_base]=${COMPLETED_BASE}" \
+            -f "inputs[investigation_base]=${LAST_GREEN}" \
             -f "inputs[merge_train_nonce]=${run_title}" \
             --jq '.html_url // empty' </dev/null)"
 

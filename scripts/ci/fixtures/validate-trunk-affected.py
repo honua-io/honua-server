@@ -55,6 +55,7 @@ class TrunkAffectedWorkflowTests(unittest.TestCase):
         self.assertIn("actions/workflows/ci.yml/dispatches", scripts)
         self.assertIn("status=completed", scripts)
         self.assertIn("inputs[selective_base]=${COMPLETED_BASE}", scripts)
+        self.assertIn("inputs[investigation_base]=${LAST_GREEN}", scripts)
         self.assertIn("scripts/ci/trunk-suspect-range.sh", scripts)
 
     def test_only_selective_runs_carry_the_title_certification_ignores(self):
@@ -152,6 +153,28 @@ class CompletedBaseExecutionTests(unittest.TestCase):
     def test_superseded_push_does_not_dispatch(self):
         self.env["PUSHED_HEAD"] = self.heads[0]
         self.assertEqual(self.resolve([], []), {"superseded": "true"})
+
+    def run_investigation_summary(self, base):
+        helper = self.clone / "scripts/ci/trunk-suspect-range.sh"
+        helper.parent.mkdir(parents=True)
+        helper.write_bytes(SUSPECT_RANGE.read_bytes())
+        helper.chmod(0o755)
+        self.env.update(INVESTIGATION_BASE=base, GITHUB_SHA=self.heads[-1])
+        steps = workflow("ci.yml")["jobs"]["changes"]["steps"]
+        step = next(step for step in steps if step.get("name") == "Record suspect merge range")
+        self.assertEqual(step["env"]["INVESTIGATION_BASE"], "${{ inputs.investigation_base }}")
+        subprocess.run(["bash", "-e", "-c", step["run"]], cwd=self.clone, env=self.env,
+                       check=True, capture_output=True, text=True)
+        return (self.clone / "summary").read_text()
+
+    def test_ci_doctor_summary_keeps_failed_merge_in_green_range(self):
+        summary = self.run_investigation_summary(self.heads[0])
+        self.assertIn(f"`{self.heads[0]}`..`{self.heads[2]}` (2 merges", summary)
+        self.assertIn("change 1", summary)
+        self.assertIn("change 2", summary)
+
+    def test_missing_green_does_not_mislabel_execution_base_as_green(self):
+        self.assertIn("ancestor unknown", self.run_investigation_summary(""))
 
     def test_both_daily_full_schedules_remain_enabled(self):
         self.assertEqual(workflow("ci.yml")["on"]["schedule"],
