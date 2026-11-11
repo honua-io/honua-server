@@ -721,3 +721,9 @@ WFS shard coverage follows the
 
 FeatureServer query coverage follows the
 [query state isolation contract](gate-model.md#featureserver-query-state-isolation).
+
+### WPS endpoint fixture lifetime
+
+The WFS 1–9 shard family includes `Wps20EndpointsTests`. See
+[WPS endpoint fixture lifetime](gate-model.md#wps-endpoint-fixture-lifetime)
+for its class-scoped applications and isolated custom-host cases.
