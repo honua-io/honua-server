@@ -532,7 +532,7 @@ SHARD_TEST_PROJECTS=""
 while IFS= read -r shard_name; do
     [[ -z "${shard_name}" ]] && continue
     shard_csproj="$(jq -r --arg n "${shard_name}" \
-        '.shards[] | select(.shard_name==$n) | .csproj // ""' .github/ci-shards.json)"
+        '.shards[] | select(.shard_name==$n) | (.csprojs // [(.csproj // "")])[]' .github/ci-shards.json)"
     SHARD_TEST_PROJECTS+="${shard_csproj:-${MONOLITH_TEST_PROJECT}}"${HONUA_NL}
 done <<< "${SELECTED_SHARDS}"
 
@@ -622,6 +622,12 @@ if [[ "${FULL}" != "1" && "${CAPABILITY_RUN_ALL}" == "false" && "${CAPABILITY_UN
             [[ "${cs}" == "${shard_name}" ]] && corroborated=1 && break
         done
         [[ -z "${corroborated}" ]] && continue
+
+        # A shared filter must execute tests in every grouped assembly. A
+        # capability's proving tests may cover only one member, so retain the
+        # full group until capability selection becomes assembly-aware.
+        grouped="$(jq -r --arg n "${shard_name}" '.shards[] | select(.shard_name==$n) | has("csprojs")' .github/ci-shards.json)"
+        [[ "${grouped}" == "true" ]] && continue
 
         # Group by testsByShard (not the flat provingTests[] list) so a shard
         # only narrows on the proving tests it actually owns, instead of every
@@ -788,6 +794,8 @@ else
         kept+="${ARCHITECTURE_TEST_PROJECT}"${HONUA_NL}
     fi
     kept+="${SOURCE_ARCHITECTURE_TEST_PROJECT}"${HONUA_NL}
+    # Group selection can add assemblies outside the changed-project closure.
+    kept+="${SHARD_TEST_PROJECTS}"${HONUA_NL}
     kept+="${MONOLITH_TEST_PROJECT}"${HONUA_NL}
     kept+="$("${PYTHON_BIN}" scripts/ci/test-projects.py gate-fast-projects)"${HONUA_NL}
     projects_json="$(printf '%s' "${kept}" \
@@ -825,7 +833,7 @@ resolved_shard_json() {
         --arg cpu "${HONUA_PRE_PR_MAX_CPU_COUNT:-}" '
         .shards[] | select(.shard_name==$n) |
         .filter=(if $narrowed!="" then $narrowed else .filter end) |
-        .csproj=(if (.csproj // "")=="" then $fallback else .csproj end) |
+        .csproj=(if has("csprojs") then "" elif (.csproj // "")=="" then $fallback else .csproj end) |
         .test_timeout_minutes=(if $timeout!="" then $timeout else (.test_timeout_minutes // .timeout_minutes) end) |
         .max_cpu_count=(if $cpu!="" then $cpu else (.max_cpu_count // "") end)
         ' .github/ci-shards.json
@@ -1199,6 +1207,7 @@ else
             csproj="$(jq -r '.csproj // ""' <<< "${shard_json}")"
             if HONUA_SERVER_TEST_SHARD_NAME="${shard_name}" \
                HONUA_SERVER_TEST_CSPROJ="${csproj}" \
+               HONUA_SERVER_TEST_CSPROJS="$(jq -c ' .csprojs // null' <<< "${shard_json}")" \
                HONUA_SERVER_TEST_FILTER="${filter}" \
                HONUA_SERVER_TEST_LOG_NAME="${log_name}" \
                HONUA_SERVER_TEST_TIMEOUT_MINUTES="${HONUA_PRE_PR_SERVER_TEST_TIMEOUT_MINUTES:-${test_timeout_minutes}}" \

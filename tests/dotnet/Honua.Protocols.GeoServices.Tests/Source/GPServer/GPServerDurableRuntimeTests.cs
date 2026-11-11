@@ -14,29 +14,24 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Security;
-using Honua.ControlPlane;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using NSubstitute;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
 /// <summary>
 /// Verifies the GPServer adapter against the real durable execution substrate.
 /// </summary>
-[Collection("Redis")]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.GPServer)]
-public sealed partial class GPServerDurableRuntimeTests(RedisFixture redis)
+public sealed partial class GPServerDurableRuntimeTests
 {
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
     private const string ServiceId = WebAppFixture.TestServiceId;
@@ -46,13 +41,11 @@ public sealed partial class GPServerDurableRuntimeTests(RedisFixture redis)
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}")]
-    public async Task SubmitJob_WithRedisBackedRuntime_CompletesAndReturnsDurableResult()
+    public async Task SubmitJob_WithPostgresJobSubstrateAndNoRedis_CompletesAndReturnsDurableResult()
     {
-        await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
+        var fixture = CreateDurableFixture(new SuccessfulGpServerJobExecutor());
 
-        var fixture = CreateDurableFixture(productionExecutor: false);
-
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();
@@ -105,7 +98,6 @@ public sealed partial class GPServerDurableRuntimeTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
         }
     }
 
@@ -115,15 +107,14 @@ public sealed partial class GPServerDurableRuntimeTests(RedisFixture redis)
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
     public async Task SubmitJob_WorkspaceProviderUnavailable_FailsDurablyAfterOneAttempt()
     {
-        await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
-        var fixture = CreateDurableFixture(productionExecutor: true)
+        var fixture = CreateDurableFixture()
             .ConfigureServices(services =>
             {
                 // Exercise the unavailable-provider profile even after a provider ships.
                 services.RemoveAll<IWorkspaceLifecycleService>();
                 services.Configure<WorkspaceOptions>(options => options.EnableAutomaticCleanup = false);
             });
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();
@@ -161,7 +152,6 @@ public sealed partial class GPServerDurableRuntimeTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
         }
     }
 
@@ -174,13 +164,9 @@ public sealed partial class GPServerDurableRuntimeTests(RedisFixture redis)
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}")]
     public async Task Workspace_ProductionStorePreservesOutputAcrossRestartAndHonorsOverwrite(string operation)
     {
-        await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
-        var fixture = CreateDurableFixture(productionExecutor: true)
-            // The default Test host delays provider registration until after the
-            // feature graph. Use its existing opt-in for the production composition order.
-            .ConfigureWebHost(builder => builder.UseSetting("HONUA_REGISTER_TEST_INFRASTRUCTURE", "true"))
+        var fixture = CreateDurableFixture()
             .ConfigureServices(services => services.Configure<WorkspaceOptions>(options => options.EnableAutomaticCleanup = false));
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         string? workspaceId = null;
         var migrationApplied = false;
         var label = "workspace-proof-" + Guid.NewGuid().ToString("N");
@@ -213,6 +199,7 @@ public sealed partial class GPServerDurableRuntimeTests(RedisFixture redis)
             AssertArea(original.Uri!, 12);
 
             await fixture.RestartHostAsync();
+            NoRedisJobHost.AssertJobsRunWithoutRedis(fixture);
             var reopened = await fixture.GetService<IWorkspaceStore>().GetAsync(workspaceId);
             reopened.Should().NotBeNull();
             reopened!.Label.Should().Be(label);
@@ -307,7 +294,6 @@ public sealed partial class GPServerDurableRuntimeTests(RedisFixture redis)
             finally
             {
                 await fixture.DisposeAsync();
-                await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
             }
         }
 
@@ -320,29 +306,6 @@ public sealed partial class GPServerDurableRuntimeTests(RedisFixture redis)
             decoded.RootElement.GetProperty("processId").GetString().Should().Be("geometry.area");
             decoded.RootElement.GetProperty("inputSrid").GetInt32().Should().Be(3857);
         }
-    }
-
-    private static async Task DeleteControlPlaneKeysAsync(string redisConnectionString)
-    {
-        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redisConnectionString);
-        var database = multiplexer.GetDatabase();
-        var server = GetServer(multiplexer);
-        var keys = server.Keys(pattern: "controlplane:*").ToArray();
-        if (keys.Length > 0)
-        {
-            await database.KeyDeleteAsync(keys);
-        }
-    }
-
-    private static IServer GetServer(ConnectionMultiplexer multiplexer)
-    {
-        var endpoints = multiplexer.GetEndPoints();
-        if (endpoints.Length == 0)
-        {
-            throw new InvalidOperationException("Redis connection string did not provide any endpoints.");
-        }
-
-        return multiplexer.GetServer(endpoints[0]);
     }
 
     private sealed class SuccessfulGpServerJobExecutor : IJobExecutor
@@ -359,6 +322,7 @@ public sealed partial class GPServerDurableRuntimeTests(RedisFixture redis)
             return JobExecutionResult.Succeeded();
         }
     }
+
     [IntegrationTheory]
     [InlineData("Execute")]
     [InlineData("SubmitJob")]
@@ -368,9 +332,8 @@ public sealed partial class GPServerDurableRuntimeTests(RedisFixture redis)
     [InterfaceOperation(TestProtocols.GPServer, "GetJobResult")]
     public async Task SoapArea_WithProductionExecutor_ReturnsIndependentRectangleAreaAndMetadata(string operation)
     {
-        await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
-        var fixture = CreateDurableFixture(productionExecutor: true);
-        await fixture.InitializeAsync();
+        var fixture = CreateDurableFixture();
+        await NoRedisJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();
@@ -438,9 +401,8 @@ public sealed partial class GPServerDurableRuntimeTests(RedisFixture redis)
     [InterfaceOperation(TestProtocols.GPServer, "GetJobResult")]
     public async Task SoapBuffer_WithProductionExecutor_ReturnsRecordSetBoundedByTheIndependentBufferGeometry()
     {
-        await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
-        var fixture = CreateDurableFixture(productionExecutor: true);
-        await fixture.InitializeAsync();
+        var fixture = CreateDurableFixture();
+        await NoRedisJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();
@@ -482,9 +444,8 @@ public sealed partial class GPServerDurableRuntimeTests(RedisFixture redis)
     [InterfaceOperation(TestProtocols.GPServer, "GetJobResult")]
     public async Task SoapUnion_WithMultiValueInput_ReturnsTheIndependentlyComputedRectangle()
     {
-        await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
-        var fixture = CreateDurableFixture(productionExecutor: true);
-        await fixture.InitializeAsync();
+        var fixture = CreateDurableFixture();
+        await NoRedisJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();
@@ -523,16 +484,15 @@ public sealed partial class GPServerDurableRuntimeTests(RedisFixture redis)
     [Endpoint("POST /services/{serviceId}/GPServer")]
     public async Task SoapJobOperation_OtherCaller_IsDeniedByCanonicalJobOwnership(string operation)
     {
-        await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
         // Only the operator grant is substituted, so both callers may execute and read
-        // jobs. Per-job ownership stays with the real job service and Redis job store.
+        // jobs. Per-job ownership stays with the real job service and job store.
         var authorizer = Substitute.For<IOperatorAuthorizationEvaluator>();
         authorizer.EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
             .Returns(AccessDecision.Allowed());
         var approval = Substitute.For<IOperatorApprovalEvaluator>();
         approval.Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
             .Returns(ApprovalRequirement.NotRequired());
-        var fixture = CreateDurableFixture(productionExecutor: true)
+        var fixture = CreateDurableFixture()
             .ConfigureWebHost(builder =>
             {
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
@@ -552,7 +512,7 @@ public sealed partial class GPServerDurableRuntimeTests(RedisFixture redis)
                     });
                 });
             });
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         try
         {
             using var owner = fixture.CreateClient(client =>
@@ -623,16 +583,15 @@ public sealed partial class GPServerDurableRuntimeTests(RedisFixture redis)
     [Endpoint("POST /services/{serviceId}/GPServer")]
     public async Task SoapJobOperation_UnauthenticatedCaller_IsChallengedWithoutJobState(string caller)
     {
-        await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
         // The real API-key handler decides; the dev bypass would accept any key. Only the
         // shared factory configures the admin password, so this host needs it explicitly.
-        var fixture = CreateDurableFixture(productionExecutor: true)
+        var fixture = CreateDurableFixture()
             .ConfigureWebHost(builder =>
             {
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
             });
-        await fixture.InitializeAsync();
+        await NoRedisJobHost.StartAsync(fixture);
         try
         {
             using var owner = fixture.CreateAdminClient();
@@ -771,65 +730,14 @@ public sealed partial class GPServerDurableRuntimeTests(RedisFixture redis)
         return await client.PostAsync($"/services/{ServiceId}/GPServer", content);
     }
 
-    private WebAppFixture CreateDurableFixture(bool productionExecutor)
-    {
-        return new WebAppFixture()
-            .ConfigureWebHost(builder =>
-            {
-                builder.ConfigureAppConfiguration((_, configBuilder) =>
-                {
-                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
-                    {
-                        ["ConnectionStrings:redis"] = GPServerRedisTestConnection.For(redis)
-                    });
-                });
-            })
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<IConnectionMultiplexer>();
-                services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(GPServerRedisTestConnection.For(redis)));
+    private static WebAppFixture CreateDurableFixture() => NoRedisJobHost.Create();
 
-                services.RemoveAll<IExecutionJobStore>();
-                services.AddSingleton<IExecutionJobStore>(sp =>
-                    new RedisExecutionJobStore(
-                        sp.GetRequiredService<IConnectionMultiplexer>(),
-                        sp.GetRequiredService<ILogger<RedisExecutionJobStore>>()));
-
-                services.RemoveAll<IGeoprocessingResultPackageStore>();
-                services.AddSingleton<IGeoprocessingResultPackageStore>(sp =>
-                    new RedisGeoprocessingResultPackageStore(
-                        sp.GetRequiredService<IConnectionMultiplexer>(),
-                        sp.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>(),
-                        sp.GetRequiredService<ILogger<RedisGeoprocessingResultPackageStore>>()));
-
-                services.RemoveAll<RedisJobQueue>();
-                services.RemoveAll<IJobQueue>();
-                services.RemoveAll<IQueueClaimReconciler>();
-                services.AddSingleton<RedisJobQueue>(sp =>
-                    new RedisJobQueue(
-                        sp.GetRequiredService<IConnectionMultiplexer>(),
-                        sp.GetRequiredService<IExecutionJobStore>(),
-                        sp.GetRequiredService<ILogger<RedisJobQueue>>()));
-                services.AddSingleton<IJobQueue>(sp => sp.GetRequiredService<RedisJobQueue>());
-                services.AddSingleton<IQueueClaimReconciler>(sp => sp.GetRequiredService<RedisJobQueue>());
-
-                services.RemoveAll<IExecutionLogStore>();
-                services.AddSingleton<IExecutionLogStore>(sp =>
-                    new RedisExecutionLogStore(
-                        sp.GetRequiredService<IConnectionMultiplexer>(),
-                        sp.GetRequiredService<ILogger<RedisExecutionLogStore>>()));
-
-                // Replace the production geometry.buffer executor registered by
-                // AddGeoprocessing with a deterministic fixture so this test
-                // exercises the GPServer protocol projection independently of
-                // the buffer implementation.
-                if (!productionExecutor)
-                {
-                    services.RemoveAll<IJobExecutor>();
-                    services.AddSingleton<IJobExecutor, SuccessfulGpServerJobExecutor>();
-                }
-                services.AddJobWorker();
-            });
-    }
-
+    // Replacing the production executors exercises the GPServer protocol projection
+    // independently of the geometry implementations.
+    private static WebAppFixture CreateDurableFixture(IJobExecutor replacementExecutor)
+        => NoRedisJobHost.Create().ConfigureServices(services =>
+        {
+            services.RemoveAll<IJobExecutor>();
+            services.AddSingleton(replacementExecutor);
+        });
 }

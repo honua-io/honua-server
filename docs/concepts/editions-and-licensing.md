@@ -41,7 +41,9 @@ Disabling licensing grants entitlements only. Authentication, authorization and
 tenant isolation still apply; features still require their runtime configuration
 and dependencies. Preview and Experimental opt-ins and the release manifest's
 `experimental:` exclusions remain in effect. Alerting and offline sync remain
-Preview; all four cloud-native formats and the whole GA process catalog
+Preview. Realtime feature streams and map collaboration sessions are
+Experimental: they work on a single node, and delivery across several nodes
+needs an optional Redis add-on. All four cloud-native formats and the whole GA process catalog
 retain their release scope. `Licensing__DevGrantEdition` remains a development-only
 override and is refused in Production, including when Mode is Disabled.
 
@@ -69,8 +71,8 @@ With licensing enabled, the server operates in one of three editions:
 | Edition | How it activates | Scope |
 |---|---|---|
 | Community | Default — no license file configured | Baseline platform: documented Community protocol surfaces, publishing, one-shot file import, portal token issuance; I3S remains Enterprise |
-| Pro | Signed license file with Pro entitlements | Adds features such as GeoServices FeatureServer editing, spatial analytics, real-time streams, Redis caching, geocoding, single-provider OIDC SSO, core branch versioning (Preview) |
-| Enterprise | Signed license file with Enterprise entitlements | Adds features such as multi-provider OIDC governance, claim-to-role mapping, organisational approval/policy controls, specialised scene ingest and I3S (Experimental), service imports, the plugin SDK |
+| Pro | Signed license file with Pro entitlements | Adds features such as GeoServices FeatureServer editing, spatial analytics and data enrichment, real-time streams, Redis caching, geocoding, single-provider OIDC SSO with a choice of role claims, core branch versioning (Preview) |
+| Enterprise | Signed license file with Enterprise entitlements | Adds features such as multi-provider OIDC governance, custom claim mappings and tenant mapping, batch geocoding, organisational approval/policy controls, specialised scene ingest and I3S (Experimental), service imports, the plugin SDK |
 
 Community requires no license and is unaffected by license expiry. Pro and Enterprise use the strict failure-mode contract: a missing, invalid or expired license refuses startup with a non-zero exit; no Community fallback is permitted. Declare `Licensing__Edition=Pro` or `Enterprise` so a missing source is identified as a paid deployment. Explicit `Community` ignores license sources; with no declared edition and no source the default remains Community.
 
@@ -81,6 +83,8 @@ Edition entitlement and release maturity are separate axes: paying for a capabil
 | Capability | Edition | 2026.1 boundary |
 |---|---|---|
 | Core branch versioning | Pro | Preview; existing experimental runtime opt-in still applies |
+| Realtime feature streams | Pro | Experimental; they work on a single node, and delivery across several nodes needs an optional Redis add-on |
+| Map collaboration sessions | Community | Experimental, for the same reason |
 | Organisational approval and policy controls | Enterprise | Paid governance around the core versioning/operation workflow |
 | Existing 3D Tiles serving, scene discovery, elevation, and generation from feature layers | Community | 3D remains Experimental; this does not expand the supported release surface |
 | Specialised CityGML/BIM and point-cloud ingest; I3S | Enterprise | Remain Experimental; no tier expansion without a specific commercial decision |
@@ -101,7 +105,7 @@ A license is a small UTF-8 JSON envelope signed with Ed25519:
 
 The decoded payload declares `licenseId`, `licensedTo`, `edition`, `issuedAt`, an optional `expiresAt`, and an `entitlements` array of feature keys. Validation is fully offline — the server verifies the signature against locally configured trusted public keys; no license server or phone-home is involved.
 
-Feature activation is entitlement-based: Community-tier features are active on Community and on valid paid deployments, and a paid feature is active only when its key (for example `editing.featureserver-edits` or `identity.oidc`) appears in the signed `entitlements` array. GeoServices FeatureServer writes are Pro-gated; open-protocol edits through OGC API Features, WFS-T, OData, and gRPC remain Community while using the shared edit pipeline. Basic single-provider OIDC is a Pro entitlement; multi-provider OIDC configuration and claim-to-role mapping remain Enterprise entitlements. The `edition` label is operator-facing and does not by itself activate every feature in that edition. Inspect the full feature inventory at `GET /api/v1/admin/license/entitlements`.
+Feature activation is entitlement-based: Community-tier features are active on Community and on valid paid deployments, and a paid feature is active only when its key (for example `editing.featureserver-edits` or `identity.oidc`) appears in the signed `entitlements` array. GeoServices FeatureServer writes are Pro-gated; open-protocol edits through OGC API Features, WFS-T, OData, and gRPC remain Community while using the shared edit pipeline. Basic single-provider OIDC is a Pro entitlement and includes choosing which claims carry roles (`RoleClaimType`, `AdditionalRoleClaimTypes`); multi-provider OIDC configuration, custom claim mappings and tenant mapping remain Enterprise entitlements. Data enrichment is Pro because it runs on spatial join (`analytics.spatial-join`). The `edition` label is operator-facing and does not by itself activate every feature in that edition. Inspect the full feature inventory at `GET /api/v1/admin/license/entitlements`.
 
 ## Configuration
 

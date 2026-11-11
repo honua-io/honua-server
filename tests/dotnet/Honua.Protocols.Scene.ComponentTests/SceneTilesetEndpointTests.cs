@@ -103,7 +103,7 @@ public sealed class SceneTilesetEndpointTests : IAsyncLifetime, IAsyncDisposable
         using var second = await _fixture.Client.SendAsync(secondRequest);
 
         second.StatusCode.Should().Be(HttpStatusCode.OK);
-        second.Headers.Age.Should().NotBeNull("the advertised and internal hosts must reuse the same anonymous cache entry");
+        second.Headers.Contains(SceneComponentTests.OutputCacheHitHeader).Should().BeTrue("the advertised and internal hosts must reuse the same anonymous cache entry");
         second.Headers.ETag.Should().Be(first.Headers.ETag);
         (await second.Content.ReadAsByteArrayAsync()).Should().Equal(expected);
     }
@@ -141,9 +141,9 @@ public sealed class SceneTilesetEndpointTests : IAsyncLifetime, IAsyncDisposable
 
         internalResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         advertisedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        advertisedResponse.Headers.Age.Should().BeNull("HTTP and HTTPS retain separate framework cache entries");
+        advertisedResponse.Headers.Contains(SceneComponentTests.OutputCacheHitHeader).Should().BeFalse("HTTP and HTTPS retain separate framework cache entries");
         repeatedHttpsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        repeatedHttpsResponse.Headers.Age.Should().NotBeNull();
+        repeatedHttpsResponse.Headers.Contains(SceneComponentTests.OutputCacheHitHeader).Should().BeTrue();
         advertisedResponse.Headers.ETag.Should().Be(internalResponse.Headers.ETag);
         (await advertisedResponse.Content.ReadAsByteArrayAsync()).Should().Equal(await internalResponse.Content.ReadAsByteArrayAsync());
         (await repeatedHttpsResponse.Content.ReadAsByteArrayAsync()).Should().Equal(await internalResponse.Content.ReadAsByteArrayAsync());
@@ -166,8 +166,8 @@ public sealed class SceneTilesetEndpointTests : IAsyncLifetime, IAsyncDisposable
             using var missingHttps = await fixture.Client.GetAsync($"https://host.docker.internal:18443{path}");
             missingHttp.StatusCode.Should().Be(HttpStatusCode.NotFound);
             missingHttps.StatusCode.Should().Be(HttpStatusCode.NotFound);
-            missingHttp.Headers.Age.Should().BeNull();
-            missingHttps.Headers.Age.Should().BeNull();
+            missingHttp.Headers.Contains(SceneComponentTests.OutputCacheHitHeader).Should().BeFalse();
+            missingHttps.Headers.Contains(SceneComponentTests.OutputCacheHitHeader).Should().BeFalse();
 
             var assetFile = Path.Join(assetRoot, assetPath);
             Directory.CreateDirectory(Path.GetDirectoryName(assetFile)!);

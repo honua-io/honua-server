@@ -11,20 +11,17 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
-using Honua.ControlPlane;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Tests.Features.Admin;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
@@ -45,9 +42,9 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 /// exactly the shape the synchronous RLS/field-mask tests assert against, so the job artifact
 /// can be compared to the known synchronous outcome.
 /// </remarks>
-[Collection("Redis")]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.OgcApiProcesses)]
-public sealed class GeoprocessingJobRowAndFieldSecurityTests(RedisFixture redis)
+public sealed class GeoprocessingJobRowAndFieldSecurityTests(DatabaseFixtureAdapter database)
 {
     private const string AdminPassword = "gp-rls-admin-key";
     private const string MaskedAttribute = "description";
@@ -63,7 +60,7 @@ public sealed class GeoprocessingJobRowAndFieldSecurityTests(RedisFixture redis)
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task LayerSourcedJob_ForRlsAndFieldMaskRestrictedSubmitter_ArtifactIsRowFilteredAndMasked()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
 
         var fixture = BuildFixture();
         await fixture.InitializeAsync();
@@ -115,7 +112,7 @@ public sealed class GeoprocessingJobRowAndFieldSecurityTests(RedisFixture redis)
             await DeletePolicyAsync(fixture, "rls-policies", rlsPolicyId);
             await DeletePolicyAsync(fixture, "field-mask-policies", maskPolicyId);
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await database.DataSource.ClearJobSubstrateAsync();
         }
     }
 
@@ -128,7 +125,7 @@ public sealed class GeoprocessingJobRowAndFieldSecurityTests(RedisFixture redis)
         // because that is what survives a worker restart and lets a DIFFERENT node resolve the
         // same RLS predicate and field mask. Asserted separately from the artifact test so a
         // regression that drops the capture is attributed precisely.
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
 
         var fixture = BuildFixture();
         await fixture.InitializeAsync();
@@ -152,24 +149,18 @@ public sealed class GeoprocessingJobRowAndFieldSecurityTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await database.DataSource.ClearJobSubstrateAsync();
         }
     }
 
-    private WebAppFixture BuildFixture()
+    private static WebAppFixture BuildFixture()
         => new WebAppFixture()
+            .WithProductionJobSubstrate()
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
-                builder.ConfigureAppConfiguration((_, configBuilder) =>
-                {
-                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
-                    {
-                        ["ConnectionStrings:redis"] = redis.ConnectionString
-                    });
-                });
             })
             .ConfigureServices(services =>
             {
@@ -189,49 +180,7 @@ public sealed class GeoprocessingJobRowAndFieldSecurityTests(RedisFixture redis)
                 services.RemoveAll<IProcessCatalog>();
                 services.AddSingleton<IProcessCatalog>(
                     new JobCallableProcessCatalog(new BuiltInProcessCatalog(), "source.honua-layer"));
-
-                WireDurableRuntime(services);
             });
-
-    private void WireDurableRuntime(IServiceCollection services)
-    {
-        services.RemoveAll<IConnectionMultiplexer>();
-        services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redis.ConnectionString));
-
-        services.RemoveAll<IExecutionJobStore>();
-        services.AddSingleton<IExecutionJobStore>(sp =>
-            new RedisExecutionJobStore(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<ILogger<RedisExecutionJobStore>>()));
-
-        services.RemoveAll<IGeoprocessingResultPackageStore>();
-        services.AddSingleton<IGeoprocessingResultPackageStore>(sp =>
-            new RedisGeoprocessingResultPackageStore(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>(),
-                sp.GetRequiredService<ILogger<RedisGeoprocessingResultPackageStore>>()));
-
-        services.RemoveAll<RedisJobQueue>();
-        services.RemoveAll<IJobQueue>();
-        services.RemoveAll<IQueueClaimReconciler>();
-        services.AddSingleton<RedisJobQueue>(sp =>
-            new RedisJobQueue(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<IExecutionJobStore>(),
-                sp.GetRequiredService<ILogger<RedisJobQueue>>()));
-        services.AddSingleton<IJobQueue>(sp => sp.GetRequiredService<RedisJobQueue>());
-        services.AddSingleton<IQueueClaimReconciler>(sp => sp.GetRequiredService<RedisJobQueue>());
-
-        services.RemoveAll<IExecutionLogStore>();
-        services.AddSingleton<IExecutionLogStore>(sp =>
-            new RedisExecutionLogStore(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<ILogger<RedisExecutionLogStore>>()));
-
-        // Activate the real worker host: the production source.honua-layer executor and the
-        // production Postgres read path are the system under test.
-        services.AddJobWorker();
-    }
 
     private static HttpClient CreateSubmitterClient(WebAppFixture fixture, string category, string? extraRole)
     {
@@ -412,24 +361,5 @@ public sealed class GeoprocessingJobRowAndFieldSecurityTests(RedisFixture redis)
 
         using var adminClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
         _ = await adminClient.DeleteAsync($"/api/v1/admin/{resource}/{id}");
-    }
-
-    private static async Task DeleteControlPlaneKeysAsync(string redisConnectionString)
-    {
-        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redisConnectionString);
-        var database = multiplexer.GetDatabase();
-        foreach (var server in multiplexer.GetEndPoints().Select(endpoint => multiplexer.GetServer(endpoint)))
-        {
-            if (!server.IsConnected || server.IsReplica)
-            {
-                continue;
-            }
-
-            var keys = server.Keys(pattern: "controlplane:*").ToArray();
-            if (keys.Length > 0)
-            {
-                await database.KeyDeleteAsync(keys);
-            }
-        }
     }
 }

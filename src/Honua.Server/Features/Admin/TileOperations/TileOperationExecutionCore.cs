@@ -631,6 +631,9 @@ internal sealed partial class TileOperationExecutionCore
             Content = archiveStream,
             FileName = $"{Path.GetFileName(objectKey)}",
             ContentType = "application/vnd.pmtiles",
+            CachePolicy = publishOptions.UrlStrategy is PMTilesUrlStrategy.PublicUrl
+                ? StoredObjectCachePolicy.PublicReplacedInPlace
+                : StoredObjectCachePolicy.NotShared,
             SizeBytes = build.ArchiveSize,
             TimeToLive = null,
             ObjectKeyOverride = objectKey,

@@ -1,0 +1,51 @@
+name: Publish Flaky Test Quarantine
+
+on:
+  workflow_run:
+    workflows: [CI, PR Gate]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+# Serialize the read/modify/write of the repository-wide twenty-five-test cap.
+# Keep completed-run events queued instead of replacing the pending publisher.
+concurrency:
+  group: publish-flaky-test-quarantine
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      contains(fromJson('["success","failure"]'), github.event.workflow_run.conclusion)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # workflow_run uses trusted default-branch code. Never check out the
+      # originating branch or execute anything from its downloaded artifacts.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download test evidence as data
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          mkdir -p quarantine-evidence
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.expired == false) | .name | select(test("^(server-test-results-|pr-gate-affected-shard-)[a-zA-Z0-9_-]+$"))' \
+            > quarantine-evidence/artifact-names.txt
+          while IFS= read -r artifact; do
+            gh run download "${SOURCE_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
+              --name "${artifact}" --dir "quarantine-evidence/${artifact}"
+          done < quarantine-evidence/artifact-names.txt
+      - name: Publish verified pass-after-fail evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUARANTINE_EVIDENCE_URL: ${{ github.event.workflow_run.html_url }}
+        run: python3 scripts/ci/quarantine-issues.py publish --results quarantine-evidence

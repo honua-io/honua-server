@@ -39,6 +39,7 @@ internal static class DataEnrichmentEndpoints
                 + "attribution, and license metadata.")
             .WithTags(EnrichmentTag)
             .Produces<EnrichmentDatasetsResponse>(StatusCodes.Status200OK, contentType: "application/json")
+            .Produces(StatusCodes.Status402PaymentRequired)
             .AllowAnonymous();
 
         endpoints.MapGet("/api/enrich/datasets/{id}", (Delegate)DataEnrichmentRequestHandlers.HandleDatasetGet)
@@ -48,6 +49,7 @@ internal static class DataEnrichmentEndpoints
             .WithDescription("Returns a single managed enrichment dataset by id, filtered by the caller's edition.")
             .WithTags(EnrichmentTag)
             .Produces<EnrichmentDatasetMetadata>(StatusCodes.Status200OK, contentType: "application/json")
+            .Produces(StatusCodes.Status402PaymentRequired)
             .Produces(StatusCodes.Status404NotFound)
             .AllowAnonymous();
 

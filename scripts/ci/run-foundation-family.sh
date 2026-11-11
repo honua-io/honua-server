@@ -207,6 +207,7 @@ foundation_run() {
       fi
     fi
 
+    cmd=(python3 scripts/ci/run-quarantine-filtered-tests.py "${cmd[@]}")
     echo "::group::dotnet test ${csproj}${filter:+ --filter ${filter}}"
     rc=0
     if ((${#envprefix[@]})); then
