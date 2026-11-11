@@ -6,10 +6,7 @@ packages=$(mktemp)
 trap 'rm -f "$packages"' EXIT
 
 mkdir -p "$additions/app" "$additions/usr/share/fonts/truetype"
-libraries="/usr/lib/*/libgssapi_krb5.so.2"
-if [ "${3:-jit}" = aot ]; then
-    libraries="$libraries /usr/lib/*/libatomic.so.1"
-fi
+libraries="/usr/lib/*/libgssapi_krb5.so.2 /usr/lib/*/libatomic.so.1"
 # Globs expand here so both multiarch layouts work.
 for library in $libraries; do
     {
