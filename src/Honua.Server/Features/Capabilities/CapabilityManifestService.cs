@@ -475,7 +475,7 @@ internal sealed class CapabilityManifestService(
                 entitlementKey: FeatureCatalog.MultiTenancyKey,
                 requiresAuthentication: true),
             Capability("realtime.feature-streams", "realtime", context,
-                maturity: CapabilityMaturity.Preview,
+                maturity: CapabilityMaturity.Experimental,
                 configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("realtime.feature-streams"),
                 entitlementKey: "streaming.feature-subscriptions"),
             Capability("serve.sensorthings", "realtime", context,
@@ -587,7 +587,7 @@ internal sealed class CapabilityManifestService(
                 supported: spec.Supported && served,
                 configured: configured,
                 unavailableReasonOverride: lifecycleEnabled
-                    ? null
+                    ? spec.UnavailableReason
                     : Core.Features.Capabilities.CapabilityReasonCodes.ExperimentalDisabled,
                 entitlementKey: spec.EntitlementKey,
                 entitlementKeys: spec.EntitlementKeys,
@@ -622,8 +622,9 @@ internal sealed class CapabilityManifestService(
             // calls one, that a Redis-off host refuses with the typed capability-unavailable
             // receipt (dependency-unavailable; license-required when Redis is unentitled).
             Capability(OperationsProposalsCapabilityId, "operate", context,
-                requiresAuthentication: true,
-                requiresDurableJobStore: true),
+                configured: options.ProposalStoreAvailable,
+                unavailableReasonOverride: SubstrateUnavailableReason(options.ProposalStoreUnavailableCause),
+                requiresAuthentication: true),
             Capability("ops.autonomy", "operate", context,
                 configured: operationCapabilities.HasAutonomyPolicyStore,
                 requiresAuthentication: true),
@@ -722,7 +723,7 @@ internal sealed class CapabilityManifestService(
             ["versioning.branch"] = new() { EntitlementKey = FeatureCatalog.BranchVersioningKey },
             ["operate.status"] = new() { RequiresAuthentication = true },
             ["ops.findings"] = new() { RequiresAuthentication = true },
-            [OperationsProposalsCapabilityId] = new() { RequiresAuthentication = true, RequiresDurableJobStore = true },
+            [OperationsProposalsCapabilityId] = ProposalStoreSpec(),
             ["ops.autonomy"] = new()
             {
                 Configured = operationCapabilities.HasAutonomyPolicyStore,
@@ -736,6 +737,14 @@ internal sealed class CapabilityManifestService(
             },
         };
     }
+
+    private ManifestCapabilitySpec ProposalStoreSpec()
+        => new()
+        {
+            Configured = options.ProposalStoreAvailable,
+            UnavailableReason = SubstrateUnavailableReason(options.ProposalStoreUnavailableCause),
+            RequiresAuthentication = true,
+        };
 
     private ManifestCapabilitySpec WarehouseSpec(WarehouseProviderDecision decision)
         => new()
@@ -829,9 +838,7 @@ internal sealed class CapabilityManifestService(
         else if (requiresDurableJobStore && !options.DurableJobRuntimeAvailable)
         {
             available = false;
-            reasonCode = options.DurableJobSubstrateCause == DurableJobSubstrateCause.RedisNotEntitled
-                ? CapabilityReasonCodes.LicenseRequired
-                : CapabilityReasonCodes.DependencyUnavailable;
+            reasonCode = SubstrateUnavailableReason(options.DurableJobSubstrateCause);
         }
         else if (requiresEnvironment && !context.EnvironmentAvailable)
         {
@@ -1461,6 +1468,11 @@ internal sealed class CapabilityManifestService(
         return context.CallerCapabilities.Contains(capability);
     }
 
+    private static string SubstrateUnavailableReason(DurableJobSubstrateCause cause)
+        => cause == DurableJobSubstrateCause.RedisNotEntitled
+            ? CapabilityReasonCodes.LicenseRequired
+            : CapabilityReasonCodes.DependencyUnavailable;
+
     private static string[] ResolveRequiredEntitlementKeys(string? entitlementKey, string[]? entitlementKeys)
     {
         if (entitlementKeys is { Length: > 0 })
@@ -1569,6 +1581,8 @@ internal sealed class CapabilityManifestService(
         public bool Supported { get; init; } = true;
 
         public bool Configured { get; init; } = true;
+
+        public string? UnavailableReason { get; init; }
 
         public string? EntitlementKey { get; init; }
 

@@ -49,7 +49,8 @@ its affected-shard verdict, clean code and repository hygiene continue on drafts
 PR Gate also runs on `ready_for_review`, waking the trusted Claude observer after
 its exact-head verification completes.
 
-PR workflows cancel superseded admission per PR. Trusted observers resolve the
+Verification workflows cancel superseded admission per PR; automation helpers
+queue superseding events without cancellation. Trusted observers resolve the
 current PR before expensive jobs: prebuild producers/parity legs cancel by PR
 and matrix identity. Claude cancels resolver admission per PR and serializes
 duplicate exact-head reviews; unrelated comments cannot interrupt paid work. Review-attestation publication
@@ -57,11 +58,30 @@ remains serialized so cancellation cannot interrupt its status/dispatch update.
 New validation concurrency uses a unique run ID outside PR events, keeping manual
 qualification independent of trunk pushes. Existing release cancellation policy is retained.
 
+## Neutral automation helpers
+
+Review Event Bridge (`Notify trusted review gate`), Review Gate Attestation
+(`Resolve pull request identity`, `Publish SHA-bound review attestation`), and
+Derived Artifact Normalization (`Generate bounded normalization projections`,
+`Produce data-only normalization envelope`) serialize their per-PR work with
+`cancel-in-progress: false` and `queue: max`. Superseded normalization subjects
+skip production and consumer mutation. Superseded review subjects finish
+successfully with a summary. Missing admission prerequisites finish the
+attestation helper neutrally while the separate required `Review Gate` status
+remains pending for drafts or failing for blocking reviews. API and attestation
+errors still fail; these helpers cannot override the required admission status.
+
+CI Doctor, PR Review Doctor and PR Sync Doctor retain their concurrency groups
+and use the same serial queue, including their generated `activation`, `agent`,
+`pre_activation` and `safe_outputs` jobs. A newer event waits instead of
+cancelling an earlier run; automation writes remain serialized. The generated
+lock workflows are compiled from their authored Markdown sources.
+
 ## Required PR lane
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
-| `pr-gate.yml` | PR Gate | `pull_request` (base `trunk`), `workflow_dispatch` | Required verification context. Admission checks run first. `pr-gate` builds the affected graph plus planned managed test roots and the server host, publishes pristine per-project outputs and runs the required boot/migration smoke against its canonical host output. The independent `fast-tests` matrix runs four jobs alongside it, each compiling only its own test roots: `architecture` (projection regeneration, source and collector architecture, MCP roster drift), `unit-fast` (isolated unit Fast tier), `server-fast` (Server Fast tier) and `server-governance` (Server governance/drift with PostGIS); both server jobs first refresh the admin parity exports Server.Tests compares. The `format` matrix runs `dotnet format` and the analyzer build (affected closure, analyzers, code style and documentation diagnostics as errors) as two jobs. Runtime execution proofs and fidelity run in full CI. The independent format and CI-router jobs remain required; `required.needs` is `[pr-gate, fast-tests, format, ci-router-validation, affected-shards]`. Selected shard jobs, bounded by the `pr_time_budget` in `.github/ci-shards.json` (over-budget shards are deferred to the next trunk run and named in a green `deferred` verdict), consume the same outputs; their aggregate enforces measured timing/TRX receipts and fails the required context on failed or missing execution. Review-first enforcement and docs-only exits remain inside the unfiltered workflow. See the [artifact contract](server-test-binary-artifacts.md) for identity, transport bounds, fallback and rollback. `runner-select` routes `pr-gate`, `fast-tests` and `format` to the build-host runner label in `HONUA_PR_GATE_RUNNER` when that host has idle runners, and to `ubuntu-latest` otherwise or when the variable is unset ([gate-model.md → PR Gate compute runner selection](gate-model.md#pr-gate-compute-runner-selection)). |
+| `pr-gate.yml` | PR Gate | `pull_request` (base `trunk`), `workflow_dispatch` | Required verification context. Admission checks run first. `pr-gate` builds the affected graph plus planned managed test roots and the server host, publishes pristine per-project outputs and runs the required boot/migration smoke against its canonical host output. The independent `fast-tests` matrix runs four jobs alongside it, each compiling only its own test roots: `architecture` (projection regeneration, source and collector architecture, MCP roster drift), `unit-fast` (isolated unit Fast tier), `server-fast` (Server Fast tier) and `server-governance` (Server governance/drift with PostGIS); both server jobs first refresh the admin parity exports Server.Tests compares. The `format` matrix runs `dotnet format` and the analyzer build (affected closure, analyzers, code style and documentation diagnostics as errors) as three jobs: Format, Analyzers (source projects), and Analyzers (tests). The source job always retains all solution source roots, including dependencies of affected test roots, and evaluates ownership after SDK/NuGet imports and removes test-only compilation roots (multi-targeted roots remain conservative); both analyzer jobs compile forward dependencies; `HonuaAnalyzerPartition` assigns each project to exactly one diagnostics pass using `IsTestProject`. Runtime execution proofs and fidelity run in full CI. The independent format and CI-router jobs remain required; `required.needs` is `[pr-gate, fast-tests, format, ci-router-validation, affected-shards]`. Selected shard jobs, bounded by the `pr_time_budget` in `.github/ci-shards.json` (over-budget shards are deferred to the next trunk run and named in a green `deferred` verdict), consume the same outputs; their aggregate enforces measured timing/TRX receipts and fails the required context on failed or missing execution. Review-first enforcement and docs-only exits remain inside the unfiltered workflow. See the [artifact contract](server-test-binary-artifacts.md) for identity, transport bounds, fallback and rollback. `runner-select` routes `pr-gate`, `fast-tests` and `format` to the build-host runner label in `HONUA_PR_GATE_RUNNER` when that host has idle runners, and to `ubuntu-latest` otherwise or when the variable is unset ([gate-model.md → PR Gate compute runner selection](gate-model.md#pr-gate-compute-runner-selection)). |
 | `review-gate.yml` | Review Gate Attestation | `pull_request_target`, `issue_comment`, trusted `repository_dispatch`, `workflow_run` [PR Gate, Review Event Bridge] | Required admission context. Publishes `Review Gate` on the exact current head only when Codex has exact-head evidence and no unresolved Codex threads. Serializes every event by resolved PR number, pins the exact trusted workflow-policy SHA, and is the only authority allowed to release expensive verification. In observe mode it retains an immutable decision receipt; merge-train selection and pre-land independently re-attest source evidence. |
 | `repo-hygiene.yml` | Repository hygiene | `pull_request` (`opened`, `synchronize`, `reopened`, `edited`) | Required additions-only context `repo-hygiene / Repository hygiene`. Calls the shared SHA-pinned workflow with read-only permissions; reads the repository-owned root allowlist and exact gate-input exceptions from the trusted base branch, rejecting new scratch, run output, dated history, samples and unexpected root entries. |
 | `claude-review.yml` | Claude Review | completed `PR Gate` `workflow_run`, `issue_comment` containing `@claude review` | Second attesting reviewer for the required `Review Gate` context (#3213, #3314; rebuilt on a trusted trigger by #3341), so a PR can still land while Codex is rate-limited. Trusted default-branch lane: **never** triggered by `pull_request`, read-only `GITHUB_TOKEN`, and it posts comments and inline threads only — never a review verdict. `scripts/ci/review-gate-evidence.js` accepts `claude` evidence alongside Codex. Inert until an auth secret exists. See [gate-model.md → Attesting reviewers](gate-model.md#attesting-reviewers). |
@@ -72,7 +92,7 @@ qualification independent of trunk pushes. Existing release cancellation policy 
 Operator ruling A (2026-09-11, #3213): a documentation-only pull request does
 not pay for the lean-gate build and unit smoke. The exit lives **inside** the
 required jobs. `PR Gate / Build and tests`, the four `PR Gate / Fast and
-architecture (<group>)` jobs, `PR Gate / Format`, `PR Gate / Analyzers` and
+architecture (<group>)` jobs, `PR Gate / Format`, `PR Gate / Analyzers`, `PR Gate / Analyzers (tests)` and
 `PR Gate / Affected shards (select)` still run and conclude success themselves,
 and so do the `PR Gate` and `PR Gate / Affected shards` aggregates. There is no
 `paths` filter, because a skipped required check blocks merge. The observe-only
@@ -113,8 +133,11 @@ the changed paths on stdin.
 |---|---|---|
 | `PR Gate / Build and tests` | The UTF-8 tracked-file guard (#3320); the terminal-error receipt, client-certification roster, review-first admission and base-image inventory checks; the admission receipt; the classifier's own fixtures; the Markdown command policy; installation-reference validation; and a public-image Docker proof only when artifact versions or executable installation procedures/harness change. | Disk cleanup, .NET setup, managed producer planning, compilation, managed artifact publication and source-built boot/migration smoke. |
 | `PR Gate / Fast and architecture (<group>)` | Checkout and classification. | Disk cleanup, .NET setup, the group's test-root build and its tests. |
-| `PR Gate / Format`, `PR Gate / Analyzers` | Checkout and classification. | .NET setup, restore, and `dotnet format` or the analyzer build. |
+| `PR Gate / Format`, `PR Gate / Analyzers`, `PR Gate / Analyzers (tests)` | Checkout and classification. | .NET setup, restore, and `dotnet format` or the analyzer build. |
 | `PR Gate / Affected shards (select)` | Classification. The job publishes `skip=true` with `reason=docs_only`, so the aggregate reports `skipped`. | Selector validation and shard selection. |
+
+The analyzer build step disables persistent MSBuild servers and node reuse;
+all compiler, analyzer and timeout failures still fail the check.
 
 Outside `PR Gate`, `docs-link-gate.yml` keeps firing on `docs/**` and
 `README.md` exactly as before: links, anchors, and the gate that rejects
@@ -606,6 +629,8 @@ The budget job records each run's phase and credits, total triage/fix credits,
 paid-run counts and the share of triage events reaching a paid Opus run. Deterministic
 skips use zero model credits. The combined envelopes are 2500 credits ($25) per day;
 triage and fix do not each receive a separate allowance.
+
+Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. Missing envelopes from ordinary producers remain errors.
 
 ### Standalone tooling in affected producer builds
 

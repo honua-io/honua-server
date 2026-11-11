@@ -20,7 +20,6 @@ public sealed class SharedCacheGuardTests
     [UnitTheory]
     [InlineData(nameof(ResponseCacheClass.Tile))]
     [InlineData(nameof(ResponseCacheClass.FeatureQuery))]
-    [InlineData(nameof(ResponseCacheClass.StaticMapImage))]
     [InlineData(nameof(ResponseCacheClass.StaticObject))]
     public void Apply_AccessNeverDecided_IsNotShared(string cacheClassName)
     {

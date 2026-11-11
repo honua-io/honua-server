@@ -245,7 +245,8 @@
       "displayName": "Map Collaboration Sessions",
       "category": "Collaboration",
       "edition": "Community",
-      "description": "Collaborative saved-map session operations (comments, activity, shared editing coordination)."
+      "description": "Collaborative saved-map session operations (comments, activity, shared editing coordination).",
+      "status": "experimental"
     },
     {
       "key": "demo.showcase",
@@ -803,7 +804,8 @@
       "displayName": "Real-Time Feature Streams",
       "category": "Streaming",
       "edition": "Pro",
-      "description": "Subscribe to WebSocket and SSE feature-change streams with filters and replay cursors."
+      "description": "Subscribe to WebSocket and SSE feature-change streams with filters and replay cursors.",
+      "status": "experimental"
     },
     {
       "key": "styling.auto-suggest",
