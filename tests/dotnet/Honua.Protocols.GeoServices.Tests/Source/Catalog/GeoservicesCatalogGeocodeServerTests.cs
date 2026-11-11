@@ -36,8 +36,10 @@ public sealed class GeoservicesCatalogGeocodeServerTests : IClassFixture<Geoserv
         _fixture = fixture;
     }
 
-    // Collision graphs stay separate from the unmodified catalog and other authorization settings;
-    // only read-only mount-prefix variants share a seeded configuration.
+    /// <summary>
+    /// Keeps collision graphs separate from the unmodified catalog and other locator and authorization
+    /// settings; only read-only mount-prefix variants share a seeded configuration.
+    /// </summary>
     public sealed class CatalogFixture : IDisposable
     {
         private readonly Dictionary<(bool Configured, bool RestrictedFeatures), WebApplicationFactory<Program>>
