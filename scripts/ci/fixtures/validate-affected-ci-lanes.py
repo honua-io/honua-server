@@ -123,8 +123,10 @@ class AffectedLaneTests(unittest.TestCase):
         self.assertIn('sort_by(-.dispatch_rank)', scripts)
         self.assertIn('build', jobs['server-tests']['needs'])
         self.assertIn('6 || 24', jobs['server-tests']['strategy']['max-parallel'])
-        self.assertIn("needs.changes.outputs.full_ci != 'true'",
-                      jobs['server-tests']['strategy']['max-parallel'])
+        parallelism = jobs['server-tests']['strategy']['max-parallel']
+        self.assertIn('inputs.selective_base &&', parallelism)
+        self.assertNotIn('full_ci', parallelism,
+                         'Full coverage must not expand an affected run beyond its runner budget')
         step = next(step for step in jobs['changes']['steps'] if step.get('id') == 'specialized')
         self.assertIn("trailing_selective == 'true'", step['env']['SELECTIVE'])
         self.assertIn("full_ci != 'true'", step['env']['SELECTIVE'])

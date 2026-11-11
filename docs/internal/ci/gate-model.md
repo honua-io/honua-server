@@ -93,6 +93,10 @@ Stage 3 details:
   ignores runs titled `CI affected ...`, so a selective run that finishes after
   a full run on the same sha cannot supersede that full run's certification.
   The full-matrix fallback is titled `CI full matrix ...` and still certifies.
+- Every `selective_base` dispatch limits server shards to six concurrent jobs,
+  including router promotions and explicit full-coverage overrides. These
+  fallbacks still run every selected shard. Scheduled and non-selective full
+  runs retain their 24-job budget.
 - Stage 3 is not a required check and changes no ruleset.
 
 ## PR Lane (Required Checks)
