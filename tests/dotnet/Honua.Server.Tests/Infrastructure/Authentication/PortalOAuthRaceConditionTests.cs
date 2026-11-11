@@ -4,8 +4,8 @@
 using System.Net.Http;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -132,9 +132,8 @@ public sealed class PortalOAuthRaceConditionTests
     [UnitTest]
     public async Task ExchangeRefreshTokenAsync_ConcurrentSecondConsumer_ReturnsInvalidGrant_Bh2023()
     {
-        var memoryCache = new MemoryCache(new MemoryCacheOptions());
-        var store = new PortalOAuthStore(memoryCache, NullLogger<PortalOAuthStore>.Instance);
-        var realIssuer = new PortalTokenIssuer(memoryCache, NullLogger<PortalTokenIssuer>.Instance);
+        var store = new PortalOAuthStore(new InMemorySecurityTokenStore(), NullLogger<PortalOAuthStore>.Instance);
+        var realIssuer = new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<PortalTokenIssuer>.Instance);
         var service = BuildService(store, realIssuer, rotateRefreshTokens: true);
 
         // Seed a refresh token directly in the store.
@@ -174,8 +173,7 @@ public sealed class PortalOAuthRaceConditionTests
     [UnitTest]
     public async Task ExchangeRefreshTokenAsync_WhenIssueAsyncThrows_RefreshTokenIsRestored_Bh2024()
     {
-        var memoryCache = new MemoryCache(new MemoryCacheOptions());
-        var store = new PortalOAuthStore(memoryCache, NullLogger<PortalOAuthStore>.Instance);
+        var store = new PortalOAuthStore(new InMemorySecurityTokenStore(), NullLogger<PortalOAuthStore>.Instance);
 
         // Seed a refresh token directly in the store (bypass the full auth-code flow).
         var refreshValue = await store.CreateRefreshTokenAsync(
@@ -221,8 +219,7 @@ public sealed class PortalOAuthRaceConditionTests
     [UnitTest]
     public async Task ExchangeRefreshTokenAsync_RetryAfterRestoration_Succeeds_Bh2024()
     {
-        var memoryCache = new MemoryCache(new MemoryCacheOptions());
-        var store = new PortalOAuthStore(memoryCache, NullLogger<PortalOAuthStore>.Instance);
+        var store = new PortalOAuthStore(new InMemorySecurityTokenStore(), NullLogger<PortalOAuthStore>.Instance);
 
         var refreshValue = await store.CreateRefreshTokenAsync(
             new PortalOAuthRefreshToken
@@ -247,7 +244,7 @@ public sealed class PortalOAuthRaceConditionTests
                 "https://app.example.com", CancellationToken.None));
 
         // Second attempt — healthy issuer.
-        var healthyIssuer = new PortalTokenIssuer(memoryCache, NullLogger<PortalTokenIssuer>.Instance);
+        var healthyIssuer = new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<PortalTokenIssuer>.Instance);
         var healthyService = BuildService(store, healthyIssuer, rotateRefreshTokens: true);
 
         var retryResult = await healthyService.ExchangeAsync(
@@ -267,9 +264,8 @@ public sealed class PortalOAuthRaceConditionTests
     [InlineData(false)]
     public async Task RefreshToken_NativeBearerBinding_PersistsWithOrWithoutRotation(bool rotate)
     {
-        using var cache = new MemoryCache(new MemoryCacheOptions());
-        var store = new PortalOAuthStore(cache, NullLogger<PortalOAuthStore>.Instance);
-        var issuer = new PortalTokenIssuer(cache, NullLogger<PortalTokenIssuer>.Instance);
+        var store = new PortalOAuthStore(new InMemorySecurityTokenStore(), NullLogger<PortalOAuthStore>.Instance);
+        var issuer = new PortalTokenIssuer(new Honua.Infrastructure.Security.InMemorySecurityTokenStore(), NullLogger<PortalTokenIssuer>.Instance);
         var service = BuildService(store, issuer, rotate);
         var token = await store.CreateRefreshTokenAsync(new PortalOAuthRefreshToken
         {
@@ -297,8 +293,7 @@ public sealed class PortalOAuthRaceConditionTests
 
     private static PortalOAuthStore CreateStore()
     {
-        var memoryCache = new MemoryCache(new MemoryCacheOptions());
-        return new PortalOAuthStore(memoryCache, NullLogger<PortalOAuthStore>.Instance);
+        return new PortalOAuthStore(new InMemorySecurityTokenStore(), NullLogger<PortalOAuthStore>.Instance);
     }
 
     private static PortalOAuthTokenService BuildService(

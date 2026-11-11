@@ -68,7 +68,7 @@ public sealed partial class FolderOperationIntegrationTests
         using var body = JsonDocument.Parse(payload);
         body.RootElement.GetProperty("data").GetProperty("status").GetString().Should().Be("Denied", payload);
         body.RootElement.GetProperty("data").GetProperty("reason").GetString().Should().Be("The requester does not have access to every affected service.");
-        (await _proposals.ListActiveAsync()).Should().OnlyContain(proposal => activeBefore.Contains(proposal.ProposalId),
+        (await _proposals.ListActiveAsync()).Select(proposal => proposal.ProposalId).Should().BeSubsetOf(activeBefore,
             "submission must check every affected facet before accepting an approval proposal");
         (await SnapshotAsync()).Etag.Should().Be(restricted.Etag);
     }

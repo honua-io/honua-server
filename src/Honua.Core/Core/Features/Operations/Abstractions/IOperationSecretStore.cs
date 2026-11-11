@@ -10,19 +10,14 @@ public interface IOperationSecretStore
 {
     bool IsAvailable { get; }
 
-    OperationSecretReference Store(
-        string operationInstanceId,
-        string operationId,
-        string? principalId,
-        string? tenantId,
-        string name,
-        string value,
-        TimeSpan? ttl = null);
+    OperationSecretReference Store(OperationSecretBinding binding, string name, string value, TimeSpan? ttl = null);
 
-    string? Consume(
-        OperationSecretReference reference,
-        string operationInstanceId,
-        string operationId,
-        string? principalId,
-        string? tenantId);
+    // Returns the value once, and only to the operation, principal and tenant it was stored for.
+    string? Consume(OperationSecretReference reference, OperationSecretBinding binding);
 }
+
+public sealed record OperationSecretBinding(
+    string OperationInstanceId,
+    string OperationId,
+    string? PrincipalId,
+    string? TenantId);

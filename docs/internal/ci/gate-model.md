@@ -90,6 +90,10 @@ Stage 3 details:
   ignores runs titled `CI affected ...`, so a selective run that finishes after
   a full run on the same sha cannot supersede that full run's certification.
   The full-matrix fallback is titled `CI full matrix ...` and still certifies.
+- Every `selective_base` dispatch limits server shards to six concurrent jobs,
+  including router promotions and explicit full-coverage overrides. These
+  fallbacks still run every selected shard. Scheduled and non-selective full
+  runs retain their 24-job budget.
 - Stage 3 is not a required check and changes no ruleset.
 
 ## PR Lane (Required Checks)
@@ -640,6 +644,30 @@ projects: when selected, each restores and builds by its own project path before
 managed outputs are published. Restore and build failures remain gating, with
 the same warnings, analyzers and graph-build settings as the solution build.
 Unknown projects outside the solution still fail planning; test selection is unchanged.
+
+### Optional PR workflow input boundaries
+
+Capability Impact Comparison keeps its PR observation report, scoped to runtime
+source, .NET proving tests, compatibility baselines, capability data, the shard
+map and the selector/report tools. Unrelated prose and workflow edits no longer
+start it. It is currently disabled in repository settings; this filter makes
+re-enabling it safe. Capability Matrix Aggregation and OpenAPI Contract
+Governance already enumerate their generator/contract inputs and retain those
+filters. GeoArrow now also watches global.json and NuGet.config; GeoParquet
+retains its existing serializer/query/import/build-input boundary.
+
+Docs Link Gate retains its complete PR suite for documentation, skills, checker
+and manifest edits. Source/docker/eng-only edits instead run the link checker and
+its adversarial fixtures in the existing ci.yml CI Router Validation job on affected trunk
+runs and twice-daily full runs. That job already participates in CI Gate; no
+required check name or aggregate dependency changes. The runtime URL scan still
+runs and fails the trunk gate when a source/config link breaks.
+
+Derived Artifact Normalization watches .NET generator/proving-test code and
+client compatibility receipts instead of every test language, and GIS data
+instead of GIS prose. Runtime source, generator scripts, CITE status and all
+existing build/setup inputs remain covered. Its producer/consumer security
+boundary and deterministic replay are unchanged.
 
 ### ImageServer endpoint database lifetime
 

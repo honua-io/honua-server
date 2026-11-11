@@ -34,7 +34,7 @@ internal sealed class GeoServerImportProgressStore(IUniversalProgressStore store
 
         while (current.Status != OperationStatus.Cancelled)
         {
-            var result = await store.TrySetProgressAsync(jobId, progress, current.Status, ttl, cancellationToken).ConfigureAwait(false);
+            var result = await store.TrySetProgressAsync(new OperationProgressWrite(jobId, progress, ttl), current.Status, cancellationToken).ConfigureAwait(false);
             if (result.Outcome != ProgressCompareAndSetOutcome.StatusMismatch || result.CurrentProgress == null)
             {
                 return;
