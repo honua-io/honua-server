@@ -77,6 +77,12 @@ internal sealed partial class FileImportJobExecutor(
         var progress = new Progress<ImportProgress>(p => writer.Report(p with
         {
             JobId = jobId,
+            // Only the returned result can publish a terminal receipt.
+            Status = ImportStatus.Processing,
+            CompletedAt = null,
+            Schema = null,
+            PhysicalTableName = null,
+            ConnectionId = null,
             OperationInstanceId = request.OperationInstanceId,
             CorrelationId = request.CorrelationId,
             AuditId = request.AuditId,
@@ -272,6 +278,9 @@ internal sealed partial class FileImportJobExecutor(
         var terminal = current with
         {
             Status = status,
+            Schema = status == ImportStatus.Completed && result?.Success == true ? result.Schema : null,
+            PhysicalTableName = status == ImportStatus.Completed && result?.Success == true ? result.PhysicalTableName : null,
+            ConnectionId = null,
             FeaturesProcessed = result?.FeatureCount ?? current.FeaturesProcessed,
             CompletedAt = DateTimeOffset.UtcNow,
             ErrorMessage = errorMessage,
