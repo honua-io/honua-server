@@ -43,6 +43,8 @@ namespace Honua.Server.Tests.Features.Security;
 
 public sealed class FeatureServerServiceRbacTests : IClassFixture<FeatureServerServiceRbacTests.Fixture>
 {
+    private const string CalculateExpression = "[{\"field\":\"name\",\"sqlExpression\":\"'RBAC'\"}]";
+
     private readonly Fixture _fixture;
 
     public FeatureServerServiceRbacTests(Fixture fixture)
@@ -50,17 +52,13 @@ public sealed class FeatureServerServiceRbacTests : IClassFixture<FeatureServerS
         _fixture = fixture;
     }
 
-    /// <summary>
-    /// Shares the immutable application only for requests rejected before any state change.
-    /// </summary>
+    // Rejected requests cannot change the shared application; successful writes stay isolated.
     public sealed class Fixture : IDisposable
     {
         public WebApplicationFactory<Program> Application { get; } = ServiceRbacTestFixture.CreateFactory();
 
         public void Dispose() => Application.Dispose();
     }
-
-    private const string CalculateExpression = "[{\"field\":\"name\",\"sqlExpression\":\"'RBAC'\"}]";
 
     // calculate is POST-only (#6100).
     private static FormUrlEncodedContent CreateCalculateContent() => new(
