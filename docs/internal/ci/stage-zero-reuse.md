@@ -79,6 +79,16 @@ or completed builds per hour, and cannot bound demand outside that window.
 Keep six slots by five workers provisional until comparable live completion
 samples cover alternative splits and PR runner demand.
 
+A later controlled six-file run on 11 November verified actual incremental
+reuse. In one admission, cold compile took 2.71 minutes and immediate warm
+compile took 0.12; feedback fell from 4.77 to 2.28 minutes. A separate admission
+then retained the sampled Core DLL, reference and generated-output timestamps
+across synchronization and execution: compile 0.096 minutes, feedback 2.05,
+with 28 unit invocations passing. Its queue was 12.22 minutes, synchronization
+0.47, restore 0.057 and tests 1.80. This proves reuse for one pinned worktree
+on the same host, not a fleet cache hit rate. Disk-pressure eviction remains
+possible, and queue time still dominates that warm sample.
+
 ## Post-merge queue baseline
 
 [Affected run 42929935484](https://github.com/honua-io/honua-server/actions/runs/42929935484)
@@ -90,8 +100,9 @@ The longest execution included AOT (34.80 minutes), the managed producer
 (26.50 minutes), and the Capabilities shard (26.63 minutes).
 
 This run predates the completed-run base selection and six-job affected cap.
-Those changes need a completed subsequent affected run before an after value
-can be reported. Full fallback retains complete coverage under the affected
+The subsequent runtime-base refresh and newest-merge selection cap merged in
+PR #7332. A completed subsequent affected run is still needed before an after
+value can be reported. Full fallback retains complete coverage under the affected
 cap; scheduled full runs retain their separate concurrency budget. Existing
 selector guards determine expensive-suite eligibility, while descending shard
 rank starts estimated slow work first. Queue reduction must be assessed beside
