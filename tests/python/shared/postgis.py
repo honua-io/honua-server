@@ -314,6 +314,22 @@ class PostGISFixture:
             try:
                 conn.execute("CREATE SCHEMA IF NOT EXISTS honua;")
 
+                # Migrations are disabled for the Python server, but GP requests use
+                # the PostgreSQL job and operation-progress stores.
+                migration_dir = (
+                    Path(__file__).resolve().parents[3]
+                    / "src/Honua.Server/Migrations"
+                )
+                for migration_name in (
+                    "147_CreateJobSubstrate.sql",
+                    "150_CreateOAuthClientsAndOperationProgress.sql",
+                ):
+                    conn.execute(
+                        (migration_dir / migration_name)
+                        .read_text()
+                        .replace("$HonuaSchema$", "honua")
+                    )
+
                 # The Python server intentionally skips DbUp migrations, but the metadata-v2
                 # store still uses the public journal as its schema-floor receipt. Record the
                 # physical metadata-v2 baseline provisioned below so this compatibility fixture
