@@ -793,6 +793,19 @@ shard on selected PR runs and twice-daily full trunk runs. This changes no
 runner count, required check name, required aggregate dependency, workflow, or
 shard definition.
 
+### GPServer endpoint application lifetime
+
+`GPServerEndpointTests` holds a `PostgresFixture` class fixture, so the
+reference-counted PostgreSQL infrastructure starts once and stays alive until
+the last case in the class has run. The default `WebAppFixture` application
+starts only in cases that use the shared client, fixture or job store, and is
+disposed only if it was started. Every case still builds its own hosts, isolated
+schemas, in-memory job store and service replacements.
+All cases and assertions remain in the GeoServices GPServer Endpoints shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
 ## Trailing affected CI selection
 
 Trailing affected CI refreshes its completed-ancestor base when the selection job starts,
