@@ -8,6 +8,7 @@ import sys
 import unittest
 
 MODULE = Path(__file__).resolve().parents[1] / 'partition-managed-producer.py'
+sys.path.insert(0, str(MODULE.parent))
 spec = importlib.util.spec_from_file_location('partition', MODULE)
 partition = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = partition
