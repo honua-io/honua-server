@@ -41,8 +41,8 @@ jobs:
             });
             const runs = data.workflow_runs;
             const finished = runs.filter(run => run.status === 'completed' && ['success', 'failure'].includes(run.conclusion));
-            const lastResult = finished[0];
-            const stuck = runs.filter(run => run.status === 'queued' && now - Date.parse(run.created_at) > maxQueuedMs);
+            const lastResult = finished.sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))[0];
+            const stuck = runs.filter(run => run.status === 'queued' && now - Date.parse(run.updated_at) > maxQueuedMs);
             const { data: scheduled } = await github.rest.actions.listWorkflowRuns({
               ...repo, workflow_id: 'ci.yml', branch: 'trunk', event: 'schedule', per_page: 10,
             });
@@ -57,11 +57,11 @@ jobs:
             }
             if (!lastResult) {
               problems.push('No trunk CI run in the last 50 reached success or failure.');
-            } else if (now - Date.parse(lastResult.updated_at) > maxResultAgeMs) {
+            } else if (runs.some(run => run.status !== 'completed') && now - Date.parse(lastResult.updated_at) > maxResultAgeMs) {
               problems.push(`The last trunk CI result (${lastResult.conclusion}, ${lastResult.html_url}) finished at ${lastResult.updated_at}, more than ${process.env.MAX_HOURS_WITHOUT_RESULT} h ago.`);
             }
             for (const run of stuck) {
-              problems.push(`Run ${run.html_url} (${run.display_title}) has been queued since ${run.created_at}.`);
+              problems.push(`Run ${run.html_url} (${run.display_title}) has been queued since ${run.updated_at}.`);
             }
             const cancelled = runs.slice(0, 10).filter(run => run.conclusion === 'cancelled').length;
             if (cancelled >= 6) problems.push(`${cancelled} of the last 10 trunk CI runs were cancelled.`);
