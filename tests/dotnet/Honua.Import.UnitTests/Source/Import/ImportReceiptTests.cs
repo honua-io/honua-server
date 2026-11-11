@@ -8,13 +8,14 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Import.FileImport;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Import;
 
 public sealed class ImportReceiptTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
@@ -50,7 +51,7 @@ public sealed class ImportReceiptTests
         }
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(ImportStatus.Queued)]
     [InlineData(ImportStatus.Processing)]
     [InlineData(ImportStatus.Failed)]

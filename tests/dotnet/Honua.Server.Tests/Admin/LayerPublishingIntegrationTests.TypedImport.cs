@@ -29,13 +29,7 @@ public sealed partial class LayerPublishingIntegrationTests
     public async Task PublishImportedGeoJson_TypedColumns_FilterAndSortAcrossFeatureSurfaces()
     {
         await InstallImportFunctionsAsync();
-        await DeleteSecureConnectionAsync();
-        _connectionCreated = false;
-        var publishConnection = new Npgsql.NpgsqlConnectionStringBuilder(_fixture.Postgres.ConnectionString)
-        {
-            SearchPath = $"{_fixture.CurrentSchema},public"
-        };
-        await CreateSecureConnectionAsync(publishConnection.ConnectionString);
+        await CreateSchemaScopedImportConnectionAsync();
 
         var logicalTableName = $"typed_points_{Guid.NewGuid():N}";
         const string geoJson = """
@@ -255,6 +249,17 @@ public sealed partial class LayerPublishingIntegrationTests
         properties.TryGetProperty("created_at", out _).Should().BeFalse(payload);
         properties.GetProperty("properties").GetProperty("name").GetString().Should().Be("Legacy");
         (await ColumnNamesAsync("public", tableName)).Should().NotContain("name");
+    }
+
+    private async Task CreateSchemaScopedImportConnectionAsync()
+    {
+        await DeleteSecureConnectionAsync();
+        _connectionCreated = false;
+        var publishConnection = new Npgsql.NpgsqlConnectionStringBuilder(_fixture.Postgres.ConnectionString)
+        {
+            SearchPath = $"{_fixture.CurrentSchema},public"
+        };
+        await CreateSecureConnectionAsync(publishConnection.ConnectionString);
     }
 
     private async Task<string> ReadOgcItemsAsync(string query)
