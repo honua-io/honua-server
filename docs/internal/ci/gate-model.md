@@ -648,8 +648,9 @@ Unknown projects outside the solution still fail planning; test selection is unc
 ## Catalog SOAP test isolation
 
 Catalog SOAP metadata and export cases share the default raster application when their
-responses depend only on canned raster data. Raster-only overrides resolve through the
-existing request service scope, reusing the host with a fresh schema and mock per fixture.
-Call-history assertions retain their own mocks. Constructor-graph overrides and telemetry
-listeners retain independent applications. Every original case and assertion still runs in
-the same shard; no coverage moves to trunk-only execution.
+responses depend only on canned raster data. Catalog directory and catalog fault cases use
+request-scoped raster overrides with a fresh schema and mock per fixture. SOAP ImageServer
+cases retain full service replacement because their resolver, export backend and statistics
+scopes also consume the raster store. Custom configuration, interaction assertions and
+telemetry listeners retain independent applications. Every original case and assertion still
+runs in the same shard; no coverage moves to trunk-only execution.

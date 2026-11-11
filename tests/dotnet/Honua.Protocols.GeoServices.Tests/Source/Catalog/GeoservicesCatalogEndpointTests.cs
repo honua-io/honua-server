@@ -43,12 +43,12 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
         _soapRaster = soapRaster;
     }
 
-    // Canned raster responses can share an application; call-history assertions need separate
-    // mock instances, and telemetry listeners retain their isolated application lifecycle.
+    // Canned raster responses can share an application; interaction assertions and telemetry
+    // listeners retain separate mocks and application lifecycles.
     public sealed class SoapRasterFixture : IAsyncLifetime
     {
         public WebAppFixture Application { get; } = new WebAppFixture()
-            .ReplaceRequestService<IRasterStore>(CreateSoapRasterStore());
+            .ConfigureServices(services => services.AddSingleton(CreateSoapRasterStore()));
 
         public Task InitializeAsync() => Application.InitializeAsync();
 
@@ -788,7 +788,7 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
             {
                 new RasterInfo { Id = 1, LayerId = 0, Name = "raster", Width = 1, Height = 1, BandCount = 1, PixelType = "8BUI", Srid = 4326 }
             }));
-        var fixture = new WebAppFixture().ReplaceRequestService<IRasterStore>(rasterStore);
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
         await fixture.InitializeAsync();
         try
         {
@@ -820,7 +820,7 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
         var rasterStore = Substitute.For<IRasterStore>();
         rasterStore.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<RasterInfo?>(new InvalidOperationException("probe failed")));
-        var fixture = new WebAppFixture().ReplaceRequestService<IRasterStore>(rasterStore);
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
         await fixture.InitializeAsync();
         try
         {
@@ -1407,7 +1407,7 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
                  })
         {
             var rasterStore = CreateSoapRasterStore(pixelType: postgisPixelType);
-            var fixture = new WebAppFixture().ReplaceRequestService<IRasterStore>(rasterStore);
+            var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
             await fixture.InitializeAsync();
             try
             {
@@ -1436,7 +1436,7 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
     public async Task PostSoapImageServer_GetServiceInfo_ClassifiesNad83AsGeographic()
     {
         var rasterStore = CreateSoapRasterStore(srid: 4269);
-        var fixture = new WebAppFixture().ReplaceRequestService<IRasterStore>(rasterStore);
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
         await fixture.InitializeAsync();
         try
         {
@@ -1466,7 +1466,7 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
     public async Task PostSoapImageServer_GetServiceInfo_DefaultsMissingSridToWgs84()
     {
         var rasterStore = CreateSoapRasterStore(srid: null);
-        var fixture = new WebAppFixture().ReplaceRequestService<IRasterStore>(rasterStore);
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
         await fixture.InitializeAsync();
         try
         {
@@ -1561,7 +1561,7 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
     public async Task PostSoapImageServer_ExportImage_DelegatesToCanonicalRasterExport()
     {
         var rasterStore = CreateSoapRasterStore();
-        var fixture = new WebAppFixture().ReplaceRequestService<IRasterStore>(rasterStore);
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
         await fixture.InitializeAsync();
         try
         {
@@ -1653,7 +1653,7 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
                 PixelType = "32BF",
                 Srid = 4326
             });
-        var fixture = new WebAppFixture().ReplaceRequestService<IRasterStore>(rasterStore);
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
         await fixture.InitializeAsync();
         try
         {
@@ -1863,7 +1863,7 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
     public async Task PostSoapImageServer_GetImage_ReturnsBipPixelsFollowedByPackedNoDataMask()
     {
         var rasterStore = CreateSoapRasterStore();
-        var fixture = new WebAppFixture().ReplaceRequestService<IRasterStore>(rasterStore);
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
         await fixture.InitializeAsync();
         try
         {
@@ -1909,7 +1909,7 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
     public async Task PostSoapImageServer_GetImage_RejectsMultispectralPngProjection()
     {
         var rasterStore = CreateSoapRasterStore(bandCount: 4);
-        var fixture = new WebAppFixture().ReplaceRequestService<IRasterStore>(rasterStore);
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
         await fixture.InitializeAsync();
         try
         {
