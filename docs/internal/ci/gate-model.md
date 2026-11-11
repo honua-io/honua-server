@@ -679,3 +679,11 @@ accessed through their request-generated job IDs and reference tokens.
 All cases and assertions remain in the WFS 1–9 shard family on selected PR runs
 and twice-daily full trunk runs. This changes no runner count, required check
 name, required aggregate dependency, workflow, or shard definition.
+
+### GPServer endpoint state isolation
+
+`GPServerEndpointTests` retains PostgreSQL for the class lifetime. Each case
+keeps its own application, schema and execution-job store; default setup runs
+only in cases that use it. Cases with custom services initialize and dispose
+their custom applications as before. Retaining database infrastructure avoids
+repeating container bootstrap without sharing job state or changing assertions.

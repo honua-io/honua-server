@@ -652,3 +652,7 @@ Optional PR workflow filters and retained post-merge coverage are documented in
 The WFS 1–9 shard family includes `Wps20EndpointsTests`. See
 [WPS endpoint fixture lifetime](gate-model.md#wps-endpoint-fixture-lifetime)
 for its class-scoped applications and isolated custom-host cases.
+
+GPServer endpoint tests retain database infrastructure and avoid unused default
+application startup under the
+[GPServer state isolation contract](gate-model.md#gpserver-endpoint-state-isolation).
