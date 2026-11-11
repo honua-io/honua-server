@@ -52,6 +52,31 @@ public sealed class FeatureQueryBuilderObjectIdsTests
         result.Sql.Should().NotContain("COUNT(*) OVER()");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildObjectIdsQuery_PublicIdProjection_RequiresExplicitOptIn(bool returnPublicIds)
+    {
+        var pool = new DefaultObjectPoolProvider().Create(new FeatureStoreStringBuilderPooledObjectPolicy());
+        var queryBuilder = new FeatureQueryBuilder(pool, new GeometryProcessor());
+        var result = queryBuilder.BuildObjectIdsQuery(1, new FeatureQuery
+        {
+            PublicIdAttributeName = "source_id",
+            ReturnPublicObjectIds = returnPublicIds
+        });
+
+        if (returnPublicIds)
+        {
+            result.Sql.Should().Contain("SELECT COALESCE((attributes ->> $2)::bigint, objectid) FROM");
+            result.WhereParameters.Should().ContainSingle().Which.Should().Be("source_id");
+        }
+        else
+        {
+            result.Sql.Should().Contain("SELECT objectid FROM");
+            result.WhereParameters.Should().BeEmpty();
+        }
+    }
+
     [Fact]
     public void BuildPreChangeObjectIdsQuery_FiltersRecordedImagesWithTheSameWhereAndEnforcedFilter()
     {
