@@ -754,6 +754,17 @@ Support shard on selected PR runs and twice-daily full trunk runs. This changes
 no runner count, required check name, required aggregate dependency, workflow,
 or shard definition.
 
+### Secure connection default application lifetime
+
+`SecureConnectionEndpointsTests` starts its default application lazily: only
+cases that call `InitializeDefaultApplicationAsync()` start it, and only those
+cases dispose it. Cases that build a custom host no longer pay for an unused
+default application.
+All cases and assertions remain in the Server Features Admin Platform and
+Connections shard on selected PR runs and twice-daily full trunk runs. This
+changes no runner count, required check name, required aggregate dependency,
+workflow, or shard definition.
+
 ## Trailing affected CI selection
 
 Trailing affected CI refreshes its completed-ancestor base when the selection job starts,
