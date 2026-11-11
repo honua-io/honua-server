@@ -15,7 +15,7 @@
     },
     {
       "path": "src/Honua.Server/appsettings.json",
-      "sha256": "7e18067473c41437800eb5e6c0d82baa6994cb4a0fa7b6c8875163df40ac96f6"
+      "sha256": "fd64667965c72b23a59e2b02ebb982542b0b8499a567251a166fa5b69642ea4a"
     },
     {
       "path": "eng/Honua.ProtocolProfiles.props",
