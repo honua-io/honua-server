@@ -709,6 +709,12 @@ The `GeoServices GPServer and NAServer` shard includes the
 Raw pixel export test database lifecycle is documented in the
 [gate model](gate-model.md#raw-pixel-export-database-lifetime).
 
+### Security permission matrix
+
+The Security and Authorization shards exercise the cross-protocol permission matrix.
+Its application ownership rules are documented in
+[Security permission matrix fixture lifetime](gate-model.md#security-permission-matrix-fixture-lifetime).
+
 ## Automatic merge admission
 
 `auto-merge-ready.yml` reconciles same-repository trunk PRs using the repository-scoped

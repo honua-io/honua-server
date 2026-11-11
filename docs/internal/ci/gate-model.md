@@ -763,6 +763,14 @@ existing application fixture lifecycle and raster isolation. Every assertion rem
 in the existing selected PR and twice-daily full trunk runs; required checks, aggregate
 needs, runner counts, workflows, and shard definitions are unchanged.
 
+### Security permission matrix fixture lifetime
+
+`CrossProtocolPermissionMatrixTests` uses a class-lifetime application for its
+immutable wildcard-query read policy and a separate client per case. Write
+scenarios and alternative grants own separate applications. The Security and
+Authorization shards partition these cases by method. PR path routing selects
+affected shards; full trunk runs cover the entire matrix.
+
 ## Automatic merge admission
 
 [Automatic merge admission](workflow-inventory.md#automatic-merge-admission) uses
