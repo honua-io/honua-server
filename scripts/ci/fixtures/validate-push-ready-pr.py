@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise publication side effects and live gate/race admission."""
+"""Exercise publication side effects and simulated gate/race admission."""
 import importlib.util
 import json
 from pathlib import Path
