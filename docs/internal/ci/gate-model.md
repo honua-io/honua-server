@@ -687,3 +687,10 @@ keeps its own application, schema and execution-job store; default setup runs
 only in cases that use it. Cases with custom services initialize and dispose
 their custom applications as before. Retaining database infrastructure avoids
 repeating container bootstrap without sharing job state or changing assertions.
+
+### Geocoding response fixture lifetime
+
+`GeocodingEndpointTests` uses one class-lifetime Community application for
+request-derived default-provider responses. Each case owns its HTTP client.
+Request-capture, custom-provider and Enterprise configurations own separate
+applications. Full trunk runs include every case; PR routing selects affected geocoding shards.
