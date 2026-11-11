@@ -52,15 +52,15 @@ public sealed class OperationSecretKeyRingProtectionTests
     public void RequiresDurableChannelCertificate_StaysOffInDevelopmentAndTest()
     {
         OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
-            isDevelopment: true, isTest: false, redisConnected: true).Should().BeFalse();
+            isDevelopment: true, isTest: false, keyRingIsShared: true).Should().BeFalse();
         OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
-            isDevelopment: false, isTest: true, redisConnected: true).Should().BeFalse();
+            isDevelopment: false, isTest: true, keyRingIsShared: true).Should().BeFalse();
         OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
-            isDevelopment: true, isTest: true, redisConnected: true).Should().BeFalse();
+            isDevelopment: true, isTest: true, keyRingIsShared: true).Should().BeFalse();
         OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
-            isDevelopment: false, isTest: false, redisConnected: false).Should().BeFalse();
+            isDevelopment: false, isTest: false, keyRingIsShared: false).Should().BeFalse();
         OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
-            isDevelopment: false, isTest: false, redisConnected: true).Should().BeTrue();
+            isDevelopment: false, isTest: false, keyRingIsShared: true).Should().BeTrue();
     }
 
     // The published image is uid 1001. A root-owned 0640 file is readable when its
@@ -344,8 +344,8 @@ public sealed class OperationSecretKeyRingProtectionTests
             "key",
             new XElement("descriptor", new XElement("descriptor")));
 
-        RedisDataProtectionKeyRepository.IsProtectedElement(protectedKey).Should().BeTrue();
-        RedisDataProtectionKeyRepository.IsProtectedElement(legacyKey).Should().BeFalse();
+        DataProtectionKeyElementProtection.IsProtected(protectedKey).Should().BeTrue();
+        DataProtectionKeyElementProtection.IsProtected(legacyKey).Should().BeFalse();
     }
 
     [UnitTest]
@@ -360,7 +360,7 @@ public sealed class OperationSecretKeyRingProtectionTests
                     new XElement("masterKey", new XElement("value", "plaintext")))),
             new XElement("encryptedSecret"));
 
-        RedisDataProtectionKeyRepository.IsProtectedElement(key).Should().BeFalse();
+        DataProtectionKeyElementProtection.IsProtected(key).Should().BeFalse();
     }
 
     [UnitTest]
@@ -371,7 +371,7 @@ public sealed class OperationSecretKeyRingProtectionTests
             "key",
             new XElement("descriptor", new XElement(unrelatedNamespace + "encryptedSecret")));
 
-        RedisDataProtectionKeyRepository.IsProtectedElement(key).Should().BeFalse();
+        DataProtectionKeyElementProtection.IsProtected(key).Should().BeFalse();
     }
 
     // XmlKeyManager.EncryptIfNecessary always wraps the encryptor output as
@@ -397,7 +397,7 @@ public sealed class OperationSecretKeyRingProtectionTests
                         new XAttribute("decryptorType", "Honua.Server.Features.Operations.RsaAesGcmKeyRingDecryptor"),
                         new XElement(cipher + "key")))));
 
-        RedisDataProtectionKeyRepository.IsProtectedElement(key).Should().BeTrue();
+        DataProtectionKeyElementProtection.IsProtected(key).Should().BeTrue();
     }
 
     [UnitTest]
@@ -407,7 +407,7 @@ public sealed class OperationSecretKeyRingProtectionTests
             "revocation",
             new XElement("revocationDate", "2026-10-06T00:00:00Z"));
 
-        RedisDataProtectionKeyRepository.IsProtectedElement(revocation).Should().BeTrue();
+        DataProtectionKeyElementProtection.IsProtected(revocation).Should().BeTrue();
     }
 
     // A private key on disk gets a unique name and 0600 at creation time, not a fixed
@@ -452,7 +452,7 @@ public sealed class OperationSecretKeyRingProtectionTests
         second.Should().Be("approved-secret");
         repository.Elements.Should().ContainSingle();
         var stored = repository.Elements[0];
-        RedisDataProtectionKeyRepository.IsProtectedElement(stored).Should().BeTrue();
+        DataProtectionKeyElementProtection.IsProtected(stored).Should().BeTrue();
         XNamespace dataProtection = "http://schemas.asp.net/2015/03/dataProtection";
         stored.Descendants(dataProtection + "encryptedSecret").Should().ContainSingle();
         stored.Descendants("encryptedSecret").Should().BeEmpty();

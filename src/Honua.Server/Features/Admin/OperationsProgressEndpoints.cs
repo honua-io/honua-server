@@ -774,8 +774,7 @@ internal static partial class OperationsProgressEndpoints
         for (var attempt = 0; attempt < MaxCancelCompareAndSetAttempts; attempt++)
         {
             var cancelledProgress = observedCancellable.WithCancellation(DateTimeOffset.UtcNow, "Cancelled by user");
-            var casResult = await progressStore.TrySetProgressAsync(
-                operationId, cancelledProgress, observedProgress.Status, TimeSpan.FromDays(7), cancellationToken);
+            var casResult = await progressStore.TrySetProgressAsync(new OperationProgressWrite(operationId, cancelledProgress, TimeSpan.FromDays(7)), observedProgress.Status, cancellationToken);
 
             if (casResult.Outcome == ProgressCompareAndSetOutcome.Updated)
             {

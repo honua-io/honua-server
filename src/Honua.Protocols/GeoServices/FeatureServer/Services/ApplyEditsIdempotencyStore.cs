@@ -5,8 +5,6 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using Honua.Infrastructure.Security;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
-using Microsoft.Extensions.Caching.Distributed;
-using StackExchange.Redis;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
@@ -57,26 +55,17 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
     private readonly ILogger<DistributedApplyEditsIdempotencyStore> _logger;
 
     public DistributedApplyEditsIdempotencyStore(
-        IConnectionMultiplexer? multiplexer,
-        IDistributedCache? cache,
+        IIdempotencyReservationStore reservations,
         ILogger<DistributedApplyEditsIdempotencyStore> logger,
-        TimeSpan? reservationWindow = null,
-        TimeProvider? timeProvider = null)
+        TimeSpan? reservationWindow = null)
     {
-        _payloads = new IdempotencyPayloadStore(multiplexer, cache, timeProvider);
+        _payloads = new IdempotencyPayloadStore(reservations);
         _reservationWindow = reservationWindow is { } window && window > IdempotencyPayloadStore.ReservationWindow
             ? window
             : IdempotencyPayloadStore.ReservationWindow;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    // Backward-compatible overload for callers that do not yet supply an IConnectionMultiplexer.
-    public DistributedApplyEditsIdempotencyStore(
-        IDistributedCache? cache,
-        ILogger<DistributedApplyEditsIdempotencyStore> logger)
-        : this(multiplexer: null, cache, logger)
-    {
-    }
 
     public async Task<ApplyEditsResponse?> TryGetAsync(
         ApplyEditsIdempotencyScope scope,
@@ -108,15 +97,14 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
         ArgumentNullException.ThrowIfNull(response);
         ArgumentException.ThrowIfNullOrEmpty(reservationToken);
         return _payloads.SetIfAbsentOrOwnedAsync(
-            BuildKey(scope),
-            reservationToken,
+            new IdempotencyReservation(BuildKey(scope), reservationToken),
             Serialize(response),
             ex => LogUnavailable(scope, ex),
             cancellationToken);
     }
 
     public Task ReleaseAsync(ApplyEditsIdempotencyScope scope, string reservationToken)
-        => _payloads.ReleaseAsync(BuildKey(scope), reservationToken, ex => LogUnavailable(scope, ex));
+        => _payloads.ReleaseAsync(new IdempotencyReservation(BuildKey(scope), reservationToken), ex => LogUnavailable(scope, ex));
 
     private void LogUnavailable(ApplyEditsIdempotencyScope scope, Exception exception)
         => FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(_logger, scope.ServiceId, scope.LayerId, exception);

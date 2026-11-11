@@ -23,7 +23,7 @@ mapfile -t merges < <(git log --first-parent --format='%H%x09%s' "${base}..${hea
 
 echo "## Suspect merge range"
 echo
-echo "\`${base}\`..\`${head}\` (${#merges[@]} merges on trunk since the last green CI run)"
+echo "\`${base}\`..\`${head}\` (${#merges[@]} merges on trunk since the supplied base)"
 echo
 
 pull_requests=()

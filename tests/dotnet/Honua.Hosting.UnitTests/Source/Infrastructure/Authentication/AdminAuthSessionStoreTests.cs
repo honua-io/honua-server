@@ -26,176 +26,73 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 [Operation(Operations.Security)]
 public sealed class AdminAuthSessionStoreTests
 {
-    // ─── BH-028 regression ──────────────────────────────────────────────────────
-
     [UnitTest]
-    public async Task GetPendingSessionAsync_DistributedCacheThrows_FallsBackToMemoryCache()
+    public async Task GetAuthenticatedSessionAsync_OnASecondStoreOverTheSameTokens_HonoursTheSignIn()
     {
-        // Regression test for BH-028: when distributedCache.GetAsync throws (e.g. Redis
-        // cluster failover), the store previously evicted the in-process memory entry and
-        // returned null.  Admin login flows in progress during the outage returned 401.
-        // After the fix, the memory tier is preserved as a fallback.
-        var mockDistCache = Substitute.For<IDistributedCache>();
-        // SetAsync succeeds by default (NSubstitute returns Task.CompletedTask) so the
-        // pending session is committed to both distributed and memory caches on creation.
-        mockDistCache
-            .GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromException<byte[]?>(new InvalidOperationException("Redis cluster failover")));
+        var sharedTokens = new InMemorySecurityTokenStore();
+        var signInNode = new AdminAuthSessionStore(sharedTokens, NullLogger<AdminAuthSessionStore>.Instance);
+        var otherNode = new AdminAuthSessionStore(sharedTokens, NullLogger<AdminAuthSessionStore>.Instance);
+        var sessionId = await signInNode.CreateAuthenticatedSessionAsync(
+            "oidc", "access-token", null, [], DateTimeOffset.UtcNow.AddMinutes(5), CancellationToken.None);
 
-        var memCache = new MemoryCache(new MemoryCacheOptions());
-        var store = new AdminAuthSessionStore(memCache, NullLogger<AdminAuthSessionStore>.Instance, mockDistCache);
-        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(10);
+        (await otherNode.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None)).Should().NotBeNull();
 
-        var sessionId = await store.CreatePendingSessionAsync(
-            providerKey: "oidc-test",
-            state: "random-state-value",
-            codeVerifier: "pkce-verifier",
-            expiresAt: expiresAt,
-            cancellationToken: CancellationToken.None);
-
-        // Distributed cache throws → before the fix: memory entry evicted, null returned.
-        // After the fix: falls back to the memory tier; pending session is returned.
-        var session = await store.GetPendingSessionAsync(sessionId, CancellationToken.None);
-
-        session.Should().NotBeNull(
-            "the pending session must be retrievable from memory cache during a Redis outage (BH-028)");
-        session!.ProviderKey.Should().Be("oidc-test");
-        session.State.Should().Be("random-state-value");
+        await otherNode.RemoveAuthenticatedSessionAsync(sessionId, CancellationToken.None);
+        (await signInNode.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None))
+            .Should().BeNull("a sign-out on one node is effective on the next read anywhere");
     }
 
     [UnitTest]
-    public async Task GetAuthenticatedSessionAsync_DistributedCacheThrows_FallsBackToMemoryCache()
+    public async Task GetPendingSessionAsync_IsNotAnswerableWithAnAuthenticatedSessionId()
     {
-        // Same BH-028 regression but for authenticated sessions: an admin console page
-        // load during a Redis outage must not evict the session and return 401.
-        var mockDistCache = Substitute.For<IDistributedCache>();
-        mockDistCache
-            .GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromException<byte[]?>(new InvalidOperationException("Redis cluster failover")));
-
-        var memCache = new MemoryCache(new MemoryCacheOptions());
-        var store = new AdminAuthSessionStore(memCache, NullLogger<AdminAuthSessionStore>.Instance, mockDistCache);
-        var expiresAt = DateTimeOffset.UtcNow.AddHours(1);
-
+        var store = CreateStore();
         var sessionId = await store.CreateAuthenticatedSessionAsync(
-            providerKey: "oidc-test",
-            accessToken: "at-test-value",
-            idToken: null,
-            claims: [new AdminAuthSessionClaim { Type = "sub", Value = "user-1" }],
-            expiresAt: expiresAt,
-            cancellationToken: CancellationToken.None);
+            "oidc", "access-token", null, [], DateTimeOffset.UtcNow.AddMinutes(5), CancellationToken.None);
 
-        var session = await store.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None);
-
-        session.Should().NotBeNull(
-            "the authenticated session must be retrievable from memory cache during a Redis outage (BH-028)");
-        session!.ProviderKey.Should().Be("oidc-test");
-        session.AccessToken.Should().Be("at-test-value");
+        (await store.GetPendingSessionAsync(sessionId, CancellationToken.None)).Should().BeNull();
     }
 
     [UnitTest]
-    public async Task GetPendingSessionAsync_DistributedCacheReturnsNull_ReturnsNull()
+    public async Task CreateAuthenticatedSessionAsync_StoreUnavailable_Throws()
     {
-        // When distributedCache.GetAsync returns null (key genuinely absent / expired),
-        // the correct behavior is to evict the memory entry and return null.
-        // The BH-028 fix must not affect this path.
-        var mockDistCache = Substitute.For<IDistributedCache>();
-        mockDistCache
-            .GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<byte[]?>(null));
+        var tokens = Substitute.For<ISecurityTokenStore>();
+        tokens.StoreAsync(default, default, default, default)
+            .ReturnsForAnyArgs(Task.FromException(new InvalidOperationException("database unavailable")));
+        var store = new AdminAuthSessionStore(tokens, NullLogger<AdminAuthSessionStore>.Instance);
 
-        var memCache = new MemoryCache(new MemoryCacheOptions());
-        var store = new AdminAuthSessionStore(memCache, NullLogger<AdminAuthSessionStore>.Instance, mockDistCache);
+        var create = () => store.CreateAuthenticatedSessionAsync(
+            "oidc", "access-token", null, [], DateTimeOffset.UtcNow.AddMinutes(5), CancellationToken.None);
 
-        var sessionId = await store.CreatePendingSessionAsync(
-            providerKey: "oidc-test",
-            state: "state-val",
-            codeVerifier: "verifier-val",
-            expiresAt: DateTimeOffset.UtcNow.AddMinutes(5),
-            cancellationToken: CancellationToken.None);
-
-        var session = await store.GetPendingSessionAsync(sessionId, CancellationToken.None);
-
-        session.Should().BeNull(
-            "a null distributed cache result means key-not-found; the store must return null");
+        await create.Should().ThrowAsync<InvalidOperationException>();
     }
 
     [UnitTest]
-    public async Task RemoveAuthenticatedSessionAsync_DistributedCacheFails_RejectsRevocationAndEvictsLocalSession()
+    public async Task RemoveAuthenticatedSessionAsync_StoreUnavailable_RejectsTheSignOut()
     {
-        var cache = Substitute.For<IDistributedCache>();
-        cache.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException(new IOException("Redis unavailable")));
-        cache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<byte[]?>(new IOException("Redis unavailable")));
-        using var memory = new MemoryCache(new MemoryCacheOptions());
-        var store = new AdminAuthSessionStore(memory, NullLogger<AdminAuthSessionStore>.Instance, cache);
-        var sessionId = await store.CreateAuthenticatedSessionAsync("oidc", "token", null,
-            [new AdminAuthSessionClaim { Type = "sub", Value = "admin" }],
-            DateTimeOffset.UtcNow.AddMinutes(5), CancellationToken.None);
+        var store = new AdminAuthSessionStore(RevocationUnavailable(), NullLogger<AdminAuthSessionStore>.Instance);
 
-        await Assert.ThrowsAsync<ServiceUnavailableException>(() =>
-            store.RemoveAuthenticatedSessionAsync(sessionId, CancellationToken.None));
-        Assert.Null(await store.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None));
+        var remove = () => store.RemoveAuthenticatedSessionAsync("a-session", CancellationToken.None);
+
+        await remove.Should().ThrowAsync<ServiceUnavailableException>();
     }
 
     [UnitTest]
-    public async Task RemovePendingSessionAsync_DistributedCacheFails_PreservesBestEffortCleanup()
+    public async Task RemovePendingSessionAsync_StoreUnavailable_IsBestEffort()
     {
-        var cache = Substitute.For<IDistributedCache>();
-        cache.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException(new IOException("Redis unavailable")));
-        cache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<byte[]?>(new IOException("Redis unavailable")));
-        using var memory = new MemoryCache(new MemoryCacheOptions());
-        var store = new AdminAuthSessionStore(memory, NullLogger<AdminAuthSessionStore>.Instance, cache);
-        var sessionId = await store.CreatePendingSessionAsync("oidc", "state", "verifier",
-            DateTimeOffset.UtcNow.AddMinutes(5), CancellationToken.None);
+        var store = new AdminAuthSessionStore(RevocationUnavailable(), NullLogger<AdminAuthSessionStore>.Instance);
 
-        await store.RemovePendingSessionAsync(sessionId, CancellationToken.None);
-        Assert.Null(await store.GetPendingSessionAsync(sessionId, CancellationToken.None));
+        var remove = () => store.RemovePendingSessionAsync("a-pending-sign-in", CancellationToken.None);
+
+        await remove.Should().NotThrowAsync();
     }
 
-    [Theory]
-    [Trait("Tier", "Fast")]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task RemoveAuthenticatedSessionAsync_DeleteDenied_RequiresConfirmedAbsence(bool recordExists)
+    private static ISecurityTokenStore RevocationUnavailable()
     {
-        var cache = Substitute.For<IDistributedCache>();
-        byte[]? payload = null;
-        cache.SetAsync(Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<DistributedCacheEntryOptions>(), Arg.Any<CancellationToken>())
-            .Returns(call =>
-            {
-                payload = call.ArgAt<byte[]>(1);
-                return Task.CompletedTask;
-            });
-        cache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromResult(recordExists ? payload : null));
-        cache.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException(new IOException("Delete denied")));
-        using var memory = new MemoryCache(new MemoryCacheOptions());
-        var store = new AdminAuthSessionStore(memory, NullLogger<AdminAuthSessionStore>.Instance, cache);
-        var sessionId = await store.CreateAuthenticatedSessionAsync("oidc", "token", null,
-            [new AdminAuthSessionClaim { Type = "sub", Value = "admin" }],
-            DateTimeOffset.UtcNow.AddMinutes(5), CancellationToken.None);
-
-        if (recordExists)
-        {
-            await Assert.ThrowsAsync<ServiceUnavailableException>(() =>
-                store.RemoveAuthenticatedSessionAsync(sessionId, CancellationToken.None));
-        }
-        else
-        {
-            await store.RemoveAuthenticatedSessionAsync(sessionId, CancellationToken.None);
-        }
-
-        cache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<byte[]?>(new IOException("Read unavailable")));
-        Assert.Null(await store.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None));
+        var tokens = Substitute.For<ISecurityTokenStore>();
+        tokens.RevokeAsync(default, default)
+            .ReturnsForAnyArgs(Task.FromException(new InvalidOperationException("database unavailable")));
+        return tokens;
     }
-
-    // ─── Basic session lifecycle ────────────────────────────────────────────────
 
     [UnitTest]
     public async Task CreateAndGetPendingSession_RoundTrips()
@@ -373,8 +270,5 @@ public sealed class AdminAuthSessionStoreTests
     // ────────────────────────────────────────────────────────────────────────────
 
     private static AdminAuthSessionStore CreateStore()
-    {
-        var memoryCache = new MemoryCache(new MemoryCacheOptions());
-        return new AdminAuthSessionStore(memoryCache, NullLogger<AdminAuthSessionStore>.Instance);
-    }
+        => new(new InMemorySecurityTokenStore(), NullLogger<AdminAuthSessionStore>.Instance);
 }

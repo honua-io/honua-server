@@ -343,13 +343,10 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         // not regress the process-local cache to it in that path.
         _cachedCurrent = commitWasReconciled ? null : snapshot;
 
-        // Drop the shared read-through snapshot cache for this environment so read surfaces
-        // (MCP tools, REST/OGC metadata) observe the committed mutation immediately on this node
-        // instead of waiting out the TTL. When Redis is composed the invalidator also broadcasts to
-        // every other node (RedisMetadataV2GraphCacheInvalidator); without it, other nodes remain
-        // TTL-bounded. This is the canonical
-        // catalog write, so every mutation path (admin publish, migration/import, release
-        // reconcilers) invalidates through here. (mcp A2 hot-path caching.)
+        // Drop this node's snapshot so its read surfaces observe the committed mutation immediately.
+        // Other nodes notice the new ETag at their next revision probe. This is the canonical catalog
+        // write, so every mutation path (admin publish, migration, import, release reconcilers)
+        // invalidates through here.
         _cacheInvalidator?.Invalidate(_environment);
 
         return snapshot;

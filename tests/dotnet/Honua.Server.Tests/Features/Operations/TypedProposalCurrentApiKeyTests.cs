@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using Honua.ControlPlane;
 using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.TestKit.Extensions;
 using Microsoft.Extensions.Logging;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -33,7 +34,7 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 [Operation(Operations.TestInfrastructure)]
 public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
     private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
     private HumanApprovalHttpClient _human = null!;
     private readonly CountingPublishExecutor _executor = new();
