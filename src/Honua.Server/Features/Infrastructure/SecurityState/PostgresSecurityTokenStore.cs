@@ -5,16 +5,21 @@ using System.Security.Cryptography;
 using System.Text;
 using Honua.ControlPlane;
 using Honua.Infrastructure.Security;
+using Microsoft.AspNetCore.DataProtection;
 using Npgsql;
 using NpgsqlTypes;
 
 namespace Honua.Server.Features.Infrastructure.SecurityState;
 
-internal sealed class PostgresSecurityTokenStore(JobStoreDatabase database) : ISecurityTokenStore, IExpiredRowSweep
+// Payloads carry identity-provider tokens and PKCE verifiers, so they are protected with the shared
+// key ring before they reach the database; the bearer value itself is kept only as a digest.
+internal sealed class PostgresSecurityTokenStore(JobStoreDatabase database, IDataProtectionProvider dataProtection)
+    : ISecurityTokenStore, IExpiredRowSweep
 {
     private const string LiveToken = "kind = @kind AND token_hash = @token_hash AND expires_at > now()";
 
     private readonly string _tokens = database.Table("security_tokens");
+    private readonly IDataProtector _payloadProtector = dataProtection.CreateProtector("Honua.SecurityTokens.Payload");
 
     public Task StoreAsync(SecurityTokenKey key, ReadOnlyMemory<byte> payload, TimeSpan lifetime, CancellationToken cancellationToken)
         => WriteAsync(
@@ -90,7 +95,10 @@ internal sealed class PostgresSecurityTokenStore(JobStoreDatabase database) : IS
                     """,
                     connection);
                 AddKeyParameters(command, key);
-                command.Parameters.Add(new NpgsqlParameter("payload", NpgsqlDbType.Bytea) { Value = write.Payload });
+                command.Parameters.Add(new NpgsqlParameter("payload", NpgsqlDbType.Bytea)
+                {
+                    Value = _payloadProtector.Protect(write.Payload.ToArray())
+                });
                 command.Parameters.Add(write.ExpiryParameter.Clone());
                 await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
             },
@@ -109,11 +117,24 @@ internal sealed class PostgresSecurityTokenStore(JobStoreDatabase database) : IS
                 AddKeyParameters(command, key);
                 await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
                 return await reader.ReadAsync(token).ConfigureAwait(false)
-                    ? new StoredSecurityToken(reader.GetFieldValue<byte[]>(0), reader.GetFieldValue<DateTimeOffset>(1))
+                    ? Unprotect(reader.GetFieldValue<byte[]>(0), reader.GetFieldValue<DateTimeOffset>(1))
                     : null;
             },
             repeat,
             cancellationToken);
+
+    // A payload the key ring can no longer open reads as an absent token, so the caller signs in again.
+    private StoredSecurityToken? Unprotect(byte[] protectedPayload, DateTimeOffset expiresAt)
+    {
+        try
+        {
+            return new StoredSecurityToken(_payloadProtector.Unprotect(protectedPayload), expiresAt);
+        }
+        catch (CryptographicException)
+        {
+            return null;
+        }
+    }
 
     private static void AddKeyParameters(NpgsqlCommand command, SecurityTokenKey key)
     {

@@ -46,6 +46,19 @@ public sealed class PostgresSecurityTokenStoreTests(DatabaseFixtureAdapter datab
     }
 
     [IntegrationTest]
+    public async Task StoreAsync_PersistsThePayloadProtectedAndReturnsItInTheClear()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var key = NewKey(SecurityTokenKind.AdminSession);
+        await harness.CreateSecurityTokenStore().StoreAsync(key, _payload, _lifetime, CancellationToken.None);
+
+        var stored = await harness.ScalarAsync<byte[]>($"SELECT payload FROM {harness.Table("security_tokens")}");
+
+        Encoding.UTF8.GetString(stored!).Should().NotContain("operator");
+        (await harness.CreateSecurityTokenStore().FindAsync(key, CancellationToken.None))!.Payload.Should().Equal(_payload);
+    }
+
+    [IntegrationTest]
     public async Task ConsumeAsync_SixteenConcurrentCallers_ExactlyOneReceivesThePayload()
     {
         await using var harness = await CreateHarnessAsync();

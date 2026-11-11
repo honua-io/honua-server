@@ -49,7 +49,7 @@ internal sealed partial class PostgresWorkflowOperationStore
     public async Task<IReadOnlyList<WorkflowOperationRecord>> ListActiveAsync(
         WorkflowOperationKind? kind = null,
         CancellationToken cancellationToken = default)
-        => await database.ExecuteAsync(
+        => await _database.ExecuteAsync(
             async (connection, _, token) =>
             {
                 await using var command = new NpgsqlCommand(
@@ -76,7 +76,7 @@ internal sealed partial class PostgresWorkflowOperationStore
         var skip = (page - 1) * pageSize;
         const string Filter = "(@kind::text IS NULL OR kind = @kind) AND (@status::text IS NULL OR status = @status)";
 
-        var (totalCount, items) = await database.ExecuteAsync(
+        var (totalCount, items) = await _database.ExecuteAsync(
             async (connection, _, token) =>
             {
                 await using var batch = new NpgsqlBatch(connection);
@@ -127,7 +127,7 @@ internal sealed partial class PostgresWorkflowOperationStore
             return null;
         }
 
-        return await database.ExecuteAsync(
+        return await _database.ExecuteAsync(
             async (connection, _, token) =>
             {
                 await using var command = new NpgsqlCommand(
@@ -148,7 +148,7 @@ internal sealed partial class PostgresWorkflowOperationStore
     }
 
     private Task<WorkflowOperationRecord?> ReadFirstAsync(string statement, string value, CancellationToken cancellationToken)
-        => database.ExecuteAsync(
+        => _database.ExecuteAsync(
             async (connection, _, token) =>
             {
                 await using var command = new NpgsqlCommand(statement, connection);

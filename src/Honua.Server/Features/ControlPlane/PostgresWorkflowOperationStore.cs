@@ -5,19 +5,17 @@ using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Coordination;
-using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
 
 namespace Honua.ControlPlane;
 
 internal sealed partial class PostgresWorkflowOperationStore(
-    JobStoreDatabase database,
-    ILeaseStore leases,
-    IOptions<ControlPlaneRetentionOptions> retention,
-    IOptions<MetadataReleaseOperationOptions> metadataReleaseOptions,
+    ControlPlaneStorage storage,
+    WorkflowOperationRetention retention,
     ILogger<PostgresWorkflowOperationStore> logger) : IWorkflowOperationStore, IExpiredRowSweep
 {
+    private readonly JobStoreDatabase _database = storage.Database;
     private const int DefaultPageSize = 50;
     private const int MaxPageSize = 200;
     private const string InsertColumns =
@@ -31,8 +29,8 @@ internal sealed partial class PostgresWorkflowOperationStore(
         + "updated_at = @updated_at, completed_at = @completed_at, deploy_target_id = @deploy_target_id, "
         + "metadata_package_id = @metadata_package_id, expires_at = now() + @retention, record = @record";
 
-    private readonly string _operations = database.Table("workflow_operations");
-    private readonly OperationLeases _operationLeases = new(leases, "workflow-operation:");
+    private readonly string _operations = storage.Database.Table("workflow_operations");
+    private readonly OperationLeases _operationLeases = new(storage.Leases, "workflow-operation:");
 
     public Task<bool> TryAcquireLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
         => _operationLeases.TryAcquireAsync(new LeaseClaim(operationId, ownerId), leaseDuration, cancellationToken);
@@ -107,7 +105,7 @@ internal sealed partial class PostgresWorkflowOperationStore(
     // A deploy stays while an older deploy of its target is retained, so the retained deploys of a
     // target always include every deploy later than any one of them.
     public Task<int> DeleteExpiredAsync(int batchSize, CancellationToken cancellationToken)
-        => database.ExecuteAsync(
+        => _database.ExecuteAsync(
             async (connection, _, token) =>
             {
                 await using var command = new NpgsqlCommand(
@@ -132,7 +130,7 @@ internal sealed partial class PostgresWorkflowOperationStore(
             cancellationToken);
 
     private Task<bool> WriteAsync(string statement, OperationWrite write, CancellationToken cancellationToken)
-        => database.ExecuteAsync(
+        => _database.ExecuteAsync(
             async (connection, _, token) =>
             {
                 await using var command = new NpgsqlCommand(statement, connection);
@@ -184,10 +182,7 @@ internal sealed partial class PostgresWorkflowOperationStore(
             or WorkflowOperationStatus.ManualInterventionRequired;
 
     private TimeSpan ResolveRetention(WorkflowOperationRecord operation, TimeSpan? ttl)
-        => ttl
-            ?? (operation.Kind == WorkflowOperationKind.MetadataRelease
-                ? metadataReleaseOptions.Value.OperationRetention
-                : retention.Value.WorkflowOperations);
+        => ttl ?? retention.For(operation.Kind);
 
     private void LogUpdated(WorkflowOperationRecord operation)
     {

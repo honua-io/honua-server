@@ -36,6 +36,8 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
         Leases = new PostgresLeaseStore(jobs.JobStore);
     }
 
+    private readonly IDataProtectionProvider _sharedKeyRing = new EphemeralDataProtectionProvider();
+
     public ILeaseStore Leases { get; }
 
     public ControlPlaneRetentionOptions Retention { get; } = new();
@@ -61,7 +63,7 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
     public Task<T?> ScalarAsync<T>(string sql, params NpgsqlParameter[] parameters) => _jobs.ScalarAsync<T>(sql, parameters);
 
     public PostgresOperationProposalStore CreateProposalStore()
-        => new(_jobs.Database, Leases, Options.Create(Retention), NullLogger<PostgresOperationProposalStore>.Instance);
+        => new(new ControlPlaneStorage(_jobs.Database, Leases), Options.Create(Retention), NullLogger<PostgresOperationProposalStore>.Instance);
 
     public PostgresOperationInstanceStore CreateInstanceStore()
         => new(_jobs.Database, Leases, Options.Create(Retention));
@@ -71,15 +73,14 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
 
     public PostgresWorkflowOperationStore CreateWorkflowOperationStore()
         => new(
-            _jobs.Database,
-            Leases,
-            Options.Create(Retention),
-            Options.Create(new MetadataReleaseOperationOptions()),
+            new ControlPlaneStorage(_jobs.Database, Leases),
+            new WorkflowOperationRetention(Options.Create(Retention), Options.Create(new MetadataReleaseOperationOptions())),
             NullLogger<PostgresWorkflowOperationStore>.Instance);
 
     public PostgresDataProtectionKeyRepository CreateKeyRepository() => new(DataSource, _jobs.Database);
 
-    public PostgresSecurityTokenStore CreateSecurityTokenStore() => new(_jobs.Database);
+    // Every node opens what another node protected, as with the shared key ring.
+    public PostgresSecurityTokenStore CreateSecurityTokenStore() => new(_jobs.Database, _sharedKeyRing);
 
     public PostgresTokenReplayStore CreateTokenReplayStore() => new(DataSource, _jobs.Database);
 

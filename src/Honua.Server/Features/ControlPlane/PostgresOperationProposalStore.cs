@@ -13,15 +13,15 @@ using NpgsqlTypes;
 namespace Honua.ControlPlane;
 
 internal sealed partial class PostgresOperationProposalStore(
-    JobStoreDatabase database,
-    ILeaseStore leases,
+    ControlPlaneStorage storage,
     IOptions<ControlPlaneRetentionOptions> retention,
     ILogger<PostgresOperationProposalStore> logger) : IOperationProposalStore, IExpiredRowSweep
 {
+    private readonly JobStoreDatabase _database = storage.Database;
     private const string SelectColumns = "version, updated_at, record";
 
-    private readonly string _proposals = database.Table("operation_proposals");
-    private readonly OperationLeases _operationLeases = new(leases, "operation-proposal:");
+    private readonly string _proposals = storage.Database.Table("operation_proposals");
+    private readonly OperationLeases _operationLeases = new(storage.Leases, "operation-proposal:");
 
     public Task<bool> TryAcquireLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
         => _operationLeases.TryAcquireAsync(new LeaseClaim(operationId, ownerId), leaseDuration, cancellationToken);
@@ -40,7 +40,7 @@ internal sealed partial class PostgresOperationProposalStore(
         ArgumentNullException.ThrowIfNull(proposal);
 
         var created = proposal with { Version = 0 };
-        var inserted = await database.ExecuteAsync(
+        var inserted = await _database.ExecuteAsync(
             async (connection, _, token) =>
             {
                 await using var command = new NpgsqlCommand(
@@ -77,7 +77,7 @@ internal sealed partial class PostgresOperationProposalStore(
             return null;
         }
 
-        return await database.ExecuteAsync(
+        return await _database.ExecuteAsync(
             async (connection, _, token) =>
             {
                 await using var command = new NpgsqlCommand(
@@ -100,7 +100,7 @@ internal sealed partial class PostgresOperationProposalStore(
 
         var expectedVersion = proposal.Version;
         var next = proposal with { Version = expectedVersion + 1 };
-        var updated = await database.ExecuteAsync(
+        var updated = await _database.ExecuteAsync(
             async (connection, _, token) =>
             {
                 await using var command = new NpgsqlCommand(
@@ -133,7 +133,7 @@ internal sealed partial class PostgresOperationProposalStore(
     public async Task<IReadOnlyList<OperationProposal>> ListActiveAsync(
         OperationClass? kind = null,
         CancellationToken cancellationToken = default)
-        => await database.ExecuteAsync(
+        => await _database.ExecuteAsync(
             async (connection, _, token) =>
             {
                 await using var command = new NpgsqlCommand(
@@ -160,7 +160,7 @@ internal sealed partial class PostgresOperationProposalStore(
             cancellationToken).ConfigureAwait(false);
 
     public Task<int> DeleteExpiredAsync(int batchSize, CancellationToken cancellationToken)
-        => database.ExecuteAsync(
+        => _database.ExecuteAsync(
             async (connection, _, token) =>
             {
                 await using var command = new NpgsqlCommand(

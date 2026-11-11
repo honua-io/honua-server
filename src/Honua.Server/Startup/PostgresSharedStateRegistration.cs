@@ -37,6 +37,10 @@ internal static class PostgresSharedStateRegistration
         services.TryAddSingleton<PostgresExecutionJobStore>();
         services.TryAddSingleton<ILeaseStore, PostgresLeaseStore>();
 
+        services.TryAddSingleton(provider => new ControlPlaneStorage(
+            provider.GetRequiredService<JobStoreDatabase>(),
+            provider.GetRequiredService<ILeaseStore>()));
+        services.TryAddSingleton<WorkflowOperationRetention>();
         services.TryAddSingleton<PostgresOperationProposalStore>();
         services.TryAddSingleton<PostgresWorkflowOperationStore>();
         services.TryAddSingleton<PostgresOperationInstanceStore>();
@@ -48,6 +52,9 @@ internal static class PostgresSharedStateRegistration
         services.TryAddSingleton(provider => new PostgresTokenReplayStore(
             provider.GetRequiredService<NpgsqlDataSource>(),
             provider.GetRequiredService<JobStoreDatabase>()));
+        services.TryAddSingleton(provider => new PostgresSecurityTokenStore(
+            provider.GetRequiredService<JobStoreDatabase>(),
+            provider.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>()));
         services.AddSharedOrLocal<ISecurityTokenStore, PostgresSecurityTokenStore>(static () => new InMemorySecurityTokenStore());
         services.AddSharedOrLocal<IIdempotencyReservationStore, PostgresIdempotencyReservationStore>(
             static () => new InMemoryIdempotencyReservationStore());
