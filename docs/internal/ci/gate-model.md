@@ -780,6 +780,19 @@ and GeoServices ImageServer Rendering and Support shards on selected PR runs and
 twice-daily full trunk runs. This changes no runner count, required check name,
 required aggregate dependency, workflow, or shard definition.
 
+### ImageServer mosaic integration database lifetime
+
+`ImageServerMosaicIntegrationTests` takes a class-scoped `PostgresFixture`,
+which holds a reference to the shared, reference-counted PostgreSQL/PostGIS
+infrastructure from the first case to the last instead of letting it be torn
+down and rebuilt between cases. Each case still builds a fresh `WebAppFixture`
+host with its own isolated application schema, raster seed and license
+entitlement configuration.
+All cases and assertions remain in the GeoServices ImageServer Raster Rendering
+shard on selected PR runs and twice-daily full trunk runs. This changes no
+runner count, required check name, required aggregate dependency, workflow, or
+shard definition.
+
 ## Trailing affected CI selection
 
 Trailing affected CI refreshes its completed-ancestor base when the selection job starts,

@@ -18,9 +18,11 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
+// The class fixture keeps the reference-counted PostgreSQL infrastructure alive between cases;
+// each case still owns its host, schema, raster seed, and license configuration.
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
-public sealed class ImageServerMosaicIntegrationTests
+public sealed class ImageServerMosaicIntegrationTests : IClassFixture<PostgresFixture>
 {
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/query")]
