@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Orchestration.Domain;
+
 namespace Honua.Core.Features.WorkflowPackages.Domain;
 
 public static class WorkflowPackageGraphValidator
@@ -24,7 +26,6 @@ public static class WorkflowPackageGraphValidator
         };
 
         var failures = new List<WorkflowPackageValidationFailure>();
-        var warnings = new List<string>();
 
         if (graph.Nodes.Count == 0)
         {
@@ -156,12 +157,10 @@ public static class WorkflowPackageGraphValidator
                     FieldPath = "graph.edges"
                 });
             }
-
-            if (edge.Kind == WorkflowEdgeKind.Failure && string.IsNullOrWhiteSpace(edge.TargetPort))
-            {
-                warnings.Add($"Failure edge from '{edge.SourceNodeId}' to '{edge.TargetNodeId}' has no targetPort; it will be treated as a control-only failure branch.");
-            }
         }
+
+        ValidateOrchestrationEdges(graph, failures);
+        ValidateOrchestrationRules(graph, nodeIds, failures);
 
         if (nodeIds.Count == graph.Nodes.Count && HasCycle(graph))
         {
@@ -174,8 +173,77 @@ public static class WorkflowPackageGraphValidator
         }
 
         return failures.Count == 0
-            ? WorkflowPackageValidationResult.Success(packageHash, warnings)
-            : WorkflowPackageValidationResult.Failed(failures, packageHash, warnings);
+            ? WorkflowPackageValidationResult.Success(packageHash)
+            : WorkflowPackageValidationResult.Failed(failures, packageHash);
+    }
+
+    private static void ValidateOrchestrationEdges(WorkflowGraph graph, List<WorkflowPackageValidationFailure> failures)
+    {
+        foreach (var pair in graph.Edges.GroupBy(edge => (edge.SourceNodeId, edge.TargetNodeId)))
+        {
+            if (pair.Any(edge => edge.Kind == WorkflowEdgeKind.Failure) && pair.Any(edge => edge.Kind != WorkflowEdgeKind.Failure))
+            {
+                failures.Add(new WorkflowPackageValidationFailure
+                {
+                    Code = "CONFLICTING_FAILURE_EDGE",
+                    Message = $"Failure edge '{pair.Key.SourceNodeId}' to '{pair.Key.TargetNodeId}' cannot also carry data or success control flow.",
+                    FieldPath = "graph.edges"
+                });
+            }
+        }
+        foreach (var edge in graph.Edges.Where(edge => !Enum.IsDefined(edge.Kind)
+            || edge.Kind == WorkflowEdgeKind.Failure && !string.IsNullOrWhiteSpace(edge.TargetPort)))
+        {
+            failures.Add(new WorkflowPackageValidationFailure
+            {
+                Code = "UNSUPPORTED_EDGE",
+                Message = $"Edge '{edge.SourceNodeId}' to '{edge.TargetNodeId}' must use a supported kind; Failure edges are control-only and cannot bind a target port.",
+                FieldPath = "graph.edges"
+            });
+        }
+    }
+
+    private static void ValidateOrchestrationRules(
+        WorkflowGraph graph,
+        HashSet<string> nodeIds,
+        List<WorkflowPackageValidationFailure> failures)
+    {
+        var forEachNodeIds = graph.Nodes.Where(node => node.ForEach is not null)
+            .Select(node => node.NodeId).ToHashSet(StringComparer.Ordinal);
+        foreach (var node in graph.Nodes)
+        {
+            var dependencies = graph.Edges.Where(edge => edge.TargetNodeId == node.NodeId)
+                .Select(edge => edge.SourceNodeId).Distinct(StringComparer.Ordinal).ToArray();
+            var executionFailures = WorkflowStepExecutionValidator.Validate(node)
+                .Concat(WorkflowStepExecutionValidator.ValidateReferences(node, dependencies, (nodeIds, forEachNodeIds)));
+            foreach (var failure in executionFailures)
+            {
+                failures.Add(new WorkflowPackageValidationFailure
+                {
+                    Code = "INVALID_EXECUTION_SETTING",
+                    Message = $"Node '{node.NodeId}': {failure.Value}",
+                    FieldPath = $"graph.nodes[{node.NodeId}].{failure.Key}"
+                });
+            }
+            if (node.NodeId?.Contains(WorkflowDefinitionExpander.IterationSeparator, StringComparison.Ordinal) == true)
+            {
+                failures.Add(new WorkflowPackageValidationFailure
+                {
+                    Code = "RESERVED_NODE_ID",
+                    Message = $"Node id must not contain '{WorkflowDefinitionExpander.IterationSeparator}'.",
+                    FieldPath = $"graph.nodes[{node.NodeId}].nodeId"
+                });
+            }
+            foreach (var edge in graph.Edges.Where(edge => edge.Kind == WorkflowEdgeKind.Data && edge.TargetNodeId == node.NodeId && forEachNodeIds.Contains(edge.SourceNodeId) && !string.IsNullOrWhiteSpace(edge.TargetPort)))
+            {
+                failures.Add(new WorkflowPackageValidationFailure
+                {
+                    Code = "UNSUPPORTED_ITERATION_BINDING",
+                    Message = $"Node '{node.NodeId}' cannot bind aggregate output from ForEach node '{edge.SourceNodeId}'.",
+                    FieldPath = "graph.edges"
+                });
+            }
+        }
     }
 
     private static HashSet<string> WiredInputPorts(WorkflowGraph graph, string nodeId)
@@ -197,8 +265,7 @@ public static class WorkflowPackageGraphValidator
         while (edgeIndex < graph.Edges.Count)
         {
             var edge = graph.Edges[edgeIndex];
-            if (edge.Kind != WorkflowEdgeKind.Failure &&
-                adjacency.TryGetValue(edge.SourceNodeId, out var targets) &&
+            if (adjacency.TryGetValue(edge.SourceNodeId, out var targets) &&
                 adjacency.ContainsKey(edge.TargetNodeId))
             {
                 targets.Add(edge.TargetNodeId);
