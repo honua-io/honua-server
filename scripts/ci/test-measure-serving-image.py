@@ -38,6 +38,40 @@ class ServingImageMeasurementTests(unittest.TestCase):
                 archive.addfile(member, io.BytesIO(payload))
         return path, config['digest'], layer['size']
 
+    def run_published_gate(self, directory, files, deps, size=100):
+        with patch('sys.argv', ['measure-serving-image.py', 'registry/server@sha256:' + 'a' * 64,
+                               '--published', '--profile', 'postgis', '--verify-jit-boundary',
+                               '--default-image', '--output', str(Path(directory) / 'report.json')]), \
+             patch.object(self.measurement, 'inspect_image', return_value={'Id': 'sha256:' + 'b' * 64, 'Size': size}), \
+             patch.object(self.measurement, 'measure_registry_image', return_value={'compressed_layer_bytes': 50}), \
+             patch.object(self.measurement, 'exported_files', return_value=(files, deps)):
+            self.measurement.main()
+
+    def test_published_gate_rejects_excluded_native(self):
+        files = {name: 1 for name in self.measurement.FORMAT_FILES}
+        files['app/libduckdb.so'] = 20
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, 'libduckdb.so'):
+                self.run_published_gate(directory, files, {'targets': {}})
+
+    def test_published_gate_rejects_excluded_runtime_manifest_input(self):
+        files = {name: 1 for name in self.measurement.FORMAT_FILES}
+        deps = json.loads('{"targets": {"net10.0": {"optional/1": {"runtime": {"Honua.MySql.dll": {}}}}}}')
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, 'Honua.MySql.dll'):
+                self.run_published_gate(directory, files, deps)
+
+    def test_published_gate_rejects_size_overrun(self):
+        files = {name: 1 for name in self.measurement.FORMAT_FILES}
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, '220000000'):
+                self.run_published_gate(directory, files, {'targets': {}}, size=220_000_001)
+
+    def test_published_gate_accepts_store_free_jit_image(self):
+        files = {name: 1 for name in self.measurement.FORMAT_FILES}
+        with tempfile.TemporaryDirectory() as directory:
+            self.run_published_gate(directory, files, {'targets': {}})
+
     def test_oci_compressed_bytes_are_bound_to_loaded_image(self):
         with tempfile.TemporaryDirectory() as directory:
             path, image_id, layer_size = self.make_oci_archive(directory)

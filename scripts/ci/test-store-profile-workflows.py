@@ -20,7 +20,7 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertEqual(build['with']['file'], 'Dockerfile')
         self.assertIn('HONUA_STORE_PROFILE=postgis', build['with']['build-args'])
         verify = next(step for step in steps if step.get('name') == 'Verify RC JIT candidate before registry publication')
-        self.assertIn('measure-serving-image.py "$CANDIDATE" --published --profile postgis', verify['run'])
+        self.assertIn('measure-serving-image.py "$CANDIDATE" --published --profile postgis --verify-jit-boundary --default-image', verify['run'])
         self.assertIn('steps.build.outputs.digest', verify['env']['CANDIDATE'])
         text = (ROOT / '.github/workflows/release-bundle.yml').read_text()
         self.assertIn('${channel}-jit', text)

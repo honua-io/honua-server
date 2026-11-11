@@ -198,9 +198,12 @@ def main():
     parser.add_argument('--oci-archive', type=Path)
     parser.add_argument('--published', action='store_true')
     parser.add_argument('--default-image', action='store_true')
+    parser.add_argument('--verify-jit-boundary', action='store_true')
     args = parser.parse_args()
     if not args.published and not all((args.baseline, args.compilation, args.evidence_directory)):
         parser.error('Export measurement requires baseline, compilation and evidence directory')
+    if args.verify_jit_boundary and not args.published:
+        parser.error('Published JIT boundary verification requires --published')
     inspection = inspect_image(args.image)
     if args.published:
         report = {'image': args.image, 'image_id': inspection['Id'], 'bytes': inspection['Size'],
@@ -210,6 +213,11 @@ def main():
         args.output.write_text(json.dumps(report, indent=2) + '\n')
         if args.default_image:
             verify_size(inspection['Size'], args.profile)
+        if args.verify_jit_boundary:
+            files, deps = exported_files(args.image)
+            verify_files(files, args.profile)
+            verify_build_inputs({'assets': {'targets': {}}, 'responses': [],
+                                 'deps': deps, 'compilation': 'jit'}, args.profile)
         print(f"{args.profile}: {inspection['Size']} uncompressed bytes; "
               f"{report['oci']['compressed_layer_bytes']} compressed layer bytes")
         return

@@ -549,3 +549,40 @@ public sealed class OperationSecretKeyRingProtectionTests
             DateTimeOffset.UtcNow.AddMinutes(10));
     }
 }
+
+[CollectionDefinition("OperationSecretTemporaryDirectory", DisableParallelization = true)]
+public sealed class OperationSecretTemporaryDirectoryCollection;
+
+[Collection("OperationSecretTemporaryDirectory")]
+public sealed class OperationSecretTemporaryDirectoryTests
+{
+    [UnitTest]
+    public void WritePkcs12Material_WithMissingTemporaryRoot_CreatesRootAndCertificate()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var original = Environment.GetEnvironmentVariable("TMPDIR");
+        var root = Path.Join(Path.GetTempPath(), $"honua-keyring-test-{Guid.NewGuid():N}", "honua");
+        try
+        {
+            Environment.SetEnvironmentVariable("TMPDIR", root);
+            var written = OperationSecretKeyRingProtection.WritePkcs12Material(Convert.ToBase64String([1, 2, 3]));
+
+            Path.GetDirectoryName(written.Path).Should().Be(root);
+            File.ReadAllBytes(written.Path).Should().Equal(1, 2, 3);
+            File.GetUnixFileMode(written.Path).Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("TMPDIR", original);
+            var parent = Path.GetDirectoryName(root)!;
+            if (Directory.Exists(parent))
+            {
+                Directory.Delete(parent, recursive: true);
+            }
+        }
+    }
+}
