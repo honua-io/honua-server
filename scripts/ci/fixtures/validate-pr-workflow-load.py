@@ -141,10 +141,12 @@ class PullRequestLoadTests(unittest.TestCase):
         self.assertIn("!github.event.pull_request.draft", jobs["runner-select"].get("if", ""))
 
     def test_required_aggregate_rejects_draft_and_missing_heavy_results(self):
-        required = workflow("pr-gate.yml")["jobs"]["required"]
-        self.assertEqual(set(required["needs"]), {
-            "pr-gate", "fast-tests", "format", "ci-router-validation", "affected-shards",
-        })
+        jobs = workflow("pr-gate.yml")["jobs"]
+        required = jobs["required"]
+        dependencies = {"pr-gate", "fast-tests", "format", "ci-router-validation", "affected-shards"}
+        if "server-test-producer" in jobs:
+            dependencies.add("server-test-producer")
+        self.assertEqual(set(required["needs"]), dependencies)
         verdict = next(step for step in required["steps"] if "run" in step)
 
         def run_verdict(results):
