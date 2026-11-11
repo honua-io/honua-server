@@ -644,4 +644,8 @@ managed outputs are published. Restore and build failures remain gating, with
 the same warnings, analyzers and graph-build settings as the solution build.
 Unknown projects outside the solution still fail planning; test selection is unchanged.
 
-The GeoServices catalog selections run SOAP coverage with fresh HTTP clients. See [catalog SOAP test isolation](gate-model.md#catalog-soap-test-isolation) for application reuse boundaries.
+The GeoServices catalog selections run SOAP coverage with fresh HTTP clients. Raster-only
+mock overrides reuse the host through the existing request service scope while preserving
+fixture schemas and mock histories. See [catalog SOAP test isolation](gate-model.md#catalog-soap-test-isolation)
+for application reuse boundaries. Required checks, aggregate dependencies and runner selections
+are unchanged.
