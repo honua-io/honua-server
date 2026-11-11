@@ -620,6 +620,14 @@ filter. Retired Redis endpoint selectors are removed; the coverage guard still
 rejects dead positive clauses, and the partition fixture verifies complete,
 disjoint method ownership with unchanged source triggers and budgets.
 
+### Layer publishing shared application fixture
+
+The `Server Features Admin Layer Publishing` shard selects 48 named
+`LayerPublishingIntegrationTests` methods through an exact-name filter, with a
+27-minute test timeout. The class's remaining 19 methods run in
+`Server Features Admin Runtime Operations` through its complementary filter.
+Each shard process builds its own instance of the shared class fixture.
+
 ### Governance capacity split
 
 The former `Server Features Admin Governance and Sharing` shard timed out at
