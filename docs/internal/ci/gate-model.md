@@ -50,20 +50,25 @@ earlier one could not.
 | **0 Pre-PR** | Author, before opening or pushing | `scripts/ci/pre-pr-check.sh` (local) | Affected build, Fast tests and affected shards on the author's machine | No; the PR template asks for the result |
 | **1 PR gate** | `pull_request` | `pr-gate.yml`, `review-gate.yml`, `repo-hygiene.yml` | Affected-scope build, selected shards, Fast/architecture, format, router validation, exact-head review | Yes: `PR Gate`, `Review Gate`, Repository hygiene |
 | **2 Pre-merge** | Trunk moves under an open PR | `pr-sync-doctor.md` and the fleet lander | A behind PR is refreshed only when trunk touched its affected projects; the refreshed head reruns stage 1. The lander merges only an exact-head green, thread-free PR | Yes, through stage 1 on the refreshed head |
-| **3 Post-merge affected** | `push` to `trunk` | `trunk-affected.yml` dispatching `ci.yml` | Selective CI over the merges since the last green CI run (`selective_base`): the shards and lanes those merges touch | No; a red run starts the CI doctor |
+| **3 Post-merge affected** | `push` to `trunk` | `trunk-affected.yml` dispatching `ci.yml` | Selective CI over new merges since the latest completed CI run (`selective_base`): the shards and lanes those merges touch | No; a red run starts the CI doctor |
 | **4 Full** | `schedule` 09:00 and 21:00 UTC | `ci.yml` | The full matrix, compatibility and certification lanes | No; full proof clears the lander's trunk-red brake |
 
 Stage 3 details:
 
-- The base is the newest successful `CI` run on trunk whose head is an
-  ancestor of the pushed head, whether that run was selective or full; a
-  selective green proves its own range, so the chain of greens covers trunk.
-  With no green ancestor in the newest 50 successful runs, the dispatch is a
-  full matrix.
-- Runs queue in one concurrency group without cancellation. GitHub keeps one
-  pending run per group and replaces it with a newer one; the newer run diffs
-  from the last green head, so it covers every merge the replaced run would
-  have. A run whose push is no longer the trunk tip exits for the same reason.
+- The execution base is the most recently completed `CI` run on trunk with
+  a success or failure conclusion and an ancestor head, selective or full.
+  The newest 100 completed runs are ordered by completion update time.
+  Cancelled runs cannot advance the base. With no eligible ancestor, dispatch
+  a full matrix. A failed base bounds execution; it does not certify trunk.
+- The dispatch summary separately lists the culprit range from the latest
+  full green ancestor (searched among the newest 100 successful runs,
+  excluding affected titles that cannot clear earlier failures). It passes
+  that ancestor as `investigation_base` to `ci.yml` for the CI doctor; missing
+  green history is reported as unknown. Failures
+  remain owned by the CI doctor; twice-daily full runs retain complete coverage.
+- Runs queue without cancellation. GitHub replaces older pending runs; the
+  newer run covers merges since the latest completed head. Superseded pushes
+  exit when checkout finds a newer trunk tip.
 - Shards the PR gate deferred by time budget run here: the router selects
   them again from the merged diff, so a deferred shard is verified within one
   affected run of its merge.
