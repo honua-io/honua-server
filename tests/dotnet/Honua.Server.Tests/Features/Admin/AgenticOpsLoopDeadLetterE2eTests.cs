@@ -16,6 +16,7 @@ using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.TestKit.Extensions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -51,7 +52,7 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
     {
         await DeleteControlPlaneKeysAsync(redis.ConnectionString);
 
-        _fixture = HumanApprovalHttpClient.Configure(new WebAppFixture(), _identity)
+        _fixture = HumanApprovalHttpClient.Configure(new WebAppFixture().WithProductionJobSubstrate(), _identity)
             .ConfigureWebHost(builder =>
             {
                 // Host settings are required because Program decides whether Redis-backed
