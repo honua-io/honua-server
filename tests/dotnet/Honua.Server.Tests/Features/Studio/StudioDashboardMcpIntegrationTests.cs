@@ -14,6 +14,7 @@ using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Db.Postgres.Features.Studio;
+using Honua.TestKit.Extensions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -28,7 +29,7 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Protocol(TestProtocols.Mcp)]
 public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
     private readonly RedisFixture _redis = new();
     private readonly string _studioSchema = $"dashboard_{Guid.NewGuid():N}";
     private HttpClient _client = null!;
@@ -231,7 +232,7 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
         // A second application host has its own lifecycle/runtime/store instances. Only the
         // database connection is shared; no draft or version object crosses the replica boundary.
         var connectionProvider = _fixture.Services.GetRequiredService<IAdoNetDatabaseConnectionProvider>();
-        var replica = new WebAppFixture().ConfigureServices(services =>
+        var replica = new WebAppFixture().WithProductionJobSubstrate().ConfigureServices(services =>
         {
             services.RemoveAll<IStudioPackageStore>();
             services.AddScoped<IStudioPackageStore>(_ => new PostgresStudioPackageStore(connectionProvider, _studioSchema));

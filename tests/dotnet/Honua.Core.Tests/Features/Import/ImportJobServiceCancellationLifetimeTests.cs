@@ -221,7 +221,7 @@ public sealed class ImportJobServiceCancellationLifetimeTests
             Task.FromResult<IReadOnlyList<string>>([]);
         public Task<IReadOnlyList<T>> GetActiveOperationsAsync<T>(OperationType operationType, CancellationToken cancellationToken = default) where T : class, IOperationProgress =>
             Task.FromResult<IReadOnlyList<T>>([]);
-        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(string operationId, IOperationProgress progress, OperationStatus expectedStatus, TimeSpan? ttl = null, CancellationToken cancellationToken = default) =>
+        public Task<ProgressCompareAndSetResult> TrySetProgressAsync(OperationProgressWrite write, OperationStatus expectedStatus, CancellationToken cancellationToken = default) =>
             Task.FromResult(ProgressCompareAndSetResult.NotFound);
     }
 }

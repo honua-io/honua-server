@@ -4,19 +4,17 @@
 using System.Net;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
 public sealed partial class CoordinatedReleaseControlEndpointsTests
 {
-    private readonly MemoryDistributedCache _sharedSessions = new(Options.Create(new MemoryDistributedCacheOptions()));
+    private readonly InMemorySecurityTokenStore _sharedSessions = new();
     private bool _sessionReadsUnavailable;
 
     [IntegrationTheory]
@@ -43,17 +41,17 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests
         _metadata.StartCalls.Should().Be(0);
     }
 
-    private IDistributedCache CreateSessionCache()
+    private ISecurityTokenStore CreateSessionTokens()
     {
-        var cache = Substitute.For<IDistributedCache>();
-        cache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(call => _sessionReadsUnavailable
-            ? Task.FromException<byte[]?>(new InvalidOperationException("Shared sessions unavailable."))
-            : _sharedSessions.GetAsync(call.Arg<string>(), call.Arg<CancellationToken>()));
-        cache.SetAsync(Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<DistributedCacheEntryOptions>(), Arg.Any<CancellationToken>())
-            .Returns(call => _sharedSessions.SetAsync(call.Arg<string>(), call.Arg<byte[]>(),
-                call.Arg<DistributedCacheEntryOptions>(), call.Arg<CancellationToken>()));
-        cache.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(call => _sharedSessions.RemoveAsync(call.Arg<string>(), call.Arg<CancellationToken>()));
-        return cache;
+        var tokens = Substitute.For<ISecurityTokenStore>();
+        tokens.FindAsync(Arg.Any<SecurityTokenKey>(), Arg.Any<CancellationToken>()).Returns(call => _sessionReadsUnavailable
+            ? Task.FromException<StoredSecurityToken?>(new InvalidOperationException("Shared sessions unavailable."))
+            : _sharedSessions.FindAsync(call.Arg<SecurityTokenKey>(), call.Arg<CancellationToken>()));
+        tokens.StoreAsync(Arg.Any<SecurityTokenKey>(), Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(call => _sharedSessions.StoreAsync(call.Arg<SecurityTokenKey>(), call.Arg<ReadOnlyMemory<byte>>(),
+                call.Arg<TimeSpan>(), call.Arg<CancellationToken>()));
+        tokens.RevokeAsync(Arg.Any<SecurityTokenKey>(), Arg.Any<CancellationToken>())
+            .Returns(call => _sharedSessions.RevokeAsync(call.Arg<SecurityTokenKey>(), call.Arg<CancellationToken>()));
+        return tokens;
     }
 }

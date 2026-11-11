@@ -5,6 +5,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Import.ObjectStore;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Capabilities;
+using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.ControlPlane;
 using Honua.Import.FileImport;
@@ -44,7 +45,8 @@ internal sealed class CapabilityManifestOptionsSnapshot
         IExecutionJobStore? executionJobStore = null,
         IJobQueue? jobQueue = null,
         Honua.Core.Features.FileImport.Abstractions.IBackgroundImportRunnerInfo? backgroundImportRunner = null,
-        IOptions<ImportObjectStoreOptions>? objectStoreOptions = null)
+        IOptions<ImportObjectStoreOptions>? objectStoreOptions = null,
+        IOperationProposalStore? proposalStore = null)
     {
         BackgroundImportRunner = backgroundImportRunner;
         ObjectStoreConfigured = objectStoreOptions?.Value.AllowedBuckets?
@@ -84,7 +86,9 @@ internal sealed class CapabilityManifestOptionsSnapshot
         DurableJobSubstrateCause = substrate.Classify(executionJobStore is not null, jobQueue is not null);
         DurableJobRuntimeAvailable =
             DurableJobSubstrateCause == Core.Features.Capabilities.DurableJobSubstrateCause.Available;
-        RedisDurability = BuildRedisDurability(substrate, DurableJobRuntimeAvailable);
+        ProposalStoreAvailable = UnavailableOperationProposalStore.IsDurable(proposalStore);
+        ProposalStoreUnavailableCause = substrate.Classify(jobStorePresent: false, jobQueuePresent: false);
+        RedisDurability = BuildRedisDurability(substrate, ProposalStoreAvailable);
         DeploymentIdentity = deploymentIdentity;
         DeploymentProfile = new CapabilityManifestDeploymentProfile
         {
@@ -131,7 +135,12 @@ internal sealed class CapabilityManifestOptionsSnapshot
 
     public DurableJobSubstrateCause DurableJobSubstrateCause { get; }
 
-    // The Redis durability outcome is published only next to an available runtime so it is not read as a reason a capability is withheld.
+    // Proposals are stored in Redis, so the job store being present does not make them available.
+    public bool ProposalStoreAvailable { get; }
+
+    public DurableJobSubstrateCause ProposalStoreUnavailableCause { get; }
+
+    // The Redis durability outcome is published only next to an available proposal store so it is not read as a reason a capability is withheld.
     public CapabilityManifestRedisDurability? RedisDurability { get; }
 
     public CapabilityManifestDeploymentProfile DeploymentProfile { get; }
@@ -140,9 +149,9 @@ internal sealed class CapabilityManifestOptionsSnapshot
 
     private static CapabilityManifestRedisDurability? BuildRedisDurability(
         DurableJobSubstrateOptions substrate,
-        bool runtimeAvailable)
+        bool redisBackedStoreAvailable)
     {
-        if (!runtimeAvailable || substrate.RedisDurabilityStatus is not { } status)
+        if (!redisBackedStoreAvailable || substrate.RedisDurabilityStatus is not { } status)
         {
             return null;
         }

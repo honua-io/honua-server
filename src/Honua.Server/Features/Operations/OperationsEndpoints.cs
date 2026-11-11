@@ -384,12 +384,7 @@ internal static class OperationsEndpoints
 
         var principalId = CanonicalSecurityActor.Resolve(context.User)?.ActorId;
         var tenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId;
-        var value = secretStore.Consume(
-            reference,
-            handle.OperationInstanceId,
-            handle.OperationId,
-            principalId,
-            tenantId);
+        var value = secretStore.Consume(reference, new OperationSecretBinding(handle.OperationInstanceId, handle.OperationId, principalId, tenantId));
         if (value is null)
         {
             return NotFound(context, "The requested operation secret was not found or was already consumed.");

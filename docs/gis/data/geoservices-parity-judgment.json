@@ -2116,7 +2116,7 @@
           "src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs",
           "src/Honua.Protocols/GeoServices/GPServer/GPServerEsriTaskAliases.cs",
           "src/Honua.Protocols/GeoServices/GPServer/GPServerExecutionPolicy.cs",
-          "src/Honua.Geoprocessing/Core/Features/Geoprocessing/RedisGeoprocessingResultPackageStore.cs",
+          "src/Honua.Geoprocessing/Core/Features/Geoprocessing/PostgresGeoprocessingResultPackageStore.cs",
           "src/Honua.Server/EndpointRegistry.cs"
         ],
         "tests": [

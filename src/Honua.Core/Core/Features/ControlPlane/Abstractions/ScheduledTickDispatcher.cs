@@ -77,7 +77,12 @@ public enum ScheduledTickKind
     /// Idempotent: each pass re-evaluates job state, read leases, and retention holds against the
     /// current store listing, so duplicate or concurrent sweeps delete nothing extra.
     /// </summary>
-    GeoprocessingOutputSweep
+    GeoprocessingOutputSweep,
+
+    // Job store retention sweep (JobStoreRetentionSweeper.SweepAsync): deletes terminal jobs, job
+    // logs, result packages and leases past their retention. Cadence minutes. Every delete is
+    // bounded and skips locked rows, so duplicate or concurrent sweeps delete nothing extra.
+    JobStoreRetention
 }
 
 /// <summary>
