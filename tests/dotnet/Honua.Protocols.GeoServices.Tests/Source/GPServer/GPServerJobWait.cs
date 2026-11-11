@@ -11,25 +11,21 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Waits for durable GPServer jobs driven through the real Redis-backed worker (#4965).
-/// </summary>
-/// <remarks>
-/// The deadlines come from the runtime's own timing instead of a fixed 30 s. A submitted job
-/// waits up to one <see cref="JobExecutionService.PollInterval"/> before a worker claims it (the
-/// claim loop has no wake-up signal), and any single Redis call on the test host may stall for up
-/// to <see cref="GPServerRedisTestConnection.StallTolerance"/> before it fails. Before, the job
-/// waits and several client timeouts were 30 s, the same as the tolerated stall, so one stall the
-/// host was configured to survive could still fail the test. A timeout reports the last status
-/// response and the durable job record, so a genuine hang stays diagnosable.
-/// </remarks>
+// Waits for durable GPServer jobs driven through the real worker.
+// The deadlines come from the runtime's own timing. A submitted job waits up to one
+// PollInterval before a worker claims it (the claim loop has no
+// wake-up signal), and a four-vCPU runner booting several test hosts at once can stall any single
+// store call for up to StallTolerance. A timeout reports the last status response
+// and the durable job record, so a genuine hang stays diagnosable.
 internal static class GPServerJobWait
 {
-    /// <summary>HTTP timeout for one request: one tolerated Redis stall plus headroom.</summary>
-    public static readonly TimeSpan RequestTimeout = GPServerRedisTestConnection.StallTolerance + TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan StallTolerance = TimeSpan.FromSeconds(30);
+
+    // HTTP timeout for one request: one tolerated stall plus headroom.
+    public static readonly TimeSpan RequestTimeout = StallTolerance + TimeSpan.FromSeconds(15);
 
     /// <summary>Budget for a job to reach a terminal status: one tolerated stall plus six idle claim polls.</summary>
-    public static readonly TimeSpan JobBudget = GPServerRedisTestConnection.StallTolerance + (JobExecutionService.PollInterval * 6);
+    public static readonly TimeSpan JobBudget = StallTolerance + (JobExecutionService.PollInterval * 6);
 
     private static readonly TimeSpan PollDelay = TimeSpan.FromMilliseconds(100);
 

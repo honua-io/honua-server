@@ -224,7 +224,7 @@ require(
 )
 require(
     r"dotnet build \"\$\{target\}\" \\\s+--no-restore \\\s+--configuration Release \\\s+-graphBuild \\\s+"
-    r"/p:TreatWarningsAsErrors=true \\\s+/p:RunAnalyzers=true \\\s+"
+    r"/p:TreatWarningsAsErrors=true \\\s+/p:HonuaAnalyzerPartition=\"\$\{ANALYZER_PARTITION\}\" \\\s+"
     r"/p:EnforceCodeStyleInBuild=true \\\s+/p:GenerateDocumentationFile=true",
     "build with analyzers, code style and documentation diagnostics as errors",
     text=FORMAT_TEXT,
@@ -235,13 +235,16 @@ require(
 )
 require(
     r"format:\n[\s\S]*?- check: Format\n\s+format: 'true'\n\s+analyzer-build: 'false'\n"
-    r"\s+- check: Analyzers\n\s+format: 'false'\n\s+analyzer-build: 'true'\n",
-    "run format and the analyzer build as parallel PR Gate format jobs",
+    r"\s+analyzer-partition: all\n\s+- check: Analyzers\n\s+format: 'false'\n\s+analyzer-build: 'true'\n"
+    r"\s+analyzer-partition: source\n\s+- check: Analyzers \(tests\)\n\s+format: 'false'\n"
+    r"\s+analyzer-build: 'true'\n\s+analyzer-partition: tests\n",
+    "require both complementary analyzer partitions in the format matrix",
     text=PR_GATE.read_text(encoding="utf-8"),
 )
 require(
     r"format-scope: affected\n\s+format: \$\{\{ matrix\.format \}\}\n"
-    r"\s+analyzer-build: \$\{\{ matrix\.analyzer-build \}\}",
+    r"\s+analyzer-build: \$\{\{ matrix\.analyzer-build \}\}\n"
+    r"\s+analyzer-partition: \$\{\{ matrix\.analyzer-partition \}\}",
     "pass each format matrix job its own check",
     text=PR_GATE.read_text(encoding="utf-8"),
 )

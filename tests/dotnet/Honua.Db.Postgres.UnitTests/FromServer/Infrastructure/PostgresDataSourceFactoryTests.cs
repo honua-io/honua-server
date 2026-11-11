@@ -65,6 +65,43 @@ public sealed class PostgresDataSourceFactoryTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public void ResolveConnectionLimits_SingleJobExecutionWorker_UsesASmallPoolWithNoFloor()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [PostgresDataSourceFactory.ExecutionWorkerOperationIdVariable] = "job-1",
+            })
+            .Build();
+
+        var limits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
+
+        limits.MaxConnectionPoolSize.Should().Be(PostgresDataSourceFactory.ExecutionWorkerUnsetMaxConnectionPoolSize);
+        limits.MaxConcurrentQueries.Should().Be(PostgresDataSourceFactory.ExecutionWorkerUnsetMaxConnectionPoolSize);
+        limits.MinConnectionPoolSize.Should().Be(0);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void ResolveConnectionLimits_SingleJobExecutionWorkerWithExplicitPool_KeepsTheOperatorValues()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [PostgresDataSourceFactory.ExecutionWorkerOperationIdVariable] = "job-1",
+                ["Limits:Connections:MaxConnectionPoolSize"] = "30",
+                ["Limits:Connections:MinConnectionPoolSize"] = "3",
+            })
+            .Build();
+
+        var limits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
+
+        limits.MaxConnectionPoolSize.Should().Be(30);
+        limits.MinConnectionPoolSize.Should().Be(3);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public void ResolveConnectionLimits_LambdaHost_DoesNotPinThePoolAtTheCap()
     {
         var configuration = new ConfigurationBuilder()
