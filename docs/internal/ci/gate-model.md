@@ -665,6 +665,10 @@ Unknown projects outside the solution still fail planning; test selection is unc
 
 ### Stage 0 evidence and cross-phase reuse
 
+The local build-host transport evicts idle checkout outputs before queued
+outputs under disk pressure. The existing free-space thresholds and active-run
+protections remain; queued outputs may still be evicted as a fallback.
+
 [Stage 0 reuse assessment](stage-zero-reuse.md) records live queue/build timings,
 the five-run cache observation, and the protected issuer requirements for any
 future gate skip. Local receipts do not currently skip hosted tests. Compiled

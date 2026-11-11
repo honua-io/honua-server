@@ -54,6 +54,12 @@ remote child has exited. Marker cleanup must verify remote execution liveness
 before permitting eviction. Do not claim incremental reuse from output paths
 alone or remove marker protection based only on local process exit.
 
+The local transport now prefers idle checkout caches for eviction before
+queued checkout caches. Queued caches remain eligible if idle eviction cannot
+recover the existing 90 GiB target; current and recently active checkouts retain
+their protection. Five isolated cleanup scenarios passed, including the disk
+pressure fallback. Live cache-hit and cycle-time effects remain unmeasured.
+
 Six lane slots, each bounded to five .NET processors and five MSBuild workers,
 limit nominal lane demand to 30 processors. PR runner services share the host
 and bypass lane admission. This is not an operating-system CPU reservation or
