@@ -1061,6 +1061,7 @@ builder.Services.AddStyleSuggestionCore();
 builder.Services.Configure<Honua.Infrastructure.Services.TemporaryFileOptions>(
     builder.Configuration.GetSection(Honua.Infrastructure.Services.TemporaryFileOptions.SectionName));
 builder.Services.AddSingleton<Honua.Infrastructure.Services.FileSystemTemporaryFileService>();
+builder.Services.TryAddSingleton<Honua.Infrastructure.Security.ISecurityTokenStore, Honua.Infrastructure.Security.InMemorySecurityTokenStore>();
 builder.Services.AddSingleton<Honua.Infrastructure.Services.ITemporaryFileService,
     Honua.Infrastructure.Services.CloudBackedTemporaryFileService>();
 

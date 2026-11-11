@@ -1,18 +1,17 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Text;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Infrastructure.Events;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
-using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Services;
 
@@ -21,12 +20,7 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
     private const string TemporaryFolder = "temporary-files";
     private const string TemporaryPrefix = TemporaryFolder + "/";
     private const string AuthorizedPrincipalMetadataKey = "honua-temp-principal";
-    private const string CloudTemporaryFileKeyPrefix = "honua:temporary-files:cloud:";
-    // Distinct from CloudTemporaryFileKeyPrefix. Aspire's Redis IDistributedCache stores that
-    // key as a hash; a raw SET of the same key replaces the hash and the next cache read
-    // fails with WRONGTYPE (#5826).
-    private const string CloudTemporarySharedTokenKeyPrefix = "honua:temporary-files:shared:";
-    private const string CloudTemporaryQuotaLeaseKey = "honua:temporary-files:cloud:quota";
+    private const string CloudTemporaryQuotaLeaseKey = "temporary-files:cloud-quota";
     private const long MetadataOverheadBytes = 1024;
     private static readonly TimeSpan CloudTemporaryQuotaLeaseDuration = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan CloudTemporaryQuotaLeaseRetryDelay = TimeSpan.FromMilliseconds(100);
@@ -46,27 +40,26 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
     private readonly TemporaryFileOptions _options;
     private readonly ILogger<CloudBackedTemporaryFileService> _logger;
     private readonly IHttpContextAccessor? _httpContextAccessor;
-    private readonly IDistributedCache? _distributedCache;
-    private readonly IConnectionMultiplexer? _redis;
+    private readonly ISecurityTokenStore _tokens;
+    private readonly ILeaseStore? _leases;
     private readonly SemaphoreSlim _cloudWriteGate = new(1, 1);
-    private readonly ConcurrentDictionary<string, IssuedCloudToken> _issuedCloudTokens = new(StringComparer.Ordinal);
 
     public CloudBackedTemporaryFileService(
         FileSystemTemporaryFileService localFileService,
         ICloudFileStorage cloudFileStorage,
         IOptions<TemporaryFileOptions> options,
         ILogger<CloudBackedTemporaryFileService> logger,
+        ISecurityTokenStore tokens,
         IHttpContextAccessor? httpContextAccessor = null,
-        IDistributedCache? distributedCache = null,
-        IConnectionMultiplexer? redis = null)
+        ILeaseStore? leases = null)
     {
         _localFileService = localFileService ?? throw new ArgumentNullException(nameof(localFileService));
         _cloudFileStorage = cloudFileStorage ?? throw new ArgumentNullException(nameof(cloudFileStorage));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _httpContextAccessor = httpContextAccessor;
-        _distributedCache = distributedCache;
-        _redis = redis;
+        _tokens = tokens ?? throw new ArgumentNullException(nameof(tokens));
+        _leases = leases;
     }
 
     private bool UseCloudStorage => _cloudFileStorage.Provider != CloudStorageProvider.Local;
@@ -104,7 +97,7 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
                 : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, quotaLease.LeaseLostToken);
             var quotaLeaseRenewalTask = quotaLease is null
                 ? Task.CompletedTask
-                : quotaLease.MaintainLeaseAsync(
+                : quotaLease.MaintainAsync(
                     TimeSpan.FromMilliseconds(CloudTemporaryQuotaLeaseDuration.TotalMilliseconds / 3d),
                     quotaLeaseRenewalCts!.Token);
             var processingToken = processingCts?.Token ?? cancellationToken;
@@ -188,7 +181,7 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
     }
 
     private async Task EnsureCloudQuotaLeaseStillHeldAsync(
-        RedisLeaseCoordinator? quotaLease,
+        LeaseHolder? quotaLease,
         string cloudObjectKey,
         CancellationToken cancellationToken)
     {
@@ -221,7 +214,7 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
                 ex);
         }
 
-        CloudBackedTemporaryFileLog.SharedWriteRejectedRedisLost(_logger);
+        CloudBackedTemporaryFileLog.SharedWriteRejectedCoordinationLost(_logger);
         throw CreateCloudQuotaLeaseLostException();
     }
 
@@ -509,6 +502,8 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
         };
     }
 
+    // Every node resolves the public token through the shared token store, so a URL issued by one
+    // node downloads from any other. A token that cannot be recorded is never handed out.
     private async Task<string> CreatePublicTokenAsync(
         string cloudObjectKey,
         TimeSpan retention,
@@ -518,27 +513,17 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
 
         // The public id is opaque. It is never a client-decodable object key.
         var publicToken = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
-
-        // A configured multiplexer that is down must not publish a URL only this process
-        // can resolve. Cloud storage already required Redis for the quota lease.
-        if (_redis is not { IsConnected: true })
+        try
         {
-            CloudBackedTemporaryFileLog.SharedWriteRejectedRedisUnavailable(_logger);
-            throw new TemporaryStorageLimitExceededException(
-                "Temporary file coordination is currently unavailable. Please retry shortly.",
-                _options.StorageFullRetryAfterSeconds);
+            await _tokens.StoreAsync(
+                TemporaryFileToken(publicToken),
+                Encoding.UTF8.GetBytes(cloudObjectKey),
+                retention,
+                cancellationToken).ConfigureAwait(false);
         }
-
-        var published = await _redis.GetDatabase().StringSetAsync(
-            GetSharedCloudTokenKey(publicToken),
-            cloudObjectKey,
-            retention,
-            false,
-            When.Always,
-            CommandFlags.None).ConfigureAwait(false);
-        if (!published)
+        catch (Exception storeFailure) when (storeFailure is not OutOfMemoryException and not OperationCanceledException)
         {
-            CloudBackedTemporaryFileLog.SharedWriteRejectedRedisUnavailable(_logger);
+            CloudBackedTemporaryFileLog.SharedWriteRejectedCoordinationUnavailable(_logger, storeFailure);
             throw new TemporaryStorageLimitExceededException(
                 "Temporary file coordination is currently unavailable. Please retry shortly.",
                 _options.StorageFullRetryAfterSeconds);
@@ -549,49 +534,10 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
 
     private async Task<string?> ResolveCloudObjectKeyAsync(string publicToken, CancellationToken cancellationToken)
     {
-        // Connected Redis is the only mapping that every replica can see. A process-local
-        // cache entry must not keep the issuer serving a token the other replicas already miss.
-        if (_redis is { IsConnected: true })
-        {
-            var shared = await _redis.GetDatabase().StringGetAsync(
-                GetSharedCloudTokenKey(publicToken)).ConfigureAwait(false);
-            if (!shared.IsNullOrEmpty &&
-                TryAcceptIssuedObjectKey(shared.ToString(), out var fromRedis))
-            {
-                return fromRedis;
-            }
-
-            return null;
-        }
-
-        if (_redis != null)
-        {
-            return null;
-        }
-
-        if (_distributedCache != null)
-        {
-            var cachedObjectKey = await _distributedCache.GetStringAsync(
-                GetCloudTemporaryFileCacheKey(publicToken),
-                cancellationToken).ConfigureAwait(false);
-            if (TryAcceptIssuedObjectKey(cachedObjectKey, out var cached))
-            {
-                return cached;
-            }
-        }
-
-        if (_issuedCloudTokens.TryGetValue(publicToken, out var issued))
-        {
-            if (issued.ExpiresAt > DateTimeOffset.UtcNow &&
-                TryAcceptIssuedObjectKey(issued.ObjectKey, out var local))
-            {
-                return local;
-            }
-
-            _issuedCloudTokens.TryRemove(publicToken, out _);
-        }
-
-        return null;
+        var stored = await _tokens.FindAsync(TemporaryFileToken(publicToken), cancellationToken).ConfigureAwait(false);
+        return stored is not null && TryAcceptIssuedObjectKey(Encoding.UTF8.GetString(stored.Payload), out var objectKey)
+            ? objectKey
+            : null;
     }
 
     private static bool TryAcceptIssuedObjectKey(string? objectKey, out string accepted)
@@ -606,21 +552,14 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
         return false;
     }
 
-    private async Task<RedisLeaseCoordinator?> AcquireCloudQuotaLeaseAsync(CancellationToken cancellationToken)
+    // The quota is a lease row, so one node at a time measures and writes the shared temporary folder.
+    private async Task<LeaseHolder?> AcquireCloudQuotaLeaseAsync(CancellationToken cancellationToken)
     {
-        if (_redis == null)
+        if (_leases is null)
         {
-            CloudBackedTemporaryFileLog.SharedWriteRejectedRedisRequired(_logger);
+            CloudBackedTemporaryFileLog.SharedWriteRejectedCoordinationRequired(_logger);
             throw new TemporaryStorageLimitExceededException(
-                "Temporary file coordination requires Redis when using shared cloud storage. Please configure Redis and retry.",
-                _options.StorageFullRetryAfterSeconds);
-        }
-
-        if (!_redis.IsConnected)
-        {
-            CloudBackedTemporaryFileLog.SharedWriteRejectedRedisUnavailable(_logger);
-            throw new TemporaryStorageLimitExceededException(
-                "Temporary file coordination is currently unavailable. Please retry shortly.",
+                "Temporary file coordination requires the system database when using shared cloud storage.",
                 _options.StorageFullRetryAfterSeconds);
         }
 
@@ -628,53 +567,22 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var leaseCoordinator = new RedisLeaseCoordinator(_redis, CloudTemporaryQuotaLeaseKey, CloudTemporaryQuotaLeaseDuration);
-            if (await leaseCoordinator.TryAcquireOrExtendAsync().ConfigureAwait(false))
+            var quotaLease = new LeaseHolder(_leases, CloudTemporaryQuotaLeaseKey, CloudTemporaryQuotaLeaseDuration);
+            if (await quotaLease.TryAcquireOrExtendAsync(cancellationToken).ConfigureAwait(false))
             {
-                return leaseCoordinator;
+                return quotaLease;
             }
 
-            leaseCoordinator.Dispose();
-            if (!_redis.IsConnected)
-            {
-                CloudBackedTemporaryFileLog.SharedWriteRejectedRedisLost(_logger);
-                throw new TemporaryStorageLimitExceededException(
-                    "Temporary file coordination is currently unavailable. Please retry shortly.",
-                    _options.StorageFullRetryAfterSeconds);
-            }
-
+            quotaLease.Dispose();
             await Task.Delay(CloudTemporaryQuotaLeaseRetryDelay, cancellationToken).ConfigureAwait(false);
         }
     }
 
-    private async Task DeletePublicTokenAsync(string publicToken, CancellationToken cancellationToken)
-    {
-        _issuedCloudTokens.TryRemove(publicToken, out _);
-        if (_distributedCache != null)
-        {
-            await _distributedCache.RemoveAsync(
-                GetCloudTemporaryFileCacheKey(publicToken),
-                cancellationToken).ConfigureAwait(false);
-        }
+    private Task DeletePublicTokenAsync(string publicToken, CancellationToken cancellationToken)
+        => _tokens.RevokeAsync(TemporaryFileToken(publicToken), cancellationToken);
 
-        if (_redis is { IsConnected: true })
-        {
-            await _redis.GetDatabase().KeyDeleteAsync(
-                GetSharedCloudTokenKey(publicToken)).ConfigureAwait(false);
-        }
-    }
-
-    private static string GetCloudTemporaryFileCacheKey(string publicToken)
-    {
-        return CloudTemporaryFileKeyPrefix + publicToken;
-    }
-
-    private static string GetSharedCloudTokenKey(string publicToken)
-    {
-        return CloudTemporarySharedTokenKeyPrefix + publicToken;
-    }
-
-    private readonly record struct IssuedCloudToken(string ObjectKey, DateTimeOffset ExpiresAt);
+    private static SecurityTokenKey TemporaryFileToken(string publicToken)
+        => new(SecurityTokenKind.TemporaryFile, publicToken);
 
     private static bool IsProviderGeneratedTemporaryObjectKey(string objectKey)
     {
