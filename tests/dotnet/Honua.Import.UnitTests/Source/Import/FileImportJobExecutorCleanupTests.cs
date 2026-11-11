@@ -85,8 +85,7 @@ public sealed class FileImportJobExecutorCleanupTests
     {
         var progress = new MemoryProgress();
         var importer = new ScriptedImporter((_, _) => Task.FromResult(
-            ImportResult.CreateSuccess("roads", SupportedFileFormat.GeoPackage, 3, detectedSrid: 2193)
-                with { SourceSrid = 2193, StoredSrid = 4326, Reprojected = true }));
+            ImportResult.CreateSuccess("roads", SupportedFileFormat.GeoPackage, 3, detectedSrid: 2193) with { SourceSrid = 2193, StoredSrid = 4326, Reprojected = true }));
 
         await ExecuteAsync(new RecordingStorage(), importer, SixGiB, progress: progress);
 

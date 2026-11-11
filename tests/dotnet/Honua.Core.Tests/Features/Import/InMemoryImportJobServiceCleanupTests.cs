@@ -124,8 +124,7 @@ public sealed class InMemoryImportJobServiceCleanupTests
     [Fact]
     public async Task QueueImportAsync_Success_ReportsSourceAndStoredCoordinateSystem()
     {
-        var reprojected = ImportResult.CreateSuccess("parcels", SupportedFileFormat.GeoJson, 1, detectedSrid: 2193)
-            with { SourceSrid = 2193, StoredSrid = 4326, Reprojected = true };
+        var reprojected = ImportResult.CreateSuccess("parcels", SupportedFileFormat.GeoJson, 1, detectedSrid: 2193) with { SourceSrid = 2193, StoredSrid = 4326, Reprojected = true };
         using var jobService = new InMemoryImportJobService(
             new FakeFileImportService(reprojected), new NoopPerformanceMonitor(), NullLogger<InMemoryImportJobService>.Instance);
         using var stream = new MemoryStream([0x01]);
