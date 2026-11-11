@@ -642,6 +642,12 @@ paid-run counts and the share of triage events reaching a paid Opus run. Determi
 skips use zero model credits. The combined envelopes are 2500 credits ($25) per day;
 triage and fix do not each receive a separate allowance.
 
+### Router validator execution
+
+`validate-ci-router.sh` runs independent fixtures in a bounded pool (four workers by default; `HONUA_ROUTER_WORKERS=1..8`), records each fixture duration and collects every exit code before returning failure. A failed or missing result cannot produce success. The routing assertions retain their exact cases and shard ownership checks.
+
+`--changed-only` is a local feedback mode: stdin routing cases skip only when their complete input closure (router, shard map, jq wrapper and validator infrastructure) is unchanged against the merge base with `origin/trunk`. Staged, unstaged, renamed and untracked inputs count. Unknown base or an ambiguous path runs everything; undeclared fixture input closures also run. CI and GitHub Actions ignore the optimization and always run every fixture.
+
 The PR managed producer compiles `Honua.Server.Tests` in a parallel, review-admitted job. The main producer excludes that project while preserving every other selected compile root; a reverse project reference to Server.Tests rejects this partition. Each producer publishes only the assemblies consumed by selected shards. The affected-shards aggregate requires the parallel producer to succeed even for an empty shard matrix, retaining the required aggregate dependency contract. Only the affected-shard matrix cancels sibling shards after a failure; fast-test and analyzer matrices retain every result.
 
 Review revalidation shares `.github/scripts/revalidate-exact-head-review.cjs` across producer, fast-test and aggregate jobs. The aggregate checks out code only for enforced attempt-2 review validation. Generated-output classification shares `scripts/ci/classify-generated-output.sh`; executable skip policy still comes from the immutable PR base, and uncertainty preserves all checks.
