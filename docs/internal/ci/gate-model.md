@@ -732,8 +732,9 @@ so queued dispatches do not retain an obsolete range. Dispatch and execution use
 fall back to the newest merge; the summary records the older range deferred to
 the twice-daily full run. A broad newest merge retains every selected shard.
 Affected shard concurrency is six, or twelve when more than 30 shards remain
-selected (`scripts/ci/trailing_selection.py` owns both numbers), including
-full-coverage routing fallbacks; manual and scheduled full runs retain 24. A
+selected (`scripts/ci/trailing_selection.py` owns both numbers and the
+threshold), including full-coverage routing fallbacks; manual and scheduled
+full runs retain 24. A
 134-shard affected run took 214 minutes at six while PR Gate job queueing stayed
 at a two-second median; twelve halves that so a broad run finishes before the
 next full run. Required PR gates
