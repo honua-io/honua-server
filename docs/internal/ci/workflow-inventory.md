@@ -44,10 +44,10 @@ analysis.
 CodeQL, Compose Release Lifecycle, GeoArrow/GeoParquet interop, OGC API
 building-block conformance, and serving/GDAL image verification defer heavy jobs
 until the PR is ready. They subscribe to `ready_for_review` and ready-head
-`synchronize` events; conversion back to draft cancels the active run. PR Gate,
-its affected-shard verdict, clean code and repository hygiene continue on drafts.
-PR Gate also runs on `ready_for_review`, waking the trusted Claude observer after
-its exact-head verification completes.
+`synchronize` events; conversion back to draft cancels the active verification run.
+Drafts run Format, Clean code, and Repository hygiene. The `PR Gate` aggregate
+rejects their skipped heavy dependencies. Ready PRs run the complete gate, waking
+the trusted Claude observer after exact-head verification completes.
 
 Verification workflows cancel superseded admission per PR; automation helpers
 queue superseding events without cancellation. Trusted observers resolve the
@@ -642,6 +642,8 @@ paid-run counts and the share of triage events reaching a paid Opus run. Determi
 skips use zero model credits. The combined envelopes are 2500 credits ($25) per day;
 triage and fix do not each receive a separate allowance.
 
+Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. If both producer jobs were skipped by job-level admission (draft or non-base edit), the consumer also returns without validation or mutation. Missing envelopes from ordinary producers remain errors.
+
 ### Router validator execution
 
 `validate-ci-router.sh` runs independent fixtures in a bounded pool (four workers by default; `HONUA_ROUTER_WORKERS=1..8`), records each fixture duration and collects every exit code before returning failure. A failed or missing result cannot produce success. The routing assertions retain their exact cases and shard ownership checks. Cancellation sends TERM to owned worker groups, escalates to KILL after a bounded grace period, and reaps workers before deleting results.
@@ -716,3 +718,5 @@ Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
 revocation: a human or drain lane owns any manually armed dependency PR.
 If mergeability becomes clean between the live query and enable mutation, only
 GitHub's specific clean-status response ends neutrally; other API errors fail.
+
+PR Gate and native-image impact observers record `source-run-draft-admission` when the latest `PR Gate / Runner select` and `PR Gate / Build and tests` outcomes at or before the source attempt were both skipped (a partial rerun keeps earlier outcomes); these attempts emit no promotion receipt. Ready-run failures remain observable.

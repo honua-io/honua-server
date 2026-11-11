@@ -124,11 +124,15 @@ def validate(
     require(producer, "persist-credentials: false", "untrusted checkout must not persist credentials")
     require(producer, "  generate:\n", "untrusted generation must have an isolated job")
     require(producer, "  produce:\n", "envelope packaging must have an isolated job")
-    require(
-        producer,
-        "if: github.event.action != 'edited' || github.event.changes.base.ref.from != null",
-        "edited events must run only when the PR base changes",
+    generate_admission = producer.split("  generate:\n", 1)[1].split("    runs-on:", 1)[0]
+    expected_admission = (
+        "    if: >-\n"
+        "      (github.event_name != 'pull_request' || !github.event.pull_request.draft)\n"
+        "      && (github.event.action != 'edited' || github.event.changes.base.ref.from != null)\n"
     )
+    if not generate_admission.endswith(expected_admission):
+        raise AssertionError(
+            "generation must skip drafts and run edited events only when the PR base changes")
     generate_block = producer.split("  generate:\n", 1)[1].split("  produce:\n", 1)[0]
     produce_block = producer.split("  produce:\n", 1)[1]
     require(generate_block, "uses: ./.github/actions/setup-dotnet-ci", "generation must configure .NET")

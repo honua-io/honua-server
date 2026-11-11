@@ -2,6 +2,7 @@ name: GP Alias Contract
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches: [trunk]
     paths:
       - 'src/Honua.Protocols/GeoServices/GPServer/GPServerEsriTaskAliases.cs'
@@ -20,6 +21,7 @@ concurrency:
 
 jobs:
   aliases:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -72,6 +74,7 @@ jobs:
           path: alias-results/
           if-no-files-found: error
   ogc-process-list:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
