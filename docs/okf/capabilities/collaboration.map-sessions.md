@@ -16,7 +16,7 @@ Collaborative saved-map session operations (comments, activity, shared editing c
 | Capability key | `collaboration.map-sessions` |
 | Category | Collaboration |
 | Edition | Community |
-| Surface maturity | 9 implemented |
+| Surface maturity | 9 experimental |
 | Registry entries | 9 |
 | Proving tests | 67 |
 

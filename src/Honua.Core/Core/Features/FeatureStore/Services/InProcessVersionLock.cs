@@ -117,6 +117,8 @@ public sealed class InProcessVersionLock : IVersionLock
     {
         private int _released;
 
+        public CancellationToken LockLostToken => CancellationToken.None;
+
         public ValueTask DisposeAsync()
         {
             if (Interlocked.Exchange(ref _released, 1) == 0)

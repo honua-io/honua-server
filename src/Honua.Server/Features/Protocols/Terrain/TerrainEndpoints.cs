@@ -12,6 +12,7 @@ using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Raster;
+using Honua.Infrastructure.SharedCaching;
 using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
@@ -35,6 +36,7 @@ internal static class TerrainEndpoints
             .WithDescription("Returns TileJSON 3.0 metadata and Honua terrain extensions for MapLibre/Mapbox raster-dem clients")
             .WithTags("Terrain")
             .CacheOutput("TerrainMetadata")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument)
             .WithETag()
             .Produces<TerrainMetadataResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status400BadRequest)
@@ -49,6 +51,7 @@ internal static class TerrainEndpoints
             .WithDescription("Returns a 256x256 PNG tile encoded with the Mapbox Terrain-RGB formula")
             .WithTags("Terrain")
             .CacheOutput("TerrainTile")
+            .WithSharedCacheClass(ResponseCacheClass.Tile)
             .Produces(StatusCodes.Status200OK, contentType: PngContentType)
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status401Unauthorized)
@@ -64,7 +67,6 @@ internal static class TerrainEndpoints
         HttpContext context,
         [FromServices] ITerrainTileService terrainTileService,
         [FromServices] IOptions<LimitsOptions> limitsOptions,
-        [FromServices] IOptions<TileOptions> tileOptions,
         CancellationToken cancellationToken)
     {
         var validation = await ValidateDatasetAsync(context, datasetId, cancellationToken);
@@ -90,7 +92,6 @@ internal static class TerrainEndpoints
         var (minZoom, maxZoom) = ResolveZoomLimits(limitsOptions.Value.Tiles);
         var response = BuildMetadataResponse(datasetId, resource, layerId, metadata, minZoom, maxZoom, context);
 
-        SetCacheHeader(context, tileOptions.Value.CacheMaxAge);
         return Results.Json(response, TerrainJsonContext.Default.TerrainMetadataResponse, contentType: JsonContentType);
     }
 
@@ -102,7 +103,6 @@ internal static class TerrainEndpoints
         HttpContext context,
         [FromServices] ITerrainTileService terrainTileService,
         [FromServices] IOptions<LimitsOptions> limitsOptions,
-        [FromServices] IOptions<TileOptions> tileOptions,
         CancellationToken cancellationToken)
     {
         var tileValidation = ValidateTileCoordinates(context, z, x, y, limitsOptions.Value.Tiles);
@@ -145,7 +145,6 @@ internal static class TerrainEndpoints
             activity?.SetTag("honua.output.bytes", tile.Data.Length);
             activity?.SetTag("honua.terrain.all_nodata", tile.IsAllNoData);
 
-            SetCacheHeader(context, tileOptions.Value.CacheMaxAge);
             return Results.Bytes(tile.Data, tile.ContentType);
         }
         catch (TerrainTileException ex)
@@ -174,6 +173,11 @@ internal static class TerrainEndpoints
                 AccessScope.Read,
                 TerrainProtocolName,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        if (validation.IsValid && !RequestAnonymity.IsAnonymous(context))
+        {
+            context.Response.Headers.Append(HeaderNames.Vary, "Authorization, X-API-Key");
+        }
 
         if (!validation.IsValid || validation.Publication?.LayerIndex is not null)
         {
@@ -285,31 +289,4 @@ internal static class TerrainEndpoints
                 StandardErrorHelpers.CreateUnprocessableEntity(context, exception.Message),
             _ => StandardErrorHelpers.CreateBadRequest(context, exception.Message)
         };
-
-    // Every request header that can select the caller's principal (mirrors the output-cache
-    // bypass set), plus Cookie for the admin session. A private response must vary on all of them
-    // so a user-agent cache never replays one caller's tile after the credential changes.
-    private static readonly string[] CredentialHeaders =
-    [
-        HeaderNames.Authorization,
-        "X-API-Key",
-        "X-Esri-Authorization",
-        "X-Honua-Embed-Key",
-        "X-Honua-Token",
-    ];
-
-    private static readonly string CredentialVary =
-        string.Join(", ", CredentialHeaders.Append(HeaderNames.Cookie));
-
-    internal static void SetCacheHeader(HttpContext context, int cacheMaxAge)
-    {
-        var credentialed = context.User.Identity?.IsAuthenticated == true
-            || CredentialHeaders.Any(context.Request.Headers.ContainsKey);
-        context.Response.Headers[HeaderNames.CacheControl] =
-            $"{(credentialed ? "private" : "public")}, max-age={Math.Max(0, cacheMaxAge)}";
-        if (credentialed)
-        {
-            context.Response.Headers[HeaderNames.Vary] = CredentialVary;
-        }
-    }
 }

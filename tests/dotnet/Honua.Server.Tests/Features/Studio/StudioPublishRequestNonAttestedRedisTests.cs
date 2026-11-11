@@ -114,7 +114,7 @@ public sealed class StudioPublishRequestNonAttestedRedisTests : IAsyncLifetime
             var capability = root.GetProperty("capabilities").EnumerateArray()
                 .Single(entry => entry.GetProperty("id").GetString() == capabilityId);
             capability.GetProperty("available").GetBoolean().Should().BeTrue(
-                $"a connected Redis enables {capabilityId} whatever the durability attestation said: {capability.GetRawText()}");
+                $"the durability attestation never withholds {capabilityId}: {capability.GetRawText()}");
         }
 
         var job = root.GetProperty("limits").GetProperty("job");

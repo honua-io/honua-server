@@ -1,7 +1,7 @@
 ---
 type: capability
 title: "OIDC Authentication"
-description: "Single-provider OpenID Connect authentication with Azure AD, Google, Okta, Auth0, or generic OIDC."
+description: "Single-provider OpenID Connect authentication with Azure AD, Google, Okta, Auth0, or generic OIDC, including the choice of which claims carry roles."
 resource: "honua://capability/identity.oidc"
 tags: [capability, identity, pro]
 ---
@@ -9,7 +9,7 @@ tags: [capability, identity, pro]
 
 # OIDC Authentication
 
-Single-provider OpenID Connect authentication with Azure AD, Google, Okta, Auth0, or generic OIDC.
+Single-provider OpenID Connect authentication with Azure AD, Google, Okta, Auth0, or generic OIDC, including the choice of which claims carry roles.
 
 | | |
 | --- | --- |

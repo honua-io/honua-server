@@ -33,6 +33,7 @@
     <PackageReference Include="AWSSDK.S3" />
     <PackageReference Include="AWSSDK.SecurityToken" />
     <PackageReference Include="AWSSDK.Batch" />
+    <PackageReference Include="AWSSDK.CloudFront" />
     <PackageReference Include="AWSSDK.CloudWatch" />
     <PackageReference Include="AWSSDK.ECS" />
     <PackageReference Include="AWSSDK.ElasticLoadBalancingV2" />

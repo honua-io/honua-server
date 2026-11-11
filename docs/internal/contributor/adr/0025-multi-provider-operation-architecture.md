@@ -1,7 +1,9 @@
 # ADR-0025: Multi-Provider Operation Architecture
 
 ## Status
-Accepted
+Accepted. Superseded in part by [ADR-0081](0081-postgres-job-substrate.md): the "Redis and
+Durability" section no longer applies to execution jobs, the job queue, job logs and geoprocessing
+result packages, which are stored in PostgreSQL. Workflow operations stay on Redis.
 
 ## Context
 

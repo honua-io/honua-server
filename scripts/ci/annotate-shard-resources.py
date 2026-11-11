@@ -4,6 +4,8 @@ import argparse
 import json
 import sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shard_projects import shard_projects
 
 MONOLITH = 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
 
@@ -14,9 +16,10 @@ def annotate(matrix, catalog):
         projects = {}
     result = []
     for shard in matrix:
-        entry = projects.get(shard.get('csproj') or MONOLITH)
-        free = (isinstance(entry, dict) and entry.get('role') in {'unit', 'component'}
-                and type(entry.get('resources')) is list and entry['resources'] == [])
+        entries = [projects.get(p) for p in shard_projects(shard)]
+        free = all(isinstance(entry, dict) and entry.get('role') in {'unit', 'component'}
+                   and type(entry.get('resources')) is list and entry['resources'] == []
+                   for entry in entries)
         result.append({**shard, 'needs_postgres': not free})
     return result
 
