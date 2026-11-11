@@ -89,7 +89,7 @@ class PullRequestLoadTests(unittest.TestCase):
             with self.subTest(workflow=name):
                 self.assertIn("github.event.pull_request.number", concurrency.get("group", ""))
                 cancellation = concurrency.get("cancel-in-progress")
-                if name in ("review-gate.yml", "review-event-bridge.yml", "pr-review-doctor.lock.yml", "normalize-derived-artifacts.yml"):
+                if name in ("review-gate.yml", "review-event-bridge.yml", "pr-review-doctor.lock.yml", "normalize-derived-artifacts.yml", "auto-merge-ready.yml"):
                     self.assertEqual(cancellation, "false")
                     self.assertEqual(concurrency.get("queue"), "max")
                 else:
@@ -195,7 +195,7 @@ class PullRequestLoadTests(unittest.TestCase):
             definition = workflow(path.name)
             if "pull_request" not in definition.get("on", {}):
                 continue
-            if path.name in ("pr-gate.yml", "clean-code.yml", "repo-hygiene.yml"):
+            if path.name in ("pr-gate.yml", "clean-code.yml", "repo-hygiene.yml", "auto-merge-ready.yml"):
                 continue
             with self.subTest(workflow=path.name):
                 types = definition["on"]["pull_request"].get("types", [])
@@ -211,6 +211,22 @@ class PullRequestLoadTests(unittest.TestCase):
                         "pull_request": {"draft": True}, "inputs": {},
                     }}
                     self.assertFalse(evaluate(condition, event), condition)
+
+    def test_auto_merge_control_admits_draft_cleanup_only(self):
+        if not (WORKFLOWS / "auto-merge-ready.yml").is_file():
+            self.skipTest("Auto-merge control workflow has not landed yet")
+        condition = workflow("auto-merge-ready.yml")["jobs"]["enable"]["if"]
+        event = {"repository": "owner/repo", "event": {
+            "action": "synchronize", "pull_request": {
+                "draft": True, "head": {"repo": {"full_name": "owner/repo"}},
+                "base": {"ref": "trunk"}, "user": {"login": "contributor"},
+            },
+        }}
+        self.assertFalse(evaluate(condition, event))
+        event["event"]["action"] = "converted_to_draft"
+        self.assertTrue(evaluate(condition, event))
+        event["event"]["pull_request"]["head"]["repo"]["full_name"] = "fork/repo"
+        self.assertFalse(evaluate(condition, event))
 
     def test_trusted_observers_keep_current_draft_refusal(self):
         observer = workflow("server-test-prebuild-observe.yml")
