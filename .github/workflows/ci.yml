@@ -26,7 +26,7 @@ on:
         type: boolean
         default: false
       selective_base:
-        description: 'Trailing-verification mode: full SHA of a trunk ancestor (typically the last matrix-green head). The run diffs selective_base...HEAD and gates only the shards/lanes that diff touches. Empty = full lane. Overridden by full_ci=true.'
+        description: 'Trailing-verification mode: full SHA of a trunk ancestor (typically the latest completed CI head). The run diffs selective_base...HEAD and gates only the shards/lanes that diff touches. Empty = full lane. Overridden by full_ci=true.'
         required: false
         type: string
         default: ''
