@@ -65,6 +65,7 @@ Expected: a row/column tuple such as `(5, 12)` with a populated `geometry` colum
 - **400 on `f=parquet` with `returnM=true`** — GeoParquet 1.1.0 supports only XY/XYZ; drop `returnM`.
 - **400 `Shapefile format does not support mixed geometry types`** — bulk-export mixed-geometry layers as `gpkg` or `csv` instead.
 - **503 `Large exports require cloud storage`** — the async export path needs a configured cloud storage provider; reduce the export scope with `where`/`bbox` or configure storage.
+- **503 `Export queue is full`** — five background exports are already queued or running across the deployment; retry after one finishes.
 - **CSV is missing geometry detail** — CSV serializes geometry to a text column; use GeoJSON/GeoParquet for full-fidelity geometry. See [troubleshooting](../deploy/troubleshooting.md).
 
 ## Next steps

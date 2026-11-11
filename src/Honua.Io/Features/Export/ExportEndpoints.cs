@@ -210,10 +210,9 @@ internal static class ExportEndpoints
             {
                 await exportJobService.StartAsync(job, cancellationToken).ConfigureAwait(false);
             }
-            catch (InvalidOperationException ex) when (string.Equals(
-                ex.Message,
-                ExportJobService.DurableQueueUnavailableMessage,
-                StringComparison.Ordinal))
+            catch (InvalidOperationException ex) when (
+                string.Equals(ex.Message, ExportJobService.DurableQueueUnavailableMessage, StringComparison.Ordinal)
+                || string.Equals(ex.Message, ExportJobService.QueueFullMessage, StringComparison.Ordinal))
             {
                 HonuaTelemetry.RecordException(activity, ex);
                 HonuaTelemetry.CategorizeLatency(activity, sw.Elapsed.TotalMilliseconds);

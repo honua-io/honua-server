@@ -24,6 +24,11 @@ internal sealed class ExportJobService(
     IJobQueue? jobQueue = null) : IExportJobService
 {
     internal const string DurableQueueUnavailableMessage = "Large exports require durable background job storage to be configured.";
+    internal const string QueueFullMessage = "Export queue is full. Please retry later.";
+
+    // One running and four waiting: the capacity of the in-process queue exports used before, now
+    // counted across every node.
+    internal const int MaxOutstandingExports = 5;
     internal const string RequestParameter = "honua.export.request";
     internal static readonly TimeSpan Retention = TimeSpan.FromHours(24);
 
@@ -38,13 +43,32 @@ internal sealed class ExportJobService(
             throw new InvalidOperationException(DurableQueueUnavailableMessage);
         }
 
+        await EnsureAdmittedAsync(jobStore, cancellationToken).ConfigureAwait(false);
+        await CreateJobAsync(jobStore, job, cancellationToken).ConfigureAwait(false);
+        await EnqueueAsync(jobQueue, job.JobId, cancellationToken).ConfigureAwait(false);
+        return job.JobId;
+    }
+
+    private static async Task EnsureAdmittedAsync(IExecutionJobStore store, CancellationToken cancellationToken)
+    {
+        var outstanding = await store.ListActiveAsync(ExecutionJobKind.Export, MaxOutstandingExports + 1, cancellationToken)
+            .ConfigureAwait(false);
+        if (outstanding.Count >= MaxOutstandingExports)
+        {
+            throw new InvalidOperationException(QueueFullMessage);
+        }
+    }
+
+    // The queued progress is written first, so a job never exists without the progress its status URL reads.
+    private async Task CreateJobAsync(IExecutionJobStore store, ExportJob job, CancellationToken cancellationToken)
+    {
         var progress = ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.LayerId, job.TotalFeatures);
         await progressStore.SetProgressAsync(job.JobId, progress, Retention, cancellationToken).ConfigureAwait(false);
 
         bool created;
         try
         {
-            created = await jobStore.TryCreateAsync(CreateRecord(job), cancellationToken: cancellationToken).ConfigureAwait(false);
+            created = await store.TryCreateAsync(CreateRecord(job), cancellationToken: cancellationToken).ConfigureAwait(false);
         }
         catch
         {
@@ -57,19 +81,20 @@ internal sealed class ExportJobService(
             await progressStore.DeleteProgressAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
             throw new InvalidOperationException($"Failed to create export execution job '{job.JobId}'.");
         }
+    }
 
+    // The record is durable, so the export is accepted: the next reconciliation sweep queues a local
+    // job whose enqueue was lost.
+    private async Task EnqueueAsync(IJobQueue queue, string jobId, CancellationToken cancellationToken)
+    {
         try
         {
-            await jobQueue.EnqueueAsync(job.JobId, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await queue.EnqueueAsync(jobId, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
-        // The record is durable, so the export is accepted: the reconciler's dispatch repair enqueues a
-        // local job that was created but not queued.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            ExportJobServiceLog.EnqueueDeferredToDispatchRepair(logger, job.JobId, ex);
+            ExportJobServiceLog.EnqueueDeferredToDispatchRepair(logger, jobId, ex);
         }
-
-        return job.JobId;
     }
 
     internal static bool TryReadRequest(ExecutionJobRecord record, [NotNullWhen(true)] out ExportJob? job)

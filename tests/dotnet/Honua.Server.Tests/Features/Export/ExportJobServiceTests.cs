@@ -66,6 +66,25 @@ public sealed class ExportJobServiceTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task Start_WhenExportsAreAlreadyOutstanding_IsRefused()
+    {
+        var jobStore = new InMemoryExecutionJobStore();
+        var progressStore = new ComparingInMemoryProgressStore();
+        var service = CreateService(progressStore, jobStore, Substitute.For<IJobQueue>());
+        for (var index = 0; index < ExportJobService.MaxOutstandingExports; index++)
+        {
+            await service.StartAsync(ExportJobTestData.CreateJob($"outstanding-{index}"));
+        }
+
+        var start = () => service.StartAsync(ExportJobTestData.CreateJob("one-too-many"));
+
+        await start.Should().ThrowAsync<InvalidOperationException>().WithMessage(ExportJobService.QueueFullMessage);
+        (await jobStore.GetAsync("one-too-many")).Should().BeNull();
+        (await progressStore.GetProgressAsync("one-too-many")).Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task Start_WhenProgressCannotBeWritten_CreatesNoJob()
     {
         var jobStore = new InMemoryExecutionJobStore();
@@ -301,6 +320,69 @@ public sealed class ExportJobServiceTests
         store.ReceivedCalls().Should().BeEmpty();
     }
 
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task Execute_AfterTheExportCompleted_IsANoOpSuccess()
+    {
+        var progressStore = new ComparingInMemoryProgressStore();
+        var job = ExportJobTestData.CreateJob(Guid.NewGuid().ToString("N"));
+        var record = await SubmitAsync(progressStore, job);
+        var queued = (await progressStore.GetProgressAsync<ExportProgress>(job.JobId))!;
+        await progressStore.SetProgressAsync(job.JobId, queued with
+        {
+            Status = OperationStatus.Completed,
+            DownloadUrl = "https://example.test/first.csv",
+            CompletedAt = DateTimeOffset.UtcNow
+        });
+        var store = Substitute.For<IStreamingFeatureStore>();
+        var storage = Substitute.For<ICloudFileStorage>();
+
+        // The worker requeued the job after the executor had already recorded the completion.
+        var result = await RunAsync(progressStore, store, storage, record with { AttemptCount = 2 });
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        store.ReceivedCalls().Should().BeEmpty("a completed export is not read again");
+        await storage.DidNotReceive().UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>());
+        (await progressStore.GetProgressAsync<ExportProgress>(job.JobId))!.DownloadUrl
+            .Should().Be("https://example.test/first.csv");
+    }
+
+    [UnitTheory]
+    [Operation(Operations.Export)]
+    [InlineData(OperationStatus.Cancelled)]
+    [InlineData(OperationStatus.Failed)]
+    public async Task Execute_ConsoleRetryOfAnEndedExport_RunsAndClearsTheOldOutcome(OperationStatus ended)
+    {
+        var progressStore = new ComparingInMemoryProgressStore();
+        var job = ExportJobTestData.CreateJob(Guid.NewGuid().ToString("N"));
+        var record = await SubmitAsync(progressStore, job);
+        var queued = (await progressStore.GetProgressAsync<ExportProgress>(job.JobId))!;
+        await progressStore.SetProgressAsync(job.JobId, queued with
+        {
+            Status = ended,
+            ErrorMessage = "Export failed.",
+            CompletedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            CurrentPhase = "Export failed"
+        });
+        var store = Substitute.For<IStreamingFeatureStore>();
+        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(ExportJobTestData.CreateFeatures());
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ExportJobTestData.Uploaded("retried", "text/csv"));
+        storage.GetPresignedUrlAsync("retried", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns("https://example.test/retried.csv");
+
+        // A Console retry resets the record to Queued without a cancellation request.
+        var result = await RunAsync(progressStore, store, storage, record with { Status = ExecutionJobStatus.Running, AttemptCount = 1 });
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        var progress = (await progressStore.GetProgressAsync<ExportProgress>(job.JobId))!;
+        progress.Status.Should().Be(OperationStatus.Completed);
+        progress.ErrorMessage.Should().BeNull();
+        progress.DownloadUrl.Should().Be("https://example.test/retried.csv");
+    }
+
     [UnitTheory]
     [Operation(Operations.Export)]
     [InlineData(ExecutionJobStatus.Failed, OperationStatus.Failed)]
@@ -353,9 +435,21 @@ public sealed class ExportJobServiceTests
         IStreamingFeatureStore store,
         ICloudFileStorage storage,
         ExportJob job)
+        => await RunAsync(progressStore, store, storage, await SubmitAsync(progressStore, job));
+
+    private static async Task<ExecutionJobRecord> SubmitAsync(IUniversalProgressStore progressStore, ExportJob job)
     {
         var jobStore = new InMemoryExecutionJobStore();
         await CreateService(progressStore, jobStore, Substitute.For<IJobQueue>()).StartAsync(job);
+        return (await jobStore.GetAsync(job.JobId))!;
+    }
+
+    private static async Task<JobExecutionResult> RunAsync(
+        IUniversalProgressStore progressStore,
+        IStreamingFeatureStore store,
+        ICloudFileStorage storage,
+        ExecutionJobRecord record)
+    {
         using var services = new ServiceCollection()
             .AddSingleton(store)
             .AddSingleton(storage)
@@ -365,10 +459,7 @@ public sealed class ExportJobServiceTests
             progressStore,
             services.GetRequiredService<IServiceScopeFactory>(),
             NullLogger<ExportJobExecutor>.Instance);
-        return await executor.ExecuteAsync(
-            (await jobStore.GetAsync(job.JobId))!,
-            Substitute.For<IJobExecutionContext>(),
-            CancellationToken.None);
+        return await executor.ExecuteAsync(record, Substitute.For<IJobExecutionContext>(), CancellationToken.None);
     }
 }
 

@@ -253,10 +253,7 @@ public enum ExecutionJobKind
     /// </summary>
     LayerPublish,
 
-    /// <summary>
-    /// Asynchronous admin layer export (CSV, Shapefile, GeoPackage) above the synchronous
-    /// threshold: the worker streams the layer, uploads the file and publishes its download URL.
-    /// </summary>
+    // Asynchronous admin layer export (CSV, Shapefile, GeoPackage) above the synchronous threshold.
     Export
 }
 

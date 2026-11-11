@@ -44,88 +44,73 @@ internal sealed class ExportJobExecutor(
             return NotRetryable("Export request has no captured submitter identity.");
         }
 
-        var processing = await StartProcessingAsync(request, cancellationToken).ConfigureAwait(false);
-        if (processing is null)
+        var start = await StartProcessingAsync(job, request, cancellationToken).ConfigureAwait(false);
+        return start switch
         {
-            return NotRetryable("Export progress is no longer active.");
+            { AlreadyCompleted: true } => JobExecutionResult.Succeeded(start.Progress!.Warnings),
+            { Progress: null } => NotRetryable("Export progress is no longer active."),
+            _ => await ExportAsync(new ExportRun(request, start.Progress), cancellationToken).ConfigureAwait(false)
+        };
+    }
+
+    // A worker that requeued an already-completed export finds Completed and does nothing. A Console
+    // retry finds the ended outcome without a cancellation request and starts over; a cancellation
+    // request means the export was cancelled.
+    private async Task<ExportStart> StartProcessingAsync(ExecutionJobRecord job, ExportJob request, CancellationToken cancellationToken)
+    {
+        var existing = await progressStore.GetProgressAsync<ExportProgress>(request.JobId, cancellationToken).ConfigureAwait(false);
+        if (existing is null)
+        {
+            var initial = Fresh(request);
+            await progressStore.SetProgressAsync(request.JobId, initial, ExportJobService.Retention, cancellationToken).ConfigureAwait(false);
+            return new ExportStart(initial);
         }
 
-        // "honua-export" is a compile-time relative literal and the job id is always the
-        // server-generated Guid.NewGuid().ToString("N") minted in ExportEndpoints (never
-        // caller-supplied), so this combine cannot silently drop Path.GetTempPath().
-        var scratchDir = Path.Join(Path.GetTempPath(), "honua-export", request.JobId);
-        Directory.CreateDirectory(scratchDir);
+        if (existing.Status == OperationStatus.Completed)
+        {
+            return new ExportStart(existing, AlreadyCompleted: true);
+        }
 
-        using var activity = HonuaTelemetry.ActivitySource.StartActivity("Export.ProcessQueuedJob");
-        activity?.SetTag("export.job_id", request.JobId);
-        activity?.SetTag("export.format", request.Format);
-        activity?.SetTag("export.service_name", request.ServiceName);
-        activity?.SetTag("export.layer_id", request.LayerId);
-        activity?.SetTag("export.total_features", request.TotalFeatures);
+        if (existing.Status == OperationStatus.Cancelled && job.CancellationRequestedAt.HasValue)
+        {
+            throw new OperationCanceledException("The export was cancelled before it started.");
+        }
 
+        var processing = existing.Status is OperationStatus.Queued or OperationStatus.Processing
+            ? existing with { Status = OperationStatus.Processing, CurrentPhase = ExportingPhase }
+            : Fresh(request);
+        var admission = await progressStore.TrySetProgressAsync(
+                new OperationProgressWrite(request.JobId, processing, ExportJobService.Retention),
+                existing.Status,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return admission.Outcome == ProgressCompareAndSetOutcome.Updated
+            ? new ExportStart(processing)
+            : Lost(admission.CurrentProgress as ExportProgress);
+    }
+
+    private static ExportStart Lost(ExportProgress? current) => current?.Status switch
+    {
+        OperationStatus.Cancelled => throw new OperationCanceledException("The export was cancelled before it started."),
+        OperationStatus.Completed => new ExportStart(current, AlreadyCompleted: true),
+        _ => new ExportStart(null)
+    };
+
+    private static ExportProgress Fresh(ExportJob request)
+        => ExportProgress.CreateInitial(request.JobId, request.Format, request.ServiceName, request.LayerId, request.TotalFeatures)
+            with { Status = OperationStatus.Processing, CurrentPhase = ExportingPhase };
+
+    private async Task<JobExecutionResult> ExportAsync(ExportRun run, CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(run.ScratchDir);
+        using var activity = StartActivity(run.Request);
         await using var scope = scopeFactory.CreateAsyncScope();
         var cloudStorage = scope.ServiceProvider.GetRequiredService<ICloudFileStorage>();
-        string? uploadedFileId = null;
-        var completed = false;
         try
         {
-            var streamingStore = scope.ServiceProvider.GetRequiredService<IStreamingFeatureStore>();
-            var crsRegistry = scope.ServiceProvider.GetRequiredService<ICrsRegistry>();
-
-            var features = streamingStore.StreamFeaturesAsync(request.LayerId, request.Query, cancellationToken);
-            var output = await WriteToFileAsync(request, features, scratchDir, crsRegistry, logger, cancellationToken).ConfigureAwait(false);
-            var fileInfo = new FileInfo(output.Path);
-
-            await using (var fileStream = File.OpenRead(output.Path))
-            {
-                var uploadResult = await cloudStorage.UploadAsync(new FileUploadRequest
-                {
-                    Content = fileStream,
-                    FileName = Path.GetFileName(output.Path),
-                    ContentType = GetContentType(request.Format),
-                    Folder = "exports",
-                    TimeToLive = ExportJobService.Retention
-                }, cancellationToken).ConfigureAwait(false);
-                uploadedFileId = uploadResult.File?.FileId;
-            }
-
-            var downloadUrl = uploadedFileId is not null
-                ? await cloudStorage.GetPresignedUrlAsync(uploadedFileId, ExportJobService.Retention, cancellationToken).ConfigureAwait(false)
-                : null;
-
-            cancellationToken.ThrowIfCancellationRequested();
-            var done = processing with
-            {
-                Status = OperationStatus.Completed,
-                ProcessedFeatures = output.WrittenCount,
-                Warnings = output.Warnings,
-                OutputSizeBytes = fileInfo.Length,
-                DownloadUrl = downloadUrl,
-                CompletedAt = DateTimeOffset.UtcNow,
-                CurrentPhase = "Export completed"
-            };
-
-            // A cancellation accepted while the file was written wins over the completion.
-            var completion = await progressStore.TrySetProgressAsync(
-                    new OperationProgressWrite(request.JobId, done, ExportJobService.Retention),
-                    OperationStatus.Processing,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (completion.Outcome != ProgressCompareAndSetOutcome.Updated)
-            {
-                if (completion.CurrentProgress?.Status == OperationStatus.Cancelled)
-                {
-                    throw new OperationCanceledException("The export was cancelled while it ran.");
-                }
-
-                return NotRetryable("Export progress is no longer active.");
-            }
-
-            completed = true;
-            activity?.SetTag("export.output_size_bytes", fileInfo.Length);
-            activity?.SetStatus(ActivityStatusCode.Ok);
-            ExportLog.AsyncExportCompleted(logger, request.JobId, request.TotalFeatures, fileInfo.Length);
-            return JobExecutionResult.Succeeded(output.Warnings);
+            var result = await WriteUploadAndCompleteAsync(run, scope.ServiceProvider, cancellationToken).ConfigureAwait(false);
+            activity?.SetStatus(run.Completed ? ActivityStatusCode.Ok : ActivityStatusCode.Error);
+            return result;
         }
         // A provider can surface cancellation as its own exception; the worker decides cancellation from OCE.
         catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException
@@ -136,117 +121,152 @@ internal sealed class ExportJobExecutor(
         catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            ExportLog.AsyncExportFailed(logger, request.JobId, ex);
+            ExportLog.AsyncExportFailed(logger, run.Request.JobId, ex);
             return NotRetryable(ExportFailureMessage);
         }
         finally
         {
-            if (!completed && uploadedFileId is not null)
-            {
-                await DeleteArtifactBestEffortAsync(cloudStorage, request.JobId, uploadedFileId).ConfigureAwait(false);
-            }
-
-            try
-            {
-                Directory.Delete(scratchDir, recursive: true);
-            }
-            catch (Exception cleanupEx) when (cleanupEx is not OutOfMemoryException)
-            {
-                // Cleanup failure must not fail the export job itself; log and continue.
-                ExportJobServiceLog.ScratchDirCleanupFailed(logger, request.JobId, scratchDir, cleanupEx);
-            }
+            await CleanUpAsync(run, cloudStorage).ConfigureAwait(false);
         }
     }
 
-    // A retry after a lost node finds the progress already Processing and takes it over.
-    private async Task<ExportProgress?> StartProcessingAsync(ExportJob request, CancellationToken cancellationToken)
+    private async Task<JobExecutionResult> WriteUploadAndCompleteAsync(
+        ExportRun run,
+        IServiceProvider services,
+        CancellationToken cancellationToken)
     {
-        var existing = await progressStore.GetProgressAsync<ExportProgress>(request.JobId, cancellationToken).ConfigureAwait(false);
-        if (existing?.Status == OperationStatus.Cancelled)
-        {
-            throw new OperationCanceledException("The export was cancelled before it started.");
-        }
+        var request = run.Request;
+        var features = services.GetRequiredService<IStreamingFeatureStore>()
+            .StreamFeaturesAsync(request.LayerId, request.Query, cancellationToken);
+        var output = await WriteToFileAsync(run, features, services.GetRequiredService<ICrsRegistry>(), cancellationToken)
+            .ConfigureAwait(false);
+        var downloadUrl = await UploadAsync(run, output, services.GetRequiredService<ICloudFileStorage>(), cancellationToken)
+            .ConfigureAwait(false);
 
-        var processing = (existing ?? ExportProgress.CreateInitial(
-                request.JobId, request.Format, request.ServiceName, request.LayerId, request.TotalFeatures)) with
+        cancellationToken.ThrowIfCancellationRequested();
+        var done = run.Processing with
         {
-            Status = OperationStatus.Processing,
-            CurrentPhase = ExportingPhase
+            Status = OperationStatus.Completed,
+            ProcessedFeatures = output.WrittenCount,
+            Warnings = output.Warnings,
+            OutputSizeBytes = new FileInfo(output.Path).Length,
+            DownloadUrl = downloadUrl,
+            CompletedAt = DateTimeOffset.UtcNow,
+            CurrentPhase = "Export completed"
         };
-        if (existing is null)
-        {
-            await progressStore.SetProgressAsync(request.JobId, processing, ExportJobService.Retention, cancellationToken).ConfigureAwait(false);
-            return processing;
-        }
 
-        var admission = await progressStore.TrySetProgressAsync(
-                new OperationProgressWrite(request.JobId, processing, ExportJobService.Retention),
-                existing.Status,
+        // A cancellation accepted while the file was written wins over the completion.
+        var completion = await progressStore.TrySetProgressAsync(
+                new OperationProgressWrite(request.JobId, done, ExportJobService.Retention),
+                OperationStatus.Processing,
                 cancellationToken)
             .ConfigureAwait(false);
-        if (admission.Outcome == ProgressCompareAndSetOutcome.Updated)
+        if (completion.Outcome != ProgressCompareAndSetOutcome.Updated)
         {
-            return processing;
+            return completion.CurrentProgress?.Status == OperationStatus.Cancelled
+                ? throw new OperationCanceledException("The export was cancelled while it ran.")
+                : NotRetryable("Export progress is no longer active.");
         }
 
-        if (admission.CurrentProgress?.Status == OperationStatus.Cancelled)
+        run.Completed = true;
+        Activity.Current?.SetTag("export.output_size_bytes", done.OutputSizeBytes);
+        ExportLog.AsyncExportCompleted(logger, request.JobId, request.TotalFeatures, done.OutputSizeBytes);
+        return JobExecutionResult.Succeeded(output.Warnings);
+    }
+
+    private static async Task<string?> UploadAsync(
+        ExportRun run,
+        ExportFileResult output,
+        ICloudFileStorage cloudStorage,
+        CancellationToken cancellationToken)
+    {
+        await using (var fileStream = File.OpenRead(output.Path))
         {
-            throw new OperationCanceledException("The export was cancelled before it started.");
+            var uploadResult = await cloudStorage.UploadAsync(new FileUploadRequest
+            {
+                Content = fileStream,
+                FileName = Path.GetFileName(output.Path),
+                ContentType = GetContentType(run.Request.Format),
+                Folder = "exports",
+                TimeToLive = ExportJobService.Retention
+            }, cancellationToken).ConfigureAwait(false);
+            run.UploadedFileId = uploadResult.File?.FileId;
         }
 
-        return null;
+        return run.UploadedFileId is null
+            ? null
+            : await cloudStorage.GetPresignedUrlAsync(run.UploadedFileId, ExportJobService.Retention, cancellationToken)
+                .ConfigureAwait(false);
+    }
+
+    private async Task CleanUpAsync(ExportRun run, ICloudFileStorage cloudStorage)
+    {
+        if (!run.Completed && run.UploadedFileId is not null)
+        {
+            await DeleteArtifactBestEffortAsync(cloudStorage, run.Request.JobId, run.UploadedFileId).ConfigureAwait(false);
+        }
+
+        try
+        {
+            Directory.Delete(run.ScratchDir, recursive: true);
+        }
+        catch (Exception cleanupEx) when (cleanupEx is not OutOfMemoryException)
+        {
+            // Cleanup failure must not fail the export job itself; log and continue.
+            ExportJobServiceLog.ScratchDirCleanupFailed(logger, run.Request.JobId, run.ScratchDir, cleanupEx);
+        }
+    }
+
+    private static Activity? StartActivity(ExportJob request)
+    {
+        var activity = HonuaTelemetry.ActivitySource.StartActivity("Export.ProcessQueuedJob");
+        activity?.SetTag("export.job_id", request.JobId);
+        activity?.SetTag("export.format", request.Format);
+        activity?.SetTag("export.service_name", request.ServiceName);
+        activity?.SetTag("export.layer_id", request.LayerId);
+        activity?.SetTag("export.total_features", request.TotalFeatures);
+        return activity;
     }
 
     private static JobExecutionResult NotRetryable(string message)
         => JobExecutionResult.Failed(message) with { IsRetryable = false };
 
-    private sealed record ExportFileResult(string Path, int WrittenCount, IReadOnlyList<string> Warnings);
-
-    private static async Task<ExportFileResult> WriteToFileAsync(
-        ExportJob job,
+    private async Task<ExportFileResult> WriteToFileAsync(
+        ExportRun run,
         IAsyncEnumerable<Feature> features,
-        string scratchDir,
         ICrsRegistry crsRegistry,
-        ILogger logger,
         CancellationToken cancellationToken)
     {
-        string? srsName = null;
-        string? srsWkt = null;
+        var job = run.Request;
         var crs = await crsRegistry.ResolveBySridAsync(job.OutputSrid, cancellationToken).ConfigureAwait(false);
-        if (crs.HasValue)
-        {
-            srsName = $"EPSG:{job.OutputSrid}";
-            srsWkt = crs.Value.Wkt;
-        }
+        var srsName = crs.HasValue ? $"EPSG:{job.OutputSrid}" : null;
+        var srsWkt = crs?.Wkt;
 
         // SanitizeExportFilename strips path separators, drive/colon characters, and
         // traversal segments (FileUploadSecurity.SanitizeFileName), so baseName cannot be
-        // rooted and the Path.Combine calls below cannot silently drop scratchDir.
-        var baseName = ExportEndpoints.SanitizeExportFilename(job.ServiceName, job.LayerName);
+        // rooted and the Path.Join calls below cannot silently drop the scratch directory.
+        var basePath = Path.Join(run.ScratchDir, ExportEndpoints.SanitizeExportFilename(job.ServiceName, job.LayerName));
 
         switch (BuiltInExportFormats.Resolve(job.Format))
         {
             case BuiltInExportFormat.Csv:
                 {
-                    var csvPath = Path.Join(scratchDir, $"{baseName}.csv");
-                    await using var stream = File.Create(csvPath);
+                    await using var stream = File.Create($"{basePath}.csv");
                     var writtenCount = await CsvExportWriter.WriteAsync(stream, features, job.Fields, cancellationToken).ConfigureAwait(false);
-                    return new ExportFileResult(csvPath, writtenCount, []);
+                    return new ExportFileResult($"{basePath}.csv", writtenCount, []);
                 }
             case BuiltInExportFormat.Shapefile:
                 {
-                    var zipPath = Path.Join(scratchDir, $"{baseName}.zip");
-                    await using var stream = File.Create(zipPath);
+                    await using var stream = File.Create($"{basePath}.zip");
                     var result = await ShapefileExportWriter.WriteAsync(
                         stream, features, job.Fields, job.GeometryType, srsWkt, logger, cancellationToken).ConfigureAwait(false);
-                    return new ExportFileResult(zipPath, result.WrittenCount, result.Warnings);
+                    return new ExportFileResult($"{basePath}.zip", result.WrittenCount, result.Warnings);
                 }
             case BuiltInExportFormat.GeoPackage:
                 {
-                    var gpkgPath = Path.Join(scratchDir, $"{baseName}.gpkg");
                     var writtenCount = await GeoPackageExportWriter.WriteAsync(
-                        gpkgPath, features, job.Fields, job.GeometryType, job.OutputSrid, srsName, srsWkt, cancellationToken).ConfigureAwait(false);
-                    return new ExportFileResult(gpkgPath, writtenCount, []);
+                        $"{basePath}.gpkg", features, job.Fields, job.GeometryType, job.OutputSrid, srsName, srsWkt, cancellationToken).ConfigureAwait(false);
+                    return new ExportFileResult($"{basePath}.gpkg", writtenCount, []);
                 }
             default:
                 throw new InvalidOperationException($"Unsupported export format: {job.Format}");
@@ -273,4 +293,26 @@ internal sealed class ExportJobExecutor(
         "gpkg" => "application/geopackage+sqlite3",
         _ => "application/octet-stream"
     };
+
+    private sealed record ExportStart(ExportProgress? Progress, bool AlreadyCompleted = false);
+
+    private sealed record ExportFileResult(string Path, int WrittenCount, IReadOnlyList<string> Warnings);
+
+    // One export attempt: the request, its Processing progress, its scratch directory, and the upload
+    // it may have to retract.
+    private sealed class ExportRun(ExportJob request, ExportProgress processing)
+    {
+        public ExportJob Request { get; } = request;
+
+        public ExportProgress Processing { get; } = processing;
+
+        // "honua-export" is a compile-time relative literal and the job id is always the
+        // server-generated Guid.NewGuid().ToString("N") minted in ExportEndpoints (never
+        // caller-supplied), so this combine cannot silently drop Path.GetTempPath().
+        public string ScratchDir { get; } = Path.Join(Path.GetTempPath(), "honua-export", request.JobId);
+
+        public string? UploadedFileId { get; set; }
+
+        public bool Completed { get; set; }
+    }
 }

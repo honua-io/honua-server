@@ -1,7 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Runtime.CompilerServices;
 using FluentAssertions;
+using Honua.ControlPlane;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -33,64 +35,138 @@ public sealed class ExportJobTests(DatabaseFixtureAdapter database) : IClassFixt
     public async Task Export_ClaimedByTwoWorkers_RunsOnce()
     {
         await using var harness = await PostgresJobSubstrateHarness.CreateAsync(database, nameof(ExportJobTests));
-        var progressStore = new ComparingInMemoryProgressStore();
-        var streams = 0;
-        JobSecurityContext? observedSubmitter = null;
-        var store = Substitute.For<IStreamingFeatureStore>();
-        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(_ =>
-            {
-                Interlocked.Increment(ref streams);
-                observedSubmitter = JobSecurityScope.Current?.Submitter;
-                return ExportJobTestData.CreateFeatures();
-            });
-        var storage = Substitute.For<ICloudFileStorage>();
-        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
-            .Returns(ExportJobTestData.Uploaded("export-file", "text/csv"));
-        storage.GetPresignedUrlAsync("export-file", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns("https://example.test/export.csv");
-        using var services = new ServiceCollection()
-            .AddSingleton(store)
-            .AddSingleton(storage)
-            .AddSingleton<ICrsRegistry>(new ExportJobTestData.NullCrsRegistry())
-            .BuildServiceProvider();
-        var terminal = new ExportJobTerminalCallback(progressStore, NullLogger<ExportJobTerminalCallback>.Instance);
-        var nodeA = harness.CreateWorker(CreateExecutor(), terminal, harness.CreateNodeJobStore());
-        var nodeB = harness.CreateWorker(CreateExecutor(), terminal, harness.CreateNodeJobStore());
-        await nodeA.StartAsync(CancellationToken.None);
-        await nodeB.StartAsync(CancellationToken.None);
+        using var nodes = new ExportNodes(new ComparingInMemoryProgressStore());
+        var job = ExportJobTestData.CreateJob(Guid.NewGuid().ToString("N"));
+        await nodes.SubmitAsync(harness, job);
+        var nodeA = harness.CreateWorker(nodes.CreateExecutor(), nodes.Terminal, harness.CreateNodeJobStore());
+        var nodeB = harness.CreateWorker(nodes.CreateExecutor(), nodes.Terminal, harness.CreateNodeJobStore());
+        await Task.WhenAll(nodeA.StartAsync(CancellationToken.None), nodeB.StartAsync(CancellationToken.None));
 
+        ExecutionJobRecord finished;
         try
         {
-            var job = ExportJobTestData.CreateJob(Guid.NewGuid().ToString("N"));
-            await new ExportJobService(progressStore, NullLogger<ExportJobService>.Instance, harness.JobStore, harness.Queue)
-                .StartAsync(job);
-
-            var finished = await harness.WaitForJobAsync(
-                job.JobId,
-                record => record.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled,
-                TimeSpan.FromSeconds(60));
-
-            // Give a duplicate claim time to surface before asserting there was none.
-            await Task.Delay(TimeSpan.FromSeconds(2));
-
-            finished.Status.Should().Be(ExecutionJobStatus.Succeeded, finished.ErrorMessage);
-            finished.AttemptCount.Should().Be(1, "one node claimed the export and no other attempt ran");
-            Volatile.Read(ref streams).Should().Be(1, "the layer is read once across both nodes");
-            await storage.Received(1).UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>());
-            observedSubmitter.Should().BeEquivalentTo(job.Submitter, "the worker runs the export as its submitter");
-            var progress = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
-            progress!.Status.Should().Be(OperationStatus.Completed);
-            progress.DownloadUrl.Should().Be("https://example.test/export.csv");
-            (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
+            finished = await harness.WaitForJobAsync(job.JobId, IsEnded, TimeSpan.FromSeconds(60));
         }
         finally
         {
-            await nodeA.StopAsync(CancellationToken.None);
-            await nodeB.StopAsync(CancellationToken.None);
+            // Stopping both workers drains anything they still run, so a duplicate attempt would be counted below.
+            await Task.WhenAll(nodeA.StopAsync(CancellationToken.None), nodeB.StopAsync(CancellationToken.None));
         }
 
-        ExportJobExecutor CreateExecutor()
-            => new(progressStore, services.GetRequiredService<IServiceScopeFactory>(), NullLogger<ExportJobExecutor>.Instance);
+        finished.Status.Should().Be(ExecutionJobStatus.Succeeded, finished.ErrorMessage);
+        (await harness.JobStore.GetAsync(job.JobId))!.AttemptCount.Should().Be(1, "one node claimed the export");
+        nodes.Streams.Should().Be(1, "the layer is read once across both nodes");
+        await nodes.Storage.Received(1).UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>());
+        nodes.ObservedSubmitter.Should().BeEquivalentTo(job.Submitter, "the worker runs the export as its submitter");
+        var progress = await nodes.Progress.GetProgressAsync<ExportProgress>(job.JobId);
+        progress!.Status.Should().Be(OperationStatus.Completed);
+        progress.DownloadUrl.Should().Be("https://example.test/export.csv");
+        (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
+    }
+
+    [IntegrationTest]
+    public async Task Export_WhoseWorkerIsLost_IsTakenOverByAnotherNodeAndUploadedOnce()
+    {
+        await using var harness = await PostgresJobSubstrateHarness.CreateAsync(database, nameof(ExportJobTests));
+        using var nodes = new ExportNodes(new ComparingInMemoryProgressStore()) { HoldFirstRead = true };
+        var job = ExportJobTestData.CreateJob(Guid.NewGuid().ToString("N"));
+        await nodes.SubmitAsync(harness, job);
+        var lostNode = harness.CreateWorker(nodes.CreateExecutor(), nodes.Terminal, harness.CreateNodeJobStore());
+        await lostNode.StartAsync(CancellationToken.None);
+        JobExecutionService? survivor = null;
+        try
+        {
+            await nodes.FirstReadStarted.WaitAsync(TimeSpan.FromSeconds(60));
+
+            // The lost node stops heartbeating; the reconciler sees its claim expire and requeues the job.
+            await harness.AgeClaimAsync(job.JobId, TimeSpan.FromHours(1));
+            await harness.RunReconciliationSweepAsync(CancellationToken.None);
+            survivor = harness.CreateWorker(nodes.CreateExecutor(), nodes.Terminal, harness.CreateNodeJobStore());
+            await survivor.StartAsync(CancellationToken.None);
+
+            // The requeue waits out the retry policy's first backoff before the survivor can claim it.
+            var finished = await harness.WaitForJobAsync(job.JobId, IsEnded, TimeSpan.FromSeconds(180));
+            finished.Status.Should().Be(ExecutionJobStatus.Succeeded, finished.ErrorMessage);
+            finished.AttemptCount.Should().Be(2, "the surviving node ran the second attempt");
+            nodes.Streams.Should().Be(2, "the lost attempt started reading before it was taken over");
+            await nodes.Storage.Received(1).UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>());
+            (await nodes.Progress.GetProgressAsync<ExportProgress>(job.JobId))!.Status.Should().Be(OperationStatus.Completed);
+        }
+        finally
+        {
+            await lostNode.StopAsync(CancellationToken.None);
+            if (survivor != null)
+            {
+                await survivor.StopAsync(CancellationToken.None);
+            }
+        }
+    }
+
+    private static bool IsEnded(ExecutionJobRecord record)
+        => record.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled;
+
+    // The services every node shares: one layer, one object store, one progress store.
+    private sealed class ExportNodes : IDisposable
+    {
+        private readonly TaskCompletionSource _firstReadStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly ServiceProvider _services;
+        private int _streams;
+
+        public ExportNodes(ComparingInMemoryProgressStore progress)
+        {
+            Progress = progress;
+            Terminal = new ExportJobTerminalCallback(progress, NullLogger<ExportJobTerminalCallback>.Instance);
+            var store = Substitute.For<IStreamingFeatureStore>();
+            store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+                .Returns(call => Read(call.ArgAt<CancellationToken>(2)));
+            Storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+                .Returns(ExportJobTestData.Uploaded("export-file", "text/csv"));
+            Storage.GetPresignedUrlAsync("export-file", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+                .Returns("https://example.test/export.csv");
+            _services = new ServiceCollection()
+                .AddSingleton(store)
+                .AddSingleton(Storage)
+                .AddSingleton<ICrsRegistry>(new ExportJobTestData.NullCrsRegistry())
+                .BuildServiceProvider();
+        }
+
+        public ComparingInMemoryProgressStore Progress { get; }
+
+        public ExportJobTerminalCallback Terminal { get; }
+
+        public ICloudFileStorage Storage { get; } = Substitute.For<ICloudFileStorage>();
+
+        // The first read blocks until its worker is cancelled, standing in for a node that stopped mid-export.
+        public bool HoldFirstRead { get; init; }
+
+        public Task FirstReadStarted => _firstReadStarted.Task;
+
+        public int Streams => Volatile.Read(ref _streams);
+
+        public JobSecurityContext? ObservedSubmitter { get; private set; }
+
+        public Task<string> SubmitAsync(PostgresJobSubstrateHarness harness, ExportJob job)
+            => new ExportJobService(Progress, NullLogger<ExportJobService>.Instance, harness.JobStore, harness.Queue)
+                .StartAsync(job);
+
+        public ExportJobExecutor CreateExecutor()
+            => new(Progress, _services.GetRequiredService<IServiceScopeFactory>(), NullLogger<ExportJobExecutor>.Instance);
+
+        public void Dispose() => _services.Dispose();
+
+        private async IAsyncEnumerable<Feature> Read([EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            ObservedSubmitter = JobSecurityScope.Current?.Submitter;
+            if (Interlocked.Increment(ref _streams) == 1 && HoldFirstRead)
+            {
+                _firstReadStarted.TrySetResult();
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
+
+            await foreach (var feature in ExportJobTestData.CreateFeatures().WithCancellation(cancellationToken))
+            {
+                yield return feature;
+            }
+        }
     }
 }
