@@ -5,8 +5,8 @@ on:
   schedule:
     # Full integration lane. PR CI is selective; release workflows own
     # packaging/publishing smoke.
-    - cron: '0 9 * * *'
-    - cron: '0 21 * * *'
+    - cron: '23 9 * * *'
+    - cron: '23 21 * * *'
   # Per-PR verification lives in pr-gate.yml. Full CI runs on trunk twice
   # daily or by dispatch, keeping runtime proofs and protocol builds off the
   # per-push critical path while preserving complete integration coverage.
