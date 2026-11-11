@@ -27,7 +27,7 @@ internal static class StudioMcpSchemas
 
     public static readonly JsonElement ListVersionsArgumentSchema = Parse("""
         {"type":"object","required":["itemId"],"additionalProperties":false,"properties":{
-        "itemId":{"type":"string","format":"uuid"},"beforeVersionNumber":{"type":"integer","minimum":1},
+        "itemId":{"type":"string","format":"uuid","description":"itemId from honua_studio_list_items."},"beforeVersionNumber":{"type":"integer","minimum":1},
         "limit":{"type":"integer","minimum":1,"maximum":100,"default":25}}}
         """);
 
@@ -81,23 +81,23 @@ internal static class StudioMcpSchemas
           "minLength": 1,
           "maxLength": 200,
           "pattern": "^[A-Za-z0-9_.-]+$",
-          "description": "Caller-supplied. Machine-friendly package key (letters, numbers, dash, underscore, dot only)."
+          "description": "Caller-supplied package key; letters, digits, dash, underscore or dot."
         }
         """;
 
     private static readonly string LayerInputSchemaJson = $$"""
         {
           "type": "object",
-          "description": "Caller-authored layer; copy studioSourceId from honua_list_layers into sourceId.",
+          "description": "Caller-authored layer; sourceId from honua_list_layers.studioSourceId.",
           "required": ["id"],
           "additionalProperties": false,
           "properties": {
-            "id": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Stable layer id, unique within the composition." },
-            "sourceId": { "type": "string", "maxLength": {{StudioCatalogSourceIdentity.MaxLength}}, "description": "For catalog-backed layers copy studioSourceId from honua_list_layers or honua_describe_layer. Distinct from this composition layer.id. Supported portable bindings and metadata.honua.source overrides remain separate explicit source mechanisms." },
-            "type": { "type": "string", "maxLength": 100, "description": "Layer type (e.g. fill, circle, line, raster)." },
+            "id": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Unique composition layer id." },
+            "sourceId": { "type": "string", "maxLength": {{StudioCatalogSourceIdentity.MaxLength}}, "description": "Catalog source: studioSourceId from honua_list_layers or honua_describe_layer, distinct from layer.id. Portable bindings and metadata.honua.source overrides are separate." },
+            "type": { "type": "string", "maxLength": 100, "description": "Layer type: fill, circle, line, raster, etc." },
             "title": { "type": "string", "maxLength": 200, "description": "Display title." },
             "visible": { "type": "boolean", "default": true, "description": "Layer visibility." },
-            "styleRef": { "type": "string", "maxLength": 200, "description": "Bound style reference (catalog styleId or inline style key)." },
+            "styleRef": { "type": "string", "maxLength": 200, "description": "Style: catalog styleId or inline key." },
             "metadata": { "type": "object", "description": "Additional layer metadata." }
           }
         }
@@ -110,7 +110,7 @@ internal static class StudioMcpSchemas
     private static readonly string ViewInputSchemaJson = $$"""
         {
           "type": "object",
-          "description": "Caller-selected camera settings; inspect the existing view with honua_studio_get_draft.",
+          "description": "Caller-selected camera; inspect with honua_studio_get_draft.",
           "additionalProperties": false,
           "properties": {
             "bbox": { "type": "array", "minItems": {{StudioCompositionViewBounds.BboxOrdinateCount}}, "maxItems": {{StudioCompositionViewBounds.BboxOrdinateCount}}, "items": { "type": "number" }, "description": "Viewport bounding box [minX, minY, maxX, maxY]." },
@@ -118,7 +118,7 @@ internal static class StudioMcpSchemas
             "zoom": { "type": "number", "minimum": {{Number(StudioCompositionViewBounds.MinZoom)}}, "maximum": {{Number(StudioCompositionViewBounds.MaxZoom)}}, "description": "Map zoom." },
             "pitch": { "type": "number", "minimum": {{Number(StudioCompositionViewBounds.MinPitch)}}, "maximum": {{Number(StudioCompositionViewBounds.MaxPitch)}}, "description": "Map pitch." },
             "bearing": { "type": "number", "minimum": {{Number(StudioCompositionViewBounds.MinBearing)}}, "exclusiveMaximum": {{Number(StudioCompositionViewBounds.MaxBearingExclusive)}}, "description": "Map bearing." },
-            "crs": { "type": "string", "maxLength": 100, "description": "Coordinate reference system (e.g. EPSG:4326)." }
+            "crs": { "type": "string", "maxLength": 100, "description": "CRS, e.g. EPSG:4326." }
           }
         }
         """;
@@ -126,15 +126,15 @@ internal static class StudioMcpSchemas
     private const string WidgetInputSchemaJson = """
         {
           "type": "object",
-          "description": "Caller-authored widget; inspect existing composition ids with honua_studio_get_draft.",
+          "description": "Caller-authored widget; ids from honua_studio_get_draft.",
           "required": ["id", "kind"],
           "additionalProperties": false,
           "properties": {
-            "id": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Stable widget id, unique within the composition." },
+            "id": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Unique composition widget id." },
             "kind": { "type": "string", "minLength": 1, "maxLength": 100, "description": "Widget kind (e.g. table, chart, legend, filter)." },
             "title": { "type": "string", "maxLength": 200, "description": "Display title." },
             "sourceId": { "type": "string", "maxLength": 200, "description": "Bound source identifier." },
-            "config": { "type": "object", "description": "Widget-specific bounded configuration." }
+            "config": { "type": "object", "description": "Bounded widget configuration." }
           }
         }
         """;
@@ -147,20 +147,20 @@ internal static class StudioMcpSchemas
     private static readonly string InteractionInputSchemaJson = $$"""
         {
           "type": "object",
-          "description": "Caller-authored binding between component ids returned by honua_studio_get_draft.",
+          "description": "Caller-authored binding; component ids from honua_studio_get_draft.",
           "required": ["id", "on", "do"],
           "additionalProperties": false,
           "properties": {
-            "id": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxInteractionIdLength}}, "pattern": "\\S", "description": "Stable interaction id, unique within the composition. Binding an existing id replaces that interaction." },
+            "id": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxInteractionIdLength}}, "pattern": "\\S", "description": "Unique composition interaction id; existing id replaces the binding." },
             "on": {
               "type": "object",
               "required": ["ref", "event"],
               "additionalProperties": false,
               "properties": {
-                "ref": { "type": "string", "pattern": "{{ComponentRefPattern}}", "description": "Event-source component declared in the same document: 'map', 'layer:{id}', 'widget:{id}' or 'control:{id}' (resolved against the document's controls collection, geospatial-mcp ADR-0031)." },
-                "event": { "type": "string", "enum": {{EventNameEnumJson}}, "description": "User-gesture event: featureSelect/featureHover (layers), selection (widgets), change (controls), viewportChange (map)." }
+                "ref": { "type": "string", "pattern": "{{ComponentRefPattern}}", "description": "Component in this document: map, layer:{id}, widget:{id} or control:{id} (controls collection)." },
+                "event": { "type": "string", "enum": {{EventNameEnumJson}}, "description": "Gesture: featureSelect/featureHover (layer), selection (widget), change (control), viewportChange (map)." }
               },
-              "description": "The user-gesture event source. At most {{StudioInteractionVocabulary.MaxInteractionsPerEventSource}} interactions may share the same (ref, event) pair."
+              "description": "Gesture source; max {{StudioInteractionVocabulary.MaxInteractionsPerEventSource}} interactions per (ref, event)."
             },
             "do": {
               "type": "object",
@@ -168,12 +168,12 @@ internal static class StudioMcpSchemas
               "additionalProperties": false,
               "properties": {
                 "ref": { "type": "string", "pattern": "{{ComponentRefPattern}}", "description": "Action-target component declared in the same document." },
-                "verb": { "type": "string", "enum": {{ActionVerbEnumJson}}, "description": "Presentation/exploration verb. Interactions never mutate source records." },
-                "args": { "type": "object", "description": "Static JSON arguments. A string value beginning with '$event.' is substituted at dispatch time from the event payload; there is no expression language." }
+                "verb": { "type": "string", "enum": {{ActionVerbEnumJson}}, "description": "Presentation/exploration only; never mutates source records." },
+                "args": { "type": "object", "description": "Static JSON; '$event.' strings resolve from the event payload at dispatch. No expressions." }
               },
-              "description": "The action. Actions never emit events, so bindings cannot cascade."
+              "description": "Action emits no events; bindings cannot cascade."
             },
-            "disabled": { "type": "boolean", "default": false, "description": "Authored-but-inactive binding: retained in the document, skipped at dispatch." }
+            "disabled": { "type": "boolean", "default": false, "description": "Inactive binding retained in document; skipped at dispatch." }
           }
         }
         """;
@@ -184,8 +184,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "interaction"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_create_draft." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
+            "draftId": { "type": "string", "format": "uuid", "description": "id from honua_studio_create_draft." },
+            "generation": { "type": "integer", "minimum": 1, "description": "generation from honua_studio_get_draft; stale fails." },
             "interaction": {{InteractionInputSchemaJson}}
           }
         }
@@ -197,8 +197,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "interactionId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_create_draft." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
+            "draftId": { "type": "string", "format": "uuid", "description": "id from honua_studio_create_draft." },
+            "generation": { "type": "integer", "minimum": 1, "description": "generation from honua_studio_get_draft; stale fails." },
             "interactionId": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "\\S", "description": "interaction.id from honua_studio_get_draft; unknown ids fail." }
           }
         }
@@ -211,15 +211,15 @@ internal static class StudioMcpSchemas
     private static readonly string ControlInputSchemaJson = $$"""
         {
           "type": "object",
-          "description": "Caller-authored control; inspect layer/source ids with honua_studio_get_draft.",
+          "description": "Caller-authored control; layer/source ids from honua_studio_get_draft.",
           "required": ["id", "kind"],
           "additionalProperties": false,
           "properties": {
-            "id": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxControlIdLength}}, "pattern": "\\S", "description": "Stable control id, unique within the composition's controls block. Adding an existing id replaces that control; 'control:{id}' interaction references resolve against it." },
-            "kind": { "type": "string", "enum": {{ControlKindEnumJson}}, "description": "Closed control vocabulary. Map affordances: navigation, scale, fullscreen, geolocate, search, measure, attribution, basemapSwitcher, bookmarks. Data-binding affordances that emit 'change': timeSlider, filterSelect, filterSlider, filterDateRange, opacity. There is deliberately no feature-editing draw kind (ADR-0028)." },
-            "title": { "type": "string", "maxLength": {{StudioInteractionVocabulary.MaxControlTitleLength}}, "description": "Host-rendered label. Hosts fall back to a per-kind default when omitted." },
-            "sourceId": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxControlSourceIdLength}}, "description": "Layer or datasource the control reads its domain from. Data-binding kinds normally set it; presentation-only kinds omit it. When supplied it MUST resolve to a layer id (or that layer's bound sourceId) declared in the same document, or the call is rejected." },
-            "config": { "type": "object", "description": "Per-kind, host-interpreted configuration. Data, not code: no expression language, and no capability the composition surface does not already have." }
+            "id": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxControlIdLength}}, "pattern": "\\S", "description": "Unique controls-block id; existing id replaces the control. Referenced by control:{id}." },
+            "kind": { "type": "string", "enum": {{ControlKindEnumJson}}, "description": "Closed enum. Data controls timeSlider, filterSelect, filterSlider, filterDateRange and opacity emit change; others are map affordances. No feature-editing kind." },
+            "title": { "type": "string", "maxLength": {{StudioInteractionVocabulary.MaxControlTitleLength}}, "description": "Host label; defaults per kind." },
+            "sourceId": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxControlSourceIdLength}}, "description": "Domain source: layer id or its bound sourceId in this document; invalid references fail. Normally set for data controls, omitted for presentation controls." },
+            "config": { "type": "object", "description": "Per-kind host configuration: data only, no expressions or additional capabilities." }
           }
         }
         """;
@@ -230,8 +230,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "control"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_create_draft." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
+            "draftId": { "type": "string", "format": "uuid", "description": "id from honua_studio_create_draft." },
+            "generation": { "type": "integer", "minimum": 1, "description": "generation from honua_studio_get_draft; stale fails." },
             "control": {{ControlInputSchemaJson}}
           }
         }
@@ -243,10 +243,10 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "controlId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_create_draft." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
+            "draftId": { "type": "string", "format": "uuid", "description": "id from honua_studio_create_draft." },
+            "generation": { "type": "integer", "minimum": 1, "description": "generation from honua_studio_get_draft; stale fails." },
             "controlId": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxControlIdLength}}, "pattern": "\\S", "description": "control.id from honua_studio_get_draft; unknown ids fail." },
-            "cascadeInteractions": { "type": "boolean", "default": false, "description": "When true, interactions whose on.ref or do.ref is 'control:{controlId}' are removed with the control. When false (default), the call fails while any interaction still references it, so the document never retains a dangling binding." }
+            "cascadeInteractions": { "type": "boolean", "default": false, "description": "True removes interactions referencing control:{controlId} in on.ref or do.ref. False (default) rejects removal while references remain." }
           }
         }
         """;
@@ -263,12 +263,12 @@ internal static class StudioMcpSchemas
               "enum": {{FamilyEnumJson}},
               "description": "Caller-supplied. Studio package family."
             },
-            "schemaVersion": { "type": "string", "minLength": 1, "maxLength": 50, "description": "Caller-supplied. Envelope schema version for the family." },
+            "schemaVersion": { "type": "string", "minLength": 1, "maxLength": 50, "description": "Caller-supplied family schema version." },
             "workspaceId": { "type": "string", "maxLength": 200, "description": "Workspace identifier." },
-            "ownerId": { "type": "string", "maxLength": 200, "description": "Admin-only owner principal identifier. Non-admin callers must omit this field and become the owner automatically." },
-            "body": { "type": "object", "description": "Optional initial composition/family body. Omit to start empty." },
-            "itemId": { "type": "string", "format": "uuid", "description": "Existing content item id, to add a draft under an existing item." },
-            "baseVersionId": { "type": "string", "format": "uuid", "description": "Immutable version this draft was reopened from, when applicable." }
+            "ownerId": { "type": "string", "maxLength": 200, "description": "Admin-only owner id; non-admin callers omit it and become owner." },
+            "body": { "type": "object", "description": "Initial composition/family body; omit to start empty." },
+            "itemId": { "type": "string", "format": "uuid", "description": "Existing item id to add a draft under." },
+            "baseVersionId": { "type": "string", "format": "uuid", "description": "Immutable version this draft reopened, if any." }
           }
         }
         """;
@@ -279,7 +279,7 @@ internal static class StudioMcpSchemas
           "required": ["draftId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_create_draft." }
+            "draftId": { "type": "string", "format": "uuid", "description": "id from honua_studio_create_draft." }
           }
         }
         """;
@@ -290,14 +290,14 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "packageKey", "schemaVersion"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_create_draft." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
+            "draftId": { "type": "string", "format": "uuid", "description": "id from honua_studio_create_draft." },
+            "generation": { "type": "integer", "minimum": 1, "description": "generation from honua_studio_get_draft; stale fails." },
             "packageKey": {{PackageKeyPropertyJson}},
-            "schemaVersion": { "type": "string", "minLength": 1, "maxLength": 50, "description": "Caller-supplied. Envelope schema version for the family." },
+            "schemaVersion": { "type": "string", "minLength": 1, "maxLength": 50, "description": "Caller-supplied family schema version." },
             "format": { "type": "string", "maxLength": 100, "description": "Family-specific package format." },
             "workspaceId": { "type": "string", "maxLength": 200, "description": "Workspace identifier." },
-            "ownerId": { "type": "string", "maxLength": 200, "description": "Admin-only owner principal identifier. Non-admin callers must omit this field; explicit non-admin assignment is rejected." },
-            "body": { "type": "object", "description": "Replacement composition/family body. Omit to leave the existing body unchanged." }
+            "ownerId": { "type": "string", "maxLength": 200, "description": "Admin-only owner id; non-admin assignment is rejected." },
+            "body": { "type": "object", "description": "Replacement composition/family body; omit to keep it." }
           }
         }
         """;
@@ -308,10 +308,10 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "layer"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_create_draft." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
+            "draftId": { "type": "string", "format": "uuid", "description": "id from honua_studio_create_draft." },
+            "generation": { "type": "integer", "minimum": 1, "description": "generation from honua_studio_get_draft; stale fails." },
             "layer": {{LayerInputSchemaJson}},
-            "beforeId": { "type": "string", "maxLength": 200, "description": "Optional layer id before which to insert the new layer; appended when omitted or unmatched." }
+            "beforeId": { "type": "string", "maxLength": 200, "description": "Insert before this layer id; otherwise append." }
           }
         }
         """;
@@ -322,8 +322,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "layerId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_create_draft." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
+            "draftId": { "type": "string", "format": "uuid", "description": "id from honua_studio_create_draft." },
+            "generation": { "type": "integer", "minimum": 1, "description": "generation from honua_studio_get_draft; stale fails." },
             "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "layer.id from honua_studio_get_draft." }
           }
         }
@@ -335,10 +335,10 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "layerId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_create_draft." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
+            "draftId": { "type": "string", "format": "uuid", "description": "id from honua_studio_create_draft." },
+            "generation": { "type": "integer", "minimum": 1, "description": "generation from honua_studio_get_draft; stale fails." },
             "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "layer.id from honua_studio_get_draft." },
-            "styleRef": { "type": ["string", "null"], "maxLength": 200, "description": "Style reference (catalog styleId or inline style key). Omit or set null to clear the binding." },
+            "styleRef": { "type": ["string", "null"], "maxLength": 200, "description": "Catalog styleId or inline style key; omit/null clears binding." },
             "styleBody": { "type": "object", "description": "Inline paint/layout overrides keyed by layerId or '<layerId>__outline'. Not with styleRef." }
           }
         }
@@ -350,8 +350,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "mapSpec"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_create_draft." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
+            "draftId": { "type": "string", "format": "uuid", "description": "id from honua_studio_create_draft." },
+            "generation": { "type": "integer", "minimum": 1, "description": "generation from honua_studio_get_draft; stale fails." },
             "mapSpec": { "type": "object", "description": "Caller-edited mapSpec from honua_studio_get_draft; only layers, name, metadata, transition, light, lights and fog may change." }
           }
         }
@@ -363,10 +363,10 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "layerId", "visible"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_create_draft." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
+            "draftId": { "type": "string", "format": "uuid", "description": "id from honua_studio_create_draft." },
+            "generation": { "type": "integer", "minimum": 1, "description": "generation from honua_studio_get_draft; stale fails." },
             "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "layer.id from honua_studio_get_draft." },
-            "visible": { "type": "boolean", "description": "Caller-supplied. Whether the layer is visible in the composition." }
+            "visible": { "type": "boolean", "description": "Caller-supplied layer visibility." }
           }
         }
         """;
@@ -377,8 +377,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "view"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_create_draft." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
+            "draftId": { "type": "string", "format": "uuid", "description": "id from honua_studio_create_draft." },
+            "generation": { "type": "integer", "minimum": 1, "description": "generation from honua_studio_get_draft; stale fails." },
             "view": {{ViewInputSchemaJson}}
           }
         }
@@ -390,8 +390,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "widget"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_create_draft." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
+            "draftId": { "type": "string", "format": "uuid", "description": "id from honua_studio_create_draft." },
+            "generation": { "type": "integer", "minimum": 1, "description": "generation from honua_studio_get_draft; stale fails." },
             "widget": {{WidgetInputSchemaJson}}
           }
         }
@@ -403,8 +403,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "widgetId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Draft id from honua_studio_create_draft." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Current generation from honua_studio_get_draft; stale edits fail." },
+            "draftId": { "type": "string", "format": "uuid", "description": "id from honua_studio_create_draft." },
+            "generation": { "type": "integer", "minimum": 1, "description": "generation from honua_studio_get_draft; stale fails." },
             "widgetId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "widget.id from honua_studio_get_draft; unknown ids fail." }
           }
         }
@@ -420,8 +420,8 @@ internal static class StudioMcpSchemas
             "versionId": { "type": "string", "format": "uuid", "description": "version.versionId from honua_studio_save_version." },
             "contentHash": { "type": "string", "minLength": 1, "maxLength": 128, "description": "version.contentHash from honua_studio_save_version." },
             "route": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Caller-supplied. Requested target route key." },
-            "visibility": { "type": "string", "enum": ["personal", "team", "organization", "public"], "description": "Caller-supplied. personal: owner only; team and organization: signed-in callers in the item tenant; public: anonymous readers. Team uses the same tenant audience as organization." },
-            "note": { "type": "string", "maxLength": 2000, "description": "Human-readable rationale recorded for reviewer context." }
+            "visibility": { "type": "string", "enum": ["personal", "team", "organization", "public"], "description": "Caller-supplied. personal: owner; team/organization: signed-in item-tenant callers; public: anonymous readers." },
+            "note": { "type": "string", "maxLength": 2000, "description": "Rationale recorded for reviewers." }
           }
         }
         """;

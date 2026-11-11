@@ -1,8 +1,8 @@
 {
   "$schema": "./mcp-tool-roster.v1.schema.json",
   "schemaVersion": 1,
-  "serverSha": "4b5b25431c8447c9d2720145970152f6bbd57af5",
-  "generatedAt": "2026-11-10T22:15:55Z",
+  "serverSha": "b6fc3593a0651d5e12d164f696aa5776a53cd4c6",
+  "generatedAt": "2026-11-11T01:52:06Z",
   "regenerate": "bash scripts/ci/generate-mcp-tool-roster.sh",
   "static": [
     "honua_alert_events",
@@ -52,6 +52,8 @@
     "honua_studio_create_draft",
     "honua_studio_get_draft",
     "honua_studio_get_version",
+    "honua_studio_list_items",
+    "honua_studio_list_versions",
     "honua_studio_preview_draft",
     "honua_studio_propose_publication",
     "honua_studio_remove_control",
@@ -293,6 +295,8 @@
       "honua_studio_create_draft",
       "honua_studio_get_draft",
       "honua_studio_get_version",
+      "honua_studio_list_items",
+      "honua_studio_list_versions",
       "honua_studio_preview_draft",
       "honua_studio_propose_publication",
       "honua_studio_remove_control",
