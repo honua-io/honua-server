@@ -721,6 +721,9 @@ FeatureServer RBAC coverage retains its existing Security and Authorization
 shard routing. Application reuse is described in the
 [gate model](gate-model.md#featureserver-authorization-denial-fixture-lifetime).
 
+ImageServer shard coverage includes the
+[mosaic integration isolation contract](gate-model.md#mosaic-integration-isolation-contract).
+
 ## Automatic merge admission
 
 `auto-merge-ready.yml` reconciles same-repository trunk PRs using the repository-scoped

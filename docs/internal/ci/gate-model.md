@@ -780,6 +780,14 @@ replica before checking denial retain isolated applications. Every status and
 response assertion remains in the Security and Authorization shard family;
 required checks, aggregate dependencies, and full trunk coverage are unchanged.
 
+### Mosaic integration isolation contract
+
+Every ImageServer mosaic case creates its own application fixture, schema and
+license configuration. It replaces the layer's rows in the process-global
+`honua.raster_data` table under the schema-mutation lock before asserting.
+PostgreSQL infrastructure may span cases, so cases must not depend on a fresh
+container. This contract applies to PR shards and full trunk runs.
+
 ## Automatic merge admission
 
 [Automatic merge admission](workflow-inventory.md#automatic-merge-admission) uses

@@ -18,9 +18,10 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
+// Retaining PostgreSQL avoids repeated container bootstrap; raster seeds and schemas remain per case.
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
-public sealed class ImageServerMosaicIntegrationTests
+public sealed class ImageServerMosaicIntegrationTests : IClassFixture<PostgresFixture>
 {
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/query")]
