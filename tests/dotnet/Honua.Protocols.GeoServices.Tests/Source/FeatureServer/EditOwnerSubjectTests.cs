@@ -312,7 +312,8 @@ public sealed class EditOwnerSubjectTests
             new ApplyEditsRequest { Deletes = [7L, 8L] },
             new FeatureServerEditsHandler.EditTarget
             {
-                Resource = OwnerEditResource(), StorageLayerId = 7,
+                Resource = OwnerEditResource(),
+                StorageLayerId = 7,
                 Principal = new EditPrincipal("subject-a", IsAuthenticated: true, IsAdmin: false),
                 VersionContext = branch
             }, context, CancellationToken.None);

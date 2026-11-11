@@ -98,7 +98,9 @@ public sealed class FeatureServerExpectedAbsenceTests
         };
         return new FeatureServerEditsHandler.EditTarget
         {
-            Resource = resource, StorageLayerId = 7, StorageBinding = binding
+            Resource = resource,
+            StorageLayerId = 7,
+            StorageBinding = binding
         };
     }
 

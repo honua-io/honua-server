@@ -119,7 +119,9 @@ public sealed class FeatureServerVersionedPreReadTests
             new ApplyEditsRequest { Deletes = [11L] },
             new FeatureServerEditsHandler.EditTarget
             {
-                Resource = Resource(), StorageLayerId = 7, VersionContext = Branch
+                Resource = Resource(),
+                StorageLayerId = 7,
+                VersionContext = Branch
             }, context, CancellationToken.None);
 
         var deleted = context.DeleteFeatures.Should().ContainSingle().Subject;
