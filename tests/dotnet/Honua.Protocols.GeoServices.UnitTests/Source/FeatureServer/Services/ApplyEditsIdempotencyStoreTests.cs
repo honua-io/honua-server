@@ -9,11 +9,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Unit tests for <see cref="DistributedApplyEditsIdempotencyStore"/> covering
-/// the BH5-001 atomic-reserve primitive (SET NX / ConcurrentDictionary.TryAdd) and
-/// the pending-sentinel behaviour.
-/// </summary>
+// The atomic reservation and the pending reservation that never reads back as a response.
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class ApplyEditsIdempotencyStoreTests
 {
@@ -27,9 +23,8 @@ public sealed class ApplyEditsIdempotencyStoreTests
     [Fact]
     public async Task TryReserveAsync_ConcurrentSameScope_ExactlyOneWins()
     {
-        // Arrange: no IConnectionMultiplexer → in-process fallback via ConcurrentDictionary.TryAdd.
         var store = new DistributedApplyEditsIdempotencyStore(
-            cache: null,
+            new InMemoryIdempotencyReservationStore(),
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
 
         var scope = new ApplyEditsIdempotencyScope("svc", 0, new IdempotencyCaller("none", "alice"), "key-race");
@@ -43,8 +38,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
 
         // Assert: exactly one winner.
         results.Count(token => token is not null).Should().Be(1,
-            "ConcurrentDictionary.TryAdd is atomic; exactly one concurrent caller must win " +
-            "the reservation (BH5-001)");
+            "exactly one concurrent caller must win the reservation");
         results.Count(token => token is null).Should().Be(9,
             "all other concurrent callers must fail the reservation and return 409");
     }
@@ -55,7 +49,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
         // After a successful TryReserveAsync the reservation is stored; TryGetAsync
         // must return null (not try to deserialize the sentinel as a response).
         var store = new DistributedApplyEditsIdempotencyStore(
-            cache: null,
+            new InMemoryIdempotencyReservationStore(),
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
 
         var scope = new ApplyEditsIdempotencyScope("svc", 0, new IdempotencyCaller("none", "alice"), "key-sentinel");
@@ -75,7 +69,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
         // Full lifecycle: reserve → edit executes → SetAsync stores response →
         // TryGetAsync returns the stored response for deduplication.
         var store = new DistributedApplyEditsIdempotencyStore(
-            cache: null,
+            new InMemoryIdempotencyReservationStore(),
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
 
         var scope = new ApplyEditsIdempotencyScope("svc", 0, new IdempotencyCaller("none", "alice"), "key-full");
@@ -106,7 +100,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
     public async Task SetAsync_ForeignToken_DoesNotOverwriteTheOwner()
     {
         var store = new DistributedApplyEditsIdempotencyStore(
-            cache: null,
+            new InMemoryIdempotencyReservationStore(),
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
         var scope = new ApplyEditsIdempotencyScope("svc", 0, new IdempotencyCaller("none", "alice"), "key-owned");
         var owner = await store.TryReserveAsync(scope);
@@ -125,10 +119,8 @@ public sealed class ApplyEditsIdempotencyStoreTests
     {
         var time = new ManualTimeProvider();
         var store = new DistributedApplyEditsIdempotencyStore(
-            multiplexer: null,
-            cache: null,
-            NullLogger<DistributedApplyEditsIdempotencyStore>.Instance,
-            timeProvider: time);
+            new InMemoryIdempotencyReservationStore(time),
+            NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
         var scope = new ApplyEditsIdempotencyScope("svc", 0, new IdempotencyCaller("none", "alice"), "key-slow");
         var slow = await store.TryReserveAsync(scope);
         slow.Should().NotBeNull();
@@ -152,11 +144,9 @@ public sealed class ApplyEditsIdempotencyStoreTests
 
         var time = new ManualTimeProvider();
         var store = new DistributedApplyEditsIdempotencyStore(
-            multiplexer: null,
-            cache: null,
+            new InMemoryIdempotencyReservationStore(time),
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance,
-            reservationWindow: window,
-            timeProvider: time);
+            reservationWindow: window);
         var scope = new ApplyEditsIdempotencyScope("svc", 0, new IdempotencyCaller("none", "alice"), "key-long");
         (await store.TryReserveAsync(scope)).Should().NotBeNull();
 

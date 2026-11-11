@@ -644,6 +644,11 @@ managed outputs are published. Restore and build failures remain gating, with
 the same warnings, analyzers and graph-build settings as the solution build.
 Unknown projects outside the solution still fail planning; test selection is unchanged.
 
+Optional PR workflow filters and retained post-merge coverage are documented in
+[optional PR input boundaries](gate-model.md#optional-pr-workflow-input-boundaries).
+
+### FeatureServer authorization fixtures
+
 FeatureServer RBAC coverage retains its existing Security and Authorization
 shard routing. Application reuse is described in the
 [gate model](gate-model.md#featureserver-authorization-denial-fixture-lifetime).

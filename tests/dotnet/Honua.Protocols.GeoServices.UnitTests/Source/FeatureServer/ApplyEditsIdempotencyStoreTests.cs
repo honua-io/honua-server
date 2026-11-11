@@ -11,7 +11,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -42,7 +41,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
     public async Task TryGetAsync_BeforeSet_ReturnsNull()
     {
         var store = new DistributedApplyEditsIdempotencyStore(
-            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
+            new InMemoryIdempotencyReservationStore(),
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
 
         var result = await store.TryGetAsync(Scope());
@@ -55,7 +54,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
     public async Task SetThenTryGet_WithDistributedCache_ReplaysOriginalObjectId()
     {
         var store = new DistributedApplyEditsIdempotencyStore(
-            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
+            new InMemoryIdempotencyReservationStore(),
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
 
         (await store.SetAsync(Scope(), "unreserved", SampleResponse(objectId: 99))).Should().BeTrue();
@@ -74,7 +73,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
     {
         // No IDistributedCache configured -> the in-process fallback dictionary is exercised.
         var store = new DistributedApplyEditsIdempotencyStore(
-            cache: null,
+            new InMemoryIdempotencyReservationStore(),
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
 
         (await store.SetAsync(Scope(), "unreserved", SampleResponse(objectId: 7))).Should().BeTrue();
@@ -90,7 +89,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
     public async Task TryGetAsync_DifferentPrincipal_DoesNotReplay()
     {
         var store = new DistributedApplyEditsIdempotencyStore(
-            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
+            new InMemoryIdempotencyReservationStore(),
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
 
         (await store.SetAsync(Scope(principal: "alice"), "unreserved", SampleResponse())).Should().BeTrue();
@@ -105,7 +104,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
     public async Task TryGetAsync_DifferentLayer_DoesNotReplay()
     {
         var store = new DistributedApplyEditsIdempotencyStore(
-            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
+            new InMemoryIdempotencyReservationStore(),
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
 
         (await store.SetAsync(Scope(layer: 0), "unreserved", SampleResponse())).Should().BeTrue();
@@ -113,41 +112,6 @@ public sealed class ApplyEditsIdempotencyStoreTests
         var replay = await store.TryGetAsync(Scope(layer: 1));
 
         replay.Should().BeNull("the same key on a different layer is a distinct edit");
-    }
-
-    // ─── BH7-002 regression ──────────────────────────────────────────────────────
-
-    /// <summary>
-    /// BH7-002: concurrent TryReserveAsync on a non-Redis IDistributedCache (e.g.
-    /// MemoryDistributedCache — the default deployment) must still produce exactly one
-    /// winner per key.  The store must fall through to the in-process ConcurrentDictionary
-    /// path instead of returning true for every caller (the previous "fall-open" bug).
-    /// </summary>
-    [UnitTest]
-    [Operation(Operations.ApplyEdits)]
-    public async Task TryReserveAsync_ConcurrentSameScope_NonRedisCache_ExactlyOneWins()
-    {
-        // Arrange: MemoryDistributedCache configured but no IConnectionMultiplexer.
-        // Prior to the fix TryReserveAsync handed out a reservation unconditionally here.
-        var store = new DistributedApplyEditsIdempotencyStore(
-            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
-            NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
-
-        var scope = Scope(key: "bh7-002-race");
-
-        // Act: 10 concurrent reservations for the same scope.
-        var tasks = Enumerable.Range(0, 10)
-            .Select(_ => store.TryReserveAsync(scope))
-            .ToArray();
-
-        var results = await Task.WhenAll(tasks);
-
-        // Assert: exactly one winner (BH7-002).
-        results.Count(static token => token is not null).Should().Be(1,
-            "ConcurrentDictionary.TryAdd is the fallback for non-Redis IDistributedCache; " +
-            "exactly one concurrent caller must win the reservation so only one edit executes");
-        results.Count(static token => token is null).Should().Be(9,
-            "all other concurrent callers must lose the reservation and return 409");
     }
 
     // ─── #3052: reservation release ──────────────────────────────────────────────
@@ -162,7 +126,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
     public async Task ReleaseAsync_AfterReservation_AllowsTheSameKeyToReserveAgain()
     {
         var store = new DistributedApplyEditsIdempotencyStore(
-            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
+            new InMemoryIdempotencyReservationStore(),
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
         var scope = Scope(key: "release-then-retry");
 
@@ -184,7 +148,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
     public async Task ReleaseAsync_WithInProcessFallback_AllowsTheSameKeyToReserveAgain()
     {
         var store = new DistributedApplyEditsIdempotencyStore(
-            cache: null,
+            new InMemoryIdempotencyReservationStore(),
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
         var scope = Scope(key: "release-then-retry-fallback");
 
@@ -206,7 +170,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
     public async Task ReleaseAsync_AfterRecordedResponse_LeavesTheReplayValueIntact()
     {
         var store = new DistributedApplyEditsIdempotencyStore(
-            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
+            new InMemoryIdempotencyReservationStore(),
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
         var scope = Scope(key: "recorded-then-released");
 
@@ -230,7 +194,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
     public async Task ReleaseAsync_WithoutReservation_IsANoOp()
     {
         var store = new DistributedApplyEditsIdempotencyStore(
-            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
+            new InMemoryIdempotencyReservationStore(),
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
         var scope = Scope(key: "never-reserved");
 
@@ -255,7 +219,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
     public async Task ReleaseAsync_WithLapsedOwnersToken_LeavesTheSuccessorsReservationHeld()
     {
         var store = new DistributedApplyEditsIdempotencyStore(
-            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
+            new InMemoryIdempotencyReservationStore(),
             NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
         var scope = Scope(key: "lapsed-owner");
 
