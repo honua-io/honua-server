@@ -669,6 +669,15 @@ filter. Retired Redis endpoint selectors are removed; the coverage guard still
 rejects dead positive clauses, and the partition fixture verifies complete,
 disjoint method ownership with unchanged source triggers and budgets.
 
+### Layer publishing shared application fixture
+
+`LayerPublishingIntegrationTests` shares one customized host and feature schema across
+its cases. Each case uses distinct layer, table, service, and secure-connection identities
+and cleans up its publications and source tables. Before each case the fixture reapplies
+the server seed, which deletes and recreates the seeded features and catalog metadata, and
+restores the metadata graph with a new revision.
+The missing-SRID simulation creates and removes its expression index under the schema lock.
+
 ### Governance capacity split
 
 The former `Server Features Admin Governance and Sharing` shard timed out at
