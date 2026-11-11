@@ -670,7 +670,7 @@ existing build/setup inputs remain covered. Its producer/consumer security
 boundary and deterministic replay are unchanged.
 
 Trailing affected CI refreshes its completed-ancestor base when the selection job starts,
-so queued dispatches do not retain an obsolete range. Selections above 30 shards
+so queued dispatches do not retain an obsolete range. Dispatch and execution use the same completed-run selector; execution never regresses behind the dispatched base. Selections above 30 shards
 fall back to the newest merge; the summary records the older range deferred to
 the twice-daily full run. A broad newest merge retains every selected shard.
 Affected shard concurrency remains six, including full-coverage routing fallbacks;

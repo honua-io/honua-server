@@ -7,35 +7,14 @@ from pathlib import Path
 import subprocess
 import sys
 
+from completed_ci_base import completed_base
+
 
 SHARD_BACKLOG_LIMIT = 30
 
 
 def git(*arguments):
     return subprocess.check_output(["git", *arguments], text=True).strip()
-
-
-def ancestor(base, head):
-    return subprocess.run(["git", "merge-base", "--is-ancestor", base, head],
-                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
-
-
-def completed_base(dispatched, head):
-    endpoint = (f"repos/{os.environ['GITHUB_REPOSITORY']}/actions/workflows/ci.yml/runs"
-                "?branch=trunk&status=completed&per_page=100")
-    try:
-        payload = json.loads(subprocess.check_output(["gh", "api", endpoint], text=True))
-    except (subprocess.CalledProcessError, json.JSONDecodeError):
-        print("::warning::Completed CI history unavailable; retaining the dispatched base.")
-        return dispatched
-    runs = sorted(payload["workflow_runs"], key=lambda run: run["updated_at"], reverse=True)
-    for run in runs:
-        candidate = run["head_sha"]
-        if (run["conclusion"] in {"success", "failure"} and len(candidate) == 40
-                and all(character in "0123456789abcdef" for character in candidate)
-                and ancestor(dispatched, candidate) and ancestor(candidate, head)):
-            return candidate
-    return dispatched
 
 
 def selected_count(base, head):
@@ -62,7 +41,11 @@ def execution_base(base, head):
 
 def main():
     dispatched, head = sys.argv[1:]
-    base = completed_base(dispatched, head)
+    try:
+        base = completed_base(head, dispatched)
+    except (subprocess.CalledProcessError, json.JSONDecodeError):
+        print("::warning::Completed CI history unavailable; retaining the dispatched base.")
+        base = dispatched
     base, reason = execution_base(base, head)
     with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
         output.write(f"base={base}\nrange={base}...{head}\ntrailing_selective=true\n")
