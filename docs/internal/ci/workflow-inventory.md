@@ -728,3 +728,9 @@ for its class-scoped applications and isolated custom-host cases.
 See [ImageServer endpoint database lifetime](gate-model.md#imageserver-endpoint-database-lifetime)
 for endpoint isolation and database reuse. The pure WMTS capability unit test runs
 without a database fixture in the ImageServer Rendering and Support shard.
+
+### Geocoding endpoint fixtures
+
+The geocoding shard includes the endpoint response and provider request-contract
+cases. See [Geocoding response fixture lifetime](gate-model.md#geocoding-response-fixture-lifetime)
+for their application isolation rules.
