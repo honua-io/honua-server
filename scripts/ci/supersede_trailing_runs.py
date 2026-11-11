@@ -42,6 +42,11 @@ def is_selective(run):
     return (run.get("display_title") or "").startswith(AFFECTED_RUN_TITLE_PREFIX)
 
 
+def is_untitled_full_run(run):
+    """Scheduled and plain manual runs carry no dispatch nonce; titled dispatches may be selective."""
+    return (run.get("display_title") or "").strip() == "CI"
+
+
 def contains(covering_head, head):
     if covering_head == head:
         return True
@@ -56,7 +61,7 @@ def covered_selective_runs(runs, own_id, own_head):
 
 def covering_full_run(runs, own_id, own_head):
     for run in runs:
-        if (run["id"] != own_id and run["status"] in STARTED_STATUSES and not is_selective(run)
+        if (run["id"] != own_id and run["status"] in STARTED_STATUSES and is_untitled_full_run(run)
                 and contains(run["head_sha"], own_head)):
             return run
     return None

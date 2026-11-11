@@ -355,7 +355,8 @@ class SupersedeTrailingRunsTests(unittest.TestCase):
     def test_selective_run_continues_without_a_started_covering_full_run(self):
         cases = {"full run held by concurrency": [trunk_run(9, NEWER_HEAD, "CI ", status="pending")],
                  "full run at an older head": [trunk_run(9, PRIOR_HEAD, "CI ")],
-                 "only other selective runs": [trunk_run(4, NEWER_HEAD, "CI affected cccc..dddd")]}
+                 "only other selective runs": [trunk_run(4, NEWER_HEAD, "CI affected cccc..dddd")],
+                 "titled dispatch of unknown scope": [trunk_run(9, NEWER_HEAD, "CI train-42")]}
         for case, runs in cases.items():
             own = trunk_run(2, FULL_HEAD, "CI affected aaaa..cccc")
             _, cancellations = self.decide(
