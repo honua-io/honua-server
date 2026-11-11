@@ -61,11 +61,13 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
-        // The fixture sends an API key. Its response must not enter a shared cache.
+        // The development-bypass identity is authenticated and must not enter a cache.
         response.Headers.CacheControl?.Private.Should().BeTrue();
         response.Headers.CacheControl?.Public.Should().BeFalse();
         response.Headers.Vary.Should().Contain("X-API-Key");
-        response.Headers.CacheControl?.MaxAge.Should().BeGreaterThan(TimeSpan.Zero);
+        response.Headers.CacheControl?.NoStore.Should().BeTrue();
+        response.Headers.CacheControl?.MaxAge.Should().BeNull();
+        response.Headers.CacheControl?.SharedMaxAge.Should().BeNull();
 
         var content = await response.Content.ReadAsStringAsync();
         using var json = JsonDocument.Parse(content);
@@ -131,11 +133,13 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
-        // The fixture sends an API key. Its response must not enter a shared cache.
+        // The development-bypass identity is authenticated and must not enter a cache.
         response.Headers.CacheControl?.Private.Should().BeTrue();
         response.Headers.CacheControl?.Public.Should().BeFalse();
         response.Headers.Vary.Should().Contain("X-API-Key");
-        response.Headers.CacheControl?.MaxAge.Should().BeGreaterThan(TimeSpan.Zero);
+        response.Headers.CacheControl?.NoStore.Should().BeTrue();
+        response.Headers.CacheControl?.MaxAge.Should().BeNull();
+        response.Headers.CacheControl?.SharedMaxAge.Should().BeNull();
 
         var bitmap = await DecodeBitmapAsync(response);
         using (bitmap)

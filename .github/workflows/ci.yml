@@ -5,8 +5,8 @@ on:
   schedule:
     # Full integration lane. PR CI is selective; release workflows own
     # packaging/publishing smoke.
-    - cron: '0 9 * * *'
-    - cron: '0 21 * * *'
+    - cron: '23 9 * * *'
+    - cron: '23 21 * * *'
   # Per-PR verification lives in pr-gate.yml. Full CI runs on trunk twice
   # daily or by dispatch, keeping runtime proofs and protocol builds off the
   # per-push critical path while preserving complete integration coverage.
@@ -26,7 +26,12 @@ on:
         type: boolean
         default: false
       selective_base:
-        description: 'Trailing-verification mode: full SHA of a trunk ancestor (typically the last matrix-green head). The run diffs selective_base...HEAD and gates only the shards/lanes that diff touches. Empty = full lane. Overridden by full_ci=true.'
+        description: 'Trailing-verification mode: full SHA of a trunk ancestor (typically the latest completed CI head). The run diffs selective_base...HEAD and gates only the shards/lanes that diff touches. Empty = full lane. Overridden by full_ci=true.'
+        required: false
+        type: string
+        default: ''
+      investigation_base:
+        description: 'Last green trunk ancestor for the CI doctor suspect range; independent of selective execution scope. Empty = unknown.'
         required: false
         type: string
         default: ''
@@ -333,7 +338,7 @@ jobs:
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ] &&
                [[ "${SELECTIVE_BASE}" =~ ^[0-9a-f]{40}$ ]] &&
                [ "${FULL_CI_INPUT}" != "true" ]; then
-            # Trailing-verification dispatch: diff against the last verified
+            # Trailing-verification dispatch: diff against the latest completed
             # trunk head so only landings since then gate lanes/shards. The
             # SHA regex is the injection guard; an unknown SHA fails safe to
             # the full trunk range below.
@@ -355,8 +360,14 @@ jobs:
       - name: Record suspect merge range
         if: steps.diff.outputs.trailing_selective == 'true'
         env:
-          SELECTIVE_BASE: ${{ inputs.selective_base }}
-        run: scripts/ci/trunk-suspect-range.sh "${SELECTIVE_BASE}" "${GITHUB_SHA}" | tee -a "$GITHUB_STEP_SUMMARY"
+          INVESTIGATION_BASE: ${{ inputs.investigation_base }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INVESTIGATION_BASE}" ]; then
+            scripts/ci/trunk-suspect-range.sh "${INVESTIGATION_BASE}" "${GITHUB_SHA}" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Last green trunk ancestor unknown; no bounded culprit range is available." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Check for non-test changes
         id: filter
