@@ -620,6 +620,13 @@ filter. Retired Redis endpoint selectors are removed; the coverage guard still
 rejects dead positive clauses, and the partition fixture verifies complete,
 disjoint method ownership with unchanged source triggers and budgets.
 
+### Layer publishing shared application fixture
+
+The `Server Features Admin Layer Publishing` shard selects
+`LayerPublishingIntegrationTests`, with a 27-minute
+test timeout. `LayerPublishingIntegrationTests` shares its application host across
+cases and belongs to the admin runtime partition.
+
 ### Governance capacity split
 
 The former `Server Features Admin Governance and Sharing` shard timed out at
@@ -683,10 +690,3 @@ Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
 revocation: a human or drain lane owns any manually armed dependency PR.
 If mergeability becomes clean between the live query and enable mutation, only
 GitHub's specific clean-status response ends neutrally; other API errors fail.
-
-### Layer publishing shared application fixture
-
-The `Server Features Admin Layer Publishing` shard runs the original
-`LayerPublishingIntegrationTests` test identities, including tenant-boundary coverage.
-Its class fixture reuses the application host; the shard retains its existing selector
-and timeout, and the admin runtime partition retains its existing assignment.

@@ -1642,7 +1642,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         });
         _layerId = publishedLayer.LayerId;
 
-        await _publishingFixture.SimulateMissingCatalogSridAsync(_layerId);
+        await _publishingFixture.SimulateMissingCatalogSridAsync(publishedLayer.LayerId);
         using (var scope = _fixture.Services.CreateScope())
         {
             var cache = scope.ServiceProvider.GetRequiredService<IFeatureCacheManager>();

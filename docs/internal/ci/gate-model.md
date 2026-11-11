@@ -630,6 +630,14 @@ filter. Retired Redis endpoint selectors are removed; the coverage guard still
 rejects dead positive clauses, and the partition fixture verifies complete,
 disjoint method ownership with unchanged source triggers and budgets.
 
+### Layer publishing shared application fixture
+
+`LayerPublishingIntegrationTests` shares one customized host and feature schema across
+its cases. Each case uses distinct layer, table, service, and secure-connection identities
+and cleans up its publications and source tables. Fixture setup ensures seed rows exist
+and restores the metadata graph with a new revision; it does not reset changed SQL rows.
+The missing-SRID simulation creates and removes its expression index under the schema lock.
+
 ### Governance capacity split
 
 The former `Server Features Admin Governance and Sharing` shard timed out at
@@ -701,11 +709,3 @@ Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
 revocation: a human or drain lane owns any manually armed dependency PR.
 If mergeability becomes clean between the live query and enable mutation, only
 GitHub's specific clean-status response ends neutrally; other API errors fail.
-
-### Layer publishing shared application fixture
-
-`LayerPublishingIntegrationTests` shares one customized host and feature schema across
-its cases. Each case uses distinct layer, table, service, and secure-connection identities
-and cleans up its publications and source tables. Fixture setup ensures seed rows exist
-and restores the metadata graph with a new revision; it does not reset changed SQL rows.
-The missing-SRID simulation creates and removes its expression index under the schema lock.
