@@ -106,7 +106,7 @@
       "capability": "collaboration.map-sessions",
       "maturity": "experimental",
       "reasonCode": "release-deferred",
-      "reason": "Map collaboration sessions are Experimental. They work on a single node; delivery across several nodes needs an optional Redis add-on. The routes keep serving exactly as before; this row changes the claim, not the surface.",
+      "reason": "Map collaboration sessions are Experimental. Presence, cursors and live operations reach only participants connected to the same node. The routes keep serving exactly as before; this row changes the claim, not the surface.",
       "decision": "Founder ruling (2026-11-09); honua-server#6809"
     }
   ]
