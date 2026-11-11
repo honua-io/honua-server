@@ -49,6 +49,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-testcontainer-images.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-heavy-runners.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-trunk-affected.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-trunk-signal-watchdog.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-affected-ci-lanes.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-project-overlap.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-native-tools-image.py

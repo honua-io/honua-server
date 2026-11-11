@@ -21,6 +21,8 @@ internal static class McpToolRoster
         new PreviewStudioDraftTool(jobService, NullLogger<PreviewStudioDraftTool>.Instance),
         new SaveStudioVersionTool(jobService, NullLogger<SaveStudioVersionTool>.Instance),
         new GetStudioVersionTool(jobService, NullLogger<GetStudioVersionTool>.Instance),
+        new ListStudioItemsTool(jobService, NullLogger<ListStudioItemsTool>.Instance),
+        new ListStudioVersionsTool(jobService, NullLogger<ListStudioVersionsTool>.Instance),
         new ReopenStudioVersionTool(jobService, NullLogger<ReopenStudioVersionTool>.Instance),
         new AddStudioLayerTool(jobService, NullLogger<AddStudioLayerTool>.Instance),
         new RemoveStudioLayerTool(jobService, NullLogger<RemoveStudioLayerTool>.Instance),
