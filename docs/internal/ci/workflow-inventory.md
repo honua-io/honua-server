@@ -420,7 +420,7 @@ which is why both the run count and exact observed span are recorded.
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
-| `ogc-rc-conformance.yml` | OGC release-candidate conformance | RC `workflow_call` | Runs all dispatchers after the RC image build; aggregate blocks on failure |
+| `ogc-rc-conformance.yml` | OGC release-candidate conformance | RC `workflow_call` | Runs all dispatchers after the RC image build of a promotable candidate (`candidate == 'true'`); aggregate blocks on failure |
 | `cite-conformance-common.yml` | CITE Conformance (reusable) | `workflow_call` | Shared checkout/build/run/parse/upload/fail skeleton for single-suite CITE runs. |
 | `cite-conformance.yml` | OGC CITE Conformance Tests (Features) | `workflow_dispatch`, RC `workflow_call` | |
 | `cite-tiles-conformance.yml` | OGC API Tiles CITE Conformance | `workflow_dispatch`, RC `workflow_call` | |

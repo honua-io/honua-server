@@ -724,7 +724,8 @@ boundary and deterministic replay are unchanged.
 ## OGC release-candidate qualification
 
 External OGC conformance runs through individual manual dispatchers and, after the
-RC image build, through `ogc-rc-conformance.yml`. The RC manifest waits for success.
+RC image build of a promotable candidate, through `ogc-rc-conformance.yml`. The RC
+manifest waits for success; non-candidate rc dispatches skip it because they produce no manifest.
 Optional integration flags do not bypass it. See the [workflow inventory](workflow-inventory.md#ogc-cite--conformance)
 for the complete dispatchers, source/image binding and separate certification policy.
 

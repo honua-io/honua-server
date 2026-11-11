@@ -37,14 +37,20 @@ class OgcReleaseCandidateTests(unittest.TestCase):
     def test_every_release_candidate_waits_for_conformance(self):
         jobs = workflow("release-bundle.yml")["jobs"]
         call = jobs["ogc-conformance"]
-        self.assertEqual(call["needs"], "rc-image")
-        self.assertEqual(call["if"], "${{ github.event.inputs.channel == 'rc' }}")
+        self.assertEqual(call["needs"], ["release-context", "rc-image"])
+        # Only a candidate run can be promoted by aggregate, so non-candidate
+        # rc dispatches do not spend the full OGC qualification.
+        self.assertEqual(call["if"], "${{ github.event.inputs.channel == 'rc' && needs.release-context.outputs.candidate == 'true' }}")
         self.assertNotIn("run_integration", call["if"])
         self.assertEqual(call["with"]["server_image"], "${{ needs.rc-image.outputs.image_digest_ref }}")
         self.assertEqual(call["with"]["source_sha"], "${{ needs.rc-image.outputs.server_sha }}")
         self.assertIn("ogc-conformance", jobs["aggregate"]["needs"])
         self.assertIn("github.event.inputs.channel != 'rc' || needs.ogc-conformance.result == 'success'",
                       jobs["aggregate"]["if"])
+
+    def test_release_contract_tests_run_when_the_rc_qualification_changes(self):
+        paths = workflow("release-bundle.yml")["on"]["pull_request"]["paths"]
+        self.assertIn(".github/workflows/ogc-rc-conformance.yml", paths)
 
     def test_reusable_calls_supply_required_inputs(self):
         def inspect(name, ancestors=()):

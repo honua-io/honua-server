@@ -20,6 +20,7 @@ on:
       - '.github/workflows/release-bundle.yml'
       - '.github/workflows/cite-conformance.yml'
       - '.github/workflows/cite-conformance-common.yml'
+      - '.github/workflows/ogc-rc-conformance.yml'
       - 'scripts/release/dispatch-and-wait.sh'
       - 'eng/release/bundle-suites.v1.json'
       - 'tests/dotnet/Honua.ReleaseWorkflows.Tests/**'
@@ -363,8 +364,10 @@ jobs:
 
   ogc-conformance:
     name: Qualify OGC release candidate
-    needs: rc-image
-    if: ${{ github.event.inputs.channel == 'rc' }}
+    needs: [release-context, rc-image]
+    # Only a candidate run can be promoted by aggregate, so non-candidate
+    # rc dispatches do not spend the full OGC qualification.
+    if: ${{ github.event.inputs.channel == 'rc' && needs.release-context.outputs.candidate == 'true' }}
     uses: ./.github/workflows/ogc-rc-conformance.yml
     permissions:
       contents: read
