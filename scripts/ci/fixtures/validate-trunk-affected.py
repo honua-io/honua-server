@@ -7,6 +7,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import importlib.util
 
@@ -212,6 +213,79 @@ class SuspectRangeTests(unittest.TestCase):
         self.assertIn("docs: direct push without a pull request", report)
         self.assertIn("Merged pull requests: [#7199](https://github.com/honua-io/honua-server/pull/7199)", report)
         self.assertNotIn("#1]", report)
+
+
+class RuntimeBaseTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location(
+            "runtime_base", ROOT / "scripts/ci/resolve-trailing-base.py")
+        cls.module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.module)
+
+    def resolve(self, records, ancestors):
+        with patch.dict(os.environ, GITHUB_REPOSITORY="honua-io/honua-server"), \
+                patch.object(self.module.subprocess, "check_output", return_value=json.dumps(
+                    {"workflow_runs": records})), \
+                patch.object(self.module, "ancestor", side_effect=lambda a, b: (a, b) in ancestors):
+            return self.module.completed_base("a" * 40, "d" * 40)
+
+    def record(self, letter, conclusion="failure", updated="2"):
+        return dict(head_sha=letter * 40, conclusion=conclusion, updated_at=updated)
+
+    def test_completion_after_dispatch_advances_execution_base(self):
+        self.assertEqual(self.resolve([self.record("b")],
+                                     {("a" * 40, "b" * 40), ("b" * 40, "d" * 40)}), "b" * 40)
+
+    def test_old_newer_foreign_and_cancelled_runs_do_not_regress_base(self):
+        records = [self.record("b", "cancelled"), self.record("c"), self.record("e")]
+        self.assertEqual(self.resolve(records, {("a" * 40, "b" * 40),
+                                              ("b" * 40, "d" * 40),
+                                              ("a" * 40, "e" * 40)}), "a" * 40)
+
+    def test_history_outage_retains_dispatched_scope(self):
+        with patch.dict(os.environ, GITHUB_REPOSITORY="honua-io/honua-server"), \
+                patch.object(self.module.subprocess, "check_output",
+                             side_effect=subprocess.CalledProcessError(1, "gh")):
+            self.assertEqual(self.module.completed_base("base", "head"), "base")
+
+    def test_small_selection_keeps_accumulated_range(self):
+        with patch.object(self.module, "selected_count", return_value=30):
+            base, reason = self.module.execution_base("base", "head")
+        self.assertEqual(base, "base")
+        self.assertIn("30 shards", reason)
+
+    def test_large_selection_uses_entire_newest_merge_and_records_deferral(self):
+        with patch.object(self.module, "selected_count", side_effect=[160, 4]), \
+                patch.object(self.module, "git", return_value="first-parent") as git:
+            base, reason = self.module.execution_base("base", "head")
+        self.assertEqual(base, "first-parent")
+        git.assert_called_once_with("rev-parse", "head^1")
+        self.assertIn("deferred to scheduled full CI", reason)
+
+    def test_broad_newest_merge_is_never_arbitrarily_truncated(self):
+        with patch.object(self.module, "selected_count", side_effect=[160, 150]), \
+                patch.object(self.module, "git", return_value="parent"):
+            base, reason = self.module.execution_base("base", "head")
+        self.assertEqual(base, "parent")
+        self.assertIn("retain all of its shards", reason)
+
+    def test_router_failure_fails_selection_without_silently_skipping_tests(self):
+        with patch.object(self.module, "selected_count",
+                          side_effect=subprocess.CalledProcessError(1, "router")):
+            with self.assertRaises(subprocess.CalledProcessError):
+                self.module.execution_base("base", "head")
+
+    def test_effective_base_reaches_routing_and_build_with_least_privilege(self):
+        jobs = workflow("ci.yml")["jobs"]
+        changes = jobs["changes"]
+        self.assertEqual(changes["permissions"], {"contents": "read", "actions": "read"})
+        self.assertEqual(changes["outputs"]["selective_base"], "${{ steps.diff.outputs.base }}")
+        self.assertIn("resolve-trailing-base.py", step_scripts(changes))
+        for job_name in ("targeted-shards", "build"):
+            self.assertIn("needs.changes.outputs.selective_base", json.dumps(jobs[job_name]))
+        self.assertEqual(jobs["server-tests"]["strategy"]["max-parallel"],
+                         "${{ inputs.selective_base && 6 || 24 }}")
 
 
 if __name__ == "__main__":

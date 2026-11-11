@@ -646,3 +646,11 @@ Unknown projects outside the solution still fail planning; test selection is unc
 
 Optional PR workflow filters and retained post-merge coverage are documented in
 [optional PR input boundaries](gate-model.md#optional-pr-workflow-input-boundaries).
+
+Trailing affected CI refreshes its completed-ancestor base when the selection job starts,
+so queued dispatches do not retain an obsolete range. Selections above 30 shards
+fall back to the newest merge; the summary records the older range deferred to
+the twice-daily full run. A broad newest merge retains every selected shard.
+Affected shard concurrency remains six, including full-coverage routing fallbacks;
+manual and scheduled full runs retain their existing budget. Required PR gates
+and shard definitions are unchanged.
