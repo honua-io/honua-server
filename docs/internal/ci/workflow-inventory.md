@@ -689,39 +689,3 @@ GitHub's specific clean-status response ends neutrally; other API errors fail.
 The WFS 1–9 shard family includes `Wps20EndpointsTests`. See
 [WPS endpoint fixture lifetime](gate-model.md#wps-endpoint-fixture-lifetime)
 for its class-scoped applications and isolated custom-host cases.
-
-### Governance capacity split
-
-The former `Server Features Admin Governance and Sharing` shard timed out at
-22.05 minutes in affected run 42846296623. Three numbered children partition
-its original filter exactly, including method-name matches outside governance
-classes. A fallback child retains future matches. The original paths, test and
-job budgets, reporting, and CPU limits remain unchanged. The partition fixture
-checks method-level union, disjointness, nonempty children, and inherited limits.
-
-Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
-spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
-minutes, including setup allowance. These initialize dispatch ranks; actual
-child minutes and measured ranks require the next completed full trunk run.
-
-Doctor budget admission counts both separately dispatched phases using the pinned gh-aw
-usage-artifact accountant over the preceding 24 hours. In-flight runs reserve their
-per-run cap; missing usage fails closed. Both native daily guardrails remain enabled.
-The budget job records each run's phase and credits, total triage/fix credits,
-paid-run counts and the share of triage events reaching a paid Opus run. Deterministic
-skips use zero model credits. The combined envelopes are 2500 credits ($25) per day;
-triage and fix do not each receive a separate allowance.
-
-Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. Missing envelopes from ordinary producers remain errors.
-
-### Standalone tooling in affected producer builds
-
-The affected producer keeps solution members in its managed solution filter. The
-Lambda deployment driver and MCP manifest generator are explicit standalone
-projects: when selected, each restores and builds by its own project path before
-managed outputs are published. Restore and build failures remain gating, with
-the same warnings, analyzers and graph-build settings as the solution build.
-Unknown projects outside the solution still fail planning; test selection is unchanged.
-
-Optional PR workflow filters and retained post-merge coverage are documented in
-[optional PR input boundaries](gate-model.md#optional-pr-workflow-input-boundaries).
