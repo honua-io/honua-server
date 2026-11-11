@@ -481,7 +481,7 @@ class AffectedShardVerdictTests(unittest.TestCase):
                 env = {**os.environ, "GITHUB_EVENT_NAME": "pull_request",
                        "BUILD_AND_TEST_RESULT": "success", "FAST_RESULT": "success",
                        "FORMAT_RESULT": "success", "CI_ROUTER_RESULT": "success",
-                       "AFFECTED_SHARDS_RESULT": result}
+                       "SERVER_PRODUCER_RESULT": "success", "AFFECTED_SHARDS_RESULT": result}
                 run = subprocess.run(["bash", "-c", command], env=env, capture_output=True)
                 self.assertEqual(run.returncode == 0, result == "success")
         env.update(GITHUB_EVENT_NAME="workflow_dispatch", AFFECTED_SHARDS_RESULT="skipped")

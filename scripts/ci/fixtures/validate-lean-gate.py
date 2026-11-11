@@ -337,9 +337,9 @@ require(
     text=PR_GATE_TEXT,
 )
 require(
-    r"required:\n[\s\S]*?name: PR Gate\n[\s\S]*?needs: \[pr-gate, fast-tests, format, ci-router-validation, affected-shards\]",
+    r"required:\n[\s\S]*?name: PR Gate\n[\s\S]*?needs: \[pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer\]",
     "keep the required PR Gate context as a fail-closed aggregator over "
-    "build/tests, format, and CI router validation",
+    "build/tests, format, CI router validation, and the server-test producer",
     text=PR_GATE_TEXT,
 )
 require(
