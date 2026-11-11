@@ -191,11 +191,9 @@ would otherwise have been blocked — it can only withhold a status that no
 admission could have consumed. `reopened` re-fires the workflow.
 
 **A closed subject is the only staleness `attest` may shed, and that asymmetry
-is load-bearing.** `resolve` uses one PR-wide `cancel-in-progress: true` group
-and GitHub guarantees no ordering within a concurrency group, so a
-late-delivered event for an *old* head can cancel the resolver for the *newest*
-head and then shed itself. The attestation already queued behind it is then the
-only thing left that will stamp the live head, and `Review Gate` is required at
+is load-bearing.** Resolvers now serialize in a PR-wide queue without
+cancelling earlier events. GitHub does not guarantee event delivery order, so a
+late event may still describe an old head. The required status must bind to
 the exact current head. `attest` therefore binds to the **live head**, never to
 the subject its event named: shedding a moved subject there would leave that
 head permanently unattested and the PR unmergeable until some unrelated comment

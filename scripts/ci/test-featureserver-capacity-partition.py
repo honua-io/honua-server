@@ -5,7 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 
-from shard_capacity_partition import PartitionSource, check_partition
+from shard_capacity_partition import PartitionSource, capacity_split_names, check_partition
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("coverage", ROOT / "scripts/ci/check-server-test-shard-coverage.py")
@@ -14,7 +14,8 @@ SPEC.loader.exec_module(MODULE)
 CONFIG = json.loads((ROOT / ".github/ci-shards.json").read_text())
 EVIDENCE = json.loads((ROOT / "docs/internal/ci/featureserver-shard-capacity-20261018.json").read_text())
 ORIGINAL = EVIDENCE["originalShard"]
-NAMES = ("FeatureServer Editing and Relationships", "FeatureServer Query Services and Replication")
+NAMES = ("FeatureServer Editing and Relationships",
+         *capacity_split_names(CONFIG, "FeatureServer Query Services and Replication"))
 CHILDREN = [next(s for s in CONFIG["shards"] if s["name"] == name) for name in NAMES]
 # The parent can execute only this assembly. Keep every registered source root
 # for it; walking other assemblies cannot add candidates to selection_pool.
@@ -46,7 +47,8 @@ def check(children):
     }
     for method, owner in probes.items():
         assert MODULE._eval(PARENT, method)
-        assert [i for i, expr in enumerate(parsed) if MODULE._eval(expr, method)] == [owner]
+        owners = [min(i, 1) for i, expr in enumerate(parsed) if MODULE._eval(expr, method)]
+        assert owners == [owner]
     return list(map(len, selected))
 
 

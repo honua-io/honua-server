@@ -49,7 +49,7 @@ def declared(fqn: str, csproj: str, *, methods: tuple[str, ...] = (),
 
 def resolve(shard_defs: list[dict], classes: dict[str, dict]) -> dict[str, list]:
     parsed = {s["name"]: MODULE._FilterParser(s["filter"]).parse() for s in shard_defs}
-    csprojs = {s["name"]: s.get("csproj") or MODULE.DEFAULT_CSPROJ for s in shard_defs}
+    csprojs = {s["name"]: tuple(MODULE.shard_projects(s)) for s in shard_defs}
     return MODULE.find_dangling_filters(shard_defs, parsed, csprojs, classes)
 
 
@@ -226,7 +226,7 @@ ASSERT_SHARDS = [
 def assert_owner(fqn: str, csproj: str, shard: str, classes: dict[str, dict],
                  *, runnable: bool = True) -> MODULE.AssertionResult:
     parsed = {s["name"]: MODULE._FilterParser(s["filter"]).parse() for s in ASSERT_SHARDS}
-    csprojs = {s["name"]: s.get("csproj") or MODULE.DEFAULT_CSPROJ for s in ASSERT_SHARDS}
+    csprojs = {s["name"]: tuple(MODULE.shard_projects(s)) for s in ASSERT_SHARDS}
     return MODULE.evaluate_assertion(
         fqn, csproj, shard,
         require_runnable=runnable,
@@ -503,7 +503,7 @@ def test_raster_serving_shard_owns_the_raster_serving_namespaces() -> None:
     )
     shard_defs = config["shards"]
     parsed = {s["name"]: MODULE._FilterParser(s["filter"]).parse() for s in shard_defs}
-    csprojs = {s["name"]: s.get("csproj") or MODULE.DEFAULT_CSPROJ for s in shard_defs}
+    csprojs = {s["name"]: tuple(MODULE.shard_projects(s)) for s in shard_defs}
     classes = MODULE.enumerate_test_classes()
     raster = [
         key for key, entry in classes.items()
@@ -517,7 +517,7 @@ def test_raster_serving_shard_owns_the_raster_serving_namespaces() -> None:
     for fqn in raster:
         owners = [
             name for name, node in parsed.items()
-            if csprojs[name] == classes[fqn]["csproj"] and MODULE._eval(node, classes[fqn]["fqn"])
+            if classes[fqn]["csproj"] in csprojs[name] and MODULE._eval(node, classes[fqn]["fqn"])
         ]
         assert owners == ["Raster Serving Scene Geometry and Terrain"], (fqn, owners)
 
@@ -533,7 +533,7 @@ def test_studio_dashboard_mcp_integration_has_one_server_assembly_owner() -> Non
     assert classes[f"{KNOWN}::{fqn}"]["has_tests"]
     owners = [
         shard["name"] for shard in config["shards"]
-        if (shard.get("csproj") or KNOWN) == classes[f"{KNOWN}::{fqn}"]["csproj"]
+        if classes[f"{KNOWN}::{fqn}"]["csproj"] in MODULE.shard_projects(shard)
         and MODULE._eval(MODULE._FilterParser(shard["filter"]).parse(), fqn)
     ]
     # #3204 moved Features.Studio (and this fixture with it) to `Server Features
@@ -569,7 +569,7 @@ def test_core_capacity_moves_have_exactly_one_server_assembly_owner() -> None:
         assert classes[f"{KNOWN}::{fqn}"]["has_tests"]
         owners = [
             shard["name"] for shard in config["shards"]
-            if (shard.get("csproj") or KNOWN) == classes[f"{KNOWN}::{fqn}"]["csproj"]
+            if classes[f"{KNOWN}::{fqn}"]["csproj"] in MODULE.shard_projects(shard)
             and MODULE._eval(MODULE._FilterParser(shard["filter"]).parse(), fqn)
         ]
         assert owners == [owner], (fqn, owners)

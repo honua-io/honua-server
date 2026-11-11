@@ -314,7 +314,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--timings", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
+    parser.add_argument("--matrix-file", type=Path)
     args = parser.parse_args(argv)
+    matrix_json = args.matrix_file.read_text() if args.matrix_file else os.environ.get("SELECT_MATRIX")
+    matrix = json.loads(matrix_json or "[]")
     outcome = decide(
         mode=os.environ.get("MODE", ""),
         selection=Selection(
@@ -322,7 +325,7 @@ def main(argv: list[str] | None = None) -> int:
             skip=os.environ.get("SELECT_SKIP", ""),
             reason=os.environ.get("SELECT_REASON", ""),
             count=os.environ.get("SELECT_COUNT", ""),
-            shards=[entry["shard_name"] for entry in json.loads(os.environ.get("SELECT_MATRIX") or "[]")],
+            shards=[entry["shard_name"] for entry in matrix],
             deferred=_names(os.environ.get("SELECT_DEFERRED") or "[]"),
         ),
         shards_result=os.environ.get("SHARDS_RESULT", ""),

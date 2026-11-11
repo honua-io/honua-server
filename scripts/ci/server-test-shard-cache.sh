@@ -28,7 +28,7 @@ effective_project() {
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  server-test-shard-cache.sh plan --shard NAME --project CSPROJ --matrix-json JSON --source-sha SHA --runner-os OS --sdk VERSION
+  server-test-shard-cache.sh plan --shard NAME --project CSPROJ (--matrix-file PATH | --matrix-json JSON) --source-sha SHA --runner-os OS --sdk VERSION
                                   [--run-id ID] [--run-attempt N] [--prebuild-consume SWITCH]
   server-test-shard-cache.sh restore --project CSPROJ --source-sha SHA --payload DIR --cache-hit true|false [--read-mode MODE]
 EOF
@@ -41,6 +41,7 @@ shift
 shard=""
 project=""
 matrix_json=""
+matrix_file=""
 source_sha=""
 runner_os=""
 sdk=""
@@ -56,6 +57,7 @@ while [[ $# -gt 0 ]]; do
     --shard) shard="${2:-}"; shift 2 ;;
     --project) project="${2:-}"; shift 2 ;;
     --matrix-json) matrix_json="${2:-}"; shift 2 ;;
+    --matrix-file) matrix_file="${2:-}"; shift 2 ;;
     --source-sha) source_sha="${2:-}"; shift 2 ;;
     --runner-os) runner_os="${2:-}"; shift 2 ;;
     --sdk) sdk="${2:-}"; shift 2 ;;
@@ -85,6 +87,9 @@ suffix="$(jq -er --arg project "${project}" '.projects[] | select(.csproj == $pr
 
 case "${mode}" in
   plan)
+    if [[ -n "${matrix_file}" ]]; then
+      matrix_json="$(cat "${matrix_file}")"
+    fi
     if [[ -z "${shard}" || -z "${matrix_json}" || -z "${runner_os}" || -z "${sdk}" ]]; then
       usage
       exit 2
@@ -106,6 +111,7 @@ case "${mode}" in
     # See "Writer selection" in docs/internal/ci/server-test-binary-artifacts.md.
     writer="$(jq -r --arg project "${project}" --arg fallback "${DEFAULT_PROJECT}" '
       [ .[]
+        | select(.csprojs == null)
         | select((if ((.csproj // "") == "") then $fallback else .csproj end) == $project)
         | .shard_name ]
       | first

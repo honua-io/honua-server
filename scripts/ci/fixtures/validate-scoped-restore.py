@@ -25,7 +25,7 @@ class ScopedRestoreTests(unittest.TestCase):
             helper.write_text('#!/bin/bash\nprintf "%s\\n" "$@" > target\n')
             helper.chmod(0o755)
             (root / 'selected.slnf').write_text('{}')
-            for mode, formatting, expected in [('affected','false','selected.slnf'), ('affected','true','Honua.sln'), ('full','false','Honua.sln'), ('unknown','false','Honua.sln')]:
+            for mode, formatting, expected in [('affected','false','selected.slnf'), ('test-roots','false','selected.slnf'), ('affected','true','Honua.sln'), ('full','false','Honua.sln'), ('unknown','false','Honua.sln')]:
                 env = dict(os.environ, GATE_BUILD_MODE=mode, GATE_RUN_FORMAT=formatting, GATE_BUILD_FILTER='selected.slnf')
                 subprocess.run(['bash','-e','-c',restore_run],cwd=root,env=env,check=True)
                 self.assertEqual((root / 'target').read_text().splitlines()[0], expected)
@@ -37,8 +37,11 @@ class ScopedRestoreTests(unittest.TestCase):
         phase = action.split('    - name: Validate gate phase\n', 1)[1].split('    #', 1)[0]
         phase_run = textwrap.dedent(phase.split('      run: |\n', 1)[1]).rstrip()
         for value in ['all', 'build', 'test', 'invalid']:
-            result = subprocess.run(['bash', '-e', '-c', phase_run], env=dict(os.environ, GATE_PHASE=value), capture_output=True)
+            result = subprocess.run(['bash', '-e', '-c', phase_run], env=dict(os.environ, GATE_PHASE=value, GATE_TEST_GROUP='all'), capture_output=True)
             self.assertEqual(result.returncode == 0, value != 'invalid')
+        for group in ['all', 'architecture', 'unit-fast', 'server-fast', 'server-governance', 'producer', 'invalid']:
+            result = subprocess.run(['bash', '-e', '-c', phase_run], env=dict(os.environ, GATE_PHASE='all', GATE_TEST_GROUP=group), capture_output=True)
+            self.assertEqual(result.returncode == 0, group != 'invalid')
         section = action.split('    - name: Union producer test roots\n', 1)[1].split('    - name:', 1)[0]
         script = textwrap.dedent(section.split('      run: |\n', 1)[1]).rstrip()
         with tempfile.TemporaryDirectory() as directory:
@@ -57,7 +60,9 @@ class ScopedRestoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'scripts/ci').mkdir(parents=True)
-            for name in ['run-foundation-family.sh', 'dotnet-restore-retry.sh']:
+            for name in ['run-foundation-family.sh', 'dotnet-restore-retry.sh',
+                         'run-quarantine-filtered-tests.py', 'retry-failed-shard-tests.py',
+                         'flake_quarantine.py', 'shard_processes.py']:
                 shutil.copy2(ROOT / 'scripts/ci' / name, root / 'scripts/ci' / name)
             (root / 'Honua.sln').touch()
             fake = root / 'dotnet'

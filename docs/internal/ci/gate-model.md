@@ -31,6 +31,14 @@
 
 Full CI runs twice daily at `09:00` and `21:00` UTC (01:00 and 13:00 Pacific standard time). It retains protocol-profile compilation, remote-source and server execution proofs, and import/export fidelity. The existing Worker GDAL job owns native GDAL/PDAL coverage and the raster execution receipt checks.
 
+## Neutral automation helpers
+
+See [the workflow inventory](workflow-inventory.md#neutral-automation-helpers)
+for helper check names and queue policy. Helper completion does not grant
+admission: drafts retain pending `Review Gate` status, blocking reviews retain
+failure, and real attestation/API errors fail. Superseded normalization producers
+and consumers exit neutrally before producing data or mutating a branch.
+
 ## Verification stages
 
 Every stage reacts to a repository event; no stage polls. A change is verified
@@ -42,20 +50,31 @@ earlier one could not.
 | **0 Pre-PR** | Author, before opening or pushing | `scripts/ci/pre-pr-check.sh` (local) | Affected build, Fast tests and affected shards on the author's machine | No; the PR template asks for the result |
 | **1 PR gate** | `pull_request` | `pr-gate.yml`, `review-gate.yml`, `repo-hygiene.yml` | Affected-scope build, selected shards, Fast/architecture, format, router validation, exact-head review | Yes: `PR Gate`, `Review Gate`, Repository hygiene |
 | **2 Pre-merge** | Trunk moves under an open PR | `pr-sync-doctor.md` and the fleet lander | A behind PR is refreshed only when trunk touched its affected projects; the refreshed head reruns stage 1. The lander merges only an exact-head green, thread-free PR | Yes, through stage 1 on the refreshed head |
-| **3 Post-merge affected** | `push` to `trunk` | `trunk-affected.yml` dispatching `ci.yml` | Selective CI over the merges since the last green CI run (`selective_base`): the shards and lanes those merges touch | No; a red run starts the CI doctor |
-| **4 Full** | `schedule` 09:00 and 21:00 UTC | `ci.yml` | The full matrix, compatibility and certification lanes | No; full proof clears the lander's trunk-red brake |
+| **3 Post-merge affected** | `push` to `trunk` | `trunk-affected.yml` dispatching `ci.yml` | Selective CI over new merges since the latest completed CI run (`selective_base`): the shards and lanes those merges touch | No; a red run starts the CI doctor |
+| **4 Full** | `schedule` 09:23 and 21:23 UTC | `ci.yml` | The full matrix, compatibility and certification lanes | No; full proof clears the lander's trunk-red brake |
+
+Full runs use off-hour minutes to reduce schedule-delivery contention. The
+half-hourly `trunk-signal-watchdog.yml` reports a missing scheduled start after
+14 hours, independently of affected CI activity. It also reports outstanding work without a usable
+result for 2 hours, runs queued over 45 minutes, and excessive cancellations;
+its issue closes only when all signals recover.
 
 Stage 3 details:
 
-- The base is the newest successful `CI` run on trunk whose head is an
-  ancestor of the pushed head, whether that run was selective or full; a
-  selective green proves its own range, so the chain of greens covers trunk.
-  With no green ancestor in the newest 50 successful runs, the dispatch is a
-  full matrix.
-- Runs queue in one concurrency group without cancellation. GitHub keeps one
-  pending run per group and replaces it with a newer one; the newer run diffs
-  from the last green head, so it covers every merge the replaced run would
-  have. A run whose push is no longer the trunk tip exits for the same reason.
+- The execution base is the most recently completed `CI` run on trunk with
+  a success or failure conclusion and an ancestor head, selective or full.
+  The newest 100 completed runs are ordered by completion update time.
+  Cancelled runs cannot advance the base. With no eligible ancestor, dispatch
+  a full matrix. A failed base bounds execution; it does not certify trunk.
+- The dispatch summary separately lists the culprit range from the latest
+  full green ancestor (searched among the newest 100 successful runs,
+  excluding affected titles that cannot clear earlier failures). It passes
+  that ancestor as `investigation_base` to `ci.yml` for the CI doctor; missing
+  green history is reported as unknown. Failures
+  remain owned by the CI doctor; twice-daily full runs retain complete coverage.
+- Runs queue without cancellation. GitHub replaces older pending runs; the
+  newer run covers merges since the latest completed head. Superseded pushes
+  exit when checkout finds a newer trunk tip.
 - Shards the PR gate deferred by time budget run here: the router selects
   them again from the merged diff, so a deferred shard is verified within one
   affected run of its merge.
@@ -71,6 +90,10 @@ Stage 3 details:
   ignores runs titled `CI affected ...`, so a selective run that finishes after
   a full run on the same sha cannot supersede that full run's certification.
   The full-matrix fallback is titled `CI full matrix ...` and still certifies.
+- Every `selective_base` dispatch limits server shards to six concurrent jobs,
+  including router promotions and explicit full-coverage overrides. These
+  fallbacks still run every selected shard. Scheduled and non-selective full
+  runs retain their 24-job budget.
 - Stage 3 is not a required check and changes no ruleset.
 
 ## PR Lane (Required Checks)
@@ -79,7 +102,7 @@ These workflows are merge-blocking for all PRs to trunk:
 
 | Workflow | What it validates | Path filter |
 |---|---|---|
-| `pr-gate.yml` | **Required verification context `PR Gate`.** Admission includes tracked-text UTF-8 validation. The affected-scope warnings-as-errors producer publishes pristine, verified managed test outputs and runs the required boot/migration smoke against its canonical host output; selected shard consumers run the affected tests that fit the `pr_time_budget` in `.github/ci-shards.json` (shards over 10 measured minutes, or past 45 runner-minutes in total, are deferred to the next trunk run and named in the verdict). Independent Fast/architecture, format and CI-router jobs remain required. `required.needs` includes `pr-gate`, `fast-tests`, `format`, `ci-router-validation`, and `affected-shards`. The affected-shard aggregate enforces every selected timing/TRX result before `PR Gate` succeeds. See the [artifact contract](server-test-binary-artifacts.md) for same-run identity, bounds, rollback and scoped fallback. | None — a required context must never be path-filtered |
+| `pr-gate.yml` | **Required verification context `PR Gate`.** Admission includes tracked-text UTF-8 validation. The affected-scope warnings-as-errors producer publishes pristine, verified managed test outputs and runs the required boot/migration smoke against its canonical host output; selected shard consumers run the affected tests that fit the `pr_time_budget` in `.github/ci-shards.json` (shards over 10 measured minutes, or past 45 runner-minutes in total, are deferred to the next trunk run and named in the verdict). Independent Fast/architecture jobs (one per test group, each compiling only its test roots), format, analyzer and CI-router jobs remain required. `required.needs` includes `pr-gate`, `fast-tests`, `format`, `ci-router-validation`, and `affected-shards`. The affected-shard aggregate enforces every selected timing/TRX result before `PR Gate` succeeds. See the [artifact contract](server-test-binary-artifacts.md) for same-run identity, bounds, rollback and scoped fallback. | None — a required context must never be path-filtered |
 | `review-gate.yml` | **Required admission context `Review Gate`.** Immutable default-branch workflow policy publishes exact-head review evidence from an attesting reviewer (Codex or Claude — see [Attesting reviewers](#attesting-reviewers)) and, in enforce mode, releases one admitted PR Gate rerun. In observe mode it retains a SHA-bound decision receipt for the read-only `review-first-evidence-ledger.yml`; the ledger reports but cannot promote. Review events arrive through the read-only `review-event-bridge.yml`; no PR-authored workflow has status or Actions write authority. | None — it must publish on every PR head |
 | `repo-hygiene.yml` | **Required context `repo-hygiene / Repository hygiene`.** Reads the root allowlist and exact gate-input exceptions from the trusted base branch; checks only PR-added paths for scratch, backups, run output, dated history, product samples and unexpected roots. The shared checker is pinned by SHA, runs with read-only permissions and has a five-minute timeout. | None — it must publish on every PR head |
 | `ci.yml` | **No `pull_request` trigger.** Full CI runs twice daily at 09:00 and 21:00 UTC (01:00 and 13:00 Pacific standard time) and through manual dispatch. It covers managed builds, protocol profiles, foundation and server shards, native Worker tests, runtime proofs, architecture checks, JavaScript checks and compatibility. `CI Gate` requires the runtime proof result and appears only on full CI runs. | n/a — not PR-triggered |
@@ -151,11 +174,24 @@ diff base. At the default depth 1 those parent commits are absent, the scope
 computation force-fulls, and the optimization silently never fires.
 
 **Format scope.** The PR's existing independent format job retains its affected
-or full document selection and complete formatter restore context. It also owns
-the analyzer pass: the managed producer builds with `/p:RunAnalyzers=false`
-(about a third of its compile), and the format job then builds the affected
-or full scope with analyzers, code style and documentation diagnostics as
-warnings-as-errors, so `PR Gate` still fails on every analyzer finding. Full CI runs
+or full document selection and complete formatter restore context. A parallel
+`PR Gate / Analyzers` (source) and `PR Gate / Analyzers (tests)` jobs of the
+same matrix own disjoint analyzer passes: every other
+PR build runs with `/p:RunAnalyzers=false`, and both jobs build the diff's
+affected closure (or the full solution on fallback, and nothing when the diff
+reaches no project) with analyzers, code style and documentation diagnostics
+as warnings-as-errors. `HonuaAnalyzerPartition` in `Directory.Build.targets`
+assigns `IsTestProject=true` projects to `tests` and every other project to
+`source`. After restore, the source partition evaluates `IsTestProject` through MSBuild
+and omits test-only compilation roots; imports are respected, incomplete evaluation
+fails closed, and multi-targeted projects conservatively remain included. Each
+partition still compiles forward dependencies but runs analyzers only for its own set; source generators remain enabled. The `format` matrix remains
+in `required.needs`, so both partitions must pass. The existing analyzer check
+name is retained for the source partition. Analyzer builds disable persistent
+MSBuild servers and node reuse so process teardown does not depend on a shared
+server; compiler, analyzer and timeout failures still fail the job.
+Unpartitioned callers default to
+`all`; invalid partitions fail the build. `PR Gate` still fails on every analyzer finding. Full CI runs
 an independent full-solution format job; `CI Gate` requires it when build inputs
 are selected, without making test consumers wait for formatting.
 
@@ -259,7 +295,7 @@ certification and LLM smoke, PostgreSQL and core-package compatibility, AOT,
 Docker build, and Console quickstart smoke. Admission, routing, receipt
 aggregation and final verdict jobs remain on standard hosted runners so a
 compute-pool problem cannot strand their reporting. Light checks such as JS
-type checking also stay hosted. The PR Gate is unchanged.
+type checking also stay hosted. The PR Gate has its own selection, below.
 
 The selected runner must provide a clean Ubuntu x64 environment compatible with
 GitHub's hosted tools, Docker, passwordless sudo, .NET/Node/Python setup actions,
@@ -272,6 +308,43 @@ Main checks the chosen pool on the first ordinary combined batch using it;
 no separate branch full run is needed. Clear the variable to restore the hosted
 default for new runs. Treat existing runs as assigned to their original pool;
 main handles their completion or cancellation.
+
+## PR Gate compute runner selection
+
+`PR Gate / Runner select` decides where `pr-gate` (Build and tests),
+`fast-tests` and `format` run. With the repository variable
+`HONUA_PR_GATE_RUNNER` unset, its steps skip and those jobs stay on
+`ubuntu-latest`. Set it to `honua-build` to use the ephemeral runners on the lane
+build host (honua-iac `bootstrap/aws-build-host`, "PR Gate runners"). It also
+needs the variable `HONUA_PR_GATE_RUNNER_REGION` and the secret
+`HONUA_PR_GATE_WAKE_ROLE_ARN`. The job assumes that role through GitHub OIDC
+(`id-token: write` on this job only; the role can describe and wake the build
+host and read its heartbeat, nothing else) and runs
+`scripts/ci/select-gate-runner.sh`:
+
+- When the host's heartbeat is fresh and shows two idle runners, the three jobs
+  use the label.
+- When the host is busy, or no heartbeat arrives within three minutes, they use
+  `ubuntu-latest`. A stopped host is still woken for later runs.
+- Any failure selects `ubuntu-latest`. Every selection step is
+  `continue-on-error`, so the job cannot fail and skip the required producer,
+  which carries no job condition.
+
+Shards, admission, routing and aggregate jobs always stay hosted. Under
+`REVIEW_FIRST_MODE: enforce` the selection steps skip and the gate stays hosted:
+the review release reruns only failed jobs, so attempt 2 would reuse a choice
+made at admission and could queue on a host that has since stopped.
+
+The build-host runners are clean per job but are not hosted images. They have no
+sudo, so the disk-cleanup steps do nothing there. Docker is rootless and per job,
+and tools come from the setup actions plus the host's packages (Python 3, Node 22,
+PowerShell, git, jq). Do not point `HONUA_CI_HEAVY_RUNNER` at this label: full CI
+expects passwordless sudo.
+
+A spot interruption fails the running job. Use **Re-run all jobs**, which selects
+compute again; **Re-run failed jobs** keeps the earlier choice, and it waits if
+the host has stopped since then. Clear `HONUA_PR_GATE_RUNNER` to return new runs
+to hosted runners immediately.
 
 ## Nightly Lane
 
@@ -455,3 +528,119 @@ partial passing results); consumers must require the overall successful outcome
 as well. Missing counts stay missing. Synthetic supervisor fixtures are labelled
 as such and do not qualify a candidate. These files are diagnostic provenance;
 local files alone do not constitute a trusted release attestation.
+
+## Bounded flaky-test quarantine
+
+The founder-approved quarantine policy in [known-flakes.md](known-flakes.md#automatic-bounded-quarantine)
+allows one same-job failed-method retry within the original shard budget. Success requires
+complete passing retry evidence, retained alongside the first attempt. Ambiguous theory-row
+names are rejected so a passing sibling cannot conceal a missing failure. Infrastructure and
+execution failures remain blocking. Tests retain the supervisor’s process group so shared deadlines clean up the full tree.
+Cancellation signals the test’s descendants, including those that leave the inherited
+process group, and escalates to SIGKILL after at most half a second. Required check names and minimum-execution checks remain
+unchanged. Bot-authored issues provide a validated, project-scoped exclusion list capped at
+25 methods and 14 days per entry; expiry restores gating automatically. Foundation and lean
+gate duplicate coverage consume the same list. A separate `Flaky Test Detection` job runs
+quarantined methods without exclusions or retries and is explicitly non-gating.
+
+The publisher has issue-write permission only on a trusted `workflow_run` path. It checks
+same-repository provenance, checks out default-branch code, validates raw case evidence and
+hashes, and never executes downloaded data or checks out the triggering branch.
+Publication uses GitHub's FIFO concurrency queue (`queue: max`, up to 100 pending
+runs), keeping issue mutations serial without replacing a pending completion event.
+If that service limit is reached, rerun canceled publishers to recover their evidence.
+
+### Grouped unit and component shards
+
+The server matrix combines 33 small unit/component assemblies into four jobs:
+Provider and AI Units, Runtime Units, Protocol Units, and Protocol and Host
+Components. Each `csprojs` list is an explicit assembly union. Routing, build
+selection, resource classification, and the source coverage guard inspect every
+member. Catalogued Docker, Postgres, and Redis dependencies remain supported;
+resourceful members retain service provisioning. Unknown resources fail closed.
+The existing required check names and tier policies remain unchanged.
+
+The shared runner executes each member with its own fresh TRX and timing record,
+within one shared 20-minute test budget. Every assembly must execute tests and
+pass; a passing sibling cannot conceal an empty, failed, or timed-out assembly.
+It also emits a combined TRX and timing receipt for the existing aggregates.
+Capability selection retains a group's full filter so sibling assemblies cannot
+receive empty proving-test selections. Shared-budget timeouts retain the existing
+capacity-versus-hang classification, progress measurement, and diagnostic tokens.
+The optional cache observer uses normal build fallback for grouped jobs.
+
+The scheduled baseline run 42685503356 spent 75.38 runner-minutes across these
+33 jobs. Reusing one setup per group estimates 22.80 runner-minutes; this is a
+planning estimate, not an observed result. Post-merge elapsed minutes must come
+from a full trunk run before claiming savings or refreshing child dispatch ranks.
+
+Full CI transfers the selected shard matrix as a run-and-attempt-scoped JSON
+artifact to the managed producer, cache planners and receipt verifier. Full
+filters stay out of environment variables and command arguments, whose per-string
+limits can prevent the shell from starting. Missing matrix artifacts fail the
+selected lane. PR receipt verification receives only selected shard names; its
+execution matrix and enforced test filters remain unchanged.
+
+### Pre-PR and trailing affected execution
+
+Before refreshing a behind branch, lanes and the sync doctor share
+`bash scripts/ci/compute-affected-projects.sh --trunk-overlap HEAD origin/trunk`.
+Its JSON `refresh_required` compares committed changes on both sides of their
+merge base using the canonical reverse-dependency selector. Disjoint project
+closures avoid an unnecessary merge and gate restart. Non-managed files use
+their top-level folder; root files, changed project graphs and unavailable refs
+require revalidation conservatively. This decision does not resolve conflicts
+or attest test execution. Callers must treat an execution or parsing failure
+as requiring revalidation. Commit local changes before using this mode.
+
+`pre-pr-check.sh --affected-tests` restores once, builds the affected unit-test
+closure without analyzers, then runs unit tests by default. Pass `--integration`
+with `--affected-tests` to include affected integration shards. The independent
+PR Format check retains analyzer coverage. Positively classified docs/CI-only
+changes use the existing governance checks without starting a .NET build;
+unknown or invalid routing still fails closed. A full-build fallback retains
+these Stage 0 CPU limits and disables build analyzers; its validation scope is
+unchanged. Stage 0 uses
+`HONUA_STAGE0_MAX_CPU_COUNT` (default 5, range 1–16) and reports restore, build,
+and test durations separately. Host queue/sync timings are reported by the
+local lane runner; they are separate from execution time.
+
+Trailing `selective_base` dispatches use their verified base for the managed
+producer's affected project graph. An effective full-CI decision (including a
+router promotion or manual override) builds the whole solution. Consumers reuse the single producer's
+artifacts. Server shards retain descending measured `dispatch_rank` order and
+run at most six at once (full runs retain 24). Expensive AOT, Docker,
+Postgres compatibility, browser, Python, MCP and quickstart lanes use
+`scripts/ci/affected-ci-lanes.py` to select their own inputs. Native, container
+and MCP checks conservatively include every runtime source or project change,
+including transitive publish inputs and REST/gRPC backends. Shared seed files
+select every compatibility lane. Shared inputs,
+unknown paths, missing diff evidence, and the canonical router's `run_all`
+fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
+as a prerequisite. PR routing, required check names, shard definitions, and the
+twice-daily full matrix are preserved.
+
+Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. Missing envelopes from ordinary producers remain errors.
+
+### Governance capacity split
+
+The former `Server Features Admin Governance and Sharing` shard timed out at
+22.05 minutes in affected run 42846296623. Three numbered children partition
+its original filter exactly, including method-name matches outside governance
+classes. A fallback child retains future matches. The original paths, test and
+job budgets, reporting, and CPU limits remain unchanged. The partition fixture
+checks method-level union, disjointness, nonempty children, and inherited limits.
+
+Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
+spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
+minutes, including setup allowance. These initialize dispatch ranks; actual
+child minutes and measured ranks require the next completed full trunk run.
+
+### Standalone tooling in affected producer builds
+
+The affected producer keeps solution members in its managed solution filter. The
+Lambda deployment driver and MCP manifest generator are explicit standalone
+projects: when selected, each restores and builds by its own project path before
+managed outputs are published. Restore and build failures remain gating, with
+the same warnings, analyzers and graph-build settings as the solution build.
+Unknown projects outside the solution still fail planning; test selection is unchanged.

@@ -1,7 +1,7 @@
 ---
 type: reference
 title: "Referenced GP output persistence"
-description: "Enabling Geoprocessing:OutputStaging requires a deployment-owned persistent volume contract."
+description: "Enabling Geoprocessing:OutputStaging requires object storage or a deployment-owned persistent volume contract."
 ---
 # Referenced GP output persistence
 
@@ -10,7 +10,11 @@ volume contract. This protects the 2026.1 whole-catalog GP GA promise: a success
 job's referenced output must remain readable after server/worker replacement and
 backup restore. An arbitrary directory is no longer sufficient.
 
-The only supported provider is `local` on a **shared persistent filesystem**.
+Two providers are supported. `object-storage` keeps outputs in the deployment's S3
+or Azure Blob file storage and is the one to use when the server runs as replaceable
+tasks (ECS Fargate, Kubernetes without a shared volume); see
+[Object storage provider](#object-storage-provider). The rest of this page describes
+`local` on a **shared persistent filesystem**.
 Every serving host, local worker, and independently scheduled GDAL worker must
 mount the same volume. Container writable layers, `emptyDir`, temporary directories,
 and unbacked host paths are not supported production staging stores. Existing
@@ -82,3 +86,38 @@ ceiling, preserve its descriptor, then read it through
 authorization. Assert the descriptor identity, media type, length and independently
 expected SHA-256; record readiness and the runtime attestation after recovery.
 Restoring only Redis/Postgres is insufficient when referenced staging is enabled.
+
+## Object storage provider
+
+Set `Geoprocessing__OutputStaging__Enabled=true` and
+`Geoprocessing__OutputStaging__Provider=object-storage`. Outputs are then written to
+the bucket or container that `FileStorage` already uses (`FileStorage__Provider`
+must be `AwsS3` or `AzureBlob`; `Local` is refused at startup because a local
+directory is not shared between instances). No volume, marker file, `LocalRootPath`,
+`PersistenceClass`, `BackupIdentity` or `ConfigurationDigest` is needed: durability
+and backup are properties of the bucket and belong to the deployment.
+
+- **Keys.** An output is one object at
+  `{KeyPrefix}/{jobId}/a{attempt}/{outputName}/{fileName}` (`KeyPrefix` defaults to
+  `gp/outputs`). If the file storage has its own key prefix
+  (`FileStorage__AwsS3__KeyPrefix` or `FileStorage__AzureBlob__BlobPrefix`), `KeyPrefix`
+  must start with it, for example `honua/gp/outputs`; startup refuses anything else,
+  because retention could not list the outputs.
+- **Downloads.** Results are served only through the server's artifact route, which
+  checks access to the job, and never through a presigned or public URL. A range
+  request is honoured and the entity tag is the output's SHA-256, as with `local`.
+  The server reads the object forward to the start of a requested range, so a range
+  near the end of a very large output costs a read of the bytes before it between
+  the server and the bucket.
+- **Retention.** The orphan sweep deletes an output once its job record has been
+  removed and `OrphanRetention` has passed, unless the output was registered into a
+  catalog. Read leases and retention holds are small sibling objects ending in
+  `.readlease` and `.hold`; do not add a bucket lifecycle rule that deletes objects
+  under `KeyPrefix` sooner than `OrphanRetention`.
+- **Writes.** An output is written in one conditional request, so the server first copies it to a
+  private temporary file (deleted when the write ends) and an output cannot exceed the provider's
+  single-request limit (5 GiB on S3). Size the task's ephemeral storage for the largest output.
+- **Readiness.** The `gp-output-store` health check reports the provider and store
+  reference when the bucket can be reached.
+- **Not covered.** The standalone GDAL worker does not compose the file storage
+  client, so it cannot use this provider yet; use it for jobs the server runs.

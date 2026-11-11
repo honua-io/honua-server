@@ -83,12 +83,26 @@ case "${mode}" in
     sleep 600
     ;;
   ppidkill)
+    # The retry supervisor sits between this stub and GNU timeout. Find the
+    # wrapper by identity so this fixture still kills the intended process.
+    timeout_pid="${PPID}"
+    for (( ancestor = 0; ancestor < 8; ancestor++ )); do
+      timeout_command="$(ps -p "${timeout_pid}" -o comm=)"
+      case "${timeout_command##*/}" in
+        timeout|gtimeout) break ;;
+      esac
+      timeout_pid="$(ps -p "${timeout_pid}" -o ppid= | tr -d ' ')"
+    done
+    case "${timeout_command##*/}" in
+      timeout|gtimeout) ;;
+      *) echo 'GNU timeout ancestor not found' >&2; exit 1 ;;
+    esac
     trap '' TERM
     kill_at=$(( $(date +%s) + seconds ))
     while :; do
       echo "stub progress $(date -u +'%H:%M:%S')"
       if [[ "$(date +%s)" -ge "${kill_at}" ]]; then
-        kill -9 "${PPID}" 2>/dev/null || true
+        kill -9 "${timeout_pid}"
         exit 0
       fi
       sleep 0.2
@@ -97,6 +111,25 @@ case "${mode}" in
 esac
 STUB
 chmod +x "${stub_dir}/dotnet"
+
+# These two instrumentation cases need an unresponsive direct child of timeout.
+# Bypass only the retry supervisor in the fixture; its bounded cleanup is tested
+# separately by test-flake-quarantine.py, including detached descendants.
+export HONUA_FIXTURE_PYTHON
+HONUA_FIXTURE_PYTHON="$(command -v python3)"
+cat > "${stub_dir}/python3" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+case "${HONUA_FIXTURE_MODE:-}:$(basename "${1:-}")" in
+  sigterm-proof:retry-failed-shard-tests.py|ppidkill:retry-failed-shard-tests.py)
+    while [[ "$1" != "--" ]]; do shift; done
+    shift
+    exec "$@"
+    ;;
+esac
+exec "${HONUA_FIXTURE_PYTHON}" "$@"
+STUB
+chmod +x "${stub_dir}/python3"
 
 # run_case <name> <mode> <seconds> <timeout-minutes> <warn-ratio> <stall-seconds>
 # Emits the runner's stdout to ${out_file} and its timing JSON to ${timing_file};
