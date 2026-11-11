@@ -39,7 +39,11 @@ in the queue (15 seconds readiness, 27 seconds sync, 4.44 seconds restore,
 all inspected Core intermediate timestamps. The medium prime built in 3.63
 minutes after 13.85 minutes queued (16 seconds readiness, 28 seconds sync,
 4.48 seconds restore, 5.65 minutes execution and 11 seconds copy-back). All
-three runs passed. These are observed rebuilds, not demonstrated warm hits.
+three runs passed. The medium repeat also passed: queue 16.48 minutes,
+readiness 0.25, synchronization 0.43, restore 0.07, build 2.97, unit test
+invocations 2.01, execution 5.25 and copy-back 0.18 minutes; total wall was
+22.62 minutes. Its outputs were absent before execution. These are observed
+rebuilds, not demonstrated warm hits.
 
 During these runs available host disk fell from 86 GiB to 28 GiB, then recovered
 to 80 GiB. Transport cleanup starts below 60 GiB and removes least-recently-used
@@ -66,6 +70,14 @@ and bypass lane admission. This is not an operating-system CPU reservation or
 proof of no oversubscription. Measure simultaneous lane and PR workloads before
 raising concurrency. A global admission budget covering both classes is needed
 to make a total-host bound enforceable.
+
+An eleven-sample, five-minute live window on 11 November measured 36 visible
+and allowed logical CPUs. CPU usage ranged from 11.91 to 23.82 busy processors
+(median 18.76), with one-minute load from 14.79 to 27.31. This window did not
+show CPU oversubscription. It does not establish the optimal slot/worker split
+or completed builds per hour, and cannot bound demand outside that window.
+Keep six slots by five workers provisional until comparable live completion
+samples cover alternative splits and PR runner demand.
 
 ## Post-merge queue baseline
 
