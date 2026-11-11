@@ -14,6 +14,13 @@ namespace Honua.Architecture.Tests;
 [Trait("Category", "Architecture")]
 public sealed class DatabaseMigrationSafetyTests
 {
+    private static readonly string[] PreRc2BoundaryMigrations =
+    [
+        "142_CreateAiFinancialAccounting.sql",
+        "144_RenameGeoServicesRestSourceKind.sql",
+        "145_ProtectImportDependencies.sql"
+    ];
+
     [ArchitectureTest]
     public void MigrationScripts_AfterReaderBaseline_MustRemainExpandOnly()
     {
@@ -26,7 +33,7 @@ public sealed class DatabaseMigrationSafetyTests
             path => Path.GetRelativePath(root, path).Replace('\\', '/'), File.ReadAllText);
         var hashes = JsonSerializer.Deserialize<Dictionary<string, string>>(
             File.ReadAllText(Path.Join(root, "eng", "schema", "schema-migration-hashes.v1.json")))!;
-        RollingUpgradeViolations(scripts, baseline, hashes).Should().BeEmpty(
+        RollingUpgradeViolations(scripts, new MigrationPins(baseline, hashes, ReadReleaseBoundary(root))).Should().BeEmpty(
             "the supported rolling update retains the previous reader's schema; a review annotation does not permit a contraction");
     }
 
@@ -47,8 +54,8 @@ public sealed class DatabaseMigrationSafetyTests
     [InlineData("TRUNCATE honua.features;")]
     public void ExpandOnlyGate_SeededContractMigration_IsRejectedEvenWhenReviewed(string sql)
     {
-        RollingUpgradeViolations(new Dictionary<string, string> { ["new.sql"] = sql }, new Dictionary<string, string>(),
-            new Dictionary<string, string> { ["new.sql"] = MigrationHash(sql) })
+        RollingUpgradeViolations(new Dictionary<string, string> { ["new.sql"] = sql }, new MigrationPins(
+            new Dictionary<string, string>(), new Dictionary<string, string> { ["new.sql"] = MigrationHash(sql) }))
             .Should().ContainSingle().Which.Should().Contain("new.sql");
     }
 
@@ -56,8 +63,8 @@ public sealed class DatabaseMigrationSafetyTests
     public void ExpandOnlyGate_AdditiveMigration_IsAccepted()
     {
         const string sql = "ALTER TABLE honua.layers ADD COLUMN note text;";
-        RollingUpgradeViolations(new Dictionary<string, string> { ["new.sql"] = sql },
-            new Dictionary<string, string>(), new Dictionary<string, string> { ["new.sql"] = MigrationHash(sql) })
+        RollingUpgradeViolations(new Dictionary<string, string> { ["new.sql"] = sql }, new MigrationPins(
+            new Dictionary<string, string>(), new Dictionary<string, string> { ["new.sql"] = MigrationHash(sql) }))
             .Should().BeEmpty();
     }
 
@@ -77,7 +84,7 @@ public sealed class DatabaseMigrationSafetyTests
             proposed["001.sql"] = "CREATE TABLE fixture (id text);";
         }
 
-        RollingUpgradeViolations(proposed, baseline).Should().ContainSingle()
+        RollingUpgradeViolations(proposed, new MigrationPins(baseline)).Should().ContainSingle()
             .Which.Should().Contain("001.sql");
     }
 
@@ -85,7 +92,7 @@ public sealed class DatabaseMigrationSafetyTests
     public void ExpandOnlyGate_UnpinnedAdditiveMigration_IsRejected()
     {
         RollingUpgradeViolations(new Dictionary<string, string> { ["new.sql"] = "CREATE TABLE future (id integer);" },
-            new Dictionary<string, string>()).Should().ContainSingle().Which.Should().Contain("hash-pinned");
+            new MigrationPins(new Dictionary<string, string>())).Should().ContainSingle().Which.Should().Contain("hash-pinned");
     }
 
     [Theory]
@@ -100,8 +107,76 @@ public sealed class DatabaseMigrationSafetyTests
         {
             scripts["new.sql"] = "CREATE TABLE future (id text);";
         }
-        RollingUpgradeViolations(scripts, new Dictionary<string, string>(), hashes)
+        RollingUpgradeViolations(scripts, new MigrationPins(new Dictionary<string, string>(), hashes))
             .Should().ContainSingle().Which.Should().Contain("new.sql");
+    }
+
+    private static Dictionary<string, string> ReadReleaseBoundary(string root)
+    {
+        using var boundary = JsonDocument.Parse(File.ReadAllText(
+            Path.Join(root, "eng", "schema", "schema-release-boundary.v1.json")));
+        return boundary.RootElement.GetProperty("migrations").Deserialize<Dictionary<string, string>>()!;
+    }
+
+    [ArchitectureTest]
+    public void MigrationScripts_AfterReleaseBoundary_DeclareExpandForRc2Reader()
+    {
+        var root = FindProjectRoot(Directory.GetCurrentDirectory());
+        using var boundary = JsonDocument.Parse(File.ReadAllText(
+            Path.Join(root, "eng", "schema", "schema-release-boundary.v1.json")));
+        var floor = boundary.RootElement.GetProperty("lastMigration").GetInt32();
+        floor.Should().Be(145);
+        var rasterFloor = boundary.RootElement.GetProperty("lastRasterMigration").GetInt32();
+        rasterFloor.Should().Be(8);
+        var boundaryHashes = ReadReleaseBoundary(root);
+        boundaryHashes.Keys.Should().BeEquivalentTo(PreRc2BoundaryMigrations);
+        foreach (var (name, hash) in boundaryHashes)
+        {
+            var file = EnumerateMigrationFiles().Single(path => Path.GetFileName(path) == name);
+            MigrationHash(File.ReadAllText(file)).Should().Be(hash, $"{name}: the pre-rc.2 boundary requires exact bytes");
+        }
+        var scripts = EnumerateMigrationFiles().Where(path => IsAfterReleaseBoundary(path, floor, rasterFloor)).ToArray();
+        scripts.Should().NotBeEmpty();
+        foreach (var file in scripts)
+        {
+            var name = Path.GetFileName(file);
+            var declaration = MigrationReaderCompatibility.Declare(name, File.ReadAllText(file));
+            declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Expand,
+                $"{name}: every migration above the pre-rc.2 boundary must declare expand");
+            MigrationReaderCompatibility.Verify(declaration, name, floor).Accepted.Should().BeTrue(
+                $"{name}: the rc.2 reader must accept every later migration");
+        }
+    }
+
+    private static bool IsAfterReleaseBoundary(string path, int serverFloor, int rasterFloor)
+    {
+        var number = int.Parse(Path.GetFileName(path).Split('_')[0], System.Globalization.CultureInfo.InvariantCulture);
+        var floor = path.Replace('\\', '/').Contains("/Honua.Db/Postgres/Migrations/", StringComparison.Ordinal)
+            ? rasterFloor : serverFloor;
+        return number > floor;
+    }
+
+    [Theory]
+    [InlineData("src/Honua.Server/Migrations/146_Add.sql", true)]
+    [InlineData("src/Honua.Server/Migrations/145_Old.sql", false)]
+    [InlineData("src/Honua.Db/Postgres/Migrations/009_Add.sql", true)]
+    [InlineData("src/Honua.Db/Postgres/Migrations/008_Old.sql", false)]
+    public void ReleaseBoundary_UsesEachMigrationRootsNumbering(string path, bool expected)
+        => IsAfterReleaseBoundary(path, 145, 8).Should().Be(expected);
+
+    [Theory]
+    [InlineData("-- honua:reader-incompatible reason=old enum\nUPDATE kinds SET kind = 'new';")]
+    [InlineData("-- honua:compatibility-review reason=reviewed\nDROP TABLE old;")]
+    public void ExpandOnlyGate_BoundaryException_RequiresExactNameAndHash(string sql)
+    {
+        var scripts = new Dictionary<string, string> { ["new.sql"] = sql };
+        var hashes = new Dictionary<string, string> { ["new.sql"] = MigrationHash(sql) };
+        RollingUpgradeViolations(scripts, new MigrationPins(new(), hashes)).Should().ContainSingle().Which.Should().Contain("new.sql");
+        RollingUpgradeViolations(scripts, new MigrationPins(new(), hashes, new() { ["other.sql"] = MigrationHash(sql) }))
+            .Should().ContainSingle();
+        RollingUpgradeViolations(scripts, new MigrationPins(new(), hashes, new() { ["new.sql"] = MigrationHash(sql + "-- changed") }))
+            .Should().ContainSingle();
+        RollingUpgradeViolations(scripts, new MigrationPins(new(), hashes, hashes)).Should().BeEmpty();
     }
 
     private static string MigrationHash(string sql)
@@ -177,11 +252,16 @@ public sealed class DatabaseMigrationSafetyTests
         verdict.RefusalReason.Should().Be("declared reader-incompatible, not expand");
     }
 
-    private static IEnumerable<string> RollingUpgradeViolations(
-        Dictionary<string, string> scripts, Dictionary<string, string> baseline,
-        Dictionary<string, string>? hashes = null)
+    private sealed record MigrationPins(
+        Dictionary<string, string> Baseline,
+        Dictionary<string, string>? Ledger = null,
+        Dictionary<string, string>? ReleaseBoundary = null);
+
+    private static IEnumerable<string> RollingUpgradeViolations(Dictionary<string, string> scripts, MigrationPins pins)
     {
-        hashes ??= baseline;
+        var baseline = pins.Baseline;
+        var hashes = pins.Ledger ?? baseline;
+        var boundary = pins.ReleaseBoundary ?? new Dictionary<string, string>();
         foreach (var (name, hash) in baseline)
         {
             if (!scripts.TryGetValue(name, out var sql) || MigrationHash(sql) != hash)
@@ -211,9 +291,14 @@ public sealed class DatabaseMigrationSafetyTests
             {
                 yield return $"{name}: every migration must be hash-pinned in schema-migration-hashes.v1.json";
             }
-            if (!baseline.ContainsKey(name) && MigrationSafetyClassifier.Classify(name, sql).IsBreaking)
+            var incompatible = Regex.IsMatch(sql, @"^[ \t]*--[ \t]*honua:reader-incompatible\b",
+                RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
+            var contracting = MigrationSafetyClassifier.Classify(name, sql).IsBreaking;
+            if ((incompatible || (contracting && !baseline.ContainsKey(name))) &&
+                (!boundary.TryGetValue(Path.GetFileName(name), out var boundaryHash) || boundaryHash != MigrationHash(sql)))
             {
-                yield return $"{name}: contracting migrations cannot ship in a rolling update";
+                var rule = incompatible ? "honua:reader-incompatible" : "contracting";
+                yield return $"{name}: {rule} requires an exact name and SHA-256 match in schema-release-boundary.v1.json; migrations from rc.2 must remain expand-only";
             }
         }
     }

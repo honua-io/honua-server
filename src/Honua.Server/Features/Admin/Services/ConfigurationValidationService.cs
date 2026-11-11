@@ -30,7 +30,7 @@ internal static class ConfigurationValidationService
         }
 
         var deploymentMode = ResolveDeploymentMode(configuration, errors);
-        ValidateDeploymentDependencies(configuration, deploymentMode, errors, warnings);
+        ValidateDeploymentDependencies(configuration, deploymentMode, errors);
 
         // Check feature flags and log their status
         LogFeatureStatus(configuration, logger, "HONUA_OBSERVABILITY", "Observability");
@@ -193,25 +193,11 @@ internal static class ConfigurationValidationService
     private static void ValidateDeploymentDependencies(
         IConfiguration configuration,
         DeploymentMode deploymentMode,
-        List<string> errors,
-        List<string> warnings)
+        List<string> errors)
     {
         if (deploymentMode != DeploymentMode.MultiNode)
         {
             return;
-        }
-
-        var redisConnection = configuration.GetConnectionString("redis")
-            ?? configuration["Aspire:StackExchange:Redis:ConnectionString"];
-        if (string.IsNullOrWhiteSpace(redisConnection))
-        {
-            errors.Add("Multi-node deployment requires ConnectionStrings__redis for shared cache and output cache.");
-        }
-
-        var cacheFallbackEnabled = configuration.GetValue<bool?>("Cache:EnableFallback") ?? true;
-        if (cacheFallbackEnabled)
-        {
-            warnings.Add("Cache:EnableFallback is enabled in multi-node mode. This can cause per-node cache divergence.");
         }
 
         var providerName = configuration.GetValue<string>("FileStorage:Provider")

@@ -81,6 +81,9 @@ CONFIG_FILE = REPO_ROOT / ".github" / "ci-shards.json"
 # resolved csproj == the class's owning project has a filter matching its FQN.
 # An empty shard `csproj` resolves to DEFAULT_CSPROJ (the Server.Tests monolith)
 # in scripts/ci/run-server-test-shard.sh.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shard_projects import shard_projects
+
 DEFAULT_CSPROJ = "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
 TEST_PROJECT_DIRS = {
     "tests/dotnet/Honua.Server.Tests":
@@ -583,10 +586,14 @@ def iter_clauses(node) -> list[tuple[str, str, str]]:
     return [(node[1], node[2], node[3])]
 
 
+def project_list(value):
+    return [value] if isinstance(value, str) else value
+
+
 def claiming_shards(entry: dict, parsed: dict, shard_csproj: dict) -> list[str]:
     """Resolve one assembly's class without merging identical names elsewhere."""
     return [name for name, node in parsed.items()
-            if shard_csproj[name] == entry["csproj"] and _eval(node, entry["fqn"])]
+            if entry["csproj"] in project_list(shard_csproj[name]) and _eval(node, entry["fqn"])]
 
 
 def selection_pool(classes: dict[str, dict], csproj: str) -> list[str]:
@@ -631,9 +638,9 @@ def find_dangling_filters(
         "stale_negative": [],
         "unresolvable": [],
     }
-    for shard in shards:
+    for shard, csproj in ((shard, project) for shard in shards
+                           for project in project_list(shard_csproj[shard["name"]])):
         name = shard["name"]
-        csproj = shard_csproj[name]
         if csproj not in known_csprojs:
             result["unresolvable"].append(
                 (name, csproj,
@@ -709,7 +716,7 @@ def evaluate_assertion(
         return AssertionResult(
             2, f"::error::asserted owner shard {shard_name!r} does not exist"
         )
-    if shard_csproj[shard_name] != csproj:
+    if csproj not in project_list(shard_csproj[shard_name]):
         return AssertionResult(
             1,
             f"::error::shard {shard_name!r} targets {shard_csproj[shard_name]!r}, "
@@ -817,7 +824,7 @@ def main() -> int:
             print(f"::error::shard {shard['name']!r} has an unparseable "
                   f"filter: {exc}", file=sys.stderr)
             return 2
-        shard_csproj[shard["name"]] = shard.get("csproj") or DEFAULT_CSPROJ
+        shard_csproj[shard["name"]] = tuple(shard_projects(shard))
 
     parsed_partitions = []
     partition_children: set[str] = set()
@@ -860,7 +867,7 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
-        child_projects = {shard_csproj[child] for child in children}
+        child_projects = {p for child in children for p in project_list(shard_csproj[child])}
         if len(child_projects) != 1:
             print(
                 f"::error::partition {name!r} spans multiple test projects: "

@@ -504,7 +504,7 @@ internal sealed partial class FeatureServerQueryExecutor
             ? limit
             : MaxNonStreamingObjectIds;
         var ids = await reader
-            .QueryObjectIdsAsync(layerId, query with { Limit = ceiling + 1 }, cancellationToken)
+            .QueryObjectIdsAsync(layerId, query with { Limit = ceiling + 1, ReturnPublicObjectIds = true }, cancellationToken)
             .ConfigureAwait(false);
         if (ids.IsDefault)
         {

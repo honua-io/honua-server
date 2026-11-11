@@ -78,6 +78,17 @@ def validate_synthetic_artifact_catalog(
     )
 
 
+def validate_aggregate_review_status(required_job: str, revalidation_condition: str) -> None:
+    aggregate_check = required_job.split("- name: Revalidate exact-head review before success", 1)[1]
+    require(aggregate_check, revalidation_condition, "aggregate must revalidate exact-head review")
+    require(aggregate_check, "revalidate-exact-head-review.cjs", "aggregate must call shared exact-head review status validation")
+    shared_review = (ROOT / ".github/scripts/revalidate-exact-head-review.cjs").read_text()
+    require(shared_review, "github.rest.repos.listCommitStatusesForRef", "shared validator must read exact-head review status")
+    require(shared_review, "head !== expectedHead", "shared validator must reject mismatched heads")
+    require(shared_review, "reviewGate?.state !== 'success'", "shared validator must fail closed")
+
+
+
 def main() -> None:
     pr_gate = read_text(PR_GATE)
     review_gate = read_text(REVIEW_GATE)
@@ -194,21 +205,19 @@ def main() -> None:
         for name in [before_name, after_name]:
             step = source.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
             require(step, revalidation_condition, f"{label} {name} must be attempt-2-only")
-            require(step, "github.rest.repos.listCommitStatusesForRef", f"{label} {name} must read exact-head review status")
-    aggregate_check = job("required").split("- name: Revalidate exact-head review before success", 1)[1]
-    require(aggregate_check, revalidation_condition, "aggregate must revalidate exact-head review")
-    require(aggregate_check, "github.rest.repos.listCommitStatusesForRef", "aggregate must read exact-head review status")
+            require(step, "revalidate-exact-head-review.cjs", f"{label} {name} must call shared exact-head review status validation")
+    validate_aggregate_review_status(job("required"), revalidation_condition)
 
     require(review_gate, "  actions: write", "trusted review transition needs actions: write")
     require(
         review_gate,
         "group: review-resolve-pr-${{ github.event.pull_request.number || github.event.issue.number || github.event.client_payload.pr || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number) || format('{0}:{1}', github.event.workflow_run.head_repository.full_name, github.event.workflow_run.head_branch) || github.run_id }}",
-        "resolver concurrency must cancel superseded heads for the same PR",
+        "resolver concurrency must serialize events for the same PR",
     )
     require(
         review_bridge,
         "group: review-event-bridge-pr-${{ github.event.pull_request.number }}",
-        "review bridge concurrency must cancel superseded heads for the same PR",
+        "review bridge concurrency must serialize events for the same PR",
     )
     require(
         review_gate,
@@ -262,11 +271,12 @@ def main() -> None:
         "if: steps.stale.outputs.superseded != 'true'",
         "superseded bridge events must skip trusted gate notification",
     )
-    require(
-        review_bridge,
-        "core.setFailed('Superseded review event; trusted notification suppressed.');",
-        "superseded bridge events must expose a non-success workflow conclusion",
-    )
+    if "core.setFailed(" in review_bridge:
+        raise AssertionError("superseded bridge events must complete neutrally")
+    for source in [review_gate, review_bridge]:
+        require(source, "queue: max", "review helpers must queue rather than cancel pending events")
+        if "cancel-in-progress: true" in source:
+            raise AssertionError("review helpers must not cancel in-progress events")
     require(
         review_gate,
         "ref: ${{ github.workflow_sha }}",

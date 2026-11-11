@@ -6,6 +6,7 @@ using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Licensing.Abstractions;
+using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Authentication;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Security.Domain;
@@ -32,7 +33,7 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 [Operation(Operations.Configuration)]
 public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
     private ReplayServiceAuthorization _authorization = null!;
     private readonly FolderRequesterMembership _memberships = new();
     private readonly FolderRequesterLicense _licensing = new();
@@ -71,6 +72,7 @@ public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) 
 
     public async Task DisposeAsync()
     {
+        await DeletePublishConnectionAsync();
         _proposer.Dispose();
         _approver.Dispose();
         try { await _fixture.DisposeAsync(); }
@@ -268,7 +270,7 @@ public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) 
     private static Dictionary<string, string?> ApprovalPolicy()
     {
         var settings = new Dictionary<string, string?> { ["Operations:Policy:Enabled"] = "true" };
-        var operations = new[] { "folder.create", "folder.update", "folder.delete", "service.move" };
+        var operations = new[] { "folder.create", "folder.update", "folder.delete", "service.move", "service.publish" };
         for (var index = 0; index < operations.Length; index++)
         {
             settings[$"Operations:Policy:Rules:{index}:OperationId"] = operations[index];

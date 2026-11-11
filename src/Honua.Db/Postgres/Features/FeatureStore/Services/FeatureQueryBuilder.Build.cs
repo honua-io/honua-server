@@ -333,9 +333,24 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         {
             var paramIndex = 2;
             var parameters = new List<object>();
+            var objectIdExpression = DatabaseSchema.ObjectIdColumn;
+            if (query.ReturnPublicObjectIds &&
+                !string.IsNullOrWhiteSpace(query.PublicIdAttributeName) &&
+                !query.PublicIdAttributeName.Equals(DatabaseSchema.ObjectIdColumn, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!IsValidJsonAttributeKey(query.PublicIdAttributeName))
+                {
+                    throw new ArgumentException($"Invalid field name for public object ID: {query.PublicIdAttributeName}");
+                }
+
+                // Legacy public ID aliases may have no JSON value; match feature serialization's fallback.
+                objectIdExpression = $"COALESCE((attributes ->> ${paramIndex++})::bigint, {DatabaseSchema.ObjectIdColumn})";
+                parameters.Add(query.PublicIdAttributeName);
+            }
+
             var featureSource = BuildVersionedFeatureSource(query, "features", ref paramIndex, parameters);
 
-            sql.Append(CultureInfo.InvariantCulture, $"SELECT {DatabaseSchema.ObjectIdColumn} FROM {featureSource} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+            sql.Append(CultureInfo.InvariantCulture, $"SELECT {objectIdExpression} FROM {featureSource} WHERE {DatabaseSchema.LayerIdColumn} = $1");
 
             AppendWhereClause(sql, query, ref paramIndex, parameters);
             AppendTemporalFilter(sql, query, ref paramIndex, parameters);

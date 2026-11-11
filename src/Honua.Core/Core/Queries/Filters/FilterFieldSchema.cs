@@ -29,11 +29,6 @@ public readonly struct FilterFieldSchema
     {
         ArgumentNullException.ThrowIfNull(fieldName);
 
-        if (fieldName.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
-        {
-            fieldType = MetadataV2FieldType.BigInteger;
-            return true;
-        }
         if (fieldName.Equals("layerid", StringComparison.OrdinalIgnoreCase) ||
             fieldName.Equals("layer_id", StringComparison.OrdinalIgnoreCase))
         {
@@ -70,6 +65,12 @@ public readonly struct FilterFieldSchema
                 fieldType = NormalizeFieldType(schemaField.Type);
                 return true;
             }
+        }
+
+        if (fieldName.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
+        {
+            fieldType = MetadataV2FieldType.BigInteger;
+            return true;
         }
 
         fieldType = MetadataV2FieldType.String;

@@ -40,6 +40,7 @@ using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Extensions.DependencyInjection;
+using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
@@ -651,7 +652,7 @@ internal sealed partial class FeatureServerQueryHandler(
             // materialized formatter that carries the echo.
             var requestedOutSrAlias = await ResolveRequestedWebMercatorAliasAsync(validatedParams, outputSrid, cancellationToken).ConfigureAwait(false);
 
-            if (canCache && ResponseCacheUtilities.ShouldBypassAdHocSpatialResponseCache(query, validatedParams.Where))
+            if (SharedCacheResponse.ExcludeIfAdHocSpatial(context, query, validatedParams.Where))
             {
                 canCache = false;
             }
@@ -1886,10 +1887,9 @@ internal sealed partial class FeatureServerQueryHandler(
         return new DatumAreaEnvelope(west, south, east, north);
     }
 
+    // A declared objectid may be a source attribute with a separate storage key.
     private static bool ShouldUseInternalObjectIdsFastPath(MetadataV2Resource resource)
-        => GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource)?.Name.Equals(
-            FieldNames.ObjectId,
-            StringComparison.OrdinalIgnoreCase) != false;
+        => GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource) is null;
 
     private static bool TryCreateObjectIdsExpression(
         MetadataV2Resource resource,

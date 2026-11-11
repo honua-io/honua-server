@@ -6,7 +6,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Import.Domain;
-using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security;
 using Honua.Geocoding.Features.Geocoding.Abstractions;
 using Honua.Geocoding.Features.Geocoding.Domain;
 using Honua.Geoprocessing;
@@ -25,6 +25,12 @@ internal sealed partial class IngestDatasetTool : IMcpTool
     public const int MaxInlineDataBytes = 4 * 1024 * 1024;
 
     public const string GeocodeEntitlementKey = GeocodeAddressesTool.EntitlementKey;
+
+    internal const string AddressColumnNotEntitledMessage =
+        "'addressColumn' geocodes during ingest and requires the Enterprise edition ('" + GeocodeEntitlementKey
+        + "' entitlement), which is not active on this server. Provide coordinate columns "
+        + "('longitudeColumn'/'latitudeColumn') or a GeoJSON payload instead, or install a licence that includes '"
+        + GeocodeEntitlementKey + "'.";
 
     public const string ImportedGeometryColumn = "geometry";
 
@@ -56,7 +62,8 @@ internal sealed partial class IngestDatasetTool : IMcpTool
             + "lon/lng/long/longitude/x and lat/latitude/y, or set longitudeColumn/latitudeColumn explicitly — or from a WKT column named "
             + "wkt/geom/geometry/shape; coordinate order is lon/lat and the coordinate CRS defaults to EPSG:4326, override with sourceSrid). "
             + "For a CSV that only has addresses, either geocode it first with honua_geocode_addresses and ingest the returned lon/lat values, or "
-            + "set addressColumn to geocode server-side during ingest (up to 100 rows; requires the 'geocoding.batch' entitlement). "
+            + "set addressColumn to geocode server-side during ingest (up to 100 rows). addressColumn requires the Enterprise edition "
+            + "('geocoding.batch' entitlement); on Community and Pro the call is refused, so use coordinate columns or a GeoJSON payload there. "
             + "Returns the {connectionId, schema, table} triple plus row count and per-row errors — pass those values straight to "
             + "honua_publish_service (with the returned geometryColumn and primaryKey) to finish the CSV → geocode → ingest → publish workflow. "
             + "Re-ingesting the same datasetName replaces that dataset. For data larger than 4 MB use the REST upload path "
@@ -234,7 +241,7 @@ internal sealed partial class IngestDatasetTool : IMcpTool
         var entitlement = LicenseGate.CheckEntitlement(httpContext.RequestServices, GeocodeEntitlementKey);
         if (!entitlement.IsActive)
         {
-            throw new GeoprocessingPreconditionFailedException(entitlement.UpgradeMessage);
+            throw new GeoprocessingPreconditionFailedException(AddressColumnNotEntitledMessage);
         }
 
         var allowFailover = LicenseGate
@@ -338,56 +345,10 @@ internal sealed partial class IngestDatasetTool : IMcpTool
         IServiceProvider services,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var resolver = services.GetService<ISecureConnectionResolver>();
-            var registry = services.GetService<ISecureConnectionRegistry>();
-            var matcher = services.GetService<ICatalogConnectionIdentityMatcher>();
-            var configuration = services.GetService<IConfiguration>();
-            var defaultConnectionString = configuration?["ConnectionStrings:DefaultConnection"];
-            if (resolver is null || registry is null || matcher is null || string.IsNullOrWhiteSpace(defaultConnectionString))
-            {
-                return default;
-            }
-
-            string? matchedName = null;
-            var connections = await registry.GetActiveConnectionsAsync(cancellationToken).ConfigureAwait(false);
-            foreach (var connection in connections)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (!connection.IsActive || string.IsNullOrWhiteSpace(connection.Name))
-                {
-                    continue;
-                }
-
-                try
-                {
-                    var connectionString = await resolver.ResolveConnectionStringAsync(connection.Name, cancellationToken).ConfigureAwait(false);
-                    if (matcher.IsMatch(connection.NormalizedProvider, defaultConnectionString, connectionString))
-                    {
-                        if (matchedName is not null)
-                        {
-                            return new CatalogConnectionMatch(null, Ambiguous: true);
-                        }
-
-                        matchedName = connection.Name;
-                    }
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    // A single unresolvable connection (missing secret, bad reference)
-                    // must not abort the scan for a matching one.
-                }
-            }
-
-            return new CatalogConnectionMatch(matchedName, Ambiguous: false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // The connection hint is best-effort; the ingest result stays valid
-            // without it (the output carries an explanatory warning instead).
-            return default;
-        }
+        var configuration = services.GetService<IConfiguration>();
+        var match = await CatalogConnectionDiscovery.FindUniqueAsync(
+            services, configuration?["ConnectionStrings:DefaultConnection"], cancellationToken).ConfigureAwait(false);
+        return new CatalogConnectionMatch(match.Connection?.Name, match.Ambiguous);
     }
 
     private readonly record struct CatalogConnectionMatch(string? ConnectionId, bool Ambiguous);

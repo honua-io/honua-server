@@ -39,47 +39,61 @@ fi
 # binary, not this wrapper function.
 source "${SCRIPT_DIR}/lib/jq-cr-safe.sh"
 
+# shellcheck source=scripts/ci/lib/router-fixtures.sh
+source "${SCRIPT_DIR}/lib/router-fixtures.sh"
+router_fixtures_init "$@"
+
+if [[ -n "${PYTHON_BIN}" ]]; then
+  run_fixture scripts/ci/fixtures/validate-router-fixtures.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-router-fixtures.py
+fi
+
+run_fixture review-revalidation node --test .github/scripts/revalidate-exact-head-review.test.cjs
+
 echo "Validating review-first PR Gate transition..."
-scripts/ci/validate-review-first-dispatch.sh
+run_fixture scripts/ci/validate-review-first-dispatch.sh scripts/ci/validate-review-first-dispatch.sh
 
 echo "Validating PR Gate impact observation..."
 if [[ -n "${PYTHON_BIN}" ]]; then
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-workflow-load.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-testcontainer-images.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-heavy-runners.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-trunk-affected.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-affected-ci-lanes.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-native-tools-image.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-gate-apt-provisioning.py --self-test
-  "${PYTHON_BIN}" scripts/ci/source-inventory-pilot/test_run.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-mcp-server-auth.py
-  HONUA_PR_GATE_IMPACT_PYTHON="${PYTHON_BIN}" scripts/ci/validate-pr-gate-impact.sh
-  "${PYTHON_BIN}" scripts/ci/audit-impact-routing-evidence.test.py
-  "${PYTHON_BIN}" scripts/ci/collect-impact-routing-runs.test.py
-  "${PYTHON_BIN}" scripts/ci/audit-affected-shards.test.py
-  "${PYTHON_BIN}" scripts/ci/affected-shard-verdict.test.py
+  run_fixture scripts/ci/fixtures/validate-trunk-signal-watchdog.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-trunk-signal-watchdog.py
+  run_fixture scripts/ci/fixtures/validate-optional-pr-inputs.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-optional-pr-inputs.py
+  run_fixture scripts/ci/fixtures/validate-pr-workflow-load.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-workflow-load.py
+  run_fixture scripts/ci/fixtures/validate-testcontainer-images.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-testcontainer-images.py
+  run_fixture scripts/ci/fixtures/validate-heavy-runners.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-heavy-runners.py
+  run_fixture scripts/ci/fixtures/validate-trunk-affected.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-trunk-affected.py
+  run_fixture scripts/ci/fixtures/validate-affected-ci-lanes.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-affected-ci-lanes.py
+  run_fixture scripts/ci/fixtures/validate-project-overlap.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-project-overlap.py
+  run_fixture scripts/ci/fixtures/validate-native-tools-image.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-native-tools-image.py
+  run_fixture scripts/ci/fixtures/validate-pr-gate-apt-provisioning.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-gate-apt-provisioning.py --self-test
+  run_fixture scripts/ci/source-inventory-pilot/test_run.py "${PYTHON_BIN}" scripts/ci/source-inventory-pilot/test_run.py
+  run_fixture scripts/ci/fixtures/validate-mcp-server-auth.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-mcp-server-auth.py
+  run_fixture scripts/ci/validate-pr-gate-impact.sh env HONUA_PR_GATE_IMPACT_PYTHON="${PYTHON_BIN}" scripts/ci/validate-pr-gate-impact.sh
+  run_fixture scripts/ci/audit-impact-routing-evidence.test.py "${PYTHON_BIN}" scripts/ci/audit-impact-routing-evidence.test.py
+  run_fixture scripts/ci/collect-impact-routing-runs.test.py "${PYTHON_BIN}" scripts/ci/collect-impact-routing-runs.test.py
+  run_fixture scripts/ci/audit-affected-shards.test.py "${PYTHON_BIN}" scripts/ci/audit-affected-shards.test.py
+  run_fixture scripts/ci/affected-shard-verdict.test.py "${PYTHON_BIN}" scripts/ci/affected-shard-verdict.test.py
 else
   echo "⚠️  Skipping PR Gate impact observation validation (no working Python 3)."
 fi
 
 echo "Validating data-only derived-artifact normalization..."
 if [[ -n "${PYTHON_BIN}" ]]; then
-  HONUA_NORMALIZATION_PYTHON="${PYTHON_BIN}" scripts/ci/validate-normalization-contract.sh
+  run_fixture scripts/ci/validate-normalization-contract.sh env HONUA_NORMALIZATION_PYTHON="${PYTHON_BIN}" scripts/ci/validate-normalization-contract.sh
 else
   echo "⚠️  Skipping data-only normalization validation (no working Python 3)."
 fi
 
 if [[ -n "${PYTHON_BIN}" ]]; then
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-generated-output-diff.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-generated-files.py
+  run_fixture scripts/ci/fixtures/validate-generated-output-diff.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-generated-output-diff.py
+  run_fixture scripts/ci/fixtures/validate-generated-files.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-generated-files.py
 fi
 
 echo "Validating secret-safe NuGet environment setup..."
 if [[ -n "${PYTHON_BIN}" ]]; then
-  "${PYTHON_BIN}" scripts/ci/test-nuget-auth.py
+  run_fixture scripts/ci/test-nuget-auth.py "${PYTHON_BIN}" scripts/ci/test-nuget-auth.py
 fi
 
 echo "Validating ci-shards.json structure..."
+validate_shard_structure() {
 jq -e '
   type == "object"
   and (.infrastructure_paths | type == "array")
@@ -131,28 +145,33 @@ jq -e '
     )
   )
 ' .github/ci-shards.json >/dev/null
+}
+run_fixture shard-structure validate_shard_structure
 
 # #2721: the artifact registry must cover the exact unique shard-project set, and
 # its package/restore contract must fail closed on RID leakage, tampering and limits.
 # The one-off #2722 hosted transfer benchmark that used to be validated here was
 # retired with its workflow; its measured result is retained in
 # docs/internal/ci/server-test-transfer-benchmark.md and ADR-0074.
-scripts/ci/validate-server-test-binary-artifacts.sh
-scripts/ci/validate-server-test-shard-cache.sh
-scripts/ci/validate-server-test-reuse-benchmark.sh
-scripts/ci/validate-server-test-prebuild.sh
+run_fixture scripts/ci/validate-server-test-binary-artifacts.sh scripts/ci/validate-server-test-binary-artifacts.sh
+run_fixture scripts/ci/validate-server-test-shard-cache.sh scripts/ci/validate-server-test-shard-cache.sh
+run_fixture scripts/ci/validate-server-test-reuse-benchmark.sh scripts/ci/validate-server-test-reuse-benchmark.sh
+run_fixture scripts/ci/validate-server-test-prebuild.sh scripts/ci/validate-server-test-prebuild.sh
 
 echo "Validating managed build producer and consumer contracts..."
 if [[ -n "${PYTHON_BIN}" ]]; then
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-scoped-restore.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-managed-test-build.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-artifact-install-cancellation.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-managed-ci-workflow.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-matrix-file-transport.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-managed-build.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-managed-sdk-selection.py
+  run_fixture scripts/ci/fixtures/validate-analyzer-test-filter.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-analyzer-test-filter.py
+  run_fixture scripts/ci/fixtures/validate-partition-managed-producer.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-partition-managed-producer.py
+  run_fixture scripts/ci/fixtures/validate-fast-test-selection.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-fast-test-selection.py
+  run_fixture scripts/ci/fixtures/validate-scoped-restore.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-scoped-restore.py
+  run_fixture scripts/ci/fixtures/validate-managed-test-build.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-managed-test-build.py
+  run_fixture scripts/ci/fixtures/validate-artifact-install-cancellation.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-artifact-install-cancellation.py
+  run_fixture scripts/ci/fixtures/validate-managed-ci-workflow.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-managed-ci-workflow.py
+  run_fixture scripts/ci/fixtures/validate-matrix-file-transport.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-matrix-file-transport.py
+  run_fixture scripts/ci/fixtures/validate-pr-managed-build.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-managed-build.py
+  run_fixture scripts/ci/fixtures/validate-managed-sdk-selection.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-managed-sdk-selection.py
 fi
-node --test .github/actions/managed-test-artifacts/client.test.mjs
+run_fixture managed-artifact-client node --test .github/actions/managed-test-artifacts/client.test.mjs
 
 # #3054: the OUTER GitHub job cap must clear the INNER dotnet-test cap by enough
 # room for the non-test part of the job (checkout, setup-dotnet, restore or
@@ -161,6 +180,8 @@ node --test .github/actions/managed-test-artifacts/client.test.mjs
 # its log/timing/TRX artifacts, and the failure surfaces as an unattributable
 # cancellation instead of an actionable capacity signal.
 echo "Validating shard timeout budgets..."
+validate_shard_budgets() {
+local budget_violations
 budget_violations="$(jq -r '
   (.shard_budget_policy.min_job_overhead_minutes // 10) as $gap
   | .shards[]
@@ -172,27 +193,29 @@ if [[ -n "${budget_violations}" ]]; then
   printf '%s\n' "${budget_violations}" >&2
   exit 1
 fi
+}
+run_fixture shard-budgets validate_shard_budgets
 
 echo "Validating shard headroom instrumentation..."
-scripts/ci/fixtures/validate-shard-headroom.sh
+run_fixture scripts/ci/fixtures/validate-shard-headroom.sh scripts/ci/fixtures/validate-shard-headroom.sh
 
 if [[ -n "${PYTHON_BIN}" ]]; then
   echo "Validating positive shard execution evidence..."
-  "${PYTHON_BIN}" scripts/ci/test-shard-execution-evidence.py
+  run_fixture scripts/ci/test-shard-execution-evidence.py "${PYTHON_BIN}" scripts/ci/test-shard-execution-evidence.py
 
   echo "Validating GitHub Actions baseline measurement contract..."
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-actions-baseline.py
+  run_fixture scripts/ci/fixtures/validate-actions-baseline.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-actions-baseline.py
 
   echo "Validating external sample inputs..."
-  "${PYTHON_BIN}" tests/python/unit/test_validated_sample_inputs.py
+  run_fixture tests/python/unit/test_validated_sample_inputs.py "${PYTHON_BIN}" tests/python/unit/test_validated_sample_inputs.py
 
   echo "Validating server-test archive entry checks..."
-  "${PYTHON_BIN}" scripts/ci/validate-server-test-archive.test.py
+  run_fixture scripts/ci/validate-server-test-archive.test.py "${PYTHON_BIN}" scripts/ci/validate-server-test-archive.test.py
 
   echo "Validating native-image impact observation contract..."
-  node --test scripts/ci/trusted-pr-workflow-run.test.js
-  "${PYTHON_BIN}" scripts/ci/native-image-impact.py validate
-  "${PYTHON_BIN}" -m unittest discover \
+  run_fixture scripts/ci/trusted-pr-workflow-run.test.js node --test scripts/ci/trusted-pr-workflow-run.test.js
+  run_fixture scripts/ci/native-image-impact.py "${PYTHON_BIN}" scripts/ci/native-image-impact.py validate
+  run_fixture native-image-impact-tests "${PYTHON_BIN}" -m unittest discover \
     -s tests/python/unit \
     -p 'test_native_image_impact.py' \
     -v
@@ -201,12 +224,15 @@ else
 fi
 
 echo "Validating targeted_override_prefixes reference real shards..."
+validate_override_references() {
 jq -e '
   ([.shards[].name]) as $names
   | (.targeted_override_prefixes // [])
   | all(.shards[] | . as $s | $names | index($s) != null)
 ' .github/ci-shards.json >/dev/null \
   || { echo "::error::a targeted_override_prefixes entry references an unknown shard name" >&2; exit 1; }
+}
+run_fixture override-references validate_override_references
 
 # The PR Gate affected-shard detector selects from this same shard map, so a
 # routing edit that stops a feature namespace selecting its owning shard has to
@@ -214,39 +240,39 @@ jq -e '
 # git, no network, no dotnet.
 echo "Validating PR Gate affected-shard selection..."
 if [[ -n "${PYTHON_BIN}" ]]; then
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-affected-shards.py
+  run_fixture scripts/ci/fixtures/validate-affected-shards.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-affected-shards.py
 else
   echo "⚠️  Skipping PR Gate affected-shard selection (no working Python 3)."
 fi
 
 echo "Checking shell script syntax..."
-scripts/ci/validate-shell-syntax.sh
+run_fixture scripts/ci/validate-shell-syntax.sh scripts/ci/validate-shell-syntax.sh
 
 echo "Checking local pre-PR change routing..."
-scripts/ci/fixtures/validate-pre-pr-routing.sh
+run_fixture scripts/ci/fixtures/validate-pre-pr-routing.sh scripts/ci/fixtures/validate-pre-pr-routing.sh
 if [[ -n "${PYTHON_BIN}" ]]; then
   echo "Checking local FAST dependency closure and changed-contract guards..."
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-pre-pr-closure.py
+  run_fixture scripts/ci/fixtures/validate-pre-pr-closure.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-pre-pr-closure.py
 fi
 
 # The PR Gate docs-only exit decides which required-gate steps skip, so its
 # classifier is validated with the other routing logic. Offline: scratch git
 # repositories only.
 echo "Checking the PR Gate docs-only exit..."
-scripts/ci/fixtures/validate-docs-only-diff.sh
+run_fixture scripts/ci/fixtures/validate-docs-only-diff.sh scripts/ci/fixtures/validate-docs-only-diff.sh
 
 if [[ -n "${PYTHON_BIN}" ]]; then
   echo "Checking Python helper syntax..."
-  "${PYTHON_BIN}" -m py_compile scripts/ci/*.py
+  run_fixture python-syntax "${PYTHON_BIN}" -m py_compile scripts/ci/*.py
 
   echo "Checking OData pilot tooling..."
-  "${PYTHON_BIN}" -m unittest discover -s scripts/ci/odata-pilot -p 'test_*.py'
+  run_fixture odata-pilot "${PYTHON_BIN}" -m unittest discover -s scripts/ci/odata-pilot -p 'test_*.py'
 
   echo "Checking Docker integration gate timeout budget..."
-  "${PYTHON_BIN}" scripts/ci/validate-docker-gate-timeouts.py
+  run_fixture scripts/ci/validate-docker-gate-timeouts.py "${PYTHON_BIN}" scripts/ci/validate-docker-gate-timeouts.py
 
   echo "Checking workflow YAML syntax..."
-  "${PYTHON_BIN}" - <<'PY'
+  run_fixture workflow-yaml "${PYTHON_BIN}" - <<'PY'
 from pathlib import Path
 try:
     import yaml
@@ -277,7 +303,7 @@ expand_split_shards() {
   ' --argjson requested "$1" .github/ci-shards.json
 }
 
-assert_descriptor() {
+_assert_descriptor() {
   local name="$1"
   local changed_files="$2"
   local expected_reason="$3"
@@ -305,7 +331,7 @@ assert_descriptor() {
 # an unrelated shard. This is the correctness guard for #1897: a single-protocol
 # change must not silently drag in unrelated shards (e.g. a FeatureServer-only
 # change must NOT select GeoServices ImageServer), and must not be run_all.
-assert_excludes_shard() {
+_assert_excludes_shard() {
   local name="$1"
   local changed_files="$2"
   local excluded_shard="$3"
@@ -331,7 +357,7 @@ assert_excludes_shard() {
 # Assert a targeted descriptor selects exactly the expected shard set. Use this
 # for measured cumulative diffs where accidental widening would recreate most
 # of the cost that path routing is intended to avoid.
-assert_exact_shards() {
+_assert_exact_shards() {
   local name="$1"
   local changed_files="$2"
   local expected_shards_json="$3"
@@ -346,6 +372,12 @@ assert_exact_shards() {
     and ((.shards | sort) == ($expected | sort))
   ' <<< "${descriptor}" >/dev/null
 }
+
+assert_descriptor() { run_fixture "routing:$1" _assert_descriptor "$@"; }
+
+assert_excludes_shard() { run_fixture "routing:$1" _assert_excludes_shard "$@"; }
+
+assert_exact_shards() { run_fixture "routing:$1" _assert_exact_shards "$@"; }
 
 echo "Dry-running shard router cases..."
 # #6318: both class/complement children retain every original WMS source trigger.
@@ -401,7 +433,7 @@ assert_exact_shards \
 assert_exact_shards \
   "core-capacity-CrsTransformationCorrectnessTests" \
   "tests/dotnet/Honua.Server.Tests/CrsTransformationCorrectnessTests.cs" \
-  '["Core Attachments", "Core Related Records and Limits", "Core OGC Features and CRS"]'
+  '["Core Attachments","Core Related Records and Limits","Core OGC Features and CRS"]'
 # #3204 headroom rebalance: AdvancedSpatialQueryTests and
 # StreamingFeatureServerEndpointTests moved out of `Core Endpoints` into their own
 # shard (#4450 putting the former here is what took Core Endpoints to 82% of its
@@ -421,7 +453,7 @@ assert_exact_shards \
 assert_exact_shards \
   "stac-capacity-split-source" \
   "src/Honua.Protocols/Stac/StacEndpoints.cs" \
-  '["Protocols Stac Components","Protocols Stac Units","STAC Items and Collections","STAC Protocol","STAC and API Governance"]'
+  '["Protocol and Host Components","Protocol Units","STAC Items and Collections","STAC Protocol","STAC and API Governance"]'
 # --- #3204 September 2026 shard-headroom rebalance --------------------------
 # Every capacity split below leaves both children on the same source tree, so a
 # change under that tree must select BOTH children; a one-shard answer would mean
@@ -748,11 +780,11 @@ assert_excludes_shard \
 assert_exact_shards \
   "scene-targeted" \
   "src/Honua.Protocols/Scene/SceneServerEndpoints.cs" \
-  '["Protocols Scene Components","Protocols Scene Units","Scene","Scene I3S Resources"]'
+  '["Protocol and Host Components","Protocol Units","Scene","Scene I3S Resources"]'
 assert_exact_shards \
   "scene-assets-targeted" \
   "src/Honua.Scene/Assets/HostedI3sSceneResourceProvider.cs" \
-  '["Operator Eval Harness","Postgres Units","Protocols Scene Components","Protocols Scene Units","Scene","Scene I3S Resources","Scene Units","gRPC Protocol and Scene"]'
+  '["Operator Eval Harness","Provider and AI Units","Protocol and Host Components","Protocol Units","Scene","Scene I3S Resources","Runtime Units","gRPC Protocol and Scene"]'
 assert_exact_shards \
   "scene-tests-targeted" \
   "tests/dotnet/Honua.Protocols.Scene.Tests/Source/I3sProductionResourceEndpointTests.cs" \
@@ -955,7 +987,7 @@ assert_exact_shards \
       'src/Honua.Routing/Features/Routing/Domain/RoutingModels.cs' \
       'src/Honua.Server/EndpointRegistry.ImageServer.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/NAServerPgRoutingEndToEndTests.cs')" \
-  '["Ai Components","Ai Units","Aws Units","Azure Units","Core and Cloud Contracts","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","GeoServices ImageServer","GeoServices ImageServer Raster Rendering","GeoServices ImageServer Rendering and Support","Geoprocessing Units","Hosting Components","Hosting Units","Import Units","OData Units","Postgres Units","Protocols GeoServices Components","Protocols GeoServices Units","Protocols OData Components","Protocols OgcApi Components","Protocols OgcApi Units","Protocols OgcClassic Components","Protocols OgcClassic Units","Protocols Scene Components","Protocols Scene Units","Protocols SensorThings Components","Protocols SensorThings Units","Protocols Stac Components","Protocols Stac Units","Raster Serving Scene Geometry and Terrain","Routing Units","STAC and API Governance","Scene Units"]'
+  '["Protocol and Host Components","Provider and AI Units","Core and Cloud Contracts","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","GeoServices ImageServer","GeoServices ImageServer Raster Rendering","GeoServices ImageServer Rendering and Support","Runtime Units","Protocol Units","Raster Serving Scene Geometry and Terrain","STAC and API Governance"]'
 
 # Follow-up proof from draft PR #2700: pure routing tests share the Core and Cloud Contracts owner
 # with the real pgRouting fixture and must not widen the canonical NAServer diff.
@@ -965,7 +997,7 @@ assert_exact_shards \
       'src/Honua.Routing/Features/Routing/Providers/LocationAllocationSolver.cs' \
       'src/Honua.Protocols/GeoServices/NAServer/NAServerParameterTranslation.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/LocationAllocationSolverTests.cs')" \
-  '["Ai Components","Ai Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","Geoprocessing Units","Protocols GeoServices Components","Protocols GeoServices Units","Protocols OgcApi Components","Protocols OgcApi Units","Protocols OgcClassic Components","Protocols OgcClassic Units","Routing Units"]'
+  '["Protocol and Host Components","Provider and AI Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","Runtime Units","Protocol Units"]'
 
 # #2712: migration 083 and the exact pgRouting TestKit fixture are bounded
 # companions to the canonical Routing/NAServer slice. Keep other migrations
@@ -1000,7 +1032,7 @@ assert_exact_shards \
       'src/Honua.Server/Migrations/083_AddNetworkDatasetTravelProfiles.sql' \
       'tests/dotnet/Honua.TestKit/PgRoutingFixture.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/NetworkDatasetValidationTests.cs')" \
-  '["Ai Components","Ai Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","Geoprocessing Units","Protocols GeoServices Components","Protocols GeoServices Units","Protocols OgcApi Components","Protocols OgcApi Units","Protocols OgcClassic Components","Protocols OgcClassic Units","Routing Units"]'
+  '["Protocol and Host Components","Provider and AI Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","Runtime Units","Protocol Units"]'
 assert_exact_shards \
   "routing-topology-lifecycle-cumulative-batch" \
   "$(printf '%s\n%s\n%s\n%s' \
@@ -1008,7 +1040,7 @@ assert_exact_shards \
       'src/Honua.Server/Migrations/084_CreateNetworkTopologyGenerations.sql' \
       'tests/dotnet/Honua.Server.Tests/Routing/NetworkTopologyLifecycleTests.cs' \
       'tests/dotnet/Honua.Server.Tests/Features/Admin/NetworkDatasetAdminEndpointsTests.cs')" \
-  '["Ai Components","Ai Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","Geoprocessing Units","Protocols GeoServices Components","Protocols GeoServices Units","Protocols OgcApi Components","Protocols OgcApi Units","Protocols OgcClassic Components","Protocols OgcClassic Units","Routing Units","Server Features Admin Network and Jobs"]'
+  '["Protocol and Host Components","Provider and AI Units","Core and Cloud Contracts","GeoServices GPServer Durable and Aliases","GeoServices GPServer SOAP","GeoServices GPServer SOAP Progress","GeoServices GPServer and NAServer","Runtime Units","Protocol Units","Server Features Admin Network and Jobs"]'
 assert_descriptor \
   "unknown-migration-still-run-all" \
   "src/Honua.Server/Migrations/999_FutureUnmappedMigration.sql" \
@@ -1077,7 +1109,7 @@ assert_exact_shards \
       'src/Honua.Protocols/GeoServices/ImageServer/ImageServerEndpoints.cs' \
       'src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs' \
       'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerZarrTestFixture.cs')" \
-  '["Ai Components","Ai Units","Aws Units","Azure Units","Databricks Units","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","GeoServices ImageServer","GeoServices ImageServer Raster Rendering","GeoServices ImageServer Rendering and Support","Geoprocessing Units","Hosting Components","Hosting Units","Import Units","MySql Units","OData Units","OGC API Tiles Coverages and Processes","OGC API Tiles Endpoints and CRS","Oracle Units","Postgres Units","Protocols GeoServices Components","Protocols GeoServices Units","Protocols OData Components","Protocols OgcApi Components","Protocols OgcApi Units","Protocols OgcClassic Components","Protocols OgcClassic Units","Protocols Scene Components","Protocols Scene Units","Protocols SensorThings Components","Protocols SensorThings Units","Protocols Stac Components","Protocols Stac Units","Raster Serving Scene Geometry and Terrain","Redshift Units","Routing Units","Scene Units","ServiceDefaults Units","Snowflake Units","SqlServer Units","WFS"]'
+  '["Protocol and Host Components","Provider and AI Units","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","GeoServices ImageServer","GeoServices ImageServer Raster Rendering","GeoServices ImageServer Rendering and Support","Runtime Units","Protocol Units","OGC API Tiles Coverages and Processes","OGC API Tiles Endpoints and CRS","Raster Serving Scene Geometry and Terrain","WFS"]'
 
 # Narrowing Zarr must not remove the carved shards' actual feature-area paths.
 assert_descriptor \
@@ -1138,7 +1170,7 @@ assert_descriptor \
 assert_exact_shards \
   "mcp-studio-source-includes-server-dashboard-proof" \
   "src/Honua.Ai/Features/Protocols/Mcp/Mcp/Studio/StudioCompositionTools.cs" \
-  '["Ai Components","Ai Units","MCP Authentication and Governance","MCP Endpoints","MCP and Sessions","Operator Eval Harness","Server Features Analytics Studio Export and Reporting","Server Features Studio Packaging"]'
+  '["Protocol and Host Components","Provider and AI Units","MCP Authentication and Governance","MCP Endpoints","MCP and Sessions","Operator Eval Harness","Server Features Analytics Studio Export and Reporting","Server Features Studio Packaging"]'
 assert_excludes_shard \
   "studio-source-excludes-collaboration-child" \
   "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs" \
@@ -1234,7 +1266,7 @@ assert_descriptor \
 assert_exact_shards \
   "shared-wmts-formatter-bounded-owners" \
   "src/Honua.Protocols/Ogc.Shared/Common/WmtsTileMatrixFormatting.cs" \
-  '["GeoServices ImageServer","OGC API Tiles Coverages and Processes","OGC Classic WMTS","Protocols OgcApi Components","Protocols OgcApi Units","Protocols OgcClassic Components","Protocols OgcClassic Units","Protocols Stac Components","Protocols Stac Units"]'
+  '["GeoServices ImageServer","OGC API Tiles Coverages and Processes","OGC Classic WMTS","Protocol and Host Components","Protocol Units"]'
 
 # An endpoint-ADDING feature PR touches the registration plumbing AND a feature
 # dir under a shard's paths: it runs the smoke subset PLUS that feature's owning
@@ -1638,26 +1670,27 @@ echo "Checking flake-hunt report contract..."
 # The nightly flake hunt reads the same shard definitions; its summarizer decides
 # what counts as a flake candidate and whether the evidence is complete enough to
 # report at all. Untested, it silently emits an empty green report.
-"${PYTHON_BIN}" scripts/ci/summarize-flaky-detection.test.py
+run_fixture scripts/ci/summarize-flaky-detection.test.py "${PYTHON_BIN}" scripts/ci/summarize-flaky-detection.test.py
 
 echo "Checking shard headroom audit and its drain guard..."
 # #3204: the audit decides whether a shard still has room, and its
 # --max-utilization guard is what names a crowded shard on the PR that fills it.
 # Untested, a wrong "latest run" reading would silently stop reporting.
-"${PYTHON_BIN}" scripts/ci/audit-shard-headroom.test.py
-"${PYTHON_BIN}" scripts/ci/fixtures/validate-shard-timing-plan.py
+run_fixture scripts/ci/audit-shard-headroom.test.py "${PYTHON_BIN}" scripts/ci/audit-shard-headroom.test.py
+run_fixture scripts/ci/fixtures/validate-shard-timing-plan.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-shard-timing-plan.py
 
 echo "Checking shard filter/test-class coverage in both directions..."
-"${PYTHON_BIN}" scripts/ci/test-geoservices-support-partition.py
-"${PYTHON_BIN}" scripts/ci/test-admin-authorization-partition.py
-"${PYTHON_BIN}" scripts/ci/test-admin-runtime-partition.py
-"${PYTHON_BIN}" scripts/ci/test-wms-capacity-partition.py
-"${PYTHON_BIN}" scripts/ci/test-featureserver-capacity-partition.py
-"${PYTHON_BIN}" scripts/ci/test-mcp-capacity-partition.py
-"${PYTHON_BIN}" scripts/ci/test-console-capacity-partition.py
-"${PYTHON_BIN}" scripts/ci/test-streaming-capacity-partition.py
-"${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
-"${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
+  run_fixture scripts/ci/test-governance-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-governance-capacity-partition.py
+run_fixture scripts/ci/test-geoservices-support-partition.py "${PYTHON_BIN}" scripts/ci/test-geoservices-support-partition.py
+run_fixture scripts/ci/test-admin-authorization-partition.py "${PYTHON_BIN}" scripts/ci/test-admin-authorization-partition.py
+run_fixture scripts/ci/test-admin-runtime-partition.py "${PYTHON_BIN}" scripts/ci/test-admin-runtime-partition.py
+run_fixture scripts/ci/test-wms-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-wms-capacity-partition.py
+run_fixture scripts/ci/test-featureserver-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-featureserver-capacity-partition.py
+run_fixture scripts/ci/test-mcp-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-mcp-capacity-partition.py
+run_fixture scripts/ci/test-console-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-console-capacity-partition.py
+run_fixture scripts/ci/test-streaming-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-streaming-capacity-partition.py
+run_fixture scripts/ci/check-server-test-shard-coverage.test.py "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
+run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
   --assert-owner \
     "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1673,7 +1706,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Api.Styles.OgcStylesCaseAuthorizationTests" \
     "tests/dotnet/Honua.Protocols.OgcApi.UnitTests/Honua.Protocols.OgcApi.UnitTests.csproj" \
-    "Protocols OgcApi Units" \
+    "Protocol Units" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests" \
     "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
@@ -1681,7 +1714,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsConformanceTests" \
     "tests/dotnet/Honua.Protocols.OgcApi.ComponentTests/Honua.Protocols.OgcApi.ComponentTests.csproj" \
-    "Protocols OgcApi Components" \
+    "Protocol and Host Components" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsParameterValidationTests" \
     "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
@@ -1704,7 +1737,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.Tiles.CompactTilePackageWriterTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Honua.Protocols.GeoServices.UnitTests.csproj" \
-    "Protocols GeoServices Units" \
+    "Protocol Units" \
   --assert-owner \
     "Honua.Server.Tests.PatchConcurrencyTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1907,7 +1940,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Routing.NetworkDatasetValidationTests" \
     "tests/dotnet/Honua.Routing.UnitTests/Honua.Routing.UnitTests.csproj" \
-    "Routing Units" \
+    "Runtime Units" \
   --assert-owner \
     "Honua.Server.Tests.Routing.PgRoutingProviderIntegrationTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1915,7 +1948,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Import.PostgresMigrationStyleApplicatorTests" \
     "tests/dotnet/Honua.Db.Postgres.UnitTests/Honua.Postgres.UnitTests.csproj" \
-    "Postgres Units" \
+    "Provider and AI Units" \
   --assert-owner \
     "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1973,7 +2006,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Ai.Tests.Capabilities.CapabilityRegistryConformanceTests" \
     "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" \
-    "Ai Units" \
+    "Provider and AI Units" \
   --assert-owner \
     "Honua.Ai.Tests.Capabilities.McpRegistryCompositionTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
@@ -1984,39 +2017,39 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Features.Infrastructure.Rendering.RasterRenderingUnavailableExceptionTests" \
     "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" \
-    "Ai Units" \
+    "Provider and AI Units" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.AnthropicStudioAiProxyAdapterTests" \
     "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" \
-    "Ai Units" \
+    "Provider and AI Units" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.BedrockStudioAiProxyAdapterTests" \
     "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" \
-    "Ai Units" \
+    "Provider and AI Units" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.OpenAiCompatibleStudioAiProxyAdapterTests" \
     "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" \
-    "Ai Units" \
+    "Provider and AI Units" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.StudioAiChatRequestMapperTests" \
     "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" \
-    "Ai Units" \
+    "Provider and AI Units" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyConfigurationTests" \
     "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" \
-    "Ai Units" \
+    "Provider and AI Units" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyJsonContextReflectionSafetyTests" \
     "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" \
-    "Ai Units" \
+    "Provider and AI Units" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyLatencyTests" \
     "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" \
-    "Ai Units" \
+    "Provider and AI Units" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyServiceTests" \
     "tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" \
-    "Ai Units" \
+    "Provider and AI Units" \
   `# Edit-owner coverage belongs to the GeoServices assembly, not Server.Tests.` \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.EditOwnerSubjectTests" \
@@ -2028,15 +2061,15 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Protocols.GeoServices.Tests.Source.FeatureServer.GeoServicesGeometryConverterAuditTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Honua.Protocols.GeoServices.UnitTests.csproj" \
-    "Protocols GeoServices Units" \
+    "Protocol Units" \
   --assert-owner \
     "Honua.Protocols.GeoServices.Tests.Source.FeatureServer.Services.FeatureQuantizerTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Honua.Protocols.GeoServices.UnitTests.csproj" \
-    "Protocols GeoServices Units" \
+    "Protocol Units" \
   --assert-owner \
     "Honua.Protocols.GeoServices.Tests.Source.ImageServer.ImageServerRenderingRuleMappingTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Honua.Protocols.GeoServices.UnitTests.csproj" \
-    "Protocols GeoServices Units" \
+    "Protocol Units" \
   `# Honua.Server.Tests assembly. AlertNotificationRateLimiterTests was swallowed` \
   `# by the Admin-family '!~RateLimit' exclusion, now narrowed to` \
   `# '!~Honua.Server.Tests.Features.Admin.RateLimit'.` \
@@ -2059,7 +2092,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Import.ImportValidationErrorMessageTests" \
     "tests/dotnet/Honua.Import.UnitTests/Honua.Import.UnitTests.csproj" \
-    "Import Units" \
+    "Runtime Units" \
   --assert-owner \
     "Honua.Server.Tests.Import.RedisJobQueueFallbackTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -2101,35 +2134,40 @@ else
 fi
 
 echo "Validating .NET Foundation Tests family split..."
-scripts/ci/validate-foundation-families.sh
+run_fixture scripts/ci/validate-foundation-families.sh scripts/ci/validate-foundation-families.sh
 
 echo "Validating shared-router local test feedback..."
 if [[ -n "${PYTHON_BIN}" ]]; then
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-local-test-feedback.py
+  run_fixture scripts/ci/fixtures/validate-local-test-feedback.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-local-test-feedback.py
 else
   echo "⚠️  Skipping local feedback fixtures (no working Python 3)."
 fi
 
 if [[ -n "${PYTHON_BIN}" ]]; then
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-rename-selection.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-working-tree-manifest.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-pre-push-receipt.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-restore-inputs.py
+  run_fixture scripts/ci/fixtures/validate-rename-selection.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-rename-selection.py
+  run_fixture scripts/ci/fixtures/validate-working-tree-manifest.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-working-tree-manifest.py
+  run_fixture scripts/ci/fixtures/validate-pre-push-receipt.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-pre-push-receipt.py
+  run_fixture scripts/ci/fixtures/validate-restore-inputs.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-restore-inputs.py
 fi
 
 if [[ -n "${PYTHON_BIN}" ]]; then
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-serving-image-boundary.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-promote-verified-image.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-shard-resources.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/test-owned-server.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/test-quickstart-console-smoke.py
+  run_fixture scripts/ci/fixtures/validate-serving-image-boundary.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-serving-image-boundary.py
+  run_fixture scripts/ci/fixtures/validate-promote-verified-image.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-promote-verified-image.py
+  run_fixture scripts/ci/fixtures/validate-shard-resources.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-shard-resources.py
+  run_fixture scripts/ci/fixtures/test-owned-server.py "${PYTHON_BIN}" scripts/ci/fixtures/test-owned-server.py
+  run_fixture scripts/ci/fixtures/test-quickstart-console-smoke.py "${PYTHON_BIN}" scripts/ci/fixtures/test-quickstart-console-smoke.py
 fi
 
 if [[ -n "${PYTHON_BIN}" ]]; then
-  "${PYTHON_BIN}" scripts/ci/fixtures/test-js-bootstrap-cleanup.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/test-owned-server.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/test-quickstart-console-smoke.py
-  "${PYTHON_BIN}" scripts/ci/fixtures/test-shell-server-ownership.py
+  run_fixture scripts/ci/fixtures/test-js-bootstrap-cleanup.py "${PYTHON_BIN}" scripts/ci/fixtures/test-js-bootstrap-cleanup.py
+  run_fixture scripts/ci/fixtures/test-owned-server.py "${PYTHON_BIN}" scripts/ci/fixtures/test-owned-server.py
+  run_fixture scripts/ci/fixtures/test-quickstart-console-smoke.py "${PYTHON_BIN}" scripts/ci/fixtures/test-quickstart-console-smoke.py
+  run_fixture scripts/ci/fixtures/test-shell-server-ownership.py "${PYTHON_BIN}" scripts/ci/fixtures/test-shell-server-ownership.py
 fi
 
+if [[ -n "${PYTHON_BIN}" ]]; then
+  run_fixture scripts/ci/test-flake-quarantine.py "${PYTHON_BIN}" scripts/ci/test-flake-quarantine.py
+fi
+
+router_fixtures_finish
 echo "CI router validation passed."

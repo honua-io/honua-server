@@ -244,6 +244,8 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PreviewStudioDraftTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, SaveStudioVersionTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GetStudioVersionTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ListStudioItemsTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ListStudioVersionsTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ReopenStudioVersionTool>());
 
         // Composition mutation (REQ-002): a small, bounded set of tools for

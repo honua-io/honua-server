@@ -14,7 +14,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
+using Honua.Server.Startup;
 
 namespace Honua.Server.Features.Operations;
 
@@ -29,6 +29,7 @@ internal static class OperationsServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(environment);
         services.AddAiExecutionAdmission(configuration);
+        services.AddPostgresSharedState(configuration);
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<OperationLineageAttestationStore>();
@@ -39,10 +40,8 @@ internal static class OperationsServiceCollectionExtensions
         else
         {
             services.TryAddSingleton<IOperationSecretStore>(sp =>
-                sp.GetService<IConnectionMultiplexer>() is { } redis
-                    ? new RedisOperationSecretStore(
-                        redis,
-                        sp.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>())
+                sp.GetService<Npgsql.NpgsqlDataSource>() is not null
+                    ? sp.GetRequiredService<PostgresOperationSecretStore>()
                     : new UnavailableOperationSecretStore());
         }
         services.TryAddScoped<IOperationApprovalBridge, AdminOperationApprovalBridge>();
@@ -93,8 +92,8 @@ internal static class OperationsServiceCollectionExtensions
         else
         {
             services.TryAddSingleton<IOperationInstanceStore>(sp =>
-                sp.GetService<IConnectionMultiplexer>() is { } redis
-                    ? new RedisOperationInstanceStore(redis)
+                sp.GetService<Npgsql.NpgsqlDataSource>() is not null
+                    ? sp.GetRequiredService<PostgresOperationInstanceStore>()
                     : new UnavailableOperationInstanceStore());
             // The durable-runtime validator and proposal reconcilers stay gated on a REAL
             // proposal store: a Redis-off host composes the fail-closed placeholder only so
