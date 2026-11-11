@@ -117,8 +117,9 @@ New migration `NNN_CreateRealtimeEventLog.sql`. It is expand-only, and each stat
 
 ```sql
 CREATE TABLE IF NOT EXISTS $HonuaSchema$.realtime_log_heads (
-    family text COLLATE "C" PRIMARY KEY,
-    head   bigint NOT NULL DEFAULT 0
+    family    text COLLATE "C" PRIMARY KEY,
+    head      bigint NOT NULL DEFAULT 0,
+    retention interval NOT NULL DEFAULT interval '24 hours'
 );
 INSERT INTO $HonuaSchema$.realtime_log_heads (family) VALUES
     ('collab-ops'), ('collab-presence'), ('observations'), ('alerts'), ('jobs'),
@@ -142,22 +143,23 @@ CREATE INDEX IF NOT EXISTS ix_realtime_events_expires
 ```
 
 ### 5.1 Append
-`honua.realtime_append(p_family text, p_rows jsonb, p_ttl interval) RETURNS bigint` takes an array
-of `{scope_key, kind, payload}` and runs one statement:
+`honua.realtime_append(p_family text, p_rows jsonb) RETURNS bigint` takes an array of
+`{scope_key, kind, payload}` and runs one statement:
 
 ```sql
 WITH h AS (
     UPDATE honua.realtime_log_heads SET head = head + jsonb_array_length(p_rows)
-    WHERE family = p_family RETURNING head)
+    WHERE family = p_family RETURNING head, retention)
 INSERT INTO honua.realtime_events (family, seq, scope_key, kind, payload, expires_at)
 SELECT p_family, h.head - jsonb_array_length(p_rows) + r.ordinality, r.value->>'scope_key',
-       r.value->>'kind', r.value->'payload', now() + p_ttl
+       r.value->>'kind', r.value->'payload', now() + h.retention
 FROM h, jsonb_array_elements(p_rows) WITH ORDINALITY AS r;
 ```
 
-It then runs `PERFORM pg_notify('honua_rt_' || p_family, '')`. Triggers call the same function. TTLs
-come from `Realtime:Retention:<family>`. Triggers read them from a one-row settings table that is
-written at startup, so a trigger never hard-codes a TTL.
+It then runs `PERFORM pg_notify('honua_rt_' || p_family, '')`. Triggers call the same function.
+At startup each task writes `Realtime:Retention:<family>` to `realtime_log_heads.retention` with a
+plain `UPDATE ... WHERE retention IS DISTINCT FROM @value`. Retention therefore lives in one place,
+and neither a trigger nor a caller passes a TTL.
 
 ### 5.2 Ordering guarantees
 - `features`: one total order by `generation`. Allocation runs under `pg_advisory_xact_lock(144047712, 0)`,
