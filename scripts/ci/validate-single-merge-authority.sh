@@ -227,7 +227,7 @@ source_has_ansi_construct() {
 source_has_forbidden_authority() {
   local source="$1" reject_ansi="${2:-0}" canonical
   [[ "${reject_ansi}" == "1" ]] && source_has_ansi_construct "${source}" && return 0
-  local api_forbidden='github(\.rest)?\.pulls\.(merge|updateBranch)|pulls\.(merge|updateBranch)|mergePullRequest|updatePullRequestBranch'
+  local api_forbidden='github(\.rest)?\.pulls\.(merge|updateBranch)|pulls\.(merge|updateBranch)|mergePullRequest|enablePullRequestAutoMerge|updatePullRequestBranch'
   local cli_forbidden='gh[[:space:]]+pr[[:space:]]+merge|gh[[:space:]]+api[^#;|&]*/pulls/[^/[:space:]]+/(merge|update-branch)|git[[:space:]]+push[^#;|&]*(HEAD:)?(refs/heads/)?trunk|git[[:space:]]+push[[:space:]]+[^[:space:];]+[[:space:]]+"?(HEAD:)?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|git[[:space:]]+push[^#;|&]*[[:alnum:]_./-]+:(refs/heads/)?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?'
   grep -Eiq "${api_forbidden}" <<<"${source}" && return 0
   canonical="$(canonical_cli_source <<<"${source}")"
@@ -412,6 +412,10 @@ scan_authorities() {
       continue
     fi
     source="$(normalized_source "${file}")"
+    # This workflow may request ruleset-governed auto-merge, never merge directly.
+    if [[ "${rel}" == ".github/workflows/auto-merge-ready.yml" ]]; then
+      source="${source//enablePullRequestAutoMerge/allowedRulesetAutoMergeRequest}"
+    fi
     reject_ansi=0
     case "${rel}" in *.sh|*.bash|*.zsh|*.yml|*.yaml) reject_ansi=1 ;; esac
     # Report the ANSI-C rejection in its own words. It is a blanket ban on
@@ -473,7 +477,12 @@ jobs:
       # `git push origin HEAD:trunk` is documentation, not executable.
       - run: git push origin HEAD:refs/heads/automation/report-${GITHUB_RUN_ID}
 YAML
+  printf 'jobs:\n  enable:\n    steps:\n      - run: enablePullRequestAutoMerge(input: {})\n' >"${scratch}/.github/workflows/auto-merge-ready.yml"
   scan_authorities "${scratch}" || { echo "safe fixture rejected" >&2; return 1; }
+  printf '      - run: mergePullRequest(input: {})\n' >>"${scratch}/.github/workflows/auto-merge-ready.yml"
+  scan_authorities "${scratch}" >/dev/null 2>&1 \
+    && { echo "direct merge escaped auto-merge exception" >&2; return 1; }
+  sed -i '$d' "${scratch}/.github/workflows/auto-merge-ready.yml"
 
   printf '\ngit push origin HEAD:trunk\n' >>"${scratch}/scripts/ci/merge-train/smart-ci.sh"
   scan_authorities "${scratch}" >/dev/null 2>&1 \
@@ -487,6 +496,7 @@ YAML
     'github.rest.pulls.updateBranch({owner, repo, pull_number: 1})'
     'pulls.updateBranch({pull_number: 1})'
     'mergePullRequest(input: {pullRequestId: $id})'
+    'enablePullRequestAutoMerge(input: {pullRequestId: $id})'
     'updatePullRequestBranch(input: {pullRequestId: $id})'
     'gh pr merge 1 --merge'
     'gh -R o/r pr merge 1 --merge'

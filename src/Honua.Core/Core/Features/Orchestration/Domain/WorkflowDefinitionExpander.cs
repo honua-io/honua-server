@@ -57,6 +57,7 @@ public static class WorkflowDefinitionExpander
                 expandedSteps.Add(step with
                 {
                     DependsOn = RemapDependencies(step.DependsOn, expandedIds),
+                    FailureDependsOn = RemapDependencies(step.FailureDependsOn, expandedIds),
                     InputBindings = RemapBindings(step.InputBindings, expandedIds)
                 });
             }
@@ -80,6 +81,7 @@ public static class WorkflowDefinitionExpander
             ForEach = null,
             Plan = SubstituteItem(template.Plan, forEach.ItemPlaceholder, item, index),
             DependsOn = RemapDependencies(template.DependsOn, expandedIds),
+            FailureDependsOn = RemapDependencies(template.FailureDependsOn, expandedIds),
             InputBindings = RemapBindings(template.InputBindings, expandedIds)
         };
     }
