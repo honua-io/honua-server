@@ -216,7 +216,7 @@
     },
     {
       "name": "Tile Operations",
-      "description": "Asynchronous tile cache seed/warm/invalidate/purge/archive/publish jobs and on-demand eviction sweeps. Response payloads on this surface use PascalCase property names."
+      "description": "Asynchronous tile cache seed/warm/invalidate/purge/archive/publish jobs. Response payloads on this surface use PascalCase property names."
     },
     {
       "name": "Field Mask Policies",
@@ -48212,7 +48212,7 @@
         "properties": {
           "operation": {
             "type": "string",
-            "description": "One of `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`, `expire`, `delete`."
+            "description": "One of `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`."
           },
           "serviceId": {
             "type": "string",
@@ -48257,11 +48257,6 @@
             "type": "string",
             "nullable": true,
             "description": "Optional generated-tile style window. Defaults to `default`."
-          },
-          "format": {
-            "type": "string",
-            "nullable": true,
-            "description": "Optional generated-tile format window. ImageServer aliases such as `jpeg`, `tiff`, and `cog` map to their canonical cache extensions."
           },
           "generationId": {
             "type": "string",

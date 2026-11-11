@@ -27,8 +27,6 @@ internal static class TileCacheJobParameterKeys
 
     public const string Style = "honua.tilecache.style";
 
-    public const string Format = "honua.tilecache.format";
-
     // When no generation id is supplied the worker uses the operation id, which retries preserve, so a retry resumes the same checkpoint.
     public const string GenerationId = "honua.tilecache.generation_id";
 }

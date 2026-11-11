@@ -167,20 +167,18 @@ public sealed class TileCacheExecutionSpecBuilderTests
     }
 
     [UnitTest]
-    public void BuildThenTryParse_RoundTrips_StyleAndFormat()
+    public void BuildThenTryParse_RoundTrips_Style()
     {
         var request = new TileOperationStartRequest
         {
             Operation = "invalidate",
             LayerId = 4,
             TileMatrixSetId = "WebMercatorQuad",
-            Style = "night",
-            Format = "png"
+            Style = "night"
         };
 
         var spec = TileCacheExecutionSpecBuilder.Build(request, schemaName: null, new TileCacheBatchOptions());
         spec.Parameters[TileCacheJobParameterKeys.Style].Should().Be("night");
-        spec.Parameters[TileCacheJobParameterKeys.Format].Should().Be("png");
 
         var parsed = TileCacheExecutionSpecBuilder.TryParse(
             spec.Parameters, out var decoded, out _, out var error);
@@ -189,7 +187,6 @@ public sealed class TileCacheExecutionSpecBuilderTests
         error.Should().BeEmpty();
         decoded.Operation.Should().Be("invalidate");
         decoded.Style.Should().Be("night");
-        decoded.Format.Should().Be("png");
     }
 
     [UnitTest]
@@ -201,7 +198,6 @@ public sealed class TileCacheExecutionSpecBuilderTests
             LayerId = 4,
             TileMatrixSetId = " WebMercatorQuad ",
             Style = " night ",
-            Format = " PNG ",
         }, schemaName: null, new TileCacheBatchOptions());
 
         TileCacheExecutionSpecBuilder.TryParse(
@@ -211,13 +207,12 @@ public sealed class TileCacheExecutionSpecBuilderTests
         decoded.Operation.Should().Be("invalidate");
         decoded.TileMatrixSetId.Should().Be("WebMercatorQuad");
         decoded.Style.Should().Be("night");
-        decoded.Format.Should().Be("png");
     }
 
     [UnitTest]
-    public void TryParse_SpecWithoutStyleOrFormat_ParsesWithNulls()
+    public void TryParse_SpecWithoutStyle_ParsesWithNullStyle()
     {
-        // Back-compat: a spec produced before the style/format fields existed must still parse.
+        // Back-compat: a spec produced before the style field existed must still parse.
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             [TileCacheJobParameterKeys.Operation] = "invalidate",
@@ -231,7 +226,6 @@ public sealed class TileCacheExecutionSpecBuilderTests
         parsed.Should().BeTrue();
         error.Should().BeEmpty();
         decoded.Style.Should().BeNull();
-        decoded.Format.Should().BeNull();
         decoded.LayerId.Should().Be(8);
     }
 

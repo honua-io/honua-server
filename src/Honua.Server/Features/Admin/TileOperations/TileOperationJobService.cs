@@ -728,8 +728,6 @@ internal sealed record TileOperationStartRequest
 
     public string? Style { get; init; }
 
-    public string? Format { get; init; }
-
     // A retry forwards the generation id so the run resumes rather than starting over.
     public string? GenerationId { get; init; }
 }

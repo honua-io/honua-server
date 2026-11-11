@@ -69,11 +69,6 @@ internal static class TileCacheExecutionSpecBuilder
             parameters[TileCacheJobParameterKeys.Style] = request.Style;
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Format))
-        {
-            parameters[TileCacheJobParameterKeys.Format] = request.Format;
-        }
-
         if (!string.IsNullOrWhiteSpace(request.GenerationId))
         {
             parameters[TileCacheJobParameterKeys.GenerationId] = request.GenerationId;
@@ -205,7 +200,6 @@ internal static class TileCacheExecutionSpecBuilder
         parameters.TryGetValue(TileCacheJobParameterKeys.ServiceId, out var serviceId);
         parameters.TryGetValue(TileCacheJobParameterKeys.TileMatrixSetId, out var tileMatrixSetId);
         parameters.TryGetValue(TileCacheJobParameterKeys.Style, out var style);
-        parameters.TryGetValue(TileCacheJobParameterKeys.Format, out var format);
         parameters.TryGetValue(TileCacheJobParameterKeys.GenerationId, out var generationId);
         if (parameters.TryGetValue(TileCacheJobParameterKeys.SchemaName, out var schema)
             && !string.IsNullOrWhiteSpace(schema))
@@ -224,7 +218,6 @@ internal static class TileCacheExecutionSpecBuilder
             Bbox = bbox,
             MaxTiles = maxTiles,
             Style = string.IsNullOrWhiteSpace(style) ? null : style,
-            Format = string.IsNullOrWhiteSpace(format) ? null : format,
             GenerationId = string.IsNullOrWhiteSpace(generationId) ? null : generationId,
         };
 
@@ -256,9 +249,6 @@ internal static class TileCacheExecutionSpecBuilder
             Style = string.IsNullOrWhiteSpace(request.Style)
                 ? "default"
                 : request.Style.Trim(),
-            Format = string.IsNullOrWhiteSpace(request.Format)
-                ? null
-                : request.Format.Trim().ToLowerInvariant(),
         };
     }
 
@@ -275,7 +265,7 @@ internal static class TileCacheExecutionSpecBuilder
         return normalized;
     }
 
-    // Resolved layer sets for one grid and style share a coarse partition and exclusive lease so a service delete cannot race a layer seed.
+    // Resolved layer sets for one grid and style share a coarse partition and exclusive lease so overlapping jobs on one window never run at once.
     public static string BuildPartitionKey(
         TileOperationStartRequest request,
         IReadOnlyList<int>? resolvedLayerIds = null)
