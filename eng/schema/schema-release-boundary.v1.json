@@ -1,0 +1,11 @@
+{
+  "boundary": "pre-2026.1-rc.2",
+  "rollbackFloor": "2026.1-rc.2",
+  "lastMigration": 145,
+  "lastRasterMigration": 8,
+  "migrations": {
+    "142_CreateAiFinancialAccounting.sql": "51B00332F10561F6DF83FC2860F26ADD89B5933BF1EDD861B534DA2A3553B503",
+    "144_RenameGeoServicesRestSourceKind.sql": "89EEBC9062DF7381E6854B7B212EB539699845C0DFC43F4C4CA911E9EF01FAA9",
+    "145_ProtectImportDependencies.sql": "5137ECDF8A2C23C7503B048BA79EA21CF504B89DED7E0E5A64417724D7DEAEB1"
+  }
+}

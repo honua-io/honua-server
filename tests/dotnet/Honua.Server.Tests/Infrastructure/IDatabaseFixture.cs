@@ -1,7 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Npgsql;
+using Honua.TestKit;
 
 namespace Honua.Server.Tests.Infrastructure;
 
@@ -9,26 +9,8 @@ namespace Honua.Server.Tests.Infrastructure;
 /// Abstraction for database test fixtures to avoid direct infrastructure dependencies in Server tests.
 /// This maintains Clean Architecture by keeping Server tests independent of specific database implementations.
 /// </summary>
-public interface IDatabaseFixture : IAsyncLifetime
+public interface IDatabaseFixture : IIsolatedSchemaFixture, IAsyncLifetime
 {
-    /// <summary>
-    /// Gets the NpgsqlDataSource for database operations.
-    /// </summary>
-    NpgsqlDataSource DataSource { get; }
-
-    /// <summary>
-    /// Creates an isolated schema for test execution.
-    /// </summary>
-    /// <param name="testClassName">Name of the test class for schema naming</param>
-    /// <returns>Schema name to use for the test</returns>
-    Task<string> CreateIsolatedSchemaAsync(string testClassName);
-
-    /// <summary>
-    /// Drops an isolated schema after test completion.
-    /// </summary>
-    /// <param name="schemaName">Schema name to drop</param>
-    Task DropSchemaAsync(string schemaName);
-
     /// <summary>
     /// Executes raw SQL in a specific schema for test setup.
     /// </summary>
@@ -44,16 +26,6 @@ public interface IDatabaseFixture : IAsyncLifetime
     /// </summary>
     /// <param name="schemaName">Schema to create.</param>
     Task CreateSchemaUnderLockAsync(string schemaName);
-
-    /// <summary>
-    /// Executes a schema/catalog-mutating DDL statement (e.g. <c>DROP TABLE public.*</c>) under the
-    /// shared seed advisory lock (honua-server#1568 residual). Use for cleanup DDL touching the
-    /// process-shared <c>public</c>/<c>honua</c> namespaces so it serializes with the locked
-    /// schema-mutation surface rather than racing the catalog.
-    /// </summary>
-    /// <param name="sql">DDL to apply.</param>
-    /// <param name="schemaName">Optional schema to set on <c>search_path</c> first.</param>
-    Task ExecuteDdlUnderLockAsync(string sql, string? schemaName = null);
 
     /// <summary>
     /// Applies a raw seed/setup script that mutates the literal, process-global <c>honua</c>

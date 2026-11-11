@@ -7,40 +7,42 @@ using System.Runtime.Versioning;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Configurations;
-using DotNet.Testcontainers.Networks;
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
-using StackExchange.Redis;
+using Microsoft.Extensions.Options;
 using Xunit;
 using Xunit.Abstractions;
+using static Honua.TestKit.DockerHostGateway;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Release-lane certification of the durable queue handoff through the exact
-/// production GDAL worker image. The image is built and loaded by
-/// <c>worker-gdal-image.yml</c>; this test deliberately never substitutes the
-/// worker host, executor, native command runner, Redis transport, or filesystem.
-/// </summary>
+// Release-lane certification of the durable queue handoff through the exact
+// production GDAL worker image. The image is built and loaded by
+// worker-gdal-image.yml; this test deliberately never substitutes the
+// worker host, executor, native command runner, job queue, or filesystem.
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper output)
 {
     private const string ImageEnvironmentVariable = "HONUA_WORKER_IMAGE";
-    private const string RedisAlias = "worker-redis";
+    private const string AssignedJobBackend = "production-container-certification";
     private const string ContainerOutputRoot = "/var/lib/honua/gp-outputs";
 
     [RequiredEnvironmentFact(
         ImageEnvironmentVariable,
         skipReason: "The production worker image must be built and named by the GDAL image lane.")]
+    [Trait("Tier", "Slow")]
     [SupportedOSPlatform("linux")]
-    public async Task ProductionImage_ExecutesStagesRejectsMalformedPayloadAndReconcilesKilledWorker()
+    public async Task ProductionImage_ExecutesStagesAndReconcilesKilledWorker()
     {
         var image = Environment.GetEnvironmentVariable(ImageEnvironmentVariable)!;
         var hostOutputRoot = Path.Join(Path.GetTempPath(), $"honua-worker-container-{Guid.NewGuid():N}");
@@ -57,39 +59,13 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
             UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute |
             UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute);
 
-        await using var network = new NetworkBuilder().Build();
-        await network.CreateAsync();
-        await using var redis = new ContainerBuilder()
-            .WithImage("redis:7.2-alpine")
-            .WithNetwork(network)
-            .WithNetworkAliases(RedisAlias)
-            .WithPortBinding(6379, true)
-            .WithCommand(
-                "redis-server",
-                "--appendonly",
-                "yes",
-                "--appendfsync",
-                "always",
-                "--save",
-                "",
-                "--maxmemory-policy",
-                "noeviction")
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilCommandIsCompleted("redis-cli", "ping"))
-            .Build();
-
+        var postgres = new PostgresFixture();
+        await postgres.InitializeAsync();
         try
         {
-            await redis.StartAsync();
-            var redisConnection = $"127.0.0.1:{redis.GetMappedPublicPort(6379)}";
-            await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redisConnection);
-            var store = new RedisExecutionJobStore(
-                multiplexer, NullLogger<RedisExecutionJobStore>.Instance);
-            var queue = new RedisJobQueue(
-                multiplexer, store, NullLogger<RedisJobQueue>.Instance);
-            var logStore = new RedisExecutionLogStore(
-                multiplexer, NullLogger<RedisExecutionLogStore>.Instance);
+            var (store, queue, logStore) = await JobSubstrate.CreateEmptyAsync(postgres);
 
-            await using var worker = BuildWorker(image, network, hostOutputRoot);
+            await using var worker = BuildWorker(image, postgres.ConnectionString, hostOutputRoot);
             await worker.StartAsync();
             await RecordNativeVersionsAsync(worker);
 
@@ -111,19 +87,6 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
             var stagedPath = Path.Join(hostOutputRoot, staged.ObjectKey.Replace('/', Path.DirectorySeparatorChar));
             File.Exists(stagedPath).Should().BeTrue("the serving host must see the worker's staged artifact");
             new FileInfo(stagedPath).Length.Should().BeGreaterThan(0);
-
-            var unrelated = CreateRasterConversionJob("unrelated");
-            (await store.TryCreateAsync(unrelated)).Should().BeTrue();
-            var malformed = $"{{not-a-valid-operation-envelope:{Guid.NewGuid():N}";
-            await multiplexer.GetDatabase().SortedSetAddAsync(
-                "controlplane:jobqueue:pending", malformed, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-            await WaitForQueueMemberRemovalAsync(multiplexer.GetDatabase(), malformed, TimeSpan.FromSeconds(10));
-            var untouched = await store.GetAsync(unrelated.OperationId);
-            untouched.Should().BeEquivalentTo(unrelated, options => options.Excluding(job => job.Version));
-            (await logStore.GetLogsAsync(malformed)).Should().BeEmpty(
-                "a rejected transport member must never reach a GDAL execution context");
-            (await logStore.GetLogsAsync(unrelated.OperationId)).Should().BeEmpty(
-                "the malformed member must not invoke GDAL against an unrelated job");
 
             var crash = CreateSlowVectorJob();
             (await store.TryCreateAsync(crash)).Should().BeTrue();
@@ -159,9 +122,9 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
                 },
             });
 
-            var reconciler = new JobReconciliationService(
+            using var reconciler = new JobReconciliationService(
                 store, queue, queue, new ExecutionJobCancellationTokens(), [], logStore,
-                NullLogger<JobReconciliationService>.Instance);
+                NullLogger<JobReconciliationService>.Instance, store, store);
             await reconciler.SweepActiveJobsAsync(CancellationToken.None);
 
             var failed = await store.GetAsync(crash.OperationId);
@@ -172,6 +135,7 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
         }
         finally
         {
+            await postgres.DisposeAsync();
             try
             {
                 Directory.Delete(hostOutputRoot, recursive: true);
@@ -190,83 +154,82 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
     public async Task ProductionImage_AssignedNativeOperation_ConvertsAndExitsWithoutDrainingQueue()
     {
         var image = Environment.GetEnvironmentVariable(ImageEnvironmentVariable)!;
-        await using var network = new NetworkBuilder().Build();
-        await network.CreateAsync();
-        await using var redis = new ContainerBuilder()
-            .WithImage("redis:7.2-alpine")
-            .WithNetwork(network)
-            .WithNetworkAliases(RedisAlias)
-            .WithPortBinding(6379, true)
-            .WithCommand("redis-server", "--appendonly", "yes", "--appendfsync", "always", "--save", "")
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilCommandIsCompleted("redis-cli", "ping"))
-            .Build();
-        await redis.StartAsync();
-        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(
-            $"{redis.Hostname}:{redis.GetMappedPublicPort(6379)}");
-        var store = new RedisExecutionJobStore(multiplexer, NullLogger<RedisExecutionJobStore>.Instance);
-        var queue = new RedisJobQueue(multiplexer, store, NullLogger<RedisJobQueue>.Instance);
-        var parameters = BaseParameters("gdal.ogr2ogr");
-        const string csv = "WKT,name,value\n\"POINT Z (12.25 -4.5 7.75)\",alpha,17\n";
-        parameters[GdalWorkerParameterKeys.StepInputPrefix + "source"] = Convert.ToBase64String(Encoding.UTF8.GetBytes(csv));
-        parameters[GdalWorkerParameterKeys.StepInputPrefix + "sourceFormat"] = "CSV";
-        parameters[GdalWorkerParameterKeys.StepInputPrefix + "targetFormat"] = "GeoJSON";
-        var assigned = CreateQueuedJob($"native-assigned-{Guid.NewGuid():N}", parameters) with
+        var postgres = new PostgresFixture();
+        await postgres.InitializeAsync();
+        try
         {
-            AttemptCount = 1,
-            ProviderOperationId = "container-certification-attempt-1",
-        };
-        (await store.TryCreateAsync(assigned)).Should().BeTrue();
-        var unrelated = CreateQueuedJob($"native-unrelated-{Guid.NewGuid():N}", parameters);
-        (await store.TryCreateAsync(unrelated)).Should().BeTrue();
-        await queue.EnqueueAsync(unrelated.OperationId);
+            var (store, queue, _) = await JobSubstrate.CreateEmptyAsync(postgres);
+            var parameters = BaseParameters("gdal.ogr2ogr");
+            const string csv = "WKT,name,value\n\"POINT Z (12.25 -4.5 7.75)\",alpha,17\n";
+            parameters[GdalWorkerParameterKeys.StepInputPrefix + "source"] = Convert.ToBase64String(Encoding.UTF8.GetBytes(csv));
+            parameters[GdalWorkerParameterKeys.StepInputPrefix + "sourceFormat"] = "CSV";
+            parameters[GdalWorkerParameterKeys.StepInputPrefix + "targetFormat"] = "GeoJSON";
+            var assigned = CreateQueuedJob($"native-assigned-{Guid.NewGuid():N}", parameters, AssignedJobBackend) with
+            {
+                AttemptCount = 1,
+                ProviderOperationId = "container-certification-attempt-1",
+            };
+            (await store.TryCreateAsync(assigned)).Should().BeTrue();
+            var unrelated = CreateQueuedJob($"native-unrelated-{Guid.NewGuid():N}", parameters);
+            (await store.TryCreateAsync(unrelated)).Should().BeTrue();
+            await queue.EnqueueAsync(unrelated.OperationId);
+            var queuedUnrelated = (await store.GetAsync(unrelated.OperationId))!;
+            (await queue.GetQueueDepthAsync()).Should().Be(1);
 
-        // Reuse exactly the launch variables stamped by Kubernetes/Batch backends.
-        var launch = ExecutionWorkerLaunchEnvironment.Build(assigned, 1)
-            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
-        await using var worker = new ContainerBuilder()
-            .WithImage(image)
-            .WithNetwork(network)
-            .WithEnvironment("ConnectionStrings__redis", $"{RedisAlias}:6379")
-            .WithEnvironment("Licensing__Mode", "Disabled")
-            .WithEnvironment("DOTNET_ENVIRONMENT", "Development")
-            .WithEnvironment(launch)
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged(
-                "Application is shutting down", options => options.WithMode(WaitStrategyMode.OneShot)))
-            .Build();
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-        await worker.StartAsync(timeout.Token);
-        (await worker.GetExitCodeAsync(timeout.Token)).Should().Be(0);
-        timeout.IsCancellationRequested.Should().BeFalse();
-        var logs = await worker.GetLogsAsync();
-        output.WriteLine(logs.Stdout);
-        output.WriteLine(logs.Stderr);
+            // Reuse exactly the launch variables stamped by Kubernetes/Batch backends.
+            var launch = ExecutionWorkerLaunchEnvironment.Build(assigned, 1)
+                .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+            await using var worker = new ContainerBuilder()
+                .WithImage(image)
+                .WithExtraHost(DockerHostAlias, "host-gateway")
+                .WithEnvironment(
+                    "ConnectionStrings__DefaultConnection",
+                    ConnectionStringReachableFromContainer(postgres.ConnectionString))
+                .WithEnvironment("Licensing__Mode", "Disabled")
+                .WithEnvironment("DOTNET_ENVIRONMENT", "Development")
+                .WithEnvironment(launch)
+                .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged(
+                    "Application is shutting down", options => options.WithMode(WaitStrategyMode.OneShot)))
+                .Build();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            await worker.StartAsync(timeout.Token);
+            (await worker.GetExitCodeAsync(timeout.Token)).Should().Be(0);
+            timeout.IsCancellationRequested.Should().BeFalse();
+            var logs = await worker.GetLogsAsync();
+            output.WriteLine(logs.Stdout);
+            output.WriteLine(logs.Stderr);
 
-        var terminal = await store.GetAsync(assigned.OperationId);
-        terminal.Should().NotBeNull();
-        terminal!.Status.Should().Be(ExecutionJobStatus.Succeeded, terminal.ErrorMessage);
-        terminal.ArtifactReferences.Should().ContainSingle();
-        var artifact = terminal.ArtifactReferences.Single();
-        artifact.Should().StartWith("data:application/geo+json;base64,");
-        using var document = JsonDocument.Parse(Convert.FromBase64String(artifact[(artifact.IndexOf(',') + 1)..]));
-        var features = document.RootElement.GetProperty("features");
-        features.GetArrayLength().Should().Be(1);
-        var feature = features[0];
-        feature.GetProperty("geometry").GetProperty("type").GetString().Should().Be("Point");
-        feature.GetProperty("geometry").GetProperty("coordinates").EnumerateArray()
-            .Select(value => value.GetDouble()).Should().Equal(12.25, -4.5, 7.75);
-        feature.GetProperty("properties").GetProperty("name").GetString().Should().Be("alpha");
-        feature.GetProperty("properties").GetProperty("value").GetString().Should().Be("17");
-        (await store.GetAsync(unrelated.OperationId)).Should().BeEquivalentTo(
-            unrelated, options => options.Excluding(job => job.Version));
-        (await multiplexer.GetDatabase().SortedSetScoreAsync("controlplane:jobqueue:pending", unrelated.OperationId))
-            .Should().NotBeNull();
+            var terminal = await store.GetAsync(assigned.OperationId);
+            terminal.Should().NotBeNull();
+            terminal!.Status.Should().Be(ExecutionJobStatus.Succeeded, terminal.ErrorMessage);
+            terminal.ArtifactReferences.Should().ContainSingle();
+            var artifact = terminal.ArtifactReferences.Single();
+            artifact.Should().StartWith("data:application/geo+json;base64,");
+            using var document = JsonDocument.Parse(Convert.FromBase64String(artifact[(artifact.IndexOf(',') + 1)..]));
+            var features = document.RootElement.GetProperty("features");
+            features.GetArrayLength().Should().Be(1);
+            var feature = features[0];
+            feature.GetProperty("geometry").GetProperty("type").GetString().Should().Be("Point");
+            feature.GetProperty("geometry").GetProperty("coordinates").EnumerateArray()
+                .Select(value => value.GetDouble()).Should().Equal(12.25, -4.5, 7.75);
+            feature.GetProperty("properties").GetProperty("name").GetString().Should().Be("alpha");
+            feature.GetProperty("properties").GetProperty("value").GetString().Should().Be("17");
+            (await store.GetAsync(unrelated.OperationId)).Should().BeEquivalentTo(queuedUnrelated);
+            (await queue.GetQueueDepthAsync()).Should().Be(1);
+        }
+        finally
+        {
+            await postgres.DisposeAsync();
+        }
     }
 
-    private static IContainer BuildWorker(string image, INetwork network, string hostOutputRoot)
+    private static IContainer BuildWorker(string image, string hostConnectionString, string hostOutputRoot)
         => new ContainerBuilder()
             .WithImage(image)
-            .WithNetwork(network)
-            .WithEnvironment("ConnectionStrings__redis", $"{RedisAlias}:6379")
+            .WithExtraHost(DockerHostAlias, "host-gateway")
+            .WithEnvironment(
+                "ConnectionStrings__DefaultConnection",
+                ConnectionStringReachableFromContainer(hostConnectionString))
             .WithEnvironment("Geoprocessing__OutputStaging__Enabled", "true")
             .WithEnvironment("Geoprocessing__OutputStaging__Provider", "local")
             .WithEnvironment("Geoprocessing__OutputStaging__StoreReference", "container-certification")
@@ -329,7 +292,8 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
 
     private static ExecutionJobRecord CreateQueuedJob(
         string operationId,
-        Dictionary<string, string> parameters)
+        Dictionary<string, string> parameters,
+        string backend = LocalBatchComputeBackend.BackendId)
     {
         var now = DateTimeOffset.UtcNow;
         return new ExecutionJobRecord
@@ -343,7 +307,7 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
             {
                 Kind = ExecutionJobKind.Geoprocessing,
                 TargetKind = BatchComputeTargetKind.AwsBatch,
-                Backend = "production-container-certification",
+                Backend = backend,
                 WorkloadName = parameters[GdalWorkerParameterKeys.ProcessDefinitions],
                 RuntimeProfile = RuntimeProfiles.Native,
                 Parameters = parameters,
@@ -352,7 +316,7 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
     }
 
     private static async Task<ExecutionJobRecord> WaitForJobAsync(
-        RedisExecutionJobStore store,
+        PostgresExecutionJobStore store,
         string operationId,
         Func<ExecutionJobRecord, bool> predicate,
         TimeSpan timeout)
@@ -373,20 +337,6 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
         throw new TimeoutException($"Job '{operationId}' did not reach the required state within {timeout}.");
     }
 
-    private static async Task WaitForQueueMemberRemovalAsync(IDatabase database, string member, TimeSpan timeout)
-    {
-        var deadline = DateTimeOffset.UtcNow + timeout;
-        while (await database.SortedSetScoreAsync("controlplane:jobqueue:pending", member) is not null)
-        {
-            if (DateTimeOffset.UtcNow >= deadline)
-            {
-                throw new TimeoutException("The production worker did not reject the malformed Redis payload.");
-            }
-
-            await Task.Delay(20);
-        }
-    }
-
     private static string FindRepositoryFile(params string[] segments)
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
@@ -399,5 +349,22 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
         }
 
         throw new FileNotFoundException($"Repository fixture not found: {Path.Join(segments)}");
+    }
+
+    private sealed record JobSubstrate(
+        PostgresExecutionJobStore Store,
+        PostgresJobQueue Queue,
+        PostgresExecutionLogStore LogStore)
+    {
+        public static async Task<JobSubstrate> CreateEmptyAsync(PostgresFixture postgres)
+        {
+            await postgres.DataSource.ClearJobSubstrateAsync();
+            var database = new JobStoreDatabase(postgres.DataSource);
+            var options = Options.Create(new JobStoreOptions());
+            return new JobSubstrate(
+                new PostgresExecutionJobStore(database, options, NullLogger<PostgresExecutionJobStore>.Instance),
+                new PostgresJobQueue(database, NullLogger<PostgresJobQueue>.Instance),
+                new PostgresExecutionLogStore(database, options, NullLogger<PostgresExecutionLogStore>.Instance));
+        }
     }
 }

@@ -7,22 +7,18 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
-using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Security.Domain;
-using Honua.Geoprocessing;
-using Honua.ControlPlane;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.DataEnrichment;
 
@@ -39,9 +35,9 @@ namespace Honua.Server.Tests.Features.DataEnrichment;
 /// succeeds as a job. Edition/entitlement gating is covered at the executor and
 /// synchronous-HTTP levels instead — see the note above the large-input test.
 /// </summary>
-[Collection("Redis")]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(ProtocolNames.OgcApiProcesses)]
-public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
+public sealed class DataEnrichmentJobIntegrationTests(DatabaseFixtureAdapter database)
 {
     private const string DatasetKey = "test-boundaries";
     private const string ProcessId = "enrichment.enrich";
@@ -59,7 +55,7 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task EnrichJob_SubmitPollFetchResults_ReturnsEnrichedFeatureCollectionWithProvenance()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
 
         var fixture = BuildFixture(HonuaEdition.Pro);
         await fixture.InitializeAsync();
@@ -92,7 +88,7 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await database.DataSource.ClearJobSubstrateAsync();
         }
     }
 
@@ -102,7 +98,7 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
     [Endpoint("DELETE /ogc/processes/jobs/{jobId}")]
     public async Task EnrichJob_Dismiss_UsesExistingJobLifecycleEndpoints()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
 
         var fixture = BuildFixture(HonuaEdition.Pro);
         await fixture.InitializeAsync();
@@ -142,23 +138,9 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await database.DataSource.ClearJobSubstrateAsync();
         }
     }
-
-    // NOTE on edition gating (#2283): there is deliberately NO Community-edition job
-    // test here. In Community edition the platform never starts a durable job worker at
-    // all — AddJobWorker self-gates on IJobQueue, which AddJobOrchestration only
-    // registers when the Redis multiplexer is wired under the license entitlement
-    // (honua-server#1841). A Community job would therefore sit Queued forever and never
-    // reach a terminal status, so such a test would assert a pre-existing platform
-    // property rather than enrichment gating, and would hang rather than fail cleanly.
-    // The enrichment edition gates are proven where they actually execute:
-    //   * executor level — EnrichmentJobExecutorTests covers both the
-    //     analytics.spatial-join entitlement denial and the dataset MinimumEdition
-    //     denial, asserting the classified failure message;
-    //   * HTTP level — DataEnrichmentEditionGateTests covers the Community 402 on the
-    //     synchronous /api/enrich surface.
 
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
@@ -166,7 +148,7 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task EnrichJob_LargeInput_SyncReturns413NamingAsyncPath_AsyncJobSucceeds()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
 
         // Cap the synchronous path at 1 input feature so the seed layer trips the
         // 413 guard, then run the SAME enrichment as a job — the async path has no
@@ -207,7 +189,7 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await database.DataSource.ClearJobSubstrateAsync();
         }
     }
 
@@ -226,7 +208,7 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task EnrichJob_InlineSourceWithLayerOnlyFilters_RefusesSubmissionWithoutQueueingJob()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
 
         var fixture = BuildFixture(HonuaEdition.Pro);
         await fixture.InitializeAsync();
@@ -261,7 +243,7 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await database.DataSource.ClearJobSubstrateAsync();
         }
     }
 
@@ -270,7 +252,7 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task EnrichJob_MalformedBbox_RefusesSubmissionWithParameterError()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
 
         var fixture = BuildFixture(HonuaEdition.Pro);
         await fixture.InitializeAsync();
@@ -305,7 +287,7 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await database.DataSource.ClearJobSubstrateAsync();
         }
     }
 
@@ -331,7 +313,7 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task EnrichJob_SubmitterLacksReadOnSourceLayer_RefusesSubmissionWithoutQueueingJob()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
 
         var fixture = BuildFixture(HonuaEdition.Pro, configureServices: SeedProcessExecuteOnlyRole);
         await fixture.InitializeAsync();
@@ -370,7 +352,7 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await database.DataSource.ClearJobSubstrateAsync();
         }
     }
 
@@ -379,7 +361,7 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task EnrichJob_SubmitterLacksReadOnDatasetLayer_RefusesSubmissionWithoutQueueingJob()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
 
         var fixture = BuildFixture(HonuaEdition.Pro, configureServices: SeedProcessExecuteOnlyRole);
         await fixture.InitializeAsync();
@@ -412,27 +394,27 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await database.DataSource.ClearJobSubstrateAsync();
         }
     }
 
     // -------------------------------------------------------------------------
-    // Helpers (mirrors VectorProcessParityIntegrationTests' durable-runtime wiring)
+    // Helpers
     // -------------------------------------------------------------------------
 
-    private WebAppFixture BuildFixture(
+    private static WebAppFixture BuildFixture(
         HonuaEdition edition,
         Dictionary<string, string?>? extraConfig = null,
         Action<IServiceCollection>? configureServices = null)
         => new WebAppFixture()
             .WithTestLicense(edition)
+            .WithProductionJobSubstrate()
             .ConfigureWebHost(builder =>
             {
                 builder.ConfigureAppConfiguration((_, configBuilder) =>
                 {
                     var config = new Dictionary<string, string?>
                     {
-                        ["ConnectionStrings:redis"] = redis.ConnectionString,
                         ["DataEnrichment:Datasets:0:Key"] = DatasetKey,
                         ["DataEnrichment:Datasets:0:DisplayName"] = "Test Boundaries",
                         ["DataEnrichment:Datasets:0:Category"] = "boundary",
@@ -450,7 +432,6 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
                     configBuilder.AddInMemoryCollection(config);
                 });
             })
-            .ConfigureServices(WireDurableRuntime)
             .ConfigureServices(services => configureServices?.Invoke(services));
 
     /// <summary>
@@ -517,47 +498,6 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
             IReadOnlyList<PermissionGrant> permissions,
             CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<PermissionGrant>>([]);
-    }
-
-    private void WireDurableRuntime(IServiceCollection services)
-    {
-        services.RemoveAll<IConnectionMultiplexer>();
-        services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redis.ConnectionString));
-
-        services.RemoveAll<IExecutionJobStore>();
-        services.AddSingleton<IExecutionJobStore>(sp =>
-            new RedisExecutionJobStore(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<ILogger<RedisExecutionJobStore>>()));
-
-        services.RemoveAll<IGeoprocessingResultPackageStore>();
-        services.AddSingleton<IGeoprocessingResultPackageStore>(sp =>
-            new RedisGeoprocessingResultPackageStore(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>(),
-                sp.GetRequiredService<ILogger<RedisGeoprocessingResultPackageStore>>()));
-
-        services.RemoveAll<RedisJobQueue>();
-        services.RemoveAll<IJobQueue>();
-        services.RemoveAll<IQueueClaimReconciler>();
-        services.AddSingleton<RedisJobQueue>(sp =>
-            new RedisJobQueue(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<IExecutionJobStore>(),
-                sp.GetRequiredService<ILogger<RedisJobQueue>>()));
-        services.AddSingleton<IJobQueue>(sp => sp.GetRequiredService<RedisJobQueue>());
-        services.AddSingleton<IQueueClaimReconciler>(sp => sp.GetRequiredService<RedisJobQueue>());
-
-        services.RemoveAll<IExecutionLogStore>();
-        services.AddSingleton<IExecutionLogStore>(sp =>
-            new RedisExecutionLogStore(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetRequiredService<ILogger<RedisExecutionLogStore>>()));
-
-        // Activate the worker host: the production dispatcher registered by
-        // AddGeoprocessing routes enrichment.enrich to EnrichmentJobExecutor —
-        // that executor is the system-under-test for this suite.
-        services.AddJobWorker();
     }
 
     // OGC execution request carrying the enrichment vocabulary: dataset id, the
@@ -637,7 +577,7 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
 
     private static async Task<JsonDocument> PollUntilTerminalAsync(HttpClient client, string jobId)
     {
-        // Generous deadline: the durable worker claims from Redis on its own poll
+        // Generous deadline: the durable worker claims from the queue on its own poll
         // cadence, so a loaded CI host can take well over the per-job compute time
         // to reach a terminal status.
         var deadline = DateTimeOffset.UtcNow.AddSeconds(120);
@@ -678,23 +618,5 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
         collection.GetProperty("type").GetString().Should().Be("FeatureCollection");
         collection.GetProperty("processId").GetString().Should().Be(ProcessId);
         return collection;
-    }
-
-    private static async Task DeleteControlPlaneKeysAsync(string redisConnectionString)
-    {
-        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redisConnectionString);
-        var database = multiplexer.GetDatabase();
-        var endpoints = multiplexer.GetEndPoints();
-        if (endpoints.Length == 0)
-        {
-            return;
-        }
-
-        var server = multiplexer.GetServer(endpoints[0]);
-        var keys = server.Keys(pattern: "controlplane:*").ToArray();
-        if (keys.Length > 0)
-        {
-            await database.KeyDeleteAsync(keys);
-        }
     }
 }
