@@ -53,7 +53,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         // explicit. Keep that equivalent shape eligible without changing its SQL.
         return orderBy.Length == 1 &&
                orderBy[0] is { Ascending: true, NullOrdering: NullOrdering.Default } ordering &&
-               string.Equals(ordering.Field, _resource.FindPrimaryIdField()?.Name ?? FieldNames.ObjectId,
+               string.Equals(ordering.Field, _primaryIdFieldName,
                    StringComparison.OrdinalIgnoreCase);
     }
 

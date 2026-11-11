@@ -307,6 +307,20 @@ public static class FilterExpressionNormalizer
             return literal;
         }
 
+        if (literal.Type == LiteralType.Number)
+        {
+            bool? value = literal.Value switch
+            {
+                0 or 0L or 0d or 0f or 0m => false,
+                1 or 1L or 1d or 1f or 1m => true,
+                _ => null
+            };
+            if (value.HasValue)
+            {
+                return new Literal(value.Value, LiteralType.Boolean);
+            }
+        }
+
         if (literal.Type == LiteralType.Text && literal.Value is string text &&
             bool.TryParse(text, out var parsed))
         {

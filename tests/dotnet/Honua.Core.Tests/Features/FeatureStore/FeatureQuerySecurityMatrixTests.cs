@@ -18,6 +18,11 @@ public sealed class FeatureQuerySecurityMatrixTests
     public static IEnumerable<object[]> MaskedQueryCases()
     {
         yield return ["primary where", new FeatureQuery { Where = "secret = 1" }];
+        yield return ["public object IDs", new FeatureQuery
+        {
+            PublicIdAttributeName = "secret",
+            ReturnPublicObjectIds = true
+        }];
         // OGC CQL2 is translated before it reaches the shared provider seam. These
         // JSONB accessor shapes cover filter and per-field queryable predicates on
         // storage-backed OGC Features resources (#4154).
