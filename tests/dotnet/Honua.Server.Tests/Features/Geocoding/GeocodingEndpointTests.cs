@@ -41,7 +41,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         _fixture = fixture;
     }
 
-    /// <summary>Default provider responses depend only on each request, so response cases can share the application.</summary>
+    // Default provider responses depend only on each request, so response cases can share the application.
     public sealed class Fixture : IDisposable
     {
         public WebApplicationFactory<Program> Application { get; } = CreateDefaultFactory();
