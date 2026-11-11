@@ -308,6 +308,12 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             var progress = new Progress<ImportProgress>(p => progressWriter.Report(p with
             {
                 JobId = jobId,
+                // Only the returned result can publish a terminal receipt.
+                Status = ImportStatus.Processing,
+                CompletedAt = null,
+                Schema = null,
+                PhysicalTableName = null,
+                ConnectionId = null,
                 OperationInstanceId = request.OperationInstanceId,
                 CorrelationId = request.CorrelationId,
                 AuditId = request.AuditId,
@@ -389,6 +395,9 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                         Status = licenseStoppedCommittedImport
                             ? ImportStatus.Failed
                             : result.Success ? ImportStatus.Completed : ImportStatus.Failed,
+                        Schema = result.Success && !licenseStoppedCommittedImport ? result.Schema : null,
+                        PhysicalTableName = result.Success && !licenseStoppedCommittedImport ? result.PhysicalTableName : null,
+                        ConnectionId = null,
                         FeaturesProcessed = result.FeatureCount,
                         BatchesCommitted = result.Success ? currentProgress.BatchesCommitted : 0,
                         CompletedAt = DateTimeOffset.UtcNow,

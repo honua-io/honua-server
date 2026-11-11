@@ -1593,6 +1593,7 @@ internal static partial class ImportEndpoints
                 return;
             }
 
+            progress = await EnrichImportReceiptAsync(context.RequestServices, progress, cancellationToken);
             IResult result = Results.Json(progress, ImportJsonContext.Default.ImportProgress);
             await result.ExecuteAsync(context);
         }

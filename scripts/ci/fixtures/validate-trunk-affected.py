@@ -6,7 +6,9 @@ import json
 import os
 import subprocess
 import tempfile
+import sys
 import unittest
+from unittest.mock import patch
 
 import importlib.util
 
@@ -53,7 +55,7 @@ class TrunkAffectedWorkflowTests(unittest.TestCase):
         self.assertIn("actions/workflows/ci.yml/runs?branch=trunk&status=success", scripts)
         self.assertIn("git merge-base --is-ancestor", scripts)
         self.assertIn("actions/workflows/ci.yml/dispatches", scripts)
-        self.assertIn("status=completed", scripts)
+        self.assertIn("scripts/ci/completed_ci_base.py", scripts)
         self.assertIn("inputs[selective_base]=${COMPLETED_BASE}", scripts)
         self.assertIn("inputs[investigation_base]=${LAST_GREEN}", scripts)
         self.assertIn("scripts/ci/trunk-suspect-range.sh", scripts)
@@ -98,10 +100,13 @@ class CompletedBaseExecutionTests(unittest.TestCase):
                       'if [[ "$2" == *"status=success"* ]]; then\n'
                       '  jq -r "$4" green.json\n'
                       'else\n'
-                      '  jq -r "$4" completed.json\n'
+                      '  cat completed.json\n'
                       'fi\n')
         gh.chmod(0o755)
         self.env["PATH"] = f"{self.clone}:{os.environ['PATH']}"
+        helper = self.clone / "scripts/ci/completed_ci_base.py"
+        helper.parent.mkdir(parents=True)
+        helper.write_bytes((ROOT / "scripts/ci/completed_ci_base.py").read_bytes())
         self.env["PUSHED_HEAD"] = self.heads[-1]
         self.script = workflow("trunk-affected.yml")["jobs"]["dispatch"]["steps"][1]["run"]
 
@@ -164,7 +169,7 @@ class CompletedBaseExecutionTests(unittest.TestCase):
 
     def run_investigation_summary(self, base):
         helper = self.clone / "scripts/ci/trunk-suspect-range.sh"
-        helper.parent.mkdir(parents=True)
+        helper.parent.mkdir(parents=True, exist_ok=True)
         helper.write_bytes(SUSPECT_RANGE.read_bytes())
         helper.chmod(0o755)
         self.env.update(INVESTIGATION_BASE=base, GITHUB_SHA=self.heads[-1])
@@ -212,6 +217,87 @@ class SuspectRangeTests(unittest.TestCase):
         self.assertIn("docs: direct push without a pull request", report)
         self.assertIn("Merged pull requests: [#7199](https://github.com/honua-io/honua-server/pull/7199)", report)
         self.assertNotIn("#1]", report)
+
+
+class RuntimeBaseTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, str(ROOT / "scripts/ci"))
+        spec = importlib.util.spec_from_file_location(
+            "runtime_base", ROOT / "scripts/ci/resolve-trailing-base.py")
+        cls.module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.module)
+        cls.selector = sys.modules["completed_ci_base"]
+
+    def resolve(self, records, ancestors):
+        with patch.dict(os.environ, GITHUB_REPOSITORY="honua-io/honua-server"), \
+                patch.object(self.module.subprocess, "check_output", return_value=json.dumps(
+                    {"workflow_runs": records})), \
+                patch.object(self.selector, "ancestor", side_effect=lambda a, b: (a, b) in ancestors):
+            return self.selector.completed_base("d" * 40, "a" * 40)
+
+    def record(self, letter, conclusion="failure", updated="2"):
+        return dict(head_sha=letter * 40, conclusion=conclusion, updated_at=updated)
+
+    def test_completion_after_dispatch_advances_execution_base(self):
+        self.assertEqual(self.resolve([self.record("b")],
+                                     {("a" * 40, "b" * 40), ("b" * 40, "d" * 40)}), "b" * 40)
+
+    def test_old_newer_foreign_and_cancelled_runs_do_not_regress_base(self):
+        records = [self.record("b", "cancelled"), self.record("c"), self.record("e")]
+        self.assertEqual(self.resolve(records, {("a" * 40, "b" * 40),
+                                              ("b" * 40, "d" * 40),
+                                              ("a" * 40, "e" * 40)}), "a" * 40)
+
+    def test_history_outage_retains_dispatched_scope(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.dict(os.environ, GITHUB_OUTPUT=f"{directory}/output",
+                           GITHUB_STEP_SUMMARY=f"{directory}/summary"), \
+                patch.object(sys, "argv", ["helper", "base", "head"]), \
+                patch.object(self.module, "completed_base",
+                             side_effect=subprocess.CalledProcessError(1, "gh")), \
+                patch.object(self.module, "execution_base", return_value=("base", "unchanged")) as resolve:
+            self.module.main()
+            resolve.assert_called_once_with("base", "head")
+            self.assertIn("base=base", Path(f"{directory}/output").read_text())
+
+    def test_small_selection_keeps_accumulated_range(self):
+        with patch.object(self.module, "selected_count", return_value=30):
+            base, reason = self.module.execution_base("base", "head")
+        self.assertEqual(base, "base")
+        self.assertIn("30 shards", reason)
+
+    def test_large_selection_uses_entire_newest_merge_and_records_deferral(self):
+        with patch.object(self.module, "selected_count", side_effect=[160, 4]), \
+                patch.object(self.module, "git", return_value="first-parent") as git:
+            base, reason = self.module.execution_base("base", "head")
+        self.assertEqual(base, "first-parent")
+        git.assert_called_once_with("rev-parse", "head^1")
+        self.assertIn("deferred to scheduled full CI", reason)
+
+    def test_broad_newest_merge_is_never_arbitrarily_truncated(self):
+        with patch.object(self.module, "selected_count", side_effect=[160, 150]), \
+                patch.object(self.module, "git", return_value="parent"):
+            base, reason = self.module.execution_base("base", "head")
+        self.assertEqual(base, "parent")
+        self.assertIn("retain all of its shards", reason)
+
+    def test_router_failure_fails_selection_without_silently_skipping_tests(self):
+        with patch.object(self.module, "selected_count",
+                          side_effect=subprocess.CalledProcessError(1, "router")):
+            with self.assertRaises(subprocess.CalledProcessError):
+                self.module.execution_base("base", "head")
+
+    def test_effective_base_reaches_routing_and_build_with_least_privilege(self):
+        jobs = workflow("ci.yml")["jobs"]
+        changes = jobs["changes"]
+        self.assertEqual(changes["permissions"], {"contents": "read", "actions": "read"})
+        self.assertEqual(changes["outputs"]["selective_base"], "${{ steps.diff.outputs.base }}")
+        self.assertIn("resolve-trailing-base.py", step_scripts(changes))
+        for job_name in ("targeted-shards", "build"):
+            self.assertIn("needs.changes.outputs.selective_base", json.dumps(jobs[job_name]))
+        self.assertEqual(jobs["server-tests"]["strategy"]["max-parallel"],
+                         "${{ inputs.selective_base && 6 || 24 }}")
 
 
 if __name__ == "__main__":

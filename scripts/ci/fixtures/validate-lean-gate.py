@@ -233,14 +233,23 @@ require(
     r"uses: \./\.github/actions/format-check\n\s+with:\n\s+format-scope: \$\{\{ inputs\.format-scope \}\}\n(?:\s+#.*\n)*\s+analyzer-build: 'false'",
     "skip the format action's analyzer build only for the inline caller whose build ran analyzers",
 )
-require(
-    r"format:\n[\s\S]*?- check: Format\n\s+format: 'true'\n\s+analyzer-build: 'false'\n"
-    r"\s+analyzer-partition: all\n\s+- check: Analyzers\n\s+format: 'false'\n\s+analyzer-build: 'true'\n"
-    r"\s+analyzer-partition: source\n\s+- check: Analyzers \(tests\)\n\s+format: 'false'\n"
-    r"\s+analyzer-build: 'true'\n\s+analyzer-partition: tests\n",
-    "require both complementary analyzer partitions in the format matrix",
-    text=PR_GATE.read_text(encoding="utf-8"),
-)
+# Drafts execute formatting while ready PRs retain both strict analyzer passes.
+format_matrix = re.search(r"include: \$\{\{ fromJSON\(github.event.pull_request.draft && '([^']+)' \|\| '([^']+)'\) \}\}", PR_GATE.read_text())
+if not format_matrix:
+    raise AssertionError('format matrix must distinguish draft and ready PRs')
+import json
+_draft, _ready = (json.loads(value) for value in format_matrix.groups())
+assert [row['check'] for row in _draft] == ['Format']
+assert [(row['check'], row['analyzer-partition'], row['analyzer-build']) for row in _ready] == [
+    ('Format', 'all', 'false'), ('Analyzers', 'source', 'true'), ('Analyzers (tests)', 'tests', 'true'), ('Analyzers (server tests)', 'tests', 'true')]
+assert [row.get('analyzer-test-partition', 'all') for row in _ready] == ['all', 'all', 'other', 'server']
+assert _draft == _ready[:1]
+_format_job = PR_GATE.read_text().split('  format:\n', 1)[1].split('\n  fast-tests:', 1)[0]
+_wait = _format_job.split('- name: Await exact-head review', 1)[1].split('- uses:', 1)[0]
+assert "github.event.pull_request.draft != true" in _wait
+for _name in ['Setup .NET', 'Restore', 'Format Check']:
+    _step = _format_job.split('- name: ' + _name, 1)[1].split('- name:', 1)[0]
+    assert "github.event.pull_request.draft == true" in _step
 require(
     r"format-scope: affected\n\s+format: \$\{\{ matrix\.format \}\}\n"
     r"\s+analyzer-build: \$\{\{ matrix\.analyzer-build \}\}\n"
@@ -328,9 +337,9 @@ require(
     text=PR_GATE_TEXT,
 )
 require(
-    r"required:\n[\s\S]*?name: PR Gate\n[\s\S]*?needs: \[pr-gate, fast-tests, format, ci-router-validation, affected-shards\]",
+    r"required:\n[\s\S]*?name: PR Gate\n[\s\S]*?needs: \[pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer\]",
     "keep the required PR Gate context as a fail-closed aggregator over "
-    "build/tests, format, and CI router validation",
+    "build/tests, format, CI router validation, and the server-test producer",
     text=PR_GATE_TEXT,
 )
 require(
@@ -355,7 +364,9 @@ require(
 )
 require(
     r"required:\n[\s\S]*?- name: Revalidate exact-head review before success\n"
-    r"\s+if: env\.REVIEW_FIRST_MODE == 'enforce'[\s\S]*?Review Gate",
+    r"\s+if: env\.REVIEW_FIRST_MODE == 'enforce'[\s\S]*?"
+    r"require\(`\$\{process\.env\.GITHUB_WORKSPACE\}/\.github/scripts/revalidate-exact-head-review\.cjs`\);\n"
+    r"\s+await revalidate\(\{ github, context, core, expectedHead: '\$\{\{ github\.event\.pull_request\.head\.sha \}\}' \}\);",
     "revalidate exact-head review after both parallel paths complete",
     text=PR_GATE_TEXT,
 )

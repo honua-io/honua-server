@@ -100,9 +100,12 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IPagedRawGeoS
     private string BuildRawPointPublicIdSelect(FeatureQuery query, SqlBuilder sql)
     {
         var name = query.PublicIdAttributeName;
+        var field = _resource.SchemaFields.FirstOrDefault(candidate =>
+            candidate.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
         if (string.IsNullOrWhiteSpace(name) ||
             name.Equals(_mapping.PrimaryKeyColumn, StringComparison.OrdinalIgnoreCase) ||
-            IsObjectIdField(name))
+            name.Equals(_primaryIdFieldName, StringComparison.OrdinalIgnoreCase) ||
+            (field == null && IsObjectIdField(name)))
         {
             return "NULL::text";
         }

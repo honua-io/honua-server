@@ -6,7 +6,7 @@ using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
-using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
 using Honua.Ai.Protocols.Mcp.Models;
@@ -139,54 +139,10 @@ internal sealed class IngestJobArtifactTool(ILogger<IngestJobArtifactTool> logge
         IServiceProvider services,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var resolver = services.GetService<ISecureConnectionResolver>();
-            var registry = services.GetService<ISecureConnectionRegistry>();
-            var matcher = services.GetService<ICatalogConnectionIdentityMatcher>();
-            var configuration = services.GetService<IConfiguration>();
-            var defaultConnectionString = configuration?["ConnectionStrings:DefaultConnection"];
-            if (resolver is null || registry is null || matcher is null || string.IsNullOrWhiteSpace(defaultConnectionString))
-            {
-                return default;
-            }
-
-            string? matchedName = null;
-            var connections = await registry.GetActiveConnectionsAsync(cancellationToken).ConfigureAwait(false);
-            foreach (var connection in connections)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (!connection.IsActive || string.IsNullOrWhiteSpace(connection.Name))
-                {
-                    continue;
-                }
-
-                try
-                {
-                    var connectionString = await resolver.ResolveConnectionStringAsync(connection.Name, cancellationToken).ConfigureAwait(false);
-                    if (matcher.IsMatch(connection.NormalizedProvider, defaultConnectionString, connectionString))
-                    {
-                        if (matchedName is not null)
-                        {
-                            return new CatalogConnectionMatch(null, true);
-                        }
-
-                        matchedName = connection.Name;
-                    }
-                }
-                catch (Exception exception) when (exception is not OperationCanceledException)
-                {
-                    // One unresolvable connection must not hide a later match.
-                }
-            }
-
-            return new CatalogConnectionMatch(matchedName, false);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            // The connection hint is not the import receipt.
-            return default;
-        }
+        var configuration = services.GetService<IConfiguration>();
+        var match = await CatalogConnectionDiscovery.FindUniqueAsync(
+            services, configuration?["ConnectionStrings:DefaultConnection"], cancellationToken).ConfigureAwait(false);
+        return new CatalogConnectionMatch(match.Connection?.Name, match.Ambiguous);
     }
 
     private readonly record struct CatalogConnectionMatch(string? ConnectionId, bool Ambiguous);
