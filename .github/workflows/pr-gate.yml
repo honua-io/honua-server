@@ -1135,12 +1135,13 @@ jobs:
     # verification paths fail closed into it.
     name: PR Gate
     if: always()
-    needs: [pr-gate, fast-tests, format, ci-router-validation, affected-shards]
+    needs: [pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Require build, tests, format, CI router validation, and affected shards
         env:
+          SERVER_PRODUCER_RESULT: ${{ needs.server-test-producer.result }}
           BUILD_AND_TEST_RESULT: ${{ needs.pr-gate.result }}
           FAST_RESULT: ${{ needs.fast-tests.result }}
           FORMAT_RESULT: ${{ needs.format.result }}
@@ -1149,6 +1150,10 @@ jobs:
         run: |
           if [[ "${GITHUB_EVENT_NAME}" == pull_request && "${AFFECTED_SHARDS_RESULT}" != success ]]; then
             echo "::error::PR Gate failed: affected-shards=${AFFECTED_SHARDS_RESULT}"
+            exit 1
+          fi
+          if [[ "${SERVER_PRODUCER_RESULT}" != "success" ]]; then
+            echo "::error::PR Gate failed: server-producer=${SERVER_PRODUCER_RESULT}"
             exit 1
           fi
           if [[ "${FAST_RESULT}" != "success" || "${BUILD_AND_TEST_RESULT}" != "success" || "${FORMAT_RESULT}" != "success" || "${CI_ROUTER_RESULT}" != "success" ]]; then

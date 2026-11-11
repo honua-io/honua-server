@@ -58,6 +58,34 @@ class ProducerTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     partition.exclude_server(partition.BuildFilterRequest(root, 'affected', source, output))
 
+    def test_imported_collector_stays_on_independent_architecture_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make_root(root)
+            collector = root / partition.COLLECTOR
+            collector.parent.mkdir(parents=True)
+            collector.write_text('<Project><Import Project="../../../coverage.props" /></Project>')
+            (root / 'coverage.props').write_text(
+                f'<Project><ItemGroup><ProjectReference Include="$(MSBuildThisFileDirectory){SERVER}" /></ItemGroup></Project>')
+            with (root / 'Honua.sln').open('a') as solution:
+                solution.write(f'\nProject("x") = "collector", "{partition.COLLECTOR}", "id"')
+            output = root / 'output.slnf'
+            partition.exclude_server(partition.BuildFilterRequest(root, 'full', None, output))
+            self.assertEqual([OTHER], json.loads(output.read_text())['solution']['projects'])
+            self.assertEqual([], partition.main_projects([partition.COLLECTOR]))
+            self.assertEqual('none', partition.consumer_producer([partition.COLLECTOR]))
+            (root / OTHER).write_text('<Project><Import Project="../../coverage.props" /></Project>')
+            with self.assertRaises(ValueError):
+                partition.exclude_server(partition.BuildFilterRequest(root, 'full', None, output))
+
+    def test_real_solution_has_no_remaining_server_reverse_dependency(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'output.slnf'
+            partition.exclude_server(partition.BuildFilterRequest(partition.ROOT, 'full', None, output))
+            projects = json.loads(output.read_text())['solution']['projects']
+            self.assertNotIn(SERVER, projects)
+            self.assertNotIn(partition.COLLECTOR, projects)
+
     def test_reverse_dependency_rejects_duplicate_compile(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

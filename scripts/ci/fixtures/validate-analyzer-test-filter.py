@@ -24,6 +24,10 @@ class PartitionTests(unittest.TestCase):
             (root / 'Honua.sln').write_text('\n'.join(
                 f'Project("type") = "Project", "{project}", "id"'
                 for project in windows_projects))
+            for project in full:
+                path = root / project
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('<Project />')
             server = set(filters.partition(root, None, 'server'))
             other = set(filters.partition(root, None, 'other'))
             self.assertEqual(full, server | other)
@@ -38,6 +42,17 @@ class PartitionTests(unittest.TestCase):
                 self.assertEqual(selected, server | other)
                 self.assertFalse(server & other)
                 self.assertLessEqual(server, {filters.SERVER})
+
+    def test_imported_server_dependency_retains_server_diagnostics_owner(self):
+        root = SCRIPT.parents[2]
+        collector = 'tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj'
+        self.assertIn(filters.SERVER, filters.project_closure(root, collector))
+        with tempfile.TemporaryDirectory() as directory:
+            scope = Path(directory) / 'scope.slnf'
+            scope.write_text(json.dumps({'solution': {'path': str(root / 'Honua.sln'),
+                                                      'projects': [collector]}}))
+            self.assertEqual([filters.SERVER], filters.partition(root, scope, 'server'))
+            self.assertEqual([collector], filters.partition(root, scope, 'other'))
 
     def test_invalid_filter_fails_closed(self):
         root = SCRIPT.parents[2]

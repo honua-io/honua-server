@@ -129,6 +129,7 @@ runs:
       shell: bash
       env:
         ANALYZER_PARTITION: ${{ inputs.analyzer-partition }}
+        TEST_PARTITION: ${{ inputs.analyzer-test-partition }}
         # Avoid persistent MSBuild server teardown affecting the build exit code.
         DOTNET_CLI_USE_MSBUILD_SERVER: 'false'
         MSBUILDUSESERVER: '0'
@@ -151,6 +152,9 @@ runs:
           target="${source_filter}"
         fi
         [[ -n "${GATE_TEST_ROOT_FILTER}" ]] && target="${GATE_TEST_ROOT_FILTER}"
+        if [[ "${ANALYZER_PARTITION}" == "tests" && "${TEST_PARTITION}" != "all" ]]; then
+          ANALYZER_PARTITION="${TEST_PARTITION}-tests"
+        fi
         timeout "${{ inputs.analyzer-build-timeout-minutes }}m" \
           dotnet build "${target}" \
             --no-restore \

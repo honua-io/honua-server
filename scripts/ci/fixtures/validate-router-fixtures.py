@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Prove worker bounds, collected failures, argv fidelity and CI authority."""
 import os
+from dataclasses import dataclass
 import signal
 import time
 from pathlib import Path
@@ -13,15 +14,22 @@ ROOT = Path(__file__).resolve().parents[3]
 LIBRARY = ROOT / 'scripts/ci/lib/router-fixtures.sh'
 
 
+@dataclass(frozen=True)
+class ShellOptions:
+    ci: str = ''
+    workers: str = '2'
+    arguments: tuple = ()
+
+
 class RouterFixturesTests(unittest.TestCase):
-    def run_shell(self, body, *, ci='', workers='2', arguments=()):
-        environment = dict(os.environ, CI=ci, GITHUB_ACTIONS='', HONUA_ROUTER_WORKERS=workers)
+    def run_shell(self, body, options=ShellOptions()):
+        environment = dict(os.environ, CI=options.ci, GITHUB_ACTIONS='', HONUA_ROUTER_WORKERS=options.workers)
         return subprocess.run(
             ['bash', '-c', 'set -euo pipefail\n'
              'SCRIPT_DIR="$1/scripts/ci"\nPYTHON_BIN="$2"\n'
              'source "$SCRIPT_DIR/lib/router-fixtures.sh"\nshift 2\n'
              'router_fixtures_init "$@"\n' + body,
-             'fixture', str(ROOT), sys.executable, *arguments],
+             'fixture', str(ROOT), sys.executable, *options.arguments],
             cwd=ROOT, env=environment, text=True, capture_output=True)
 
     def test_collects_every_failure_and_preserves_arguments(self):
@@ -93,7 +101,7 @@ router_fixtures_finish
             body = '\n'.join(
                 f'run_fixture worker-{index} bash -c \'set -e; mkdir "$1/lock"; sleep 0.05; rmdir "$1/lock"\' bash "{directory}"'
                 for index in range(5))
-            result = self.run_shell(body + '\nrouter_fixtures_finish', workers='1')
+            result = self.run_shell(body + '\nrouter_fixtures_finish', ShellOptions(workers='1'))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('5 executed, 0 failed', result.stdout)
 
@@ -101,7 +109,7 @@ router_fixtures_finish
         result = self.run_shell('''
 run_fixture routing:authority printf '%s\\n' authority-ran
 router_fixtures_finish
-''', ci='true', arguments=('--changed-only',))
+''', ShellOptions(ci='true', arguments=('--changed-only',)))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('Router full validation', result.stdout)
         self.assertIn('authority-ran', result.stdout)
@@ -120,8 +128,8 @@ router_fixtures_finish
         self.assertIn('2 executed, 0 failed', result.stdout)
 
     def test_invalid_arguments_rejected(self):
-        self.assertEqual(self.run_shell('', arguments=('--typo',)).returncode, 2)
-        self.assertEqual(self.run_shell('', workers='0').returncode, 2)
+        self.assertEqual(self.run_shell('', ShellOptions(arguments=('--typo',))).returncode, 2)
+        self.assertEqual(self.run_shell('', ShellOptions(workers='0')).returncode, 2)
 
 
 class ChangedInputsTests(unittest.TestCase):

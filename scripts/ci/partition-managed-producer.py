@@ -2,13 +2,16 @@
 """Split Server.Tests from the PR producer without dropping compile coverage."""
 import argparse
 import json
+from importlib import import_module
 from dataclasses import dataclass
 from pathlib import Path
-import xml.etree.ElementTree as ET
 
 from solution_projects import solution_projects
 
+project_closure = import_module('test-projects').closure
+COLLECTOR = 'tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj'
 SERVER = 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
+INDEPENDENT_ROOTS = {COLLECTOR, SERVER}
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -23,11 +26,13 @@ def server_projects(projects):
 
 
 def main_projects(projects):
-    return sorted(checked_projects(projects) - {SERVER})
+    return sorted(checked_projects(projects) - INDEPENDENT_ROOTS)
 
 
 def consumer_producer(projects):
     selected = checked_projects(projects)
+    if COLLECTOR in selected:
+        return 'none'
     if selected == {SERVER}:
         return 'server'
     # A mixed shard must rebuild locally rather than combine potentially
@@ -43,23 +48,13 @@ class BuildFilterRequest:
     output: Path
 
 
-def project_references(root, project):
-    for node in ET.parse(root / project).getroot().iter():
-        if node.tag.rsplit('}', 1)[-1] != 'ProjectReference':
-            continue
-        include = node.attrib.get('Include', '').replace('\\', '/')
-        if not include or any(token in include for token in ('$(', '@(', ';', '*', '?')):
-            raise ValueError(f'Cannot prove project reference in {project}: {include}')
-        yield ((root / project).parent / include).resolve()
-
-
 def exclude_server(request):
     root, mode, source, output = request.root, request.mode, request.source, request.output
     members = set(solution_projects(root))
     if SERVER not in members:
         raise ValueError('Server test project is missing from solution')
-    for project in members - {SERVER}:
-        if (root / SERVER).resolve() in project_references(root, project):
+    for project in members - INDEPENDENT_ROOTS:
+        if SERVER in project_closure(root, project):
             raise ValueError(f'{project} references the parallel server test producer')
     if mode == 'full':
         projects = members
@@ -69,10 +64,10 @@ def exclude_server(request):
             raise ValueError('Unknown project in build filter')
     else:
         raise ValueError(f'Unsupported producer build mode: {mode}')
-    if not projects - {SERVER}:
+    if not projects - INDEPENDENT_ROOTS:
         raise ValueError('Main producer filter cannot be empty')
     output.write_text(json.dumps({'solution': {'path': str(root / 'Honua.sln'),
-                                              'projects': sorted(projects - {SERVER})}}, indent=2) + '\n')
+                                              'projects': sorted(projects - INDEPENDENT_ROOTS)}}, indent=2) + '\n')
 
 
 def main():

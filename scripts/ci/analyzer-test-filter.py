@@ -3,9 +3,12 @@
 
 import argparse
 import json
+from importlib import import_module
 from pathlib import Path
 
 from solution_projects import solution_projects
+
+project_closure = import_module('test-projects').closure
 
 SERVER = "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
 
@@ -26,7 +29,8 @@ def partition(root: Path, source: Path | None, group: str) -> list[str]:
         if not projects <= members:
             raise ValueError("Analyzer filter contains unknown solution projects")
     if group == "server":
-        return sorted(projects & {SERVER})
+        needed = SERVER in projects or any(SERVER in project_closure(root, project) for project in projects)
+        return [SERVER] if needed else []
     if group == "other":
         return sorted(projects - {SERVER})
     raise ValueError(f"Unknown analyzer root partition: {group}")

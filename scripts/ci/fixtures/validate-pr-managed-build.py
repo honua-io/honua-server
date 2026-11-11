@@ -19,6 +19,21 @@ def job(name, source=TEXT):
 
 
 class PrManagedBuildTests(unittest.TestCase):
+    def test_final_gate_checks_parallel_producer_for_manual_and_pr_runs(self):
+        import yaml
+        required = yaml.safe_load(TEXT)['jobs']['required']
+        self.assertIn('server-test-producer', required['needs'])
+        guard = required['steps'][0]
+        for event in ['pull_request', 'workflow_dispatch']:
+            for result in ['success', 'failure', 'cancelled', 'skipped', '']:
+                environment = dict(os.environ, GITHUB_EVENT_NAME=event,
+                                   SERVER_PRODUCER_RESULT=result, BUILD_AND_TEST_RESULT='success',
+                                   FAST_RESULT='success', FORMAT_RESULT='success',
+                                   CI_ROUTER_RESULT='success', AFFECTED_SHARDS_RESULT='success')
+                actual = subprocess.run(['bash', '-e', '-c', guard['run']], env=environment,
+                                        capture_output=True)
+                self.assertEqual(actual.returncode == 0, result == 'success')
+
     def test_parallel_producer_failure_rejects_empty_shard_success(self):
         import yaml
         jobs = yaml.safe_load(TEXT)['jobs']
@@ -57,13 +72,13 @@ class PrManagedBuildTests(unittest.TestCase):
 
     def test_required_results_fail_closed(self):
         required = job('required')
-        self.assertIn('needs: [pr-gate, fast-tests, format, ci-router-validation, affected-shards]', required)
+        self.assertIn('needs: [pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer]', required)
         self.assertIn('if: always()', required)
         script = re.search(r'        run: \|\n(.*?)(?=\n      #|\n      -|\Z)', required, re.S).group(1)
         script = textwrap.dedent(script)
-        keys = ['BUILD_AND_TEST_RESULT', 'FAST_RESULT', 'FORMAT_RESULT', 'CI_ROUTER_RESULT',
+        keys = ['BUILD_AND_TEST_RESULT', 'SERVER_PRODUCER_RESULT', 'FAST_RESULT', 'FORMAT_RESULT', 'CI_ROUTER_RESULT',
                 'AFFECTED_SHARDS_RESULT']
-        dependencies = ['pr-gate', 'fast-tests', 'format', 'ci-router-validation', 'affected-shards']
+        dependencies = ['pr-gate', 'server-test-producer', 'fast-tests', 'format', 'ci-router-validation', 'affected-shards']
         for key, dependency in zip(keys, dependencies):
             self.assertIn(key+': ${{ needs.'+dependency+'.result }}', required)
         success = {key: 'success' for key in keys}
