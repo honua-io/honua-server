@@ -123,7 +123,7 @@ internal sealed class PostgresSecurityTokenStore(JobStoreDatabase database, IDat
             repeat,
             cancellationToken);
 
-    // A payload the key ring can no longer open reads as an absent token, so the caller signs in again.
+    // A payload the key ring cannot open reads as an absent token, so the caller signs in again.
     private StoredSecurityToken? Unprotect(byte[] protectedPayload, DateTimeOffset expiresAt)
     {
         try
