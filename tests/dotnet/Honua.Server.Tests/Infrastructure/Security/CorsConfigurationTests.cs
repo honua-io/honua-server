@@ -96,6 +96,39 @@ public sealed class CorsConfigurationTests
         Assert.Contains("Content-Type", policy.Headers);
     }
 
+    [Theory]
+    [InlineData("https://console.example.com", true)]
+    [InlineData("https://other.example.com", false)]
+    [InlineData("https://console.example.com:8443", false)]
+    [InlineData("null", false)]
+    public async Task CredentialedPolicy_OnlyAllowsExplicitOrigins(string origin, bool allowed)
+    {
+        var policy = await ResolvePolicyAsync(CorsConfiguration.ProductionPolicy, false,
+            new Dictionary<string, string?>
+            {
+                ["Cors:AllowedOrigins:0"] = "https://*.example.com",
+                ["Cors:AllowedOrigins:1"] = "https://console.example.com",
+                ["Cors:AllowCredentials"] = "true"
+            });
+        Assert.True(policy.SupportsCredentials);
+        Assert.Equal(allowed, policy.IsOriginAllowed(origin));
+    }
+
+    [Fact]
+    public async Task DevelopmentPolicy_WithCredentials_RejectsWildcardOrigins()
+    {
+        var policy = await ResolvePolicyAsync(CorsConfiguration.DevelopmentPolicy, true,
+            new Dictionary<string, string?>
+            {
+                ["Cors:DevelopmentOrigins:0"] = "*",
+                ["Cors:DevelopmentOrigins:1"] = "http://localhost:3000"
+            });
+        Assert.True(policy.SupportsCredentials);
+        Assert.False(policy.AllowAnyOrigin);
+        Assert.True(policy.IsOriginAllowed("http://localhost:3000"));
+        Assert.False(policy.IsOriginAllowed("https://other.example.com"));
+    }
+
     private static async Task<CorsPolicy> ResolvePolicyAsync(
         string policyName,
         bool isDevelopment,

@@ -60,6 +60,223 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/password-token")]
+    [Endpoint("GET /api/v1/admin/config")]
+    public async Task PasswordToken_AllowedOrigin_IssuesUsableBearerWithoutCookies()
+    {
+        await using var fixture = CreatePasswordTokenFixture();
+        await fixture.InitializeAsync();
+        using var browser = fixture.CreateClient();
+        browser.BaseAddress = new Uri("https://localhost");
+        browser.DefaultRequestHeaders.Add("Origin", "https://console.example.com");
+        using var response = await browser.PostAsJsonAsync("/api/v1/admin/auth/password-token", new { password = "test-admin-key" });
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.Contains("Set-Cookie").Should().BeFalse();
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+        var token = await response.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminOperatorBearerResponse);
+        token!.ExpiresIn.Should().BeInRange(1, 300);
+        using var api = fixture.CreateClient();
+        api.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token.AccessToken);
+        using var authorized = await api.GetAsync("/api/v1/admin/config");
+        authorized.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTheory]
+    [InlineData("https://unlisted.example.com", "https://localhost", HttpStatusCode.BadRequest)]
+    [InlineData("null", "https://localhost", HttpStatusCode.BadRequest)]
+    [InlineData(null, "https://localhost", HttpStatusCode.BadRequest)]
+    [InlineData("https://console.example.com", "http://localhost", HttpStatusCode.BadRequest)]
+    [Endpoint("POST /api/v1/admin/auth/password-token")]
+    public async Task PasswordToken_UntrustedRequest_IsRejected(string? origin, string server, HttpStatusCode expected)
+    {
+        await using var fixture = CreatePasswordTokenFixture();
+        await fixture.InitializeAsync();
+        using var browser = fixture.CreateClient();
+        browser.BaseAddress = new Uri(server);
+        if (origin is not null)
+        {
+            browser.DefaultRequestHeaders.Add("Origin", origin);
+        }
+        using var response = await browser.PostAsJsonAsync("/api/v1/admin/auth/password-token", new { password = "test-admin-key" });
+        response.StatusCode.Should().Be(expected);
+        response.Headers.Contains("Set-Cookie").Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/password-token")]
+    public async Task PasswordToken_InvalidPassword_IsUnauthorized()
+    {
+        await using var fixture = CreatePasswordTokenFixture();
+        await fixture.InitializeAsync();
+        using var browser = fixture.CreateClient();
+        browser.BaseAddress = new Uri("https://localhost");
+        browser.DefaultRequestHeaders.Add("Origin", "https://console.example.com");
+        using var response = await browser.PostAsJsonAsync("/api/v1/admin/auth/password-token", new { password = "invalid" });
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Headers.Contains("Set-Cookie").Should().BeFalse();
+    }
+
+    private static WebAppFixture CreatePasswordTokenFixture() => CreateBaseFixture().ConfigureWebHost(builder =>
+    {
+        builder.UseSetting("Oidc:Enabled", "false");
+        builder.UseSetting("Cors:AllowedOrigins:0", "https://console.example.com");
+        builder.UseSetting("Authentication:OperatorBearer:Enabled", "true");
+        builder.UseSetting("Authentication:OperatorBearer:SigningKey", TestOperatorBearerSigningKey);
+        builder.UseSetting("Authentication:OperatorBearer:MaxLifetimeMinutes", "5");
+    });
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/session")]
+    public async Task PasswordSignIn_WithoutCsrf_IsRejected()
+    {
+        _client.BaseAddress = new Uri("https://localhost");
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "test-admin-key" });
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/session")]
+    [Endpoint("GET /api/v1/admin/auth/csrf")]
+    [Endpoint("GET /api/v1/admin/config")]
+    public async Task PasswordSignIn_WithoutOidc_CreatesSecureSessionAndProtectsLogout()
+    {
+        _client.BaseAddress = new Uri("https://localhost");
+        await SetCsrfHeaderAsync(_client);
+        var signIn = await _client.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "test-admin-key" });
+        signIn.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var cookie = signIn.Headers.GetValues("Set-Cookie").Single(value => value.StartsWith("honua_admin_session=", StringComparison.Ordinal));
+        cookie.Should().Contain("httponly").And.Contain("secure").And.Contain("samesite=strict");
+        var session = await _client.GetFromJsonAsync<AdminAuthSessionResponse>("/api/v1/admin/auth/session");
+        session!.IsAuthenticated.Should().BeTrue();
+        session.ProviderKey.Should().Be("builtin");
+        session.Claims.Should().ContainSingle(claim => claim.Type == "auth_type" && claim.Value == "admin");
+        var admin = await _client.GetAsync("/api/v1/admin/config");
+        admin.StatusCode.Should().Be(HttpStatusCode.OK);
+        var sessionId = cookie.Split(';')[0].Split('=', 2)[1];
+        var store = _fixture.Services.GetRequiredService<AdminAuthSessionStore>();
+        (await store.GetInteractiveSessionForApprovalAsync(sessionId, CancellationToken.None)).Should().BeNull();
+        _client.DefaultRequestHeaders.Remove("X-Honua-CSRF");
+        var rejected = await _client.PostAsync("/api/v1/admin/auth/logout", null);
+        rejected.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await SetCsrfHeaderAsync(_client);
+        var logout = await _client.PostAsync("/api/v1/admin/auth/logout", null);
+        logout.StatusCode.Should().Be(HttpStatusCode.OK);
+        var revoked = await _client.GetFromJsonAsync<AdminAuthSessionResponse>("/api/v1/admin/auth/session");
+        revoked!.IsAuthenticated.Should().BeFalse();
+        var stored = await _fixture.Services.GetRequiredService<AdminAuthSessionStore>()
+            .GetAuthenticatedSessionAsync(sessionId, CancellationToken.None);
+        stored.Should().BeNull();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/session")]
+    [Endpoint("GET /api/v1/studio/package-families")]
+    public async Task PasswordSignIn_WithoutOidc_CanAccessStudio()
+    {
+        _client.BaseAddress = new Uri("https://localhost");
+        await SetCsrfHeaderAsync(_client);
+        using var signIn = await _client.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "test-admin-key" });
+        signIn.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        using var studio = await _client.GetAsync("/api/v1/studio/package-families");
+        studio.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/session")]
+    [Endpoint("POST /api/v1/admin/auth/bearer")]
+    [Endpoint("POST /mcp")]
+    public async Task PasswordSignIn_WithoutOidc_IssuesBearerWithDurableMcpIdentity()
+    {
+        await using var fixture = CreateBaseFixture().ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("Oidc:Enabled", "false");
+            builder.UseSetting("Authentication:OperatorBearer:Enabled", "true");
+            builder.UseSetting("Authentication:OperatorBearer:SigningKey", TestOperatorBearerSigningKey);
+        });
+        await fixture.InitializeAsync();
+        using var browser = fixture.CreateClient();
+        browser.BaseAddress = new Uri("https://localhost");
+        await SetCsrfHeaderAsync(browser);
+        using var signIn = await browser.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "test-admin-key" });
+        signIn.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        await SetCsrfHeaderAsync(browser);
+        using var bearer = await browser.PostAsync("/api/v1/admin/auth/bearer", null);
+        bearer.StatusCode.Should().Be(HttpStatusCode.OK);
+        var token = await bearer.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminOperatorBearerResponse);
+        using var mcp = fixture.CreateClient();
+        mcp.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token!.AccessToken);
+        using var initialized = await mcp.PostAsJsonAsync("/mcp", new
+        {
+            jsonrpc = "2.0",
+            id = 1,
+            method = "initialize",
+            @params = new
+            {
+                protocolVersion = "2025-06-18",
+                capabilities = new { },
+                clientInfo = new { name = "browser-session-test", version = "1.0" }
+            }
+        });
+        initialized.StatusCode.Should().Be(HttpStatusCode.OK);
+        initialized.Headers.Contains("Mcp-Session-Id").Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/session")]
+    public async Task PasswordSignIn_InvalidPassword_IsUnauthorized()
+    {
+        _client.BaseAddress = new Uri("https://localhost");
+        await SetCsrfHeaderAsync(_client);
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "incorrect-password" });
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Headers.TryGetValues("Set-Cookie", out var cookies).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/session")]
+    [Endpoint("GET /api/v1/admin/auth/csrf")]
+    public async Task PasswordSignIn_RequiresHttps()
+    {
+        _client.BaseAddress = new Uri("http://localhost");
+        var token = await _client.GetAsync("/api/v1/admin/auth/csrf");
+        token.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var signIn = await _client.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "test-admin-key" });
+        signIn.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/session")]
+    public async Task PasswordSignIn_WithDifferentOrigin_IsRejected()
+    {
+        _client.BaseAddress = new Uri("https://localhost");
+        await SetCsrfHeaderAsync(_client);
+        _client.DefaultRequestHeaders.Add("Origin", "https://localhost:8443");
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "test-admin-key" });
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/session")]
+    public async Task PasswordSignIn_WithInvalidCsrfToken_IsRejected()
+    {
+        _client.BaseAddress = new Uri("https://localhost");
+        await SetCsrfHeaderAsync(_client);
+        _client.DefaultRequestHeaders.Remove("X-Honua-CSRF");
+        _client.DefaultRequestHeaders.Add("X-Honua-CSRF", "invalid-token");
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "test-admin-key" });
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    private static async Task SetCsrfHeaderAsync(HttpClient client)
+    {
+        var response = await client.GetAsync("/api/v1/admin/auth/csrf");
+        response.EnsureSuccessStatusCode();
+        using var document = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        client.DefaultRequestHeaders.Remove("X-Honua-CSRF");
+        client.DefaultRequestHeaders.Add("X-Honua-CSRF", document.RootElement.GetProperty("requestToken").GetString());
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/auth/config")]
     public async Task GetAuthConfig_IsAnonymous_Returns200()
     {
@@ -393,6 +610,8 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
             var oidcClient = oidcFixture.CreateClient(client =>
                 client.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}"));
 
+            oidcClient.BaseAddress = new Uri("https://localhost");
+            await SetCsrfHeaderAsync(oidcClient);
             var response = await oidcClient.PostAsJsonAsync("/api/v1/admin/auth/logout", new { });
 
             response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
@@ -997,6 +1216,10 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
             var oidcClient = oidcFixture.CreateClient(client =>
                 client.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}"));
 
+            oidcClient.BaseAddress = new Uri("https://localhost");
+            var rejected = await oidcClient.PostAsync("/api/v1/admin/auth/bearer", content: null);
+            rejected.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            await SetCsrfHeaderAsync(oidcClient);
             var response = await oidcClient.PostAsync("/api/v1/admin/auth/bearer", content: null);
 
             response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
@@ -1028,6 +1251,8 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
             var sessionClient = oidcFixture.CreateClient(client =>
                 client.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}"));
 
+            sessionClient.BaseAddress = new Uri("https://localhost");
+            await SetCsrfHeaderAsync(sessionClient);
             var response = await sessionClient.PostAsync("/api/v1/admin/auth/bearer", content: null);
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 
