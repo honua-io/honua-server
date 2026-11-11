@@ -121,6 +121,7 @@ compose stop honua-server
 pg="$(compose ps -q postgres)"
 docker cp "$SEED_FILE" "$pg:/tmp/cng-seed.sql"
 docker exec -i "$pg" psql -v ON_ERROR_STOP=1 -U postgres -d honua_cng -f /tmp/cng-seed.sql >/dev/null
+docker exec -i "$pg" psql -v ON_ERROR_STOP=1 -U postgres -d honua_cng < "$REPO_ROOT/scripts/ci/seed-serving-formats.sql" >/dev/null
 seeded_feature_count="$(docker exec "$pg" psql -tA -U postgres -d honua_cng -c 'SELECT COUNT(*) FROM public.features WHERE layer_id=1000')"
 printf '%s\n' "$seeded_feature_count" > "$OUT/expected-feature-count.txt"
 compose up -d --no-build honua-server
@@ -142,7 +143,7 @@ cat "$OUT/image.txt" "$OUT/http.txt"
 if [[ "$head_magic" != PAR1 || "$tail_magic" != PAR1 ]]; then
   fail "f=parquet body is not a Parquet file (${bytes} bytes): $(head -c 300 "$OUT/cng.parquet" | tr -cd '[:print:]')"
 fi
-path="/rest/services/cng/MapServer/export?bbox=-180,-90,180,90&bboxSR=4326&size=256,256&format=png&f=image"
+path="/rest/services/cng-map/MapServer/export?bbox=-180,-90,180,90&bboxSR=4326&size=256,256&format=png&f=image"
 code="$(curl -sS --retry 3 --retry-all-errors -o "$OUT/cng.png" -w '%{http_code}' "http://127.0.0.1:${PORT}${path}")" \
   || fail "render request failed"
 [[ "$code" == 200 ]] || fail "map export answered HTTP ${code}"
@@ -171,7 +172,7 @@ code="$(curl -sS --max-time 120 -H "X-API-Key: $admin_key" -o "$OUT/cng.gpkg" -w
   || fail "GeoPackage export failed"
 [[ "$code" == 200 ]] || fail "GeoPackage export answered HTTP ${code}"
 "$format_python" "$format_assertions" gpkg "$OUT/cng.gpkg" --feature-count "$seeded_feature_count"
-path="/rest/services/cng/MapServer/WMS?SERVICE=WMS&REQUEST=GetLegendGraphic&VERSION=1.3.0&LAYER=1000&FORMAT=image/png&WIDTH=24&HEIGHT=24&TRANSPARENT=TRUE"
+path="/rest/services/cng-map/MapServer/WMS?SERVICE=WMS&REQUEST=GetLegendGraphic&VERSION=1.3.0&LAYER=1000&FORMAT=image/png&WIDTH=24&HEIGHT=24&TRANSPARENT=TRUE"
 code="$(curl -sS --max-time 120 -o "$OUT/legend.png" -w '%{http_code}' "http://127.0.0.1:${PORT}${path}")" \
   || fail "legend request failed"
 [[ "$code" == 200 ]] || fail "legend answered HTTP ${code}"
