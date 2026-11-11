@@ -216,7 +216,9 @@ services:
         - github_token
     environment:
       DOTNET_ENVIRONMENT: Development
-      ConnectionStrings__Redis: redis:6379
+      # The worker claims jobs from the server's system PostgreSQL database
+      # (AddGdalWorker throws without it). Same database as `honua` = same queue.
+      ConnectionStrings__DefaultConnection: Server=postgres;Port=5432;Database=honua_compat;User Id=postgres;Password=compat_password;
       GdalWorker__ScratchRoot: /tmp/honua-gdal-worker
       FileStorage__AwsS3__BucketName: honua-multidim-fixtures
       FileStorage__AwsS3__Region: us-east-1
@@ -228,7 +230,8 @@ services:
       AWS_SECRET_ACCESS_KEY: test
       AWS_REGION: us-east-1
     depends_on:
-      redis:
+      # `honua` applies the migrations that create the job queue tables.
+      honua:
         condition: service_healthy
       multidim-object-seed:
         condition: service_completed_successfully
