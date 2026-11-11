@@ -31,8 +31,10 @@ public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixt
         _conformanceFixture = fixture.Conformance;
     }
 
-    // Only the default and echo-enabled configurations share applications; service overrides
-    // and configuration changes stay isolated from these sequential read-only cases.
+    /// <summary>
+    /// Shares the default and echo-enabled applications while keeping service overrides
+    /// and configuration changes isolated from the sequential shared cases.
+    /// </summary>
     public sealed class Fixture : IAsyncLifetime
     {
         public WebAppFixture Default { get; } = new();
