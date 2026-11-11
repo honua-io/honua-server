@@ -622,10 +622,11 @@ disjoint method ownership with unchanged source triggers and budgets.
 
 ### Layer publishing shared application fixture
 
-The `Server Features Admin Layer Publishing` shard selects
-`LayerPublishingIntegrationTests`, with a 27-minute
-test timeout. `LayerPublishingIntegrationTests` shares its application host across
-cases and belongs to the admin runtime partition.
+The `Server Features Admin Layer Publishing` shard selects 48 named
+`LayerPublishingIntegrationTests` methods through an exact-name filter, with a
+27-minute test timeout. The class's remaining 16 methods run in
+`Server Features Admin Runtime Operations` through its complementary filter.
+Each shard process builds its own instance of the shared class fixture.
 
 ### Governance capacity split
 
