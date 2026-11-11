@@ -257,9 +257,10 @@ public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
 [Collection("Database.CoreEndpoints")]
 public sealed class FeatureServerEndpointTests : IAsyncLifetime, IClassFixture<FeatureServerEndpointTests.ReadOnlyFixture>
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;
+
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
     private readonly WebAppFixture _readOnlyApplication;
     private bool _defaultInitialized;
@@ -280,10 +281,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime, IClassFixture<F
         _fixture.EnableV2ServiceEditingCapabilities(TestServiceId, ["Create", "Update", "Delete"]);
     }
 
-    /// <summary>
-    /// Shares immutable metadata and query seeds. Cases that edit features, change metadata,
-    /// or expand the seed dataset use separate applications and schemas.
-    /// </summary>
+    // Cases that edit features, change metadata, or expand the seed dataset need separate
+    // applications and schemas; immutable metadata and query seeds can share this application.
     public sealed class ReadOnlyFixture : IAsyncLifetime
     {
         public WebAppFixture Application { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
