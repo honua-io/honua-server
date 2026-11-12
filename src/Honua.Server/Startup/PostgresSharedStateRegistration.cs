@@ -11,6 +11,7 @@ using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Infrastructure.Security;
 using Honua.Server.Features.Operations;
 using Honua.Server.Features.Infrastructure.SecurityState;
+using Honua.Server.Features.Realtime;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 
@@ -72,6 +73,7 @@ internal static class PostgresSharedStateRegistration
         services.AddRetentionSweep<PostgresSecurityTokenStore>();
         services.AddRetentionSweep<PostgresTokenReplayStore>();
         services.AddRetentionSweep<PostgresIdempotencyReservationStore>();
+        services.AddRealtimeEventLog(configuration);
         return services;
     }
 
