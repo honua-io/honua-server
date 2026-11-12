@@ -6,18 +6,11 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.Migration;
 
-/// <summary>
-/// Issue #1253. Drives footprint-driven batch migration runs forward. On each
-/// tick the leader node loads the active batches and calls
-/// <see cref="IMigrationBatchOrchestrator.AdvanceAsync"/> for each, which
-/// reconciles child import-job status, queues the next ready child, rolls up
-/// batch progress, and applies relationships once all children publish (#1256).
-/// </summary>
-/// <remarks>
-/// Advancing is idempotent and gated by the shared import leader election so
-/// exactly one node advances a batch at a time. When leadership is unavailable
-/// (no Redis, dev profile) the local fallback leader still advances batches.
-/// </remarks>
+// Drives footprint-driven batch migration runs forward. On each tick the leader node loads the
+// active batches and advances each: it reconciles child import-job status, queues the next ready
+// child, rolls up batch progress and applies relationships once all children publish. Advancing
+// is idempotent and gated by the shared import leader election, so exactly one node advances a
+// batch at a time; a host without a lease store in a development profile leads on its own node.
 internal sealed partial class MigrationBatchBackgroundService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
@@ -73,7 +66,7 @@ internal sealed partial class MigrationBatchBackgroundService : BackgroundServic
             // ImportBackgroundServiceCoordinator. This service shares the import leader
             // election instance, so releasing here removes the implicit dependency on the
             // import worker coordinator releasing the lease and lets a successor take over
-            // without waiting for the Redis lease TTL to expire.
+            // without waiting for the lease to expire.
             await _jobManager.LeaderElection.ReleaseLeadershipAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
