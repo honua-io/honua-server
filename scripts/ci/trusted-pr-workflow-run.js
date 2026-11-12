@@ -299,6 +299,50 @@ async function resolveForObservation({ core, label, markerPath, fs, ...options }
 }
 
 /**
+ * The latest completed attempt of one canonical PR Gate job at or before the
+ * source attempt. A partial rerun keeps a job's earlier outcome without
+ * re-executing it, so the deciding attempt can precede the source attempt.
+ */
+function latestSourceJob(jobs, run, name) {
+  const candidates = jobs.filter((job) =>
+    job.name === name &&
+    job.run_id === run.id &&
+    job.run_attempt <= run.run_attempt &&
+    job.workflow_name === 'PR Gate' &&
+    job.head_sha === run.head_sha &&
+    job.status === 'completed' && TERMINAL_CONCLUSIONS.has(job.conclusion),
+  );
+  const latestAttempt = Math.max(...candidates.map((job) => job.run_attempt));
+  const latest = candidates.filter((job) => job.run_attempt === latestAttempt);
+  if (latest.length !== 1) {
+    throw new Error(`source run does not identify exactly one canonical ${name} job`);
+  }
+  return latest[0];
+}
+
+async function resolvePrGateForObservation(options) {
+  const resolved = await resolveForObservation(options);
+  if (!resolved) return null;
+  const { github, owner, repo } = options;
+  const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+    owner, repo, run_id: resolved.run.id, filter: 'all', per_page: 100,
+  });
+  // A skipped heavy job alone is not draft evidence: a failed runner selection
+  // also skips it. Runner select has no dependencies, so its draft guard is the
+  // only way it is skipped.
+  const heavy = latestSourceJob(jobs, resolved.run, 'PR Gate / Build and tests');
+  const runnerSelect = latestSourceJob(jobs, resolved.run, 'PR Gate / Runner select');
+  if (heavy.conclusion !== 'skipped' || runnerSelect.conclusion !== 'skipped') return resolved;
+  recordObservationSkip({
+    ...options,
+    code: 'source-run-draft-admission',
+    reason: 'the source run did not admit the heavy PR gate',
+    source: options,
+  });
+  return null;
+}
+
+/**
  * Record one observation skip: the resolver's superseded-source class above, or
  * an observer-local one (a draft pull request, a candidate that moved mid-run).
  *
@@ -336,5 +380,6 @@ module.exports = {
   parseRunId,
   recordObservationSkip,
   resolveForObservation,
+  resolvePrGateForObservation,
   resolveTrustedPullRequestWorkflowRun,
 };

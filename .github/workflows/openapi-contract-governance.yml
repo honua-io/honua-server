@@ -5,7 +5,7 @@ on:
     branches:
       - trunk
       - main
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened, edited, ready_for_review, converted_to_draft]
     paths:
       - 'docs/developer/api-specs/**'
       - 'src/Honua.Server/Features/Admin/**'
@@ -27,6 +27,7 @@ concurrency:
 
 jobs:
   validate-openapi-contracts:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 10
 

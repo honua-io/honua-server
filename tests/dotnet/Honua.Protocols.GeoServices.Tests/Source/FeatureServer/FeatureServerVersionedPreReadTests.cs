@@ -3,23 +3,13 @@
 
 using System.Collections.Immutable;
 using FluentAssertions;
-using Honua.Core.Features.Collaboration.FeatureLocks;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Validation.Abstractions;
-using Honua.Core.Queries.Filters;
-using Honua.Infrastructure.Events;
-using Honua.Infrastructure.Validation;
-using Honua.Plugins.Abstractions;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
-using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.TestKit.Attributes;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
@@ -151,6 +141,7 @@ public sealed class FeatureServerVersionedPreReadTests
 
     private static ImmutableDictionary<string, object?> Attributes(string name, string code)
         => ImmutableDictionary<string, object?>.Empty
+            .Add("objectid", 11L)
             .Add("name", name)
             .Add("code", code);
 
@@ -188,21 +179,5 @@ public sealed class FeatureServerVersionedPreReadTests
         };
 
     private static FeatureServerEditsHandler CreateHandler(IFeatureReader reader)
-        => new(
-            new FeatureServerEditsDependencies(
-                Substitute.For<IResourceValidator>(),
-                Substitute.For<IFeatureWriter>(),
-                reader,
-                Substitute.For<IFeatureServerGeometryServices>(),
-                Substitute.For<IEditParameterAdapter<GeoServicesEditRequest>>(),
-                Substitute.For<IEditProcessor>(),
-                new FeatureMutationValidator(Substitute.For<IGeometryValidator>()),
-                Substitute.For<IFilterExpressionService>(),
-                Substitute.For<IHttpContextAccessor>(),
-                new FeatureMutationEventService(Substitute.For<IFeatureChangeEventPublisher>()),
-                Substitute.For<IPluginEditPipeline>(),
-                Substitute.For<IApplyEditsIdempotencyStore>(),
-                Substitute.For<IFeatureEditGuard>(),
-                Substitute.For<IFeatureLockService>()),
-            NullLogger<FeatureServerEditsHandler>.Instance);
+        => EditsHandlerFixture.Create(reader);
 }
