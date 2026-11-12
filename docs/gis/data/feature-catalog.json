@@ -1552,6 +1552,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_RepeatedInvalidPasswords_RefusesSourceUntilTheBlockElapses",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_RequiresHttps",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_WithoutOidc_CreatesSecureSessionAndProtectsLogout"
       ],
@@ -1567,7 +1568,6 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.GetLogoutUrl_Cognito_UsesClientAndPublicLogoutUriWithoutDiscoveryEndpoint",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.GetLogoutUrl_InProductionWithoutConfiguredPublicBaseUrl_ReturnsServiceUnavailable",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.GetLogoutUrl_NoOidcConfigured_ReturnsNotFound",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.GetLogoutUrl_WithUnknownProvider_DoesNotClearAuthenticatedSession"
@@ -1585,7 +1585,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.GetSession_AfterTokenExchange_ReturnsProjectedClaimsWithoutTokens",
-        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.GetSession_WithOpaqueAccessTokenAndJwtIdToken_ReturnsProjectedClaims"
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.GetSession_WithOpaqueAccessTokenAndJwtIdToken_ReturnsProjectedClaims",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordToken_AllowedOrigin_IssuesUsableBearerWithoutCookies"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -3836,9 +3837,6 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.AdminEndpoint_AdditionalRoleClaim_IsAccepted",
-        "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.AdminEndpoint_CognitoAccessToken_IsAccepted",
-        "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.AdminEndpoint_CognitoFallback_PreservesTrustValidation",
         "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.AdminEndpoint_ExpiredJwt_IsRejected",
         "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.AdminEndpoint_NoToken_IsRejected",
         "Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests.AdminEndpoint_TamperedSignature_IsRejected",
@@ -4269,6 +4267,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ProcessLocalAdminStoreGuardEndpointTests.CreateRateLimitPolicy_DeploymentOfTwoTasks_IsRefusedAndListStillAnswers",
         "Honua.Server.Tests.Features.Admin.RateLimitEndpointsTests.ListPolicies_Activated_ReturnsSuccessEnvelope"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -4880,6 +4879,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.PMTilesArchiveEndpointTests.CompletedArchiveJob_ProducesValidPMTilesArchive",
+        "Honua.Server.Tests.Features.Admin.PMTilesArchiveEndpointTests.CompletedArchiveJob_WithGzipTileCompression_WritesGzipTilesThatDecode",
         "Honua.Server.Tests.Features.Admin.PMTilesArchiveEndpointTests.GetJobStatus_ArchiveJob_ReturnsProgressWithArchiveFields",
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.GetJobStatus_PublishJob_ReturnsPublishedArtifactDescriptor",
         "Honua.Server.Tests.Features.Admin.TileOperationsEndpointsTests.GetJobStatus_NonexistentId_Returns404",
@@ -7659,6 +7659,8 @@
         "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateLayer_RoundTripsThroughProtocolAndPreservesOtherMetadata",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.LegacyLayer_WithoutSourceGovernance_OmitsOptionalProjectionFields",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateProtocols_DisableOgcFeatures_BlocksOgcCollectionMetadata",
+        "Honua.Server.Tests.Features.Caching.MultiTaskCacheCoherenceTests.CatalogChangeOnTaskA_ReachesTaskBCachedCollection_OnItsNextRequest",
+        "Honua.Server.Tests.Features.Caching.MultiTaskCacheCoherenceTests.LayerMadePrivateOnTaskA_TaskBStopsReplayingItsCachedCollectionAndTile",
         "Honua.Server.Tests.Features.Infrastructure.LayerEnablementIntegrationTests.DisabledLayer_ReturnsNotFoundAcrossProtocols",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesClientDiscoveryTests.Wgs84Collection_AdvertisesLongitudeFirstStorage_AndHonorsExplicitAxisOrder",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesCollectionMetadataTests.GetCollection_WithStandaloneLicenseScalar_DerivesCanonicalLicenseLink",
@@ -8781,6 +8783,8 @@
         "Honua.ProviderSmoke.Tests.PrimaryProviderSmokeTestsBase.Tiles_RasterTile_ReturnsNonEmptyPng",
         "Honua.ProviderSmoke.Tests.SqlServerProviderSmokeTests.Tiles_RasterTile_ReturnsNonEmptyPng",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.RefreshMaterializedFeatures_AfterSourceUpdate_RebuildsSnapshotMvtReads",
+        "Honua.Server.Tests.Features.Caching.MultiTaskCacheCoherenceTests.CatalogChangeOnTaskA_ReachesTaskBCachedCollection_OnItsNextRequest",
+        "Honua.Server.Tests.Features.Caching.MultiTaskCacheCoherenceTests.LayerMadePrivateOnTaskA_TaskBStopsReplayingItsCachedCollectionAndTile",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.DenseLowZoomMvtBudgetEndpointTests.GetTile_DenseZoom0_ReturnsDecodableTileWithinBudget",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesCrsTests.GetTile_WorldCRS84Quad_UsesGeographicTileEnvelopeForMvt",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesCrsTests.GetTile_WorldCRS84Quad_WithCrs4326_ReturnsTile",
@@ -12706,7 +12710,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms_GetLegendGraphic_UnsupportedFormat_ReturnsInvalidFormat",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms_GetLegendGraphic_WidthAndHeightSizeTheSwatch",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms_GetLegendGraphic_WithScale_ReturnsPngLegend",
-        "Honua.Server.Tests.Features.Security.WmsServiceRbacTests.GetCapabilities_WithAnonymousClient_ReturnsWmsAccessDeniedException"
+        "Honua.Server.Tests.Features.Security.WmsServiceRbacTests.GetCapabilities_WithAnonymousClient_ReturnsWmsAccessDeniedException",
+        "Honua.Server.Tests.Features.Styling.SavedLayerPresentationRenderingTests.SavedDrawingInfo_IsDrawnByExportGetMapAndLegend_AndClearingRestoresDefault"
       ],
       "proof_ledger_surface": "map-server",
       "maturity": "implemented",
@@ -12786,7 +12791,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsUnknownParameterTests.Wmts_GetTile_UnknownParameters_PreservesImageAndKnownParameterValidation",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.WmtsAuthorizationProofTests.Wmts_GetTile_WithoutReadRole_IsRefusedAndReturnsNoTileBytes",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.WmtsJsonFeatureInfoTests.GetFeatureInfo_Json_ReturnsNativeClientGeoJson",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.WmtsRuntimeAttributeFeatureInfoTests.GetFeatureInfo_ProviderRuntimeTypes_ReturnsTypedGeoJson"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.WmtsRuntimeAttributeFeatureInfoTests.GetFeatureInfo_ProviderRuntimeTypes_ReturnsTypedGeoJson",
+        "Honua.Server.Tests.Features.Styling.SavedLayerPresentationRenderingTests.SavedDrawingInfo_IsDrawnByMapServerTilesAndWmts"
       ],
       "proof_ledger_surface": "map-server",
       "maturity": "preview",
@@ -12920,7 +12926,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests.MapServer_Export_WithWideDatelineCrossingBbox_In3857_PreservesWrappedExtent",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests.MapServer_Export_WithoutSpatialReference_UsesAdvertisedWebMercator",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerRenderCapacityTests.Export_WhenRasterCapacityUnavailable_ReturnsServiceUnavailable",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.RenderedRasterBaselineTests.MapServer_Export_Point_MatchesCommittedBaseline"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.RenderedRasterBaselineTests.MapServer_Export_Point_MatchesCommittedBaseline",
+        "Honua.Server.Tests.Features.Styling.SavedLayerPresentationRenderingTests.SavedDrawingInfo_IsDrawnByExportGetMapAndLegend_AndClearingRestoresDefault"
       ],
       "proof_ledger_surface": "map-server",
       "maturity": "implemented",
@@ -12939,6 +12946,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests.MapServer_ExportTiles_WithCompactStorageFormat_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests.MapServer_ExportTiles_WithStorageFormatTpk_WritesExplodedTilePackage",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests.MapServer_ExportTiles_WritesZipArchiveToCloudStorage",
+        "Honua.Server.Tests.Features.Styling.SavedLayerPresentationRenderingTests.SavedDrawingInfo_IsDrawnByMapServerTilesAndWmts",
         "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryTests.ArtifactExpiry_AfterSuccess_ProducesStableNotFound",
         "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryTests.Cancel_FromDifferentReplica_QueuedJob_IsCancelledAndDequeued",
         "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryTests.Execution_EmitsJobTransitionMetricsCarryingJobIdentifiers",
@@ -13120,7 +13128,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Legend_WithInvalidIdentifier_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Legend_WithThreeSizeComponents_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Legend_WithUnsupportedDynamicLayerRenderer_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Legend_WithUnsupportedFormat_ReturnsBadRequest"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Legend_WithUnsupportedFormat_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Styling.SavedLayerPresentationRenderingTests.SavedDrawingInfo_IsDrawnByExportGetMapAndLegend_AndClearingRestoresDefault"
       ],
       "proof_ledger_surface": "map-server",
       "maturity": "implemented",
@@ -13192,7 +13201,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerTileEndpointTests.Tile_ValidCoordinates_ReturnsPngImage",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerTileEndpointTests.Tile_WhenCloudCacheHit_ReturnsStoredTile",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerTileEndpointTests.Tile_ZoomAboveConfiguredMaximum_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerTileLimitsTests.Tile_Zoom23_WithMaxTileZoom24_ReturnsPngImage"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerTileLimitsTests.Tile_Zoom23_WithMaxTileZoom24_ReturnsPngImage",
+        "Honua.Server.Tests.Features.Styling.SavedLayerPresentationRenderingTests.SavedDrawingInfo_IsDrawnByMapServerTilesAndWmts"
       ],
       "proof_ledger_surface": "map-server",
       "maturity": "implemented",
@@ -16594,7 +16604,9 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordToken_AllowedOrigin_IssuesUsableBearerWithoutCookies",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordToken_InvalidPassword_IsUnauthorized",
-        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordToken_UntrustedRequest_IsRejected"
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordToken_RepeatedInvalidPasswords_RefusesWithRetryAfter",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordToken_UntrustedRequest_IsRejected",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordToken_ValidPasswordBeforeThreshold_DoesNotResetTheCount"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -16649,6 +16661,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_InvalidPassword_IsUnauthorized",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_RepeatedInvalidPasswords_RefusesSourceUntilTheBlockElapses",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_RequiresHttps",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_WithDifferentOrigin_IsRejected",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_WithInvalidCsrfToken_IsRejected",
@@ -18984,6 +18997,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ProcessLocalAdminStoreGuardEndpointTests.CreateRateLimitPolicy_DeploymentOfTwoTasks_IsRefusedAndListStillAnswers",
         "Honua.Server.Tests.Features.Admin.RateLimitEndpointsTests.PolicyCrud_CreateGetUpdateDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -19342,6 +19356,8 @@
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.PostTileJob_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.PMTilesArchiveEndpointTests.StartJob_ArchiveOperationWithoutLayer_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.PMTilesArchiveEndpointTests.StartJob_ArchiveOperation_ReturnsAccepted",
+        "Honua.Server.Tests.Features.Admin.PMTilesArchiveEndpointTests.StartJob_ArchiveWithUnsupportedTileCompression_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Admin.PMTilesArchiveEndpointTests.StartJob_SeedWithTileCompression_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PublishArchive_Republish_PreservesLogicalArtifactIdAndObjectKey",
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.StartJob_PublishOperation_ReturnsAccepted",
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.StartJob_PublishWithoutLayerId_ReturnsBadRequest",
@@ -24858,6 +24874,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.GenerateToken_RepeatedWrongPasswords_RefusesTheCorrectPassword",
         "Honua.Server.Tests.Features.Sharing.PortalFacadeDiscoveryContractTests.GenerateToken_EmitsExpiryAsUnixMilliseconds",
         "Honua.Server.Tests.Features.Sharing.SharingManagedKeyAuthorityTests.GenerateToken_ApprovedOperationKeys_RejectsLossOfOperationAndTenantBinding",
         "Honua.Server.Tests.Features.Sharing.SharingManagedKeyAuthorityTests.GenerateToken_ConstrainedManagedKeys_RejectsAdminPromotion",
@@ -25852,7 +25869,9 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutDrawingInfo_ThenGet_RoundTripsRenderer",
         "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutDrawingInfo_WithNullBody_ClearsStoredDocument",
-        "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.SetDrawingInfo_LayerIdSharedByTwoResources_Returns409AndChangesNeither"
+        "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.SetDrawingInfo_LayerIdSharedByTwoResources_Returns409AndChangesNeither",
+        "Honua.Server.Tests.Features.Styling.SavedLayerPresentationRenderingTests.SavedDrawingInfo_IsDrawnByExportGetMapAndLegend_AndClearingRestoresDefault",
+        "Honua.Server.Tests.Features.Styling.SavedLayerPresentationRenderingTests.SavedDrawingInfo_IsDrawnByMapServerTilesAndWmts"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
