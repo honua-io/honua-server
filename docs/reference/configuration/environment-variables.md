@@ -275,6 +275,9 @@ Database connection pool and query admission:
 | `Limits__Connections__MaxConcurrentQueries` | `200` | Ceiling on concurrently executing database queries. |
 | `Limits__Connections__MaxConnectionPoolSize` | `200` | Npgsql pool maximum. |
 | `Limits__Connections__MinConnectionPoolSize` | `20` | Npgsql pool minimum. |
+| `Deployment__MaxTasks` | unset | Most server tasks that run at once against one database (the autoscaling maximum). With a value above 1, or `Deployment__Mode=MultiNode` and no count, each pool is sized from the database limit and admin changes to settings held in one task's memory are refused. |
+| `Database__InstanceClass` | unset | Database instance class, for example `db.t4g.small`. Pool sizing reads the database's connection limit from it. |
+| `Database__MaxConnections` | unset | The database's `max_connections`, when the instance class does not say it. Wins over `Database__InstanceClass`. |
 | `Limits__Connections__ConnectionIdleLifetimeSeconds` | `600` | Idle connection lifetime. |
 | `Limits__Connections__CommandTimeoutSeconds` | `30` | Database command timeout. |
 | `Limits__Connections__RequestTimeout` | `00:01:00` | End-to-end request timeout. |
