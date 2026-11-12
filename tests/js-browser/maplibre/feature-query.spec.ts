@@ -4,8 +4,8 @@
 
 import { test, expect } from '@playwright/test';
 import { createMap } from './support/map-harness.js';
+import { getStyleUrl } from './support/style-discovery.js';
 import {
-  BASE_URL,
   POINT_LAYER_ID,
   POINT_CENTER,
   POLYGON_LAYER_ID,
@@ -13,8 +13,8 @@ import {
 } from './support/constants.js';
 
 test.describe('Feature Query', () => {
-  test('[CERT-RNDR-01] queryRenderedFeatures returns features at known point', async ({ page }) => {
-    const styleUrl = `${BASE_URL}/api/styles/${POINT_LAYER_ID}.json`;
+  test('[CERT-RNDR-01] queryRenderedFeatures returns features at known point', async ({ page, request }) => {
+    const styleUrl = await getStyleUrl(request, POINT_LAYER_ID);
     const map = await createMap(page, {
       styleUrl,
       center: POINT_CENTER,
@@ -38,8 +38,8 @@ test.describe('Feature Query', () => {
     expect(typeof feature.properties.name).toBe('string');
   });
 
-  test('[CERT-RNDR-01] queryRenderedFeatures returns polygon features', async ({ page }) => {
-    const styleUrl = `${BASE_URL}/api/styles/${POLYGON_LAYER_ID}.json`;
+  test('[CERT-RNDR-01] queryRenderedFeatures returns polygon features', async ({ page, request }) => {
+    const styleUrl = await getStyleUrl(request, POLYGON_LAYER_ID);
     const map = await createMap(page, {
       styleUrl,
       // Center on the seeded polygon's interior.
