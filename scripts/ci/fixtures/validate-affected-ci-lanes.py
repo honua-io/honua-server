@@ -124,7 +124,7 @@ class AffectedLaneTests(unittest.TestCase):
         self.assertIn('build', jobs['server-tests']['needs'])
         parallelism = jobs['server-tests']['strategy']['max-parallel']
         self.assertEqual('${{ inputs.selective_base && '
-                         'fromJson(needs.targeted-shards.outputs.affected_max_parallel) || 24 }}', parallelism)
+                         'fromJson(needs.targeted-shards.outputs.affected_max_parallel) || 16 }}', parallelism)
         self.assertNotIn('full_ci', parallelism,
                          'Full coverage must not expand an affected run beyond its runner budget')
         compute = next(step for step in jobs['targeted-shards']['steps'] if step.get('id') == 'compute')

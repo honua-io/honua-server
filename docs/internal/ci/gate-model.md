@@ -2,7 +2,7 @@
 
 
 > Defines the five-tier quality gate model governing all CI workflows across the Honua project.
-> Last updated: 2026-11-10
+> Last updated: 2026-11-12
 
 ## Tier Definitions
 
@@ -17,6 +17,8 @@
 ## Governing Rules
 
 Draft pull requests run Format, Clean code, and Repository hygiene only; optional PR verification and PR Gate heavy jobs wait for `ready_for_review`. Converting a ready PR back to draft cancels its previous run. The stable `PR Gate` aggregate still runs with `always()` and fails on skipped heavy dependencies, so a draft run cannot supply mergeable verification. PR Gate and native-image impact observers exclude this intentional draft failure only when the source run’s latest `PR Gate / Runner select` and `PR Gate / Build and tests` outcomes at or before the source attempt were both skipped (a partial rerun keeps earlier outcomes; a failed runner selection is a ready-run failure), preserving ready-run failures in promotion evidence even across same-SHA draft transitions. Manual and trunk verification retain their existing coverage.
+
+NuGet audit advisories (NU1901-NU1904) never fail a restore or build: `Directory.Build.props` lists them in `WarningsNotAsErrors` (projects append to that list), so a newly published advisory shows as a restore warning and `scripts/ci/dotnet-restore-retry.sh` treats any remaining restore failure as a retryable feed error. Advisories stay tracked by the NuGet vulnerability scan in `security-nightly.yml`, which annotates High/Critical findings and opens a tracking issue without failing the job (an unreadable report still fails); bumps are ordinary dependency work.
 
 1. **PR gates must be deterministic and directly actionable by the author.** If a check fails, the author must be able to reproduce and fix it locally without external system access.
 
@@ -371,15 +373,6 @@ These workflows run on schedule and can be dispatched manually:
 
 | Workflow | Schedule | What it validates |
 |---|---|---|
-| `cite-conformance.yml` | Mon 6am UTC | OGC CITE Features conformance |
-| `cite-tiles-conformance.yml` | Tue 6am UTC | OGC API Tiles CITE conformance |
-| `cite-wfs20-conformance.yml` | Mon 3am UTC | WFS 2.0 CITE conformance |
-| `cite-wms-conformance.yml` | Wed 6am UTC | OGC WMS CITE conformance |
-| `cite-wmts-conformance.yml` | Thu 6am UTC | OGC WMTS CITE conformance |
-| `ogc-maps-conformance.yml` | Fri 6am UTC | OGC API Maps conformance |
-| `cite-kml22-conformance.yml` | Fri 3am UTC | OGC KML 2.2 CITE conformance |
-| `cite-gml32-conformance.yml` | Sat 6am UTC | OGC GML 3.2 CITE conformance |
-| `cite-gpkg12-conformance.yml` | Sat 3am UTC | OGC GeoPackage 1.2 CITE conformance |
 | `geoservices-import-fidelity-external.yml` | On-demand (`workflow_dispatch`) | External GeoServices parity + Geoportal import vs live Esri services: runs the correctness regression gate **and** the perf-parity latency gate (issue #1249) over the freshly measured scorecard (deterministic parity stays in Import Fidelity Scorecard Governance); also runs `GeoservicesGeoportalImportIntegrationTests` |
 | `routing-nightly.yml` | Weekly Sun 5:00am UTC | pgRouting provider + NAServer routing integration (`Category=Routing`); `PgRoutingFixture` manages its own Testcontainers `pgrouting/pgrouting` image |
 | `warehouse-nightly.yml` | Weekly Sun 6:00am UTC | Snowflake/Redshift/Databricks/SqlServer creds-gated provider tests; self-skips cleanly without configured secrets, surfacing pass/fail/skip counts in the run summary |
@@ -633,7 +626,7 @@ Trailing `selective_base` dispatches use their verified base for the managed
 producer's affected project graph. An effective full-CI decision (including a
 router promotion or manual override) builds the whole solution. Consumers reuse the single producer's
 artifacts. Server shards retain descending measured `dispatch_rank` order and
-run at most six at once, twelve above 30 selected shards (full runs retain 24). Expensive AOT, Docker,
+run at most six at once, twelve above 30 selected shards (full runs run at most 16). Expensive AOT, Docker,
 Postgres compatibility, browser, Python, MCP and quickstart lanes use
 `scripts/ci/affected-ci-lanes.py` to select their own inputs. Native, container
 and MCP checks conservatively include every runtime source or project change,
@@ -853,6 +846,14 @@ selected PR runs and twice-daily full trunk runs. This changes no runner count,
 required check name, required aggregate dependency, workflow, or shard
 definition.
 
+## OGC release-candidate qualification
+
+External OGC conformance runs through individual manual dispatchers and, after the
+RC image build of a promotable candidate, through `ogc-rc-conformance.yml`. The RC
+manifest waits for success; non-candidate rc dispatches skip it because they produce no manifest.
+Optional integration flags do not bypass it. See the [workflow inventory](workflow-inventory.md#ogc-cite--conformance)
+for the complete dispatchers, source/image binding and separate certification policy.
+
 ## Trailing affected CI selection
 
 Trailing affected CI refreshes its completed-ancestor base when the selection job starts,
@@ -862,7 +863,11 @@ the twice-daily full run. A broad newest merge retains every selected shard.
 Affected shard concurrency is six, or twelve when more than 30 shards remain
 selected (`scripts/ci/trailing_selection.py` owns both numbers and the
 threshold), including full-coverage routing fallbacks; manual and scheduled
-full runs retain 24. A
+full runs run 16 at once. On 12 Nov (03:30-04:00 UTC) a full run at 24 held
+28 of the org's 60 hosted runners while other pull request workflows held
+20-35, and PR Gate jobs waited a median 7.3 minutes (3 seconds before and after).
+Sixteen gives PR Gate eight more runners; the 1,272 shard-minutes of a full
+matrix then take about 79 minutes instead of 53. A
 134-shard affected run took 214 minutes at six while PR Gate job queueing stayed
 at a two-second median; twelve halves that so a broad run finishes before the
 next full run. Required PR gates
