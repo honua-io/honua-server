@@ -68,9 +68,12 @@ itself. Make the human decision in Console, then let the agent
 observe that same proposal. Do not give it an approval API key or ask it to
 impersonate your Console session.
 
-In-client approval through MCP Multi Round-Trip Requests (MRTR) is **deferred
-to rc.3**. An MCP client's local tool-consent dialog is not proof of a Honua
-approval. For rc.2, use the interactive Console approval channel.
+An MCP client that supports URL-mode elicitation can take you straight to the
+proposal: when the server sets `Mcp:ApprovalConsoleUrl`, the client offers to
+open the Console approval page for that proposal. Opening it is not approval.
+Review and decide in Console as above, and the agent then reads the result. An
+MCP client's local tool-consent dialog is never proof of a Honua approval. See
+[Clarification and approval in the client](../connect/ai-agents-mcp.md#clarification-and-approval-in-the-client).
 
 ## Migrate an automated approval setup
 

@@ -59,7 +59,7 @@ internal static class McpModernHttp
             response.Error.Code = McpErrorMapper.JsonRpcInvalidParams;
         }
 
-        if (response.Result is { } result)
+        if (response.Result is { } result && !McpModernResults.IsInputRequired(result))
         {
             response.Result = McpModernResults.Complete(result, body);
         }
