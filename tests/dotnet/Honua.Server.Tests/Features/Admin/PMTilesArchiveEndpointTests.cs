@@ -242,7 +242,7 @@ public sealed class PMTilesArchiveEndpointTests : IAsyncLifetime
     {
         var tileEntries = BitConverter.ToUInt64(archiveBytes, 80);
 
-        // honua-server#4421: every header assertion in ExportArchiveAsync passes on an archive whose tile data is
+        // Every header assertion in ExportArchiveAsync passes on an archive whose tile data is
         // arbitrary bytes — `tileType == 1` is a declared byte, not a payload check.
         //
         // Decoding the tile-data section as a single blob is not enough either: concatenated

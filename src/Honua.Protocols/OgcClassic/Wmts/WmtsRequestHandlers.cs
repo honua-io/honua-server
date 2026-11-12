@@ -1084,8 +1084,8 @@ internal static class WmtsRequestHandlers
         var v2GeometryType = layer.Resource.ReadGeometryType();
         var hasGeometry = v2GeometryType != MetadataV2GeometryType.None
             || layer.Resource.FindPrimaryGeometryField() is not null;
-        return CreateRenderLayerDescriptorFromV2(
-            layer.StorageLayerId, hasGeometry, v2GeometryType, verticalSelection, resource: layer.Resource);
+        return CreateRenderLayerDescriptorFromV2(layer.StorageLayerId, hasGeometry, v2GeometryType, verticalSelection)
+            with { Resource = layer.Resource };
     }
 
     private static bool TryResolveWmtsLayer(IReadOnlyList<WmtsLayer> layers, string layerIdOrName, out WmtsLayer layer)
@@ -1398,9 +1398,10 @@ internal static class WmtsRequestHandlers
             var styleCatalog = request.HttpContext.RequestServices.GetService<ILayerStyleCatalog>();
             if (IsProtocolEnabled(service, "Wms") && styleCatalog is not null)
             {
-                var styleConverter = request.HttpContext.RequestServices.GetService<IGeoServicesStyleConverter>();
+                var styleSources = new RasterStyleSources(
+                    styleCatalog, request.HttpContext.RequestServices.GetService<IGeoServicesStyleConverter>());
                 var supportedLegends = await Task.WhenAll(visibleLayers.Select(layer =>
-                    ResolveWmtsLegendSupportAsync(styleCatalog, styleConverter, layer, logger, cancellationToken))).ConfigureAwait(false);
+                    ResolveWmtsLegendSupportAsync(styleSources, layer, logger, cancellationToken))).ConfigureAwait(false);
                 for (var index = 0; index < visibleLayers.Count; index++)
                 {
                     if (supportedLegends[index])
@@ -1701,15 +1702,14 @@ internal static class WmtsRequestHandlers
     }
 
     private static async Task<bool> ResolveWmtsLegendSupportAsync(
-        ILayerStyleCatalog styleCatalog,
-        IGeoServicesStyleConverter? styleConverter,
+        RasterStyleSources styleSources,
         WmtsLayer layer,
         ILogger logger,
         CancellationToken cancellationToken)
     {
         try
         {
-            var plan = await GetRasterStylePlanAsync(styleCatalog, styleConverter, layer.Resource, layer.StorageLayerId, cancellationToken)
+            var plan = await GetRasterStylePlanAsync(styleSources, layer.Resource, layer.StorageLayerId, cancellationToken)
                 .ConfigureAwait(false);
             return LegendImageComposer.SupportsStylePlan(plan);
         }

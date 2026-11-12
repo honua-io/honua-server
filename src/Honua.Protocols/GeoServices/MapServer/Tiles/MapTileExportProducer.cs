@@ -144,8 +144,8 @@ internal static class MapTileExportLayerResolver
             ?? Honua.Core.Features.Shared.Models.SpatialReference.WGS84.Wkid;
 
         return [.. resolved.Select(static layer =>
-            CreateRenderLayerDescriptorFromV2(
-                layer.StorageLayerId, true, layer.Resource.ReadGeometryType(), resource: layer.Resource))];
+            CreateRenderLayerDescriptorFromV2(layer.StorageLayerId, true, layer.Resource.ReadGeometryType())
+                with { Resource = layer.Resource })];
     }
 
     internal static bool AllPinnedLayersResolve(

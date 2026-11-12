@@ -218,8 +218,9 @@ internal static partial class WmsRequestHandlers
             return CreateWmsServiceException(context, "NoApplicableCode", "Failed to allocate render surface.", StatusCodes.Status500InternalServerError);
         }
 
-        var styleCatalog = context.RequestServices.GetRequiredService<ILayerStyleCatalog>();
-        var styleConverter = context.RequestServices.GetService<IGeoServicesStyleConverter>();
+        var styleSources = new RasterStyleSources(
+            context.RequestServices.GetRequiredService<ILayerStyleCatalog>(),
+            context.RequestServices.GetService<IGeoServicesStyleConverter>());
         var maxFeatures = MaxFeaturesPerLayer;
         var totalFeatureCount = 0;
 
@@ -273,8 +274,7 @@ internal static partial class WmsRequestHandlers
             var geometryType = layer.Resource.ReadGeometryType();
 
             var stylePlan = await GetRasterStylePlanAsync(
-                styleCatalog,
-                styleConverter,
+                styleSources,
                 layer.Resource,
                 layer.StorageLayerId,
                 cancellationToken).ConfigureAwait(false);

@@ -168,8 +168,9 @@ internal static partial class MapServerEndpoints
                 .ToArray();
         }
 
-        var styleCatalog = context.RequestServices.GetRequiredService<ILayerStyleCatalog>();
         var geoServicesStyleConverter = context.RequestServices.GetRequiredService<IGeoServicesStyleConverter>();
+        var styleSources = new RasterStyleSources(
+            context.RequestServices.GetRequiredService<ILayerStyleCatalog>(), geoServicesStyleConverter);
         var legendLayers = new List<LegendLayerInfo>();
 
         foreach (var layer in visibleLayers)
@@ -196,12 +197,8 @@ internal static partial class MapServerEndpoints
             else
             {
                 // Same style source as export, so the legend matches the drawn map.
-                var stylePlan = await GetRasterStylePlanAsync(
-                    styleCatalog,
-                    geoServicesStyleConverter,
-                    layer.Resource,
-                    layer.StyleLayerId,
-                    cancellationToken).ConfigureAwait(false);
+                var stylePlan = await GetRasterStylePlanAsync(styleSources, layer.Resource, layer.StyleLayerId, cancellationToken)
+                    .ConfigureAwait(false);
                 styleLayers = stylePlan.StyleLayers;
             }
 
@@ -223,14 +220,10 @@ internal static partial class MapServerEndpoints
 
                 entries = classifiedEntries!;
             }
-            else if (TryBuildSavedClassifiedRendererEntries(
-                layer, geoServicesStyleConverter, swatchWidth, swatchHeight) is { } savedEntries)
-            {
-                entries = savedEntries;
-            }
             else
             {
-                entries = BuildLegendEntries(styleLayers, layer.GeometryType, swatchWidth, swatchHeight);
+                entries = TryBuildSavedClassifiedRendererEntries(layer, geoServicesStyleConverter, swatchWidth, swatchHeight)
+                    ?? BuildLegendEntries(styleLayers, layer.GeometryType, swatchWidth, swatchHeight);
             }
 
             legendLayers.Add(new LegendLayerInfo

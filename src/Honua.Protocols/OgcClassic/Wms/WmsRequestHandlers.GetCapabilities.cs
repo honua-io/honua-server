@@ -178,9 +178,10 @@ internal static partial class WmsRequestHandlers
             return [];
         }
 
-        var styleConverter = context.RequestServices.GetService<IGeoServicesStyleConverter>();
+        var styleSources = new RasterStyleSources(
+            styleCatalog, context.RequestServices.GetService<IGeoServicesStyleConverter>());
         var plans = await Task.WhenAll(candidates.Select(layer =>
-            GetRasterStylePlanAsync(styleCatalog, styleConverter, layer.Resource, layer.StorageLayerId, cancellationToken)))
+            GetRasterStylePlanAsync(styleSources, layer.Resource, layer.StorageLayerId, cancellationToken)))
             .ConfigureAwait(false);
 
         var dimensions = new Dictionary<int, (int Width, int Height)>();

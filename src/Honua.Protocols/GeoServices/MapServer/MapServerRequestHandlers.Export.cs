@@ -442,8 +442,7 @@ internal static partial class MapServerEndpoints
                 else
                 {
                     stylePlan = await GetRasterStylePlanAsync(
-                        styleCatalog,
-                        geoServicesStyleConverter,
+                        new RasterStyleSources(styleCatalog, geoServicesStyleConverter),
                         resource,
                         layer.StorageLayerId,
                         cancellationToken).ConfigureAwait(false);
