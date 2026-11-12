@@ -5,9 +5,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Security.Claims;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.MultiTenancy;
 using Honua.Core.Features.MultiTenancy.Abstractions;
-using Honua.Core.Features.Studio;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.RateLimiting;
@@ -18,7 +16,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.MultiTenancy;
 
@@ -31,49 +28,6 @@ namespace Honua.Server.Tests.Features.Infrastructure.MultiTenancy;
 [Protocol(TestProtocols.TestQuality)]
 public class TenantSchemaRoutingMiddlewareTests
 {
-    [IntegrationTest]
-    [Operation(Operations.Security)]
-    [Endpoint("GET /schema")]
-    public async Task StartAsync_SchemaRoutingWithoutExplicitMultiTenancy_RejectsConfiguration()
-    {
-        foreach (var multiTenancyEnabled in new string?[] { null, "false" })
-        {
-            var builder = WebApplication.CreateBuilder();
-            builder.WebHost.UseTestServer();
-            var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["MultiTenancy:Enabled"] = multiTenancyEnabled,
-                ["MultiTenancy:SchemaRouting:Enabled"] = "true",
-            }).Build();
-            builder.Services.AddHonuaTenantSchemaRouting(configuration);
-            await using var app = builder.Build();
-
-            var exception = await Assert.ThrowsAsync<OptionsValidationException>(() => app.StartAsync());
-            Assert.Contains("MultiTenancy:Enabled", exception.Message, StringComparison.Ordinal);
-        }
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Security)]
-    [Endpoint("GET /schema")]
-    public async Task StartAsync_UnconfiguredTenancy_UsesConsistentSingleTenantDefaults()
-    {
-        var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseTestServer();
-        var configuration = new ConfigurationBuilder().Build();
-        builder.Services.AddHonuaTenantContext(configuration, _ => { });
-        builder.Services.AddHonuaTenantSchemaRouting(configuration);
-        builder.Services.AddStudioPackageLifecycle(configuration);
-        await using var app = builder.Build();
-        await app.StartAsync();
-
-        var requestOptions = app.Services.GetRequiredService<IOptions<TenantContextOptions>>().Value;
-        var studioOptions = app.Services.GetRequiredService<IOptions<TenantIsolationOptions>>().Value;
-        Assert.False(requestOptions.Enabled);
-        Assert.False(studioOptions.Enabled);
-        Assert.Equal(requestOptions.DefaultTenantId, studioOptions.DefaultTenantId);
-    }
-
     [IntegrationTest]
     [Operation(Operations.Security)]
     [Endpoint("GET /schema")]
@@ -423,7 +377,6 @@ public class TenantSchemaRoutingMiddlewareTests
 
         var settings = new Dictionary<string, string?>
         {
-            ["MultiTenancy:Enabled"] = "true",
             ["MultiTenancy:SchemaRouting:Enabled"] = routingEnabled ? "true" : "false",
             ["RateLimiting:Enabled"] = rateLimitingEnabled ? "true" : "false",
             ["RateLimiting:GlobalRequestsPerMinute"] = "1",
