@@ -593,10 +593,9 @@ internal sealed partial class OperationGateway : IOperationGateway
         };
     }
 
-    private static bool RequiresNewFolderIdempotencyKey(OperationProposal existing, OperationGatewayRequest request,
-        OperationProposalPlan plan, TimeProvider clock)
-        => FolderOperationCredential.IsFolderMutation(request.OperationId ?? string.Empty) &&
-            !FolderApprovalAuthorization.MatchesExisting(existing, request.RequestedBy, plan, clock.GetUtcNow());
+    private static bool RequiresNewFolderIdempotencyKey(OperationProposal existing, FolderProposalReuseContext candidate)
+        => FolderOperationCredential.IsFolderMutation(candidate.Request.OperationId ?? string.Empty) &&
+            !FolderApprovalAuthorization.MatchesExisting(existing, candidate);
 
     private static OperationGatewayResult NewIdempotencyKeyRequiredResult(GuardrailDecision decision)
         => new()
@@ -647,7 +646,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 .ConfigureAwait(false);
             if (existing != null)
             {
-                return RequiresNewFolderIdempotencyKey(existing, request, plan, clock)
+                return RequiresNewFolderIdempotencyKey(existing, new FolderProposalReuseContext(request, plan, clock))
                     ? NewIdempotencyKeyRequiredResult(decision)
                     : ExistingProposalResult(existing, decision, request.IdempotencyKey!);
             }
@@ -754,7 +753,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 var winner = await _proposalStore.GetAsync(proposal.ProposalId, cancellationToken).ConfigureAwait(false);
                 if (winner != null)
                 {
-                    return RequiresNewFolderIdempotencyKey(winner, request, plan, clock)
+                    return RequiresNewFolderIdempotencyKey(winner, new FolderProposalReuseContext(request, plan, clock))
                         ? NewIdempotencyKeyRequiredResult(decision)
                         : ExistingProposalResult(winner, decision, request.IdempotencyKey!);
                 }

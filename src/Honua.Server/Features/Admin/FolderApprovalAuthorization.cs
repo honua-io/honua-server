@@ -29,6 +29,9 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin;
 
+internal sealed record FolderProposalReuseContext(
+    OperationGatewayRequest Request, OperationProposalPlan Plan, TimeProvider Clock);
+
 internal static class FolderApprovalAuthorization
 {
     internal const string FreshProposalRequired = "Folder requester authorization changed or is unavailable. Submit a fresh proposal.";
@@ -127,11 +130,11 @@ internal static class FolderApprovalAuthorization
         }
     }
 
-    internal static bool MatchesExisting(OperationProposal existing, string? requesterId, OperationProposalPlan plan, DateTimeOffset now)
-        => existing.RequestedBy == requesterId && existing.Plan.ExecutionPayload == plan.ExecutionPayload &&
-            existing.Plan.FolderAuthorization is { } prior && plan.FolderAuthorization is { } current &&
+    internal static bool MatchesExisting(OperationProposal existing, FolderProposalReuseContext candidate)
+        => existing.RequestedBy == candidate.Request.RequestedBy && existing.Plan.ExecutionPayload == candidate.Plan.ExecutionPayload &&
+            existing.Plan.FolderAuthorization is { } prior && candidate.Plan.FolderAuthorization is { } current &&
             prior.RequesterId == current.RequesterId && prior.OperationId == current.OperationId &&
-            prior.ExpiresAt > now && prior.SubjectId == current.SubjectId && prior.SubjectIssuer == current.SubjectIssuer &&
+            prior.ExpiresAt > candidate.Clock.GetUtcNow() && prior.SubjectId == current.SubjectId && prior.SubjectIssuer == current.SubjectIssuer &&
             prior.SnapshotEtag == current.SnapshotEtag && prior.PolicyRevision == current.PolicyRevision &&
             prior.ServiceIds.SequenceEqual(current.ServiceIds, StringComparer.Ordinal);
 
