@@ -52,8 +52,9 @@ public sealed class StudioHumanDraftMutationTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
+        using var identityProvider = _identityProvider;
         try { await _fixture.DisposeAsync(); }
-        finally { await _redis.DisposeAsync(); _identityProvider.Dispose(); }
+        finally { await _redis.DisposeAsync(); }
     }
 
     [IntegrationTest]
@@ -138,10 +139,13 @@ public sealed class StudioHumanDraftMutationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden, await response.Content.ReadAsStringAsync());
     }
 
-    private static Task<HttpResponseMessage> CreateDraftAsync(HttpClient client) => client.PostAsync(
-        "/api/v1/studio/package-drafts", new StringContent(
+    private static async Task<HttpResponseMessage> CreateDraftAsync(HttpClient client)
+    {
+        using var content = new StringContent(
             $$$$"""{"packageKey":"human-draft-{{{{Guid.NewGuid():N}}}}","workspaceId":"studio","envelope":{"family":"query","format":"studio_query_package.v1","schemaVersion":"1.0","body":{"where":"1=1"}}}""",
-            Encoding.UTF8, "application/json"));
+            Encoding.UTF8, "application/json");
+        return await client.PostAsync("/api/v1/studio/package-drafts", content);
+    }
 
     private static async Task AssertPendingAsync(HttpResponseMessage response)
     {
