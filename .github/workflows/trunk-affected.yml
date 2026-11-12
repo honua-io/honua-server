@@ -18,7 +18,7 @@ jobs:
   dispatch:
     name: Dispatch selective CI
     if: github.repository == 'honua-io/honua-server'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
       actions: write

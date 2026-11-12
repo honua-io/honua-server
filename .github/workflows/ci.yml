@@ -295,6 +295,29 @@ jobs:
               core.setFailed('PR branch is behind trunk. Refresh the branch before running CI.');
             }
 
+  supersede-trailing-runs:
+    name: Supersede Covered Trunk Runs
+    # A full trunk run covers every merge up to its head: it cancels selective
+    # runs at that head or earlier, and a selective run cancels itself while a
+    # covering full run is underway, so one head never holds two matrices of
+    # hosted runners that PR Gate needs.
+    if: ${{ github.ref == 'refs/heads/trunk' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/ci
+
+      - name: Cancel runs a full run covers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_SCOPE: ${{ (inputs.selective_base && !inputs.full_ci) && 'selective' || 'full' }}
+        run: python3 scripts/ci/supersede_trailing_runs.py "${RUN_SCOPE}"
+
   changes:
     name: Detect Non-Test Changes
     permissions:
