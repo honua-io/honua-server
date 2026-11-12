@@ -396,37 +396,47 @@ internal sealed partial class FeatureServerQueryExecutor
         context.Response.ContentType = contentType;
         context.Response.StatusCode = StatusCodes.Status200OK;
 
-        if (string.Equals(format, "geojson", StringComparison.OrdinalIgnoreCase))
+        try
         {
-            await _streamingFormatter.StreamAsGeoJsonAsync(
-                preparedStream.Features,
-                resource,
-                queryParams.ReturnGeometry,
-                queryParams.ReturnZ,
-                queryParams.ReturnM,
-                queryParams.GeometryPrecision,
-                queryParams.MaxAllowableOffset,
-                outFields,
-                preparedStream.HasMoreResults,
-                context.Response.BodyWriter,
-                cancellationToken);
+            if (string.Equals(format, "geojson", StringComparison.OrdinalIgnoreCase))
+            {
+                await _streamingFormatter.StreamAsGeoJsonAsync(
+                    preparedStream.Features,
+                    resource,
+                    queryParams.ReturnGeometry,
+                    queryParams.ReturnZ,
+                    queryParams.ReturnM,
+                    queryParams.GeometryPrecision,
+                    queryParams.MaxAllowableOffset,
+                    outFields,
+                    preparedStream.HasMoreResults,
+                    context.Response.BodyWriter,
+                    cancellationToken);
+            }
+            else
+            {
+                await _streamingFormatter.StreamAsGeoServicesJsonAsync(
+                    preparedStream.Features,
+                    resource,
+                    queryParams.ReturnGeometry,
+                    outputSrid,
+                    queryParams.ReturnZ,
+                    queryParams.ReturnM,
+                    queryParams.GeometryPrecision,
+                    queryParams.MaxAllowableOffset,
+                    outFields,
+                    preparedStream.HasMoreResults,
+                    context.Response.BodyWriter,
+                    returnCentroid: queryParams.ReturnCentroid,
+                    cancellationToken: cancellationToken);
+            }
         }
-        else
+        catch when (context.Response.HasStarted)
         {
-            await _streamingFormatter.StreamAsGeoServicesJsonAsync(
-                preparedStream.Features,
-                resource,
-                queryParams.ReturnGeometry,
-                outputSrid,
-                queryParams.ReturnZ,
-                queryParams.ReturnM,
-                queryParams.GeometryPrecision,
-                queryParams.MaxAllowableOffset,
-                outFields,
-                preparedStream.HasMoreResults,
-                context.Response.BodyWriter,
-                returnCentroid: queryParams.ReturnCentroid,
-                cancellationToken: cancellationToken);
+            // A 200 is already on the wire; drop the connection so the client cannot mistake a
+            // truncated page for a complete one.
+            context.Abort();
+            throw;
         }
 
         await context.Response.CompleteAsync();
