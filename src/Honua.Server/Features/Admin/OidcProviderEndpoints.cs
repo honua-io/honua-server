@@ -12,11 +12,14 @@ using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using Honua.Server.Features.Admin.Services;
 
 namespace Honua.Server.Features.Admin;
 
 internal static partial class OidcProviderEndpoints
 {
+    private const string ProviderSettingsName = "OIDC providers";
+
     internal sealed class OidcProviderEndpointsLog;
 
     internal static partial class OidcProviderLog
@@ -62,6 +65,7 @@ internal static partial class OidcProviderEndpoints
 
         group.MapPost("/", HandleCreateProvider)
             .WithDisplayName("Create OIDC Provider")
+            .RefuseWhenProcessLocalOnSeveralTasks<IOidcProviderStore, InMemoryOidcProviderStore>(ProviderSettingsName)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .WithMetadata(CreateProviderRoute.Instance);
 
@@ -71,10 +75,12 @@ internal static partial class OidcProviderEndpoints
 
         group.MapPut("/{id:guid}", HandleUpdateProvider)
             .WithDisplayName("Update OIDC Provider")
+            .RefuseWhenProcessLocalOnSeveralTasks<IOidcProviderStore, InMemoryOidcProviderStore>(ProviderSettingsName)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
 
         group.MapDelete("/{id:guid}", HandleDeleteProvider)
             .WithDisplayName("Delete OIDC Provider")
+            .RefuseWhenProcessLocalOnSeveralTasks<IOidcProviderStore, InMemoryOidcProviderStore>(ProviderSettingsName)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
 
         group.MapPost("/{id:guid}/test", HandleTestProvider)
