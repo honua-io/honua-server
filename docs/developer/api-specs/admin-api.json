@@ -48411,6 +48411,11 @@
             "nullable": true,
             "description": "Optional generated-tile format window. ImageServer aliases such as `jpeg`, `tiff`, and `cog` map to their canonical cache extensions."
           },
+          "tileCompression": {
+            "type": "string",
+            "nullable": true,
+            "description": "`none` or `gzip`: tile payload compression for `archive` and `publish` PMTiles output, case-insensitive. Defaults to `none`, which writes the same bytes as earlier releases. Rejected for other operations."
+          },
           "generationId": {
             "type": "string",
             "nullable": true,
@@ -48537,6 +48542,11 @@
           "ArchiveFileId": {
             "type": "string",
             "nullable": true
+          },
+          "TileCompression": {
+            "type": "string",
+            "nullable": true,
+            "description": "Tile compression written to the PMTiles header (`none` or `gzip`) for archive and publish jobs; null for other operations."
           },
           "DownloadUrl": {
             "type": "string",

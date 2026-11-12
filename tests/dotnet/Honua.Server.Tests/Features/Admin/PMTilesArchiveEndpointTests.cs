@@ -114,7 +114,65 @@ public sealed class PMTilesArchiveEndpointTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/tile-operations/jobs/{jobId}")]
     public async Task CompletedArchiveJob_ProducesValidPMTilesArchive()
     {
-        var jobId = await StartArchiveJobAsync();
+        var archiveBytes = await ExportArchiveAsync(tileCompression: null, expectedReceiptCompression: "none");
+        PMTilesHeader.ReadFrom(archiveBytes).TileCompression.Should().Be(
+            PMTilesCompression.None, "the default export must keep writing uncompressed tiles (#7361)");
+        AssertArchiveTilesDecode(archiveBytes);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/tile-operations/jobs/{jobId}")]
+    public async Task CompletedArchiveJob_WithGzipTileCompression_WritesGzipTilesThatDecode()
+    {
+        var archiveBytes = await ExportArchiveAsync(tileCompression: "GZIP", expectedReceiptCompression: "gzip");
+        var header = PMTilesHeader.ReadFrom(archiveBytes);
+        header.TileCompression.Should().Be(PMTilesCompression.Gzip);
+
+        // Every tile slice must itself be a gzip member, as PMTiles clients expect when the header says gzip.
+        foreach (var entry in ReadAllEntries(archiveBytes, header))
+        {
+            var start = (int)(header.TileDataOffset + entry.Offset);
+            archiveBytes[start].Should().Be(0x1f);
+            archiveBytes[start + 1].Should().Be(0x8b);
+        }
+
+        AssertArchiveTilesDecode(archiveBytes);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
+    public async Task StartJob_ArchiveWithUnsupportedTileCompression_ReturnsBadRequest()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/tile-operations/jobs", new
+        {
+            operation = "archive",
+            serviceId = WebAppFixture.TestServiceId,
+            layerId = WebAppFixture.TestLayerId,
+            tileCompression = "brotli"
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("tileCompression");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
+    public async Task StartJob_SeedWithTileCompression_ReturnsBadRequest()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/tile-operations/jobs", new
+        {
+            operation = "seed",
+            serviceId = WebAppFixture.TestServiceId,
+            layerId = WebAppFixture.TestLayerId,
+            tileCompression = "gzip"
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    private async Task<byte[]> ExportArchiveAsync(string? tileCompression, string expectedReceiptCompression)
+    {
+        var jobId = await StartArchiveJobAsync(tileCompression);
         var (finalStatus, lastJson) = await WaitForJobCompletionAsync(jobId);
 
         finalStatus.Should().Be(OperationStatus.Completed,
@@ -123,6 +181,8 @@ public sealed class PMTilesArchiveEndpointTests : IAsyncLifetime
         var root = lastJson!.RootElement;
         var archiveFileId = GetPropertyCaseInsensitive(root, "archiveFileId").GetString();
         archiveFileId.Should().NotBeNullOrWhiteSpace();
+        GetPropertyCaseInsensitive(root, "tileCompression").GetString().Should().Be(
+            expectedReceiptCompression, "the job receipt must record the tile compression written to the header");
         lastJson.Dispose();
 
         // Download archive bytes from cloud storage
@@ -175,7 +235,14 @@ public sealed class PMTilesArchiveEndpointTests : IAsyncLifetime
         (tileDataOffset + tileDataLength).Should().Be((ulong)archiveBytes.Length,
             "tile data should extend to end of archive");
 
-        // honua-server#4421: every header assertion above passes on an archive whose tile data is
+        return archiveBytes;
+    }
+
+    private static void AssertArchiveTilesDecode(byte[] archiveBytes)
+    {
+        var tileEntries = BitConverter.ToUInt64(archiveBytes, 80);
+
+        // honua-server#4421: every header assertion in ExportArchiveAsync passes on an archive whose tile data is
         // arbitrary bytes — `tileType == 1` is a declared byte, not a payload check.
         //
         // Decoding the tile-data section as a single blob is not enough either: concatenated
@@ -233,7 +300,7 @@ public sealed class PMTilesArchiveEndpointTests : IAsyncLifetime
             PMTilesDirectory.Decompress(slice, header.InternalCompression));
     }
 
-    private async Task<string> StartArchiveJobAsync()
+    private async Task<string> StartArchiveJobAsync(string? tileCompression = null)
     {
         var response = await _client.PostAsJsonAsync("/api/v1/admin/tile-operations/jobs", new
         {
@@ -242,7 +309,8 @@ public sealed class PMTilesArchiveEndpointTests : IAsyncLifetime
             layerId = WebAppFixture.TestLayerId,
             minZoom = 0,
             maxZoom = 1,
-            maxTiles = 5
+            maxTiles = 5,
+            tileCompression
         });
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());

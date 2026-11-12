@@ -362,6 +362,27 @@ internal static class TileOperationsEndpoints
         }
 
         var operation = request.Operation.Trim().ToLowerInvariant();
+        if (!string.IsNullOrWhiteSpace(request.TileCompression))
+        {
+            if (operation is not ("archive" or "publish"))
+            {
+                return ProblemDetailsHelpers.CreateAdminProblemDetails(
+                    context,
+                    StatusCodes.Status400BadRequest,
+                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                    "Property 'tileCompression' applies only to archive and publish operations.");
+            }
+
+            if (!TileArchiveCompression.IsSupported(request.TileCompression))
+            {
+                return ProblemDetailsHelpers.CreateAdminProblemDetails(
+                    context,
+                    StatusCodes.Status400BadRequest,
+                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                    $"Property 'tileCompression' must be one of: {TileArchiveCompression.SupportedValues}.");
+            }
+        }
+
         if (operation is "seed" or "warm" && !request.LayerId.HasValue && string.IsNullOrWhiteSpace(request.ServiceId))
         {
             return ProblemDetailsHelpers.CreateAdminProblemDetails(
