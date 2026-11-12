@@ -729,11 +729,11 @@ internal sealed class PostgresRasterStore : IRasterStore
             return PostgresRasterRawDecoder.Decode(data);
         }
 
-        var width = reader.GetInt32(widthOrd);
-        var height = reader.GetInt32(heightOrd);
-        var srid = reader.GetInt32(sridOrd);
-        var bandCount = reader.GetInt32(bandCountOrd);
-        var pixelType = reader.IsDBNull(pixelTypeOrd) ? null : reader.GetString(pixelTypeOrd);
+        var width = await reader.GetFieldValueAsync<int>(widthOrd, cancellationToken).ConfigureAwait(false);
+        var height = await reader.GetFieldValueAsync<int>(heightOrd, cancellationToken).ConfigureAwait(false);
+        var srid = await reader.GetFieldValueAsync<int>(sridOrd, cancellationToken).ConfigureAwait(false);
+        var bandCount = await reader.GetFieldValueAsync<int>(bandCountOrd, cancellationToken).ConfigureAwait(false);
+        var pixelType = await reader.IsDBNullAsync(pixelTypeOrd, cancellationToken).ConfigureAwait(false) ? null : await reader.GetFieldValueAsync<string>(pixelTypeOrd, cancellationToken).ConfigureAwait(false);
         // Trunk's export path encodes every supported format through ST_AsGDALRaster, so the
         // canvas needs no post-encode reshaping.
 
@@ -748,10 +748,10 @@ internal sealed class PostgresRasterStore : IRasterStore
             PixelType = pixelType,
             Extent = new RasterExtent
             {
-                XMin = reader.GetDouble(xminOrd),
-                YMin = reader.GetDouble(yminOrd),
-                XMax = reader.GetDouble(xmaxOrd),
-                YMax = reader.GetDouble(ymaxOrd),
+                XMin = await reader.GetFieldValueAsync<double>(xminOrd, cancellationToken).ConfigureAwait(false),
+                YMin = await reader.GetFieldValueAsync<double>(yminOrd, cancellationToken).ConfigureAwait(false),
+                XMax = await reader.GetFieldValueAsync<double>(xmaxOrd, cancellationToken).ConfigureAwait(false),
+                YMax = await reader.GetFieldValueAsync<double>(ymaxOrd, cancellationToken).ConfigureAwait(false),
                 Srid = srid
             }
         };
@@ -947,16 +947,16 @@ internal sealed class PostgresRasterStore : IRasterStore
             return PostgresRasterRawDecoder.Decode(data);
         }
 
-        var width = reader.GetInt32(widthOrd);
-        var height = reader.GetInt32(heightOrd);
-        var srid = reader.GetInt32(sridOrd);
-        var bandCount = reader.GetInt32(bandCountOrd);
+        var width = await reader.GetFieldValueAsync<int>(widthOrd, cancellationToken).ConfigureAwait(false);
+        var height = await reader.GetFieldValueAsync<int>(heightOrd, cancellationToken).ConfigureAwait(false);
+        var srid = await reader.GetFieldValueAsync<int>(sridOrd, cancellationToken).ConfigureAwait(false);
+        var bandCount = await reader.GetFieldValueAsync<int>(bandCountOrd, cancellationToken).ConfigureAwait(false);
         var extent = new RasterExtent
         {
-            XMin = reader.GetDouble(xminOrd),
-            YMin = reader.GetDouble(yminOrd),
-            XMax = reader.GetDouble(xmaxOrd),
-            YMax = reader.GetDouble(ymaxOrd),
+            XMin = await reader.GetFieldValueAsync<double>(xminOrd, cancellationToken).ConfigureAwait(false),
+            YMin = await reader.GetFieldValueAsync<double>(yminOrd, cancellationToken).ConfigureAwait(false),
+            XMax = await reader.GetFieldValueAsync<double>(xmaxOrd, cancellationToken).ConfigureAwait(false),
+            YMax = await reader.GetFieldValueAsync<double>(ymaxOrd, cancellationToken).ConfigureAwait(false),
             Srid = srid
         };
 
@@ -2263,11 +2263,11 @@ internal sealed class PostgresRasterStore : IRasterStore
             return PostgresRasterRawDecoder.Decode(data);
         }
 
-        var width = reader.IsDBNull(widthOrd) ? query.OutputWidth ?? 0 : reader.GetInt32(widthOrd);
-        var height = reader.IsDBNull(heightOrd) ? query.OutputHeight ?? 0 : reader.GetInt32(heightOrd);
-        var srid = reader.IsDBNull(sridOrd) ? query.OutputSrid : reader.GetInt32(sridOrd);
-        var bandCount = reader.IsDBNull(bandCountOrd) ? 0 : reader.GetInt32(bandCountOrd);
-        var pixelType = reader.IsDBNull(pixelTypeOrd) ? null : reader.GetString(pixelTypeOrd);
+        var width = await reader.IsDBNullAsync(widthOrd, cancellationToken).ConfigureAwait(false) ? query.OutputWidth ?? 0 : await reader.GetFieldValueAsync<int>(widthOrd, cancellationToken).ConfigureAwait(false);
+        var height = await reader.IsDBNullAsync(heightOrd, cancellationToken).ConfigureAwait(false) ? query.OutputHeight ?? 0 : await reader.GetFieldValueAsync<int>(heightOrd, cancellationToken).ConfigureAwait(false);
+        var srid = await reader.IsDBNullAsync(sridOrd, cancellationToken).ConfigureAwait(false) ? query.OutputSrid : await reader.GetFieldValueAsync<int>(sridOrd, cancellationToken).ConfigureAwait(false);
+        var bandCount = await reader.IsDBNullAsync(bandCountOrd, cancellationToken).ConfigureAwait(false) ? 0 : await reader.GetFieldValueAsync<int>(bandCountOrd, cancellationToken).ConfigureAwait(false);
+        var pixelType = await reader.IsDBNullAsync(pixelTypeOrd, cancellationToken).ConfigureAwait(false) ? null : await reader.GetFieldValueAsync<string>(pixelTypeOrd, cancellationToken).ConfigureAwait(false);
 
         return new RasterResult
         {
@@ -2278,7 +2278,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             Srid = srid,
             BandCount = bandCount,
             PixelType = pixelType,
-            Extent = ReadOptionalExtent(reader, srid)
+            Extent = await ReadOptionalExtentAsync(reader, srid, cancellationToken).ConfigureAwait(false)
         };
     }
 
@@ -5110,19 +5110,21 @@ internal sealed class PostgresRasterStore : IRasterStore
             ? Array.Empty<byte>()
             : await reader.GetFieldValueAsync<byte[]>(dataOrdinal, cancellationToken).ConfigureAwait(false);
 
-    private static RasterExtent? ReadOptionalExtent(DbDataReader reader, int? srid)
+    private static async Task<RasterExtent?> ReadOptionalExtentAsync(DbDataReader reader, int? srid, CancellationToken cancellationToken)
     {
-        var xmin = ReadOptionalDouble(reader, reader.GetOrdinal("xmin"));
-        var ymin = ReadOptionalDouble(reader, reader.GetOrdinal("ymin"));
-        var xmax = ReadOptionalDouble(reader, reader.GetOrdinal("xmax"));
-        var ymax = ReadOptionalDouble(reader, reader.GetOrdinal("ymax"));
+        var xmin = await ReadOptionalDoubleAsync(reader, reader.GetOrdinal("xmin"), cancellationToken).ConfigureAwait(false);
+        var ymin = await ReadOptionalDoubleAsync(reader, reader.GetOrdinal("ymin"), cancellationToken).ConfigureAwait(false);
+        var xmax = await ReadOptionalDoubleAsync(reader, reader.GetOrdinal("xmax"), cancellationToken).ConfigureAwait(false);
+        var ymax = await ReadOptionalDoubleAsync(reader, reader.GetOrdinal("ymax"), cancellationToken).ConfigureAwait(false);
         return xmin is null || ymin is null || xmax is null || ymax is null
             ? null
             : new RasterExtent { XMin = xmin.Value, YMin = ymin.Value, XMax = xmax.Value, YMax = ymax.Value, Srid = srid };
     }
 
-    private static double? ReadOptionalDouble(DbDataReader reader, int ordinal)
-        => reader.IsDBNull(ordinal) ? null : reader.GetDouble(ordinal);
+    private static async Task<double?> ReadOptionalDoubleAsync(DbDataReader reader, int ordinal, CancellationToken cancellationToken)
+        => await reader.IsDBNullAsync(ordinal, cancellationToken).ConfigureAwait(false)
+            ? null
+            : await reader.GetFieldValueAsync<double>(ordinal, cancellationToken).ConfigureAwait(false);
 
     private static async Task<DbDataReader> ExecuteRasterExportReaderAsync(
         DbCommand command,

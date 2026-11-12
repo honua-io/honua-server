@@ -228,13 +228,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
-        var objectIds = ImmutableArray.CreateBuilder<long>();
-        await foreach (var objectId in StreamObjectIdsAsync(layerId, query, cancellationToken).ConfigureAwait(false))
-        {
-            objectIds.Add(objectId);
-        }
-
-        return objectIds.ToImmutable();
+        var objectIds = await StreamObjectIdsAsync(layerId, query, cancellationToken).ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        return [.. objectIds];
     }
 
     public async IAsyncEnumerable<long> StreamObjectIdsAsync(

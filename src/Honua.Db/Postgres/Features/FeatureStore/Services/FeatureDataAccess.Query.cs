@@ -420,13 +420,8 @@ internal sealed partial class FeatureDataAccess
         int layerId,
         CancellationToken cancellationToken)
     {
-        var objectIds = ImmutableArray.CreateBuilder<long>();
-        await foreach (var objectId in StreamSelectObjectIdsQueryAsync(query, featureQuery, layerId, cancellationToken).ConfigureAwait(false))
-        {
-            objectIds.Add(objectId);
-        }
-
-        return objectIds.ToImmutable();
+        var objectIds = await StreamSelectObjectIdsQueryAsync(query, featureQuery, layerId, cancellationToken).ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        return [.. objectIds];
     }
 
     public async Task<Feature?> GetFeatureAsync(int layerId, long featureId, CancellationToken cancellationToken)

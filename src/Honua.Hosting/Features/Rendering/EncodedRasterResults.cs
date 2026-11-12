@@ -11,5 +11,5 @@ namespace Honua.Infrastructure.Rendering;
 internal static class EncodedRasterResults
 {
     public static IResult File(byte[] data, string contentType)
-        => Results.File(new MemoryStream(data, writable: false), contentType);
+        => Results.File(new MemoryStream(data, 0, data.Length, writable: false, publiclyVisible: true), contentType);
 }

@@ -70,6 +70,29 @@ public sealed class FeatureServerObjectIdStreamingTests
         var act = () => sut.StreamIdsAsync(LayerId, new FeatureQuery(), "objectid", context, CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Invalid query.");
+        context.Response.ContentType.Should().BeNull();
+        context.Response.Body.Length.Should().Be(0);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task StreamIdsAsync_DatabaseErrorWithinFirstPage_ThrowsBeforeWritingStatus()
+    {
+        var context = new DefaultHttpContext();
+        context.Response.Body = new MemoryStream();
+        var reader = Substitute.For<IFeatureReader, IObjectIdStreamingReader>();
+        ((IObjectIdStreamingReader)reader)
+            .StreamObjectIdsAsync(LayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(IdsThenFailure(failAfter: 1_000));
+        var sut = new FeatureServerQueryExecutor(
+            reader,
+            Substitute.For<IStreamingFeatureStore>(),
+            new StreamingQueryFormatter(Options.Create(new LimitsOptions())));
+
+        var act = () => sut.StreamIdsAsync(LayerId, new FeatureQuery(), "objectid", context, CancellationToken.None);
+
+        await act.Should().ThrowAsync<TimeoutException>();
+        context.Response.ContentType.Should().BeNull();
         context.Response.Body.Length.Should().Be(0);
     }
 
@@ -80,6 +103,19 @@ public sealed class FeatureServerObjectIdStreamingTests
     }
 
     private static long RejectQuery() => throw new ArgumentException("unknown field");
+
+    private static async IAsyncEnumerable<long> IdsThenFailure(int failAfter)
+    {
+        await Task.Yield();
+        for (var id = 1L; id <= failAfter; id++)
+        {
+            yield return id;
+        }
+
+        yield return FailStatement();
+    }
+
+    private static long FailStatement() => throw new TimeoutException("statement timeout");
 
     private sealed class BodyWatchingIdSource(MemoryStream body)
     {

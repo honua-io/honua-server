@@ -225,6 +225,7 @@ public class ImageServerExportHandlerTests
             responseFormat: "image");
         var result = await _handler.ExportImageAsync(context, 1, request);
 
+        result.Should().BeOfType<FileStreamHttpResult>("encoded exports are copied to the response in chunks");
         System.Text.Encoding.ASCII.GetString(ReadFileBytes(result)[..6]).Should().Be("Lerc2 ");
     }
 

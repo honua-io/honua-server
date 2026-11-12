@@ -9,33 +9,36 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
 internal sealed partial class FeatureServerQueryExecutor
 {
-    // About 30 KB of ids per network write; flushing every few hundred bytes costs more than it saves.
+    // Ids read before the status line, and the cadence of network writes after it (about 30 KB of ids).
     private const int IdsPerPipeFlush = 4_096;
 
-    // The first id is read before the status line is written, so query validation errors still map to
-    // a 400; every later id goes straight from the reader to the response.
-    private static async Task StreamObjectIdsWithValidationAsync(
-        IObjectIdStreamingReader reader,
-        int layerId,
-        FeatureQuery query,
-        ObjectIdResponse response)
+    private static async Task StreamObjectIdsWithValidationAsync(IObjectIdStreamingReader reader, ObjectIdStreamRequest request)
     {
-        var cancellationToken = response.CancellationToken;
         var objectIds = reader
-            .StreamObjectIdsAsync(layerId, query with { ReturnPublicObjectIds = true }, cancellationToken)
-            .GetAsyncEnumerator(cancellationToken);
+            .StreamObjectIdsAsync(request.LayerId, request.Query with { ReturnPublicObjectIds = true })
+            .GetAsyncEnumerator(request.Response.CancellationToken);
         await using (objectIds.ConfigureAwait(false))
         {
-            var hasCurrent = await MoveToFirstObjectIdAsync(objectIds).ConfigureAwait(false);
-            await WriteObjectIdsAsync(objectIds, hasCurrent, response).ConfigureAwait(false);
+            var leadingIds = await ReadLeadingObjectIdsAsync(objectIds).ConfigureAwait(false);
+            var remainingIds = leadingIds.Count == IdsPerPipeFlush ? objectIds : null;
+            await WriteObjectIdsAsync(leadingIds, remainingIds, request.Response).ConfigureAwait(false);
         }
     }
 
-    private static async Task<bool> MoveToFirstObjectIdAsync(IAsyncEnumerator<long> objectIds)
+    // A failing query, including a row-time database error within the first page of ids, surfaces here
+    // before anything is written, so it still becomes a normal error response. A failure after that point
+    // aborts the started response, as for every streamed query result.
+    private static async Task<List<long>> ReadLeadingObjectIdsAsync(IAsyncEnumerator<long> objectIds)
     {
+        var leadingIds = new List<long>();
         try
         {
-            return await objectIds.MoveNextAsync().ConfigureAwait(false);
+            while (leadingIds.Count < IdsPerPipeFlush && await objectIds.MoveNextAsync().ConfigureAwait(false))
+            {
+                leadingIds.Add(objectIds.Current);
+            }
+
+            return leadingIds;
         }
         catch (ArgumentException ex)
         {
@@ -47,10 +50,12 @@ internal sealed partial class FeatureServerQueryExecutor
         }
     }
 
-    private static async Task WriteObjectIdsAsync(IAsyncEnumerator<long> objectIds, bool hasCurrent, ObjectIdResponse response)
+    private static async Task WriteObjectIdsAsync(
+        IReadOnlyList<long> leadingIds,
+        IAsyncEnumerator<long>? remainingIds,
+        ObjectIdResponse response)
     {
         var context = response.Context;
-        var cancellationToken = response.CancellationToken;
         context.Response.ContentType = "application/json";
         context.Response.StatusCode = StatusCodes.Status200OK;
 
@@ -65,32 +70,50 @@ internal sealed partial class FeatureServerQueryExecutor
         writer.WriteStartArray("objectIds");
 
         var idsWritten = 0L;
-        while (hasCurrent)
+        foreach (var objectId in leadingIds)
         {
-            writer.WriteNumberValue(objectIds.Current);
-            if (++idsWritten % FlushInterval == 0)
-            {
-                await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
-            }
+            writer.WriteNumberValue(objectId);
+            await FlushIfDueAsync(writer, ++idsWritten, response).ConfigureAwait(false);
+        }
 
-            if (idsWritten % IdsPerPipeFlush == 0)
-            {
-                // Utf8JsonWriter only advances the pipe; flushing the pipe is what sends the bytes.
-                await context.Response.BodyWriter.FlushAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            hasCurrent = await objectIds.MoveNextAsync().ConfigureAwait(false);
+        while (remainingIds is not null && await remainingIds.MoveNextAsync().ConfigureAwait(false))
+        {
+            writer.WriteNumberValue(remainingIds.Current);
+            await FlushIfDueAsync(writer, ++idsWritten, response).ConfigureAwait(false);
         }
 
         writer.WriteEndArray();
+        if (response.ExceededTransferLimit is { } exceededTransferLimit)
+        {
+            writer.WriteBoolean("exceededTransferLimit", exceededTransferLimit);
+        }
+
         writer.WriteEndObject();
 
-        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+        await writer.FlushAsync(response.CancellationToken).ConfigureAwait(false);
         await context.Response.CompleteAsync().ConfigureAwait(false);
+    }
+
+    private static async Task FlushIfDueAsync(Utf8JsonWriter writer, long idsWritten, ObjectIdResponse response)
+    {
+        if (idsWritten % FlushInterval != 0)
+        {
+            return;
+        }
+
+        await writer.FlushAsync(response.CancellationToken).ConfigureAwait(false);
+        if (idsWritten % IdsPerPipeFlush == 0)
+        {
+            // Utf8JsonWriter only advances the pipe; flushing the pipe is what sends the bytes.
+            await response.Context.Response.BodyWriter.FlushAsync(response.CancellationToken).ConfigureAwait(false);
+        }
     }
 
     private readonly record struct ObjectIdResponse(
         string ObjectIdFieldName,
         HttpContext Context,
-        CancellationToken CancellationToken);
+        CancellationToken CancellationToken,
+        bool? ExceededTransferLimit = null);
+
+    private readonly record struct ObjectIdStreamRequest(int LayerId, FeatureQuery Query, ObjectIdResponse Response);
 }

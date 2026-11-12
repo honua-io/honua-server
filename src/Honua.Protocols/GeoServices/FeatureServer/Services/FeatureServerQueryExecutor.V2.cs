@@ -325,9 +325,7 @@ internal sealed partial class FeatureServerQueryExecutor
         {
             await StreamObjectIdsWithValidationAsync(
                 streamingReader,
-                storageLayerId,
-                query,
-                new ObjectIdResponse(objectIdFieldName, context, cancellationToken)).ConfigureAwait(false);
+                new ObjectIdStreamRequest(storageLayerId, query, new ObjectIdResponse(objectIdFieldName, context, cancellationToken))).ConfigureAwait(false);
             return;
         }
 

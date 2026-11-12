@@ -11,17 +11,20 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class FeatureDataAccess
 {
+    // The stopwatch covers database awaits only, so a slow client never reads as a slow query, and a
+    // consumer that stops early is not recorded as a failed query.
     public async IAsyncEnumerable<long> StreamSelectObjectIdsQueryAsync(
         CoreParameterizedQuery query,
         FeatureQuery featureQuery,
         int layerId,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var stopwatch = Stopwatch.StartNew();
+        var databaseTime = new Stopwatch();
         var count = 0;
-        var completed = false;
+        var databaseCallFailed = true;
         try
         {
+            databaseTime.Start();
             await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
             await using var command = await CreateCommandAsync(
                 connection,
@@ -32,25 +35,34 @@ internal sealed partial class FeatureDataAccess
 
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
+                databaseTime.Stop();
+                databaseCallFailed = false;
                 count++;
                 yield return reader.GetInt64(0);
+                databaseCallFailed = true;
+                databaseTime.Start();
             }
 
-            completed = true;
+            databaseCallFailed = false;
         }
         finally
         {
-            stopwatch.Stop();
-            if (completed)
+            databaseTime.Stop();
+            if (databaseCallFailed)
             {
-                _cacheManager.RecordQueryMetrics("select_objectids", stopwatch.ElapsedMilliseconds, count);
-                RecordPerformanceQuery("select_objectids", layerId, stopwatch.ElapsedMilliseconds, count);
-                LogSlowQuery("select_objectids", stopwatch.ElapsedMilliseconds, layerId, count);
+                _cacheManager.RecordQueryMetrics("select_objectids_error", databaseTime.ElapsedMilliseconds);
             }
             else
             {
-                _cacheManager.RecordQueryMetrics("select_objectids_error", stopwatch.ElapsedMilliseconds);
+                RecordObjectIdQuerySuccess(layerId, databaseTime.ElapsedMilliseconds, count);
             }
         }
+    }
+
+    private void RecordObjectIdQuerySuccess(int layerId, long elapsedMilliseconds, int count)
+    {
+        _cacheManager.RecordQueryMetrics("select_objectids", elapsedMilliseconds, count);
+        RecordPerformanceQuery("select_objectids", layerId, elapsedMilliseconds, count);
+        LogSlowQuery("select_objectids", elapsedMilliseconds, layerId, count);
     }
 }
