@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using FluentAssertions;
 using Honua.Core.Exceptions;
@@ -182,12 +183,12 @@ public sealed class CityGmlScenePublishExecutorTests : IDisposable
         var finalDirectory = Path.Join(_outputRoot, sceneId);
         await File.WriteAllTextAsync(finalDirectory, "blocks Directory.Move");
 
-        var activities = new List<Activity>();
+        var activities = new ConcurrentQueue<Activity>();
         using var listener = new ActivityListener
         {
             ShouldListenTo = source => source.Name == HonuaTelemetry.ServiceName,
             Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
-            ActivityStopped = activities.Add
+            ActivityStopped = activities.Enqueue
         };
         ActivitySource.AddActivityListener(listener);
 
