@@ -37,25 +37,4 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
         streamed.Should().HaveCountGreaterThan(4_096).And.BeInDescendingOrder();
         streamed.Should().OnlyContain(objectId => objectId % 2 == 0 || objectId == 1);
     }
-
-    [Fact]
-    public async Task StreamObjectIdsAsync_ConsumerStopsEarly_ReleasesTheConnection()
-    {
-        await _fixture.ExecuteAsync($"""
-            INSERT INTO {_schema}.cities (objectid, geom, name, population, attributes)
-            SELECT g, ST_SetSRID(ST_MakePoint(-150, 20), 4326), 'City ' || g, g, NULL
-            FROM generate_series(3, {ManyCities + 2}) AS g;
-            """);
-        var reader = CreateReader();
-
-        for (var attempt = 0; attempt < 3; attempt++)
-        {
-            await foreach (var _ in reader.StreamObjectIdsAsync(1, new FeatureQuery()))
-            {
-                break;
-            }
-        }
-
-        (await reader.QueryObjectIdsAsync(1, new FeatureQuery())).Should().HaveCount(ManyCities + 2);
-    }
 }

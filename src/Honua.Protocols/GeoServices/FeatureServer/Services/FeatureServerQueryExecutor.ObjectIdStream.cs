@@ -9,19 +9,33 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
 internal sealed partial class FeatureServerQueryExecutor
 {
-    // Ids read before the status line, and the cadence of network writes after it (about 30 KB of ids).
+    // About 30 KB of ids per network write.
     private const int IdsPerPipeFlush = 4_096;
+
+    // Must not exceed IdsPerPipeFlush: nothing reaches the client before this many ids have been read.
+    private const int IdsReadBeforeStatus = IdsPerPipeFlush;
 
     private static async Task StreamObjectIdsWithValidationAsync(IObjectIdStreamingReader reader, ObjectIdStreamRequest request)
     {
+        var cancellationToken = request.Response.CancellationToken;
         var objectIds = reader
-            .StreamObjectIdsAsync(request.LayerId, request.Query with { ReturnPublicObjectIds = true })
-            .GetAsyncEnumerator(request.Response.CancellationToken);
+            .StreamObjectIdsAsync(request.LayerId, request.Query with { ReturnPublicObjectIds = true }, cancellationToken)
+            .GetAsyncEnumerator(cancellationToken);
         await using (objectIds.ConfigureAwait(false))
         {
             var leadingIds = await ReadLeadingObjectIdsAsync(objectIds).ConfigureAwait(false);
-            var remainingIds = leadingIds.Count == IdsPerPipeFlush ? objectIds : null;
-            await WriteObjectIdsAsync(leadingIds, remainingIds, request.Response).ConfigureAwait(false);
+            var remainingIds = leadingIds.Count == IdsReadBeforeStatus ? objectIds : null;
+            try
+            {
+                await WriteObjectIdsAsync(leadingIds, remainingIds, request.Response).ConfigureAwait(false);
+            }
+            catch when (request.Response.Context.Response.HasStarted)
+            {
+                // A 200 is already on the wire; drop the connection so the client cannot mistake a
+                // truncated id list for a complete one.
+                request.Response.Context.Abort();
+                throw;
+            }
         }
     }
 
@@ -33,7 +47,7 @@ internal sealed partial class FeatureServerQueryExecutor
         var leadingIds = new List<long>();
         try
         {
-            while (leadingIds.Count < IdsPerPipeFlush && await objectIds.MoveNextAsync().ConfigureAwait(false))
+            while (leadingIds.Count < IdsReadBeforeStatus && await objectIds.MoveNextAsync().ConfigureAwait(false))
             {
                 leadingIds.Add(objectIds.Current);
             }

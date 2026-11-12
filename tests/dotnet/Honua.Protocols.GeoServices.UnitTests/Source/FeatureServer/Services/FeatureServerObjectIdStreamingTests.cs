@@ -9,6 +9,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 
@@ -96,6 +97,32 @@ public sealed class FeatureServerObjectIdStreamingTests
         context.Response.Body.Length.Should().Be(0);
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task StreamIdsAsync_DatabaseErrorAfterResponseStarted_AbortsTheConnection()
+    {
+        var body = new MemoryStream();
+        var context = new DefaultHttpContext();
+        context.Response.Body = body;
+        context.Features.Set<IHttpResponseFeature>(new StartedOnFirstWriteResponseFeature(body));
+        var lifetime = new RecordingLifetimeFeature();
+        context.Features.Set<IHttpRequestLifetimeFeature>(lifetime);
+        var reader = Substitute.For<IFeatureReader, IObjectIdStreamingReader>();
+        ((IObjectIdStreamingReader)reader)
+            .StreamObjectIdsAsync(LayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(IdsThenFailure(failAfter: 10_000));
+        var sut = new FeatureServerQueryExecutor(
+            reader,
+            Substitute.For<IStreamingFeatureStore>(),
+            new StreamingQueryFormatter(Options.Create(new LimitsOptions())));
+
+        var act = () => sut.StreamIdsAsync(LayerId, new FeatureQuery(), "objectid", context, CancellationToken.None);
+
+        await act.Should().ThrowAsync<TimeoutException>();
+        body.Length.Should().BePositive();
+        lifetime.Aborted.Should().BeTrue();
+    }
+
     private static async IAsyncEnumerable<long> FailingIds()
     {
         await Task.Yield();
@@ -116,6 +143,20 @@ public sealed class FeatureServerObjectIdStreamingTests
     }
 
     private static long FailStatement() => throw new TimeoutException("statement timeout");
+
+    private sealed class StartedOnFirstWriteResponseFeature(MemoryStream body) : HttpResponseFeature
+    {
+        public override bool HasStarted => body.Length > 0;
+    }
+
+    private sealed class RecordingLifetimeFeature : IHttpRequestLifetimeFeature
+    {
+        public bool Aborted { get; private set; }
+
+        public CancellationToken RequestAborted { get; set; }
+
+        public void Abort() => Aborted = true;
+    }
 
     private sealed class BodyWatchingIdSource(MemoryStream body)
     {
