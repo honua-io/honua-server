@@ -4,6 +4,7 @@
 using System.Data.Common;
 using System.Text.Json;
 using System.Transactions;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -24,6 +25,7 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 [Collection("Database")]
 public sealed partial class PostgresStorageMappedSpatialCountSerialIntegrationTests(PostgresFixture fixture) : IAsyncLifetime
 {
+    private const int LayerId = 1;
     private string _schema = null!;
     private NpgsqlDataSource _source = null!;
     private int _backendPid;
@@ -407,12 +409,12 @@ public sealed partial class PostgresStorageMappedSpatialCountSerialIntegrationTe
             values["Database:DisableJitForSourceSpatialCounts"] = "true";
         }
         var resource = CreateResource(knownGeometry: true);
-        var count = await RegisteredPostgresFeatureStore.CountThroughBoundReaderAsync(
+        var count = await RegisteredPostgresFeatureStore.RunAsync(
             values,
             _provider,
-            store => new FeatureProviderBinding(new MetadataV2Service(), resource, new MetadataV2Layer(),
-                new MetadataV2StorageBinding { ResourceId = resource.Metadata.Id }, CreateMapping(sourceBacked: true), 1, store, Connection: null),
-            BboxQuery());
+            store => store.CreateReaderForBinding(new FeatureProviderBinding(new MetadataV2Service(), resource, new MetadataV2Layer(),
+                new MetadataV2StorageBinding { ResourceId = resource.Metadata.Id }, CreateMapping(sourceBacked: true), LayerId, (IFeatureDataProvider)store, Connection: null))
+                .CountAsync(LayerId, BboxQuery()));
         count.Should().Be(3);
         await AssertObservedAsync(expected, disableJit ? "off" : "on");
         await AssertSessionRestoredAsync();

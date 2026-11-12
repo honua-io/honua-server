@@ -298,12 +298,6 @@ public class SqlServerProviderResolutionTests
         return new SqlServerFeatureStore(dataAccess, v2Provider, readSecurity);
     }
 
-    /// <summary>
-    /// Minimal <see cref="Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider"/>
-    /// stub that returns a single resource with an optional permanent filter for
-    /// BH6-021 regression tests.
-    /// </summary>
-
     private sealed class ThrowingConnectionFactory : ISqlServerConnectionFactory
     {
         public Task<Microsoft.Data.SqlClient.SqlConnection> OpenAsync(DataConnection? dataConnection, CancellationToken cancellationToken)

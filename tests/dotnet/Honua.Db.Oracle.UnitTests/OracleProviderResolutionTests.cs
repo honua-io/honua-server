@@ -381,12 +381,6 @@ public class OracleProviderResolutionTests
     }
 
     /// <summary>
-    /// Minimal <see cref="Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider"/>
-    /// stub that returns a single resource with an optional permanent filter for
-    /// BH6-021 regression tests.
-    /// </summary>
-
-    /// <summary>
     /// Probe stub that approves any SDO_GEOMETRY column and reports no versioning. Allows
     /// resolution tests to exercise binding/connection flow without a real Oracle connection
     /// while still proving that the guard is invoked before the data access call.

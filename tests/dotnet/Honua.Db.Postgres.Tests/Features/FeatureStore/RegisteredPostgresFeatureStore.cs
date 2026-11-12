@@ -15,11 +15,10 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 internal static class RegisteredPostgresFeatureStore
 {
-    public static async Task<long> CountThroughBoundReaderAsync(
+    public static async Task<T> RunAsync<T>(
         IReadOnlyDictionary<string, string?> settings,
         IAdoNetDatabaseConnectionProvider connectionProvider,
-        Func<IFeatureDataProvider, FeatureProviderBinding> bind,
-        FeatureQuery query)
+        Func<IBindableFeatureDataProvider, Task<T>> action)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
         var services = new ServiceCollection();
@@ -34,8 +33,7 @@ internal static class RegisteredPostgresFeatureStore
         services.AddSingleton(connectionProvider);
         await using var container = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         await using var scope = container.CreateAsyncScope();
-        var store = scope.ServiceProvider.GetRequiredService<IFeatureDataProvider>();
-        var reader = ((IBindableFeatureDataProvider)store).CreateReaderForBinding(bind(store));
-        return await reader.CountAsync(1, query);
+        var store = (IBindableFeatureDataProvider)scope.ServiceProvider.GetRequiredService<IFeatureDataProvider>();
+        return await action(store);
     }
 }
