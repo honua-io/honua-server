@@ -75,6 +75,7 @@ internal static class AdaptiveCompressionLevelSelector
 internal sealed class AdaptiveBrotliStream : Stream
 {
     private readonly Stream _outputStream;
+    private bool _disposed;
     private readonly AdaptiveCompressionOptions _options;
     private readonly MemoryStream _buffer;
     private BrotliStream? _compressionStream;
@@ -211,8 +212,10 @@ internal sealed class AdaptiveBrotliStream : Stream
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
+        // DisposeAsync has already released the buffer; Stream.DisposeAsync calls back into here.
+        if (disposing && !_disposed)
         {
+            _disposed = true;
             if (_compressionStream == null && _buffer.Length > 0)
             {
                 InitializeCompressionStream();
@@ -225,6 +228,11 @@ internal sealed class AdaptiveBrotliStream : Stream
 
     public override async ValueTask DisposeAsync()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
         if (_compressionStream == null && _buffer.Length > 0)
         {
             await InitializeCompressionStreamAsync(CancellationToken.None);
@@ -236,6 +244,7 @@ internal sealed class AdaptiveBrotliStream : Stream
         }
 
         await _buffer.DisposeAsync();
+        _disposed = true;
         await base.DisposeAsync();
     }
 
@@ -247,6 +256,7 @@ internal sealed class AdaptiveBrotliStream : Stream
 internal sealed class AdaptiveGzipStream : Stream
 {
     private readonly Stream _outputStream;
+    private bool _disposed;
     private readonly AdaptiveCompressionOptions _options;
     private readonly MemoryStream _buffer;
     private GZipStream? _compressionStream;
@@ -376,8 +386,10 @@ internal sealed class AdaptiveGzipStream : Stream
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
+        // DisposeAsync has already released the buffer; Stream.DisposeAsync calls back into here.
+        if (disposing && !_disposed)
         {
+            _disposed = true;
             if (_compressionStream == null && _buffer.Length > 0)
             {
                 InitializeCompressionStream();
@@ -390,6 +402,11 @@ internal sealed class AdaptiveGzipStream : Stream
 
     public override async ValueTask DisposeAsync()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
         if (_compressionStream == null && _buffer.Length > 0)
         {
             await InitializeCompressionStreamAsync(CancellationToken.None);
@@ -401,6 +418,7 @@ internal sealed class AdaptiveGzipStream : Stream
         }
 
         await _buffer.DisposeAsync();
+        _disposed = true;
         await base.DisposeAsync();
     }
 

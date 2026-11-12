@@ -62,6 +62,21 @@ public sealed class AdaptiveCompressionProviderTests
         output.BytesWritten.Should().Be(0);
     }
 
+    // Disposing a stream that never received bytes must not touch the released buffer
+    // (Stream.DisposeAsync calls Dispose(bool) again).
+    [UnitTest]
+    public async Task AdaptiveBrotliStream_EmptyPayload_DisposesWithoutWriting()
+    {
+        var output = new AsyncOnlyBufferingStream();
+        var stream = new AdaptiveBrotliStream(output, new AdaptiveCompressionOptions());
+
+        await stream.FlushAsync();
+        await stream.DisposeAsync();
+        await stream.DisposeAsync();
+
+        output.BytesWritten.Should().Be(0);
+    }
+
     [Theory]
     [InlineData(9, CompressionLevel.Fastest)]
     [InlineData(10, CompressionLevel.SmallestSize)]

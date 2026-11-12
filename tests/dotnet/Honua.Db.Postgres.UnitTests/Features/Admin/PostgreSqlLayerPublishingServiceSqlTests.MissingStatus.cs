@@ -34,17 +34,10 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
             "storageBindings" => graph.StorageBindings[0].Status,
             _ => graph.Publications[0].Status
         };
-        // An absent member keeps the property initializer (the default, Active status);
-        // only an explicit "status": null leaves the non-nullable property null.
-        if (explicitNull)
-        {
-            omitted.Should().BeNull();
-        }
-        else
-        {
-            omitted.Should().NotBeNull();
-            omitted.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
-        }
+        // An absent member keeps the property initializer; an explicit null reaches the status
+        // converter (HandleNull), which also returns the default status. Both read as Active.
+        omitted.Should().NotBeNull();
+        omitted.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
 
         var linked = PostgreSqlLayerPublishingService.BuildLinkedLayerMetadataV2Graph(
             graph, "service-0", 1, "Dataset", 4326, DateTimeOffset.UnixEpoch, storageScope: scope);
