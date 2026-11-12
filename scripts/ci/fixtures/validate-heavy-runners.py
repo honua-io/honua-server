@@ -157,6 +157,8 @@ process.stdout.write(JSON.stringify(new Function('context', `const {github, need
             }
             with self.subTest(job=name, selected=selected, fork=fork, draft=draft):
                 self.assertEqual(self.evaluate_routing(probe, context), expected)
+        self.assertEqual(self.jobs["format"]["needs"], "runner-select")
+        self.assertEqual(self.jobs["fast-tests"]["needs"], "runner-select")
         self.assertEqual(self.jobs["format"]["if"], DRAFT_FORMAT_ADMISSION)
         self.assertNotIn("if", self.jobs["fast-tests"])
 
