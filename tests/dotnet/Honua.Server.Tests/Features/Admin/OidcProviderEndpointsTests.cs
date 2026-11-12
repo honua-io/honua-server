@@ -5,6 +5,9 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Honua.Server.Features.Admin.Models;
+using Honua.Core.Features.Identity.Abstractions;
+using Honua.Infrastructure.Authentication;
+using Microsoft.Extensions.DependencyInjection;
 using Honua.Infrastructure.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -55,6 +58,46 @@ public class OidcProviderEndpointsTests : IAsyncLifetime
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTheory]
+    [InlineData("POST")]
+    [InlineData("PUT")]
+    [InlineData("DELETE")]
+    [Endpoint("POST /api/v1/admin/oidc/providers")]
+    [Endpoint("PUT /api/v1/admin/oidc/providers/{id}")]
+    [Endpoint("DELETE /api/v1/admin/oidc/providers/{id}")]
+    public async Task AgentAdministrator_CannotChangeIdentityProviders(string method)
+    {
+        var created = await _client.PostAsJsonAsync("/api/v1/admin/oidc/providers", new CreateOidcProviderRequest
+        {
+            Name = "Original provider", ProviderType = "Generic",
+            Authority = "https://auth.example.com", ClientId = "original-client",
+        }, _jsonOptions);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var provider = JsonSerializer.Deserialize<ApiResponse<OidcProviderResponse>>(
+            await created.Content.ReadAsStringAsync(), _jsonOptions)!.Data!;
+        var store = _fixture.Services.GetRequiredService<IOidcProviderStore>();
+        var before = await store.ListProvidersAsync();
+        var key = await _fixture.Services.GetRequiredService<IAdminApiKeyStore>().CreateAsync(
+            "oidc-agent", ["admin", "agent"], null, "test", CancellationToken.None);
+        using var agent = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", key.Key));
+        using var request = new HttpRequestMessage(new HttpMethod(method), method == "POST"
+            ? "/api/v1/admin/oidc/providers" : $"/api/v1/admin/oidc/providers/{provider.ProviderId}");
+        request.Content = JsonContent.Create(new
+        {
+            name = "Changed provider", providerType = "Generic", authority = "https://other.example.com", clientId = "changed-client",
+        });
+
+        using var response = await agent.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(before.Count, (await store.ListProvidersAsync()).Count);
+        var unchanged = await store.GetProviderAsync(provider.ProviderId);
+        Assert.NotNull(unchanged);
+        Assert.Equal("Original provider", unchanged.Name);
+        Assert.Equal("original-client", unchanged.ClientId);
+        Assert.Equal("https://auth.example.com", unchanged.Authority);
+    }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/oidc/providers")]

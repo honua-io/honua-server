@@ -7,6 +7,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Server.Features.Admin.Models;
 using Honua.TestKit;
+using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Authentication;
@@ -65,6 +66,37 @@ public sealed class FieldMaskPolicyEndpointsTests : IAsyncLifetime
     public Task InitializeAsync() => _fixture.InitializeAsync();
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /api/v1/admin/field-mask-policies")]
+    [Endpoint("DELETE /api/v1/admin/field-mask-policies/{id}")]
+    public async Task AgentAdministrator_CannotCreateOrDeleteFieldMaskPolicies()
+    {
+        using var human = CreateAdminClient();
+        var policyId = await CreatePolicyAsync(human);
+        var before = await ListPoliciesAsync(human);
+        var key = await _fixture.Services.GetRequiredService<IAdminApiKeyStore>().CreateAsync(
+            "field-mask-agent", ["admin", "agent"], null, "test", CancellationToken.None);
+        using var agent = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", key.Key));
+        try
+        {
+            using var content = JsonContent.Create(new CreateFieldMaskPolicyRequest
+            {
+                Role = "agent-mask", Service = "*", Layer = "*", Attribute = "name",
+            }, FieldMaskPolicyJsonContext.Default.CreateFieldMaskPolicyRequest);
+            using var created = await agent.PostAsync("/api/v1/admin/field-mask-policies", content);
+            created.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            using var deleted = await agent.DeleteAsync($"/api/v1/admin/field-mask-policies/{policyId}");
+            deleted.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            (await ListPoliciesAsync(human)).Should().BeEquivalentTo(before);
+            (await GetPolicyAsync(human, policyId)).Attribute.Should().Be(MaskedAttribute);
+        }
+        finally
+        {
+            await human.DeleteAsync($"/api/v1/admin/field-mask-policies/{policyId}");
+        }
+    }
 
     [IntegrationTest]
     [Operation(Operations.Query)]
