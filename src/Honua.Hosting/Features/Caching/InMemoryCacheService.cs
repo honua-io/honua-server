@@ -25,7 +25,6 @@ internal sealed partial class InMemoryCacheService : ICacheService, ICacheHealth
     private readonly IPerformanceMonitor _performanceMonitor;
     private readonly TimeProvider _timeProvider;
     private readonly ConcurrentDictionary<string, CacheEntry> _entries = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, KeyLockEntry> _keyLocks = new(StringComparer.Ordinal);
     private readonly ITimer _cleanupTimer;
     private volatile bool _disposed;
 
@@ -291,54 +290,6 @@ internal sealed partial class InMemoryCacheService : ICacheService, ICacheHealth
         => CacheJsonContext.Default.GetTypeInfo(typeof(T))
             ?? throw new NotSupportedException($"Type '{typeof(T).FullName}' is not registered in {nameof(CacheJsonContext)}.");
 
-    // An entry leaves the dictionary only when its last holder or waiter leaves, so every
-    // caller for one key waits on the same semaphore and the dictionary holds only keys in use.
-    private async ValueTask<KeyLock> AcquireKeyLockAsync(string key, CancellationToken cancellationToken)
-    {
-        var entry = RetainKeyLock(key);
-        try
-        {
-            await entry.Semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            ReleaseKeyLockReference(key, entry);
-            throw;
-        }
-
-        return new KeyLock(this, key, entry);
-    }
-
-    private KeyLockEntry RetainKeyLock(string key)
-    {
-        while (true)
-        {
-            var entry = _keyLocks.GetOrAdd(key, static _ => new KeyLockEntry());
-            lock (entry)
-            {
-                if (!entry.Retired)
-                {
-                    entry.References++;
-                    return entry;
-                }
-            }
-        }
-    }
-
-    private void ReleaseKeyLockReference(string key, KeyLockEntry entry)
-    {
-        lock (entry)
-        {
-            if (--entry.References > 0)
-            {
-                return;
-            }
-
-            entry.Retired = true;
-            _keyLocks.TryRemove(new KeyValuePair<string, KeyLockEntry>(key, entry));
-        }
-    }
-
     private bool ExceedsQueryResponseEntryCap(string prefixedKey, byte[] data)
         => data.Length > _options.ResponseCacheMaxEntryBytes &&
            (prefixedKey.Contains("query:featureserver", StringComparison.Ordinal) ||
@@ -385,34 +336,6 @@ internal sealed partial class InMemoryCacheService : ICacheService, ICacheHealth
         _disposed = true;
         _cleanupTimer.Dispose();
         _entries.Clear();
-    }
-
-    // The semaphores never allocate a wait handle, so in-flight callers may still release
-    // theirs after the service is disposed.
-    private sealed class KeyLockEntry
-    {
-        public SemaphoreSlim Semaphore { get; } = new(1, 1);
-
-        public int References { get; set; }
-
-        public bool Retired { get; set; }
-    }
-
-    private sealed class KeyLock(InMemoryCacheService owner, string key, KeyLockEntry entry) : IDisposable
-    {
-        private bool _released;
-
-        public void Dispose()
-        {
-            if (_released)
-            {
-                return;
-            }
-
-            _released = true;
-            entry.Semaphore.Release();
-            owner.ReleaseKeyLockReference(key, entry);
-        }
     }
 
     private sealed record CacheEntry(byte[] Data, DateTimeOffset ExpiresAt);

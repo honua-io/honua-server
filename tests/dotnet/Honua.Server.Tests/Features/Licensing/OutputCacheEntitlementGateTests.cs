@@ -15,14 +15,9 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Licensing;
 
-/// <summary>
-/// Guards the output-cache entitlement gate (<c>caching.output-cache</c>, Pro; #2998).
-/// <c>Program</c> wires <c>UseOutputCache()</c> inside an <c>app.UseWhen(...)</c> branch whose
-/// predicate checks the live license snapshot instead of capturing it once at process boot. That
-/// matters in both directions: a Community process upgraded through <see cref="ILicenseManager"/>
-/// must start caching without a restart, and a paid license that expires at runtime must stop
-/// serving cached responses immediately.
-/// </summary>
+// Program gates UseOutputCache() on the live license snapshot rather than one captured at boot,
+// so a Community process upgraded at runtime starts caching without a restart, and a paid
+// license that expires at runtime stops serving cached responses immediately.
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.LicenseManagement)]
 public sealed class OutputCacheEntitlementGateTests
