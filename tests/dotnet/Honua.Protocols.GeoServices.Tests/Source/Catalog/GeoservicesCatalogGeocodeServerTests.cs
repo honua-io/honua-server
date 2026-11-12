@@ -36,13 +36,9 @@ public sealed class GeoservicesCatalogGeocodeServerTests : IClassFixture<Geoserv
         _fixture = fixture;
     }
 
-    /// <summary>Who may read the catalog's feature services.</summary>
     public enum CatalogFeatureAccess
     {
-        /// <summary>Feature services allow anonymous reads.</summary>
         Anonymous,
-
-        /// <summary>Feature services require the catalog-reader role.</summary>
         Restricted,
     }
 
@@ -61,11 +57,9 @@ public sealed class GeoservicesCatalogGeocodeServerTests : IClassFixture<Geoserv
 
         public WebApplicationFactory<Program> Application { get; } = CreateFactory(restrictedFeatures: true);
 
-        /// <summary>Returns the shared host whose configured locator shares its public name with a graph service.</summary>
         public Task<WebApplicationFactory<Program>> GetConfiguredLocatorCollisionAsync(CatalogFeatureAccess access)
             => GetOrCreateCollisionApplicationAsync(LocatorAvailability.Configured, access);
 
-        /// <summary>Returns the shared host whose unavailable locator shares its public name with a graph service.</summary>
         public Task<WebApplicationFactory<Program>> GetUnavailableLocatorCollisionAsync(CatalogFeatureAccess access)
             => GetOrCreateCollisionApplicationAsync(LocatorAvailability.Unavailable, access);
 
