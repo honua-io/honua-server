@@ -90,20 +90,12 @@ class HeavyRunnerContractTests(unittest.TestCase):
         self.assertEqual(set(self.jobs), HEAVY_JOBS | HOSTED_JOBS | PINNED_JOBS | {SHARD_JOBS["ci.yml"][0]})
 
 
-PR_GATE_HEAVY_JOBS = {"format", "fast-tests"}
-PR_GATE_SELECTED_JOBS = PR_GATE_HEAVY_JOBS | {"pr-gate", "server-test-producer"}
+PR_GATE_SELECTED_JOBS = {"pr-gate", "server-test-producer"}
 SELECTED_RUNNER = (
     "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)"
     " && needs.runner-select.outputs.runner || 'ubuntu-latest' }}"
 )
-VALIDATED_HEAVY_RUNNER = (
-    "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)"
-    " && (vars.HONUA_PR_GATE_RUNNER != ''"
-    " && needs.runner-select.outputs.runner == vars.HONUA_PR_GATE_RUNNER"
-    " && vars.HONUA_HEAVY_RUNNER && fromJSON(vars.HONUA_HEAVY_RUNNER)"
-    " || needs.runner-select.outputs.runner) || 'ubuntu-latest' }}"
-)
-PR_GATE_LIGHT_JOBS = {"affected-shards-select", "affected-shards", "ci-router-validation", "required"}
+PR_GATE_LIGHT_JOBS = {"format", "fast-tests", "affected-shards-select", "affected-shards", "ci-router-validation", "required"}
 LIGHT_RUNNER = (
     "${{ vars.HONUA_LIGHT_RUNNER"
     " && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)"
@@ -131,41 +123,40 @@ class PrGateRunnerRoutingTests(unittest.TestCase):
     def setUpClass(cls):
         cls.jobs = yaml.safe_load((ROOT / ".github/workflows/pr-gate.yml").read_text())["jobs"]
 
-    def test_selected_jobs_follow_runner_select_and_only_format_admits_drafts(self):
+    def test_only_producers_follow_runner_select(self):
         for name in PR_GATE_SELECTED_JOBS:
             with self.subTest(job=name):
                 job = self.jobs[name]
-                self.assertEqual(job["runs-on"],
-                                 VALIDATED_HEAVY_RUNNER if name in PR_GATE_HEAVY_JOBS else SELECTED_RUNNER)
+                self.assertEqual(job["runs-on"], SELECTED_RUNNER)
                 self.assertEqual(job["needs"], "runner-select")
-                self.assertEqual(job.get("if"), DRAFT_FORMAT_ADMISSION if name == "format" else None)
+                self.assertIsNone(job.get("if"))
 
-    def test_heavy_admission_requires_validated_host_and_preserves_fallbacks(self):
-        probe = """const {expression, selected, gate, heavy, fork, draft} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+    def test_early_checks_never_use_producer_admission_or_static_heavy_labels(self):
+        probe = """const {expression, light, fork, selected, draft} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
 const github = {repository: 'owner/repo', event: {pull_request: {draft, head: {repo: {full_name: fork ? 'fork/repo' : 'owner/repo'}}}}};
 const needs = {'runner-select': {outputs: {runner: selected}}};
-const vars = {HONUA_PR_GATE_RUNNER: gate, HONUA_HEAVY_RUNNER: heavy};
+const vars = {HONUA_PR_GATE_RUNNER: 'honua-build', HONUA_HEAVY_RUNNER: '{"group":"honua-heavy"}', HONUA_LIGHT_RUNNER: light};
 process.stdout.write(JSON.stringify(new Function('context', `const {github, needs, vars, fromJSON} = context; return (${expression});`)({github, needs, vars, fromJSON: JSON.parse})));
 """
-        pool = {"group": "honua-heavy", "labels": ["honua-heavy"]}
-        scenarios = [
-            ("ready", "honua-build", "honua-build", json.dumps(pool), False, False, pool),
-            ("busy/stopped/stale/enforce", "ubuntu-latest", "honua-build", json.dumps(pool), False, False, "ubuntu-latest"),
-            ("draft selector skipped", "", "honua-build", json.dumps(pool), False, True, "ubuntu-latest"),
-            ("unset gate", "", "", json.dumps(pool), False, False, "ubuntu-latest"),
-            ("unset heavy", "honua-build", "honua-build", "", False, False, "honua-build"),
-            ("fork", "honua-build", "honua-build", json.dumps(pool), True, False, "ubuntu-latest"),
-        ]
-        for name in PR_GATE_HEAVY_JOBS:
+        pool = {"group": "honua-light", "labels": ["honua-light"]}
+        for name in ["format", "fast-tests"]:
             expression = self.jobs[name]["runs-on"].removeprefix("${{").removesuffix("}}").strip()
             expression = expression.replace("needs.runner-select", "needs['runner-select']")
-            for scenario, selected, gate, heavy, fork, draft, expected in scenarios:
-                with self.subTest(job=name, scenario=scenario):
-                    result = subprocess.run(["node", "-e", probe], input=json.dumps({
-                        "expression": expression, "selected": selected, "gate": gate,
-                        "heavy": heavy, "fork": fork, "draft": draft,
-                    }), text=True, capture_output=True, check=True)
-                    self.assertEqual(json.loads(result.stdout), expected)
+            for selected in ["honua-build", "ubuntu-latest", ""]:
+                for light, fork, draft, expected in [
+                    ("", False, False, "ubuntu-latest"),
+                    ("", False, True, "ubuntu-latest"),
+                    (json.dumps(pool), False, False, pool),
+                    (json.dumps(pool), True, False, "ubuntu-latest"),
+                ]:
+                    with self.subTest(job=name, selected=selected, fork=fork, draft=draft):
+                        result = subprocess.run(["node", "-e", probe], input=json.dumps({
+                            "expression": expression, "selected": selected, "light": light,
+                            "fork": fork, "draft": draft,
+                        }), text=True, capture_output=True, check=True)
+                        self.assertEqual(json.loads(result.stdout), expected)
+        self.assertEqual(self.jobs["format"]["if"], DRAFT_FORMAT_ADMISSION)
+        self.assertNotIn("if", self.jobs["fast-tests"])
 
     def test_light_jobs_use_the_fork_guarded_light_pool_with_hosted_fallback(self):
         for name in PR_GATE_LIGHT_JOBS:

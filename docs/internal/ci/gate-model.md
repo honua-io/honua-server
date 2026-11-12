@@ -332,9 +332,12 @@ main handles their completion or cancellation.
 
 ## PR Gate compute runner selection
 
-`PR Gate / Runner select` decides where `pr-gate` (Build and tests),
-`server-test-producer`, `fast-tests` and `format` run. With the repository variable
-`HONUA_PR_GATE_RUNNER` unset, its steps skip and those jobs stay on
+`PR Gate / Runner select` decides where `pr-gate` (Build and tests) and
+`server-test-producer` run. Format/analyzers and all four Fast/architecture
+groups use the fork-guarded `HONUA_LIGHT_RUNNER` JSON selector with
+`ubuntu-latest` fallback, independently of gate admission or heavy settings.
+These eight jobs never inherit the producer label. With the repository variable
+`HONUA_PR_GATE_RUNNER` unset, its steps skip and the two producers stay on
 `ubuntu-latest`. Set it to `honua-build` to use the ephemeral runners on the lane
 build host (honua-iac `bootstrap/aws-build-host`, "PR Gate runners"). It also
 needs the variable `HONUA_PR_GATE_RUNNER_REGION` and the secret
@@ -343,20 +346,16 @@ needs the variable `HONUA_PR_GATE_RUNNER_REGION` and the secret
 host and read its heartbeat, nothing else) and runs
 `scripts/ci/select-gate-runner.sh`:
 
-- When the host's heartbeat is fresh and shows two idle runners, Build and tests
-  and Server test producer use the selected gate label. Format/analyzers and the
-  four Fast/architecture groups use `HONUA_HEAVY_RUNNER` only when the selector
-  actually returned the nonempty configured gate label and the same-repository
-  guard passes. If the heavy variable is unset, they retain the selected gate
-  label. A static heavy variable alone never overrides a hosted fallback.
-- When the host is busy, or no heartbeat arrives within three minutes, they use
-  `ubuntu-latest`. A stopped host is still woken for later runs.
+- When the current instance's heartbeat is fresh and shows two idle gate runners,
+  Build and tests and Server test producer use the selected gate label.
+- When the host is busy, or no heartbeat arrives within three minutes, the two
+  producers use `ubuntu-latest`. A stopped host is still woken for later runs.
 - Any failure selects `ubuntu-latest`. Every selection step is
   `continue-on-error`, so the job cannot fail and skip the required producer,
   which carries no job condition.
 
-Draft Format stays hosted because runner selection skips drafts. Admission and
-control jobs use hosted compute when `HONUA_LIGHT_RUNNER` is unset. The existing
+Draft Format and admission/control jobs also use the fork-guarded light selector;
+with `HONUA_LIGHT_RUNNER` unset they stay hosted. The existing
 even-index affected-shard routing is unchanged by this early-job allocation. Under
 `REVIEW_FIRST_MODE: enforce` the selection steps skip and the gate stays hosted:
 the review release reruns only failed jobs, so attempt 2 would reuse a choice
