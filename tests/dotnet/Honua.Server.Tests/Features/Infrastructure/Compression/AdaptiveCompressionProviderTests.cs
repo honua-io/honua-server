@@ -5,6 +5,7 @@ using System.Text;
 using FluentAssertions;
 using System.IO.Compression;
 using Honua.Infrastructure.Compression;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Compression;
 
@@ -49,7 +50,7 @@ public sealed class AdaptiveCompressionProviderTests
     // .NET 11 GZipStream writes a 20-byte header and footer even for an empty payload; the
     // adaptive stream creates its GZipStream only once there are bytes, so an empty response
     // body stays empty on every runtime.
-    [Fact]
+    [UnitTest]
     public async Task AdaptiveGzipStream_EmptyPayload_WritesNoBytes()
     {
         var output = new AsyncOnlyBufferingStream();
