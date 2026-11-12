@@ -55,6 +55,28 @@ internal sealed class AdminAuthSessionAuthenticationHandler(
         }
     }
 
+    protected override Task HandleForbiddenAsync(AuthenticationProperties properties)
+    {
+        if (Response.HasStarted)
+        {
+            return Task.CompletedTask;
+        }
+
+        Response.StatusCode = StatusCodes.Status403Forbidden;
+        return Task.CompletedTask;
+    }
+
+    protected override Task HandleChallengeAsync(AuthenticationProperties properties)
+    {
+        if (Response.HasStarted)
+        {
+            return Task.CompletedTask;
+        }
+
+        Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return Task.CompletedTask;
+    }
+
     private void DeleteSessionCookie()
     {
         Response.Cookies.Delete(AdminAuthSessionStore.AuthSessionCookieName, new CookieOptions

@@ -19299,7 +19299,7 @@
           "Security"
         ],
         "summary": "Sign In Browser Administrator Session",
-        "description": "Signs a browser administrator in with the built-in administrator password and sets a 30-minute HttpOnly, Secure admin session cookie. HTTPS only. The request must be same-origin and carry the antiforgery request token from `GET /auth/csrf` in the `X-Honua-CSRF` header together with its antiforgery cookie. Any existing session for the caller is replaced. Rate limited to 5 requests per minute. Responses are `no-store`.",
+        "description": "Signs a browser administrator in with the built-in administrator password and sets a 30-minute HttpOnly, Secure admin session cookie. HTTPS only. The request must be same-origin and carry the antiforgery request token from `GET /auth/csrf` in the `X-Honua-CSRF` header together with its antiforgery cookie. Any existing session for the caller is replaced. Rate limited to 5 requests per minute. Responses from the handler are `no-store`.",
         "operationId": "createAdminPasswordSession",
         "security": [],
         "parameters": [
@@ -19331,10 +19331,10 @@
             "description": "Not HTTPS, cross-origin, missing or invalid CSRF token, or an empty or over-long password."
           },
           "401": {
-            "description": "The password is not valid."
+            "description": "The password is not valid, or no administrator password is configured."
           },
           "503": {
-            "description": "Administrator sign-in is unavailable: no administrator password is configured, the credential store is unavailable, or the shared session store could not create the session.",
+            "description": "Administrator sign-in is unavailable: the configured administrator password could not be resolved, or the shared session store could not create the session.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -19352,7 +19352,7 @@
           "Security"
         ],
         "summary": "Get Browser Session CSRF Token",
-        "description": "Issues an antiforgery request token for browser administrator sign-in and sets the matching HttpOnly, Secure, SameSite=Strict antiforgery cookie. Send the token in the `X-Honua-CSRF` header on `POST /auth/session`. HTTPS only. The response is `no-store` and is not wrapped in the standard admin envelope.",
+        "description": "Issues an antiforgery request token for browser administrator sign-in and sets the matching HttpOnly, Secure, SameSite=Strict antiforgery cookie. Send the token in the `X-Honua-CSRF` header on `POST /auth/session`. HTTPS only. The successful response is `no-store` and is not wrapped in the standard admin envelope.",
         "operationId": "getAdminBrowserCsrfToken",
         "security": [],
         "responses": {
@@ -19393,7 +19393,7 @@
         },
         "responses": {
           "200": {
-            "description": "Operator bearer issued.",
+            "description": "Operator bearer issued; it expires 30 minutes after issuance.",
             "content": {
               "application/json": {
                 "schema": {
@@ -19406,10 +19406,10 @@
             "description": "Not HTTPS, origin not explicitly allowed, an admin session cookie is present, or an empty or over-long password."
           },
           "401": {
-            "description": "The password is not valid."
+            "description": "The password is not valid, or no administrator password is configured."
           },
           "503": {
-            "description": "Administrator sign-in is unavailable, or operator bearer issuance is not configured on this server.",
+            "description": "The configured administrator password could not be resolved, or operator bearer issuance is not configured on this server.",
             "content": {
               "application/problem+json": {
                 "schema": {

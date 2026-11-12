@@ -550,8 +550,26 @@ internal sealed class ApiKeyAuthenticationHandler(
         return resolvedPassword;
     }
 
+    // A merged endpoint policy forbids or challenges every scheme in turn; another scheme
+    // (for example client certificates) may already have written the response.
+    protected override Task HandleForbiddenAsync(AuthenticationProperties properties)
+    {
+        if (Response.HasStarted)
+        {
+            return Task.CompletedTask;
+        }
+
+        Response.StatusCode = StatusCodes.Status403Forbidden;
+        return Task.CompletedTask;
+    }
+
     protected override Task HandleChallengeAsync(AuthenticationProperties properties)
     {
+        if (Response.HasStarted)
+        {
+            return Task.CompletedTask;
+        }
+
         Response.Headers.Append("WWW-Authenticate", $"ApiKey realm=\"{AuthRealm}\", header=\"{ApiKeyHeader}\"");
         if (_authOptions.EnableBasicAuthCompatibility)
         {
