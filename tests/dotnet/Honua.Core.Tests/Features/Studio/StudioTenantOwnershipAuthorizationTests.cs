@@ -99,22 +99,6 @@ public sealed class StudioTenantOwnershipAuthorizationTests
     }
 
     [UnitTest]
-    public async Task AuthorizeAsync_DefaultTenantIsolation_AllowsPreviouslyStampedContent()
-    {
-        var service = BuildService(requestTenantId: DefaultTenant, tenantIsolation: new TenantIsolationOptions());
-
-        var decision = await service.AuthorizeAsync(
-            AdminPrincipal(),
-            "admin-1",
-            StudioAuthorizationOperation.ReadContentItem,
-            resourceOwnerId: "owner-a",
-            resourceTenantId: TenantA);
-
-        Assert.True(decision.IsAllowed);
-        Assert.Null(service.CreateTenantScopeFilter(AdminPrincipal()));
-    }
-
-    [UnitTest]
     public async Task AuthorizeAsync_TenantResolutionDisabled_IsUnchanged()
     {
         var service = BuildService(requestTenantId: null, tenantIsolation: new TenantIsolationOptions { Enabled = false });
@@ -177,7 +161,7 @@ public sealed class StudioTenantOwnershipAuthorizationTests
             new StaticOptionsMonitor<StudioEndUserAuthorizationOptions>(new StudioEndUserAuthorizationOptions { Enabled = true }),
             new StaticOptionsMonitor<AdminRoleOptions>(new AdminRoleOptions { AdminRoles = [] }),
             registerTenantContext ? new StaticTenantContext(requestTenantId) : null,
-            new StaticOptionsMonitor<TenantIsolationOptions>(tenantIsolation ?? new TenantIsolationOptions { Enabled = true }));
+            new StaticOptionsMonitor<TenantIsolationOptions>(tenantIsolation ?? new TenantIsolationOptions()));
 
     private static ClaimsPrincipal AdminPrincipal(string? extraRole = null)
     {
