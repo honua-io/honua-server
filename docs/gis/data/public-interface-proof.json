@@ -853,6 +853,48 @@
       ]
     },
     {
+      "surfaceId": "asset-tasks",
+      "displayName": "Task-first asset management (asset profiles)",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/assets/**",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [
+        "/api/v1/assets/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage with AssetProfileEndpointsTests integration tests (CAS, receipts, validation).",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.Assets.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Assets/AssetProfileEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#7301"
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Source-generated AssetsJsonContext keeps the profile, task, history and completion wire shapes AOT-safe; ADR-0084 and the rc.3 asset-management specification define the contract and its open decisions.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Core/Core/Features/Assets/AssetsJsonContext.cs",
+            "docs/internal/contributor/adr/0084-task-first-asset-management.md",
+            "docs/internal/contributor/specs/asset-management-rc3.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#7301"
+        }
+      ]
+    },
+    {
       "surfaceId": "content-publication-registry",
       "displayName": "Content publication registry and published artifact routes",
       "surfaceKind": "http-route-family",
