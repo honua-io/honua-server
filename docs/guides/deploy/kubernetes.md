@@ -208,7 +208,6 @@ config:
     Public__BaseUrl: "https://honua.example.com"
     HONUA_OBSERVABILITY: "true"
     HONUA_OPENTELEMETRY: "true"
-    Cache__EnableFallback: "false"
     FileStorage__Provider: "AwsS3"
     FileStorage__AwsS3__BucketName: "honua-production"
     FileStorage__AwsS3__Region: "us-west-2"
