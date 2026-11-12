@@ -190,6 +190,12 @@ Studio isolation. Schema routing now refuses startup unless multi-tenancy is
 explicitly enabled. Review existing tenant IDs and workspace mappings before
 changing this setting. See [authentication configuration](../secure/authentication.md).
 
+Proposals and operation handles created under the previous default carry the tenant
+from the identity provider's claim (for example an Entra `tid`). In single-tenant mode
+they no longer match the deployment tenant, so only `MultiTenancy:MultiTenantAdminRoles`
+holders (`platform_admin` or `multi_tenant_admin` by default) can read or approve them.
+Finish or reject pending proposals before upgrading, or keep `MultiTenancy__Enabled=true`.
+
 ### Credential and identity management requires full-administrator authority
 
 API keys that hold only `admin:write` or `admin:manage` now receive `403` on the routes
