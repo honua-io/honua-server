@@ -81,7 +81,7 @@ lock workflows are compiled from their authored Markdown sources.
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
-| `pr-gate.yml` | PR Gate | `pull_request` (base `trunk`), `workflow_dispatch` | Required verification context. Admission checks run first. `pr-gate` builds the affected graph plus planned managed test roots and the server host, publishes pristine per-project outputs and runs the required boot/migration smoke against its canonical host output. The independent `fast-tests` matrix keeps four check names alongside it, selecting each build/test body by the shared affected-project reverse closure and its existing test roots (empty closures skip only with positive governed-docs proof; unknown selection retains all). Every nonempty managed closure also retains architecture and Server governance checks. Selected groups compile only their own test roots: `architecture` (projection regeneration, source and collector architecture, MCP roster drift), `unit-fast` (isolated unit Fast tier), `server-fast` (Server Fast tier) and `server-governance` (Server governance/drift with PostGIS); both server jobs first refresh the admin parity exports Server.Tests compares. The `format` matrix runs `dotnet format` and the analyzer build (affected closure, analyzers, code style and documentation diagnostics as errors) as four jobs: Format, Analyzers (source projects), Analyzers (tests), and Analyzers (server tests). Drafts instantiate only Format; ready PRs instantiate all four rows. The source job always retains all solution source roots, including dependencies of affected test roots, and evaluates ownership after SDK/NuGet imports and removes test-only compilation roots (multi-targeted roots remain conservative); all analyzer jobs compile forward dependencies; `HonuaAnalyzerPartition` assigns each project to exactly one diagnostics pass using `IsTestProject`. Runtime execution proofs and fidelity run in full CI. The independent format and CI-router jobs remain required; `required.needs` is `[pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer]`. Selected shard jobs, bounded by the `pr_time_budget` in `.github/ci-shards.json` (over-budget shards are deferred to the next trunk run and named in a green `deferred` verdict), consume the same outputs; their aggregate enforces measured timing/TRX receipts and fails the required context on failed or missing execution. Review-first enforcement and docs-only exits remain inside the unfiltered workflow. See the [artifact contract](server-test-binary-artifacts.md) for identity, transport bounds, fallback and rollback. `runner-select` routes `pr-gate`, `fast-tests` and `format` to the build-host runner label in `HONUA_PR_GATE_RUNNER` when that host has idle runners, and to `ubuntu-latest` otherwise or when the variable is unset ([gate-model.md → PR Gate compute runner selection](gate-model.md#pr-gate-compute-runner-selection)). |
+| `pr-gate.yml` | PR Gate | `pull_request` (base `trunk`), `workflow_dispatch` | Required verification context. Admission checks run first. `pr-gate` builds the affected graph plus planned managed test roots and the server host, publishes pristine per-project outputs and runs the required boot/migration smoke against its canonical host output. The independent `fast-tests` matrix keeps four check names alongside it, selecting each build/test body by the shared affected-project reverse closure and its existing test roots (empty closures skip only with positive governed-docs proof; unknown selection retains all). Every nonempty managed closure also retains architecture and Server governance checks. Selected groups compile only their own test roots: `architecture` (projection regeneration, source and collector architecture, MCP roster drift), `unit-fast` (isolated unit Fast tier), `server-fast` (Server Fast tier) and `server-governance` (Server governance/drift with PostGIS); both server jobs first refresh the admin parity exports Server.Tests compares. The `format` matrix runs `dotnet format` and the analyzer build (affected closure, analyzers, code style and documentation diagnostics as errors) as four jobs: Format, Analyzers (source projects), Analyzers (tests), and Analyzers (server tests, including the architecture collector so other tests do not recompile Server.Tests). Drafts instantiate only Format; ready PRs instantiate all four rows. The source job always retains all solution source roots, including dependencies of affected test roots, and evaluates ownership after SDK/NuGet imports and removes test-only compilation roots (multi-targeted roots remain conservative); all analyzer jobs compile forward dependencies; `HonuaAnalyzerPartition` assigns each project to exactly one diagnostics pass using `IsTestProject`. Runtime execution proofs and fidelity run in full CI. The independent format and CI-router jobs remain required; `required.needs` is `[pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer]`. Selected shard jobs, bounded by the `pr_time_budget` in `.github/ci-shards.json` (over-budget shards are deferred to the next trunk run and named in a green `deferred` verdict), consume the same outputs; their aggregate enforces measured timing/TRX receipts and fails the required context on failed or missing execution. Review-first enforcement and docs-only exits remain inside the unfiltered workflow. See the [artifact contract](server-test-binary-artifacts.md) for identity, transport bounds, fallback and rollback. `runner-select` routes `pr-gate`, `fast-tests` and `format` to the build-host runner label in `HONUA_PR_GATE_RUNNER` when that host has idle runners, and to `ubuntu-latest` otherwise or when the variable is unset ([gate-model.md → PR Gate compute runner selection](gate-model.md#pr-gate-compute-runner-selection)). |
 | `review-gate.yml` | Review Gate Attestation | `pull_request_target`, `issue_comment`, trusted `repository_dispatch`, `workflow_run` [PR Gate, Review Event Bridge] | Required admission context. Publishes `Review Gate` on the exact current head only when Codex has exact-head evidence and no unresolved Codex threads. Serializes every event by resolved PR number, pins the exact trusted workflow-policy SHA, and is the only authority allowed to release expensive verification. In observe mode it retains an immutable decision receipt; merge-train selection and pre-land independently re-attest source evidence. |
 | `repo-hygiene.yml` | Repository hygiene | `pull_request` (`opened`, `synchronize`, `reopened`, `edited`) | Required additions-only context `repo-hygiene / Repository hygiene`. Calls the shared SHA-pinned workflow with read-only permissions; reads the repository-owned root allowlist and exact gate-input exceptions from the trusted base branch, rejecting new scratch, run output, dated history, samples and unexpected root entries. |
 | `claude-review.yml` | Claude Review | completed `PR Gate` `workflow_run`, `issue_comment` containing `@claude review` | Second attesting reviewer for the required `Review Gate` context (#3213, #3314; rebuilt on a trusted trigger by #3341), so a PR can still land while Codex is rate-limited. Trusted default-branch lane: **never** triggered by `pull_request`, read-only `GITHUB_TOKEN`, and it posts comments and inline threads only — never a review verdict. `scripts/ci/review-gate-evidence.js` accepts `claude` evidence alongside Codex. Both action invocations admit only the named dependency, GitHub Actions, and `honua-io-bot` automation actors after trusted exact-head resolution. Inert until an auth secret exists. See [gate-model.md → Attesting reviewers](gate-model.md#attesting-reviewers). |
@@ -612,6 +612,15 @@ fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
 
+### Spec endpoint application lifetime
+
+`SpecEndpointsTests` retains one application for validation, planning, and
+rejected requests, with a fresh client per case. Successful applies, cache tests,
+and license variants own their hosts and state. The class fixture disposes the
+shared application after its last case. All cases and assertions run in their
+existing PR and trunk shard selections; runner counts, required check names,
+and aggregate dependencies are unchanged.
+
 ### Authorization shard coverage
 
 The authorization matrix selects the live `AdminAuthorizationTests` class.
@@ -619,6 +628,32 @@ The remaining authorization shard owns every other method in the original parent
 filter. Retired Redis endpoint selectors are removed; the coverage guard still
 rejects dead positive clauses, and the partition fixture verifies complete,
 disjoint method ownership with unchanged source triggers and budgets.
+
+### Layer publishing shared application fixture
+
+The `Server Features Admin Layer Publishing` shard selects 48 named
+`LayerPublishingIntegrationTests` methods through an exact-name filter, with a
+27-minute test timeout. The class's remaining 19 methods run in
+`Server Features Admin Runtime Operations` through its complementary filter.
+Each shard process builds its own instance of the shared class fixture.
+
+### WPS endpoint fixture lifetime
+
+The WFS 1–9 shard family includes `Wps20EndpointsTests`. See
+[WPS endpoint fixture lifetime](gate-model.md#wps-endpoint-fixture-lifetime)
+for its class-scoped applications and isolated custom-host cases.
+
+### ImageServer endpoint fixtures
+
+See [ImageServer endpoint database lifetime](gate-model.md#imageserver-endpoint-database-lifetime)
+for endpoint isolation and database reuse. The pure WMTS capability unit test runs
+without a database fixture in the ImageServer Rendering and Support shard.
+
+### Geocoding endpoint fixtures
+
+The geocoding shard includes the endpoint response and provider request-contract
+cases. See [Geocoding response fixture lifetime](gate-model.md#geocoding-response-fixture-lifetime)
+for their application isolation rules.
 
 ### Governance capacity split
 
@@ -631,8 +666,13 @@ checks method-level union, disjointness, nonempty children, and inherited limits
 
 Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
-minutes, including setup allowance. These initialize dispatch ranks; actual
-child minutes and measured ranks require the next completed full trunk run.
+minutes, including setup allowance. These initialized the dispatch ranks.
+
+Measured ranks (11 Nov 2026): every `dispatch_rank` is the median passing job
+duration of trunk runs 42929935484, 42935981545, 42968585882 and 42986321489, the
+first full runs after the tiny-shard consolidation. The governance children measured
+5.2, 10.0 and 7.0 minutes. A shard with no passing job keeps the larger of its old rank
+and its failed duration.
 
 Doctor budget admission counts both separately dispatched phases using the pinned gh-aw
 usage-artifact accountant over the preceding 24 hours. In-flight runs reserve their
@@ -700,6 +740,20 @@ full runs retain 24. A
 at a two-second median; twelve halves that so a broad run finishes before the
 next full run. Required PR gates
 and shard definitions are unchanged.
+
+### Covered trunk runs
+
+A full trunk run covers every merge up to its head. Its first job,
+`supersede-trailing-runs` (`scripts/ci/supersede_trailing_runs.py`), cancels
+queued or running `CI affected ...` runs at that head or an earlier one; a
+selective run cancels itself when a started scheduled run has a head that
+contains its own. Dispatched runs never cancel a selective run, because the
+runs API does not expose the inputs that decide their scope.
+Ancestry comes from the compare API. A full run held by the concurrency group
+never cancels anything, and unreadable run history cancels nothing. On
+11 Nov a 164-job affected run and a manual full run tested the same head
+together, leaving 130 affected and 37 full jobs queued while every open PR
+Gate had six to nine jobs waiting for hosted runners.
 
 ## Automatic merge admission
 

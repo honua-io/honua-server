@@ -66,7 +66,7 @@ jobs:
   check:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: Documentation links and anchors
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     # Python over Markdown files and a handful of source roots: a
     # cold run is seconds, not minutes. The ceiling is a bound, not a budget.
     timeout-minutes: 10
