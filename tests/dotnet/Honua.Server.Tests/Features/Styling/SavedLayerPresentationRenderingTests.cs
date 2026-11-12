@@ -119,14 +119,10 @@ public sealed class SavedLayerPresentationRenderingTests : IAsyncLifetime
             var bytes = await storage.DownloadBytesAsync(fileId);
             bytes.Should().NotBeNull();
             using var archive = new ZipArchive(new MemoryStream(bytes!), ZipArchiveMode.Read);
-            var tiles = new List<byte[]>();
-            foreach (var entry in archive.Entries.Where(item => item.FullName.EndsWith(".png", StringComparison.Ordinal)))
-            {
-                await using var stream = entry.Open();
-                using var buffer = new MemoryStream();
-                await stream.CopyToAsync(buffer);
-                tiles.Add(buffer.ToArray());
-            }
+            var tiles = archive.Entries
+                .Where(item => item.FullName.EndsWith(".png", StringComparison.Ordinal))
+                .Select(ReadEntryBytes)
+                .ToList();
 
             tiles.Should().NotBeEmpty("the package must contain rendered tiles");
             return tiles;
@@ -197,17 +193,12 @@ public sealed class SavedLayerPresentationRenderingTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
 
         using var document = JsonDocument.Parse(body);
-        var swatches = new List<byte[]>();
-        foreach (var layer in document.RootElement.GetProperty("layers").EnumerateArray())
-        {
-            foreach (var entry in layer.GetProperty("legend").EnumerateArray())
-            {
-                if (entry.TryGetProperty("imageData", out var imageData) && imageData.GetString() is { Length: > 0 } data)
-                {
-                    swatches.Add(Convert.FromBase64String(data));
-                }
-            }
-        }
+        var swatches = document.RootElement.GetProperty("layers").EnumerateArray()
+            .SelectMany(layer => layer.GetProperty("legend").EnumerateArray())
+            .Select(entry => entry.TryGetProperty("imageData", out var imageData) ? imageData.GetString() : null)
+            .Where(data => !string.IsNullOrEmpty(data))
+            .Select(data => Convert.FromBase64String(data!))
+            .ToList();
 
         swatches.Should().NotBeEmpty("the legend must carry swatches");
         return swatches;
@@ -231,5 +222,14 @@ public sealed class SavedLayerPresentationRenderingTests : IAsyncLifetime
         }
 
         return false;
+    }
+
+    // The archive is already in memory, so a synchronous copy is enough.
+    private static byte[] ReadEntryBytes(ZipArchiveEntry entry)
+    {
+        using var stream = entry.Open();
+        using var buffer = new MemoryStream();
+        stream.CopyTo(buffer);
+        return buffer.ToArray();
     }
 }
