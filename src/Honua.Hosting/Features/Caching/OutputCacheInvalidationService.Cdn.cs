@@ -40,6 +40,12 @@ internal sealed partial class OutputCacheInvalidationService
         cdnInvalidation.InvalidateWithNextWindow(paths);
     }
 
+    public async Task InvalidateEditedStorageLayerAsync(int storageLayerId, CancellationToken cancellationToken)
+    {
+        await EvictStorageLayerAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
+        await InvalidateCdnAfterEditAsync(CdnPaths.Everything, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task InvalidateEditedCollectionAsync(string collectionId, CancellationToken cancellationToken)
     {
         await EvictCollectionAsync(collectionId, cancellationToken).ConfigureAwait(false);

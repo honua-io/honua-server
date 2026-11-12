@@ -46,6 +46,21 @@ public sealed class CdnInvalidationTests
     }
 
     [UnitTest]
+    public async Task InvalidateEditedStorageLayerAsync_ManyEdits_CoalescesAllPublicationSurfaces()
+    {
+        var invalidation = Invalidation();
+        for (var edit = 0; edit < 50; edit++)
+        {
+            await invalidation.InvalidateEditedStorageLayerAsync(741, CancellationToken.None);
+        }
+        _cloudFront.Accepted.Should().ContainSingle().Which.Should().Equal("/*");
+        _time.Advance(CdnInvalidationService.CoalescingWindow);
+        await _cloudFront.AcceptedCountReaches(2);
+        _cloudFront.Accepted[1].Should().Equal("/*");
+        _cloudFront.Rejected.Should().Be(0);
+    }
+
+    [UnitTest]
     public async Task InvalidateEditedLayerAsync_TwentyLayersEditedWhileNothingCompletes_StaysUnderTheWildcardLimit()
     {
         var invalidation = Invalidation();

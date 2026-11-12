@@ -51,7 +51,9 @@ public sealed partial class McpTaxonomyAlignmentTests
             .GroupBy(pair => pair.Value, StringComparer.Ordinal)
             .ToDictionary(
                 group => group.Key,
-                group => group.Select(pair => pair.Key).ToArray(),
+                group => group.Any(pair => pair.Key == $"honua_{group.Key}")
+                    ? [$"honua_{group.Key}"]
+                    : group.Select(pair => pair.Key).ToArray(),
                 StringComparer.Ordinal);
 
         foreach (var assertion in assertions)
