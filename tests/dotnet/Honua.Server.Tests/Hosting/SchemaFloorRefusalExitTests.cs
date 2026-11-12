@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Server.Hosting;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 using Npgsql;
 using Testcontainers.PostgreSql;
 
@@ -89,37 +90,29 @@ public sealed class SchemaFloorRefusalExitTests
         start.Environment["Security__ConnectionEncryption__MasterKey"] =
             "schema-floor-refusal-connection-encryption-key";
         start.Environment["Security__ConnectionEncryption__Salt"] = "c2NoZW1hLWZsb29yLXJlZnVzYWwtc2FsdA==";
+        var keyRingPath = TestKeyRingCertificate.AddToEnvironment(start.Environment, "SchemaFloor-Refusal-KeyRing");
 
-        using var process = new Process { StartInfo = start };
-        process.Start().Should().BeTrue();
-        var stdoutTask = process.StandardOutput.ReadToEndAsync();
-        var stderrTask = process.StandardError.ReadToEndAsync();
-        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(4));
-        var exited = true;
+        RefusedBootRun run;
         try
         {
-            await process.WaitForExitAsync(timeout.Token);
+            run = await RefusedBootRun.RunAsync(start, TimeSpan.FromMinutes(4));
         }
-        catch (OperationCanceledException)
+        finally
         {
-            exited = false;
-            process.Kill(entireProcessTree: true);
+            File.Delete(keyRingPath);
         }
-
-        var output = await stdoutTask.ConfigureAwait(false) + await stderrTask.ConfigureAwait(false);
-        var tail = output.Length <= 4000 ? output : output[^4000..];
-        exited.Should().BeTrue("a refused boot must exit instead of serving. Output tail:{0}{1}", Environment.NewLine, tail);
-        process.ExitCode.Should().Be(
+        run.Exited.Should().BeTrue("a refused boot must exit instead of serving. Output tail:{0}{1}", Environment.NewLine, run.Tail);
+        run.ExitCode.Should().Be(
             GatedBootShutdown.RefusalExitCode,
             "an unmatched raster baseline must exit {0}, not abort or signal (observed {1}). Output tail:{2}{3}",
             GatedBootShutdown.RefusalExitCode,
-            process.ExitCode,
+            run.ExitCode,
             Environment.NewLine,
-            tail);
-        output.Should().Contain("SchemaExistsWithoutJournal");
-        output.Should().Contain("Honua.Postgres.Migrations.001_CreateRasterTables.sql");
-        output.Should().NotContain("Unhandled exception", "the floor refusal must be handled by the entry point");
-        output.Should().NotContain("Now listening on:", "a refused boot must never start serving");
+            run.Tail);
+        run.Output.Should().Contain("SchemaExistsWithoutJournal");
+        run.Output.Should().Contain("Honua.Postgres.Migrations.001_CreateRasterTables.sql");
+        run.Output.Should().NotContain("Unhandled exception", "the floor refusal must be handled by the entry point");
+        run.Output.Should().NotContain("Now listening on:", "a refused boot must never start serving");
         await AssertJournalUnchangedAsync(connectionString);
     }
 

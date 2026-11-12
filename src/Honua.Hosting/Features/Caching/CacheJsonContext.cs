@@ -21,7 +21,6 @@ namespace Honua.Infrastructure.Caching;
 [JsonSerializable(typeof(EnrichmentDatasetRecord))]
 [JsonSerializable(typeof(EnrichmentDatasetRecord[]))]
 [JsonSerializable(typeof(CachedExistenceResult))]
-[JsonSerializable(typeof(CachedCacheKeyIndex))]
 [JsonSerializable(typeof(CachedResponse))]
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(bool))]
@@ -37,5 +36,3 @@ internal sealed partial class CacheJsonContext : JsonSerializerContext
 }
 
 internal sealed record CachedExistenceResult(bool Exists);
-
-internal sealed record CachedCacheKeyIndex(string[] Keys, Dictionary<string, long>? ExpiresAtUtcTicks = null);

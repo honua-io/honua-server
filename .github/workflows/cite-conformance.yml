@@ -1,9 +1,6 @@
 name: OGC CITE Conformance Tests
 
 on:
-  schedule:
-    # Run weekly to catch conformance regressions
-    - cron: '0 6 * * 1'
   workflow_dispatch:
     inputs:
       profile:
@@ -24,18 +21,28 @@ on:
         type: string
         default: ''
 
+  workflow_call:
+    inputs:
+      profile:
+        required: false
+        type: string
+        default: default
+      honua_image:
+        required: false
+        type: string
+        default: ''
+      source_sha:
+        required: false
+        type: string
+        default: ''
+
 permissions:
   contents: read
   packages: write
 
-concurrency:
-  group: cite-conformance-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   cite:
     uses: ./.github/workflows/cite-conformance-common.yml
-    secrets: inherit
     with:
       suite: features
       display-name: OGC API Features
@@ -46,7 +53,7 @@ jobs:
       job-timeout-minutes: 45
       cite-profile: ${{ inputs.profile || 'default' }}
       honua-image: ${{ inputs.honua_image || '' }}
-      tested-honua-git-sha: ${{ github.sha }}
+      tested-honua-git-sha: ${{ inputs.honua_image != '' && inputs.source_sha || github.sha }}
       release-suite-id: ${{ contains(inputs.honua_image, '@sha256:') && 'server-cite-conformance' || '' }}
       release-compose-file: docker/cite/ogc-api-features/compose.yml
       validation-command: bash ./scripts/conformance/ogc/validate-ogc-conformance.sh --results cite-results
