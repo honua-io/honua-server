@@ -69,4 +69,16 @@
     </ItemGroup>
   </Target>
 
+  <!--
+    .NET 11 moved these Microsoft.Extensions packages into the shared framework,
+    so restore reports NU1510 (as an error under TreatWarningsAsErrors) for a direct
+    reference. Drop the reference only on net11.0+ so a net10.0 build keeps it.
+  -->
+  <ItemGroup Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net11.0'))">
+    <PackageReference Remove="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Remove="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Remove="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Remove="Microsoft.Extensions.Options" />
+  </ItemGroup>
+
 </Project>

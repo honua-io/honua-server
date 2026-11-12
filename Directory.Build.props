@@ -28,12 +28,14 @@
     <TargetFramework>$(HonuaTargetFramework)</TargetFramework>. Set the HonuaTargetFramework
     environment variable to retarget: MSBuild reads it as this property and
     scripts/ci/honua-target-framework.sh reads it for output paths, so both move together.
-    A net11.0 trial build also needs SDK 11.
+    net11.0 needs SDK 11. Until the build host carries SDK 11 in its shared SDK root,
+    global.json stays 10.0.400 with rollForward latestMajor, so the newest installed SDK
+    (11 on CI) builds; it moves to 11.0.100 / latestFeature on switch day.
     Not inherited by separately built trees with their own Directory.Build.props
     (docker/worker-customcode-dotnet/harness, the gp-dotnet template).
   -->
   <PropertyGroup>
-    <HonuaTargetFramework Condition="'$(HonuaTargetFramework)' == ''">net10.0</HonuaTargetFramework>
+    <HonuaTargetFramework Condition="'$(HonuaTargetFramework)' == ''">net11.0</HonuaTargetFramework>
   </PropertyGroup>
 
   <PropertyGroup>

@@ -5,13 +5,13 @@
 
 # Base images are digest-pinned for reproducible builds and supply-chain integrity.
 # Refresh both digests together by resolving the current manifests behind
-# `mcr.microsoft.com/dotnet/sdk:10.0` and `mcr.microsoft.com/dotnet/aspnet:10.0`.
+# `mcr.microsoft.com/dotnet/sdk:11.0` and `mcr.microsoft.com/dotnet/aspnet:11.0`.
 # Overrideable via build args so CI can swap in pre-warmed mirrors if MCR throttles.
 # These ARG defaults are the single source of truth for the mirrored bases:
 # scripts/ci/base-image-mirrors.sh reads them and the nightly `mirror-base-images`
 # job mirrors exactly what it prints, so no second digest list needs updating.
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0.404-resolute@sha256:f685dd6b5a970778b53cead9a11cf54206c4b4fc3c97e4424a59b8bff9aa43d7
-ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0.15-resolute@sha256:b5e72aa3bc183d98a0fc5739c583201a4b97bdbaadcb9dcd1b69d428a8bd172b
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:11.0.100-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea
+ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:11.0.0-resolute@sha256:bc0d6653979efba491ab3d6f589d691f96c309c3c3ef81325efa6978e7b7f242
 
 # Build stage
 # Extract restore inputs with their directory structure. Ordinary source edits,

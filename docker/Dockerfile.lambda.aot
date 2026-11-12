@@ -6,11 +6,11 @@
 # docs/internal/security/code-scanning-2026-Q2-remediation.md.
 # These ARG defaults are the single source of truth for the GHCR mirror of these
 # bases (scripts/ci/base-image-mirrors.sh + the nightly `mirror-base-images` job).
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0.404-resolute@sha256:f685dd6b5a970778b53cead9a11cf54206c4b4fc3c97e4424a59b8bff9aa43d7
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:11.0.100-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea
 # Lambda Web Adapter. The nightly build mirrors this digest to GHCR and passes the mirror here, because
 # anonymous Public ECR pulls are rate limited (429) from shared runners.
 ARG LAMBDA_ADAPTER_IMAGE=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4
-ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0.15-resolute@sha256:0b3fc2ffc701d6bb341a8112cd37edb148227920185dc2912fb3d49a86689ea5
+ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:11.0.0-resolute@sha256:6d3e208d8f5ba599ad9e80c615b5c1a2e355fd903f585cb07342dde29441675a
 
 FROM ${DOTNET_SDK_IMAGE} AS restore
 WORKDIR /src
