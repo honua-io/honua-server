@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Caching;
+using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Infrastructure.Caching;
 using Honua.TestKit.Attributes;
@@ -11,22 +12,17 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Caching;
 
-/// <summary>
-/// Tests for DistributedCacheRefreshCoordinator — validates distributed coordination with Redis.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
-public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
+public sealed class CacheRefreshCoordinatorTests : IDisposable
 {
     private readonly ManualTimeProvider _timeProvider = new();
-    private readonly DistributedCacheRefreshCoordinator _coordinator;
-    private readonly IConnectionMultiplexer _redis;
+    private readonly CacheRefreshCoordinator _coordinator;
     private readonly CancellationTokenSource _cts;
 
-    public DistributedCacheRefreshCoordinatorTests()
+    public CacheRefreshCoordinatorTests()
     {
         var options = Options.Create(new CacheOptions
         {
@@ -35,15 +31,11 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
             RefreshTimeoutSeconds = 5
         });
 
-        _redis = Substitute.For<IConnectionMultiplexer>();
-        _redis.IsConnected.Returns(false); // Test fallback mode by default
-
-        _coordinator = new DistributedCacheRefreshCoordinator(
+        _coordinator = new CacheRefreshCoordinator(
             options,
             Substitute.For<IPerformanceMonitor>(),
-            NullLogger<DistributedCacheRefreshCoordinator>.Instance,
-            _redis,
-            timeProvider: _timeProvider);
+            NullLogger<CacheRefreshCoordinator>.Instance,
+            _timeProvider);
 
         _cts = new CancellationTokenSource();
     }
@@ -57,52 +49,7 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
-    public void Constructor_WithoutRedis_EnablesFallbackMode()
-    {
-        var coordinator = new DistributedCacheRefreshCoordinator(
-            Options.Create(new CacheOptions { BackgroundRefreshEnabled = true }),
-            Substitute.For<IPerformanceMonitor>(),
-            NullLogger<DistributedCacheRefreshCoordinator>.Instance);
-
-        coordinator.IsDistributed.Should().BeFalse();
-    }
-
-    [UnitTest]
-    [Operation(Operations.Cache)]
-    public void Constructor_WithConnectedRedis_EnablesDistributedMode()
-    {
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        redis.IsConnected.Returns(true);
-        redis.GetDatabase(Arg.Any<int>()).Returns(Substitute.For<IDatabase>());
-        redis.GetSubscriber().Returns(Substitute.For<ISubscriber>());
-
-        var coordinator = new DistributedCacheRefreshCoordinator(
-            Options.Create(new CacheOptions { BackgroundRefreshEnabled = true }),
-            Substitute.For<IPerformanceMonitor>(),
-            NullLogger<DistributedCacheRefreshCoordinator>.Instance,
-            redis);
-
-        coordinator.IsDistributed.Should().BeTrue();
-    }
-
-    [UnitTest]
-    [Operation(Operations.Cache)]
-    public void Constructor_WithoutAllowFallback_ThrowsWhenRedisUnavailable()
-    {
-        var action = () => new DistributedCacheRefreshCoordinator(
-            Options.Create(new CacheOptions { BackgroundRefreshEnabled = true }),
-            Substitute.For<IPerformanceMonitor>(),
-            NullLogger<DistributedCacheRefreshCoordinator>.Instance,
-            null,
-            allowFallback: false);
-
-        action.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Redis is required*");
-    }
-
-    [UnitTest]
-    [Operation(Operations.Cache)]
-    public void TryEnqueueRefresh_FallbackMode_NewKey_ReturnsTrue()
+    public void TryEnqueueRefresh_NewKey_ReturnsTrue()
     {
         var result = _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask);
 
@@ -112,7 +59,7 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
-    public void TryEnqueueRefresh_FallbackMode_DuplicateKey_ReturnsFalse()
+    public void TryEnqueueRefresh_DuplicateKey_ReturnsFalse()
     {
         _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask);
 
@@ -123,7 +70,7 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
-    public void TryEnqueueRefresh_FallbackMode_DifferentKeys_BothSucceed()
+    public void TryEnqueueRefresh_DifferentKeys_BothSucceed()
     {
         var first = _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask);
         var second = _coordinator.TryEnqueueRefresh("layer:2", _ => Task.CompletedTask);
@@ -134,7 +81,7 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
-    public void NotifyInvalidation_FallbackMode_MarksKeyInvalidated()
+    public void NotifyInvalidation_MarksKeyInvalidated()
     {
         _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask);
 
@@ -145,7 +92,7 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
-    public void TryClaimWriteBack_FallbackMode_AfterInvalidation_ReturnsFalse()
+    public void TryClaimWriteBack_AfterInvalidation_ReturnsFalse()
     {
         _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask);
         _coordinator.NotifyInvalidation("layer:1");
@@ -157,7 +104,7 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
-    public void TryClaimWriteBack_FallbackMode_BeforeInvalidation_ReturnsTrue()
+    public void TryClaimWriteBack_BeforeInvalidation_ReturnsTrue()
     {
         _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask);
 
@@ -168,7 +115,7 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
-    public void NotifyInvalidation_FallbackMode_WithoutPendingRefresh_IsIgnored()
+    public void NotifyInvalidation_WithoutPendingRefresh_IsIgnored()
     {
         // No pending refresh → invalidation flag must not be tracked (avoids stale markers
         // that would permanently block a later TryEnqueueRefresh for the same key).
@@ -179,7 +126,7 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
-    public void NotifyInvalidation_FallbackMode_WithoutPendingRefresh_DoesNotBlockLaterEnqueue()
+    public void NotifyInvalidation_WithoutPendingRefresh_DoesNotBlockLaterEnqueue()
     {
         // Invalidation for a non-pending key must not leave state that blocks a future enqueue.
         _coordinator.NotifyInvalidation("layer:1");
@@ -187,17 +134,6 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
         var enqueued = _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask);
 
         enqueued.Should().BeTrue("invalidation without a pending refresh must not create stale markers");
-    }
-
-    [UnitTest]
-    [Operation(Operations.Cache)]
-    public async Task NotifyInvalidationClusterWideAsync_WithoutRedis_FallsBackToLocal()
-    {
-        _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask);
-
-        await _coordinator.NotifyInvalidationClusterWideAsync("layer:1");
-
-        _coordinator.WasInvalidated("layer:1").Should().BeTrue();
     }
 
     [UnitTest]
@@ -210,7 +146,7 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
         operationScope.WithTag(Arg.Any<string>(), Arg.Any<string>()).Returns(operationScope);
         performanceMonitor.StartOperation(Arg.Any<string>()).Returns(operationScope);
 
-        var coordinator = new DistributedCacheRefreshCoordinator(
+        var coordinator = new CacheRefreshCoordinator(
             Options.Create(new CacheOptions
             {
                 BackgroundRefreshEnabled = true,
@@ -218,7 +154,7 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
                 RefreshTimeoutSeconds = 5
             }),
             performanceMonitor,
-            NullLogger<DistributedCacheRefreshCoordinator>.Instance);
+            NullLogger<CacheRefreshCoordinator>.Instance);
 
         coordinator.TryEnqueueRefresh("layer:1", _ =>
         {
@@ -259,7 +195,7 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
         operationScope.WithTag(Arg.Any<string>(), Arg.Any<string>()).Returns(operationScope);
         performanceMonitor.StartOperation(Arg.Any<string>()).Returns(operationScope);
 
-        var coordinator = new DistributedCacheRefreshCoordinator(
+        var coordinator = new CacheRefreshCoordinator(
             Options.Create(new CacheOptions
             {
                 BackgroundRefreshEnabled = true,
@@ -267,7 +203,7 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
                 RefreshTimeoutSeconds = 5
             }),
             performanceMonitor,
-            NullLogger<DistributedCacheRefreshCoordinator>.Instance);
+            NullLogger<CacheRefreshCoordinator>.Instance);
 
         coordinator.TryEnqueueRefresh("layer:1", async _ =>
         {
@@ -313,7 +249,7 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
         operationScope.WithTag(Arg.Any<string>(), Arg.Any<string>()).Returns(operationScope);
         performanceMonitor.StartOperation(Arg.Any<string>()).Returns(operationScope);
 
-        var coordinator = new DistributedCacheRefreshCoordinator(
+        var coordinator = new CacheRefreshCoordinator(
             Options.Create(new CacheOptions
             {
                 BackgroundRefreshEnabled = true,
@@ -321,7 +257,7 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
                 RefreshTimeoutSeconds = 5
             }),
             performanceMonitor,
-            NullLogger<DistributedCacheRefreshCoordinator>.Instance);
+            NullLogger<CacheRefreshCoordinator>.Instance);
 
         coordinator.TryEnqueueRefresh("layer:1", _ =>
         {
@@ -361,7 +297,7 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
         operationScope.WithTag(Arg.Any<string>(), Arg.Any<string>()).Returns(operationScope);
         performanceMonitor.StartOperation(Arg.Any<string>()).Returns(operationScope);
 
-        var coordinator = new DistributedCacheRefreshCoordinator(
+        var coordinator = new CacheRefreshCoordinator(
             Options.Create(new CacheOptions
             {
                 BackgroundRefreshEnabled = true,
@@ -369,7 +305,7 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
                 RefreshTimeoutSeconds = 1 // Short timeout for test
             }),
             performanceMonitor,
-            NullLogger<DistributedCacheRefreshCoordinator>.Instance);
+            NullLogger<CacheRefreshCoordinator>.Instance);
 
         coordinator.TryEnqueueRefresh("layer:1", async ct =>
         {
@@ -401,7 +337,7 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
-    public async Task ProcessRefresh_FallbackMode_FailedRefresh_TemporarilyBacksOffRetry()
+    public async Task ProcessRefresh_FailedRefresh_TemporarilyBacksOffRetry()
     {
         var refreshAttempted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -441,7 +377,7 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
-    public async Task ProcessRefresh_FallbackMode_AfterRefreshCompletes_KeyCanBeReenqueued()
+    public async Task ProcessRefresh_AfterRefreshCompletes_KeyCanBeReenqueued()
     {
         var callCount = 0;
         var firstRefreshDone = new TaskCompletionSource<bool>();
@@ -486,208 +422,40 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
         _coordinator.SkippedCount.Should().Be(0);
     }
 
-    // ── Async Redis path tests (hosting-caching-rendering-events-2) ──────────────
-
     [UnitTest]
     [Operation(Operations.Cache)]
-    public async Task WasInvalidatedAsync_FallbackMode_ReturnsSameAsSync()
+    public async Task WasInvalidatedAsync_ReturnsSameAsSync()
     {
         _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask);
         _coordinator.NotifyInvalidation("layer:1");
 
         var syncResult = _coordinator.WasInvalidated("layer:1");
-        var asyncResult = await _coordinator.WasInvalidatedAsync("layer:1");
+        var asyncResult = await ((ICacheRefreshCoordinator)_coordinator).WasInvalidatedAsync("layer:1");
 
         asyncResult.Should().Be(syncResult).And.BeTrue();
     }
 
     [UnitTest]
     [Operation(Operations.Cache)]
-    public async Task TryClaimWriteBackAsync_FallbackMode_BeforeInvalidation_ReturnsTrue()
+    public async Task TryClaimWriteBackAsync_BeforeInvalidation_ReturnsTrue()
     {
         _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask);
 
-        var result = await _coordinator.TryClaimWriteBackAsync("layer:1");
+        var result = await ((ICacheRefreshCoordinator)_coordinator).TryClaimWriteBackAsync("layer:1");
 
         result.Should().BeTrue();
     }
 
     [UnitTest]
     [Operation(Operations.Cache)]
-    public async Task TryClaimWriteBackAsync_FallbackMode_AfterInvalidation_ReturnsFalse()
+    public async Task TryClaimWriteBackAsync_AfterInvalidation_ReturnsFalse()
     {
         _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask);
         _coordinator.NotifyInvalidation("layer:1");
 
-        var result = await _coordinator.TryClaimWriteBackAsync("layer:1");
+        var result = await ((ICacheRefreshCoordinator)_coordinator).TryClaimWriteBackAsync("layer:1");
 
         result.Should().BeFalse();
-    }
-
-    [UnitTest]
-    [Operation(Operations.Cache)]
-    public async Task WasInvalidatedAsync_DistributedMode_UsesRedisKeyExistsAsync()
-    {
-        // Arrange: set up a coordinator in distributed mode with a mock Redis database
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        redis.IsConnected.Returns(true);
-        var database = Substitute.For<IDatabase>();
-        database.Multiplexer.Returns(redis);
-        redis.GetDatabase(Arg.Any<int>()).Returns(database);
-        redis.GetSubscriber().Returns(Substitute.For<ISubscriber>());
-
-        // Simulate the invalidated key being present in Redis
-        database.KeyExistsAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(true);
-
-        var coordinator = new DistributedCacheRefreshCoordinator(
-            Options.Create(new CacheOptions { BackgroundRefreshEnabled = true }),
-            Substitute.For<IPerformanceMonitor>(),
-            NullLogger<DistributedCacheRefreshCoordinator>.Instance,
-            redis);
-
-        // Act
-        var result = await coordinator.WasInvalidatedAsync("layer:1");
-
-        // Assert
-        result.Should().BeTrue("the async path should query Redis for the invalidated key");
-        await database.Received(1).KeyExistsAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
-
-        coordinator.Dispose();
-    }
-
-    [UnitTest]
-    [Operation(Operations.Cache)]
-    public async Task StopAsync_DrainsPendingInvalidationTasksBeforeShuttingDown()
-    {
-        // Arrange: coordinator in distributed mode with a slow Redis database
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        redis.IsConnected.Returns(true);
-        var database = Substitute.For<IDatabase>();
-        database.Multiplexer.Returns(redis);
-        redis.GetDatabase(Arg.Any<int>()).Returns(database);
-        redis.GetSubscriber().Returns(Substitute.For<ISubscriber>());
-
-        // The ScriptEvaluateAsync will complete after a brief delay to simulate I/O
-        var scriptCompleted = new TaskCompletionSource<bool>();
-        database.ScriptEvaluateAsync(
-            Arg.Any<string>(),
-            Arg.Any<RedisKey[]>(),
-            Arg.Any<RedisValue[]>(),
-            Arg.Any<CommandFlags>())
-            .Returns(ci =>
-            {
-                return Task.Run(async () =>
-                {
-                    await Task.Delay(TimeSpan.FromMilliseconds(50));
-                    scriptCompleted.TrySetResult(true);
-                    return RedisResult.Create((RedisValue)"OK");
-                });
-            });
-
-        var coordinator = new DistributedCacheRefreshCoordinator(
-            Options.Create(new CacheOptions { BackgroundRefreshEnabled = false }),
-            Substitute.For<IPerformanceMonitor>(),
-            NullLogger<DistributedCacheRefreshCoordinator>.Instance,
-            redis);
-
-        // Trigger a distributed invalidation (fire-and-forget Redis ScriptEvaluateAsync)
-        coordinator.NotifyInvalidation("layer:drain-test");
-
-        // Act: stop the coordinator — StopAsync must drain the in-flight task
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await coordinator.StopAsync(cts.Token);
-
-        // Assert: the Redis script completed during the drain, not after
-        scriptCompleted.Task.IsCompleted.Should().BeTrue(
-            "StopAsync must await all pending fire-and-forget Redis invalidation tasks before returning");
-
-        coordinator.Dispose();
-    }
-
-    [UnitTest]
-    [Operation(Operations.Cache)]
-    public async Task ReleaseDistributedClaimAsync_IsAwaited_InProcessRefreshAsync()
-    {
-        // Verify that the Redis DEL/EXPIRE script is awaited (not fire-and-forget) when
-        // a background refresh completes — ensures the claim is fully released before the
-        // semaphore slot is freed.
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        redis.IsConnected.Returns(true);
-        var database = Substitute.For<IDatabase>();
-        redis.GetDatabase(Arg.Any<int>()).Returns(database);
-        redis.GetSubscriber().Returns(Substitute.For<ISubscriber>());
-
-        var releaseCompleted = new TaskCompletionSource<bool>();
-        database.Multiplexer.Returns(redis);
-        database.ScriptEvaluateAsync(
-            Arg.Any<string>(),
-            Arg.Any<RedisKey[]>(),
-            Arg.Any<RedisValue[]>(),
-            Arg.Any<CommandFlags>())
-            .Returns(ci =>
-            {
-                return Task.Run(async () =>
-                {
-                    await Task.Delay(TimeSpan.FromMilliseconds(30));
-                    releaseCompleted.TrySetResult(true);
-                    return RedisResult.Create((RedisValue)"OK");
-                });
-            });
-
-        database.KeyExistsAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(false);
-        // TryClaimDistributedRefresh calls the 4-argument StringSet overload
-        // (key, value, expiry, when) — stub that exact overload, not the
-        // CommandFlags one, or the claim silently fails and nothing enqueues.
-        database.StringSet(
-            Arg.Any<RedisKey>(),
-            Arg.Any<RedisValue>(),
-            Arg.Any<TimeSpan?>(),
-            Arg.Any<When>())
-            .Returns(true);
-
-        var performanceMonitor = Substitute.For<IPerformanceMonitor>();
-        var operationScope = Substitute.For<IOperationScope>();
-        operationScope.WithTag(Arg.Any<string>(), Arg.Any<string>()).Returns(operationScope);
-        performanceMonitor.StartOperation(Arg.Any<string>()).Returns(operationScope);
-
-        var coordinator = new DistributedCacheRefreshCoordinator(
-            Options.Create(new CacheOptions
-            {
-                BackgroundRefreshEnabled = true,
-                MaxConcurrentRefreshes = 1,
-                RefreshTimeoutSeconds = 5
-            }),
-            performanceMonitor,
-            NullLogger<DistributedCacheRefreshCoordinator>.Instance,
-            redis);
-
-        var refreshDone = new TaskCompletionSource<bool>();
-        coordinator.TryEnqueueRefresh("layer:release-test", _ =>
-        {
-            refreshDone.TrySetResult(true);
-            return Task.CompletedTask;
-        });
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        _ = coordinator.StartAsync(cts.Token);
-
-        // Wait for refresh callback to fire
-        await ((Task)refreshDone.Task).WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-
-        // Poll until the release script has run — if it were fire-and-forget, it could
-        // still be pending when the semaphore is released and a new enqueue steals the slot.
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
-        while (!releaseCompleted.Task.IsCompleted && DateTime.UtcNow < deadline)
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(20));
-        }
-
-        releaseCompleted.Task.IsCompleted.Should().BeTrue(
-            "the Redis claim-release script must be awaited (not fire-and-forget) so the lock " +
-            "is cleared before the semaphore slot is freed");
-
-        await coordinator.StopAsync(cts.Token);
-        coordinator.Dispose();
     }
 
     private sealed class ManualTimeProvider : TimeProvider

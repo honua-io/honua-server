@@ -102,7 +102,7 @@ jobs:
     if: always() && !cancelled() && (needs.runner-select.result == 'success' || github.event.pull_request.draft == true)
     name: PR Gate / ${{ matrix.check }}
     needs: runner-select
-    runs-on: ${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && needs.runner-select.outputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 45
     # Format and both analyzer partitions run independently after runner selection.
     strategy:
@@ -164,7 +164,7 @@ jobs:
   fast-tests:
     name: PR Gate / Fast and architecture (${{ matrix.test-group }})
     needs: runner-select
-    runs-on: ${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && needs.runner-select.outputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 45
     # Each group compiles only its own test roots; the producer and the analyzer
     # job compile the diff's affected closure.
@@ -252,7 +252,7 @@ jobs:
   server-test-producer:
     name: PR Gate / Server test producer
     needs: runner-select
-    runs-on: ${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && needs.runner-select.outputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 45
     outputs:
       producer-attempt: ${{ steps.managed-producer.outputs.producer-attempt }}
@@ -340,7 +340,7 @@ jobs:
     # silently un-gates trunk or leaves pull requests waiting forever.
     name: PR Gate / Build and tests
     needs: runner-select
-    runs-on: ${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && needs.runner-select.outputs.runner || 'ubuntu-latest' }}
     # Runtime toolchain proofs run in the full CI workflow.
     timeout-minutes: 75
     outputs:
