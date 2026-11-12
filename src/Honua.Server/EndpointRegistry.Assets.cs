@@ -11,5 +11,10 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/assets/profiles"),
         new("GET", "/api/v1/assets/profiles/{profileId}"),
         new("PUT", "/api/v1/assets/profiles/{profileId}"),
+        new("GET", "/api/v1/tasks"),
+        new("POST", "/api/v1/tasks"),
+        new("GET", "/api/v1/tasks/{taskId}"),
+        new("POST", "/api/v1/tasks/{taskId}/transitions"),
+        new("GET", "/api/v1/tasks/{taskId}/history"),
     ];
 }
