@@ -53,7 +53,10 @@ class HeavyRunnerContractTests(unittest.TestCase):
 
 
 PR_GATE_SELECTED_JOBS = {"format", "fast-tests", "pr-gate", "server-test-producer"}
-SELECTED_RUNNER = "${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}"
+SELECTED_RUNNER = (
+    "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)"
+    " && needs.runner-select.outputs.runner || 'ubuntu-latest' }}"
+)
 PR_GATE_LIGHT_JOBS = {"affected-shards-select", "affected-shards", "ci-router-validation", "required"}
 LIGHT_RUNNER = (
     "${{ vars.HONUA_LIGHT_RUNNER"
