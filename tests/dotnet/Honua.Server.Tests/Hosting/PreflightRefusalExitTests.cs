@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Server.Hosting;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Hosting;
 
@@ -67,6 +68,7 @@ public sealed class PreflightRefusalExitTests
         start.Environment["Security__ConnectionEncryption__MasterKey"] =
             "preflight-refusal-connection-encryption-key";
         start.Environment["Security__ConnectionEncryption__Salt"] = "cHJlZmxpZ2h0LXJlZnVzYWwtc2FsdA==";
+        var keyRingPath = TestKeyRingCertificate.AddToEnvironment(start.Environment, "Preflight-Refusal-KeyRing");
 
         using var process = new Process { StartInfo = start };
         process.Start().Should().BeTrue();
@@ -86,6 +88,7 @@ public sealed class PreflightRefusalExitTests
         }
 
         var output = await stdoutTask.ConfigureAwait(false) + await stderrTask.ConfigureAwait(false);
+        File.Delete(keyRingPath);
         var tail = output.Length <= 4000 ? output : output[^4000..];
 
         exited.Should().BeTrue("a refused boot must exit instead of serving. Output tail:{0}{1}", Environment.NewLine, tail);

@@ -21,4 +21,14 @@ public static class TestKeyRingCertificate
         File.WriteAllBytes(path, certificate.Export(X509ContentType.Pkcs12, password));
         return path;
     }
+
+    // A launched server process reads configuration from environment variables, where "__" separates sections.
+    public static string AddToEnvironment(IDictionary<string, string?> environment, string password)
+    {
+        ArgumentNullException.ThrowIfNull(environment);
+        var path = Write(password);
+        environment[PathKey.Replace(":", "__", StringComparison.Ordinal)] = path;
+        environment[PasswordKey.Replace(":", "__", StringComparison.Ordinal)] = password;
+        return path;
+    }
 }
