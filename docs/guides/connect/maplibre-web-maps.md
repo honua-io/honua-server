@@ -13,7 +13,7 @@ Honua serves per-layer vector tiles and metadata:
 
 - Tiles: `/tiles/{layerId}/{z}/{x}/{y}.mvt` (XYZ scheme, source layer name `layer`)
 - TileJSON 3.0: `/tiles/{layerId}/tile.json` (includes tile URL, bounds, zoom range, and a `style` link)
-- MapLibre style: `/api/styles/{layerId}.json` (layer-id alias; the canonical style route is `/ogc/styles/{styleId}`, which serves MapLibre and SLD via content negotiation)
+- MapLibre style: `/api/styles/{publicationId}.json` (the exact graph Layer ID, independent of the numeric tile selector; named styles are also available at `/ogc/styles/{styleId}`)
 
 ## Steps
 
@@ -61,7 +61,7 @@ Honua serves per-layer vector tiles and metadata:
    </html>
    ```
 
-   Alternatively, skip the hand-written style and pass the served style document directly: `style: \`${base}/api/styles/${layerId}.json\``.
+   Alternatively, read the TileJSON document and pass its `style` URL to MapLibre. That URL contains the graph Layer ID; do not construct it from the numeric tile selector.
 
 3. Serve the file and open it in a browser:
 

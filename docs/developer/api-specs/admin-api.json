@@ -1603,7 +1603,7 @@
         }
       }
     },
-    "/connections/{id}/layers/{layerId}/enabled": {
+    "/connections/{id}/layers/{storageLayerId}/enabled": {
       "put": {
         "tags": [
           "Layers"
@@ -1622,10 +1622,10 @@
             }
           },
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
-            "description": "Layer ID",
+            "description": "Internal storage layer identifier.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -1947,7 +1947,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/style": {
+    "/metadata/layers/{storageLayerId}/style": {
       "get": {
         "tags": [
           "Styles"
@@ -1958,10 +1958,10 @@
         "deprecated": true,
         "parameters": [
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
-            "description": "Layer ID",
+            "description": "Internal storage layer identifier.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -2000,10 +2000,10 @@
         "operationId": "updateAdminLayerStyle",
         "parameters": [
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
-            "description": "Layer ID",
+            "description": "Internal storage layer identifier.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -2046,7 +2046,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/style/import-sld": {
+    "/metadata/layers/{storageLayerId}/style/import-sld": {
       "post": {
         "tags": [
           "Styles"
@@ -2056,10 +2056,10 @@
         "operationId": "importLayerSldStyle",
         "parameters": [
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
-            "description": "Layer ID",
+            "description": "Internal storage layer identifier.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -2120,7 +2120,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/style/export-sld": {
+    "/metadata/layers/{storageLayerId}/style/export-sld": {
       "get": {
         "tags": [
           "Styles"
@@ -2130,10 +2130,10 @@
         "operationId": "exportLayerSldStyle",
         "parameters": [
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
-            "description": "Layer ID",
+            "description": "Internal storage layer identifier.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -2191,7 +2191,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/suggest-style": {
+    "/metadata/layers/{storageLayerId}/suggest-style": {
       "post": {
         "tags": [
           "Styles"
@@ -2201,10 +2201,10 @@
         "operationId": "suggestLayerStyle",
         "parameters": [
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
-            "description": "Layer ID",
+            "description": "Internal storage layer identifier.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -3713,7 +3713,7 @@
         }
       }
     },
-    "/services/{serviceName}/layers/{layerId}/metadata": {
+    "/services/{serviceName}/layers/{serviceLayerIndex}/metadata": {
       "put": {
         "tags": [
           "Services",
@@ -3732,13 +3732,14 @@
             }
           },
           {
-            "name": "layerId",
+            "name": "serviceLayerIndex",
             "in": "path",
             "required": true,
             "schema": {
               "type": "integer",
               "format": "int32"
-            }
+            },
+            "description": "Layer index within the named service."
           }
         ],
         "requestBody": {
@@ -3794,7 +3795,7 @@
             }
           },
           {
-            "name": "layerId",
+            "name": "serviceLayerIndex",
             "in": "path",
             "required": true,
             "schema": {
@@ -9987,7 +9988,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/popup-info": {
+    "/metadata/layers/{storageLayerId}/popup-info": {
       "get": {
         "tags": [
           "Metadata"
@@ -10074,7 +10075,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/drawing-info": {
+    "/metadata/layers/{storageLayerId}/drawing-info": {
       "get": {
         "tags": [
           "Metadata"
@@ -10161,7 +10162,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/relationships": {
+    "/metadata/layers/{storageLayerId}/relationships": {
       "get": {
         "tags": [
           "Metadata"
@@ -10250,7 +10251,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/fields": {
+    "/metadata/layers/{storageLayerId}/fields": {
       "get": {
         "tags": [
           "Metadata"
@@ -10336,7 +10337,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/filter": {
+    "/metadata/layers/{storageLayerId}/filter": {
       "get": {
         "tags": [
           "Metadata"
@@ -10422,7 +10423,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/validation": {
+    "/metadata/layers/{storageLayerId}/validation": {
       "get": {
         "tags": [
           "Metadata"
@@ -12790,10 +12791,10 @@
             }
           },
           {
-            "name": "layerId",
+            "name": "serviceLayerIndex",
             "in": "query",
             "required": false,
-            "description": "Filter by service-local layer id.",
+            "description": "Layer index within the named service.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -14265,7 +14266,7 @@
         }
       }
     },
-    "/services/{serviceName}/layers/{layerId}/export": {
+    "/services/{serviceName}/layers/{serviceLayerIndex}/export": {
       "get": {
         "tags": [
           "Services"
@@ -14284,10 +14285,10 @@
             }
           },
           {
-            "name": "layerId",
+            "name": "serviceLayerIndex",
             "in": "path",
             "required": true,
-            "description": "Service-local layer id.",
+            "description": "Layer index within the named service.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -14409,7 +14410,7 @@
         }
       }
     },
-    "/services/{serviceName}/layers/{layerId}/share/traffic": {
+    "/services/{serviceName}/layers/{serviceLayerIndex}/share/traffic": {
       "get": {
         "tags": [
           "Share"
@@ -14428,10 +14429,10 @@
             }
           },
           {
-            "name": "layerId",
+            "name": "serviceLayerIndex",
             "in": "path",
             "required": true,
-            "description": "Service-local layer id.",
+            "description": "Layer index within the named service.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -14500,7 +14501,7 @@
         }
       }
     },
-    "/services/{serviceName}/layers/{layerId}/share/traffic/series": {
+    "/services/{serviceName}/layers/{serviceLayerIndex}/share/traffic/series": {
       "get": {
         "tags": [
           "Share"
@@ -14519,10 +14520,10 @@
             }
           },
           {
-            "name": "layerId",
+            "name": "serviceLayerIndex",
             "in": "path",
             "required": true,
-            "description": "Service-local layer id.",
+            "description": "Layer index within the named service.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -20563,7 +20564,7 @@
         }
       }
     },
-    "/connections/{id}/layers/{layerId}/features/refresh": {
+    "/connections/{id}/layers/{storageLayerId}/features/refresh": {
       "post": {
         "tags": [
           "Layers"
@@ -20582,10 +20583,10 @@
             }
           },
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
-            "description": "Published layer identifier.",
+            "description": "Internal storage layer identifier.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -22287,7 +22288,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/discovery": {
+    "/metadata/layers/{storageLayerId}/discovery": {
       "get": {
         "operationId": "getAdminLayerDiscovery",
         "tags": [
@@ -22297,12 +22298,13 @@
         "description": "Layer IDs are global storage layer IDs, not service-local publication identifiers. Layer changes affect the shared resource and every listed publication. Other metadata is preserved. Service names address all protocol services with that logical name. Writes require the ETag returned by GET and reject stale revisions with 409.",
         "parameters": [
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
             "schema": {
               "type": "integer"
-            }
+            },
+            "description": "Internal storage layer identifier."
           }
         ],
         "responses": {
@@ -22336,12 +22338,13 @@
         "description": "Layer IDs are global storage layer IDs, not service-local publication identifiers. Layer changes affect the shared resource and every listed publication. Other metadata is preserved. Service names address all protocol services with that logical name. Writes require the ETag returned by GET and reject stale revisions with 409.",
         "parameters": [
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
             "schema": {
               "type": "integer"
-            }
+            },
+            "description": "Internal storage layer identifier."
           }
         ],
         "responses": {
@@ -22479,7 +22482,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/display": {
+    "/metadata/layers/{storageLayerId}/display": {
       "get": {
         "tags": [
           "Metadata",
@@ -22487,13 +22490,7 @@
         ],
         "parameters": [
           {
-            "name": "layerId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
+            "$ref": "#/components/parameters/AdminAuthoringLayerId"
           }
         ],
         "responses": {
@@ -22533,13 +22530,7 @@
         ],
         "parameters": [
           {
-            "name": "layerId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
+            "$ref": "#/components/parameters/AdminAuthoringLayerId"
           }
         ],
         "responses": {
@@ -22583,7 +22574,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/spatial": {
+    "/metadata/layers/{storageLayerId}/spatial": {
       "get": {
         "tags": [
           "Metadata",
@@ -22591,13 +22582,7 @@
         ],
         "parameters": [
           {
-            "name": "layerId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
+            "$ref": "#/components/parameters/AdminAuthoringLayerId"
           }
         ],
         "responses": {
@@ -22637,13 +22622,7 @@
         ],
         "parameters": [
           {
-            "name": "layerId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
+            "$ref": "#/components/parameters/AdminAuthoringLayerId"
           }
         ],
         "responses": {
@@ -22740,10 +22719,10 @@
         }
       },
       "AdminAuthoringLayerId": {
-        "name": "layerId",
+        "name": "storageLayerId",
         "in": "path",
         "required": true,
-        "description": "Global numeric layer identifier. The route is constrained to an int, so a non-integer segment does not match the route at all.",
+        "description": "Internal storage layer identifier, resolved through the storage binding. A service-local index cannot substitute for this identifier.",
         "schema": {
           "type": "integer",
           "format": "int32"
@@ -25013,7 +24992,7 @@
       "PublishedLayerSummary": {
         "type": "object",
         "properties": {
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Layer ID"
@@ -27544,11 +27523,11 @@
       "LayerMetadataResponse": {
         "type": "object",
         "required": [
-          "layerId",
+          "serviceLayerIndex",
           "layerName"
         ],
         "properties": {
-          "layerId": {
+          "serviceLayerIndex": {
             "type": "integer",
             "format": "int32"
           },
@@ -38124,7 +38103,7 @@
         "type": "object",
         "description": "A layer's stored popup-info / drawing-info JSON document.",
         "properties": {
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Layer identifier."
@@ -38185,7 +38164,7 @@
             "nullable": true,
             "description": "Relationship description."
           },
-          "relatedLayerId": {
+          "relatedStorageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Global storage-layer id of the related resource, distinct from its service-local publication index. Returns -1 if no storage-layer handle exists."
@@ -38228,7 +38207,7 @@
         "type": "object",
         "description": "A layer's persisted relationships.",
         "properties": {
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Layer identifier."
@@ -38268,7 +38247,7 @@
         "required": [
           "id",
           "name",
-          "relatedLayerId",
+          "relatedStorageLayerId",
           "originField",
           "destinationField"
         ],
@@ -38286,7 +38265,7 @@
             "nullable": true,
             "description": "Relationship description."
           },
-          "relatedLayerId": {
+          "relatedStorageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Global storage-layer id of the related resource, distinct from its service-local publication index."
@@ -38432,7 +38411,7 @@
         "type": "object",
         "description": "Persisted layer field configuration.",
         "properties": {
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Layer identifier."
@@ -38541,7 +38520,7 @@
         "type": "object",
         "description": "Persisted layer permanent filter configuration.",
         "properties": {
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Layer identifier."
@@ -38633,7 +38612,7 @@
           "status"
         ],
         "properties": {
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Layer identifier."
@@ -41840,7 +41819,7 @@
         "description": "Create/replace payload for a scheduled Share export definition.",
         "required": [
           "serviceName",
-          "layerId",
+          "serviceLayerIndex",
           "destinationType",
           "format",
           "schedule"
@@ -41855,7 +41834,7 @@
             "type": "string",
             "description": "Owning service name."
           },
-          "layerId": {
+          "serviceLayerIndex": {
             "type": "integer",
             "format": "int32",
             "minimum": 0,
@@ -41916,7 +41895,7 @@
           "serviceName": {
             "type": "string"
           },
-          "layerId": {
+          "serviceLayerIndex": {
             "type": "integer",
             "format": "int32"
           },
@@ -42088,7 +42067,7 @@
           "serviceName": {
             "type": "string"
           },
-          "layerId": {
+          "serviceLayerIndex": {
             "type": "integer",
             "format": "int32"
           }
@@ -50552,11 +50531,11 @@
       "LayerRelationshipBatchUpdateItem": {
         "type": "object",
         "required": [
-          "layerId"
+          "storageLayerId"
         ],
         "description": "Complete desired relationship set for one global storage-layer id.",
         "properties": {
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32"
           },
@@ -50679,7 +50658,7 @@
             "minimum": 0,
             "description": "Source count, updated to the actual materialization observation when reported by the worker."
           },
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32",
             "nullable": true,
@@ -52179,7 +52158,7 @@
             "type": "string",
             "nullable": true
           },
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32"
           }
@@ -52285,7 +52264,7 @@
             "minimum": 0,
             "nullable": true
           },
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32"
           }

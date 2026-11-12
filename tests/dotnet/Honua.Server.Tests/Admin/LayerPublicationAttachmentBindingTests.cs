@@ -195,13 +195,13 @@ public sealed partial class LayerPublishingIntegrationTests
             SupportsAttachments = true,
             Enabled = true
         });
-        _layerId = published.LayerId;
+        _layerId = published.StorageLayerId;
         // Source publications advertise Query and Extract. Attachment writes require the
         // declared Create/Update/Delete capabilities (#6135).
         _fixture.EnableV2ServiceEditingCapabilities(
             _serviceName,
             ["Query", "Extract", "Create", "Update", "Delete"]);
-        return published.LayerId;
+        return published.StorageLayerId;
     }
 
     private static MultipartFormDataContent AttachmentUploadForm(byte[] bytes, string filename = "bound.pdf")
