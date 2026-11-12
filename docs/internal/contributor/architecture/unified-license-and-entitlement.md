@@ -388,8 +388,8 @@ AwsMeteringWorker (BackgroundService, PeriodicTimer)
 ```
 
 The metering write path **never** runs inline on the request path. The durable
-buffer reuses `FeatureChangeRetryQueue` semantics so transient AWS API
-failures do not lose records. Reconciliation telemetry (§ 6) reports buffer
+buffer is a PostgreSQL table drained by a claim-and-mark worker, like the
+feature-change outbox, so transient AWS API failures do not lose records. Reconciliation telemetry (§ 6) reports buffer
 depth, retry count, and dead-letter count.
 
 ### 4.4 Azure Marketplace adapter

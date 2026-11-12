@@ -33,11 +33,12 @@ with tempfile.TemporaryDirectory(prefix="honua-analyzer-partitions-") as tempora
         encoding="utf-8",
     )
     projects = []
-    for kind in ("source", "tests", "server-tests"):
+    for kind in ("source", "tests", "server-tests", "collector-tests"):
         is_test = kind != "source"
         project_dir = root / kind
         project_dir.mkdir()
-        project = project_dir / ("Honua.Server.Tests.csproj" if kind == "server-tests" else "Probe.csproj")
+        name = {"server-tests": "Honua.Server.Tests", "collector-tests": "Honua.Architecture.Tests"}.get(kind, "Probe")
+        project = project_dir / f"{name}.csproj"
         projects.append(project.relative_to(root).as_posix())
         project.write_text(
             '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>'
@@ -54,7 +55,7 @@ with tempfile.TemporaryDirectory(prefix="honua-analyzer-partitions-") as tempora
         other = "source" if is_test else "tests"
         diagnostic_owners = {"all", owner}
         if is_test:
-            diagnostic_owners.add("server-tests" if kind == "server-tests" else "other-tests")
+            diagnostic_owners.add("server-tests" if kind in {"server-tests", "collector-tests"} else "other-tests")
         for partition in ("source", "tests", "all", "server-tests", "other-tests"):
             result = build(project, partition)
             expected_failure = partition in diagnostic_owners

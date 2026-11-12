@@ -327,5 +327,42 @@ class PublisherTests(unittest.TestCase):
         api.assert_not_called()
 
 
+class GitHubApiTests(unittest.TestCase):
+    ENDPOINT = 'repos/example/repo/issues?labels=ci-flake-quarantine'
+
+    def call(self, outcomes, payload=None):
+        results = [subprocess.CompletedProcess([], code, stdout, stderr) for code, stdout, stderr in outcomes]
+        with patch.object(publisher.subprocess, 'run', side_effect=results) as execute, \
+                patch.object(publisher.time, 'sleep'):
+            try:
+                return publisher.api(self.ENDPOINT, payload), execute
+            except publisher.GitHubApiError as error:
+                return error, execute
+
+    def test_transient_read_failure_is_retried(self):
+        result, execute = self.call([(1, '', 'HTTP 502: Bad Gateway'), (0, '[]', '')])
+        self.assertEqual([], result)
+        self.assertEqual(2, execute.call_count)
+
+    def test_exhausted_read_reports_sanitized_stderr(self):
+        failure = (1, '', 'HTTP 401: Bad credentials ghs_abcdefghijklmnopqrstuvwxyz0123456789')
+        error, execute = self.call([failure] * publisher.API_READ_ATTEMPTS)
+        self.assertEqual(publisher.API_READ_ATTEMPTS, execute.call_count)
+        self.assertIn('HTTP 401: Bad credentials', str(error))
+        self.assertIn(self.ENDPOINT, str(error))
+        self.assertNotIn('ghs_abcdef', str(error))
+
+    def test_failed_write_is_not_repeated(self):
+        error, execute = self.call([(1, '', 'HTTP 502: Bad Gateway')], payload={'title': 'flaky'})
+        self.assertEqual(1, execute.call_count)
+        self.assertIn('HTTP 502', str(error))
+
+    def test_timed_out_read_is_retried(self):
+        with patch.object(publisher.subprocess, 'run',
+                          side_effect=[subprocess.TimeoutExpired('gh', 1), subprocess.CompletedProcess([], 0, '[]', '')]), \
+                patch.object(publisher.time, 'sleep'):
+            self.assertEqual([], publisher.api(self.ENDPOINT))
+
+
 if __name__ == '__main__':
     unittest.main()
