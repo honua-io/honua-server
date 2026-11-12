@@ -725,15 +725,59 @@ jobs:
           python3 scripts/ci/check-doc-links.test.py
           python3 scripts/ci/check-doc-links.py
 
+  producer-runner:
+    name: CI producer / Runner select
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      runner: ${{ steps.select.outputs.runner || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: vars.HONUA_CI_PRODUCER_RUNNER == 'honua-build' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository)
+        continue-on-error: true
+        timeout-minutes: 1
+        with:
+          sparse-checkout: scripts/ci/select-ci-producer-runner.sh
+          sparse-checkout-cone-mode: false
+      - name: Assume producer readiness read role
+        if: vars.HONUA_CI_PRODUCER_RUNNER == 'honua-build' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository)
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6
+        with:
+          role-to-assume: ${{ secrets.HONUA_CI_PRODUCER_READ_ROLE_ARN }}
+          aws-region: ${{ vars.HONUA_PR_GATE_RUNNER_REGION }}
+          mask-aws-account-id: true
+          retry-max-attempts: 1
+      - name: Select producer compute without waking or waiting
+        id: select
+        if: vars.HONUA_CI_PRODUCER_RUNNER == 'honua-build' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository)
+        continue-on-error: true
+        timeout-minutes: 1
+        env:
+          HONUA_CI_PRODUCER_RUNNER: ${{ vars.HONUA_CI_PRODUCER_RUNNER }}
+          HONUA_CI_PRODUCER_TRUSTED: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) }}
+        run: bash scripts/ci/select-ci-producer-runner.sh
+
   build:
     name: Build & Format Check
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
-    needs: [changes, targeted-shards]
+    needs: [changes, targeted-shards, producer-runner]
     outputs:
       producer_attempt: ${{ steps.managed-publish.outputs.producer-attempt }}
       managed_sdk_version: ${{ steps.managed-sdk.outputs.dotnet-sdk-version }}
-    runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ needs.producer-runner.outputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 60
+    env:
+      DOTNET_PROCESSOR_COUNT: '4'
+      DOTNET_CLI_USE_MSBUILD_SERVER: 'false'
+      MSBUILDDISABLENODEREUSE: '1'
+      DOTNET_INSTALL_DIR: ${{ runner.temp }}/honua-ci-producer-sdk
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -746,6 +790,7 @@ jobs:
       # project writes Release bin/obj outputs. Reclaim unused hosted toolchains
       # before .NET setup and restore so runner diagnostics keep enough space.
       - name: Free disk space
+        if: runner.environment == 'github-hosted'
         run: |
           sudo rm -rf /usr/local/lib/android || true
           sudo rm -rf /usr/share/swift || true
@@ -823,12 +868,12 @@ jobs:
       - name: Restore producer build graph
         env:
           BUILD_TARGET: ${{ steps.managed-plan.outputs.target }}
-        run: scripts/ci/dotnet-restore-retry.sh "${BUILD_TARGET}" -p:Configuration=Release -p:TreatWarningsAsErrors=true -p:RunAnalyzers=true -p:UseSharedCompilation=false
+        run: scripts/ci/dotnet-restore-retry.sh "${BUILD_TARGET}" -p:Configuration=Release -maxcpucount:4 -p:TreatWarningsAsErrors=true -p:RunAnalyzers=true -p:UseSharedCompilation=false
 
       - name: Build (warnings as errors)
         env:
           BUILD_TARGET: ${{ steps.managed-plan.outputs.target }}
-        run: dotnet build "${BUILD_TARGET}" --no-restore --configuration Release -graphBuild -p:TreatWarningsAsErrors=true -p:RunAnalyzers=true -p:UseSharedCompilation=false
+        run: dotnet build "${BUILD_TARGET}" --no-restore --configuration Release -graphBuild -maxcpucount:4 -p:TreatWarningsAsErrors=true -p:RunAnalyzers=true -p:UseSharedCompilation=false
 
       - name: Build selected standalone tooling projects
         run: >-
@@ -855,7 +900,7 @@ jobs:
         timeout-minutes: 5
         run: >-
           dotnet build eng/ci/Honua.Ci.SourceInventory/Honua.Ci.SourceInventory.csproj
-          --configuration Release -p:TreatWarningsAsErrors=true -p:UseSharedCompilation=false
+          --configuration Release -maxcpucount:4 -p:TreatWarningsAsErrors=true -p:UseSharedCompilation=false
 
       - name: Verify source inventory fixture semantics
         if: vars.HONUA_SOURCE_INVENTORY_PILOT != 'false'

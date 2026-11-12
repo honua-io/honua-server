@@ -312,7 +312,7 @@ is one runner label, such as a GitHub-hosted larger-runner name; it is not a JSO
 label array. Main owns configuring the variable after the runner is available
 to this repository and the combined batch has passed build-host preflight.
 
-The switch covers build, format, foundation-family tests, server shards, MCP
+The switch covers format, foundation-family tests, server shards, MCP
 certification and LLM smoke, PostgreSQL and core-package compatibility, AOT,
 Docker build, and Console quickstart smoke. Admission, routing, receipt
 aggregation and final verdict jobs remain on standard hosted runners so a
@@ -330,6 +330,47 @@ Main checks the chosen pool on the first ordinary combined batch using it;
 no separate branch full run is needed. Clear the variable to restore the hosted
 default for new runs. Treat existing runs as assigned to their original pool;
 main handles their completion or cancellation.
+
+## Full-CI producer admission
+
+`Build & Format Check` has separate, producer-only admission. The hosted
+`CI producer / Runner select` job defaults to `ubuntu-latest`. MAIN can enable
+`HONUA_CI_PRODUCER_RUNNER=honua-build` only after compatible-pool preflight.
+Same-repository events can assume `HONUA_CI_PRODUCER_READ_ROLE_ARN` via OIDC,
+using `HONUA_PR_GATE_RUNNER_REGION`. That role needs only
+`autoscaling:DescribeAutoScalingGroups` and `ssm:GetParameter` for
+`/honua-lane-build-host/gate-runner/heartbeat`; its trust must cover the intended
+trunk schedule/dispatch events. It must have no wake or host-mutation rights.
+Fork events never request credentials or self-hosted admission.
+
+The selector makes one current InService instance read and one heartbeat read.
+It requires the same instance, an integer timestamp no more than 90 seconds old
+and not in the future, and integer gate `idle >= 2`. Heavy-pool idle counts do
+not qualify. Missing configuration, credentials, checkout, API access, malformed
+proof, stale proof, or busy/stopped capacity falls back hosted. There is no
+wake, wait, polling or retry loop. A snapshot is admission evidence, not a
+capacity reservation; a later queue remains possible.
+
+The producer skips hosted sudo cleanup on self-hosted runners and installs its
+SDK into `${{ runner.temp }}/honua-ci-producer-sdk`. Every producer restore,
+build and nested MSBuild evaluation uses at most four workers; job-wide
+`DOTNET_PROCESSOR_COUNT=4`, disabled MSBuild servers and disabled node reuse
+also apply to child tooling. Required checks, warning/analyzer policy, artifact
+selection and consumers remain unchanged. Other compute jobs retain their
+existing switch; this change does not activate the global heavy-runner variable.
+
+Source merge does not install or activate a runner. MAIN owns configuration
+and a runner-context preflight on the actual gate accounts: verify the private
+SDK host/runtime and native dependencies, writable SDK/tool/cache/temp paths,
+setup action compatibility without sudo, and the bounded full producer graph
+within the parent slice's 10 GiB/6 CPU limits. Preserve active workers; use the
+next authorized ordinary run for build evidence, without a new full-CI dispatch
+or rerun. Record producer/restore/build minutes and memory evidence separately
+from the earlier PR producer; no full-trunk speedup is established by that PR.
+Keep the variable unset until these prerequisites pass. A current-instance
+heartbeat with two idle gate runners is still required for each later admission.
+Clear the producer variable to restore hosted selection for new runs. Existing
+jobs keep their assigned runner.
 
 ## PR Gate compute runner selection
 
