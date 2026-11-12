@@ -52,7 +52,7 @@ public sealed class Wfs20NumberMatchedPolicyTests : IClassFixture<Wfs20NumberMat
     {
         const string outputFormat = "application/geo%2Bjson";
         var response = await _fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&OUTPUTFORMAT={outputFormat}&COUNT=1");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&OUTPUTFORMAT={outputFormat}&COUNT=1");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -77,7 +77,7 @@ public sealed class Wfs20NumberMatchedPolicyTests : IClassFixture<Wfs20NumberMat
     public async Task Wfs_GetFeature_ResultTypeHits_WithUnknownNumberMatchedPolicy_StillReturnsExactCount()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAME=test_layer&RESULTTYPE=hits");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAME=pub-layer-0&RESULTTYPE=hits");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);

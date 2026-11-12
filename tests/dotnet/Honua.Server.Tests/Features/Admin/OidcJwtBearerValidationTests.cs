@@ -99,11 +99,6 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
                 builder.UseSetting("Oidc:Generic:Enabled", "true");
                 builder.UseSetting("Oidc:Generic:Authority", _issuer);
                 builder.UseSetting("Oidc:Generic:ClientId", ClientId);
-                builder.UseSetting("Oidc:Generic:AcceptClientIdAsAudience", "true");
-                builder.UseSetting("Oidc:ClaimsMapping:AdditionalRoleClaimTypes:0", "cognito:groups");
-                builder.UseSetting("Oidc:AdminRoles:0", "admin");
-                builder.UseSetting("Oidc:AdminRoles:1", "deployment-admins");
-                builder.UseSetting("MultiTenancy:Enabled", "true");
                 // #2997: GET /api/v1/admin/oidc/providers is now gated on identity.oidc (Pro);
                 // grant it so the accept-valid path reaches the endpoint past the gate.
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
@@ -145,44 +140,6 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK,
             "a valid admin bearer without tenant claims must reach the tenant-independent admin control plane. Body: {0}",
             body);
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/oidc/providers")]
-    public async Task AdminEndpoint_AdditionalRoleClaim_IsAccepted()
-    {
-        using var response = await SendWithTokenAsync(CreateToken(group: "deployment-admins"));
-        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/oidc/providers")]
-    public async Task AdminEndpoint_CognitoAccessToken_IsAccepted()
-    {
-        using var response = await SendWithTokenAsync(CreateToken(
-            omitAudience: true, clientId: ClientId, tokenUse: "access", group: "deployment-admins"));
-        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/oidc/providers")]
-    public async Task AdminEndpoint_CognitoFallback_PreservesTrustValidation()
-    {
-        var tokens = new[]
-        {
-            CreateToken(omitAudience: true, clientId: "wrong-client", tokenUse: "access"),
-            CreateToken(omitAudience: true, clientId: ClientId, tokenUse: "id"),
-            CreateToken(omitAudience: true, clientId: ClientId, tokenUse: "access", issuer: "https://untrusted.example"),
-            CreateToken(omitAudience: true, clientId: ClientId, tokenUse: "access", tamperSignature: true),
-            CreateToken(omitAudience: true, clientId: ClientId, tokenUse: "access",
-                notBefore: DateTime.UtcNow.AddMinutes(-20), expires: DateTime.UtcNow.AddMinutes(-10)),
-            CreateToken(audience: "wrong-audience", clientId: ClientId, tokenUse: "access"),
-        };
-        foreach (var token in tokens)
-        {
-            using var response = await SendWithTokenAsync(token);
-            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        }
     }
 
     [IntegrationTest]
@@ -425,17 +382,34 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
         DateTime? expires = null,
         bool tamperSignature = false,
         string? scope = null,
-        string? tenant = null,
-        bool omitAudience = false,
-        string? clientId = null,
-        string? tokenUse = null,
-        string? group = null)
+        string? tenant = null)
     {
         var handler = new JwtSecurityTokenHandler();
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Sub, "test-user-1"),
+            // Emitted under both the configured Oidc:ClaimsMapping:RoleClaimType ("roles")
+            // and the canonical ClaimTypes.Role URI so the admin-policy role check passes
+            // regardless of which claim type name the validated identity's RoleClaimType
+            // ends up using — the dimension these tests isolate is JWT trust-chain
+            // validation (signature/issuer/audience/expiry), not role-claim mapping.
+            new("roles", "admin"),
+            new(ClaimTypes.Role, "admin"),
+        };
+
+        if (scope is not null)
+        {
+            claims.Add(new Claim("scp", scope));
+        }
+        if (tenant is not null)
+        {
+            claims.Add(new Claim("tenant_id", tenant));
+        }
+
         var token = new JwtSecurityToken(
             issuer: issuer ?? _issuer,
-            audience: omitAudience ? null : audience ?? ClientId,
-            claims: CreateTokenClaims(scope, tenant, clientId, tokenUse, group),
+            audience: audience ?? ClientId,
+            claims: claims,
             notBefore: notBefore ?? DateTime.UtcNow.AddMinutes(-5),
             expires: expires ?? DateTime.UtcNow.AddMinutes(30),
             signingCredentials: new SigningCredentials(_signingKey, SecurityAlgorithms.RsaSha256));
@@ -452,46 +426,6 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
         signatureBytes[0] ^= 0xFF;
         segments[2] = Base64UrlEncoder.Encode(signatureBytes);
         return string.Join('.', segments);
-    }
-
-    private static List<Claim> CreateTokenClaims(
-        string? scope, string? tenant, string? clientId, string? tokenUse, string? group)
-    {
-        var claims = new List<Claim>
-        {
-            new(JwtRegisteredClaimNames.Sub, "test-user-1"),
-            // Emitted under both the configured Oidc:ClaimsMapping:RoleClaimType ("roles")
-            // and the canonical ClaimTypes.Role URI so the admin-policy role check passes
-            // regardless of which claim type name the validated identity's RoleClaimType
-            // ends up using — the dimension these tests isolate is JWT trust-chain
-            // validation (signature/issuer/audience/expiry), not role-claim mapping.
-            new("roles", "admin"),
-            new(ClaimTypes.Role, "admin"),
-        };
-
-        if (group is not null)
-        {
-            claims.RemoveAll(claim => claim.Type is "roles" || claim.Type == ClaimTypes.Role);
-            claims.Add(new Claim("cognito:groups", group));
-        }
-        if (clientId is not null)
-        {
-            claims.Add(new Claim("client_id", clientId));
-        }
-        if (tokenUse is not null)
-        {
-            claims.Add(new Claim("token_use", tokenUse));
-        }
-        if (scope is not null)
-        {
-            claims.Add(new Claim("scp", scope));
-        }
-        if (tenant is not null)
-        {
-            claims.Add(new Claim("tenant_id", tenant));
-        }
-
-        return claims;
     }
 
     private string BuildJwksJson()

@@ -21,7 +21,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var (graph, _) = await LoadCurrentOrEmptyGraphAsync(cancellationToken).ConfigureAwait(false);
         var metadataByLayerId = IndexSourceGovernanceByStorageLayer(graph, serviceName, storageScope);
         return layers
-            .Select(layer => metadataByLayerId.TryGetValue(layer.LayerId, out var metadata)
+            .Select(layer => metadataByLayerId.TryGetValue(layer.StorageLayerId, out var metadata)
                 ? HydrateSourceGovernance(layer, metadata)
                 : layer)
             .ToArray();
@@ -33,7 +33,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string serviceName, LayerStorageScope? storageScope = null)
     {
         var metadataByLayerId = IndexSourceGovernanceByStorageLayer(graph, serviceName, storageScope);
-        return metadataByLayerId.TryGetValue(layer.LayerId, out var metadata)
+        return metadataByLayerId.TryGetValue(layer.StorageLayerId, out var metadata)
             ? HydrateSourceGovernance(layer, metadata)
             : layer;
     }
@@ -98,7 +98,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         MetadataV2ObjectMetadata metadata)
         => new()
         {
-            LayerId = layer.LayerId,
+            StorageLayerId = layer.StorageLayerId,
             LayerName = layer.LayerName,
             Description = layer.Description,
             Schema = layer.Schema,

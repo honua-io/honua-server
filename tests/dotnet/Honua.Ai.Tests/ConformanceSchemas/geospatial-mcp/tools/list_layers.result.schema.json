@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/list_layers.result.schema.json",
+  "title": "list_layers result payload",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "description": "Layer discovery results. Each layer carries the service-scoped selector consumed by query_features, render_map, get_style and apply_style_preset.",
+  "required": [
+    "layerCount",
+    "layers"
+  ],
+  "properties": {
+    "layerCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "layers": {
+      "type": "array",
+      "items": {
+        "$ref": "../common/service-layer-reference.schema.json"
+      }
+    }
+  }
+}

@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Text.Json;
 using Honua.Infrastructure.Authentication;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -27,7 +28,12 @@ internal static class EmulatedHumanApprovalSession
             ],
         }, CancellationToken.None);
         var client = createClient();
+        client.BaseAddress = new Uri("https://localhost");
         client.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}");
+        using var response = await client.GetAsync("/api/v1/admin/auth/csrf");
+        response.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        client.DefaultRequestHeaders.Add("X-Honua-CSRF", document.RootElement.GetProperty("requestToken").GetString());
         return client;
     }
 }

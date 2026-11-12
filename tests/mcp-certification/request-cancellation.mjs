@@ -5,6 +5,9 @@ const require = (condition, message) => { if (!condition) throw new Error(messag
 const hash = (value) => `sha256:${createHash("sha256").update(value).digest("hex")}`;
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 export const CANCELLATION_HARNESS_CONTRACT = "honua.mcp-request-cancellation-driver/v1";
+export const queryArguments = (fixture) => ({ serviceId: fixture.serviceName, serviceLayerIndex: fixture.serviceLayerIndex,
+  where: "name IN ('alpha','beta') AND count >= 1", outFields: ["name", "count"], outSrid: 4326,
+  returnGeometry: true, limit: 3 });
 async function within(promise, milliseconds) {
   let timer;
   try { return await Promise.race([promise, new Promise((_, reject) => {
@@ -29,9 +32,7 @@ export async function requestCancellation({ client, transport, otherClient, othe
   let failure;
   let proof;
   let otherClosed = false;
-  const arguments_ = { serviceId: fixture.serviceName, layerId: fixture.layerId,
-    where: "name IN ('alpha','beta') AND count >= 1", outFields: ["name", "count"], outSrid: 4326,
-    returnGeometry: true, limit: 3 };
+  const arguments_ = queryArguments(fixture);
   transport.send = function (message, options) {
     if (armed && message.method === "tools/call") {
       require(capture === null && message.params?.name === "honua_query_features", "unexpected concurrent SDK request");
@@ -105,10 +106,11 @@ export async function requestCancellation({ client, transport, otherClient, othe
     require(recovery.isError === undefined || recovery.isError === false, "recovery query returned an MCP error envelope");
     await verifyRecovery(recovery);
     require(responses.length === 1, "original SDK request received duplicate terminal responses");
+    // The v1 evidence contract calls the service index layerId; MCP arguments use serviceLayerIndex.
     proof = { schema: "honua.mcp-request-cancellation-proof/v1", performedBy,
       fixtureSourceSha: fixture.sourceSha, seedSqlSha256: fixture.seedSqlSha256, allocatedIdsSha256: fixture.allocatedIdsSha256,
       requestMethod: "tools/call", toolName: "honua_query_features", serviceName: fixture.serviceName,
-      layerId: fixture.layerId, notificationMethod: "notifications/cancelled",
+      layerId: fixture.serviceLayerIndex, notificationMethod: "notifications/cancelled",
       sessionSha256: hash(transport.sessionId), argumentsSha256: hash(JSON.stringify(arguments_)), requestId: capture.id,
       notificationRequestId: capture.id, responseId: responses[0].id, responseCount: responses.length,
       protocolCode: result.error.code, code: result.error.data.code, hasResult: false, clientAbortUsed: false,
