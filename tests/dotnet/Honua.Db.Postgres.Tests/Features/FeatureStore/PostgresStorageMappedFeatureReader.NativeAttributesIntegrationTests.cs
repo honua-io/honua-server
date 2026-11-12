@@ -481,7 +481,9 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
         var decoder = typeof(PostgresStorageMappedFeatureReader).GetMethod("BindNativeAttributeDecoder", BindingFlags.NonPublic | BindingFlags.Static)!
             .Invoke(null, [sql, wire]);
         var read = typeof(PostgresStorageMappedFeatureReader).GetMethod("ReadFeature", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        object?[] arguments = [wire, false, decoder];
+        // Same per-read attribute-name cache the production read loops pass.
+        var names = Activator.CreateInstance(read.GetParameters()[3].ParameterType);
+        object?[] arguments = [wire, false, decoder, names];
         features = new Feature[100];
         var index = 0;
         var start = GC.GetAllocatedBytesForCurrentThread();
