@@ -35,6 +35,9 @@ public static class AuthenticationExtensions
 
     public const string StudioLifecyclePolicy = "StudioLifecycle";
 
+    // Any authenticated principal, however it signed in; resource checks inside the handlers decide what it may do.
+    public const string AuthenticatedPolicy = "Authenticated";
+
     public const string StudioAiProxyPolicy = "StudioAiProxy";
 
     public static IServiceCollection AddApiKeyAuthentication(
@@ -108,6 +111,7 @@ public static class AuthenticationExtensions
             options.AddPolicy(TemporalRollbackExecutePolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(ConformanceMutatePolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(StudioLifecyclePolicy, policy => ConfigureStudioLifecyclePolicy(policy, mtlsCapabilityEnabled, oidcEnabled));
+            options.AddPolicy(AuthenticatedPolicy, policy => ConfigureAuthenticatedPolicy(policy, mtlsCapabilityEnabled, oidcEnabled));
             options.AddPolicy(StudioAiProxyPolicy, policy =>
             {
                 ConfigureStudioLifecyclePolicy(policy, mtlsCapabilityEnabled, oidcEnabled);
@@ -155,11 +159,16 @@ public static class AuthenticationExtensions
         }
     }
 
-    // Pin this policy to the composite scheme only while OIDC is registered: leaving it unpinned hides an OIDC principal, and naming an unregistered scheme throws.
     private static void ConfigureStudioLifecyclePolicy(AuthorizationPolicyBuilder policy, bool mtlsCapabilityEnabled, bool oidcEnabled)
     {
-        _ = policy.RequireAuthenticatedUser();
+        ConfigureAuthenticatedPolicy(policy, mtlsCapabilityEnabled, oidcEnabled);
         _ = policy.AddRequirements(new StudioLifecycleRequirement());
+    }
+
+    // Pin this policy to the composite scheme only while OIDC is registered: leaving it unpinned hides an OIDC principal, and naming an unregistered scheme throws.
+    private static void ConfigureAuthenticatedPolicy(AuthorizationPolicyBuilder policy, bool mtlsCapabilityEnabled, bool oidcEnabled)
+    {
+        _ = policy.RequireAuthenticatedUser();
         if (oidcEnabled)
         {
             policy.AuthenticationSchemes.Add(OidcAuthenticationExtensions.CompositeScheme);
@@ -182,6 +191,9 @@ public static class AuthenticationExtensions
 
     public static TBuilder RequireAdminAuthorization<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(AdminPolicy);
+
+    public static TBuilder RequireAuthenticatedAuthorization<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(AuthenticatedPolicy);
 
     public static TBuilder RequireAdminCredentialManagementAuthorization<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(AdminCredentialManagementPolicy);

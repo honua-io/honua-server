@@ -14,6 +14,9 @@ internal static class AssetsServiceCollectionExtensions
         services.AddScoped<AssetFormLookup>();
         services.AddScoped<AssetProfileValidator>();
         services.AddScoped<AssetProfileService>();
+        services.AddScoped<Tasks.WorkTaskLocator>();
+        services.AddScoped<Tasks.WorkTaskFormBinding>();
+        services.AddScoped<Tasks.WorkTaskService>();
         return services;
     }
 }
