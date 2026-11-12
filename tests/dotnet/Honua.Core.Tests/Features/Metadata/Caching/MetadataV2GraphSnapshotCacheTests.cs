@@ -292,6 +292,59 @@ public sealed class MetadataV2GraphSnapshotCacheTests
 
     [Trait("Tier", "Fast")]
     [Fact]
+    public async Task GetCurrentAsync_WithRevisionProbe_TtlExpiredAndRevisionUnchanged_DoesNotReload()
+    {
+        var database = new CountingProvider(SnapshotWithRevision(1));
+        var probe = new DatabaseEtagProbe(database);
+        var cache = NewCache(ttlSeconds: 10, out var clock);
+
+        await new CachingMetadataV2GraphProvider(database, cache, Environment, probe).GetCurrentAsync();
+        for (var lifetime = 0; lifetime < 5; lifetime++)
+        {
+            clock.Advance(TimeSpan.FromSeconds(11));
+            (await new CachingMetadataV2GraphProvider(database, cache, Environment, probe).GetCurrentAsync())
+                .Revision.Should().Be(1);
+        }
+
+        database.GetCurrentCalls.Should().Be(1, "a probe that confirms the revision renews the snapshot instead of re-reading the document");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task GetCurrentAsync_WithRevisionProbe_TtlExpiredAfterPublish_ReloadsOnce()
+    {
+        var database = new CountingProvider(SnapshotWithRevision(1));
+        var probe = new DatabaseEtagProbe(database);
+        var cache = NewCache(ttlSeconds: 10, out var clock);
+
+        await new CachingMetadataV2GraphProvider(database, cache, Environment, probe).GetCurrentAsync();
+        database.Next = SnapshotWithRevision(2);
+        clock.Advance(TimeSpan.FromSeconds(11));
+
+        (await new CachingMetadataV2GraphProvider(database, cache, Environment, probe).GetCurrentAsync())
+            .Revision.Should().Be(2);
+        (await new CachingMetadataV2GraphProvider(database, cache, Environment, probe).GetCurrentAsync())
+            .Revision.Should().Be(2);
+        database.GetCurrentCalls.Should().Be(2);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task GetCurrentAsync_WithRevisionProbe_NoActivatedRevisionAfterTtl_ReloadsAsBefore()
+    {
+        var database = new CountingProvider(SnapshotWithRevision(1));
+        var probe = new DatabaseEtagProbe(database) { ReturnNull = true };
+        var cache = NewCache(ttlSeconds: 10, out var clock);
+
+        await new CachingMetadataV2GraphProvider(database, cache, Environment, probe).GetCurrentAsync();
+        clock.Advance(TimeSpan.FromSeconds(11));
+        await new CachingMetadataV2GraphProvider(database, cache, Environment, probe).GetCurrentAsync();
+
+        database.GetCurrentCalls.Should().Be(2, "with no revision to compare, the lifetime still bounds a compatibility snapshot");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public async Task GetCurrentAsync_WithRevisionProbe_CacheDisabled_DoesNotProbe()
     {
         var database = new CountingProvider(SnapshotWithRevision(1));

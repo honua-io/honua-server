@@ -157,11 +157,9 @@ public sealed class ConfigurationDocumentationService
         return new ConfigurationSection
         {
             Name = "Cache",
-            Description = "Redis metadata and output caching configuration",
+            Description = "Per-node metadata and output caching configuration",
             Properties =
             [
-                BuildProperty("ConnectionStrings:redis", "ConnectionStrings__redis", "string",
-                    "Redis connection string for metadata/output caching", null, isSensitive: true),
                 BuildPropertyWithCurrent("Cache:Enabled", "Cache__Enabled", "boolean",
                     "Whether caching is enabled", true, opts.Enabled),
                 BuildPropertyWithCurrent("Cache:ResponseCachingEnabled", "Cache__ResponseCachingEnabled", "boolean",
@@ -184,12 +182,8 @@ public sealed class ConfigurationDocumentationService
                     "Negative cache TTL in seconds for missing layers/services", 60, opts.NegativeTtlSeconds, "Range: 1-3600"),
                 BuildPropertyWithCurrent("Cache:JitterPercentage", "Cache__JitterPercentage", "number",
                     "TTL jitter percentage to prevent stampedes", 0.2, opts.JitterPercentage, "Range: 0-0.5"),
-                BuildPropertyWithCurrent("Cache:EnableFallback", "Cache__EnableFallback", "boolean",
-                    "Use in-memory fallback when Redis unavailable", true, opts.EnableFallback),
-                BuildPropertyWithCurrent("Cache:FallbackMaxEntries", "Cache__FallbackMaxEntries", "integer",
-                    "Maximum entries in fallback cache", 1000, opts.FallbackMaxEntries, "Range: 10-100000"),
-                BuildPropertyWithCurrent("Cache:RetryIntervalSeconds", "Cache__RetryIntervalSeconds", "integer",
-                    "Retry interval after Redis failure", 30, opts.RetryIntervalSeconds, "Range: 5-300"),
+                BuildPropertyWithCurrent("Cache:MaxEntries", "Cache__MaxEntries", "integer",
+                    "Maximum entries in each node's in-memory cache", 10000, opts.MaxEntries, "Range: 10-500000"),
                 BuildPropertyWithCurrent("Cache:KeyPrefix", "Cache__KeyPrefix", "string",
                     "Prefix for cache keys", "honua:", opts.KeyPrefix),
                 BuildPropertyWithCurrent("Cache:BackgroundRefreshEnabled", "Cache__BackgroundRefreshEnabled", "boolean",
@@ -474,7 +468,7 @@ public sealed class ConfigurationDocumentationService
                 BuildProperty("ForwardedHeaders:KnownNetworks", "ForwardedHeaders__KnownNetworks__0", "string",
                     "Trusted proxy networks (CIDR) for forwarded headers", null),
                 BuildProperty("ForwardedHeaders:ProtoHeaderName", "ForwardedHeaders__ProtoHeaderName", "string",
-                    "Header carrying the client scheme (default X-Forwarded-Proto)", null)
+                    "Header carrying the client scheme", "X-Forwarded-Proto")
             ]
         };
     }
@@ -920,7 +914,6 @@ public sealed class ConfigurationDocumentationService
             new() { Name = "Database__SecureConnection__Name", ConfigPath = "Database", Description = "Named secure connection to use from registry", Required = false, Example = "production-primary" },
 
             // Cache
-            new() { Name = "ConnectionStrings__redis", ConfigPath = "Cache", Description = "Redis connection string for metadata/output caching", Required = false, Example = "localhost:6379" },
             new() { Name = "Cache__Enabled", ConfigPath = "Cache", Description = "Enable caching", Default = "true", Example = "false" },
             new() { Name = "Cache__ResponseCachingEnabled", ConfigPath = "Cache", Description = "Enable exact response caching separately from metadata/catalog caching", Default = "false", Example = "true" },
             new() { Name = "Cache__ResponseCachingAllowInMemoryFallback", ConfigPath = "Cache", Description = "Allow response caching on a process-local cache for a single server instance", Default = "false", Example = "true" },
@@ -932,7 +925,7 @@ public sealed class ConfigurationDocumentationService
             new() { Name = "Cache__QueryTtlSeconds", ConfigPath = "Cache", Description = "Query response cache TTL", Default = "30", Example = "60" },
             new() { Name = "Cache__NegativeTtlSeconds", ConfigPath = "Cache", Description = "Negative cache TTL for missing resources", Default = "60", Example = "30" },
             new() { Name = "Cache__JitterPercentage", ConfigPath = "Cache", Description = "TTL jitter percentage", Default = "0.2", Example = "0.1" },
-            new() { Name = "Cache__EnableFallback", ConfigPath = "Cache", Description = "Use in-memory fallback", Default = "true", Example = "false" },
+            new() { Name = "Cache__MaxEntries", ConfigPath = "Cache", Description = "Maximum entries in each node's in-memory cache", Default = "10000", Example = "50000" },
             new() { Name = "Cache__BackgroundRefreshEnabled", ConfigPath = "Cache", Description = "Enable stale-while-revalidate background refresh", Default = "true", Example = "false" },
             new() { Name = "Cache__BackgroundRefreshThreshold", ConfigPath = "Cache", Description = "TTL fraction triggering background refresh", Default = "0.25", Example = "0.3" },
             new() { Name = "Cache__MaxConcurrentRefreshes", ConfigPath = "Cache", Description = "Max concurrent background refreshes", Default = "10", Example = "20" },
