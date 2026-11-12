@@ -10,6 +10,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Db.Redshift.Features.FeatureStore;
 using Honua.Db.Redshift.Features.FeatureStore.Services;
 using Honua.TestKit.Attributes;
+using Honua.Tests.ProviderUnitSupport;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Testcontainers.PostgreSql;
@@ -36,6 +37,19 @@ namespace Honua.Db.Redshift.Tests;
 public sealed class RedshiftFeatureDataAccessIntegrationTests : IAsyncLifetime
 {
     private const string TestRedshiftEnvVar = "HONUA_TEST_REDSHIFT";
+
+    private static readonly ParcelsLayerFixture StatisticsParcels = new(DataProviderNames.Redshift, "public.parcels")
+    {
+        ObjectIdField = "id",
+        GeometryField = "geom",
+        GeometryType = MetadataV2GeometryType.Point,
+        AttributeFields =
+        [
+            new MetadataV2Field { Name = "type", Type = MetadataV2FieldType.String },
+            new MetadataV2Field { Name = "area", Type = MetadataV2FieldType.Double }
+        ],
+        ConnectionName = "stand-in"
+    };
 
     private PostgreSqlContainer _container = null!;
     private RedshiftFeatureDataAccess _dataAccess = null!;
@@ -224,92 +238,7 @@ public sealed class RedshiftFeatureDataAccessIntegrationTests : IAsyncLifetime
     }
 
     private static FeatureProviderBinding CreateStatisticsBinding(RedshiftFeatureStore provider)
-    {
-        var connectionId = Guid.NewGuid();
-        var service = new MetadataV2Service
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "svc-parcels", Name = "Parcels" },
-            SpatialReference = MetadataV2SpatialReference.Wgs84
-        };
-        var resource = new MetadataV2Object
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "Parcels" },
-            Type = MetadataV2ObjectType.FeatureDataset,
-            StorageBindingIds = ["binding-parcels"],
-            SchemaFields =
-            [
-                new MetadataV2Field
-                {
-                    Name = "id",
-                    Type = MetadataV2FieldType.BigInteger,
-                    Nullable = false,
-                    SemanticRoles = ["id.primary"]
-                },
-                new MetadataV2Field
-                {
-                    Name = "geom",
-                    Type = MetadataV2FieldType.Geometry,
-                    Nullable = false,
-                    SemanticRoles = ["geometry.primary"]
-                },
-                new MetadataV2Field { Name = "type", Type = MetadataV2FieldType.String },
-                new MetadataV2Field { Name = "area", Type = MetadataV2FieldType.Double }
-            ],
-            Spatial = new MetadataV2ObjectSpatial
-            {
-                SpatialReference = MetadataV2SpatialReference.Wgs84,
-                GeometryType = MetadataV2GeometryType.Point,
-                PrimaryGeometryField = "geom"
-            }
-        };
-        var storageBinding = new MetadataV2StorageBinding
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "binding-parcels", Name = "binding-parcels" },
-            ResourceId = resource.Metadata.Id,
-            ConnectionId = connectionId.ToString(),
-            StorageType = MetadataV2StorageType.RelationalTable,
-            Locator = "public.parcels",
-            StorageLayerId = 1
-        };
-        var publication = new MetadataV2Layer
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "pub-parcels", Name = "Parcels" },
-            ServiceId = service.Metadata.Id,
-            ResourceId = resource.Metadata.Id,
-            StorageBindingId = storageBinding.Metadata.Id,
-            Identifier = new MetadataV2LayerIdentifier { Value = "1", IsNumeric = true }
-        };
-        var graph = new MetadataV2Graph
-        {
-            Revision = 1,
-            Environment = "test",
-            Resources = [resource],
-            Connections =
-            [
-                new MetadataV2Connection
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = connectionId.ToString(), Name = "stand-in" },
-                    Provider = DataProviderNames.Redshift
-                }
-            ],
-            StorageBindings = [storageBinding],
-            Services = [service],
-            Publications = [publication]
-        };
-        var snapshot = new MetadataV2GraphSnapshot(graph, "test", DateTimeOffset.UtcNow);
-        var resolvedBinding = snapshot.ResolveStorageBinding(publication)
-            ?? throw new InvalidOperationException("Test snapshot did not include a storage binding.");
-
-        return new FeatureProviderBinding(
-            service,
-            resource,
-            publication,
-            resolvedBinding,
-            FeatureStorageMapping.FromMetadata(resource, resolvedBinding),
-            1,
-            provider,
-            Connection: null);
-    }
+        => StatisticsParcels.CreateBinding(provider, connection: null);
 }
 
 /// <summary>

@@ -9,6 +9,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Metadata.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Tests.MetadataRelease;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Metadata.Services;
@@ -566,40 +567,9 @@ public sealed class MetadataReleaseServiceTests
                     },
                 },
             ],
-            StorageBindings =
-            [
-                new MetadataV2StorageBinding
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "storage.parcels", Name = "storage.parcels" },
-                    ResourceId = "res.parcels",
-                    ConnectionId = "conn.parcels",
-                    StorageType = MetadataV2StorageType.RelationalTable,
-                    Locator = $"{environment}_schema.parcels",
-                },
-            ],
-            Services =
-            [
-                new MetadataV2Service
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "svc.features", Name = "features" },
-                    ServiceType = MetadataV2ServiceType.OgcApiFeatures,
-                    Route = $"/{environment}/ogc/features",
-                    PublicationIds = ["pub.parcels"],
-                },
-            ],
-            Publications =
-            [
-                new MetadataV2Layer
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "pub.parcels", Name = "parcels" },
-                    ResourceId = "res.parcels",
-                    ServiceId = "svc.features",
-                    StorageBindingId = "storage.parcels",
-                    PublicationType = MetadataV2LayerType.OgcCollection,
-                    Path = "parcels",
-                    ServiceLocalId = "parcels",
-                },
-            ],
+            StorageBindings = [MetadataReleaseParcelsGraph.StorageBinding(environment)],
+            Services = [MetadataReleaseParcelsGraph.FeaturesService(environment)],
+            Publications = [MetadataReleaseParcelsGraph.Publication()],
             Policies =
             [
                 new MetadataV2Policy

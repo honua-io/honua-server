@@ -11,6 +11,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Db.SqlServer;
 using Honua.Db.SqlServer.Features.FeatureStore;
 using Honua.Db.SqlServer.Features.FeatureStore.Services;
+using Honua.Tests.ProviderUnitSupport;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -26,6 +27,13 @@ namespace Honua.Db.SqlServer.Tests;
 public class SqlServerProviderResolutionTests
 {
     private const int LayerId = 1;
+
+    private static readonly ParcelsLayerFixture Parcels = new(DataProviderNames.SqlServer, "dbo.parcels")
+    {
+        ObjectIdField = "objectid",
+        GeometryField = "shape",
+        AttributeFields = [new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }]
+    };
 
     [Theory]
     [InlineData("sqlserver")]
@@ -67,7 +75,7 @@ public class SqlServerProviderResolutionTests
         // BH6-021 regression: GetEstimatesAsync was missing the EnsureNoPermanentFilterAsync
         // guard that all other public read methods call. A permanent (row-visibility) filter
         // configured on a SQL Server layer must block estimates just as it blocks queries.
-        var provider = CreateSqlServerStore(v2Provider: new StubV2Provider(LayerId, permanentFilterExpression: "status = 'active'"));
+        var provider = CreateSqlServerStore(v2Provider: new StubV2Provider(LayerId, permanentFilterExpression: "status = 'active'") { Locator = "dbo.stub_table" });
 
         var exception = await Assert.ThrowsAsync<NotSupportedException>(
             () => provider.Reader.GetEstimatesAsync(LayerId));
@@ -82,7 +90,7 @@ public class SqlServerProviderResolutionTests
         // When no permanent filter is configured the guard must pass through.
         // GetEstimatesAsync will still fail downstream (no binding), but the
         // guard itself must not interfere.
-        var provider = CreateSqlServerStore(v2Provider: new StubV2Provider(LayerId, permanentFilterExpression: null));
+        var provider = CreateSqlServerStore(v2Provider: new StubV2Provider(LayerId, permanentFilterExpression: null) { Locator = "dbo.stub_table" });
 
         // Expect InvalidOperationException from the missing binding, NOT NotSupportedException.
         await Assert.ThrowsAsync<InvalidOperationException>(
@@ -273,95 +281,9 @@ public class SqlServerProviderResolutionTests
     };
 
     private static FeatureProviderBinding CreateBinding(SqlServerFeatureStore provider, DataConnection? connection)
-    {
-        var (snapshot, service, resource, publication) = CreateSnapshot(connection?.ConnectionId ?? Guid.NewGuid());
-        var storageBinding = snapshot.ResolveStorageBinding(publication)
-            ?? throw new InvalidOperationException("Test snapshot did not include a storage binding.");
+        => Parcels.CreateBinding(provider, connection);
 
-        return new FeatureProviderBinding(
-            service,
-            resource,
-            publication,
-            storageBinding,
-            FeatureStorageMapping.FromMetadata(resource, storageBinding),
-            LayerId,
-            provider,
-            connection);
-    }
-
-    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Object Resource, MetadataV2Layer Publication)
-        CreateSnapshot(Guid connectionId)
-    {
-        var service = new MetadataV2Service
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "svc-parcels", Name = "Parcels" },
-            SpatialReference = MetadataV2SpatialReference.Wgs84
-        };
-        var resource = new MetadataV2Object
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "Parcels" },
-            Type = MetadataV2ObjectType.FeatureDataset,
-            StorageBindingIds = ["binding-parcels"],
-            SchemaFields =
-            [
-                new MetadataV2Field
-                {
-                    Name = "objectid",
-                    Type = MetadataV2FieldType.BigInteger,
-                    Nullable = false,
-                    SemanticRoles = ["id.primary"]
-                },
-                new MetadataV2Field
-                {
-                    Name = "shape",
-                    Type = MetadataV2FieldType.Geometry,
-                    Nullable = false,
-                    SemanticRoles = ["geometry.primary"]
-                },
-                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }
-            ],
-            Spatial = new MetadataV2ObjectSpatial
-            {
-                SpatialReference = MetadataV2SpatialReference.Wgs84,
-                GeometryType = MetadataV2GeometryType.Polygon,
-                PrimaryGeometryField = "shape"
-            }
-        };
-        var storageBinding = new MetadataV2StorageBinding
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "binding-parcels", Name = "binding-parcels" },
-            ResourceId = resource.Metadata.Id,
-            ConnectionId = connectionId.ToString(),
-            StorageType = MetadataV2StorageType.RelationalTable,
-            Locator = "dbo.parcels",
-            StorageLayerId = LayerId
-        };
-        var metadataConnection = new MetadataV2Connection
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = connectionId.ToString(), Name = "secure" },
-            Provider = DataProviderNames.SqlServer
-        };
-        var publication = new MetadataV2Layer
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "pub-parcels", Name = "Parcels" },
-            ServiceId = service.Metadata.Id,
-            ResourceId = resource.Metadata.Id,
-            StorageBindingId = storageBinding.Metadata.Id,
-            Identifier = new MetadataV2LayerIdentifier { Value = LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture), IsNumeric = true }
-        };
-        var graph = new MetadataV2Graph
-        {
-            Revision = 1,
-            Environment = "test",
-            Resources = [resource],
-            Connections = [metadataConnection],
-            StorageBindings = [storageBinding],
-            Services = [service],
-            Publications = [publication]
-        };
-
-        return (new MetadataV2GraphSnapshot(graph, "test", DateTimeOffset.UtcNow), service, resource, publication);
-    }
+    private static ParcelsLayerSnapshot CreateSnapshot(Guid connectionId) => Parcels.CreateSnapshot(connectionId);
 
     private static SqlServerFeatureStore CreateSqlServerStore(
         ISqlServerConnectionFactory? factory = null,
@@ -381,68 +303,6 @@ public class SqlServerProviderResolutionTests
     /// stub that returns a single resource with an optional permanent filter for
     /// BH6-021 regression tests.
     /// </summary>
-    private sealed class StubV2Provider(int storageLayerId, string? permanentFilterExpression) :
-        Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider
-    {
-        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
-        {
-            var resource = new MetadataV2Object
-            {
-                Metadata = new MetadataV2ObjectMetadata { Id = "res-stub", Name = "Stub" },
-                Type = MetadataV2ObjectType.FeatureDataset,
-                PermanentFilter = permanentFilterExpression == null ? null : new MetadataV2PermanentFilter
-                {
-                    Expression = permanentFilterExpression,
-                    Language = MetadataV2PermanentFilterLanguages.GeoServicesSql
-                }
-            };
-            var storageBinding = new MetadataV2StorageBinding
-            {
-                Metadata = new MetadataV2ObjectMetadata { Id = "binding-stub", Name = "binding-stub" },
-                ResourceId = resource.Metadata.Id,
-                StorageLayerId = storageLayerId,
-                StorageType = MetadataV2StorageType.RelationalTable,
-                Locator = "dbo.stub_table"
-            };
-            var graph = new MetadataV2Graph
-            {
-                Revision = 1,
-                Environment = "test",
-                Resources = [resource],
-                StorageBindings = [storageBinding]
-            };
-            var snapshot = new MetadataV2GraphSnapshot(graph, "etag-stub", DateTimeOffset.UtcNow);
-            return ValueTask.FromResult(snapshot);
-        }
-
-        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
-            => ValueTask.FromResult<MetadataV2GraphSnapshot?>(null);
-    }
-
-    private sealed class StubRowFilterSource(Honua.Core.Queries.Filters.SqlFragment? fragment) :
-        Honua.Core.Features.Authorization.Abstractions.IRowLevelSecurityFilterSource
-    {
-        public string? LastResourceId { get; private set; }
-
-        public Task<Honua.Core.Queries.Filters.SqlFragment?> ResolveAsync(MetadataV2Object resource, CancellationToken cancellationToken = default)
-        {
-            LastResourceId = resource.Metadata.Id;
-            return Task.FromResult(fragment);
-        }
-    }
-
-    private sealed class StubFieldMaskSource(string[] maskedFields) :
-        Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource
-    {
-        public string? LastResourceId { get; private set; }
-
-        public Task<System.Collections.Immutable.ImmutableArray<string>> ResolveAsync(
-            MetadataV2Object resource, CancellationToken cancellationToken = default)
-        {
-            LastResourceId = resource.Metadata.Id;
-            return Task.FromResult(System.Collections.Immutable.ImmutableArray.Create(maskedFields));
-        }
-    }
 
     private sealed class ThrowingConnectionFactory : ISqlServerConnectionFactory
     {

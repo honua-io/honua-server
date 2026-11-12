@@ -29,7 +29,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerMetadataHandlerTests
 {
-    private readonly TestMetadataV2GraphProvider _graphProvider = BuildGraphWithLayer(1);
+    private readonly TestMetadataV2GraphProvider _graphProvider = ImageServerTestFixtures.BuildGraphWithLayer(1);
     private readonly IRasterStore _rasterStore = Substitute.For<IRasterStore>();
     private readonly IImageServerMultidimensionalInfoBuilder _multidimensionalInfoBuilder =
         Substitute.For<IImageServerMultidimensionalInfoBuilder>();
@@ -723,19 +723,6 @@ public class ImageServerMetadataHandlerTests
         _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
             .Returns(CreateTestExtent());
     }
-
-    private static TestMetadataV2GraphProvider BuildGraphWithLayer(int layerIndex)
-        => new TestMetadataV2GraphBuilder()
-            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ObjectType.RasterDataset)
-            .AddService($"service-{layerIndex}", $"image-svc-{layerIndex}", protocols: [ServiceProtocols.ImageServer])
-            .AddPublication(
-                $"publication-{layerIndex}",
-                $"service-{layerIndex}",
-                $"resource-{layerIndex}",
-                layerIndex: layerIndex,
-                serviceLocalId: "test-layer",
-                publicationType: MetadataV2LayerType.EsriImageLayer)
-            .BuildProvider();
 
     private static RasterInfo CreateTestRasterInfo(int? srid = 4326) => new()
     {

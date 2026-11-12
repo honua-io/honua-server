@@ -16,6 +16,7 @@ using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using Honua.TestKit.Attributes;
 using Xunit.Abstractions;
+using static Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services.FormatterTestResources;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
@@ -1593,13 +1594,10 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
         return ((DoubleArray)bbox.Fields[index]).GetValue(row);
     }
 
-    /// <summary>
-    /// honua-server#4666: a resource may declare geometry through its schema alone —
-    /// <see cref="MetadataV2Object.Spatial"/> is nullable, so a graph compiled from a source
-    /// that carries a geometry column but no declared layer geometry type leaves the slot unset.
-    /// The writer used to read only the typed slot, so such a layer was served as an
-    /// attribute-only Parquet file: silent, unsignalled geometry loss for every consumer.
-    /// </summary>
+    // A resource may declare geometry through its schema alone: the Spatial slot is nullable, so a
+    // graph compiled from a source with a geometry column but no declared layer geometry type leaves
+    // it unset. Reading only the typed slot would serve an attribute-only Parquet file and silently
+    // drop the geometry for every consumer.
     [Fact]
     public async Task FormatAsGeoParquet_WhenSpatialSlotIsAbsentButSchemaDeclaresGeometry_StillWritesGeometryColumn()
     {
@@ -1750,30 +1748,15 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
         GeoParquetFeatureWriter.SerializeGeometryTypes([]).Should().Be("[]");
     }
 
-    /// <summary>
-    /// A resource whose geometry is declared only by a <see cref="MetadataV2FieldType.Geometry"/>
-    /// schema field, with no <see cref="MetadataV2Object.Spatial"/> slot at all.
-    /// </summary>
+    private static MetadataV2ObjectMetadata TestLayerMetadata() => new()
+    {
+        Id = "test-layer",
+        Name = "test_layer",
+        Description = "Test Layer"
+    };
+
     private static MetadataV2Object CreateResourceWithoutSpatialSlot(params MetadataV2Field[] fields)
-        => new()
-        {
-            Metadata = new MetadataV2ObjectMetadata
-            {
-                Id = "test-layer",
-                Name = "test_layer",
-                Description = "Test Layer"
-            },
-            SchemaFields =
-            [
-                .. fields,
-                new MetadataV2Field
-                {
-                    Name = "shape",
-                    Type = MetadataV2FieldType.Geometry,
-                    Nullable = true
-                }
-            ]
-        };
+        => FormatterTestResources.WithoutSpatialSlot(TestLayerMetadata(), fields);
 
     private static MetadataV2Object CreateLayer(params MetadataV2Field[] fields)
         => CreateResource(fields);
@@ -1799,37 +1782,5 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
     private static MetadataV2Object CreateResourceWithGeometryType(
         MetadataV2GeometryType geometryType,
         params MetadataV2Field[] fields)
-        => new()
-        {
-            Metadata = new MetadataV2ObjectMetadata
-            {
-                Id = "test-layer",
-                Name = "test_layer",
-                Description = "Test Layer"
-            },
-            SchemaFields =
-            [
-                .. fields,
-                new MetadataV2Field
-                {
-                    Name = "shape",
-                    Type = MetadataV2FieldType.Geometry,
-                    Nullable = true,
-                    SemanticRoles = ["geometry.primary"]
-                }
-            ],
-            Spatial = new MetadataV2ObjectSpatial
-            {
-                SpatialReference = MetadataV2SpatialReference.Wgs84,
-                GeometryType = geometryType,
-                PrimaryGeometryField = "shape"
-            }
-        };
-
-    private static byte[] CreatePointWkb(double x, double y)
-        => new WKBWriter().Write(new Point(x, y) { SRID = 4326 });
-
-    private static byte[] CreatePointWkbWithZm(double x, double y, double z, double m)
-        => new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: true)
-            .Write(new Point(new CoordinateZM(x, y, z, m)) { SRID = 4326 });
+        => FormatterTestResources.WithGeometryType(TestLayerMetadata(), geometryType, fields);
 }

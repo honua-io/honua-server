@@ -13,6 +13,7 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
+using Honua.Tests.ProviderUnitSupport;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.GeoServicesRest.Tests;
@@ -27,6 +28,15 @@ public class GeoServicesRestProviderResolutionTests
 {
     private const int LayerId = 1;
     private const string ServiceUrl = "https://services.arcgis.com/org/arcgis/rest/services/parcels/FeatureServer";
+
+    private static readonly ParcelsLayerFixture Parcels = new(DataProviderNames.GeoServicesRest, "remote.parcels")
+    {
+        ObjectIdField = "objectid",
+        GeometryField = "shape",
+        GeometryType = MetadataV2GeometryType.Point,
+        ConnectionName = "remote-parcels",
+        AttributeFields = [new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }]
+    };
 
     [Trait("Tier", "Fast")]
     [Theory]
@@ -342,31 +352,6 @@ public class GeoServicesRestProviderResolutionTests
         _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null)
     };
 
-    private sealed class StubRowFilterSource(Honua.Core.Queries.Filters.SqlFragment? fragment) :
-        Honua.Core.Features.Authorization.Abstractions.IRowLevelSecurityFilterSource
-    {
-        public string? LastResourceId { get; private set; }
-
-        public Task<Honua.Core.Queries.Filters.SqlFragment?> ResolveAsync(MetadataV2Object resource, CancellationToken cancellationToken = default)
-        {
-            LastResourceId = resource.Metadata.Id;
-            return Task.FromResult(fragment);
-        }
-    }
-
-    private sealed class StubFieldMaskSource(string[] maskedFields) :
-        Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource
-    {
-        public string? LastResourceId { get; private set; }
-
-        public Task<System.Collections.Immutable.ImmutableArray<string>> ResolveAsync(
-            MetadataV2Object resource, CancellationToken cancellationToken = default)
-        {
-            LastResourceId = resource.Metadata.Id;
-            return Task.FromResult(System.Collections.Immutable.ImmutableArray.Create(maskedFields));
-        }
-    }
-
     private static GeoServicesRestFeatureStore CreateProvider()
         => new(new RecordingGeoServicesRestFeatureClient(), NullLogger<GeoServicesRestFeatureStore>.Instance);
 
@@ -380,95 +365,9 @@ public class GeoServicesRestProviderResolutionTests
         };
 
     private static FeatureProviderBinding CreateBinding(GeoServicesRestFeatureStore provider, DataConnection connection)
-    {
-        var (snapshot, service, resource, publication) = CreateSnapshot(connection.ConnectionId);
-        var storageBinding = snapshot.ResolveStorageBinding(publication)
-            ?? throw new InvalidOperationException("Test snapshot did not include a storage binding.");
+        => Parcels.CreateBinding(provider, connection);
 
-        return new FeatureProviderBinding(
-            service,
-            resource,
-            publication,
-            storageBinding,
-            FeatureStorageMapping.FromMetadata(resource, storageBinding),
-            LayerId,
-            provider,
-            connection);
-    }
-
-    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Object Resource, MetadataV2Layer Publication)
-        CreateSnapshot(Guid connectionId)
-    {
-        var service = new MetadataV2Service
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "svc-parcels", Name = "Parcels" },
-            SpatialReference = MetadataV2SpatialReference.Wgs84
-        };
-        var resource = new MetadataV2Object
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "Parcels" },
-            Type = MetadataV2ObjectType.FeatureDataset,
-            StorageBindingIds = ["binding-parcels"],
-            SchemaFields =
-            [
-                new MetadataV2Field
-                {
-                    Name = "objectid",
-                    Type = MetadataV2FieldType.BigInteger,
-                    Nullable = false,
-                    SemanticRoles = ["id.primary"]
-                },
-                new MetadataV2Field
-                {
-                    Name = "shape",
-                    Type = MetadataV2FieldType.Geometry,
-                    Nullable = false,
-                    SemanticRoles = ["geometry.primary"]
-                },
-                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }
-            ],
-            Spatial = new MetadataV2ObjectSpatial
-            {
-                SpatialReference = MetadataV2SpatialReference.Wgs84,
-                GeometryType = MetadataV2GeometryType.Point,
-                PrimaryGeometryField = "shape"
-            }
-        };
-        var storageBinding = new MetadataV2StorageBinding
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "binding-parcels", Name = "binding-parcels" },
-            ResourceId = resource.Metadata.Id,
-            ConnectionId = connectionId.ToString(),
-            StorageType = MetadataV2StorageType.RelationalTable,
-            Locator = "remote.parcels",
-            StorageLayerId = LayerId
-        };
-        var metadataConnection = new MetadataV2Connection
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = connectionId.ToString(), Name = "remote-parcels" },
-            Provider = DataProviderNames.GeoServicesRest
-        };
-        var publication = new MetadataV2Layer
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "pub-parcels", Name = "Parcels" },
-            ServiceId = service.Metadata.Id,
-            ResourceId = resource.Metadata.Id,
-            StorageBindingId = storageBinding.Metadata.Id,
-            Identifier = new MetadataV2LayerIdentifier { Value = LayerId.ToString(CultureInfo.InvariantCulture), IsNumeric = true }
-        };
-        var graph = new MetadataV2Graph
-        {
-            Revision = 1,
-            Environment = "test",
-            Resources = [resource],
-            Connections = [metadataConnection],
-            StorageBindings = [storageBinding],
-            Services = [service],
-            Publications = [publication]
-        };
-
-        return (new MetadataV2GraphSnapshot(graph, "test", DateTimeOffset.UtcNow), service, resource, publication);
-    }
+    private static ParcelsLayerSnapshot CreateSnapshot(Guid connectionId) => Parcels.CreateSnapshot(connectionId);
 
     private static Dictionary<string, JsonElement> ParseAttributes(string json)
     {

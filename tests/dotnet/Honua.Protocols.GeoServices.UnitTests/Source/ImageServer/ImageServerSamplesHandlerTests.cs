@@ -6,7 +6,6 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.ZarrParser;
@@ -16,7 +15,6 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Primitives;
 using NSubstitute;
@@ -30,7 +28,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerSamplesHandlerTests
 {
-    private readonly TestMetadataV2GraphProvider _graphProvider = BuildGraphWithLayer(1);
+    private readonly TestMetadataV2GraphProvider _graphProvider = ImageServerTestFixtures.BuildGraphWithLayer(1);
     private readonly IRasterStore _rasterStore = Substitute.For<IRasterStore>();
 
     [UnitTest]
@@ -385,28 +383,6 @@ public class ImageServerSamplesHandlerTests
     };
 
     private static DefaultHttpContext CreateImageServerContext()
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton<Microsoft.Extensions.Logging.ILoggerFactory>(NullLoggerFactory.Instance);
-
-        var context = new DefaultHttpContext();
-        context.RequestServices = services.BuildServiceProvider();
-        context.Request.Path = "/rest/services/1/ImageServer/getSamples";
-        context.Response.Body = new MemoryStream();
-        return context;
-    }
-
-    private static TestMetadataV2GraphProvider BuildGraphWithLayer(int layerIndex)
-        => new TestMetadataV2GraphBuilder()
-            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ObjectType.RasterDataset)
-            .AddService($"service-{layerIndex}", $"image-svc-{layerIndex}", protocols: [ServiceProtocols.ImageServer])
-            .AddPublication(
-                $"publication-{layerIndex}",
-                $"service-{layerIndex}",
-                $"resource-{layerIndex}",
-                layerIndex: layerIndex,
-                serviceLocalId: "test-layer",
-                publicationType: MetadataV2LayerType.EsriImageLayer)
-            .BuildProvider();
+        => ImageServerTestFixtures.CreateContext("/rest/services/1/ImageServer/getSamples");
 
 }

@@ -5,7 +5,6 @@ using System.Data.Common;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -33,7 +32,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerExportHandlerTests
 {
-    private readonly TestMetadataV2GraphProvider _graphProvider = BuildGraphWithLayer(1);
+    private readonly TestMetadataV2GraphProvider _graphProvider = ImageServerTestFixtures.BuildGraphWithLayer(1);
     private readonly IRasterStore _rasterStore = Substitute.For<IRasterStore>();
     private readonly IZarrRasterSliceReader _zarrRasterSliceReader = Substitute.For<IZarrRasterSliceReader>();
     private readonly ITemporaryFileService _temporaryFileService = Substitute.For<ITemporaryFileService>();
@@ -1609,15 +1608,10 @@ public class ImageServerExportHandlerTests
 
     private static DefaultHttpContext CreateImageServerContext()
     {
-        var services = new ServiceCollection();
-        services.AddSingleton<Microsoft.Extensions.Logging.ILoggerFactory>(NullLoggerFactory.Instance);
-        services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
-
-        var context = new DefaultHttpContext();
-        context.RequestServices = services.BuildServiceProvider();
+        var context = ImageServerTestFixtures.CreateContext(
+            "/rest/services/1/ImageServer/exportImage",
+            services => services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>());
         context.User = new ClaimsPrincipal(new ClaimsIdentity([], "test"));
-        context.Request.Path = "/rest/services/1/ImageServer/exportImage";
-        context.Response.Body = new MemoryStream();
         return context;
     }
 
@@ -1770,33 +1764,7 @@ public class ImageServerExportHandlerTests
             NoDataInterpretation = noDataInterpretation ?? "esriNoDataMatchAny",
         };
 
-    private static TestMetadataV2GraphProvider BuildGraphWithLayer(int layerIndex)
-        => new TestMetadataV2GraphBuilder()
-            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ObjectType.RasterDataset)
-            .AddService($"service-{layerIndex}", $"image-svc-{layerIndex}", protocols: [ServiceProtocols.ImageServer])
-            .AddPublication(
-                $"publication-{layerIndex}",
-                $"service-{layerIndex}",
-                $"resource-{layerIndex}",
-                layerIndex: layerIndex,
-                serviceLocalId: "test-layer",
-                publicationType: MetadataV2LayerType.EsriImageLayer)
-            .BuildProvider();
-
-    private static RasterInfo CreateTestRasterInfo() => new()
-    {
-        Id = 100,
-        LayerId = 1,
-        Name = "test-raster",
-        Width = 1024,
-        Height = 1024,
-        BandCount = 3,
-        PixelType = "uint8",
-        Srid = 4326,
-        GeoTransform = [0, 1, 0, 0, 0, -1],
-        Extent = new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 },
-        CreatedAt = DateTime.UtcNow
-    };
+    private static RasterInfo CreateTestRasterInfo() => ImageServerTestFixtures.CreateWorldRgbRasterInfo();
 
     private static RasterResult CreateTestRasterResult() => new()
     {

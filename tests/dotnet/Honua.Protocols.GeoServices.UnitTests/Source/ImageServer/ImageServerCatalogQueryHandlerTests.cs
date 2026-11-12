@@ -18,7 +18,6 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Primitives;
 using NSubstitute;
@@ -29,7 +28,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerCatalogQueryHandlerTests
 {
-    private readonly TestMetadataV2GraphProvider _graphProvider = BuildGraphWithLayer(1);
+    private readonly TestMetadataV2GraphProvider _graphProvider = ImageServerTestFixtures.BuildGraphWithLayer(1);
     private readonly IRasterStore _rasterStore = Substitute.For<IRasterStore>();
     private readonly ImageServerCatalogQueryHandler _handler;
 
@@ -1159,29 +1158,7 @@ public class ImageServerCatalogQueryHandlerTests
         => new(StringComparer.OrdinalIgnoreCase);
 
     private static DefaultHttpContext CreateImageServerContext()
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton<Microsoft.Extensions.Logging.ILoggerFactory>(NullLoggerFactory.Instance);
-
-        var context = new DefaultHttpContext();
-        context.RequestServices = services.BuildServiceProvider();
-        context.Request.Path = "/rest/services/1/ImageServer/query";
-        context.Response.Body = new MemoryStream();
-        return context;
-    }
-
-    private static TestMetadataV2GraphProvider BuildGraphWithLayer(int layerIndex)
-        => new TestMetadataV2GraphBuilder()
-            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ObjectType.RasterDataset)
-            .AddService($"service-{layerIndex}", $"image-svc-{layerIndex}", protocols: [ServiceProtocols.ImageServer])
-            .AddPublication(
-                $"publication-{layerIndex}",
-                $"service-{layerIndex}",
-                $"resource-{layerIndex}",
-                layerIndex: layerIndex,
-                serviceLocalId: "test-layer",
-                publicationType: MetadataV2LayerType.EsriImageLayer)
-            .BuildProvider();
+        => ImageServerTestFixtures.CreateContext("/rest/services/1/ImageServer/query");
 
     private static RasterInfo CreateRaster(
         long id,

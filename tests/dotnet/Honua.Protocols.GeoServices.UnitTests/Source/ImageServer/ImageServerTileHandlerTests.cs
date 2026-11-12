@@ -21,7 +21,6 @@ using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -34,7 +33,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerTileHandlerTests
 {
-    private readonly TestMetadataV2GraphProvider _graphProvider = BuildGraphWithLayer(1);
+    private readonly TestMetadataV2GraphProvider _graphProvider = ImageServerTestFixtures.BuildGraphWithLayer(1);
     private readonly IRasterStore _rasterStore = Substitute.For<IRasterStore>();
     private readonly ImageServerTileHandler _handler;
 
@@ -204,25 +203,7 @@ public class ImageServerTileHandlerTests
     [Operation(Operations.GetMetadata)]
     public async Task ValidatePublicationAsync_StorageBindingChanged_ReturnsNotFound()
     {
-        var graphProvider = new TestMetadataV2GraphBuilder()
-            .AddResource("resource-imagery", "imagery", MetadataV2ObjectType.RasterDataset)
-            .AddStorageBinding(
-                "binding-imagery",
-                "resource-imagery",
-                "imagery.rasters",
-                storageLayerId: 42)
-            .AddService("service-imagery", "imagery", protocols: [ServiceProtocols.ImageServer])
-            .AddPublication(
-                "publication-imagery",
-                "service-imagery",
-                "resource-imagery",
-                storageBindingId: "binding-imagery",
-                publicationType: MetadataV2LayerType.EsriImageLayer)
-            .BuildProvider();
-        var resolver = new MetadataV2ImageServerLayerResolver(
-            new ResourceValidator(graphProvider),
-            graphProvider,
-            _rasterStore);
+        var resolver = CreateBoundImageryResolver(accessPolicy: null);
         var context = CreateImageServerContext(services => services.AddValidationServices());
 
         var resolution = await resolver.ValidatePublicationAsync(
@@ -245,29 +226,7 @@ public class ImageServerTileHandlerTests
     [Operation(Operations.GetMetadata)]
     public async Task ValidatePublicationAsync_AccessPolicyChanged_ReturnsForbidden()
     {
-        var graphProvider = new TestMetadataV2GraphBuilder()
-            .AddResource(
-                "resource-imagery",
-                "imagery",
-                MetadataV2ObjectType.RasterDataset,
-                accessPolicy: new AccessPolicy { AllowedRoles = ["imagery-admin"] })
-            .AddStorageBinding(
-                "binding-imagery",
-                "resource-imagery",
-                "imagery.rasters",
-                storageLayerId: 42)
-            .AddService("service-imagery", "imagery", protocols: [ServiceProtocols.ImageServer])
-            .AddPublication(
-                "publication-imagery",
-                "service-imagery",
-                "resource-imagery",
-                storageBindingId: "binding-imagery",
-                publicationType: MetadataV2LayerType.EsriImageLayer)
-            .BuildProvider();
-        var resolver = new MetadataV2ImageServerLayerResolver(
-            new ResourceValidator(graphProvider),
-            graphProvider,
-            _rasterStore);
+        var resolver = CreateBoundImageryResolver(new AccessPolicy { AllowedRoles = ["imagery-admin"] });
         var context = CreateImageServerContext(services => services.AddValidationServices());
         context.User = new ClaimsPrincipal(new ClaimsIdentity("test"));
 
@@ -689,43 +648,31 @@ public class ImageServerTileHandlerTests
             .Should().Be(StatusCodes.Status404NotFound);
     }
 
-    private static DefaultHttpContext CreateImageServerContext(Action<IServiceCollection>? configureServices = null)
+    private MetadataV2ImageServerLayerResolver CreateBoundImageryResolver(AccessPolicy? accessPolicy)
     {
-        var services = new ServiceCollection();
-        services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
-        configureServices?.Invoke(services);
-        var context = new DefaultHttpContext();
-        context.RequestServices = services.BuildServiceProvider();
-        context.Request.Path = "/rest/services/1/ImageServer/tile/0/0/0";
-        context.Response.Body = new MemoryStream();
-        return context;
-    }
-
-    private static TestMetadataV2GraphProvider BuildGraphWithLayer(int layerIndex)
-        => new TestMetadataV2GraphBuilder()
-            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ObjectType.RasterDataset)
-            .AddService($"service-{layerIndex}", $"image-svc-{layerIndex}", protocols: [ServiceProtocols.ImageServer])
+        var graphProvider = new TestMetadataV2GraphBuilder()
+            .AddResource("resource-imagery", "imagery", MetadataV2ObjectType.RasterDataset, accessPolicy: accessPolicy)
+            .AddStorageBinding(
+                "binding-imagery",
+                "resource-imagery",
+                "imagery.rasters",
+                storageLayerId: 42)
+            .AddService("service-imagery", "imagery", protocols: [ServiceProtocols.ImageServer])
             .AddPublication(
-                $"publication-{layerIndex}",
-                $"service-{layerIndex}",
-                $"resource-{layerIndex}",
-                layerIndex: layerIndex,
-                serviceLocalId: "test-layer",
+                "publication-imagery",
+                "service-imagery",
+                "resource-imagery",
+                storageBindingId: "binding-imagery",
                 publicationType: MetadataV2LayerType.EsriImageLayer)
             .BuildProvider();
+        return new MetadataV2ImageServerLayerResolver(
+            new ResourceValidator(graphProvider),
+            graphProvider,
+            _rasterStore);
+    }
 
-    private static RasterInfo CreateTestRasterInfo() => new()
-    {
-        Id = 100,
-        LayerId = 1,
-        Name = "test-raster",
-        Width = 1024,
-        Height = 1024,
-        BandCount = 3,
-        PixelType = "uint8",
-        Srid = 4326,
-        GeoTransform = [0, 1, 0, 0, 0, -1],
-        Extent = new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 },
-        CreatedAt = DateTime.UtcNow
-    };
+    private static DefaultHttpContext CreateImageServerContext(Action<IServiceCollection>? configureServices = null)
+        => ImageServerTestFixtures.CreateContext("/rest/services/1/ImageServer/tile/0/0/0", configureServices);
+
+    private static RasterInfo CreateTestRasterInfo() => ImageServerTestFixtures.CreateWorldRgbRasterInfo();
 }

@@ -11,6 +11,7 @@ using Honua.Core.Features.Security.Domain;
 using Honua.Db.Databricks.Features.FeatureStore;
 using Honua.Db.Databricks.Features.FeatureStore.Services;
 using Honua.Db.Databricks.Features.Infrastructure;
+using Honua.Tests.ProviderUnitSupport;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Db.Databricks.Tests;
@@ -22,6 +23,25 @@ namespace Honua.Db.Databricks.Tests;
 [global::Xunit.Trait("Tier", "Fast")]
 public class DatabricksMetadataV2QueryTests
 {
+    private static readonly ParcelsLayerFixture Layer0 = new(DataProviderNames.Databricks, "main.gis.parcels")
+    {
+        LayerId = 0,
+        ObjectIdField = "id",
+        GeometryField = "geom",
+        GeometryType = MetadataV2GeometryType.Point,
+        AttributeFields = [new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true }],
+        ConnectionName = "warehouse",
+        StorageOptions = new Dictionary<string, JsonElement>
+        {
+            ["catalogName"] = JsonSerializer.SerializeToElement("main"),
+            ["schemaName"] = JsonSerializer.SerializeToElement("gis"),
+            ["tableName"] = JsonSerializer.SerializeToElement("parcels"),
+            ["geometryColumn"] = JsonSerializer.SerializeToElement("geom"),
+            ["primaryKeyColumn"] = JsonSerializer.SerializeToElement("id"),
+            ["storageSrid"] = JsonSerializer.SerializeToElement(4326)
+        }
+    };
+
     [Theory]
     [InlineData("databricks")]
     [InlineData("databrickssql")]
@@ -134,16 +154,7 @@ public class DatabricksMetadataV2QueryTests
                     WarehouseId = "wh-123",
                     Token = "dapi-test"
                 }))));
-        var (snapshot, service, resource, publication) = CreateLayer0Snapshot(connectionId);
-        var storageBinding = snapshot.ResolveStorageBinding(publication)
-            ?? throw new InvalidOperationException("Test snapshot did not include a storage binding.");
-        return new FeatureProviderBinding(
-            service,
-            resource,
-            publication,
-            storageBinding,
-            FeatureStorageMapping.FromMetadata(resource, storageBinding),
-            0,
+        return Layer0.CreateBinding(
             store,
             new DataConnection
             {
@@ -153,88 +164,7 @@ public class DatabricksMetadataV2QueryTests
             });
     }
 
-    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Object Resource, MetadataV2Layer Publication)
-        CreateLayer0Snapshot(Guid connectionId)
-    {
-        var service = new MetadataV2Service
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "svc-parcels", Name = "Parcels" },
-            SpatialReference = MetadataV2SpatialReference.Wgs84
-        };
-        var resource = new MetadataV2Object
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "Parcels" },
-            Type = MetadataV2ObjectType.FeatureDataset,
-            StorageBindingIds = ["binding-parcels"],
-            SchemaFields =
-            [
-                new MetadataV2Field
-                {
-                    Name = "id",
-                    Type = MetadataV2FieldType.BigInteger,
-                    Nullable = false,
-                    SemanticRoles = ["id.primary"]
-                },
-                new MetadataV2Field
-                {
-                    Name = "geom",
-                    Type = MetadataV2FieldType.Geometry,
-                    Nullable = false,
-                    SemanticRoles = ["geometry.primary"]
-                },
-                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true }
-            ],
-            Spatial = new MetadataV2ObjectSpatial
-            {
-                SpatialReference = MetadataV2SpatialReference.Wgs84,
-                GeometryType = MetadataV2GeometryType.Point,
-                PrimaryGeometryField = "geom"
-            }
-        };
-        var storageBinding = new MetadataV2StorageBinding
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "binding-parcels", Name = "binding-parcels" },
-            ResourceId = resource.Metadata.Id,
-            ConnectionId = connectionId.ToString(),
-            StorageType = MetadataV2StorageType.RelationalTable,
-            Locator = "main.gis.parcels",
-            StorageLayerId = 0,
-            Options = new Dictionary<string, JsonElement>
-            {
-                ["catalogName"] = JsonSerializer.SerializeToElement("main"),
-                ["schemaName"] = JsonSerializer.SerializeToElement("gis"),
-                ["tableName"] = JsonSerializer.SerializeToElement("parcels"),
-                ["geometryColumn"] = JsonSerializer.SerializeToElement("geom"),
-                ["primaryKeyColumn"] = JsonSerializer.SerializeToElement("id"),
-                ["storageSrid"] = JsonSerializer.SerializeToElement(4326)
-            }
-        };
-        var metadataConnection = new MetadataV2Connection
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = connectionId.ToString(), Name = "warehouse" },
-            Provider = DataProviderNames.Databricks
-        };
-        var publication = new MetadataV2Layer
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "pub-parcels", Name = "Parcels" },
-            ServiceId = service.Metadata.Id,
-            ResourceId = resource.Metadata.Id,
-            StorageBindingId = storageBinding.Metadata.Id,
-            Identifier = new MetadataV2LayerIdentifier { Value = "0", IsNumeric = true }
-        };
-        var graph = new MetadataV2Graph
-        {
-            Revision = 1,
-            Environment = "test",
-            Resources = [resource],
-            Connections = [metadataConnection],
-            StorageBindings = [storageBinding],
-            Services = [service],
-            Publications = [publication]
-        };
-
-        return (new MetadataV2GraphSnapshot(graph, "test", DateTimeOffset.UtcNow), service, resource, publication);
-    }
+    private static ParcelsLayerSnapshot CreateLayer0Snapshot(Guid connectionId) => Layer0.CreateSnapshot(connectionId);
 
     private sealed class BodyCapturingHandler : StubHttpMessageHandler
     {

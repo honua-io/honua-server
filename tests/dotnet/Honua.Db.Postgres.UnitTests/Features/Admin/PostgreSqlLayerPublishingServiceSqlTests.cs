@@ -1153,41 +1153,8 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_PreservesPublicationOverRepurposedBinding()
     {
-        var service = new MetadataV2Service
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "service-existing" },
-            ServiceType = MetadataV2ServiceType.EsriFeatureService,
-            Protocols = [ServiceProtocols.FeatureServer],
-        };
-        var failedResource = new MetadataV2Object
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "resource-added" },
-            StorageBindingIds = ["binding-added"],
-            PrimaryStorageBindingId = "binding-added",
-        };
-        var failedBinding = new MetadataV2StorageBinding
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "binding-added" },
-            ResourceId = failedResource.Metadata.Id,
-            StorageType = MetadataV2StorageType.RelationalTable,
-            Locator = "failed_table",
-        };
-        var failedPublication = CreatePublication(
-            "publication-failed",
-            service.Metadata.Id,
-            failedResource.Metadata.Id,
-            failedBinding.Metadata.Id,
-            0,
-            MetadataV2LayerType.EsriFeatureLayer);
-        var previous = new MetadataV2Graph { Revision = 7, Services = [service] };
-        var persisted = previous with
-        {
-            Revision = 8,
-            Services = [service with { PublicationIds = [failedPublication.Metadata.Id] }],
-            Resources = [failedResource],
-            StorageBindings = [failedBinding],
-            Publications = [failedPublication],
-        };
+        var (service, failedResource, failedBinding, failedPublication, previous, persisted) =
+            CreateFailedFeatureLayerAddition();
         var repurposedBinding = failedBinding with
         {
             StorageType = MetadataV2StorageType.ExternalApi,
@@ -1222,41 +1189,8 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_PreservesAddedPublicationIdOverRepurposedBinding()
     {
-        var service = new MetadataV2Service
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "service-existing" },
-            ServiceType = MetadataV2ServiceType.EsriFeatureService,
-            Protocols = [ServiceProtocols.FeatureServer],
-        };
-        var failedResource = new MetadataV2Object
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "resource-added" },
-            StorageBindingIds = ["binding-added"],
-            PrimaryStorageBindingId = "binding-added",
-        };
-        var failedBinding = new MetadataV2StorageBinding
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "binding-added" },
-            ResourceId = failedResource.Metadata.Id,
-            StorageType = MetadataV2StorageType.RelationalTable,
-            Locator = "failed_table",
-        };
-        var failedPublication = CreatePublication(
-            "publication-failed",
-            service.Metadata.Id,
-            failedResource.Metadata.Id,
-            failedBinding.Metadata.Id,
-            0,
-            MetadataV2LayerType.EsriFeatureLayer);
-        var previous = new MetadataV2Graph { Revision = 7, Services = [service] };
-        var persisted = previous with
-        {
-            Revision = 8,
-            Services = [service with { PublicationIds = [failedPublication.Metadata.Id] }],
-            Resources = [failedResource],
-            StorageBindings = [failedBinding],
-            Publications = [failedPublication],
-        };
+        var (_, failedResource, failedBinding, failedPublication, previous, persisted) =
+            CreateFailedFeatureLayerAddition();
         var repurposedBinding = failedBinding with
         {
             StorageType = MetadataV2StorageType.ExternalApi,
@@ -1285,42 +1219,8 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_DoesNotTreatBindingOwnershipAsTargetRepurposing()
     {
-        var service = new MetadataV2Service
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "service-existing" },
-            ServiceType = MetadataV2ServiceType.EsriFeatureService,
-            Protocols = [ServiceProtocols.FeatureServer],
-        };
-        var failedResource = new MetadataV2Object
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "resource-added" },
-            StorageBindingIds = ["binding-added"],
-            PrimaryStorageBindingId = "binding-added",
-        };
-        var failedBinding = new MetadataV2StorageBinding
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "binding-added" },
-            ResourceId = failedResource.Metadata.Id,
-            StorageType = MetadataV2StorageType.RelationalTable,
-            Locator = "failed_table",
-            StorageLayerId = 42,
-        };
-        var failedPublication = CreatePublication(
-            "publication-failed",
-            service.Metadata.Id,
-            failedResource.Metadata.Id,
-            failedBinding.Metadata.Id,
-            0,
-            MetadataV2LayerType.EsriFeatureLayer);
-        var previous = new MetadataV2Graph { Revision = 7, Services = [service] };
-        var persisted = previous with
-        {
-            Revision = 8,
-            Services = [service with { PublicationIds = [failedPublication.Metadata.Id] }],
-            Resources = [failedResource],
-            StorageBindings = [failedBinding],
-            Publications = [failedPublication],
-        };
+        var (_, failedResource, failedBinding, failedPublication, previous, persisted) =
+            CreateFailedFeatureLayerAddition(failedStorageLayerId: 42);
         var concurrentResource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-concurrent" },
@@ -1362,46 +1262,8 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RepairsExistingPublicationBeforeRemovingFailedBinding()
     {
-        var service = new MetadataV2Service
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "service-existing" },
-            PublicationIds = ["publication-existing"],
-        };
-        var existingResource = new MetadataV2Object
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "resource-existing" },
-            StorageBindingIds = ["binding-existing"],
-            PrimaryStorageBindingId = "binding-existing",
-        };
-        var existingBinding = new MetadataV2StorageBinding
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "binding-existing" },
-            ResourceId = existingResource.Metadata.Id,
-            StorageType = MetadataV2StorageType.RelationalTable,
-            Locator = "existing_table",
-            StorageLayerId = 7,
-        };
-        var existingPublication = CreatePublication(
-            "publication-existing",
-            service.Metadata.Id,
-            existingResource.Metadata.Id,
-            existingBinding.Metadata.Id,
-            0,
-            MetadataV2LayerType.EsriFeatureLayer);
-        var failedResource = new MetadataV2Object
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "resource-added" },
-            StorageBindingIds = ["binding-added"],
-            PrimaryStorageBindingId = "binding-added",
-        };
-        var failedBinding = new MetadataV2StorageBinding
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "binding-added" },
-            ResourceId = failedResource.Metadata.Id,
-            StorageType = MetadataV2StorageType.RelationalTable,
-            Locator = "failed_table",
-            StorageLayerId = 42,
-        };
+        var fixture = CreateExistingLayerWithFailedBinding();
+        var (_, existingResource, existingBinding, existingPublication, failedResource, failedBinding) = fixture;
         var previousTargets = new[]
         {
             (Resource: existingResource, Publication: existingPublication),
@@ -1411,20 +1273,7 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
         };
         foreach (var previousTarget in previousTargets)
         {
-            var previous = new MetadataV2Graph
-            {
-                Revision = 7,
-                Services = [service],
-                Resources = [previousTarget.Resource],
-                StorageBindings = [existingBinding],
-                Publications = [previousTarget.Publication],
-            };
-            var persisted = previous with
-            {
-                Revision = 8,
-                Resources = [previousTarget.Resource, failedResource],
-                StorageBindings = [existingBinding, failedBinding],
-            };
+            var (previous, persisted) = fixture.CreateGraphs(previousTarget.Resource, previousTarget.Publication);
             var currentResource = previousTarget.Resource with
             {
                 StorageBindingIds = [.. previousTarget.Resource.StorageBindingIds, failedBinding.Metadata.Id],
@@ -1475,46 +1324,8 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
     [Fact]
     public void BuildRebasedCompensatingMetadataV2Graph_RemovesExistingPublicationWhenOriginalTargetWasDeleted()
     {
-        var service = new MetadataV2Service
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "service-existing" },
-            PublicationIds = ["publication-existing"],
-        };
-        var existingResource = new MetadataV2Object
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "resource-existing" },
-            StorageBindingIds = ["binding-existing"],
-            PrimaryStorageBindingId = "binding-existing",
-        };
-        var existingBinding = new MetadataV2StorageBinding
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "binding-existing" },
-            ResourceId = existingResource.Metadata.Id,
-            StorageType = MetadataV2StorageType.RelationalTable,
-            Locator = "existing_table",
-            StorageLayerId = 7,
-        };
-        var existingPublication = CreatePublication(
-            "publication-existing",
-            service.Metadata.Id,
-            existingResource.Metadata.Id,
-            existingBinding.Metadata.Id,
-            0,
-            MetadataV2LayerType.EsriFeatureLayer);
-        var failedResource = new MetadataV2Object
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "resource-added" },
-            StorageBindingIds = ["binding-added"],
-            PrimaryStorageBindingId = "binding-added",
-        };
-        var failedBinding = new MetadataV2StorageBinding
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "binding-added" },
-            ResourceId = failedResource.Metadata.Id,
-            StorageType = MetadataV2StorageType.RelationalTable,
-            Locator = "failed_table",
-            StorageLayerId = 42,
-        };
+        var fixture = CreateExistingLayerWithFailedBinding();
+        var (_, existingResource, _, existingPublication, failedResource, failedBinding) = fixture;
         var previousTargets = new[]
         {
             (Resource: existingResource, Publication: existingPublication),
@@ -1525,20 +1336,7 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
         };
         foreach (var previousTarget in previousTargets)
         {
-            var previous = new MetadataV2Graph
-            {
-                Revision = 7,
-                Services = [service],
-                Resources = [previousTarget.Resource],
-                StorageBindings = [existingBinding],
-                Publications = [previousTarget.Publication],
-            };
-            var persisted = previous with
-            {
-                Revision = 8,
-                Resources = [previousTarget.Resource, failedResource],
-                StorageBindings = [existingBinding, failedBinding],
-            };
+            var (previous, persisted) = fixture.CreateGraphs(previousTarget.Resource, previousTarget.Publication);
 
             foreach (var deleteOriginalResource in new[] { true, false })
             {
@@ -3396,9 +3194,8 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
     public void IndexSourceGovernanceByStorageLayer_WithProtocolSpecificNameCollision_UsesFeatureServerResource()
     {
         var featureMetadata = new MetadataV2ObjectMetadata { Id = "resource-feature", License = "CC-BY-4.0" };
-        var graph = new MetadataV2Graph
-        {
-            Services =
+        var graph = CreateSharedNameGovernanceGraph(
+            featureMetadata,
             [
                 new MetadataV2Service
                 {
@@ -3412,32 +3209,7 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
                     Protocols = [ServiceProtocols.FeatureServer],
                 }
             ],
-            Resources =
-            [
-                new MetadataV2Object { Metadata = new MetadataV2ObjectMetadata { Id = "resource-ogc", License = "MIT" } },
-                new MetadataV2Object { Metadata = featureMetadata }
-            ],
-            StorageBindings =
-            [
-                new MetadataV2StorageBinding
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-ogc" },
-                    ResourceId = "resource-ogc",
-                    StorageLayerId = 7
-                },
-                new MetadataV2StorageBinding
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-feature" },
-                    ResourceId = "resource-feature",
-                    StorageLayerId = 7
-                }
-            ],
-            Publications =
-            [
-                CreatePublication("pub-ogc", "service-ogc", "resource-ogc", "binding-ogc", 7, MetadataV2LayerType.OgcCollection),
-                CreatePublication("pub-feature", "service-feature", "resource-feature", "binding-feature", 7, MetadataV2LayerType.EsriFeatureLayer)
-            ]
-        };
+            "service-ogc");
 
         var result = PostgreSqlLayerPublishingService.IndexSourceGovernanceByStorageLayer(graph, "shared");
 
@@ -3684,9 +3456,8 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
     public void IndexSourceGovernanceByStorageLayer_WithMixedPublicationsOnFeatureService_UsesEsriResource()
     {
         var featureMetadata = new MetadataV2ObjectMetadata { Id = "resource-feature", License = "CC-BY-4.0" };
-        var graph = new MetadataV2Graph
-        {
-            Services =
+        var graph = CreateSharedNameGovernanceGraph(
+            featureMetadata,
             [
                 new MetadataV2Service
                 {
@@ -3695,32 +3466,7 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
                     Protocols = [ServiceProtocols.FeatureServer],
                 }
             ],
-            Resources =
-            [
-                new MetadataV2Object { Metadata = new MetadataV2ObjectMetadata { Id = "resource-ogc", License = "MIT" } },
-                new MetadataV2Object { Metadata = featureMetadata }
-            ],
-            StorageBindings =
-            [
-                new MetadataV2StorageBinding
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-ogc" },
-                    ResourceId = "resource-ogc",
-                    StorageLayerId = 7
-                },
-                new MetadataV2StorageBinding
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-feature" },
-                    ResourceId = "resource-feature",
-                    StorageLayerId = 7
-                }
-            ],
-            Publications =
-            [
-                CreatePublication("pub-ogc", "service-feature", "resource-ogc", "binding-ogc", 7, MetadataV2LayerType.OgcCollection),
-                CreatePublication("pub-feature", "service-feature", "resource-feature", "binding-feature", 7, MetadataV2LayerType.EsriFeatureLayer)
-            ]
-        };
+            "service-feature");
 
         var result = PostgreSqlLayerPublishingService.IndexSourceGovernanceByStorageLayer(graph, "shared");
 
@@ -3844,44 +3590,7 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
             Lifecycle = MetadataV2LifecycleStatus.Active,
             State = MetadataV2OperationalState.Ready,
         };
-        var graph = new MetadataV2Graph
-        {
-            Revision = 7,
-            Resources =
-            [
-                new MetadataV2Object
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "resource-shared" },
-                    StorageBindingIds = ["binding-7", "binding-8"],
-                    PrimaryStorageBindingId = "binding-7",
-                    Status = activeStatus,
-                },
-            ],
-            StorageBindings =
-            [
-                new MetadataV2StorageBinding
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-7" },
-                    ResourceId = "resource-shared",
-                    StorageLayerId = 7,
-                    Status = activeStatus,
-                },
-                new MetadataV2StorageBinding
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-8" },
-                    ResourceId = "resource-shared",
-                    StorageLayerId = 8,
-                    Status = activeStatus,
-                },
-            ],
-            Publications =
-            [
-                CreatePublication("pub-7", "service-a", "resource-shared", "binding-7", 7,
-                    MetadataV2LayerType.EsriFeatureLayer) with { Status = activeStatus },
-                CreatePublication("pub-8", "service-a", "resource-shared", "binding-8", 8,
-                    MetadataV2LayerType.EsriFeatureLayer) with { Status = activeStatus },
-            ],
-        };
+        var graph = CreateSharedResourceTwoLayerGraph("service-a", activeStatus);
         var disabledAt = DateTimeOffset.Parse("2026-08-11T19:10:00Z", CultureInfo.InvariantCulture);
 
         var firstDisabled = PostgreSqlLayerPublishingService.BuildLayerEnabledMetadataV2Graph(
@@ -4216,9 +3925,8 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
             Lifecycle = MetadataV2LifecycleStatus.Active,
             State = MetadataV2OperationalState.Ready,
         };
-        var graph = new MetadataV2Graph
+        var graph = CreateSharedResourceTwoLayerGraph("service-alpha", activeStatus) with
         {
-            Revision = 7,
             Services =
             [
                 new MetadataV2Service
@@ -4228,40 +3936,6 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
                     Protocols = [ServiceProtocols.FeatureServer],
                     PublicationIds = ["pub-7", "pub-8"],
                 },
-            ],
-            Resources =
-            [
-                new MetadataV2Object
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "resource-shared" },
-                    StorageBindingIds = ["binding-7", "binding-8"],
-                    PrimaryStorageBindingId = "binding-7",
-                    Status = activeStatus,
-                },
-            ],
-            StorageBindings =
-            [
-                new MetadataV2StorageBinding
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-7" },
-                    ResourceId = "resource-shared",
-                    StorageLayerId = 7,
-                    Status = activeStatus,
-                },
-                new MetadataV2StorageBinding
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-8" },
-                    ResourceId = "resource-shared",
-                    StorageLayerId = 8,
-                    Status = activeStatus,
-                },
-            ],
-            Publications =
-            [
-                CreatePublication("pub-7", "service-alpha", "resource-shared", "binding-7", 7,
-                    MetadataV2LayerType.EsriFeatureLayer) with { Status = activeStatus },
-                CreatePublication("pub-8", "service-alpha", "resource-shared", "binding-8", 8,
-                    MetadataV2LayerType.EsriFeatureLayer) with { Status = activeStatus },
             ],
         };
 
@@ -4580,94 +4254,32 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
     [Fact]
     public void BuildLinkedLayerMetadataV2Graph_WithNonFeatureExactIdCollision_ReturnsConflict()
     {
-        var graph = new MetadataV2Graph
-        {
-            Services =
-            [
-                new MetadataV2Service
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "beta", Name = "disabled-name" },
-                    ServiceType = MetadataV2ServiceType.OgcApiFeatures,
-                    Protocols = [ServiceProtocols.OgcFeatures],
-                },
-                new MetadataV2Service
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "service-enabled", Name = "beta" },
-                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
-                    Protocols = [ServiceProtocols.FeatureServer],
-                },
-            ],
-            Resources =
-            [
-                new MetadataV2Object { Metadata = new MetadataV2ObjectMetadata { Id = "resource-alpha" } },
-            ],
-            StorageBindings =
-            [
-                new MetadataV2StorageBinding
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-layer-101" },
-                    ResourceId = "resource-alpha",
-                    StorageLayerId = 101,
-                },
-            ],
-        };
-
-        var action = () => PostgreSqlLayerPublishingService.BuildLinkedLayerMetadataV2Graph(
-            graph,
-            "beta",
-            101,
-            "Parcels",
-            4326,
-            DateTimeOffset.Parse("2026-08-10T12:00:00Z", CultureInfo.InvariantCulture));
-
-        var exception = action.Should().Throw<LayerPublishingException>().Which;
-        exception.ErrorKind.Should().Be(LayerPublishingErrorKind.Conflict);
-        exception.LayerId.Should().Be(101);
-        exception.Message.Should().Contain("does not resolve to one unique Esri FeatureServer service");
+        AssertLinkedLayer101ToBetaConflicts(CreateAlphaLayer101Graph(
+            new MetadataV2Service
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "beta", Name = "disabled-name" },
+                ServiceType = MetadataV2ServiceType.OgcApiFeatures,
+                Protocols = [ServiceProtocols.OgcFeatures],
+            },
+            new MetadataV2Service
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "service-enabled", Name = "beta" },
+                ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                Protocols = [ServiceProtocols.FeatureServer],
+            }));
     }
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildLinkedLayerMetadataV2Graph_WithDisabledNameOnly_ReturnsConflict()
     {
-        var graph = new MetadataV2Graph
-        {
-            Services =
-            [
-                new MetadataV2Service
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "service-disabled", Name = "beta" },
-                    ServiceType = MetadataV2ServiceType.EsriFeatureService,
-                    Protocols = [ServiceProtocols.OgcFeatures],
-                },
-            ],
-            Resources =
-            [
-                new MetadataV2Object { Metadata = new MetadataV2ObjectMetadata { Id = "resource-alpha" } },
-            ],
-            StorageBindings =
-            [
-                new MetadataV2StorageBinding
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-layer-101" },
-                    ResourceId = "resource-alpha",
-                    StorageLayerId = 101,
-                },
-            ],
-        };
-
-        var action = () => PostgreSqlLayerPublishingService.BuildLinkedLayerMetadataV2Graph(
-            graph,
-            "beta",
-            101,
-            "Parcels",
-            4326,
-            DateTimeOffset.Parse("2026-08-10T12:00:00Z", CultureInfo.InvariantCulture));
-
-        var exception = action.Should().Throw<LayerPublishingException>().Which;
-        exception.ErrorKind.Should().Be(LayerPublishingErrorKind.Conflict);
-        exception.LayerId.Should().Be(101);
-        exception.Message.Should().Contain("does not resolve to one unique Esri FeatureServer service");
+        AssertLinkedLayer101ToBetaConflicts(CreateAlphaLayer101Graph(
+            new MetadataV2Service
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "service-disabled", Name = "beta" },
+                ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                Protocols = [ServiceProtocols.OgcFeatures],
+            }));
     }
 
     [global::Xunit.Trait("Tier", "Fast")]

@@ -17,6 +17,7 @@ using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.TestKit.Attributes;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using static Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services.FormatterTestResources;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
@@ -998,11 +999,8 @@ public sealed class GeoArrowQueryFormatterTests
         return $@"{{""crs"":{projJson},""crs_type"":""projjson""}}";
     }
 
-    /// <summary>
-    /// honua-server#4666: the GeoArrow writer shared the GeoParquet writer's one-sided spatial
-    /// predicate, so a resource declaring geometry only through its schema fields (no
-    /// <see cref="MetadataV2Object.Spatial"/> slot) was streamed as attribute-only Arrow.
-    /// </summary>
+    // A resource may declare geometry only through its schema fields, with no Spatial slot;
+    // the stream must still carry the geometry column rather than attribute-only Arrow.
     [Fact]
     public async Task FormatAsGeoArrowAsync_WhenSpatialSlotIsAbsentButSchemaDeclaresGeometry_StillWritesGeometryColumn()
     {
@@ -1055,30 +1053,15 @@ public sealed class GeoArrowQueryFormatterTests
         ((Point)decoded).Y.Should().BeApproximately(ExpectedY, 1e-9);
     }
 
-    /// <summary>
-    /// A resource whose geometry is declared only by a <see cref="MetadataV2FieldType.Geometry"/>
-    /// schema field, with no <see cref="MetadataV2Object.Spatial"/> slot at all.
-    /// </summary>
+    private static MetadataV2ObjectMetadata HarborsMetadata() => new()
+    {
+        Id = "harbors",
+        Name = "harbors",
+        Description = "Harbors"
+    };
+
     private static MetadataV2Object CreateResourceWithoutSpatialSlot(params MetadataV2Field[] fields)
-        => new()
-        {
-            Metadata = new MetadataV2ObjectMetadata
-            {
-                Id = "harbors",
-                Name = "harbors",
-                Description = "Harbors"
-            },
-            SchemaFields =
-            [
-                .. fields,
-                new MetadataV2Field
-                {
-                    Name = "shape",
-                    Type = MetadataV2FieldType.Geometry,
-                    Nullable = true
-                }
-            ]
-        };
+        => FormatterTestResources.WithoutSpatialSlot(HarborsMetadata(), fields);
 
     /// <summary>
     /// honua-server#4747: GeoArrow encoded <c>geometry_types</c> with the same reflection-based
@@ -1149,37 +1132,5 @@ public sealed class GeoArrowQueryFormatterTests
     private static MetadataV2Object CreateResourceWithGeometryType(
         MetadataV2GeometryType geometryType,
         params MetadataV2Field[] fields)
-        => new()
-        {
-            Metadata = new MetadataV2ObjectMetadata
-            {
-                Id = "harbors",
-                Name = "harbors",
-                Description = "Harbors"
-            },
-            SchemaFields =
-            [
-                .. fields,
-                new MetadataV2Field
-                {
-                    Name = "shape",
-                    Type = MetadataV2FieldType.Geometry,
-                    Nullable = true,
-                    SemanticRoles = ["geometry.primary"]
-                }
-            ],
-            Spatial = new MetadataV2ObjectSpatial
-            {
-                SpatialReference = MetadataV2SpatialReference.Wgs84,
-                GeometryType = geometryType,
-                PrimaryGeometryField = "shape"
-            }
-        };
-
-    private static byte[] CreatePointWkb(double x, double y)
-        => new WKBWriter().Write(new Point(x, y) { SRID = 4326 });
-
-    private static byte[] CreatePointWkbWithZm(double x, double y, double z, double m)
-        => new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: true)
-            .Write(new Point(new CoordinateZM(x, y, z, m)) { SRID = 4326 });
+        => FormatterTestResources.WithGeometryType(HarborsMetadata(), geometryType, fields);
 }
