@@ -745,7 +745,7 @@ public sealed class ImageServerMosaicIntegrationTests
         var fixture = await CreateFixtureAsync(edition);
         try
         {
-            await RasterIntegrationTestData.RunWithLayerRastersAsync(fixture, rasters, () => test(fixture));
+            await RasterIntegrationTestData.RunWithLayerRastersAsync(fixture, new RasterLayerSeed(rasters), () => test(fixture));
         }
         finally
         {

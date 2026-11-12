@@ -22,6 +22,8 @@ public sealed record RasterSeed(
     int Srid = 4326,
     string? Description = null);
 
+public sealed record RasterLayerSeed(IReadOnlyList<RasterSeed> Rasters, int LayerId = WebAppFixture.TestLayerId);
+
 public static class RasterIntegrationTestData
 {
     public static readonly DateTimeOffset WestAcquisition = new(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
@@ -38,7 +40,7 @@ public static class RasterIntegrationTestData
         Func<Task> action,
         int layerId = WebAppFixture.TestLayerId)
     {
-        return RunWithLayerRastersAsync(fixture, CreateIssue522Mosaic(), action, layerId);
+        return RunWithLayerRastersAsync(fixture, new RasterLayerSeed(CreateIssue522Mosaic(), layerId), action);
     }
 
     // Seeds and runs the action under one schema-mutation lock hold, so no parallel collection can
@@ -46,17 +48,17 @@ public static class RasterIntegrationTestData
     // not reentrant across connections: the action must not take it again.
     public static Task RunWithLayerRastersAsync(
         WebAppFixture fixture,
-        IReadOnlyList<RasterSeed> rasters,
-        Func<Task> action,
-        int layerId = WebAppFixture.TestLayerId)
+        RasterLayerSeed seed,
+        Func<Task> action)
     {
         ArgumentNullException.ThrowIfNull(fixture);
-        ArgumentNullException.ThrowIfNull(rasters);
+        ArgumentNullException.ThrowIfNull(seed);
+        ArgumentNullException.ThrowIfNull(seed.Rasters);
         ArgumentNullException.ThrowIfNull(action);
 
         return fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
         {
-            await ReplaceLayerRastersUnderLockAsync(fixture, layerId, rasters).ConfigureAwait(false);
+            await ReplaceLayerRastersUnderLockAsync(fixture, seed.LayerId, seed.Rasters).ConfigureAwait(false);
             await action().ConfigureAwait(false);
         });
     }
