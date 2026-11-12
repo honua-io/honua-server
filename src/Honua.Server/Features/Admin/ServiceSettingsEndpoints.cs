@@ -67,13 +67,13 @@ internal static partial class ServiceSettingsEndpoints
             .WithDisplayName("Update Time Info")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
 
-        group.MapGet("/{serviceName}/layers/{layerId:int}/metadata", HandleGetLayerMetadata)
+        group.MapGet("/{serviceName}/layers/{serviceLayerIndex:int}/metadata", HandleGetLayerMetadata)
             .WithDisplayName("Get Layer Metadata")
             .Produces<ApiResponse<LayerMetadataResponse>>(200)
             .Produces<ApiResponse<object>>(404)
             .ProducesProblem(409);
 
-        group.MapPut("/{serviceName}/layers/{layerId:int}/metadata", HandleUpdateLayerMetadata)
+        group.MapPut("/{serviceName}/layers/{serviceLayerIndex:int}/metadata", HandleUpdateLayerMetadata)
             .WithDisplayName("Update Layer Metadata")
             .Produces<ApiResponse<LayerMetadataResponse>>(200)
             .Produces<ApiResponse<object>>(400)
@@ -315,14 +315,14 @@ internal static partial class ServiceSettingsEndpoints
                 title: "Service-level TimeInfo update not supported",
                 detail:
                     "Service-scope TimeInfo is not representable in the Metadata v2 graph. " +
-                    "Use PUT /admin/services/{serviceName}/layers/{layerId}/metadata instead.",
+                    "Use PUT /admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata instead.",
                 statusCode: StatusCodes.Status501NotImplemented));
     }
 
     private static async Task<IResult>
         HandleUpdateLayerMetadata(
             string serviceName,
-            int layerId,
+            int serviceLayerIndex,
             UpdateLayerMetadataRequest request,
             [FromServices] IMetadataV2GraphProvider graphProvider,
             [FromServices] IMetadataV2GraphStore graphStore,
@@ -332,7 +332,7 @@ internal static partial class ServiceSettingsEndpoints
         try
         {
             var snapshot = await GetSnapshotForServiceAsync(graphProvider, graphStore, serviceName, context.RequestAborted).ConfigureAwait(false);
-            var target = ResolveFeatureLayerTarget(snapshot, serviceName, layerId);
+            var target = ResolveFeatureLayerTarget(snapshot, serviceName, serviceLayerIndex);
             if (target.Error is not null)
                 return target.Error;
             var resource = target.Resource!;
@@ -344,7 +344,7 @@ internal static partial class ServiceSettingsEndpoints
                 ServiceSettingsLog.UpdateLayerMetadataFailed(
                     logger,
                     serviceName,
-                    layerId,
+                    serviceLayerIndex,
                     new NotSupportedException("Raster mosaic settings have no Metadata v2 representation yet."));
                 return TypedResults.Problem(
                     title: "Raster mosaic settings update not supported",
@@ -372,7 +372,7 @@ internal static partial class ServiceSettingsEndpoints
             var mutation = await MutateResourceByIdAsync(
                 graphStore,
                 serviceName,
-                layerId,
+                serviceLayerIndex,
                 resource.Metadata.Id,
                 next =>
                 {
@@ -434,7 +434,7 @@ internal static partial class ServiceSettingsEndpoints
             {
                 return TypedResults.Problem(
                     title: "FeatureServer layer changed during update",
-                    detail: $"Layer {layerId} in service '{serviceName}' was relinked while its metadata was being updated.",
+                    detail: $"Layer {serviceLayerIndex} in service '{serviceName}' was relinked while its metadata was being updated.",
                     statusCode: StatusCodes.Status409Conflict);
             }
 
@@ -442,14 +442,14 @@ internal static partial class ServiceSettingsEndpoints
             if (persistedResource is null)
             {
                 return TypedResults.NotFound(
-                    ApiResponse<object>.Failure($"Layer {layerId} not found in service '{serviceName}'."));
+                    ApiResponse<object>.Failure($"Layer {serviceLayerIndex} not found in service '{serviceName}'."));
             }
 
             await InvalidateServiceCatalogCacheAsync(context, graphProvider, serviceName, logger,
                 request.Editing is not null ? persistedResource.Metadata.Id : null).ConfigureAwait(false);
 
             var response = BuildLayerMetadataResponse(
-                layerId,
+                serviceLayerIndex,
                 persistedResource.Metadata.Name,
                 persistedResource.Metadata,
                 persistedResource.AccessPolicy,
@@ -464,7 +464,7 @@ internal static partial class ServiceSettingsEndpoints
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            ServiceSettingsLog.UpdateLayerMetadataFailed(logger, serviceName, layerId, ex);
+            ServiceSettingsLog.UpdateLayerMetadataFailed(logger, serviceName, serviceLayerIndex, ex);
             return TypedResults.Problem(
                 title: "Layer metadata update failed",
                 detail: "An internal error occurred while updating layer metadata.",
@@ -571,7 +571,7 @@ internal static partial class ServiceSettingsEndpoints
     }
 
     private static LayerMetadataResponse BuildLayerMetadataResponse(
-        int layerId,
+        int serviceLayerIndex,
         string layerName,
         MetadataV2ObjectMetadata metadata,
         AccessPolicy? accessPolicy,
@@ -581,7 +581,7 @@ internal static partial class ServiceSettingsEndpoints
     {
         return new LayerMetadataResponse
         {
-            LayerId = layerId,
+            ServiceLayerIndex = serviceLayerIndex,
             LayerName = layerName,
             Editing = editing,
             License = metadata.License,
@@ -857,7 +857,7 @@ internal static partial class ServiceSettingsEndpoints
     private static async Task<(MetadataV2Resource? Resource, bool BindingConflict)> MutateResourceByIdAsync(
         IMetadataV2GraphStore graphStore,
         string serviceName,
-        int layerId,
+        int serviceLayerIndex,
         string resourceId,
         Func<MetadataV2Resource, MetadataV2Resource> mutate,
         MetadataV2EditingPatch? editingPatch,
@@ -869,7 +869,7 @@ internal static partial class ServiceSettingsEndpoints
             var bindingState = ResolveFeatureLayerBindingState(
                 snapshot.Graph,
                 serviceName,
-                layerId,
+                serviceLayerIndex,
                 resourceId);
             if (bindingState == FeatureLayerBindingState.Conflict)
             {
@@ -906,7 +906,7 @@ internal static partial class ServiceSettingsEndpoints
                 var publicationIds = snapshot.Graph.Publications.Where(publication =>
                         publication.ResourceId == resourceId && serviceIds.Contains(publication.ServiceId) &&
                         publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
-                        publication.LayerIndex == layerId && snapshot.IsRoutable(publication))
+                        publication.LayerIndex == serviceLayerIndex && snapshot.IsRoutable(publication))
                     .Select(publication => publication.Metadata.Id).ToHashSet(StringComparer.Ordinal);
                 updated = MetadataV2EditingConfiguration.Apply(updated, resourceId, publicationIds, editingPatch);
                 mutatedResource = updated.Resources.Single(resource => resource.Metadata.Id == resourceId);
@@ -927,7 +927,7 @@ internal static partial class ServiceSettingsEndpoints
     private static FeatureLayerBindingState ResolveFeatureLayerBindingState(
         MetadataV2Graph graph,
         string serviceName,
-        int layerId,
+        int serviceLayerIndex,
         string expectedResourceId)
     {
         var matchingServices = graph.Services
@@ -948,7 +948,7 @@ internal static partial class ServiceSettingsEndpoints
         }
 
         var snapshot = new MetadataV2GraphSnapshot(graph, "\"feature-layer-binding\"", DateTimeOffset.UtcNow);
-        var currentResourceIds = FindLayerMetadataResourceIds(snapshot, featureServiceIds, layerId);
+        var currentResourceIds = FindLayerMetadataResourceIds(snapshot, featureServiceIds, serviceLayerIndex);
         if (currentResourceIds.Length == 0)
         {
             return FeatureLayerBindingState.NotFound;

@@ -114,7 +114,7 @@ public sealed partial class LayerPublishingIntegrationTests
         publishResponse.IsSuccessStatusCode.Should().BeTrue(publishBody);
         using var publishDocument = JsonDocument.Parse(publishBody);
         var details = publishDocument.RootElement.GetProperty("data").GetProperty("result").GetProperty("details");
-        var layerId = int.Parse(details.GetProperty("layerId").GetString()!, CultureInfo.InvariantCulture);
+        var layerId = int.Parse(details.GetProperty("storageLayerId").GetString()!, CultureInfo.InvariantCulture);
         return (layerId, Honua.Ai.Protocols.Mcp.McpResourceUris.PublishedServiceUri(details.GetProperty("serviceName").GetString()!));
     }
 }

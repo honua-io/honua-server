@@ -10,11 +10,12 @@ using NpgsqlTypes;
 
 namespace Honua.Server.Features.Infrastructure.Progress;
 
-// An operation whose snapshot has not expired is listed as active whatever its status; callers
-// filter by status, as they did before.
+// An operation whose snapshot has not expired is listed as active whatever its status, unless it was
+// quarantined as unreadable; callers filter by status, as they did before.
 internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) : IUniversalProgressStore, IExpiredRowSweep
 {
     private const string LiveOperation = "operation_id = @operation_id AND expires_at > now()";
+    private const string QuarantinedStatus = "Quarantined";
     private const string SnapshotAssignments =
         "operation_type = @operation_type, status = @status, payload = @payload, expires_at = now() + @lifetime";
     private static readonly TimeSpan _defaultLifetime = TimeSpan.FromHours(24);
@@ -90,6 +91,21 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
         var payload = await ReadPayloadAsync(operationId, cancellationToken).ConfigureAwait(false);
         return payload is null ? null : OperationProgressSerializer.Deserialize(payload);
     }
+
+    public Task QuarantineProgressAsync(string operationId, OperationType operationType, CancellationToken cancellationToken = default)
+        => database.ExecuteAsync(
+            async (connection, token) =>
+            {
+                await using var command = new NpgsqlCommand(
+                    $"UPDATE {_progress} SET status = @status WHERE {LiveOperation} AND operation_type = @operation_type",
+                    connection);
+                command.Parameters.Add(new NpgsqlParameter("operation_id", NpgsqlDbType.Text) { Value = operationId });
+                command.Parameters.Add(new NpgsqlParameter("operation_type", NpgsqlDbType.Text) { Value = operationType.ToString() });
+                command.Parameters.Add(new NpgsqlParameter("status", NpgsqlDbType.Text) { Value = QuarantinedStatus });
+                await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+            },
+            StatementRepeat.SafeToRepeat,
+            cancellationToken);
 
     public Task DeleteProgressAsync(string operationId, CancellationToken cancellationToken = default)
         => database.ExecuteAsync(
@@ -180,9 +196,11 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
                 await using var command = new NpgsqlCommand(
                     $"""
                     SELECT {column} FROM {_progress}
-                    WHERE expires_at > now() AND (@operation_type::text IS NULL OR operation_type = @operation_type)
+                    WHERE expires_at > now() AND status <> @quarantined
+                      AND (@operation_type::text IS NULL OR operation_type = @operation_type)
                     """,
                     connection);
+                command.Parameters.Add(new NpgsqlParameter("quarantined", NpgsqlDbType.Text) { Value = QuarantinedStatus });
                 command.Parameters.Add(new NpgsqlParameter("operation_type", NpgsqlDbType.Text)
                 {
                     Value = operationType.HasValue ? operationType.Value.ToString() : DBNull.Value
