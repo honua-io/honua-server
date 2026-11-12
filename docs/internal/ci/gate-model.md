@@ -136,7 +136,8 @@ shared lean gate was 18m09s, split roughly:
 
 The build is now separated from test execution. Pristine outputs are packaged
 once before tests or coverage can modify them. Downstream consumers verify the
-same-run source, SDK, platform and build-property identity, then compile only
+same-run source, SDK, platform and build-property identity, relocate staged MVC
+and static-asset content roots to their own checkout, then compile only
 missing projects as one scoped fallback graph. Both architecture suites run
 after projection regeneration; the full collector remains intact. Full CI also
 uses a managed producer and an independent, required full-solution format job.
