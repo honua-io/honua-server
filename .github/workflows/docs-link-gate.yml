@@ -24,6 +24,7 @@ name: Docs Link Gate
 # Keep scripts/ci triggers limited to the actual checkers and their manifests.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches: [trunk]
     paths:
       - 'README.md'
@@ -63,6 +64,7 @@ concurrency:
 
 jobs:
   check:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: Documentation links and anchors
     runs-on: ubuntu-latest
     # Python over Markdown files and a handful of source roots: a
