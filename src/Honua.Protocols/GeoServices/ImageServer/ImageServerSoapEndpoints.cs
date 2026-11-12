@@ -608,7 +608,7 @@ internal static partial class ImageServerSoapEndpoints
             requireAllBandsValid,
             cancellationToken).ConfigureAwait(false);
 
-        if (returnMimeData && TryGetExportedImageBytes(exportResult, out var imageData))
+        if (returnMimeData && GetExportedImageBytes(exportResult) is { } imageData)
         {
             XNamespace xsi = XmlSchemaInstanceNamespace;
             var mimeResult = new XElement(
@@ -749,7 +749,7 @@ internal static partial class ImageServerSoapEndpoints
                 current.PublicationId!,
                 AuthorizationOperation.Export,
                 cancellationToken).ConfigureAwait(false);
-            if (TryGetExportedImageBytes(uncompressed, out var imageData))
+            if (GetExportedImageBytes(uncompressed) is { } imageData)
             {
                 if (!TryBuildEsriPixelBlock(imageData.Span, width, height, bandCount, out var pixelBlock))
                 {
@@ -780,7 +780,7 @@ internal static partial class ImageServerSoapEndpoints
             current.PublicationId!,
             AuthorizationOperation.Export,
             cancellationToken).ConfigureAwait(false);
-        if (TryGetExportedImageBytes(exportResult, out var lercData))
+        if (GetExportedImageBytes(exportResult) is { } lercData)
         {
             return CreateSoapResponse(
                 requestContext.SoapNamespace,

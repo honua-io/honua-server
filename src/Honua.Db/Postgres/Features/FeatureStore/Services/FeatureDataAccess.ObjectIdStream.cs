@@ -5,7 +5,6 @@ using System.Data;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Honua.Core.Features.FeatureStore.Domain;
-using CoreParameterizedQuery = Honua.Core.Features.FeatureStore.Domain.ParameterizedQuery;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
@@ -14,9 +13,7 @@ internal sealed partial class FeatureDataAccess
     // The stopwatch covers database awaits only, so a slow client never reads as a slow query, and a
     // consumer that stops early is not recorded as a failed query.
     public async IAsyncEnumerable<long> StreamSelectObjectIdsQueryAsync(
-        CoreParameterizedQuery query,
-        FeatureQuery featureQuery,
-        int layerId,
+        ObjectIdQueryRequest request,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var databaseTime = new Stopwatch();
@@ -28,8 +25,8 @@ internal sealed partial class FeatureDataAccess
             await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
             await using var command = await CreateCommandAsync(
                 connection,
-                query.Sql,
-                cmd => AddQueryParameters(cmd, featureQuery, layerId, query.WhereParameters),
+                request.Query.Sql,
+                cmd => AddQueryParameters(cmd, request.FeatureQuery, request.LayerId, request.Query.WhereParameters),
                 cancellationToken).ConfigureAwait(false);
             await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleResult, cancellationToken).ConfigureAwait(false);
 
@@ -54,7 +51,7 @@ internal sealed partial class FeatureDataAccess
             }
             else
             {
-                RecordObjectIdQuerySuccess(layerId, databaseTime.ElapsedMilliseconds, count);
+                RecordObjectIdQuerySuccess(request.LayerId, databaseTime.ElapsedMilliseconds, count);
             }
         }
     }

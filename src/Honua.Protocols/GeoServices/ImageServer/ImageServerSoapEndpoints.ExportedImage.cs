@@ -9,19 +9,12 @@ internal static partial class ImageServerSoapEndpoints
 {
     // exportImage answers with the encoded bytes either as a byte result (small or empty images) or as a
     // stream result over a buffer (encoded exports); SOAP embeds the bytes in XML.
-    internal static bool TryGetExportedImageBytes(IResult exportResult, out ReadOnlyMemory<byte> imageData)
-    {
-        switch (exportResult)
+    internal static ReadOnlyMemory<byte>? GetExportedImageBytes(IResult exportResult)
+        => exportResult switch
         {
-            case FileContentHttpResult { FileContents: var contents }:
-                imageData = contents;
-                return true;
-            case FileStreamHttpResult { FileStream: MemoryStream stream } when stream.TryGetBuffer(out var buffer):
-                imageData = buffer;
-                return true;
-            default:
-                imageData = default;
-                return false;
-        }
-    }
+            FileContentHttpResult { FileContents: var contents } => contents,
+            FileStreamHttpResult { FileStream: MemoryStream stream } when stream.TryGetBuffer(out var buffer)
+                => (ReadOnlyMemory<byte>)buffer,
+            _ => null
+        };
 }

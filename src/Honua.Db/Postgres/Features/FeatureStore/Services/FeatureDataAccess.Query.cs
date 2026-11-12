@@ -420,7 +420,7 @@ internal sealed partial class FeatureDataAccess
         int layerId,
         CancellationToken cancellationToken)
     {
-        var objectIds = await StreamSelectObjectIdsQueryAsync(query, featureQuery, layerId, cancellationToken).ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        var objectIds = await StreamSelectObjectIdsQueryAsync(new ObjectIdQueryRequest(query, featureQuery, layerId), cancellationToken).ToArrayAsync(cancellationToken).ConfigureAwait(false);
         return [.. objectIds];
     }
 

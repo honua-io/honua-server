@@ -15,28 +15,32 @@ public sealed class ImageServerSoapExportedImageTests
 
     [UnitTest]
     [Operation(Operations.Export)]
-    public void TryGetExportedImageBytes_EncodedRasterStreamResult_ReturnsTheBytes()
+    public void GetExportedImageBytes_EncodedRasterStreamResult_ReturnsTheBytes()
     {
         var result = EncodedRasterResults.File(Encoded, "image/tiff");
 
-        ImageServerSoapEndpoints.TryGetExportedImageBytes(result, out var imageData).Should().BeTrue();
-        imageData.ToArray().Should().Equal(Encoded);
+        var imageData = ImageServerSoapEndpoints.GetExportedImageBytes(result);
+
+        imageData.Should().NotBeNull();
+        imageData!.Value.ToArray().Should().Equal(Encoded);
     }
 
     [UnitTest]
     [Operation(Operations.Export)]
-    public void TryGetExportedImageBytes_ByteResult_ReturnsTheBytes()
+    public void GetExportedImageBytes_ByteResult_ReturnsTheBytes()
     {
         var result = Results.File(Encoded, "image/tiff");
 
-        ImageServerSoapEndpoints.TryGetExportedImageBytes(result, out var imageData).Should().BeTrue();
-        imageData.ToArray().Should().Equal(Encoded);
+        var imageData = ImageServerSoapEndpoints.GetExportedImageBytes(result);
+
+        imageData.Should().NotBeNull();
+        imageData!.Value.ToArray().Should().Equal(Encoded);
     }
 
     [UnitTest]
     [Operation(Operations.Export)]
-    public void TryGetExportedImageBytes_ProblemResult_ReturnsFalse()
+    public void GetExportedImageBytes_ProblemResult_ReturnsNull()
     {
-        ImageServerSoapEndpoints.TryGetExportedImageBytes(Results.BadRequest(), out _).Should().BeFalse();
+        ImageServerSoapEndpoints.GetExportedImageBytes(Results.BadRequest()).Should().BeNull();
     }
 }

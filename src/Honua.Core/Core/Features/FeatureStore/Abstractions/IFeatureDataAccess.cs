@@ -93,12 +93,10 @@ internal interface IFeatureDataAccess
 
     // Providers without a row-at-a-time reader fall back to the collected ids.
     async IAsyncEnumerable<long> StreamSelectObjectIdsQueryAsync(
-        ParameterizedQuery query,
-        FeatureQuery featureQuery,
-        int layerId,
+        ObjectIdQueryRequest request,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var objectIds = await ExecuteSelectObjectIdsQueryAsync(query, featureQuery, layerId, cancellationToken).ConfigureAwait(false);
+        var objectIds = await ExecuteSelectObjectIdsQueryAsync(request.Query, request.FeatureQuery, request.LayerId, cancellationToken).ConfigureAwait(false);
         foreach (var objectId in objectIds)
         {
             yield return objectId;

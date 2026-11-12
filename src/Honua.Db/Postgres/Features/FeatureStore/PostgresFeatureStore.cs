@@ -266,7 +266,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var objectIdsQuery = _queryBuilder.BuildObjectIdsQuery(layerId, query, geometryStorageType);
-        await foreach (var objectId in _dataAccess.StreamSelectObjectIdsQueryAsync(objectIdsQuery, query, layerId, cancellationToken).ConfigureAwait(false))
+        await foreach (var objectId in _dataAccess.StreamSelectObjectIdsQueryAsync(new ObjectIdQueryRequest(objectIdsQuery, query, layerId), cancellationToken).ConfigureAwait(false))
         {
             yield return objectId;
         }
