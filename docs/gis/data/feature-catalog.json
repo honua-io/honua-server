@@ -126,7 +126,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.FieldMaskPolicyEndpointsTests.FieldMaskPolicy_MasksColumn_ForRestrictedRoleOnly"
+        "Honua.Server.Tests.Features.Admin.FieldMaskPolicyEndpointsTests.FieldMaskPolicy_MasksColumn_ForRestrictedRoleOnly",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ShareVisibilityAndRowPolicies_AgentKey_CannotWidenAccess"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -509,6 +510,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ShareVisibilityAndRowPolicies_AgentKey_CannotWidenAccess",
         "Honua.Server.Tests.Features.Admin.RowLevelSecurityEndpointsTests.RlsPolicy_FiltersFeatureServerQuery_ByCallerClaim"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -15944,6 +15946,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ShareVisibilityAndRowPolicies_AgentKey_CannotWidenAccess",
         "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.PatchContent_UpdatesDisplayableFields",
         "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.PatchContent_VisibilityToTeam_WithoutTeamScope_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_StoredIdentityCollision_PreservesGraphAuthorizationAndOwnership"
@@ -16917,6 +16920,8 @@
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.RefreshMaterializedFeatures_AfterSourceUpdate_RebuildsSnapshotMvtReads",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.RefreshMaterializedFeatures_OnManagedStoreLayer_IsRefusedAndKeepsEdits",
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.PostPublishLayer_WithoutAuth_Returns401",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.PublishLayer_AgentKey_IsNotExemptAsAdministrator",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.PublishLayer_ApprovedOperationReplay_IsNotRefusedForApproval",
         "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithLargeSingleRowGroup_ImportsFeatures",
         "Honua.Server.Tests.Import.ImportEndpointTests.ImportFile_DefaultOperationalSchema_CanDiscoverPublishAndQueryFeatureServer",
         "Honua.Server.Tests.Seed.AdminSampleSeedPublishThroughAdminApiTests.AdminSampleSourceTables_PublishThroughAdminApi_ReturnFeatureServerCountsAndExtents"
@@ -19624,6 +19629,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ShareVisibilityAndRowPolicies_AgentKey_CannotWidenAccess",
         "Honua.Server.Tests.Features.Console.ConsoleShareEndpointsTests.MintPublicLink_OnVisibilityDerivedPublicItem_PreservesPublicIndexedAndResolves",
         "Honua.Server.Tests.Features.Console.ConsoleShareEndpointsTests.MintPublicLink_RejectsExpiryPastInjectedClock",
         "Honua.Server.Tests.Features.Console.ConsoleShareEndpointsTests.PublicLinkLifecycle_ResolvesAndDeniesExpiredInvalidRevokedAndPrivateWithoutTitleLeak"
@@ -19685,6 +19691,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ContentPublicationAndOAuthScopes_AgentKey_AreRefused",
         "Honua.Server.Tests.Features.Console.Publications.ContentPublicationEndpointsTests.Publish_DuplicateSlug_ReturnsConflictWithoutLeakingInternals",
         "Honua.Server.Tests.Features.Console.Publications.ContentPublicationEndpointsTests.Publish_MapWithBindingsLikePayload_IsNotBodyValidated",
         "Honua.Server.Tests.Features.Console.Publications.ContentPublicationEndpointsTests.Publish_ReportWithDuplicateBindingAlias_ReturnsDuplicateError",
@@ -19959,6 +19966,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.McpPublishService_AgentRequestDoesNotPublish_HumanPublicationIsReadableByFreshClient",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.SubmitAccessPolicyOperation_AgentKey_FilesProposalForHumanApproval",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.SubmitOtherGatedOperation_AgentKey_IsRefusedWithAgentPolicyRef",
         "Honua.Server.Tests.Features.OperationsToolset.AdminAccessInstallerCredentialTests.InstallerCredential_ListsAndResolvesItsEffectivePermissions_ThroughCanonicalOperations",
         "Honua.Server.Tests.Features.OperationsToolset.AdminAccessProposalRestartTests.DestructiveAccessOperation_ProposalIdentitiesAndIdempotencySurviveHostRestart",
         "Honua.Server.Tests.Features.OperationsToolset.AiAdmissionControlHostTests.AdminControls_UseDurableLedgerAndAudit",
@@ -20605,7 +20615,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.McpPublishService_CompletedPublication_ReturnedResourceIsReadableByFreshClient",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.McpPublishService_AgentRequestDoesNotPublish_HumanPublicationIsReadableByFreshClient",
         "Honua.Server.Tests.Admin.McpPublishedServicePostgresDurabilityTests.PublishTwice_QueuedCompletionAndHostRestart_ReadPersistedGraphAtExactUri",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_WithoutOidc_IssuesBearerWithDurableMcpIdentity",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.ProposalEvidenceSecurityJourneyTests.EvidenceBoundProposal_BootstrapAdminIsRejectedBeforePersistence",
@@ -25581,6 +25591,7 @@
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishNamespace_ScopesEntireGraphIgnoresWireTenantAndServesOwner",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.QualifiedLayerMutations_ThroughConnectionRoute_PreserveEffectiveStorageOwnership",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.SetLayerEnabled_NonexistentLayer_Returns404",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.EnableLayerAndRoleGrants_AgentKey_RequireHumanApproval",
         "Honua.Server.Tests.Features.Infrastructure.LayerEnablementIntegrationTests.DisabledLayer_ReturnsNotFoundAcrossProtocols"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -26013,7 +26024,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.DefineListDeleteScope_RoundTrips"
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.DefineListDeleteScope_RoundTrips",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ContentPublicationAndOAuthScopes_AgentKey_AreRefused"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -26113,6 +26125,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.EnableLayerAndRoleGrants_AgentKey_RequireHumanApproval",
         "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.SetPermissions_ValidRequest_ReturnsUpdatedPermissions",
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.AdminPermissionReplacement_PreservesConsoleWorkspaceOwnership"
       ],
@@ -26171,6 +26184,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.PutServiceAccessPolicy_WithoutAuth_Returns401",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.UpdateAccessPolicy_AgentKey_RequiresHumanApproval",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.UpdateAccessPolicy_HumanAdministratorKey_IsNotGated",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateAccessPolicy_WithValidPayload_ReturnsUpdatedOrNotFound"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -26221,6 +26236,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.LayerMetadata_Get_ReturnsPreviouslyWrittenGovernance",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.UpdateLayerMetadata_AgentKeyChangingAccess_RequiresHumanApproval",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsAttachmentAuthoringTests.AttachmentIntent_InvalidBoolean_IsRejectedWithoutMutation",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsAttachmentAuthoringTests.AttachmentIntent_OmittedOrNullPreservesLegacyMetadata_ExplicitValueUsesCanonicalDefaults",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsAttachmentAuthoringTests.AttachmentIntent_RoundTripsWithoutChangingOtherMetadata_AndInvalidatesAliases",
@@ -26396,6 +26412,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ShareVisibilityAndRowPolicies_AgentKey_CannotWidenAccess",
         "Honua.Server.Tests.Features.Console.ConsoleOpenDataEndpointsTests.Eligibility_DistributableType_FlipsWhenAccessTierBecomesPublicIndexed",
         "Honua.Server.Tests.Features.Console.ConsoleShareEndpointsTests.PublicLinkLifecycle_ResolvesAndDeniesExpiredInvalidRevokedAndPrivateWithoutTitleLeak",
         "Honua.Server.Tests.Features.Console.ConsoleShareEndpointsTests.PublicShareAndEmbed_WithPrivateDependency_ReturnClosureConflictUnlessBypassed",
