@@ -221,6 +221,25 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
     }
 
     [UnitTheory]
+    [InlineData("\"index\":0,")]
+    [InlineData("")]
+    public async Task StreamAsync_TextDeltaOutsideOpenBlock_FailsClosedWithoutVisibleText(string deltaIndex)
+    {
+        var fixture = """
+            data: {"type":"message_start","message":{"model":"claude-opus-5-5"}}
+            data: {"type":"content_block_start","index":0,"content_block":{"type":"text"}}
+            data: {"type":"content_block_stop","index":0}
+            """ + $"\ndata: {{\"type\":\"content_block_delta\",{deltaIndex}\"delta\":{{\"type\":\"text_delta\",\"text\":\"late\"}}}}\n";
+
+        var events = await CollectAsync(CreateAdapter(fixture), ToolFreeRequest());
+
+        var failure = events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.Error).Subject;
+        failure.ErrorCode.Should().Be(StudioAiStreamGrammarValidator.InvalidStreamCode);
+        failure.ErrorMessage.Should().Be("Provider returned invalid stream event type 'content_block_delta' (delta type 'text_delta', block type 'missing').");
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.TextDelta);
+    }
+
+    [UnitTheory]
     [InlineData("{\"type\":\"text_delta\",\"text\":null}", "text_delta")]
     [InlineData("{\"type\":\"citations_delta\",\"body\":\"private body\"}", "citations_delta")]
     [InlineData("{\"type\":\"input_json_delta\"}", "input_json_delta")]

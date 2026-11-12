@@ -73,14 +73,13 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         AiExecutionContext? executionContext = null)
     {
         string? requiredCredentialFingerprint = null;
-        var identity = executionContext ?? request.ExecutionContext;
-        return new(options, request, "/v1/messages", (snapshot, original, model) =>
+        return new(options, request, "/v1/messages", (snapshot, original, model, identity) =>
         {
             var scope = new AnthropicContinuationStore.Scope(snapshot, original, model, identity);
             var body = JsonSerializer.SerializeToUtf8Bytes(BuildRequest(scope), StudioAiProxyJsonContext.Default.AnthropicProxyRequest);
             requiredCredentialFingerprint = scope.RestoredCredentials.SingleOrDefault();
             return body;
-        }, identity)
+        }, executionContext)
         { RequiredCredentialFingerprint = requiredCredentialFingerprint };
     }
 
@@ -253,7 +252,6 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
                     StudioAiStreamGrammarValidator.InvalidStreamCode);
                 yield break;
             }
-            turn.Capture(frame, payload);
 
             switch (frame.Type)
             {
@@ -289,8 +287,8 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
                     && frame.Index is { } thinkingIndex && state.OpenContentBlocks.GetValueOrDefault(thinkingIndex) == "thinking":
                     break;
 
-                case "content_block_delta" when frame.Index is { } blockIndex
-                    && state.OpenContentBlocks.GetValueOrDefault(blockIndex) is "thinking" or "redacted_thinking":
+                case "content_block_delta" when frame.Index is not { } blockIndex
+                    || state.OpenContentBlocks.GetValueOrDefault(blockIndex) is null or "thinking" or "redacted_thinking":
                     yield return state.RejectFrame(frame, payload.Length, stoppedContentBlockType);
                     yield break;
 
@@ -370,6 +368,8 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
                     yield return state.RejectFrame(frame, payload.Length, stoppedContentBlockType);
                     yield break;
             }
+
+            turn.Capture(frame, payload);
         }
 
         if (!state.SawMessageStop)

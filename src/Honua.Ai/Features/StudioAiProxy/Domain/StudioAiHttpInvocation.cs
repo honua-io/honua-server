@@ -13,7 +13,7 @@ internal sealed class StudioAiHttpInvocation
     private readonly byte[] _body;
 
     internal StudioAiHttpInvocation(StudioAiProxyProviderOptions options, StudioAiChatRequest request, string suffix,
-        Func<StudioAiProxyProviderOptions, StudioAiChatRequest, string, byte[]> serialize,
+        Func<StudioAiProxyProviderOptions, StudioAiChatRequest, string, AiExecutionContext?, byte[]> serialize,
         AiExecutionContext? executionContext = null)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -30,7 +30,7 @@ internal sealed class StudioAiHttpInvocation
             || !string.IsNullOrEmpty(destination.Query) || !string.IsNullOrEmpty(destination.Fragment))
             throw new ArgumentException("The provider HTTP invocation destination is invalid.");
         Destination = destination;
-        _body = serialize(_options, Request, Model);
+        _body = serialize(_options, Request, Model, ExecutionContext);
     }
 
     internal StudioAiChatRequest Request { get; }
