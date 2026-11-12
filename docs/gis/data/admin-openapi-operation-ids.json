@@ -189,6 +189,18 @@
       "path": "/auth/providers/{providerKey}/authorize-url"
     },
     {
+      "operationId": "createAdminPasswordBearer",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/auth/password-token"
+    },
+    {
+      "operationId": "createAdminPasswordSession",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/auth/session"
+    },
+    {
       "operationId": "createAlertRule",
       "catalogOperationId": null,
       "method": "POST",
@@ -561,6 +573,12 @@
       "path": "/auth/session"
     },
     {
+      "operationId": "getAdminBrowserCsrfToken",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/auth/csrf"
+    },
+    {
       "operationId": "getAdminCacheStatus",
       "catalogOperationId": null,
       "method": "GET",
@@ -577,6 +595,12 @@
       "catalogOperationId": null,
       "method": "GET",
       "path": "/metadata/layers/{storageLayerId}/discovery"
+    },
+    {
+      "operationId": "getAdminLayerDisplay",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/metadata/layers/{layerId}/display"
     },
     {
       "operationId": "getAdminLayerDrawingInfo",
@@ -607,6 +631,12 @@
       "catalogOperationId": null,
       "method": "GET",
       "path": "/metadata/layers/{storageLayerId}/relationships"
+    },
+    {
+      "operationId": "getAdminLayerSpatial",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/metadata/layers/{layerId}/spatial"
     },
     {
       "operationId": "getAdminLayerStyle",
@@ -979,6 +1009,12 @@
       "catalogOperationId": null,
       "method": "GET",
       "path": "/migration/performance-evidence/latest"
+    },
+    {
+      "operationId": "getLayerMetadata",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/services/{serviceName}/layers/{layerId}/metadata"
     },
     {
       "operationId": "getLayerPublishJobStatus",
@@ -2145,6 +2181,12 @@
       "path": "/import/scan"
     },
     {
+      "operationId": "setAdminLayerDisplay",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/metadata/layers/{layerId}/display"
+    },
+    {
       "operationId": "setAdminLayerDrawingInfo",
       "catalogOperationId": "admin.layer.drawing-info.set",
       "method": "PUT",
@@ -2167,6 +2209,12 @@
       "catalogOperationId": null,
       "method": "PUT",
       "path": "/metadata/layers/relationships/batch"
+    },
+    {
+      "operationId": "setAdminLayerSpatial",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/metadata/layers/{layerId}/spatial"
     },
     {
       "operationId": "setAlertRuleEnabled",

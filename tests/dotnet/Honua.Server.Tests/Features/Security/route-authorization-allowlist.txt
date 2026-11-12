@@ -18,6 +18,7 @@ anonymous DELETE /ogc/processes/jobs/{jobId}
 anonymous DELETE /scim/v2/Groups/{id}
 anonymous DELETE /scim/v2/Users/{id}
 anonymous GET /
+anonymous GET /admin/auth/callback
 anonymous GET /admin/services/{folderName}/{serviceName}.{serviceType}
 anonymous GET /admin/services/{serviceName}.{serviceType}
 anonymous GET /api/enrich/catalog
@@ -25,6 +26,7 @@ anonymous GET /api/enrich/datasets
 anonymous GET /api/enrich/datasets/{id}
 anonymous GET /api/v1/realtime/incidents/sse
 anonymous GET /api/v{version:apiVersion}/admin/auth/config
+anonymous GET /api/v{version:apiVersion}/admin/auth/csrf
 anonymous GET /api/v{version:apiVersion}/admin/auth/providers/{providerKey}/logout-url
 anonymous GET /api/v{version:apiVersion}/admin/auth/session
 anonymous GET /api/v{version:apiVersion}/admin/capabilities
@@ -193,8 +195,10 @@ anonymous POST /api/enrich
 anonymous POST /api/v1/cloud-demo/reset
 anonymous POST /api/v{version:apiVersion}/admin/auth/bearer
 anonymous POST /api/v{version:apiVersion}/admin/auth/logout
+anonymous POST /api/v{version:apiVersion}/admin/auth/password-token
 anonymous POST /api/v{version:apiVersion}/admin/auth/providers/{providerKey}/authorize-url
 anonymous POST /api/v{version:apiVersion}/admin/auth/providers/{providerKey}/token
+anonymous POST /api/v{version:apiVersion}/admin/auth/session
 anonymous POST /api/v{version:apiVersion}/console/share/embed/{token}/redeem
 anonymous POST /api/v{version:apiVersion}/embed/analytics
 anonymous POST /csp-violation-report
