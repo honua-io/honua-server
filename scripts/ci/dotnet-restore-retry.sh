@@ -11,7 +11,7 @@
 # network/feed timeout or 5xx from api.nuget.org or the GitHub Packages feed
 # during restore, where re-running the same restore succeeds. This wrapper
 # retries restore a bounded number of times with a growing delay and turns on
-# NuGet's enhanced HTTP retry so a single flaky request no longer fails the job.
+# NuGet's enhanced HTTP retry so a single flaky request does not fail the job.
 #
 # NuGet audit advisories (NU1901-NU1904) are not restore failures at all:
 # Directory.Build.props lists them in WarningsNotAsErrors, so a freshly
