@@ -861,7 +861,7 @@ jobs:
         if: vars.HONUA_SOURCE_INVENTORY_PILOT != 'false'
         timeout-minutes: 3
         run: |
-          dotnet eng/ci/Honua.Ci.SourceInventory/bin/Release/net10.0/Honua.Ci.SourceInventory.dll self-test
+          dotnet "eng/ci/Honua.Ci.SourceInventory/bin/Release/$(scripts/ci/honua-target-framework.sh)/Honua.Ci.SourceInventory.dll" self-test
           python3 scripts/ci/source-inventory-pilot/test_run.py
 
       - name: Observe source inventory metadata parity
@@ -870,7 +870,7 @@ jobs:
         continue-on-error: true
         run: >-
           python3 scripts/ci/source-inventory-pilot/run.py
-          --tool eng/ci/Honua.Ci.SourceInventory/bin/Release/net10.0/Honua.Ci.SourceInventory.dll
+          --tool "eng/ci/Honua.Ci.SourceInventory/bin/Release/$(scripts/ci/honua-target-framework.sh)/Honua.Ci.SourceInventory.dll"
 
       - name: Upload producer source inventory observations
         if: always() && vars.HONUA_SOURCE_INVENTORY_PILOT != 'false'

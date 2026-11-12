@@ -10,7 +10,7 @@ namespace Honua.Core.Tests.Features.Raster;
 
 public sealed class InlineColorRampTests
 {
-    private static JsonElement Parse(string json) => JsonDocument.Parse(json).RootElement;
+    private static JsonElement Parse(string json) => JsonElement.Parse(json);
 
     [UnitTest]
     public void Resolve_AlgorithmicRamp_ProducesStopsSpanningDisplayRange()
