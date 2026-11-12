@@ -119,14 +119,23 @@ public sealed class GeoServerRestClientSecurityTests
 
     private static SocketsHttpConnectionContext CreateConnectionContext(DnsEndPoint dnsEndPoint, HttpRequestMessage request)
     {
-        var constructor = typeof(SocketsHttpConnectionContext).GetConstructor(
-            BindingFlags.Instance | BindingFlags.NonPublic,
-            binder: null,
-            [typeof(DnsEndPoint), typeof(HttpRequestMessage)],
-            modifiers: null);
+        // Internal constructor: (DnsEndPoint, HttpRequestMessage) on .NET 10; .NET 11 appends a
+        // connection id. Match the leading parameters and default any that follow.
+        var constructor = typeof(SocketsHttpConnectionContext)
+            .GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic)
+            .SingleOrDefault(candidate => candidate.GetParameters() is [{ ParameterType: var first }, { ParameterType: var second }, ..]
+                && first == typeof(DnsEndPoint) && second == typeof(HttpRequestMessage));
 
         constructor.Should().NotBeNull();
-        return (SocketsHttpConnectionContext)constructor!.Invoke([dnsEndPoint, request]);
+        var arguments = constructor!.GetParameters()
+            .Select((parameter, index) => index switch
+            {
+                0 => (object?)dnsEndPoint,
+                1 => request,
+                _ => parameter.ParameterType.IsValueType ? Activator.CreateInstance(parameter.ParameterType) : null
+            })
+            .ToArray();
+        return (SocketsHttpConnectionContext)constructor.Invoke(arguments);
     }
 
     private static async Task<int> WaitForDescriptorSettleAsync(int baselineDescriptors, TimeSpan timeout)

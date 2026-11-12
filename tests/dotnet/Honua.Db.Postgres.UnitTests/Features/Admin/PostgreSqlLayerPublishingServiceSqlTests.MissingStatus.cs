@@ -11,14 +11,22 @@ namespace Honua.Db.Postgres.Tests.Features.Admin;
 public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
 {
     [UnitTheory]
-    [InlineData("resources")]
-    [InlineData("storageBindings")]
-    [InlineData("publications")]
-    public void BuildLinkedLayerMetadataV2Graph_OmittedStatus_InitializesReadyStatus(string collection)
+    [InlineData("resources", false)]
+    [InlineData("storageBindings", false)]
+    [InlineData("publications", false)]
+    [InlineData("resources", true)]
+    [InlineData("storageBindings", true)]
+    [InlineData("publications", true)]
+    public void BuildLinkedLayerMetadataV2Graph_OmittedStatus_InitializesReadyStatus(string collection, bool explicitNull)
     {
         var (source, scope, datasetId) = CreateCollidingStorageGraph(false);
         var document = JsonSerializer.SerializeToNode(source, MetadataV2JsonContext.Default.MetadataV2Graph)!;
-        document[collection]![0]!.AsObject().Remove("status");
+        var entity = document[collection]![0]!.AsObject();
+        entity.Remove("status");
+        if (explicitNull)
+        {
+            entity["status"] = null;
+        }
         var graph = JsonSerializer.Deserialize(document.ToJsonString(), MetadataV2JsonContext.Default.MetadataV2Graph)!;
         var omitted = collection switch
         {
@@ -26,7 +34,17 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
             "storageBindings" => graph.StorageBindings[0].Status,
             _ => graph.Publications[0].Status
         };
-        omitted.Should().BeNull();
+        // An absent member keeps the property initializer (the default, Active status);
+        // only an explicit "status": null leaves the non-nullable property null.
+        if (explicitNull)
+        {
+            omitted.Should().BeNull();
+        }
+        else
+        {
+            omitted.Should().NotBeNull();
+            omitted.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
+        }
 
         var linked = PostgreSqlLayerPublishingService.BuildLinkedLayerMetadataV2Graph(
             graph, "service-0", 1, "Dataset", 4326, DateTimeOffset.UnixEpoch, storageScope: scope);

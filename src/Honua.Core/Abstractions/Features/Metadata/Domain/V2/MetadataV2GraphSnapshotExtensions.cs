@@ -76,8 +76,9 @@ public static class MetadataV2GraphSnapshotExtensions
         => Enum.IsDefined(value) && !EqualityComparer<TEnum>.Default.Equals(value, unknownValue);
 
     // A missing status object is an omitted caller value, not an explicit draft.
-    // JSON deserialization can leave the non-nullable property null when the
-    // member is absent; that entity stays routable. Explicit draft does not.
+    // An absent member deserializes to the default (Active) status; an explicit
+    // "status": null still leaves the non-nullable property null, and that entity
+    // stays routable too. Explicit draft does not.
     private static bool IsServingStatus(MetadataV2Status? status)
         => status is null || status.Lifecycle is MetadataV2LifecycleStatus.Active or MetadataV2LifecycleStatus.Deprecated;
 
