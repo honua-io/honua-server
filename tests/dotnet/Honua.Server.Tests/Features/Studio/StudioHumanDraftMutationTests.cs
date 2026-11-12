@@ -27,7 +27,7 @@ namespace Honua.Server.Tests.Features.Studio;
 [Operation(Operations.StudioLifecycle)]
 public sealed class StudioHumanDraftMutationTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
     private readonly RedisFixture _redis = new();
     private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
 
