@@ -68,6 +68,8 @@ class OwnedServerTests(unittest.TestCase):
             next(Path("/proc/1/fd").iterdir(), None)
         except PermissionError:
             pass
+        except FileNotFoundError:
+            self.skipTest("PID 1 is hidden from this runner's procfs, so it has no descriptors to deny")
         else:
             self.skipTest("PID 1 descriptors can be listed by this runner (ptrace access, not mode bits, decides)")
         with self.assertRaisesRegex(RuntimeError, "cannot be inspected"):
