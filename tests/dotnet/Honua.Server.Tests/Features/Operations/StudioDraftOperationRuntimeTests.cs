@@ -400,7 +400,7 @@ public sealed class StudioDraftOperationRuntimeTests
             SnapshotVersion: 1,
             KeyId: null));
         var policy = new CanonicalOperationPolicyDecisionPoint(
-            Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions()),
+            new CanonicalOperationPolicyConfiguration(Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions())),
             new Honua.Core.Features.Guardrails.DefaultGuardrailLadder(
                 entitlements,
                 Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Guardrails.GuardrailLadderOptions())));
@@ -460,7 +460,7 @@ public sealed class StudioDraftOperationRuntimeTests
         var lifecycle = BuildLifecycle(store);
         var saved = await SaveFirstVersionAsync(lifecycle);
         var policy = new CanonicalOperationPolicyDecisionPoint(
-            Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions()),
+            new CanonicalOperationPolicyConfiguration(Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions())),
             new Honua.Core.Features.Guardrails.DefaultGuardrailLadder(
                 new Honua.Infrastructure.Licensing.DisabledLicenseService(),
                 Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Guardrails.GuardrailLadderOptions())));
@@ -536,7 +536,7 @@ public sealed class StudioDraftOperationRuntimeTests
         var lifecycle = BuildLifecycle(store);
         var saved = await SaveFirstVersionAsync(lifecycle);
         var policy = new CanonicalOperationPolicyDecisionPoint(
-            Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions()),
+            new CanonicalOperationPolicyConfiguration(Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions())),
             new Honua.Core.Features.Guardrails.DefaultGuardrailLadder(
                 new Honua.Infrastructure.Licensing.DisabledLicenseService(),
                 Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Guardrails.GuardrailLadderOptions())));
@@ -582,7 +582,7 @@ public sealed class StudioDraftOperationRuntimeTests
         var lifecycle = BuildLifecycle(store);
         var saved = await SaveFirstVersionAsync(lifecycle);
         var policy = new CanonicalOperationPolicyDecisionPoint(
-            Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions()),
+            new CanonicalOperationPolicyConfiguration(Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions())),
             new Honua.Core.Features.Guardrails.DefaultGuardrailLadder(
                 new Honua.Infrastructure.Licensing.DisabledLicenseService(),
                 Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Guardrails.GuardrailLadderOptions())));

@@ -277,9 +277,9 @@ internal static class OperationsServiceCollectionExtensions
         {
             var initiation = sp.GetService<OperationInitiationResolver>();
             return new CanonicalOperationPolicyDecisionPoint(
-                sp.GetRequiredService<IOptions<OperationPolicyOptions>>(),
+                new CanonicalOperationPolicyConfiguration(sp.GetRequiredService<IOptions<OperationPolicyOptions>>(), productionEnvironment),
                 sp.GetRequiredService<Honua.Core.Features.Guardrails.Abstractions.IGuardrailLadder>(),
-                productionEnvironment, initiation is null ? null : initiation.ResolveAsync);
+                initiation is null ? null : initiation.ResolveAsync);
         });
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHostedService, OperationPolicyStartupReporter>());

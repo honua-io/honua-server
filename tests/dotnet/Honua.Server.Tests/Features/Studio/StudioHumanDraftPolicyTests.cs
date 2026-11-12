@@ -108,7 +108,7 @@ public sealed class StudioHumanDraftPolicyTests
         var guardrail = new GuardrailDecision(tier, OperationClass.StudioDraftMutation, HonuaEdition.Enterprise, source);
         ladder.Resolve(OperationClass.StudioDraftMutation).Returns(guardrail);
         ladder.Resolve(OperationClass.StudioDraftMutation, Arg.Any<string?>()).Returns(guardrail);
-        var policy = new CanonicalOperationPolicyDecisionPoint(Options.Create(new OperationPolicyOptions()),
+        var policy = new CanonicalOperationPolicyDecisionPoint(new CanonicalOperationPolicyConfiguration(Options.Create(new OperationPolicyOptions())),
             ladder, resolveInitiation: _ => Task.FromResult((OperationInitiationKind.Human, OperationInitiationChannel.InteractiveOidc)));
         return policy.EvaluateAsync(StudioDraftOperations.BuildDescriptors().Single(item => item.OperationId == operationId),
             new OperationRequest

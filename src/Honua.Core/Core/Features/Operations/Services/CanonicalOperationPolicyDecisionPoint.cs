@@ -10,7 +10,6 @@ using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Studio.Abstractions;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Operations.Services;
 
@@ -21,12 +20,11 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
     private readonly Func<CancellationToken, Task<(OperationInitiationKind Kind, OperationInitiationChannel Channel)>>? _resolveInitiation;
 
     public CanonicalOperationPolicyDecisionPoint(
-        IOptions<OperationPolicyOptions> options,
+        CanonicalOperationPolicyConfiguration configuration,
         IGuardrailLadder legacyGuardrails,
-        bool productionEnvironment = false,
         Func<CancellationToken, Task<(OperationInitiationKind Kind, OperationInitiationChannel Channel)>>? resolveInitiation = null)
     {
-        _typedPolicy = new ConfigurableOperationPolicyDecisionPoint(options, productionEnvironment);
+        _typedPolicy = new ConfigurableOperationPolicyDecisionPoint(configuration.Options, configuration.ProductionEnvironment);
         _legacyGuardrails = legacyGuardrails;
         _resolveInitiation = resolveInitiation;
     }
