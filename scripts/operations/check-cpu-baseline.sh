@@ -7,7 +7,7 @@
 # (QEMU/KVM "qemu64" or "kvm64", some Proxmox defaults) hide these flags from the guest.
 #
 # Run it before installing or upgrading, on the host or inside the Honua image the host will run
-# (the CPU a container sees is the one the server will see):
+# (the CPU a container sees is the one the server will see). It needs only sh, sed, head and uname:
 #   sh scripts/operations/check-cpu-baseline.sh
 #   docker run --rm -i --entrypoint sh <image> -s < scripts/operations/check-cpu-baseline.sh
 #   kubectl run honua-cpu-check --rm -i --restart=Never --image=<image> --command -- sh -s < scripts/operations/check-cpu-baseline.sh

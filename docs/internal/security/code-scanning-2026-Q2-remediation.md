@@ -253,9 +253,9 @@ then-pinned **bullseye** Functions base (`azure-functions/base:4-appservice`):
 
 Of the remaining 51 records, 45 had no fixed Debian package and six belonged to
 the Microsoft-owned v4 extension bundle (`MessagePack` and `System.Text.Json`).
-Those numbers are the *pre-bookworm* baseline: the base is now
+Those numbers are the *pre-bookworm* baseline: the base moved to
 `dotnet-isolated:4-dotnet-isolated9.0-appservice` (see "Moving the Functions base
-off EOL Debian 11" below), which retires the bullseye won't-fix class outright.
+off EOL Debian 11" below), and later to its .NET 10 variant, which retires the bullseye won't-fix class outright.
 The residual extension-bundle records cannot be upgraded independently without
 replacing files owned and loaded by the Functions host; they are neither
 `.trivyignore`d nor dismissed, so a future Microsoft base or extension-bundle
@@ -299,7 +299,8 @@ resolved from MCR on 2026-07-31:
 | `azure-functions/python:4-python3.12-appservice` | **bookworm** | 4.1048.200.18 | 2026-07-29 |
 | `azure-functions/dotnet-isolated:4-dotnet-isolated9.0-appservice` (**new pin**) | **bookworm** | 4.1051.300.6 | 2026-07-29 |
 
-`dotnet-isolated:4-dotnet-isolated9.0-appservice` is the pin this repo now uses.
+`dotnet-isolated:4-dotnet-isolated9.0-appservice` was the pin from 2026-07-31 until
+2026-11-12, when .NET 9 support ended (see "Moving the Functions base to .NET 10" below).
 It is the same host on a supported distro: identical
 `ENTRYPOINT ["/azure-functions-host/start.sh"]`, identical
 `AzureWebJobsScriptRoot=/home/site/wwwroot` and
@@ -345,6 +346,30 @@ extension bundles. The controlled Trivy 0.68.1 measurement on 2026-07-24 against
 the *old* bullseye pin was 784 HIGH/CRITICAL package records unmodified, 105
 after the header and bundle removal, and 51 after applying available Bullseye
 security updates.
+
+
+### Moving the Functions base to .NET 10 (2026-11-12)
+
+.NET 9 left support on 2026-11-10, so both Functions images moved from
+`dotnet-isolated:4.1055.300-2-dotnet-isolated9.0-appservice` (bookworm) to
+`dotnet-isolated:4.1055.300-6-dotnet-isolated10.0-appservice`, the same host
+(`HOST_VERSION=4.1055.300.6`) and `start.sh` entrypoint. Microsoft builds the
+10.0 variant on **Ubuntu 24.04**, not bookworm, and it ships only the 10.0.15
+shared frameworks. Runtime dependencies checked on the pinned digest:
+
+| Dependency | 9.0 variant (bookworm) | 10.0 variant (Ubuntu 24.04) |
+| --- | --- | --- |
+| ICU | `libicu72` | `libicu74` |
+| `libssl` | `libssl3` | `libssl3t64` |
+| `libgssapi-krb5-2` | installed by our runtime layer | in base, and still installed by our runtime layer |
+| `libstdc++6`, `zlib1g` | in base | in base |
+| `libc6-dev`, `linux-libc-dev` | installed by base | installed by base; the purge stays load-bearing |
+| `ASPNETCORE_CONTENTROOT` | `/azure-functions-host` | not set |
+
+`docker/cloud/azure-functions/handler.sh` now sets the custom handler's content
+root and working directory to `/home/site/wwwroot/app`, so `appsettings.json` is
+found whatever the base sets. An AOT publish run through the Dockerfile's runtime
+stage on the new base answered `/healthz/live` with 200 through the Functions host.
 
 ### Actionable vs. recorded: `ignore-unfixed` on the platform-image SARIF
 

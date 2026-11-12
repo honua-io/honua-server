@@ -5,22 +5,14 @@
 # Pin manifest digests to avoid mutable-tag noise in Trivy nightly scans.
 # Refresh cadence + remediation rationale: docs/internal/security/code-scanning-2026-Q2-remediation.md.
 #
-# Base selection (honua-server#3036): the `azure-functions/base` repository is
-# abandoned — its newest published tags (`4`/`4-appservice`, host 4.636.2,
-# 2025-03-06; `4-nightly*`, host 4.637.1, 2025-04-22) are all still built from
-# EOL Debian 11 (bullseye). The Functions host itself is very much alive, but
-# Microsoft only republishes it under the language-worker repositories, and
-# those moved to Debian 12 (bookworm). `dotnet-isolated:4-dotnet-isolated9.0-appservice`
-# is the same `/azure-functions-host` with the same `/azure-functions-host/start.sh`
-# entrypoint on a supported distro, ~15 months newer (host 4.1051.300.6).
-# Custom handlers are a host feature, not a worker feature, so the bundled
-# dotnet-isolated worker is simply unused once FUNCTIONS_WORKER_RUNTIME=custom
-# is set below.
-# .NET 9 left support on 2026-11-10, so the pin is the .NET 10 isolated
-# variant of the same host. Its 10.0 tags are built on Ubuntu 24.04 (noble), not
-# bookworm; the host and start.sh entrypoint are unchanged.
-# The pinned host 4.1055.300.6 ships the ASP.NET Core and Microsoft.NETCore.App
-# shared frameworks 10.0.15 only.
+# Base selection: the `azure-functions/base` repository is abandoned (its newest
+# tags are still EOL Debian 11). Microsoft ships the maintained Functions host only
+# under the language-worker repositories, so the base is
+# `dotnet-isolated:<host>-dotnet-isolated10.0-appservice`: the same
+# `/azure-functions-host` and `/azure-functions-host/start.sh` entrypoint, built on
+# Ubuntu 24.04, with the 10.0.15 shared frameworks. Custom handlers are a host
+# feature, not a worker feature, so the bundled dotnet-isolated worker is simply
+# unused once FUNCTIONS_WORKER_RUNTIME=custom is set below.
 ARG AZURE_FUNCTIONS_BASE_IMAGE=mcr.microsoft.com/azure-functions/dotnet-isolated:4.1055.300-6-dotnet-isolated10.0-appservice@sha256:b67cd05d98ef75de3b7a8c439262e7ad299e3379cd88489974003623cde5d67c
 
 FROM ${AZURE_FUNCTIONS_BASE_IMAGE} AS build
