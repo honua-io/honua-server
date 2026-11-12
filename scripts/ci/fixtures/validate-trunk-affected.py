@@ -299,7 +299,7 @@ class RuntimeBaseTests(unittest.TestCase):
             self.assertIn("needs.changes.outputs.selective_base", json.dumps(jobs[job_name]))
         self.assertEqual(jobs["server-tests"]["strategy"]["max-parallel"],
                          "${{ inputs.selective_base && "
-                         "fromJson(needs.targeted-shards.outputs.affected_max_parallel) || 24 }}")
+                         "fromJson(needs.targeted-shards.outputs.affected_max_parallel) || 16 }}")
 
 
 FULL_HEAD, PRIOR_HEAD, NEWER_HEAD = "c" * 40, "b" * 40, "d" * 40

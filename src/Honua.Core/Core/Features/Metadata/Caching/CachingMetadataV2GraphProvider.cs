@@ -76,10 +76,17 @@ public sealed class CachingMetadataV2GraphProvider : IMetadataV2GraphProvider
             ? _cache.GetOrLoadAsync(_environment, _loadCurrent, cancellationToken)
             : GetRevalidatedAsync(_revisionProbe, cancellationToken);
 
+    // The probe, not the snapshot lifetime, decides when the catalog is read again: a probe that finds the cached
+    // revision still current renews it, so the document is reloaded and parsed only after a revision change.
     private async ValueTask<MetadataV2GraphSnapshot> GetRevalidatedAsync(
         IMetadataV2GraphRevisionProbe probe,
         CancellationToken cancellationToken)
     {
+        if (_cache.TryGetExpired(_environment, out var expired))
+        {
+            await RenewIfCurrentAsync(probe, expired, cancellationToken).ConfigureAwait(false);
+        }
+
         var snapshot = await _cache.GetOrLoadAsync(_environment, _loadCurrent, cancellationToken).ConfigureAwait(false);
 
         // One probe per request scope: repeat reads in the same request reuse the validated
@@ -98,9 +105,28 @@ public sealed class CachingMetadataV2GraphProvider : IMetadataV2GraphProvider
             _cache.InvalidateIfCurrent(_environment, snapshot.Etag);
             snapshot = await _cache.GetOrLoadAsync(_environment, _loadCurrent, cancellationToken).ConfigureAwait(false);
         }
+        else if (currentEtag is not null)
+        {
+            _cache.Renew(_environment, currentEtag);
+        }
 
         _validated = snapshot;
         return snapshot;
+    }
+
+    // A probe that is not due, or a catalog with no activated revision, answers null: the expired snapshot is then
+    // reloaded as before.
+    private async ValueTask RenewIfCurrentAsync(
+        IMetadataV2GraphRevisionProbe probe,
+        MetadataV2GraphSnapshot expired,
+        CancellationToken cancellationToken)
+    {
+        var currentEtag = await probe.GetCurrentEtagAsync(cancellationToken).ConfigureAwait(false);
+        if (currentEtag is not null && string.Equals(currentEtag, expired.Etag, StringComparison.Ordinal))
+        {
+            _cache.Renew(_environment, currentEtag);
+            _validated = expired;
+        }
     }
 
     public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)

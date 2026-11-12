@@ -212,7 +212,6 @@ config:
     Public__BaseUrl: "https://honua.example.com"
     HONUA_OBSERVABILITY: "true"
     HONUA_OPENTELEMETRY: "true"
-    Cache__EnableFallback: "false"
     FileStorage__Provider: "AwsS3"
     FileStorage__AwsS3__BucketName: "honua-production"
     FileStorage__AwsS3__Region: "us-west-2"
@@ -495,12 +494,9 @@ kubectl -n honua rollout status deployment/honua-honua --timeout=600s
 
 ## Redis durability
 
-Redis holds acknowledged control-plane state: governed proposals and workflow
-operations. Jobs, the job queue and execution logs are in PostGIS. Any working
-Redis enables the control plane. At
-startup the server reads the Redis persistence policy once and publishes the
-outcome as information (`limits.job.redisDurability` on the capability
-manifest). It reports `attested` only when all three of these hold:
+Jobs, the job queue, execution logs, proposals and workflow operations are in
+PostGIS. A self-managed Redis keeps acknowledged writes across a restart when
+all three of these hold:
 
 | Redis setting | Required value |
 |---|---|
@@ -508,22 +504,10 @@ manifest). It reports `attested` only when all three of these hold:
 | `appendfsync` | `everysec` or `always` |
 | `maxmemory-policy` | `noeviction` |
 
-Otherwise it reports `unverified` (the policy could not be read; managed Redis
-such as AWS ElastiCache and MemoryDB blocks `CONFIG`) or `not-durable` (the
-policy was read and is not durable). A stock `redis:7-alpine` sidecar defaults
-to `appendonly no` and reports `not-durable`.
-
-**The outcome is information, not a gate.** `operations.proposals` stays
-available, `jobs.runner` does not depend on Redis, pods stay `Ready`, and the `redis` health entry
-stays `Healthy` with the outcome in its data. Durability is a property of the
-Redis you choose. Configure the policy above on self-managed Redis, or rely on
-the managed service's replication, snapshots or transaction log.
-
-If a cluster must not serve at all unless the outcome is `attested`, set
-`Jobs__RequireDurableStore: "true"` in `config.env`. Any other outcome then
-exits with a single typed startup error naming the cause and its remediation.
-Because the readiness probe never passes, the rollout stops. Managed Redis that
-blocks `CONFIG` can never satisfy this setting.
+A stock `redis:7-alpine` sidecar defaults to `appendonly no`. Durability is a
+property of the Redis you choose. Configure the policy above on self-managed
+Redis, or rely on the managed service's replication, snapshots or transaction
+log.
 
 ## Troubleshoot
 
@@ -543,10 +527,6 @@ blocks `CONFIG` can never satisfy this setting.
 - **Native gRPC is unreachable** — this chart contract publishes the HTTP and
   gRPC-Web listener on port 8080. Native h2c gRPC on port 8081 needs a
   separately managed Service/Ingress until the chart exposes that listener.
-- **Pods log "Redis durability attestation: not-durable" or "unverified"**: this
-  is information. Pods stay `Ready`, and jobs and governed proposals keep
-  running. See [Redis durability](#redis-durability) to decide whether the
-  cluster's Redis needs a durable policy.
 
 ## Next steps
 

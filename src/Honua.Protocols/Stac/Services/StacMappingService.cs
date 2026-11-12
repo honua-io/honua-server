@@ -26,7 +26,7 @@ internal sealed class StacMappingService
     private static GeoJsonWriter? _geoJsonWriter;
 
     // RFC 7946 requires the geometry member to be present, so a missing geometry is stored as a cloned JSON null rather than omitted.
-    private static readonly JsonElement JsonNullElement = JsonDocument.Parse("null").RootElement.Clone();
+    private static readonly JsonElement JsonNullElement = JsonElement.Parse("null");
 
     private static GeoJsonWriter GetGeoJsonWriter() => _geoJsonWriter ??= new GeoJsonWriter();
     public static async Task<StacCollection> MapResourceToCollectionAsync(

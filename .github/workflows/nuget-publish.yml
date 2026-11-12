@@ -137,7 +137,9 @@ jobs:
           };
           EOF
 
-          dotnet build --configuration Release /p:TreatWarningsAsErrors=true
+          # The smoke project lives outside the repo, so it does not inherit
+          # Directory.Build.props: keep NuGet advisories as warnings here too.
+          dotnet build --configuration Release /p:TreatWarningsAsErrors=true "/p:WarningsNotAsErrors=NU1901%3BNU1902%3BNU1903%3BNU1904"
 
           popd >/dev/null
 
