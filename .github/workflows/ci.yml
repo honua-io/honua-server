@@ -592,7 +592,6 @@ jobs:
         run: |
           set -euo pipefail
           all_shards_json=$(jq -c '[.shards[].name]' .github/ci-shards.json)
-          # Scratch reproduction: two PostGIS/Testcontainers shards only.
           all_shards_json='["Core and Cloud Contracts","Migration"]'
           # Selective base: a PR diffs against its base branch; a merge-train
           # batch (workflow_dispatch on train/batch/*, no full_ci override) diffs
