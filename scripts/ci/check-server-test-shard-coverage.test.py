@@ -772,3 +772,42 @@ def test_miscellaneous_partition_detects_missing_moved_methods() -> None:
 test_miscellaneous_partition_detects_missing_moved_methods()
 
 print("shard-filter-dangling-guard=ok")
+
+
+def test_admin_auth_capacity_split_preserves_methods_paths_and_budgets() -> None:
+    """The former seven-class selection has exactly one owner after the split."""
+    config = json.loads((REPOSITORY_ROOT / ".github/ci-shards.json").read_text())
+    shards = {s["name"]: s for s in config["shards"]}
+    children = ["Server Features Admin Authentication and Credentials",
+                "Server Features Admin OAuth and OIDC", "Server Features Admin API Keys",
+                "Server Features Admin Client Certificates"]
+    classes = ["AdminAuthEndpointsTests", "OAuthClientEndpointsTests",
+               "OidcJwtBearerValidationTests", "OidcProviderEndpointsTests",
+               "AdminApiKeyEndpointsTests", "ClientCertificateAdminEndpointsTests",
+               "OperatorBearerTokenServiceTests"]
+    parent = MODULE._FilterParser("|".join(
+        "FullyQualifiedName~Honua.Server.Tests.Features.Admin." + name for name in classes)).parse()
+    parsed = {name: MODULE._FilterParser(shards[name]["filter"]).parse() for name in children}
+    selected_classes = set()
+    for info in MODULE.runnable_classes(MODULE.enumerate_classes()).values():
+        if info["csproj"] != KNOWN:
+            continue
+        assert MODULE.partition_claim_errors("Admin authentication capacity split", parent,
+            children, parsed, info["fqn"], info["methods"], "method") == [], info["fqn"]
+        if MODULE._eval(parent, info["fqn"]):
+            selected_classes.add(info["fqn"].rsplit(".", 1)[-1])
+    assert selected_classes == set(classes)
+    baseline = json.loads((REPOSITORY_ROOT /
+        "docs/internal/ci/admin-auth-capacity-20261112.json").read_text())["originalShard"]
+    for name in children:
+        child = shards[name]
+        assert child["test_timeout_minutes"] == 22
+        assert child["timeout_minutes"] == 32
+        for field in ("paths", "csproj", "max_cpu_count", "upload_operator_eval_report",
+                      "upload_odata_evidence", "dispatch_rank"):
+            assert child[field] == baseline[field], (name, field)
+    assert len({shards[name]["artifact_suffix"] for name in children}) == len(children)
+    assert len({shards[name]["log_name"] for name in children}) == len(children)
+
+
+test_admin_auth_capacity_split_preserves_methods_paths_and_budgets()

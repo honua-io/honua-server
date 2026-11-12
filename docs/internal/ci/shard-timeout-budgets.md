@@ -1556,3 +1556,24 @@ expands to all of its children. The affected-shard selector ranks one child per 
 family before any family's second child when the routing signals tie, so a change to a
 class split across many children does not take every slot from another changed test's
 owner.
+
+## Admin authentication capacity split (12 November 2026)
+
+Trunk `8558bbce1e` [run 43209990084](https://github.com/honua-io/honua-server/actions/runs/43209990084/job/131180962263)
+exhausted the authentication/credentials shard's 22-minute inner budget with
+output still arriving two seconds before termination (100.2% utilization).
+This is a censored sample, not a completed duration. The recorded baseline is
+[admin-auth-capacity-20261112.json](admin-auth-capacity-20261112.json).
+
+The seven classes now run in four jobs: authentication and operator bearer;
+OAuth and OIDC; API keys; client certificates. Whole classes stay together.
+Every child retains all original source triggers, report flags, project,
+parallelism and 22/32-minute inner/outer budgets. Required checks are unchanged.
+The coverage fixture proves the historical selection has exactly one owner,
+and the containing identity partition includes all four children.
+
+The children conservatively inherit the parent's 21.7-minute dispatch rank;
+these are not measured child durations. PR time-budget deferral therefore stays
+in force until completed scheduled trunk samples justify new ranks. The next
+scheduled full run must establish child durations and policy headroom; no
+post-change reduction is claimed yet. No daytime full CI dispatch is needed.
