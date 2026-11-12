@@ -133,6 +133,35 @@ public sealed class AlertEvaluationBackgroundServiceTests
     }
 
     [UnitTest]
+    public async Task Execute_RenewalThrowsDuringAPass_StopsThePassAndReloadsTheCheckpoint()
+    {
+        var leader = new ScriptedLeader { Allow = true };
+        var store = new MutableCheckpointStore(initialGeneration: 10);
+        var pipeline = new BlockingPipeline(completedPasses: 1);
+        await using var provider = CreateProvider(store, pipeline);
+        var service = CreateService(provider, leader, leaseDuration: TimeSpan.FromMilliseconds(150));
+
+        try
+        {
+            await service.StartAsync(CancellationToken.None);
+            await WaitUntilAsync(() => pipeline.Started);
+            leader.ThrowRenewals = true;
+
+            await WaitUntilAsync(() => pipeline.Cancelled);
+            leader.ThrowRenewals = false;
+            await WaitUntilAsync(() => pipeline.Starts >= 2);
+
+            store.Writes.Should().Be(1, "only the pass that completed before the failed renewal commits");
+            store.Reads.Should().BeGreaterThanOrEqualTo(2, "a pass stopped by a failed renewal must not reuse its cached checkpoint");
+            service.ExecuteTask!.IsFaulted.Should().BeFalse();
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [UnitTest]
     public async Task Execute_RenewalHangsDuringAPass_CancelsThePassBeforeTheLeaseRunsOut()
     {
         var leader = new ScriptedLeader { Allow = true };
@@ -226,12 +255,19 @@ public sealed class AlertEvaluationBackgroundServiceTests
 
         public volatile bool HangRenewals;
 
+        public volatile bool ThrowRenewals;
+
         public async Task<bool> TryAcquireAsync(CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _calls);
             if (HangRenewals)
             {
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+
+            if (ThrowRenewals)
+            {
+                throw new InvalidOperationException("lease store unavailable");
             }
 
             var leader = Allow;
@@ -279,8 +315,9 @@ public sealed class AlertEvaluationBackgroundServiceTests
         }
     }
 
-    private sealed class BlockingPipeline : IAlertPipeline
+    private sealed class BlockingPipeline(int completedPasses = 0) : IAlertPipeline
     {
+        private int _remainingCompletedPasses = completedPasses;
         private volatile bool _started;
         private volatile bool _cancelled;
         private int _starts;
@@ -297,6 +334,11 @@ public sealed class AlertEvaluationBackgroundServiceTests
             DateTimeOffset? evaluatedAt = null,
             CancellationToken cancellationToken = default)
         {
+            if (Interlocked.Decrement(ref _remainingCompletedPasses) >= 0)
+            {
+                return lastProcessedGeneration + 1;
+            }
+
             _started = true;
             Interlocked.Increment(ref _starts);
             try

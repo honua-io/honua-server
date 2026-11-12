@@ -81,6 +81,7 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
                     Interlocked.Exchange(ref _lastHeartbeatAtTicks, _time.GetUtcNow().UtcTicks);
 
                     var isLeader = await _leaderElection.TryAcquireAsync(stoppingToken).ConfigureAwait(false);
+                    var leaseAcquiredAt = _time.GetTimestamp();
                     UpdateLeaderAcquisitionState();
                     if (!isLeader)
                     {
@@ -101,7 +102,7 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
                         LogStarting(_logger, workerName, activeCheckpoint.LastGeneration);
                     }
 
-                    var pass = await RunLeasedPassAsync(activeCheckpoint, stoppingToken).ConfigureAwait(false);
+                    var pass = await RunLeasedPassAsync(activeCheckpoint, leaseAcquiredAt, stoppingToken).ConfigureAwait(false);
                     if (pass is null)
                     {
                         LogLeadershipLostDuringPass(_logger);
@@ -150,9 +151,16 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
     // be shown: when a renewal fails, or when no renewal has succeeded for two thirds of the lease,
     // well before a successor could take over and evaluate the same generations. Null means the
     // pass stopped for that reason and committed no checkpoint.
-    private async Task<PassResult?> RunLeasedPassAsync(AlertWorkerCheckpoint checkpoint, CancellationToken stoppingToken)
+    private async Task<PassResult?> RunLeasedPassAsync(
+        AlertWorkerCheckpoint checkpoint,
+        long leaseAcquiredAt,
+        CancellationToken stoppingToken)
     {
-        var lease = new PassLease(_options.Evaluation.LeaderLeaseDuration, _time, stoppingToken);
+        using var lease = new PassLease(
+            _options.Evaluation.LeaderLeaseDuration,
+            _time.GetElapsedTime(leaseAcquiredAt),
+            _time,
+            stoppingToken);
         using var passFinished = new CancellationTokenSource();
         var renewal = KeepLeadershipAsync(lease, passFinished.Token);
         try
@@ -167,7 +175,6 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
         {
             await passFinished.CancelAsync().ConfigureAwait(false);
             await renewal.ConfigureAwait(false);
-            lease.Dispose();
         }
     }
 
@@ -225,6 +232,13 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
         catch (Exception ex) when (ex is not OutOfMemoryException && passFinished.IsCancellationRequested)
         {
         }
+        // Intentionally broad: a renewal that cannot answer cannot show leadership either, so the
+        // pass stops instead of the failure surfacing after it.
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            LogRenewalFailed(_logger, ex);
+            lease.Lose();
+        }
     }
 
     private sealed record PassResult(AlertWorkerCheckpoint Checkpoint, bool Progressed);
@@ -235,11 +249,12 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
         private readonly CancellationTokenSource _linked;
         private readonly TimeSpan _validFor;
 
-        public PassLease(TimeSpan leaseDuration, TimeProvider time, CancellationToken stoppingToken)
+        public PassLease(TimeSpan leaseDuration, TimeSpan heldFor, TimeProvider time, CancellationToken stoppingToken)
         {
             RenewalInterval = leaseDuration / 3;
             _validFor = leaseDuration * 2 / 3;
-            _deadline = new CancellationTokenSource(_validFor, time);
+            var remaining = _validFor - heldFor;
+            _deadline = new CancellationTokenSource(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero, time);
             _linked = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, _deadline.Token);
         }
 
@@ -297,4 +312,7 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
 
     [LoggerMessage(EventId = 9415, Level = LogLevel.Warning, Message = "Alert evaluator lost its leader lease during a pass and stopped the pass.")]
     private static partial void LogLeadershipLostDuringPass(ILogger logger);
+
+    [LoggerMessage(EventId = 9416, Level = LogLevel.Warning, Message = "Alert evaluator could not renew its leader lease during a pass.")]
+    private static partial void LogRenewalFailed(ILogger logger, Exception exception);
 }
