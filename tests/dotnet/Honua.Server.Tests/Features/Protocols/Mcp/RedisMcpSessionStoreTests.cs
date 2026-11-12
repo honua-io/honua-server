@@ -92,8 +92,8 @@ public sealed class RedisMcpSessionStoreTests(RedisFixture redis)
             IdleTimeout, CancellationToken.None);
         try
         {
-            McpSessionManager.TryRequestKey(System.Text.Json.JsonDocument.Parse("7").RootElement, out var number);
-            McpSessionManager.TryRequestKey(System.Text.Json.JsonDocument.Parse("\"7\"").RootElement, out var text);
+            McpSessionManager.TryRequestKey(System.Text.Json.JsonElement.Parse("7"), out var number);
+            McpSessionManager.TryRequestKey(System.Text.Json.JsonElement.Parse("\"7\""), out var text);
             Task<McpRequestState> Update(RedisMcpSessionStore store, string key, string owner, string epoch, McpRequestOperation operation) =>
                 store.UpdateRequestAsync(session, owner, key, epoch, operation, CancellationToken.None);
 

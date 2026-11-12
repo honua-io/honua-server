@@ -10,5 +10,5 @@ internal sealed class NoOpOutboxCapabilityProvider : IOutboxCapabilityProvider
     public bool SupportsTransactionalOutbox => false;
 
     public string? CapabilityLimitationDescription =>
-        "No backing-store outbox capability provider is registered; feature mutations fall back to the post-commit publish + retry queue path.";
+        "No backing-store outbox capability provider is registered; feature-change events are published best effort after commit.";
 }
