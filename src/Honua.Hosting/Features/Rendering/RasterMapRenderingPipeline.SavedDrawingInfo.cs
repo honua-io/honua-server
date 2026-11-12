@@ -26,7 +26,7 @@ internal static partial class RasterMapRenderingPipeline
     // or when the saved renderer converts to nothing renderable, the catalog style applies.
     internal static async Task<RasterStylePlan> GetRasterStylePlanAsync(
         RasterStyleSources styleSources,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         CancellationToken cancellationToken)
     {
@@ -40,7 +40,7 @@ internal static partial class RasterMapRenderingPipeline
             .ConfigureAwait(false);
     }
 
-    internal static bool TryGetSavedDrawingInfo(MetadataV2Resource resource, out JsonElement drawingInfo)
+    internal static bool TryGetSavedDrawingInfo(MetadataV2Object resource, out JsonElement drawingInfo)
     {
         if (resource.Extensions is { } extensions
             && (extensions.TryGetValue(SavedDrawingInfoExtensionKey, out drawingInfo)
@@ -56,13 +56,13 @@ internal static partial class RasterMapRenderingPipeline
 
     // The MapLibre JSON a saved drawingInfo converts to, for renderers that take a style document.
     internal static string? ResolveSavedDrawingInfoMapLibreStyle(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         IGeoServicesStyleConverter styleConverter)
         => ResolveSavedDrawingInfoStyle(resource, storageLayerId, styleConverter)?.MapLibreStyleJson;
 
     private static ConvertedSavedStyle? ResolveSavedDrawingInfoStyle(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         IGeoServicesStyleConverter styleConverter)
     {
