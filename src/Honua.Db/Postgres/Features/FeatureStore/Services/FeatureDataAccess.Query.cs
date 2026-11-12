@@ -61,9 +61,10 @@ internal sealed partial class FeatureDataAccess
             var features = new List<Feature>();
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
+            var names = new FeatureAttributeNameCache();
             while (await reader.ReadAsync(cancellationToken))
             {
-                var feature = await ReadFeatureAsync(reader, cancellationToken);
+                var feature = ReadFeature(reader, names);
                 features.Add(feature);
             }
 
@@ -185,9 +186,10 @@ internal sealed partial class FeatureDataAccess
             var features = new List<GmlFeature>();
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
+            var names = new FeatureAttributeNameCache();
             while (await reader.ReadAsync(cancellationToken))
             {
-                var feature = await ReadGmlFeatureAsync(reader, cancellationToken);
+                var feature = ReadGmlFeature(reader, names);
                 features.Add(feature);
             }
 
@@ -225,9 +227,10 @@ internal sealed partial class FeatureDataAccess
             var features = new List<EncodedGeoJsonFeature>();
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
+            var names = new FeatureAttributeNameCache();
             while (await reader.ReadAsync(cancellationToken))
             {
-                var feature = await ReadGeoJsonFeatureAsync(reader, cancellationToken);
+                var feature = ReadGeoJsonFeature(reader, names);
                 features.Add(feature);
             }
 
@@ -269,7 +272,7 @@ internal sealed partial class FeatureDataAccess
 
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                var feature = await ReadRawGeoJsonFeatureAsync(reader, cancellationToken).ConfigureAwait(false);
+                var feature = ReadRawGeoJsonFeature(reader);
                 features.Add(feature);
             }
 
@@ -307,9 +310,10 @@ internal sealed partial class FeatureDataAccess
             var features = new List<KmlFeature>();
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
+            var names = new FeatureAttributeNameCache();
             while (await reader.ReadAsync(cancellationToken))
             {
-                var feature = await ReadKmlFeatureAsync(reader, cancellationToken);
+                var feature = ReadKmlFeature(reader, names);
                 features.Add(feature);
             }
 
@@ -476,7 +480,7 @@ internal sealed partial class FeatureDataAccess
             return null;
         }
 
-        return await ReadFeatureAsync(reader, cancellationToken);
+        return ReadFeature(reader);
     }
 
     public async Task<FeatureExtent?> GetExtentAsync(
@@ -616,9 +620,10 @@ internal sealed partial class FeatureDataAccess
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
+        var names = new FeatureAttributeNameCache();
         while (await reader.ReadAsync(cancellationToken))
         {
-            yield return await ReadFeatureAsync(reader, cancellationToken);
+            yield return ReadFeature(reader, names);
         }
     }
 
@@ -637,9 +642,10 @@ internal sealed partial class FeatureDataAccess
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
+        var names = new FeatureAttributeNameCache();
         while (await reader.ReadAsync(cancellationToken))
         {
-            yield return await ReadGmlFeatureAsync(reader, cancellationToken);
+            yield return ReadGmlFeature(reader, names);
         }
     }
 }

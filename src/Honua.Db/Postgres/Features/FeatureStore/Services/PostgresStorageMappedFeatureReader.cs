@@ -480,9 +480,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         await using var session = await OpenFeatureReadSessionAsync(
             query, probeLimit: false, allowSerialPlan: false, cancellationToken).ConfigureAwait(false);
         var reader = session.Reader!;
+        var names = new FeatureAttributeNameCache();
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            yield return ReadFeature(reader, textAttributes: query.Distinct, session.NativeAttributes);
+            yield return ReadFeature(reader, textAttributes: query.Distinct, session.NativeAttributes, names);
         }
     }
 
@@ -525,9 +526,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         await using var session = await OpenFeatureReadSessionAsync(
             query, probeLimit, allowSerialPlan: true, cancellationToken).ConfigureAwait(false);
         var reader = session.Reader!;
+        var names = new FeatureAttributeNameCache();
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            features.Add(ReadFeature(reader, textAttributes: query.Distinct, session.NativeAttributes));
+            features.Add(ReadFeature(reader, textAttributes: query.Distinct, session.NativeAttributes, names));
         }
 
         return features.ToImmutable();
@@ -1594,7 +1596,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 : throw new ArgumentException($"Field '{fieldName}' was not found on resource '{_resource.Metadata.Name}'."));
     }
 
-    private Feature ReadFeature(NpgsqlDataReader reader, bool textAttributes, NativeAttributeDecoder? nativeAttributes)
+    private Feature ReadFeature(
+        NpgsqlDataReader reader,
+        bool textAttributes,
+        NativeAttributeDecoder? nativeAttributes,
+        FeatureAttributeNameCache? names = null)
     {
         var id = reader.GetInt64(0);
         var geometry = reader.IsDBNull(1) ? null : reader.GetFieldValue<byte[]>(1);
@@ -1606,12 +1612,12 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             {
                 if (textAttributes)
                 {
-                    FeatureAttributeJsonReader.ReadInto(reader.GetString(2), attributesDictionary);
+                    FeatureAttributeJsonReader.ReadInto(reader.GetString(2), attributesDictionary, names);
                 }
                 else
                 {
                     using var document = reader.GetFieldValue<JsonDocument>(2);
-                    FeatureAttributeJsonReader.ReadInto(document.RootElement, attributesDictionary);
+                    FeatureAttributeJsonReader.ReadInto(document.RootElement, attributesDictionary, names);
                 }
             }
 
