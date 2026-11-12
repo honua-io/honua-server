@@ -15,6 +15,6 @@ internal static partial class ImageServerSoapEndpoints
             FileContentHttpResult { FileContents: var contents } => contents,
             FileStreamHttpResult { FileStream: MemoryStream stream } when stream.TryGetBuffer(out var buffer)
                 => (ReadOnlyMemory<byte>)buffer,
-        _ => (ReadOnlyMemory<byte>?)null
+            _ => (ReadOnlyMemory<byte>?)null
         };
 }
