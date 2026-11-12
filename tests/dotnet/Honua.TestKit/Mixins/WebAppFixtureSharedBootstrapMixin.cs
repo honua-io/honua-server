@@ -52,21 +52,35 @@ internal static class WebAppFixtureSharedBootstrapMixin
     /// first caller spins up the factory and connects it to a fresh
     /// <see cref="PostgresFixture"/>; every subsequent caller just bumps the refcount.
     /// </summary>
-    internal static async Task EnsureInitializedAsync(string sharedAdminPassword)
+    internal static async Task EnsureInitializedAsync(
+        string sharedAdminPassword,
+        Func<string, string, WebApplicationFactory<Program>>? buildFactory = null)
     {
         await _sharedLock.WaitAsync();
         try
         {
             if (!_sharedInitialized)
             {
-                _sharedPostgres = new PostgresFixture();
-                await _sharedPostgres.InitializeAsync();
-
-                _sharedFactory = BuildSharedFactory(_sharedPostgres.ConnectionString, sharedAdminPassword);
-                // Start the lazy host under the lock so parallel fixtures share one service provider.
-                _ = _sharedFactory.Services;
-
-                _sharedInitialized = true;
+                try
+                {
+                    _sharedPostgres = new PostgresFixture();
+                    await _sharedPostgres.InitializeAsync();
+                    _sharedFactory = (buildFactory ?? BuildSharedFactory)(_sharedPostgres.ConnectionString, sharedAdminPassword);
+                    _sharedFactory.StartServer();
+                    _sharedInitialized = true;
+                }
+                catch
+                {
+                    try
+                    {
+                        await DisposeSharedResourcesAsync();
+                    }
+                    catch (Exception)
+                    {
+                        // Cleanup must not replace the startup error that explains the failure.
+                    }
+                    throw;
+                }
             }
 
             _sharedRefCount++;
@@ -94,19 +108,7 @@ internal static class WebAppFixtureSharedBootstrapMixin
 
             if (_sharedRefCount == 0 && _sharedInitialized)
             {
-                if (_sharedFactory is not null)
-                {
-                    await _sharedFactory.DisposeAsync();
-                }
-
-                if (_sharedPostgres is not null)
-                {
-                    await _sharedPostgres.DisposeAsync();
-                }
-
-                _sharedFactory = null;
-                _sharedPostgres = null;
-                _sharedInitialized = false;
+                await DisposeSharedResourcesAsync();
             }
         }
         finally
@@ -115,7 +117,30 @@ internal static class WebAppFixtureSharedBootstrapMixin
         }
     }
 
-    private static WebApplicationFactory<Program> BuildSharedFactory(
+    private static async Task DisposeSharedResourcesAsync()
+    {
+        var factory = _sharedFactory;
+        var postgres = _sharedPostgres;
+        _sharedFactory = null;
+        _sharedPostgres = null;
+        _sharedInitialized = false;
+        try
+        {
+            if (factory is not null)
+            {
+                await factory.DisposeAsync();
+            }
+        }
+        finally
+        {
+            if (postgres is not null)
+            {
+                await postgres.DisposeAsync();
+            }
+        }
+    }
+
+    internal static WebApplicationFactory<Program> BuildSharedFactory(
         string connectionString,
         string sharedAdminPassword)
     {
@@ -133,10 +158,7 @@ internal static class WebAppFixtureSharedBootstrapMixin
             ["HONUA_TEST_SCHEMA_HEADERS"] = "true",
         };
 
-        // Not disposed here by design: the returned factory is stored in the process-wide
-        // _sharedFactory field by the caller (EnsureInitializedAsync) and disposed once,
-        // in ReleaseAsync, when the last referencing WebAppFixture tears down. Disposing
-        // it here or wrapping the call in `using` would break every fixture sharing it.
+        // The shared bootstrap owns this factory until startup fails or its last caller releases it.
         return Honua.TestKit.ConfiguredWebApplicationFactory.Create(builder =>
             {
                 WebAppFixturePostgresWiringMixin.ApplyCommonHostSettings(builder);

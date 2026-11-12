@@ -122,11 +122,13 @@ class AffectedLaneTests(unittest.TestCase):
         scripts = '\n'.join(step.get('run', '') for step in jobs['targeted-shards']['steps'])
         self.assertIn('sort_by(-.dispatch_rank)', scripts)
         self.assertIn('build', jobs['server-tests']['needs'])
-        self.assertIn('6 || 24', jobs['server-tests']['strategy']['max-parallel'])
         parallelism = jobs['server-tests']['strategy']['max-parallel']
-        self.assertIn('inputs.selective_base &&', parallelism)
+        self.assertEqual('${{ inputs.selective_base && '
+                         'fromJson(needs.targeted-shards.outputs.affected_max_parallel) || 24 }}', parallelism)
         self.assertNotIn('full_ci', parallelism,
                          'Full coverage must not expand an affected run beyond its runner budget')
+        compute = next(step for step in jobs['targeted-shards']['steps'] if step.get('id') == 'compute')
+        self.assertIn('python3 scripts/ci/trailing_selection.py)" >> "$GITHUB_OUTPUT"', compute['run'])
         step = next(step for step in jobs['changes']['steps'] if step.get('id') == 'specialized')
         self.assertIn("trailing_selective == 'true'", step['env']['SELECTIVE'])
         self.assertIn("full_ci != 'true'", step['env']['SELECTIVE'])
@@ -134,6 +136,23 @@ class AffectedLaneTests(unittest.TestCase):
                     'docker-build', 'python-integration-tests', 'mcp-certification', 'quickstart-console-smoke']:
             self.assertIn('inputs.selective_base &&', jobs[job]['if'])
             self.assertIn("full_ci == 'true'", jobs[job]['if'])
+
+
+class ShardWidthTests(unittest.TestCase):
+    def affected_width(self, shards):
+        result = subprocess.run(
+            [sys.executable, str(ROOT / 'scripts/ci/trailing_selection.py')],
+            input='[' + ','.join('{}' for _ in range(shards)) + ']',
+            capture_output=True, text=True, check=True)
+        return int(result.stdout)
+
+    def test_narrow_affected_runs_keep_pr_safe_width(self):
+        self.assertEqual(6, self.affected_width(1))
+        self.assertEqual(6, self.affected_width(30))
+
+    def test_broad_affected_runs_double_width_without_reaching_full(self):
+        self.assertEqual(12, self.affected_width(31))
+        self.assertEqual(12, self.affected_width(134))
 
 
 if __name__ == '__main__':

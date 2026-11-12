@@ -7,6 +7,7 @@ on:
   # Pull requests run only the NuGet vulnerability gate and the security data check;
   # every other job is nightly/dispatch.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - 'Directory.Packages.props'
       - 'Directory.Build.props'
@@ -116,7 +117,9 @@ jobs:
           retention-days: 90
 
   nuget-vulnerability-scan:
-    if: inputs.existing_image == ''
+    if: >-
+      (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+      && (inputs.existing_image == '')
     name: NuGet Vulnerability Scan
     runs-on: ubuntu-latest
     timeout-minutes: 15
