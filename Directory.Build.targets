@@ -16,13 +16,15 @@
     <PropertyGroup>
       <RunAnalyzers>true</RunAnalyzers>
       <RunAnalyzers Condition="'$(HonuaAnalyzerPartition)' == 'source' and '$(IsTestProject)' == 'true'">false</RunAnalyzers>
-      <RunAnalyzers Condition="'$(HonuaAnalyzerPartition)' == 'tests' and '$(IsTestProject)' != 'true'">false</RunAnalyzers>
+      <RunAnalyzers Condition="('$(HonuaAnalyzerPartition)' == 'tests' or '$(HonuaAnalyzerPartition)' == 'server-tests' or '$(HonuaAnalyzerPartition)' == 'other-tests') and '$(IsTestProject)' != 'true'">false</RunAnalyzers>
+      <RunAnalyzers Condition="'$(HonuaAnalyzerPartition)' == 'server-tests' and '$(MSBuildProjectName)' != 'Honua.Server.Tests' and '$(MSBuildProjectName)' != 'Honua.Architecture.Tests'">false</RunAnalyzers>
+      <RunAnalyzers Condition="'$(HonuaAnalyzerPartition)' == 'other-tests' and ('$(MSBuildProjectName)' == 'Honua.Server.Tests' or '$(MSBuildProjectName)' == 'Honua.Architecture.Tests')">false</RunAnalyzers>
     </PropertyGroup>
   </Target>
 
   <Target Name="ValidateHonuaAnalyzerPartition" BeforeTargets="PrepareForBuild"
-          Condition="'$(HonuaAnalyzerPartition)' != '' and '$(HonuaAnalyzerPartition)' != 'all' and '$(HonuaAnalyzerPartition)' != 'source' and '$(HonuaAnalyzerPartition)' != 'tests'">
-    <Error Text="Unknown HonuaAnalyzerPartition '$(HonuaAnalyzerPartition)'. Expected all, source or tests." />
+          Condition="'$(HonuaAnalyzerPartition)' != '' and '$(HonuaAnalyzerPartition)' != 'all' and '$(HonuaAnalyzerPartition)' != 'source' and '$(HonuaAnalyzerPartition)' != 'tests' and '$(HonuaAnalyzerPartition)' != 'server-tests' and '$(HonuaAnalyzerPartition)' != 'other-tests'">
+    <Error Text="Unknown HonuaAnalyzerPartition '$(HonuaAnalyzerPartition)'. Expected all, source, tests, server-tests or other-tests." />
   </Target>
 
   <!-- Suppress test-specific warnings after project properties are finalized. -->

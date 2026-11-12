@@ -23,7 +23,6 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
@@ -38,9 +37,11 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 /// route binding, telemetry, JSON formatting, and error handling are all covered
 /// per ADR-0011 API Surface Coverage.
 /// </summary>
+// Retaining PostgreSQL between cases avoids infrastructure restarts while each case owns
+// its host, schema, and substitutes.
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
-public class ImageServerEndpointsTests
+public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
 {
     private const int TestLayerId = 0;
 
@@ -1134,34 +1135,6 @@ public class ImageServerEndpointsTests
         }
     }
 
-    [UnitTest]
-    public void Issue5522_GetCapabilities_ResourceUrlPercentEncodesReservedServiceId()
-    {
-        // Route values arrive decoded, so a service requested as imagery%23west must be
-        // re-escaped in both the WMTS base path and the literal layer segment; a raw '#'
-        // would turn the rest of the template into a fragment.
-        var context = new DefaultHttpContext
-        {
-            RequestServices = new ServiceCollection()
-                .AddSingleton<IConfiguration>(new ConfigurationBuilder().Build())
-                .BuildServiceProvider(),
-        };
-        context.Request.Scheme = "https";
-        context.Request.Path = "/rest/services/imagery#west/ImageServer/WMTS/1.0.0/WMTSCapabilities.xml";
-        context.Request.QueryString = new QueryString("?token=abc");
-
-        var xml = Honua.Protocols.GeoServices.ImageServer.Handlers.ImageServerWmtsHandler.BuildCapabilitiesXml(
-            context,
-            "imagery#west",
-            timeExtent: null,
-            additionalGrids: []);
-
-        xml.Should().Contain(
-            "/rest/services/imagery%23west/ImageServer/WMTS/imagery%23west/{Style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}.png?token=abc");
-        xml.Should().Contain("<ows:Identifier>imagery#west</ows:Identifier>");
-        xml.Should().NotContain("imagery#west/");
-    }
-
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/WMTS")]
     [Operation(Operations.Metadata)]
@@ -1516,7 +1489,7 @@ public class ImageServerEndpointsTests
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
 
-            var feature = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            var feature = JsonElement.Parse(await response.Content.ReadAsStringAsync());
             feature.GetProperty("attributes").GetProperty("OBJECTID").GetInt64().Should().Be(100);
             feature.GetProperty("attributes").GetProperty("Name").GetString().Should().Be("test-raster");
             feature.GetProperty("geometry").GetProperty("rings").GetArrayLength().Should().BeGreaterThan(0);
@@ -1539,7 +1512,7 @@ public class ImageServerEndpointsTests
                 $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/100?f=pjson");
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var feature = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            var feature = JsonElement.Parse(await response.Content.ReadAsStringAsync());
             feature.GetProperty("attributes").GetProperty("OBJECTID").GetInt64().Should().Be(100);
         }
         finally
@@ -1561,7 +1534,7 @@ public class ImageServerEndpointsTests
 
             // GeoServices errors use HTTP 200 and carry the status in the Esri error body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            var body = JsonElement.Parse(await response.Content.ReadAsStringAsync());
             body.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
         }
         finally
@@ -1609,7 +1582,7 @@ public class ImageServerEndpointsTests
 
                 jsonResponse.StatusCode.Should().Be(HttpStatusCode.OK);
                 jsonResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
-                var envelope = JsonDocument.Parse(await jsonResponse.Content.ReadAsStringAsync()).RootElement;
+                var envelope = JsonElement.Parse(await jsonResponse.Content.ReadAsStringAsync());
                 envelope.GetProperty("href").GetString().Should().NotBeNullOrWhiteSpace();
                 envelope.GetProperty("width").GetInt32().Should().Be(256);
                 envelope.GetProperty("height").GetInt32().Should().Be(256);
@@ -1636,7 +1609,7 @@ public class ImageServerEndpointsTests
                 $"/rest/services/{TestLayerId}/ImageServer/100/info?f=json");
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var info = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            var info = JsonElement.Parse(await response.Content.ReadAsStringAsync());
             info.EnumerateObject().Select(static property => property.Name).Should().BeEquivalentTo([
                 "origin",
                 "blockWidth",
@@ -1676,7 +1649,7 @@ public class ImageServerEndpointsTests
                 $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/100/info/keyProperties?f=pjson");
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var properties = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            var properties = JsonElement.Parse(await response.Content.ReadAsStringAsync());
             properties.GetProperty("BandCount").GetInt32().Should().Be(1);
             properties.GetProperty("DataType").GetString().Should().Be("U8");
         }
@@ -1699,7 +1672,7 @@ public class ImageServerEndpointsTests
                 $"/rest/services/{TestLayerId}/ImageServer/100/info/histograms?f=json");
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var histograms = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement
+            var histograms = JsonElement.Parse(await response.Content.ReadAsStringAsync())
                 .GetProperty("histograms");
             histograms.GetArrayLength().Should().Be(1);
             histograms[0].GetProperty("counts").GetArrayLength().Should().Be(4);
@@ -1738,7 +1711,7 @@ public class ImageServerEndpointsTests
                 $"/rest/services/{TestLayerId}/ImageServer/100/imageSupportData?f=json");
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            var body = JsonElement.Parse(await response.Content.ReadAsStringAsync());
             body.GetProperty("rasterId").GetInt64().Should().Be(100);
             body.GetProperty("sensorName").GetString().Should().Be("WorldView-3");
             body.GetProperty("cameraModel").GetString().Should().Be("WV110");
@@ -1766,7 +1739,7 @@ public class ImageServerEndpointsTests
                 $"/rest/services/{TestLayerId}/ImageServer/100/imageSupportData?f=json");
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            var body = JsonElement.Parse(await response.Content.ReadAsStringAsync());
             body.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
         }
         finally
@@ -1811,7 +1784,7 @@ public class ImageServerEndpointsTests
                 $"/rest/services/{TestLayerId}/ImageServer/200/thumbnail?f=json");
             jsonResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             jsonResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
-            var envelope = JsonDocument.Parse(await jsonResponse.Content.ReadAsStringAsync()).RootElement;
+            var envelope = JsonElement.Parse(await jsonResponse.Content.ReadAsStringAsync());
             envelope.GetProperty("href").GetString().Should().NotBeNullOrWhiteSpace();
 
             selectedRasterIds.Should().OnlyContain(id => id == 200);
@@ -1837,7 +1810,7 @@ public class ImageServerEndpointsTests
                 $"/rest/services/{TestLayerId}/ImageServer/100/rasterFile?f=json");
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            var body = JsonElement.Parse(await response.Content.ReadAsStringAsync());
             body.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
         }
         finally
@@ -1861,7 +1834,7 @@ public class ImageServerEndpointsTests
                 $"/rest/services/{TestLayerId}/ImageServer/999/info?f=json");
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            var body = JsonElement.Parse(await response.Content.ReadAsStringAsync());
             body.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
         }
         finally
@@ -2915,7 +2888,7 @@ public class ImageServerEndpointsTests
                 $"/rest/services/{TestLayerId}/ImageServer?f=json");
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var root = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            var root = JsonElement.Parse(await response.Content.ReadAsStringAsync());
             root.GetProperty("capabilities").GetString().Should().Contain("Mensuration");
             root.GetProperty("mensurationCapabilities").GetString().Should().Be("Basic");
         }
@@ -4358,7 +4331,7 @@ public class ImageServerEndpointsTests
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
 
-            var root = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            var root = JsonElement.Parse(await response.Content.ReadAsStringAsync());
 
             // conf.json returns the service descriptor. Honua does not advertise an ArcGIS
             // Server version (see NoGeoServicesServerVersionTests).

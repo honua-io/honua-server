@@ -14,12 +14,13 @@ on:
         - transactional
         - full
 
-  # Weekly scheduled run
-  schedule:
-    - cron: '0 3 * * 1'  # Monday 3 AM UTC
-
-  # Tier: nightly — conformance suites are external and heavyweight.
-  # PR/push triggers removed in #485. See docs/internal/ci/gate-model.md.
+  # Invoked by the release-candidate qualification workflow.
+  workflow_call:
+    inputs:
+      profile:
+        required: false
+        type: string
+        default: basic
 
 permissions:
   contents: read
@@ -28,11 +29,7 @@ permissions:
   checks: write
 
 env:
-  CITE_PROFILE: ${{ github.event.inputs.profile || 'basic' }}
-
-concurrency:
-  group: cite-wfs20-conformance-${{ github.ref }}
-  cancel-in-progress: true
+  CITE_PROFILE: ${{ inputs.profile || 'basic' }}
 
 jobs:
   wfs20-cite-conformance:
@@ -49,7 +46,7 @@ jobs:
       fail-fast: false
       matrix:
         profile:
-          - ${{ github.event.inputs.profile || 'basic' }}
+          - ${{ inputs.profile || 'basic' }}
 
     steps:
     - name: Checkout repository

@@ -24,6 +24,17 @@ endpoint for this publication operation in the restored contract; defer workflow
 that depend on it until a validated implementation is available. Existing raster
 import and serving operations retain their previous contracts.
 
+## Cache health without Redis fallback
+
+The cache now runs in process memory on every node, so the Redis fallback it used to
+report no longer exists. `GET /api/v1/admin/operations/cache/health` drops the
+`fallbackEnabled` and `retryIntervalSeconds` properties from `OpsCacheHealthResponse`.
+The other properties keep their names and meaning.
+
+Clients that read either property should stop reading it and regenerate from the
+current admin contract. There is no replacement, because no fallback or reconnect
+interval remains to report.
+
 ## Import scan result types
 
 The import scan response schema uses `oneOf` to describe the default inventory
@@ -55,6 +66,16 @@ proposals need fresh proposals, and unpassed legacy coordinated-release gates
 need fresh human reviews. Already claimed legacy executions and submitted child
 operations retain their recorded authority and may drain. Deploy Server before
 the Console companion; automation can continue proposing and monitoring work.
+
+## Browser session CSRF protection
+
+Cookie-authenticated clients must fetch `GET /api/v1/admin/auth/csrf` over HTTPS
+and send its `requestToken` in the `X-Honua-CSRF` header for unsafe requests,
+including sign-in, bearer issuance and logout. Keep cookies on the same origin.
+Fetch a fresh token after password or OIDC sign-in because the token is bound to
+the current identity. Coordinate this server update with the Console client.
+See [browser sign-in](../guides/secure/authentication.md) for the session and
+separate-origin bearer flows.
 
 ## Migration Baseline
 

@@ -15,7 +15,7 @@ env:
   AWS_ECR_REPOSITORY: ${{ vars.AWS_ECR_REPOSITORY }}
   ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
   ACR_REPOSITORY: ${{ vars.ACR_REPOSITORY }}
-  TRIVY_IMAGE: aquasec/trivy:0.68.1
+  TRIVY_IMAGE: aquasec/trivy:0.68.1@sha256:a93fd67162843c0f749002af9245fe9a2e5edc41445bd71d3949c803e95ef05b
 
 concurrency:
   group: deploy-${{ github.ref }}
@@ -301,6 +301,15 @@ jobs:
           fi
           python3 scripts/ci/measure-serving-image.py "$CANDIDATE" --profile "${{ matrix.store_profile }}" \
             --published --output artifacts/published-image-size.json
+
+      # On v* tags no public tag is assigned until the exact candidate digest passes the blocking
+      # Trivy gate (fixable HIGH/CRITICAL only, by design; see scripts/ci/trivy-release-gate.sh).
+      - name: Gate serving tag release on fixable HIGH/CRITICAL vulnerabilities
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          CANDIDATE: ${{ steps.targets.outputs.staging_image }}@${{ steps.candidate.outputs.digest }}
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
+        run: scripts/ci/trivy-release-gate.sh "$CANDIDATE"
 
       - name: Publish verified serving architecture tags
         shell: bash

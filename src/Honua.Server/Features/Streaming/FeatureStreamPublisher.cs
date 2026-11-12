@@ -12,13 +12,11 @@ internal sealed partial class FeatureStreamPublisher(
     IFeatureChangeEventStore store,
     FeatureStreamSessionManager sessionManager,
     ILogger<FeatureStreamPublisher> logger,
-    IFeatureChangeRetryQueue? retryQueue = null,
     FeatureChangeEventSinkBroadcaster? sinkBroadcaster = null) : IFeatureChangeEventPublisher
 {
     private readonly IFeatureChangeEventStore _store = store ?? throw new ArgumentNullException(nameof(store));
     private readonly FeatureStreamSessionManager _sessionManager = sessionManager ?? throw new ArgumentNullException(nameof(sessionManager));
     private readonly ILogger<FeatureStreamPublisher> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    private readonly IFeatureChangeRetryQueue? _retryQueue = retryQueue;
     private readonly FeatureChangeEventSinkBroadcaster? _sinkBroadcaster = sinkBroadcaster;
 
     public async Task PublishAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
@@ -30,19 +28,11 @@ internal sealed partial class FeatureStreamPublisher(
         {
             persisted = await _store.AppendAsync(durableRequest, cancellationToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            LogPublishCancelled(_logger);
-            await QueueRetryAsync(durableRequest).ConfigureAwait(false);
-            return;
-        }
-        // Intentional catch-all: this is the best-effort publish path; any durable-append
-        // failure (transient store fault, serialization, etc.) must fall back to the retry
-        // queue rather than throwing out of the publisher.
+        // Best effort runs after the edit committed, so a failed append is logged with the
+        // event's identity and dropped; durable delivery is the transactional outbox's job.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            LogPublishFailed(_logger, ex);
-            await QueueRetryAsync(durableRequest).ConfigureAwait(false);
+            LogPublishDropped(_logger, durableRequest.EventId!, durableRequest.LayerId, durableRequest.ObjectId, ex);
             return;
         }
 
@@ -56,9 +46,7 @@ internal sealed partial class FeatureStreamPublisher(
 
     public async Task PublishStrictAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
     {
-        // Outbox dispatcher path (#692): a failed durable append must surface as an
-        // exception so the dispatcher keeps the outbox row claimed/failed instead of
-        // silently transferring durability to the best-effort retry queue.
+        // A failed durable append surfaces so the dispatcher keeps the outbox row for retry.
         var durableRequest = EnsureEventId(request);
         var persisted = await _store.AppendAsync(durableRequest, cancellationToken).ConfigureAwait(false);
         if (await _sessionManager.RefreshRoutabilityAsync(cancellationToken).ConfigureAwait(false))
@@ -167,33 +155,12 @@ internal sealed partial class FeatureStreamPublisher(
         }
     }
 
-    [LoggerMessage(EventId = 5100, Level = LogLevel.Warning, Message = "Failed to publish feature-change event to store.")]
-    private static partial void LogPublishFailed(ILogger logger, Exception exception);
-
-    [LoggerMessage(EventId = 5101, Level = LogLevel.Warning, Message = "Feature-change event publish was cancelled after the originating write completed.")]
-    private static partial void LogPublishCancelled(ILogger logger);
-
-    [LoggerMessage(EventId = 5102, Level = LogLevel.Warning, Message = "Failed to queue feature-change publish retry.")]
-    private static partial void LogRetryQueueFailed(ILogger logger, Exception exception);
+    [LoggerMessage(
+        EventId = 5100,
+        Level = LogLevel.Warning,
+        Message = "Feature-change event {EventId} for layer {LayerId} object {ObjectId} was dropped because the event store append failed.")]
+    private static partial void LogPublishDropped(ILogger logger, string eventId, int layerId, long objectId, Exception exception);
 
     [LoggerMessage(EventId = 5103, Level = LogLevel.Debug, Message = "Feature stream event delivered locally to {Count} sessions (cursor={Cursor})")]
     private static partial void LogLocalEventBroadcast(ILogger logger, int count, long cursor);
-
-    private async Task QueueRetryAsync(FeatureChangeEventRequest request)
-    {
-        if (_retryQueue == null)
-        {
-            return;
-        }
-
-        try
-        {
-            await _retryQueue.EnqueueAsync(request, CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            LogRetryQueueFailed(_logger, ex);
-            throw;
-        }
-    }
 }

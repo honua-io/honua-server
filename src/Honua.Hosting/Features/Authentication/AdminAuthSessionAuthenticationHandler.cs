@@ -42,7 +42,8 @@ internal sealed class AdminAuthSessionAuthenticationHandler(
 
         try
         {
-            var principal = AdminAuthClaimsProjector.CreatePrincipal(session.Claims, Scheme.Name);
+            var principal = AdminAuthClaimsProjector.CreatePrincipal(session.Claims, Scheme.Name,
+                session.Origin == AdminAuthSessionOrigin.Builtin ? "admin" : "oidc");
             return AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name));
         }
         catch (ArgumentException ex)
@@ -52,6 +53,28 @@ internal sealed class AdminAuthSessionAuthenticationHandler(
             DeleteSessionCookie();
             return AuthenticateResult.Fail("The admin session is invalid or expired.");
         }
+    }
+
+    protected override Task HandleForbiddenAsync(AuthenticationProperties properties)
+    {
+        if (Response.HasStarted)
+        {
+            return Task.CompletedTask;
+        }
+
+        Response.StatusCode = StatusCodes.Status403Forbidden;
+        return Task.CompletedTask;
+    }
+
+    protected override Task HandleChallengeAsync(AuthenticationProperties properties)
+    {
+        if (Response.HasStarted)
+        {
+            return Task.CompletedTask;
+        }
+
+        Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return Task.CompletedTask;
     }
 
     private void DeleteSessionCookie()

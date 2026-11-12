@@ -34,6 +34,18 @@ test('scheduled catch-up is bounded, exact-head, and uses the shared selector', 
   assert.match(source, /format\('head-\{0\}', inputs\.head\)/);
 });
 
+test('both reviewer actions admit only the named automation identities', () => {
+  const botLists = [...source.matchAll(/^\s+allowed_bots: '([^']+)'$/gm)];
+  assert.equal(botLists.length, 2, 'review and turn-budget fallback must both declare admission');
+  for (const [, bots] of botLists) {
+    assert.deepEqual(bots.split(',').sort(), [
+      'dependabot[bot]',
+      'github-actions[bot]',
+      'honua-io-bot',
+    ]);
+  }
+});
+
 test('the lane never submits a pull-request review verdict', () => {
   // A CHANGES_REQUESTED from this identity is cleared only by a NEWER positive
   // from the SAME identity, so a false positive from an optional reviewer that

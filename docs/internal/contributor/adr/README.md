@@ -88,6 +88,9 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0081](0081-postgres-job-substrate.md) | PostgreSQL is the durable job substrate | Proposed | 2026-11 |
 | [0082](0082-postgres-control-plane-state.md) | PostgreSQL holds all shared state; Redis is removed | Proposed | 2026-11 |
 | [0083](0083-cdn-is-the-shared-cache.md) | The CDN is the shared cache | Proposed | 2026-11 |
+| [0084](0084-task-first-asset-management.md) | Task-first asset management on ordinary layers | Proposed | 2026-11 |
+| [0085](0085-postgres-realtime-event-log.md) | Cross-node realtime runs on a PostgreSQL event log behind one fan-out provider | Proposed | 2026-11 |
+| [0086](0086-one-generation-for-configuration-and-caches.md) | One source of truth and one generation number for configuration and caches | Accepted | 2026-11 |
 
 ## Template
 

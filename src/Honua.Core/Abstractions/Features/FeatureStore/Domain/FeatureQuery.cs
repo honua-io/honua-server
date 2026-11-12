@@ -40,6 +40,9 @@ public readonly record struct FeatureQuery
 
     public string? PublicIdAttributeName { get; init; }
 
+    // ID-only reads return storage keys unless a protocol explicitly requests numeric public IDs.
+    public bool ReturnPublicObjectIds { get; init; }
+
     public int? SpatialReferenceSrid { get; init; }
 
     public int? OutputSrid { get; init; }

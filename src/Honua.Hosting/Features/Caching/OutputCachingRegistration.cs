@@ -16,10 +16,7 @@ namespace Honua.Infrastructure.Caching;
 internal static class OutputCachingRegistration
 {
     // Configure output caching for metadata endpoints
-    internal static void ConfigureOutputCaching(
-        IServiceCollection services,
-        IConfiguration configuration,
-        bool redisCacheEntitled = false)
+    internal static void ConfigureOutputCaching(IServiceCollection services, IConfiguration configuration)
     {
         var ttl = new OutputCacheTtlOptions();
         configuration.GetSection(OutputCacheTtlOptions.SectionName).Bind(ttl);
@@ -57,6 +54,8 @@ internal static class OutputCachingRegistration
             {
                 policy.AddPolicy<RouteTagOutputCachePolicy>();
                 policy.AddPolicy<AnonymousOnlyOutputCachePolicy>();
+                policy.AddPolicy<RequireAnonymousGrantOutputCachePolicy>();
+                policy.AddPolicy<CapOutputCacheLifetimeAtCdnLifetimePolicy>();
                 // Safe by construction rather than by opt-out discipline: a request
                 // carrying an application-defined credential, and a response the
                 // handler marked no-store, are both excluded from the shared cache
@@ -76,11 +75,6 @@ internal static class OutputCachingRegistration
                 // from cache as a whole-body 200 - GDAL /vsicurl, PMTiles and COG readers then
                 // download the entire object per read. Range requests skip lookup and storage.
                 policy.AddPolicy<BypassOutputCacheOnRangeRequestPolicy>();
-                // A Redis output cache outlives the deployment that changes what may be stored,
-                // so entries written by an earlier build — including the error envelopes the
-                // policy above now refuses — would keep being replayed until their TTL expires.
-                // The epoch is part of every cache key, so raising it retires them in one deploy.
-                policy.VaryByValue(static _ => new KeyValuePair<string, string>("cache-epoch", OutputCacheEpoch));
                 policy.VaryByValue(static context => ResolveTenantOutputCacheKey(context));
                 // Metadata responses (service directory, capabilities, collections, STAC,
                 // tiles, styles) are filtered by the process-wide license edition and
@@ -96,6 +90,8 @@ internal static class OutputCachingRegistration
                 {
                     policy.VaryByValue(static context => ResolveTestSchemaOutputCacheKey(context));
                 }
+
+                policy.AddPolicy<OutputCacheStatusPolicy>();
             }, excludeDefaultPolicy: true);
 
             // Service metadata caching policy
@@ -574,41 +570,16 @@ internal static class OutputCachingRegistration
             // Note: No default base policy - endpoints must explicitly opt into caching for
             // security. Enforced by excludeDefaultPolicy on AddBasePolicy above.
         });
-
-        var redisConnectionString = configuration.GetConnectionString("redis")
-            ?? configuration["Aspire:StackExchange:Redis:ConnectionString"];
-        if (ShouldUseRedisOutputCache(redisCacheEntitled, redisConnectionString))
-        {
-            var cacheKeyPrefix = configuration.GetSection("Cache")["KeyPrefix"] ?? "honua:";
-            services.AddStackExchangeRedisOutputCache(options =>
-            {
-                options.Configuration = redisConnectionString;
-                options.InstanceName = $"{cacheKeyPrefix}outputcache:";
-            });
-        }
     }
 
-    internal static bool ShouldUseRedisOutputCache(
-        bool redisCacheEntitled,
-        string? redisConnectionString)
-        => redisCacheEntitled && !string.IsNullOrWhiteSpace(redisConnectionString);
-
-    // A Redis output cache re-checks the Redis entitlement on every request so a hot license replacement cannot keep Redis access.
-    internal static bool HasLiveOutputCacheEntitlements(
-        IServiceProvider services,
-        bool redisOutputCacheConfigured)
-        => LicenseGate.HasLiveEntitlement(services, FeatureCatalog.OutputCacheKey)
-            && (!redisOutputCacheConfigured
-                || LicenseGate.HasLiveEntitlement(services, FeatureCatalog.RedisCacheKey));
+    internal static bool HasLiveOutputCacheEntitlements(IServiceProvider services)
+        => LicenseGate.HasLiveEntitlement(services, FeatureCatalog.OutputCacheKey);
 
     // Cache hits bypass the tile handler. Partition by the enforced byte budget so
     // entries produced before enforcement or under a larger cap cannot bypass it.
     private static KeyValuePair<string, string> ResolveTileSizeOutputCacheKey(HttpContext context)
         => new("tile-size-budget", context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>()
             .Value.Tiles.MaxTileSize.ToString(CultureInfo.InvariantCulture));
-
-    // Raise this generation when entries written by an earlier build must not be replayed from a persistent cache.
-    private const string OutputCacheEpoch = "2";
 
     private static KeyValuePair<string, string> ResolveTenantOutputCacheKey(HttpContext context)
         => new("tenant", TenantScopeHelpers.ResolveRequestTenantId(context) ?? "<none>");

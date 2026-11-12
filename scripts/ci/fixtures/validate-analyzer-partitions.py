@@ -5,9 +5,12 @@ from pathlib import Path
 import importlib.util
 import subprocess
 import tempfile
+import sys
 
 
 TARGETS = Path(__file__).resolve().parents[3] / "Directory.Build.targets"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 spec = importlib.util.spec_from_file_location("analyzer_source_filter", TARGETS.parent / "scripts/ci/analyzer-source-filter.py")
 source_filter = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(source_filter)
@@ -30,10 +33,12 @@ with tempfile.TemporaryDirectory(prefix="honua-analyzer-partitions-") as tempora
         encoding="utf-8",
     )
     projects = []
-    for is_test in (False, True):
-        project_dir = root / ("tests" if is_test else "source")
+    for kind in ("source", "tests", "server-tests", "collector-tests"):
+        is_test = kind != "source"
+        project_dir = root / kind
         project_dir.mkdir()
-        project = project_dir / "Probe.csproj"
+        name = {"server-tests": "Honua.Server.Tests", "collector-tests": "Honua.Architecture.Tests"}.get(kind, "Probe")
+        project = project_dir / f"{name}.csproj"
         projects.append(project.relative_to(root).as_posix())
         project.write_text(
             '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>'
@@ -48,9 +53,12 @@ with tempfile.TemporaryDirectory(prefix="honua-analyzer-partitions-") as tempora
         subprocess.run(["dotnet", "restore", str(project), "--verbosity", "quiet"], check=True)
         owner = "tests" if is_test else "source"
         other = "source" if is_test else "tests"
-        for partition in (owner, "all", other):
+        diagnostic_owners = {"all", owner}
+        if is_test:
+            diagnostic_owners.add("server-tests" if kind in {"server-tests", "collector-tests"} else "other-tests")
+        for partition in ("source", "tests", "all", "server-tests", "other-tests"):
             result = build(project, partition)
-            expected_failure = partition != other
+            expected_failure = partition in diagnostic_owners
             if (result.returncode != 0) != expected_failure:
                 raise AssertionError(f"{owner}/{partition}: unexpected result\n{result.stdout}{result.stderr}")
             if expected_failure and "error CA1825" not in result.stdout:
@@ -59,7 +67,7 @@ with tempfile.TemporaryDirectory(prefix="honua-analyzer-partitions-") as tempora
         if invalid.returncode == 0 or "Unknown HonuaAnalyzerPartition" not in invalid.stdout:
             raise AssertionError("Invalid partition must fail closed")
         source.write_text("public class Probe { syntax error }\n", encoding="utf-8")
-        for partition in (owner, other):
+        for partition in ("source", "tests", "all", "server-tests", "other-tests"):
             result = build(project, partition)
             if result.returncode == 0 or "error CS" not in result.stdout:
                 raise AssertionError(f"{partition}: compiler errors must still fail the build")

@@ -540,7 +540,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
 
         try
         {
-            return JsonDocument.Parse(json).RootElement;
+            return JsonElement.Parse(json);
         }
         catch (JsonException)
         {

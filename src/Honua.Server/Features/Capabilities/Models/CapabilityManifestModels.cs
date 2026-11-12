@@ -294,18 +294,6 @@ internal sealed record CapabilityManifestJobLimits
     public required bool SupportsProgressPolling { get; init; }
 
     public required bool DurableJobRuntimeAvailable { get; init; }
-
-    // The Redis durability attestation never withholds jobs.runner or operations.proposals.
-    public CapabilityManifestRedisDurability? RedisDurability { get; init; }
-}
-
-internal sealed record CapabilityManifestRedisDurability
-{
-    public required string Status { get; init; }
-
-    public string? Cause { get; init; }
-
-    public string? Remediation { get; init; }
 }
 
 internal sealed record CapabilityManifestUploadLimits

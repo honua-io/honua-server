@@ -81,6 +81,7 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
                     Interlocked.Exchange(ref _lastHeartbeatAtTicks, _time.GetUtcNow().UtcTicks);
 
                     var isLeader = await _leaderElection.TryAcquireAsync(stoppingToken).ConfigureAwait(false);
+                    var leaseAcquiredAt = _time.GetTimestamp();
                     UpdateLeaderAcquisitionState();
                     if (!isLeader)
                     {
@@ -101,35 +102,16 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
                         LogStarting(_logger, workerName, activeCheckpoint.LastGeneration);
                     }
 
-                    await using var scope = _scopeFactory.CreateAsyncScope();
-                    var pipeline = scope.ServiceProvider.GetRequiredService<IAlertPipeline>();
-                    var checkpointStore = scope.ServiceProvider.GetRequiredService<IAlertCheckpointStore>();
-
-                    var previousGeneration = activeCheckpoint.LastGeneration;
-                    var now = _time.GetUtcNow();
-                    var nextGeneration = await pipeline
-                        .ProcessChangesAsync(previousGeneration, _options.Evaluation.ChangeBatchSize, now, stoppingToken)
-                        .ConfigureAwait(false);
-
-                    var shouldSweep = !activeCheckpoint.LastDwellSweepAt.HasValue ||
-                        now - activeCheckpoint.LastDwellSweepAt.Value >= _options.Evaluation.DwellSweepInterval;
-
-                    if (shouldSweep)
+                    var pass = await RunLeasedPassAsync(activeCheckpoint, leaseAcquiredAt, stoppingToken).ConfigureAwait(false);
+                    if (pass is null)
                     {
-                        var evaluated = await pipeline
-                            .SweepDwellAsync(now, _options.Evaluation.ChangeBatchSize, stoppingToken)
-                            .ConfigureAwait(false);
-                        LogDwellSweep(_logger, evaluated);
-                        activeCheckpoint = activeCheckpoint with { LastDwellSweepAt = now };
+                        LogLeadershipLostDuringPass(_logger);
+                        leading = false;
+                        checkpoint = null;
+                        continue;
                     }
 
-                    if (nextGeneration != previousGeneration || shouldSweep)
-                    {
-                        activeCheckpoint = activeCheckpoint with { LastGeneration = nextGeneration };
-                        await checkpointStore.SetAsync(activeCheckpoint, stoppingToken).ConfigureAwait(false);
-                    }
-
-                    checkpoint = activeCheckpoint;
+                    checkpoint = pass.Checkpoint;
 
                     // Record a productive leader-pass heartbeat: this node holds leadership and
                     // completed a pass, so a stale value here means the leader is wedged.
@@ -137,7 +119,7 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
 
                     // Delay only when the batch made no progress; a productive batch loops
                     // immediately so a change backlog drains at full speed.
-                    if (nextGeneration == previousGeneration && !shouldSweep)
+                    if (!pass.Progressed)
                     {
                         await Task.Delay(_options.Evaluation.IdleDelay, stoppingToken).ConfigureAwait(false);
                     }
@@ -163,6 +145,132 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
 
         await _leaderElection.ReleaseAsync(CancellationToken.None).ConfigureAwait(false);
         LogStopped(_logger);
+    }
+
+    // A pass can outlast the lease, so it keeps renewing the lease and stops once leadership cannot
+    // be shown: when a renewal fails, or when no renewal has succeeded for two thirds of the lease,
+    // well before a successor could take over and evaluate the same generations. Null means the
+    // pass stopped for that reason and committed no checkpoint.
+    private async Task<PassResult?> RunLeasedPassAsync(
+        AlertWorkerCheckpoint checkpoint,
+        long leaseAcquiredAt,
+        CancellationToken stoppingToken)
+    {
+        using var lease = new PassLease(
+            _options.Evaluation.LeaderLeaseDuration,
+            _time.GetElapsedTime(leaseAcquiredAt),
+            _time,
+            stoppingToken);
+        using var passFinished = new CancellationTokenSource();
+        var renewal = KeepLeadershipAsync(lease, passFinished.Token);
+        try
+        {
+            return await RunPassAsync(checkpoint, lease.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested && lease.Token.IsCancellationRequested)
+        {
+            return null;
+        }
+        finally
+        {
+            await passFinished.CancelAsync().ConfigureAwait(false);
+            await renewal.ConfigureAwait(false);
+        }
+    }
+
+    private async Task<PassResult> RunPassAsync(AlertWorkerCheckpoint checkpoint, CancellationToken passToken)
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var pipeline = scope.ServiceProvider.GetRequiredService<IAlertPipeline>();
+        var checkpointStore = scope.ServiceProvider.GetRequiredService<IAlertCheckpointStore>();
+
+        var previousGeneration = checkpoint.LastGeneration;
+        var now = _time.GetUtcNow();
+        var nextGeneration = await pipeline
+            .ProcessChangesAsync(previousGeneration, _options.Evaluation.ChangeBatchSize, now, passToken)
+            .ConfigureAwait(false);
+
+        var shouldSweep = !checkpoint.LastDwellSweepAt.HasValue ||
+            now - checkpoint.LastDwellSweepAt.Value >= _options.Evaluation.DwellSweepInterval;
+        if (shouldSweep)
+        {
+            var evaluated = await pipeline
+                .SweepDwellAsync(now, _options.Evaluation.ChangeBatchSize, passToken)
+                .ConfigureAwait(false);
+            LogDwellSweep(_logger, evaluated);
+            checkpoint = checkpoint with { LastDwellSweepAt = now };
+        }
+
+        var progressed = nextGeneration != previousGeneration || shouldSweep;
+        if (progressed)
+        {
+            checkpoint = checkpoint with { LastGeneration = nextGeneration };
+            await checkpointStore.SetAsync(checkpoint, passToken).ConfigureAwait(false);
+        }
+
+        return new PassResult(checkpoint, progressed);
+    }
+
+    private async Task KeepLeadershipAsync(PassLease lease, CancellationToken passFinished)
+    {
+        try
+        {
+            while (true)
+            {
+                await Task.Delay(lease.RenewalInterval, _time, passFinished).ConfigureAwait(false);
+                if (!await _leaderElection.TryAcquireAsync(passFinished).ConfigureAwait(false))
+                {
+                    lease.Lose();
+                    return;
+                }
+
+                lease.Renewed();
+            }
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException && passFinished.IsCancellationRequested)
+        {
+            // Intentionally broad once the pass has finished: a renewal cut short by the pass
+            // ending must not replace the pass's own outcome.
+        }
+        // Intentionally broad: a renewal that cannot answer cannot show leadership either, so the
+        // pass stops instead of the failure surfacing after it.
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            LogRenewalFailed(_logger, ex);
+            lease.Lose();
+        }
+    }
+
+    private sealed record PassResult(AlertWorkerCheckpoint Checkpoint, bool Progressed);
+
+    private sealed class PassLease : IDisposable
+    {
+        private readonly CancellationTokenSource _deadline;
+        private readonly CancellationTokenSource _linked;
+        private readonly TimeSpan _validFor;
+
+        public PassLease(TimeSpan leaseDuration, TimeSpan heldFor, TimeProvider time, CancellationToken stoppingToken)
+        {
+            RenewalInterval = leaseDuration / 3;
+            _validFor = leaseDuration * 2 / 3;
+            var remaining = _validFor - heldFor;
+            _deadline = new CancellationTokenSource(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero, time);
+            _linked = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, _deadline.Token);
+        }
+
+        public TimeSpan RenewalInterval { get; }
+
+        public CancellationToken Token => _linked.Token;
+
+        public void Renewed() => _deadline.CancelAfter(_validFor);
+
+        public void Lose() => _deadline.Cancel();
+
+        public void Dispose()
+        {
+            _linked.Dispose();
+            _deadline.Dispose();
+        }
     }
 
     private void UpdateLeaderAcquisitionState()
@@ -201,4 +309,10 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
 
     [LoggerMessage(EventId = 9414, Level = LogLevel.Information, Message = "Alert evaluator stopped.")]
     private static partial void LogStopped(ILogger logger);
+
+    [LoggerMessage(EventId = 9415, Level = LogLevel.Warning, Message = "Alert evaluator lost its leader lease during a pass and stopped the pass.")]
+    private static partial void LogLeadershipLostDuringPass(ILogger logger);
+
+    [LoggerMessage(EventId = 9416, Level = LogLevel.Warning, Message = "Alert evaluator could not renew its leader lease during a pass.")]
+    private static partial void LogRenewalFailed(ILogger logger, Exception exception);
 }

@@ -19,15 +19,66 @@ def job(name, source=TEXT):
 
 
 class PrManagedBuildTests(unittest.TestCase):
+    def test_final_gate_checks_parallel_producer_for_manual_and_pr_runs(self):
+        import yaml
+        required = yaml.safe_load(TEXT)['jobs']['required']
+        self.assertIn('server-test-producer', required['needs'])
+        guard = required['steps'][0]
+        for event in ['pull_request', 'workflow_dispatch']:
+            for result in ['success', 'failure', 'cancelled', 'skipped', '']:
+                environment = dict(os.environ, GITHUB_EVENT_NAME=event,
+                                   SERVER_PRODUCER_RESULT=result, BUILD_AND_TEST_RESULT='success',
+                                   FAST_RESULT='success', FORMAT_RESULT='success',
+                                   CI_ROUTER_RESULT='success', AFFECTED_SHARDS_RESULT='success')
+                actual = subprocess.run(['bash', '-e', '-c', guard['run']], env=environment,
+                                        capture_output=True)
+                self.assertEqual(actual.returncode == 0, result == 'success')
+
+    def test_parallel_producer_failure_rejects_empty_shard_success(self):
+        import yaml
+        jobs = yaml.safe_load(TEXT)['jobs']
+        aggregate = jobs['affected-shards']
+        self.assertIn('server-test-producer', aggregate['needs'])
+        guard = next(step for step in aggregate['steps']
+                     if step.get('name') == 'Require parallel producer success')
+        self.assertEqual('always()', guard['if'])
+        for result in ['success', 'failure', 'cancelled', 'skipped', '']:
+            actual = subprocess.run(['bash', '-e', '-c', guard['run']],
+                                    env=dict(os.environ, SERVER_PRODUCER_RESULT=result))
+            self.assertEqual(actual.returncode == 0, result == 'success')
+        self.assertTrue(jobs['affected-shard']['strategy']['fail-fast'])
+        self.assertFalse(jobs['fast-tests']['strategy']['fail-fast'])
+        producer = job('server-test-producer')
+        for contract in ['Await exact-head review', 'Classify docs-only diff', 'phase: build',
+                         'test-group: server-producer', 'partition-managed-producer.py server-projects',
+                         'Publish selected server test outputs']:
+            self.assertIn(contract, producer)
+
+    def test_consumers_select_their_own_producer_sdk_and_attempt(self):
+        import yaml
+        jobs = yaml.safe_load(TEXT)['jobs']
+        producer = jobs['server-test-producer']
+        self.assertIn('managed-sdk', producer['outputs']['managed-sdk-version'])
+        self.assertIn('managed-producer', producer['outputs']['producer-attempt'])
+        steps = jobs['affected-shard']['steps']
+        plan = next(step for step in steps if step.get('id') == 'consumer-plan')
+        sdk = next(step for step in steps if step.get('name') == 'Setup .NET')
+        consume = next(step for step in steps if step.get('id') == 'managed-consumer')
+        self.assertLess(steps.index(plan), steps.index(sdk))
+        self.assertIn('partition-managed-producer.py consumer', plan['run'])
+        self.assertIn('needs.server-test-producer.outputs.managed-sdk-version', sdk['with']['artifact-sdk-version'])
+        self.assertIn('needs.server-test-producer.outputs.producer-attempt', consume['with']['producer-attempt'])
+        self.assertIn("outputs.producer != 'none'", consume['with']['enabled'])
+
     def test_required_results_fail_closed(self):
         required = job('required')
-        self.assertIn('needs: [pr-gate, fast-tests, format, ci-router-validation, affected-shards]', required)
+        self.assertIn('needs: [pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer]', required)
         self.assertIn('if: always()', required)
         script = re.search(r'        run: \|\n(.*?)(?=\n      #|\n      -|\Z)', required, re.S).group(1)
         script = textwrap.dedent(script)
-        keys = ['BUILD_AND_TEST_RESULT', 'FAST_RESULT', 'FORMAT_RESULT', 'CI_ROUTER_RESULT',
+        keys = ['BUILD_AND_TEST_RESULT', 'SERVER_PRODUCER_RESULT', 'FAST_RESULT', 'FORMAT_RESULT', 'CI_ROUTER_RESULT',
                 'AFFECTED_SHARDS_RESULT']
-        dependencies = ['pr-gate', 'fast-tests', 'format', 'ci-router-validation', 'affected-shards']
+        dependencies = ['pr-gate', 'server-test-producer', 'fast-tests', 'format', 'ci-router-validation', 'affected-shards']
         for key, dependency in zip(keys, dependencies):
             self.assertIn(key+': ${{ needs.'+dependency+'.result }}', required)
         success = {key: 'success' for key in keys}
@@ -36,6 +87,10 @@ class PrManagedBuildTests(unittest.TestCase):
         for key in keys:
             for result in ['failure','cancelled','skipped','']:
                 self.assertNotEqual(subprocess.run(['bash','-e','-c',script],env=dict(os.environ,**(success | {key:result})),capture_output=True).returncode,0,(key,result))
+
+        draft = success | {key: 'skipped' for key in keys if key != 'FORMAT_RESULT'}
+        self.assertNotEqual(subprocess.run(['bash', '-e', '-c', script], env=dict(os.environ, **draft),
+                                          capture_output=True).returncode, 0)
 
     def test_fast_architecture_remains_independent_and_required(self):
         fast = job('fast-tests')
@@ -181,8 +236,9 @@ class PrManagedBuildTests(unittest.TestCase):
             self.assertIn('--no-build',command)
             self.assertIn('--no-restore',command)
         shard=job('affected-shard')
-        self.assertIn('needs: [affected-shards-select, pr-gate]',shard)
-        self.assertIn('producer-attempt: ${{ needs.pr-gate.outputs.producer-attempt }}',shard)
+        self.assertIn('needs: [affected-shards-select, pr-gate, server-test-producer]',shard)
+        self.assertIn('needs.pr-gate.outputs.producer-attempt', shard)
+        self.assertIn('needs.server-test-producer.outputs.producer-attempt', shard)
 
 
 if __name__ == '__main__':

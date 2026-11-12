@@ -197,6 +197,80 @@ Legacy records without a tenant owner are hidden from tenant-scoped callers;
 a platform operator can inspect those records and re-propose pending work in
 its intended tenant. Idempotency keys are scoped to the accepted tenant.
 
+### Browser administrator sessions
+
+Serve the static Console and the API over the same HTTPS origin. Browser sign-in
+uses the configured administrator password without saving an API key or password
+in browser storage:
+
+The browser obtains a CSRF token before signing in and retains it in memory.
+Successful sign-in sets an opaque HttpOnly, Secure, SameSite=Strict cookie lasting
+30 minutes. A fresh CSRF token is required after sign-in because tokens are bound
+to the current identity. Cookie-authenticated writes, bearer issuance, and logout
+require that token in the `X-Honua-CSRF` header. Logout removes the server-side
+session as well as the browser cookie.
+
+Password sign-in requires HTTPS and accepts the configured administrator password,
+not managed API keys. It works without enabling OIDC. Existing OIDC sign-in uses
+server-held state and an authorization code with PKCE; provider credentials and
+provider tokens stay on the server. Fetch a fresh CSRF token after OIDC sign-in too.
+
+For a separately hosted Console, configure exact `Cors:AllowedOrigins` entries
+and enable `Authentication:OperatorBearer` with a signing key. The Console submits
+the administrator password to `/api/v1/admin/auth/password-token` over HTTPS with
+credentials omitted. The request must have an explicitly allowed Origin. The
+response contains an operator bearer and its expiry without setting cookies.
+Keep the bearer in memory and send it in the Authorization header; its lifetime
+is bounded by the configured operator bearer maximum and 30 minutes. Sign in again
+after expiry. Credentialed CORS never expands wildcard origins. Cookies remain
+same-origin; CORS does not authorize cross-origin cookie writes.
+
+Separate-origin OIDC requires a public SPA client registered with the provider.
+Use authorization code with PKCE and an API-audience access token accepted by the
+server's configured JWT validation. Configure the provider's SPA redirect and
+origin allowlists; never give the browser a client secret. The backend-assisted
+OIDC endpoints continue to use same-origin session cookies.
+
+#### Failed sign-in and API-key attempts
+
+The server counts failed sign-in and API-key attempts per client address and
+briefly refuses a source after repeated failures. An attempt counts when the
+presented value matches no managed key and is then compared with the configured
+administrator password and does not match it. This applies to browser session
+and password-token sign-in, `X-API-Key`, Basic compatibility, and bearer and
+`token` credentials. It still applies while the key store is unavailable. Nothing
+counts when no administrator password is configured or it cannot be resolved.
+Unknown or expired portal tokens and OIDC access tokens are not compared and do
+not count. For `generateToken`, every exchange the administrator verifier rejects
+counts. A success does not clear earlier failures; they expire with the window.
+OAuth client-credential secrets are not counted.
+
+While a source is refused, no credential from it is checked. Password sign-in
+returns `429` with `Retry-After`, and an `X-API-Key` request that the API-key
+challenge answers gets the same. Other challenges keep their usual response, a
+route that allows anonymous access serves the request anonymously, and
+`generateToken` reports its usual failure.
+
+The client address is the connection address after trusted forwarded-header
+processing. Behind a proxy, enable `ForwardedHeaders` or every client shares the
+proxy's address; the server warns at startup while `ForwardedHeaders` is off.
+List addresses that front many clients in `ExemptNetworks`. Counts are held per
+server instance, and a request without a client address is not counted.
+
+| Setting (`Authentication:FailedAttempts`) | Default | Meaning |
+|---|---:|---|
+| `Enabled` | `true` | Count failures and refuse sources. |
+| `Threshold` | `10` | Failures within `Window` that refuse a source. |
+| `Window` | `00:15:00` | Counting window, started by the first failure. |
+| `BlockDuration` | `00:15:00` | How long a source stays refused. |
+| `MaxTrackedSources` | `10000` | Addresses tracked per instance; expired entries are evicted first. |
+| `ExemptNetworks` | none | Ranges that are never counted or refused, written as a network address and prefix length: `10.0.0.0/8`, or `/32` and `/128` for one address. |
+
+`Window` and `BlockDuration` are at most one day. In Development and Test, an
+administrator password of exactly 64 lowercase hex characters is treated as a
+portal token on bearer and `token` transports and is not accepted there; use
+`X-API-Key` or a password of another shape.
+
 ### 3. Enable OIDC for browser and admin sign-in
 
 ```bash
@@ -207,7 +281,8 @@ Oidc__Generic__ClientId=honua-admin
 Oidc__Generic__ClientSecret=$OIDC_CLIENT_SECRET
 ```
 
-For a separately hosted Console, pin the backend-assisted admin broker's callback:
+For a separately hosted Console, or a static Console sharing a public origin with the API,
+pin the backend-assisted admin broker's callback:
 
 ```bash
 Oidc__AdminAuthCallbackUri=https://console.example.com/admin/auth/callback
@@ -216,12 +291,23 @@ Oidc__AdminAuthCallbackUri=https://console.example.com/admin/auth/callback
 Keep `Public__BaseUrl` at the public API origin. The optional callback must be an
 absolute HTTPS URI with the exact `/admin/auth/callback` path and no user information,
 query or fragment. Register that same URI on the OIDC app client and route it to
-Console's authenticated BFF. The broker uses this deployment setting for both
+the API origin. With CloudFront, route `/admin/auth/callback` to the API origin on
+the same distribution as `/console/`; no edge redirect is needed. The broker uses
+this deployment setting for both
 creation of the authorization URL and authorization-code exchange; request bodies
 cannot choose a redirect. Without the setting, the existing `Public:BaseUrl` plus
 `/admin/auth/callback` behavior is retained, including an existing public path prefix.
 This setting does not alter API links, ASP.NET OIDC middleware callback paths, or
 post-logout URLs. State, pending-session cookies and PKCE remain required.
+
+The authorization URL request accepts an optional `returnTo` field. The exact
+allowed paths are `/console/` (the default) and `/console/operate/connections`.
+The server stores this path with the authorization state and PKCE verifier. The
+root callback exchanges the code, sets the authenticated session cookie, and
+redirects to the stored path. Callback query parameters cannot select the return
+path. The pending login cookie uses `SameSite=Lax` for the provider redirect; the
+authenticated session cookie uses `SameSite=Strict`. On landing, Console refreshes
+its session identity and CSRF token before sending authenticated mutations.
 
 Cognito logout requires separate deployment integration: Console's current logout
 clears its local/operator sessions and upstream server cookie jar, but does not
@@ -399,6 +485,7 @@ A wrong or missing key returns `401` with a `WWW-Authenticate: ApiKey` challenge
 | Symptom | Fix |
 |---|---|
 | `401` on admin endpoints | `HONUA_ADMIN_PASSWORD` unset or mismatched; confirm the `X-API-Key` header is present and the process restarted after the change. |
+| `429` with `Retry-After` on sign-in, or a correct key still refused | Repeated failed attempts from that address; wait for `Retry-After` and fix the credential the client sends. |
 | `generateToken` refuses to issue | Issuance is HTTPS-only by default — front the server with TLS (see [TLS and mTLS](tls-and-mtls.md)). |
 | Token works from one host but not another | Portal tokens are bound to `client=referer` or `client=ip`; re-issue with the binding the caller actually presents. |
 | `admin:write` or `admin:manage` key gets `403` creating, rotating or revoking API keys, changing user roles, deprovisioning users or managing OAuth clients | Expected: these routes need full-administrator authority. Use a key granted `admin`, `*` or `admin:*`, the bootstrap credential, an administrator session, or submit the change as a proposal for approval. See [Credential and identity management](../../reference/admin-api/users-roles-licensing.md#credential-and-identity-management). |

@@ -101,7 +101,7 @@ internal static class OperationSecretKeyRingProtection
         return new MaterializedKeyRing(path, password);
     }
 
-    // Development and Test may start without a key-ring certificate; every other environment that connected to Redis requires one.
+    // Development and Test may start without a key-ring certificate; every other environment with a database requires one.
     public static bool RequiresDurableChannelCertificate(bool isDevelopment, bool isTest, bool keyRingIsShared)
         => keyRingIsShared && !isDevelopment && !isTest;
 
@@ -130,9 +130,10 @@ internal static class OperationSecretKeyRingProtection
         if (string.IsNullOrWhiteSpace(path))
         {
             throw new InvalidOperationException(
-                $"'{CertificatePathKey}' is required when the durable operation secret channel is enabled. "
-                + $"Redis turns that channel on. Mount a PKCS#12 certificate and set '{CertificatePathKey}', or on a "
-                + $"host that cannot mount files (AWS Lambda) set '{CertificateMaterialKey}' to a Secrets Manager reference "
+                $"'{CertificatePathKey}' is required outside Development and Test whenever a database is configured "
+                + "('ConnectionStrings:DefaultConnection'): the operation key ring is stored in that database and this "
+                + $"certificate protects it. Mount a PKCS#12 certificate and set '{CertificatePathKey}', or on a "
+                + $"host that cannot mount files set '{CertificateMaterialKey}' to a Secrets Manager reference "
                 + "for the bundle.");
         }
 

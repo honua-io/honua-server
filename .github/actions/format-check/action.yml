@@ -34,6 +34,12 @@ inputs:
       both partitions. Dependencies still compile in each partition.
     required: false
     default: 'all'
+  analyzer-test-partition:
+    description: >
+      Test compilation roots: 'server' or 'other' form disjoint partitions;
+      'all' preserves every root. Both split jobs must remain required.
+    required: false
+    default: 'all'
   analyzer-build-timeout-minutes:
     description: 'Cap for the analyzer build step.'
     required: false
@@ -83,32 +89,54 @@ runs:
         GATE_FILTER_PATH: ${{ runner.temp }}/analyzer-build.slnf
       run: scripts/ci/compute-lean-gate-build-scope.sh
 
+    - name: Partition test analyzer roots
+      id: test-roots
+      if: inputs.analyzer-build == 'true' && inputs.analyzer-partition == 'tests' && inputs.analyzer-test-partition != 'all' && steps.analyzer-build-scope.outputs.mode != 'none'
+      shell: bash
+      env:
+        TEST_PARTITION: ${{ inputs.analyzer-test-partition }}
+        GATE_BUILD_MODE: ${{ steps.analyzer-build-scope.outputs.mode }}
+        GATE_BUILD_FILTER: ${{ steps.analyzer-build-scope.outputs.filter }}
+      run: |
+        filter="${RUNNER_TEMP}/test-analyzer-build.slnf"
+        args=(--group "${TEST_PARTITION}" --output "${filter}")
+        if [[ "${GATE_BUILD_MODE}" == "affected" ]]; then
+          args+=(--filter "${GATE_BUILD_FILTER}")
+        fi
+        count=$(python3 scripts/ci/analyzer-test-filter.py "${args[@]}")
+        echo "count=${count}" >> "${GITHUB_OUTPUT}"
+        echo "filter=${filter}" >> "${GITHUB_OUTPUT}"
+
     - name: Restore analyzer build scope
-      if: inputs.analyzer-build == 'true' && steps.analyzer-build-scope.outputs.mode != 'none'
+      if: inputs.analyzer-build == 'true' && steps.analyzer-build-scope.outputs.mode != 'none' && steps.test-roots.outputs.count != '0'
       shell: bash
       env:
         GATE_BUILD_MODE: ${{ steps.analyzer-build-scope.outputs.mode }}
         GATE_BUILD_FILTER: ${{ steps.analyzer-build-scope.outputs.filter }}
+        GATE_TEST_ROOT_FILTER: ${{ steps.test-roots.outputs.filter }}
       run: |
         target=Honua.sln
         if [[ "${GATE_BUILD_MODE}" == "affected" && "${{ inputs.analyzer-partition }}" != "source" ]]; then
           [[ -f "${GATE_BUILD_FILTER}" ]] || { echo "::error::Missing analyzer build filter"; exit 1; }
           target="${GATE_BUILD_FILTER}"
         fi
+        [[ -n "${GATE_TEST_ROOT_FILTER}" ]] && target="${GATE_TEST_ROOT_FILTER}"
         scripts/ci/dotnet-restore-retry.sh "${target}" --property:Configuration=Release
 
     # Composite-action steps do not support `timeout-minutes`.
     - name: Build with analyzers (warnings as errors)
-      if: inputs.analyzer-build == 'true' && steps.analyzer-build-scope.outputs.mode != 'none'
+      if: inputs.analyzer-build == 'true' && steps.analyzer-build-scope.outputs.mode != 'none' && steps.test-roots.outputs.count != '0'
       shell: bash
       env:
         ANALYZER_PARTITION: ${{ inputs.analyzer-partition }}
+        TEST_PARTITION: ${{ inputs.analyzer-test-partition }}
         # Avoid persistent MSBuild server teardown affecting the build exit code.
         DOTNET_CLI_USE_MSBUILD_SERVER: 'false'
         MSBUILDUSESERVER: '0'
         MSBUILDDISABLENODEREUSE: '1'
         GATE_BUILD_MODE: ${{ steps.analyzer-build-scope.outputs.mode }}
         GATE_BUILD_FILTER: ${{ steps.analyzer-build-scope.outputs.filter }}
+        GATE_TEST_ROOT_FILTER: ${{ steps.test-roots.outputs.filter }}
       run: |
         target=Honua.sln
         [[ "${GATE_BUILD_MODE}" == "affected" ]] && target="${GATE_BUILD_FILTER}"
@@ -122,6 +150,10 @@ runs:
             exit 0
           fi
           target="${source_filter}"
+        fi
+        [[ -n "${GATE_TEST_ROOT_FILTER}" ]] && target="${GATE_TEST_ROOT_FILTER}"
+        if [[ "${ANALYZER_PARTITION}" == "tests" && "${TEST_PARTITION}" != "all" ]]; then
+          ANALYZER_PARTITION="${TEST_PARTITION}-tests"
         fi
         timeout "${{ inputs.analyzer-build-timeout-minutes }}m" \
           dotnet build "${target}" \
