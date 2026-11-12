@@ -41,9 +41,8 @@ public sealed class AgentSettingsApprovalTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    [IntegrationTest]
+    [IntegrationTheory]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
-    [Theory]
     [InlineData("create")]
     [InlineData("update")]
     [InlineData("delete")]
