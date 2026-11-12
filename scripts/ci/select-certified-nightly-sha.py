@@ -45,6 +45,8 @@ import time
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 
+from trailing_selection import AFFECTED_RUN_TITLE_PREFIX
+
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 RUN_URL = re.compile(r"/actions/runs/(\d+)(?:/|$)")
 LANES_VARIABLE = "CERTIFICATION_LANE_JOBS"
@@ -52,7 +54,6 @@ LANES_VARIABLE = "CERTIFICATION_LANE_JOBS"
 # (certification/full-matrix-checks.yaml). merge_group and pull_request never certify.
 CERTIFYING_EVENTS = frozenset({"schedule", "workflow_dispatch"})
 REPORT_LIMIT = 10
-AFFECTED_RUN_TITLE_PREFIX = "CI affected "
 
 
 class SelectionError(RuntimeError):

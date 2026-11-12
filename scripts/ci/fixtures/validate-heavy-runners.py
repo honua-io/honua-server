@@ -17,7 +17,7 @@ HEAVY_JOBS = {
     "core-package-compatibility", "aot-build", "docker-build", "quickstart-console-smoke",
 }
 HOSTED_JOBS = {
-    "pr-template-check", "pr-readiness", "changes", "targeted-shards",
+    "pr-template-check", "pr-readiness", "supersede-trailing-runs", "changes", "targeted-shards",
     "ci-router-validation", "dotnet-foundation-tests", "js-typecheck", "test-all",
     "merge-queue-gate", "ci-gate", "doctor-notify",
 }
