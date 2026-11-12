@@ -28,7 +28,7 @@ policy rules cannot remove this requirement. A direct admin API call from an
 agent for either change is refused with an approval-required error that says
 how to submit it for approval. Some changes are refused for agents outright:
 a layer's access settings, enabling or refreshing a layer, role permissions,
-OAuth scopes, scene ingestion, registration and access settings, form package publication,
+OAuth scopes, scene generation, ingestion, registration and access settings, form package publication,
 and Console content publications and their sharing. Make those
 changes yourself in Console.
 
