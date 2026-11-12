@@ -52,7 +52,7 @@ Responses on cached routes carry an RFC 9211 `Cache-Status` header for this cach
 
 | Value | Meaning |
 | --- | --- |
-| `Honua; hit; ttl=240; detail="revision=..."` | Replayed from the task's cache; the entry lives 240 s more |
+| `Honua; hit; ttl=240; detail="revision=..."` | Replayed from the task's cache; the entry lives up to 240 s more (a shorter per-tileset lifetime is not known on a replay) |
 | `Honua; fwd=miss; detail="revision=..."` | Rendered for this request |
 | `Honua; fwd=bypass` | Not looked up: the request carries a credential, is signed in, is not a plain GET, or the cache is not available in this edition |
 

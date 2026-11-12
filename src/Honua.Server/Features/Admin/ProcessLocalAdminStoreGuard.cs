@@ -35,5 +35,5 @@ internal static class ProcessLocalAdminStoreGuard
     internal static string RefusalDetail(string settingsName, int tasks)
         => string.Create(
             CultureInfo.InvariantCulture,
-            $"{settingsName} are held in the memory of the server task that receives the change, and this deployment is configured to run more than one task ({tasks} expected; {DeploymentTaskCount.MaxTasksKey}, {DeploymentTaskCount.ReplicaCountKey} or {DeploymentTaskCount.ModeKey}). The change would reach one task only and be lost when it restarts, so it was not made. Set them in the server configuration, or make the change on a deployment configured for a single task.");
+            $"{settingsName} are held in the memory of the server task that receives the change, and this deployment is configured to run more than one task ({tasks} expected; {DeploymentTaskCount.MaxTasksKey}, {DeploymentTaskCount.ReplicaCountKey}, {DeploymentTaskCount.ServerReplicasKey} or {DeploymentTaskCount.ModeKey}). The change would reach one task only and be lost when it restarts, so it was not made. Set them in the server configuration, or make the change on a deployment configured for a single task.");
 }

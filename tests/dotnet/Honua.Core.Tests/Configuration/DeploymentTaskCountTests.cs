@@ -18,8 +18,9 @@ public sealed class DeploymentTaskCountTests
     [InlineData(null, null, "8", "MultiNode", 8)]
     [InlineData("1", null, null, "MultiNode", 1)]
     [InlineData("6", null, null, null, 6)]
-    [InlineData(null, "3", "9", null, 3)]
-    [InlineData("4", "9", "10", "MultiNode", 4)]
+    [InlineData(null, "3", "9", null, 9)]
+    [InlineData("4", "9", "10", "MultiNode", 10)]
+    [InlineData(null, "2", "10", null, 10)]
     [InlineData("0", "5", null, null, 5)]
     [InlineData("many", null, null, "multinode", 2)]
     public void Resolve_StatedCountOrMode_ReturnsExpectedTasks(

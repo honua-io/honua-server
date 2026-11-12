@@ -40,13 +40,13 @@ public sealed class MultiTaskCacheCoherenceTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _taskA = Task();
+        _taskA = NewTaskHost();
         await _taskA.InitializeAsync();
         await InstallCatalogTablesAsync(_taskA);
         var seed = _taskA.GetService<TestMetadataV2GraphProvider>().GetCurrentForSchema(_taskA.CurrentSchema).Graph;
         await SaveCatalogAsync(_taskA, seed with { Environment = _environment, Revision = 1 }, expectedEtag: null);
 
-        _taskB = Task().ShareSchemaWith(_taskA);
+        _taskB = NewTaskHost().ShareSchemaWith(_taskA);
         await _taskB.InitializeAsync();
     }
 
@@ -104,7 +104,7 @@ public sealed class MultiTaskCacheCoherenceTests : IAsyncLifetime
     private static string CacheStatus(HttpResponseMessage response)
         => response.Headers.TryGetValues(OutputCacheStatus.HeaderName, out var values) ? string.Join(", ", values) : "<none>";
 
-    private WebAppFixture Task()
+    private WebAppFixture NewTaskHost()
     {
         var fixture = new WebAppFixture()
             .WithTestLicense(HonuaEdition.Pro)
@@ -131,6 +131,7 @@ public sealed class MultiTaskCacheCoherenceTests : IAsyncLifetime
                     new IntervalMetadataV2GraphRevisionProbe(
                         (IMetadataV2GraphRevisionProbe)store,
                         provider.GetRequiredService<MetadataV2GraphRevisionProbeSchedule>(),
+                        // Production polls at most every 2 s for reads; zero makes "the next request" exact for the test.
                         new MetadataV2GraphRevalidation(TimeSpan.Zero, RequireCurrentRevision: false)));
             });
             services.TryAddSingleton(static provider => new MetadataV2GraphRevisionProbeSchedule(TimeProvider.System));

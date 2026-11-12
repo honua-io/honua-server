@@ -20,15 +20,22 @@ internal sealed class CapOutputCacheLifetimeAtCdnLifetimePolicy : IOutputCachePo
 
     public ValueTask ServeResponseAsync(OutputCacheContext context, CancellationToken cancellationToken)
     {
+        Apply(context);
+        return ValueTask.CompletedTask;
+    }
+
+    // Also applied by any later policy that re-admits storage, so a re-admitted entry obeys the same limit.
+    internal static void Apply(OutputCacheContext context)
+    {
         if (SharedCacheResponse.SharedLifetime(context.HttpContext) is not { } cdnLifetime)
         {
-            return ValueTask.CompletedTask;
+            return;
         }
 
         if (cdnLifetime <= TimeSpan.Zero)
         {
             context.AllowCacheStorage = false;
-            return ValueTask.CompletedTask;
+            return;
         }
 
         var lifetime = context.ResponseExpirationTimeSpan ?? DefaultLifetime(context.HttpContext);
@@ -36,8 +43,6 @@ internal sealed class CapOutputCacheLifetimeAtCdnLifetimePolicy : IOutputCachePo
         {
             context.ResponseExpirationTimeSpan = cdnLifetime;
         }
-
-        return ValueTask.CompletedTask;
     }
 
     private static TimeSpan DefaultLifetime(HttpContext context)

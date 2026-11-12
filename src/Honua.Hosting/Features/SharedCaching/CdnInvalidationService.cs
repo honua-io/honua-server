@@ -96,11 +96,13 @@ internal sealed partial class CdnInvalidationService(
         CdnPurgeCause cause,
         CancellationToken cancellationToken)
     {
-        var result = await SendWithRetriesAsync(paths, cancellationToken).ConfigureAwait(false);
+        var distinctPaths = paths.Distinct(StringComparer.Ordinal).ToArray();
+        var withinBudget = distinctPaths.Length > MaxWildcardPathsPerInvalidation ? CdnPaths.Everything : distinctPaths;
+        var result = await SendWithRetriesAsync(withinBudget, cancellationToken).ConfigureAwait(false);
         if (result.Outcome is not CdnInvalidationOutcome.NotConfigured)
         {
             var outcome = result.Outcome.ToString();
-            var purgedPaths = string.Join(' ', paths.Distinct(StringComparer.Ordinal));
+            var purgedPaths = string.Join(' ', withinBudget);
             Log.PurgeRecorded(
                 logger, cause.Reason, cause.ChangeId, Environment.MachineName, outcome, result.Detail ?? string.Empty, purgedPaths);
         }
@@ -108,10 +110,8 @@ internal sealed partial class CdnInvalidationService(
         return result;
     }
 
-    private async Task<CdnInvalidationResult> SendWithRetriesAsync(string[] paths, CancellationToken cancellationToken)
+    private async Task<CdnInvalidationResult> SendWithRetriesAsync(IReadOnlyCollection<string> withinBudget, CancellationToken cancellationToken)
     {
-        var distinctPaths = paths.Distinct(StringComparer.Ordinal).ToArray();
-        var withinBudget = distinctPaths.Length > MaxWildcardPathsPerInvalidation ? CdnPaths.Everything : distinctPaths;
         var result = await invalidator.InvalidateAsync(withinBudget, cancellationToken).ConfigureAwait(false);
         foreach (var delay in BusyRetryDelays)
         {

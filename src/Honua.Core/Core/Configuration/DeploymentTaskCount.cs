@@ -6,9 +6,9 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Core.Configuration;
 
-// How many server tasks may share one database at once. An explicit count wins, and an autoscaling ceiling counts as
-// the number of tasks; a multi-node deployment that states neither is taken to run more than one task, because state
-// that only one task holds is wrong there either way.
+// How many server tasks may share one database at once: the largest stated count, an autoscaling ceiling included,
+// because pools and refusals must hold at the peak. A multi-node deployment that states none is taken to run more than
+// one task, because state that only one task holds is wrong there either way.
 public static class DeploymentTaskCount
 {
     public const string ReplicaCountKey = "Deployment:ReplicaCount";
@@ -24,11 +24,12 @@ public static class DeploymentTaskCount
     public static int Resolve(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
-        if (TryReadCount(configuration[ReplicaCountKey], out var count)
-            || TryReadCount(configuration[ServerReplicasKey], out count)
-            || TryReadCount(configuration[MaxTasksKey], out count))
+        var stated = new[] { ReplicaCountKey, ServerReplicasKey, MaxTasksKey }
+            .Select(key => TryReadCount(configuration[key], out var count) ? count : 0)
+            .Max();
+        if (stated > 0)
         {
-            return count;
+            return stated;
         }
 
         return string.Equals(configuration[ModeKey], "MultiNode", StringComparison.OrdinalIgnoreCase)
