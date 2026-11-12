@@ -11,6 +11,7 @@ using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
+using Honua.Server.Features.Studio.Models;
 using Honua.Server.Tests.Features.Admin;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -75,6 +76,58 @@ public sealed class StudioHumanDraftMutationTests : IAsyncLifetime
         var stored = await _fixture.Services.GetRequiredService<IStudioPackageStore>().GetDraftAsync(draftId);
         stored.Should().NotBeNull();
         response.Headers.GetValues("X-Honua-Operation-Instance-Id").Should().ContainSingle();
+    }
+
+    [IntegrationTheory]
+    [InlineData(false, "own")]
+    [InlineData(true, "own")]
+    [InlineData(false, "other")]
+    [InlineData(true, "other")]
+    [InlineData(false, "missing")]
+    [InlineData(true, "missing")]
+    [Endpoint("PUT /api/v1/studio/package-drafts/{draftId}")]
+    [Endpoint("DELETE /api/v1/studio/package-drafts/{draftId}")]
+    public async Task MutateDraft_VerifiedHuman_OnlyStoredOwnerExecutesDirectly(bool delete, string ownership)
+    {
+        using var human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider);
+        using var create = await CreateDraftAsync(human.Client);
+        create.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var createdBody = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
+        var draftId = createdBody.RootElement.GetProperty("data").GetProperty("draftId").GetGuid();
+        var store = _fixture.Services.GetRequiredService<IStudioPackageStore>();
+        var draft = (await store.GetDraftAsync(draftId))!;
+        draft = (await store.UpdateDraftAsync(draft with
+        {
+            OwnerId = ownership switch { "own" => human.ActorId, "other" => "another-canonical-actor", _ => null }
+        }))!;
+        var path = $"/api/v1/studio/package-drafts/{draftId:D}";
+        using var update = new StringContent(JsonSerializer.Serialize(new UpdateStudioPackageDraftRequest
+        {
+            PackageKey = draft.PackageKey,
+            WorkspaceId = draft.WorkspaceId,
+            // A requested owner must not substitute for the persisted owner's evidence.
+            OwnerId = human.ActorId,
+            Envelope = draft.Envelope,
+            Generation = draft.Generation,
+        }, StudioApiJsonContext.Default.UpdateStudioPackageDraftRequest), Encoding.UTF8, "application/json");
+
+        using var response = delete
+            ? await human.Client.DeleteAsync(path)
+            : await human.Client.PutAsync(path, update);
+        var body = await response.Content.ReadAsStringAsync();
+
+        if (ownership == "own")
+        {
+            response.StatusCode.Should().Be(delete ? HttpStatusCode.NoContent : HttpStatusCode.OK, body);
+        }
+        else
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.Accepted, body);
+            using var pending = JsonDocument.Parse(body);
+            pending.RootElement.GetProperty("data").GetProperty("status").GetInt32()
+                .Should().Be((int)OperationHandleStatus.RequiresApproval);
+            (await store.GetDraftAsync(draftId)).Should().BeEquivalentTo(draft);
+        }
     }
 
     [IntegrationTest]
