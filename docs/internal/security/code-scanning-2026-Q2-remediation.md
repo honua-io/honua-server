@@ -38,8 +38,8 @@ drift.
 
 | Dockerfile | Stage | Image | Digest |
 | --- | --- | --- | --- |
-| `docker/Dockerfile.functions` | build + runtime | `mcr.microsoft.com/azure-functions/dotnet-isolated:4.1055.300-2-dotnet-isolated9.0-appservice` | `@sha256:4bed140e217027464567f68e3e630486663922e4bc4d5ec6ecd5408b5bbb540f` |
-| `docker/Dockerfile.functions.aot` | build + runtime | `mcr.microsoft.com/azure-functions/dotnet-isolated:4.1055.300-2-dotnet-isolated9.0-appservice` | `@sha256:4bed140e217027464567f68e3e630486663922e4bc4d5ec6ecd5408b5bbb540f` |
+| `docker/Dockerfile.functions` | build + runtime | `mcr.microsoft.com/azure-functions/dotnet-isolated:4.1055.300-6-dotnet-isolated10.0-appservice` | `@sha256:b67cd05d98ef75de3b7a8c439262e7ad299e3379cd88489974003623cde5d67c` |
+| `docker/Dockerfile.functions.aot` | build + runtime | `mcr.microsoft.com/azure-functions/dotnet-isolated:4.1055.300-6-dotnet-isolated10.0-appservice` | `@sha256:b67cd05d98ef75de3b7a8c439262e7ad299e3379cd88489974003623cde5d67c` |
 | `docker/Dockerfile.lambda` | runtime | `public.ecr.aws/lambda/provided:al2023` | `@sha256:612c98f126c2a95e77a016d56fed50a83055e11d636132ee6ebdd461f01b9617` |
 | `docker/Dockerfile.lambda(.aot)` | adapter | `public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1` | `@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4` |
 
@@ -50,7 +50,7 @@ upstream contents deterministic so nightly Trivy stops re-uploading the same
 advisories under shifting layers and (b) brings the Functions image in line with
 the existing platform Dockerfile pattern (`Dockerfile`,
 `docker/Dockerfile.aot`, `docker/Dockerfile.lambda{,.aot}`). Refresh cadence:
-explicit PR per published image. The 2026-10-19 refresh moves off host 4.1053.200.3 (ASP.NET Core 8.0.30 and worker 9.0.19) to host 4.1055.250.1, whose shared frameworks are ASP.NET Core 8.0.32, the 9.0.21 worker, and Microsoft.NETCore.App 10.0.13. The floating `4-dotnet-isolated9.0-appservice` tag still resolves to ASP.NET Core 8.0.31. The 2026-11-04 refresh moves to host 4.1055.300.2, whose shared frameworks are 8.0.33, 9.0.22 and 10.0.14, together with the .NET 10.0.14 SDK, ASP.NET Core and runtime-deps images, the GDAL worker runtime, and the Native AOT toolchain the SDK restores (Microsoft.DotNet.ILCompiler 10.0.14, the first release outside GHSA-p3jp-9v83-76w9). The generated .NET inventory also records the
+explicit PR per published image. The 2026-10-19 refresh moves off host 4.1053.200.3 (ASP.NET Core 8.0.30 and worker 9.0.19) to host 4.1055.250.1, whose shared frameworks are ASP.NET Core 8.0.32, the 9.0.21 worker, and Microsoft.NETCore.App 10.0.13. The floating `4-dotnet-isolated9.0-appservice` tag still resolves to ASP.NET Core 8.0.31. The 2026-11-04 refresh moves to host 4.1055.300.2, whose shared frameworks are 8.0.33, 9.0.22 and 10.0.14, together with the .NET 10.0.14 SDK, ASP.NET Core and runtime-deps images, the GDAL worker runtime, and the Native AOT toolchain the SDK restores (Microsoft.DotNet.ILCompiler 10.0.14, the first release outside GHSA-p3jp-9v83-76w9). The 2026-11-12 refresh moves both Functions images from the .NET 9 isolated variant (out of support since 2026-11-10) to the .NET 10 isolated variant of host 4.1055.300.6, which ships only the 10.0.15 shared frameworks and is built on Ubuntu 24.04 rather than bookworm (#7379). The generated .NET inventory also records the
 digest-pinned auxiliary `docker/Dockerfile.lambda.aot.simple`; it remains outside
 the platform publish matrix. Developer images, including `docker/Dockerfile.dev`, are now digest-pinned
 and included in the generated inventory.
