@@ -438,7 +438,7 @@ internal sealed partial class FeatureDataAccess
         }
         var effective = reader.GetInt16(3) == 3
             ? (Feature?)null
-            : await ReadFeatureAsync(reader, cancellationToken).ConfigureAwait(false);
+            : ReadFeature(reader);
         return (effective, VersionEditsTableName, versionId);
     }
 
