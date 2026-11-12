@@ -428,7 +428,7 @@ public sealed class GeoArrowQueryFormatterTests
         ((Point)point).Y.Should().BeApproximately(21.3069, 0.0001);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task FormatAsGeoArrowAsync_WithMetadataV2Object_WritesReadableArrowStreamWithGeoMetadata()
     {
         var resource = CreateResource(

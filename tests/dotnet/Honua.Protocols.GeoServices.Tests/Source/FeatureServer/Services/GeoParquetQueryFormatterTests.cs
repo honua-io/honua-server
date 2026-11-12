@@ -464,7 +464,7 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
         geoDoc.RootElement.GetProperty("primary_column").GetString().Should().Be("geometry");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task FormatAsGeoParquet_WithMetadataV2Object_WritesReadableParquetWithGeoMetadata()
     {
         var resource = CreateResource(
