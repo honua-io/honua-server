@@ -420,37 +420,13 @@ internal sealed partial class FeatureDataAccess
         int layerId,
         CancellationToken cancellationToken)
     {
-        var stopwatch = Stopwatch.StartNew();
-        try
+        var objectIds = ImmutableArray.CreateBuilder<long>();
+        await foreach (var objectId in StreamSelectObjectIdsQueryAsync(query, featureQuery, layerId, cancellationToken).ConfigureAwait(false))
         {
-            await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-            await using var command = await CreateCommandAsync(
-                connection,
-                query.Sql,
-                cmd => AddQueryParameters(cmd, featureQuery, layerId, query.WhereParameters),
-                cancellationToken).ConfigureAwait(false);
-
-            var objectIds = new List<long>();
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                objectIds.Add(reader.GetInt64(0));
-            }
-
-            stopwatch.Stop();
-            _cacheManager.RecordQueryMetrics("select_objectids", stopwatch.ElapsedMilliseconds, objectIds.Count);
-            RecordPerformanceQuery("select_objectids", layerId, stopwatch.ElapsedMilliseconds, objectIds.Count);
-            LogSlowQuery("select_objectids", stopwatch.ElapsedMilliseconds, layerId, objectIds.Count);
-
-            return objectIds.ToImmutableArray();
+            objectIds.Add(objectId);
         }
-        catch (Exception)
-        {
-            stopwatch.Stop();
-            _cacheManager.RecordQueryMetrics("select_objectids_error", stopwatch.ElapsedMilliseconds);
-            throw;
-        }
+
+        return objectIds.ToImmutable();
     }
 
     public async Task<Feature?> GetFeatureAsync(int layerId, long featureId, CancellationToken cancellationToken)

@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Data;
+using System.Runtime.CompilerServices;
 using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.FeatureStore.Abstractions;
@@ -89,6 +90,20 @@ internal interface IFeatureDataAccess
         FeatureQuery featureQuery,
         int layerId,
         CancellationToken cancellationToken);
+
+    // Providers without a row-at-a-time reader fall back to the collected ids.
+    async IAsyncEnumerable<long> StreamSelectObjectIdsQueryAsync(
+        ParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var objectIds = await ExecuteSelectObjectIdsQueryAsync(query, featureQuery, layerId, cancellationToken).ConfigureAwait(false);
+        foreach (var objectId in objectIds)
+        {
+            yield return objectId;
+        }
+    }
 
     /// <summary>
     /// Executes a related records query and returns matching features

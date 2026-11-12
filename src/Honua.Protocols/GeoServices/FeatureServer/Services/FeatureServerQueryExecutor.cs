@@ -471,6 +471,16 @@ internal sealed partial class FeatureServerQueryExecutor
         HttpContext context,
         CancellationToken cancellationToken)
     {
+        if (_featureReader is IObjectIdStreamingReader streamingReader)
+        {
+            await StreamObjectIdsWithValidationAsync(
+                streamingReader,
+                layerId,
+                query,
+                new ObjectIdResponse(objectIdFieldName, context, cancellationToken)).ConfigureAwait(false);
+            return;
+        }
+
         var objectIds = await QueryObjectIdsWithValidationAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         await WriteObjectIdsAsync(objectIds, objectIdFieldName, context, cancellationToken).ConfigureAwait(false);
     }

@@ -42,7 +42,7 @@ namespace Honua.Db.Postgres.Features.FeatureStore;
 /// 'field = value', 'age > 18') and properly parameterizes all literal values while
 /// validating field names to prevent SQL injection attacks.</para>
 /// </remarks>
-internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IDistinctFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore, IPreChangeImageReader
+internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IDistinctFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IObjectIdStreamingReader, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore, IPreChangeImageReader
 {
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
@@ -254,14 +254,27 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
+        var objectIds = ImmutableArray.CreateBuilder<long>();
+        await foreach (var objectId in StreamObjectIdsAsync(layerId, query, cancellationToken).ConfigureAwait(false))
+        {
+            objectIds.Add(objectId);
+        }
+
+        return objectIds.ToImmutable();
+    }
+
+    public async IAsyncEnumerable<long> StreamObjectIdsAsync(
+        int layerId,
+        FeatureQuery query,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
         query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var objectIdsQuery = _queryBuilder.BuildObjectIdsQuery(layerId, query, geometryStorageType);
-        return await _dataAccess.ExecuteSelectObjectIdsQueryAsync(
-            objectIdsQuery,
-            query,
-            layerId,
-            cancellationToken).ConfigureAwait(false);
+        await foreach (var objectId in _dataAccess.StreamSelectObjectIdsQueryAsync(objectIdsQuery, query, layerId, cancellationToken).ConfigureAwait(false))
+        {
+            yield return objectId;
+        }
     }
 
     public async Task<IReadOnlySet<long>> QueryPreChangeObjectIdsAsync(

@@ -320,8 +320,19 @@ internal sealed partial class FeatureServerQueryExecutor
             return;
         }
 
+        var reader = routedReader ?? _featureReader;
+        if (reader is IObjectIdStreamingReader streamingReader)
+        {
+            await StreamObjectIdsWithValidationAsync(
+                streamingReader,
+                storageLayerId,
+                query,
+                new ObjectIdResponse(objectIdFieldName, context, cancellationToken)).ConfigureAwait(false);
+            return;
+        }
+
         var objectIds = await QueryObjectIdsWithValidationAsync(
-            routedReader ?? _featureReader,
+            reader,
             storageLayerId,
             query,
             cancellationToken).ConfigureAwait(false);
