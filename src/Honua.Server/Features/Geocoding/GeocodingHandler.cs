@@ -679,7 +679,7 @@ internal sealed class GeocodingHandler(
             // order with the input records. The candidate's correlation attribute (or its position)
             // names the zero-based input index; the emitted ResultID is that record's OBJECTID, or
             // its one-based position when the record has none, as GeoServices clients correlate
-            // batch results by ResultID == OBJECTID (#7417). ResultID is stamped both on the
+            // batch results by ResultID == OBJECTID. ResultID is stamped both on the
             // location and in its attributes, for match and no-match slots alike.
             var candidates = result.Data ?? [];
             var reprojectedLocations = new List<GeocodeAddressLocation>(candidates.Count);
@@ -1366,7 +1366,7 @@ internal sealed class GeocodingHandler(
     }
 
     // Maps a zero-based input index to the ResultID a GeoServices client expects: the submitted
-    // record's OBJECTID, or the one-based position when the record carried none (#7417).
+    // record's OBJECTID, or the one-based position when the record carried none.
     private static int ResolveClientResultId(int inputIndex, List<int?> recordIds)
         => inputIndex >= 0 && inputIndex < recordIds.Count && recordIds[inputIndex] is { } objectId
             ? objectId

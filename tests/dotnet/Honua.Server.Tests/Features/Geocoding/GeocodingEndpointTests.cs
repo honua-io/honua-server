@@ -677,7 +677,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     public async Task BatchGeocode_ResultIdEchoesRecordObjectId_FallingBackToOneBasedPosition()
     {
         // GeoServices clients (the .NET SDK BatchGeocodeDetailedAsync, ArcGIS clients) correlate
-        // batch results by ResultID == the submitted record's OBJECTID (#7417). A record without
+        // batch results by ResultID == the submitted record's OBJECTID. A record without
         // an OBJECTID gets its one-based position. ResultID must hold on the location and in its
         // attributes, even when outFields narrows the attributes.
         using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
