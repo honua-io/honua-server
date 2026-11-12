@@ -25,6 +25,8 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 [JsonSerializable(typeof(MetadataV2Role))]
 [JsonSerializable(typeof(MetadataV2RuntimeSnapshot))]
 [JsonSerializable(typeof(MetadataV2ObjectMetadata))]
+[JsonSerializable(typeof(MetadataV2ResponsibleParty))]
+[JsonSerializable(typeof(MetadataV2SpatialResolution))]
 [JsonSerializable(typeof(MetadataV2Status))]
 [JsonSerializable(typeof(MetadataV2Condition))]
 [JsonSerializable(typeof(MetadataV2ExtensionPoint))]

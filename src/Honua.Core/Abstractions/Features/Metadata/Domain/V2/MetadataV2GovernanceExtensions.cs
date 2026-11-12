@@ -20,9 +20,11 @@ public static class MetadataV2GovernanceExtensions
         {
             License = ResolveLicense(resourceMetadata, serviceMetadata),
             Attribution = FirstDefined(resourceMetadata.Attribution, serviceMetadata.Attribution),
-            ContactPoint = IsDefined(resourceMetadata.ContactPoint)
-                ? resourceMetadata.ContactPoint
-                : serviceMetadata.ContactPoint,
+            AccessConstraints = FirstDefined(resourceMetadata.AccessConstraints, serviceMetadata.AccessConstraints),
+            Fees = FirstDefined(resourceMetadata.Fees, serviceMetadata.Fees),
+            Language = FirstDefined(resourceMetadata.Language, serviceMetadata.Language),
+            ContactPoint = HasContact(resourceMetadata) ? resourceMetadata.ContactPoint : serviceMetadata.ContactPoint,
+            Contacts = HasContact(resourceMetadata) ? resourceMetadata.Contacts : serviceMetadata.Contacts,
             Links = MergeLinks(
                 resourceMetadata.Links,
                 serviceMetadata.Links,
@@ -41,6 +43,9 @@ public static class MetadataV2GovernanceExtensions
            resourceMetadata.Links.Any(IsLicenseLink)
             ? resourceMetadata.License
             : serviceMetadata.License;
+
+    private static bool HasContact(MetadataV2ObjectMetadata metadata)
+        => metadata.Contacts.Count > 0 || IsDefined(metadata.ContactPoint);
 
     private static bool IsDefined(MetadataV2ContactPoint? contactPoint)
         => contactPoint is not null &&

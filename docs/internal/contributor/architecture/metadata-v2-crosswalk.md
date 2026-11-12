@@ -4,6 +4,26 @@ Concept-by-concept semantic bridge between the V2 canonical graph and every
 API/package format honua-server projects metadata into. Used to validate that
 the V2 model can losslessly round-trip every concept these standards expose.
 
+## Source of truth in code
+
+The descriptive-metadata crosswalk is defined once in code; this page explains it but does not override it.
+
+- `MetadataCrosswalk.Fields` (`src/Honua.Core/Core/Features/Metadata/Crosswalk/`) maps each Honua field to its
+  ISO 19115-3, ISO 19139, DCAT-AP, STAC, OGC API Records and OGC capabilities element. A test fails when an
+  encoder stops emitting a mapped field.
+- `DescriptiveMetadataResolver` produces the effective record every emitter reads. Descriptive fields belong to
+  the item (a layer may override its dataset). Governance fields (license, access constraints, fees,
+  attribution, contacts, language, governance links) fall back from the dataset to its service, the service's
+  folder, then the environment. A dataset never inherits a publisher. A service also takes its title,
+  description, keywords and publisher from its folder, then the environment.
+- With no explicit access-constraints statement, the statement is derived from the license.
+- `Iso19139Writer`, `Iso19115Part3Writer` and `DcatApWriter` encode the record. The ISO encodings describe
+  datasets; services are described in DCAT as `dcat:DataService`. Code values outside a target's code list
+  (for example ISO 19115-1 roles in ISO 19139) are dropped from that encoding.
+- WCS 1.0 keeps `NONE` for fees and access constraints: its schema types both as a list of names.
+
+The tables below are the original gap analysis; where they disagree with the code, the code wins.
+
 ## Coverage legend
 - ✅ — V2 has a typed slot, lossless mapping
 - ⚠️ — V2 covers it via the open `Extensions` / `Options` bag (works, untyped)

@@ -723,6 +723,7 @@ public static class MetadataV2GraphValidator
             errors.Add(
                 $"{ownerLabel} metadata.license must be a canonical SPDX expression or the literal 'proprietary' without padding or control characters and must not exceed {SpdxLicensePolicy.MaxExpressionLength} characters.");
         }
+        MetadataV2DescriptiveValidation.Validate(errors, ownerLabel, metadata);
 
         if (!IsValidGovernanceText(metadata.Attribution, MetadataV2ObjectMetadata.MaxAttributionLength))
         {
