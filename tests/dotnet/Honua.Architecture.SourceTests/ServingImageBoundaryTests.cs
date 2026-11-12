@@ -292,6 +292,19 @@ public sealed class ServingImageBoundaryTests
             {
                 gate.Should().Contain("github.event_name == 'push'", "scan_only dispatches stay advisory");
             }
+
+            var nextStepIndex = workflow.IndexOf(
+                "\n      - name:",
+                publicationIndex + expectation.Publication.Length,
+                StringComparison.Ordinal);
+            var publication = workflow[publicationIndex..(nextStepIndex >= 0 ? nextStepIndex : workflow.Length)];
+            var image = expectation.Path == Platform ? "scan_image" : "staging_image";
+            publication.Should().Contain(
+                $"CANDIDATE: ${{{{ steps.targets.outputs.{image} }}}}@${{{{ {expectation.Digest} }}}}",
+                $"{expectation.Path} must promote the digest the gate scanned");
+            publication.Should().Contain("scripts/ci/promote-verified-image.py", expectation.Path);
+            publication.Should().Contain("--candidate \"$CANDIDATE\"", expectation.Path);
+            publication.Should().Contain("--staging-tag", expectation.Path);
         }
 
         foreach (var path in new[] { Deploy, Platform })

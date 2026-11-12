@@ -11,15 +11,13 @@
 set -euo pipefail
 
 image="${1:?usage: trivy-release-gate.sh <image@sha256:digest>}"
-[[ "$image" == *@sha256:* ]] || { echo "::error::release gate needs a digest reference, got $image" >&2; exit 2; }
+if [[ "$image" != *@sha256:* ]]; then
+  echo "::error::release gate needs a digest reference, got $image" >&2
+  exit 2
+fi
 : "${TRIVY_IMAGE:?TRIVY_IMAGE must name the pinned Trivy image}"
 cache_dir="${TRIVY_CACHE_DIR:-${RUNNER_TEMP:-/tmp}/trivy-cache}"
 mkdir -p "$cache_dir"
-
-# Reuse a database an earlier scan in this job already downloaded; otherwise fetch it.
-db_options=()
-[[ -f "$cache_dir/db/trivy.db" ]] && db_options+=(--skip-db-update)
-[[ -d "$cache_dir/java-db" ]] && db_options+=(--skip-java-db-update)
 
 docker pull --quiet "$image" >/dev/null
 docker run --rm \
@@ -29,7 +27,6 @@ docker run --rm \
   "$TRIVY_IMAGE" image \
   --scanners vuln \
   --skip-version-check \
-  "${db_options[@]}" \
   --severity HIGH,CRITICAL \
   --ignore-unfixed \
   --ignorefile /work/.trivyignore-release \
