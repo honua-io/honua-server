@@ -145,7 +145,7 @@ class PrGateRunnerRoutingTests(unittest.TestCase):
 const github = {repository: 'owner/repo', event: {pull_request: {draft, head: {repo: {full_name: fork ? 'fork/repo' : 'owner/repo'}}}}};
 const needs = {'runner-select': {outputs: {runner: selected}}};
 const vars = {HONUA_PR_GATE_RUNNER: gate, HONUA_HEAVY_RUNNER: heavy};
-process.stdout.write(JSON.stringify(new Function('github', 'needs', 'vars', 'fromJSON', `return (${expression});`)(github, needs, vars, JSON.parse)));
+process.stdout.write(JSON.stringify(new Function('context', `const {github, needs, vars, fromJSON} = context; return (${expression});`)({github, needs, vars, fromJSON: JSON.parse})));
 """
         pool = {"group": "honua-heavy", "labels": ["honua-heavy"]}
         scenarios = [
