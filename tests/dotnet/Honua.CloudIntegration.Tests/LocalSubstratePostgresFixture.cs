@@ -4,7 +4,6 @@
 using Npgsql;
 using Testcontainers.PostgreSql;
 using DotNet.Testcontainers.Containers;
-using System.Text.RegularExpressions;
 using Xunit;
 
 namespace Honua.CloudIntegration.Tests;
@@ -52,18 +51,8 @@ public sealed class LocalSubstratePostgresFixture : IAsyncLifetime
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Keep startup failures visible without logging connection strings, environment
-            // assignments or URI credentials from Docker/Testcontainers exception messages.
-            var message = Regex.Replace(ex.Message,
-                @"\b[a-z][a-z0-9+.-]*://[^\s""'<>]+", "[redacted URI]",
-                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-            message = Regex.Replace(message,
-                @"\b[\w]+(?:[ ]+[\w]+)*\s*=\s*(?:""[^""]*""|'[^']*'|[^;\s,""}\]]+)",
-                "[redacted assignment]", RegexOptions.CultureInvariant);
-            message = Regex.Replace(message,
-                @"(""(?:password|pwd|username|connectionstring|authorization|token|secret)""\s*:\s*)""(?:\\.|[^""\\])*""",
-                "$1\"[redacted]\"", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-            Console.Error.WriteLine($"PostgreSQL fixture startup failed ({ex.GetType().Name}): {message}");
+            // Exception messages can contain container credentials and connection strings.
+            Console.Error.WriteLine($"PostgreSQL fixture startup failed ({ex.GetType().Name}).");
             Available = false;
             if (_container is not null)
             {
