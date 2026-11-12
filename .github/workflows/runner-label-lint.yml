@@ -4,7 +4,7 @@ name: Runner label lint
 # check parses the candidate's workflow files and fails when a fork-reachable
 # job could resolve runs-on to a self-hosted runner without the fork guard.
 # pull_request_target keeps this caller on the base branch's version; the
-# shared workflow checks out only the PR head's .github/workflows, without
+# shared workflow checks out only the PR's .github/workflows (merge ref, else head), without
 # credentials, and reads it as data.
 on:
   push:
@@ -21,4 +21,4 @@ concurrency:
 
 jobs:
   runner-label-lint:
-    uses: honua-io/.github/.github/workflows/runner-label-lint.yml@2f0caca5b5a84b9bcd9af24b1916b47fee2204ed # runner-label lint
+    uses: honua-io/.github/.github/workflows/runner-label-lint.yml@ee6ad1b3db454828b77d8765f8770316b2f2db84 # runner-label lint
