@@ -48,7 +48,8 @@ internal static partial class RlsPolicyEndpoints
 
         group.MapPost("/", HandleCreatePolicy)
             .WithDisplayName("Create RLS Policy")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
 
         group.MapGet("/{id:guid}", HandleGetPolicy)
             .WithDisplayName("Get RLS Policy")

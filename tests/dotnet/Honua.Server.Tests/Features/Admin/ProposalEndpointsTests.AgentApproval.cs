@@ -24,6 +24,8 @@ public sealed partial class ProposalEndpointsTests
     [Endpoint("PUT /api/v1/console/content/{id}/share/access")]
     [Endpoint("PATCH /api/v1/console/content/{id}")]
     [Endpoint("DELETE /api/v1/admin/rls-policies/{id}")]
+    [Endpoint("DELETE /api/v1/admin/field-mask-policies/{id}")]
+    [Endpoint("POST /api/v1/console/content/{id}/share/link")]
     public async Task ShareVisibilityAndRowPolicies_AgentKey_CannotWidenAccess()
     {
         using var agent = await CreateKeyClientAsync("agent-sharing", AgentKeyPermissions);
@@ -31,13 +33,19 @@ public sealed partial class ProposalEndpointsTests
 
         var share = await agent.PutAsJsonAsync($"/api/v1/console/content/{id}/share/access", new { accessTier = "public-indexed" });
         var widen = await agent.PatchAsJsonAsync($"/api/v1/console/content/{id}", new { visibility = "public" });
+        var team = await agent.PatchAsJsonAsync($"/api/v1/console/content/{id}", new { visibility = "team" });
         var narrow = await agent.PatchAsJsonAsync($"/api/v1/console/content/{id}", new { visibility = "personal" });
+        var link = await agent.PostAsJsonAsync($"/api/v1/console/content/{id}/share/link", new { });
         var unmask = await agent.DeleteAsync($"/api/v1/admin/rls-policies/{id}");
+        var unmaskFields = await agent.DeleteAsync($"/api/v1/admin/field-mask-policies/{id}");
 
         await AssertAgentApprovalRefusalAsync(share, ConsoleGuidance, AgentApprovalFilter.AccessGrantsRef);
         await AssertAgentApprovalRefusalAsync(widen, ConsoleGuidance, AgentApprovalFilter.ContentVisibilityRef);
+        await AssertAgentApprovalRefusalAsync(team, ConsoleGuidance, AgentApprovalFilter.ContentVisibilityRef);
         (await narrow.Content.ReadAsStringAsync()).Should().NotContain("urn:honua:approval-required");
+        await AssertAgentApprovalRefusalAsync(link, ConsoleGuidance, AgentApprovalFilter.AccessGrantsRef);
         await AssertAgentApprovalRefusalAsync(unmask, ConsoleGuidance, AgentApprovalFilter.AccessGrantsRef);
+        await AssertAgentApprovalRefusalAsync(unmaskFields, ConsoleGuidance, AgentApprovalFilter.AccessGrantsRef);
     }
 
     [IntegrationTest]
@@ -109,7 +117,7 @@ public sealed partial class ProposalEndpointsTests
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/operations/{id}/submit")]
-    public async Task SubmitOtherGatedOperation_AgentKey_IsRefusedWhateverTheApprovalSettings()
+    public async Task SubmitOtherGatedOperation_AgentKey_IsRefusedWithAgentPolicyRef()
     {
         using var agent = await CreateKeyClientAsync("agent-fields-operation", AgentKeyPermissions);
         var request = new OperationInvokeRequest

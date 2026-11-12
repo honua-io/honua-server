@@ -10,9 +10,9 @@ using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Identity.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin;
 using Honua.Server.Features.Console.Models;
 using Microsoft.AspNetCore.Mvc;
-using Honua.Server.Features.Admin;
 
 namespace Honua.Server.Features.Console;
 

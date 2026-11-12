@@ -1,8 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.Infrastructure.Authentication;
 using Honua.Core.Features.Console.Domain;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Console.Models;
 
@@ -36,7 +36,7 @@ internal static class AgentApprovalFilter
     public static ValueTask<object?> LayerState(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
         => Refuse(invocation, next, LayerStateRef, ConsoleGuidance);
 
-    // Organization or public visibility widens who can see content; narrowing stays open to agents.
+    // Any visibility beyond personal, or a team scope, puts content in front of a new audience.
     public static ValueTask<object?> ContentVisibility(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
         => invocation.Arguments.Any(static argument => WidensVisibility(argument))
             ? Refuse(invocation, next, ContentVisibilityRef, ConsoleGuidance)
@@ -44,14 +44,14 @@ internal static class AgentApprovalFilter
 
     private static bool WidensVisibility(object? argument) => argument switch
     {
-        CreateConsoleContentItemRequest create => IsWide(create.Visibility),
-        UpdateConsoleContentItemRequest update => IsWide(update.Visibility),
+        CreateConsoleContentItemRequest create => IsWide(create.Visibility) || create.TeamScopeId is not null,
+        UpdateConsoleContentItemRequest update => IsWide(update.Visibility) || update.TeamScopeId is not null,
         PatchConsoleContentItemRequest patch => IsWide(patch.Visibility),
         _ => false,
     };
 
     private static bool IsWide(ConsoleVisibility? visibility)
-        => visibility is ConsoleVisibility.Organization or ConsoleVisibility.Public;
+        => visibility is not null and not ConsoleVisibility.Personal;
 
     public static ValueTask<object?> AccessGrants(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
         => Refuse(invocation, next, AccessGrantsRef, ConsoleGuidance);
