@@ -276,8 +276,8 @@ def validate(
         raise AssertionError("trusted consumer must inspect the zip before any extraction")
     require(
         consumer,
-        "candidate only; independent PR Gate required",
-        "candidate output must remain excluded from the accuracy audit without PR Gate corroboration",
+        "candidate only; independent byte regeneration required",
+        "candidate output must remain excluded from the accuracy audit without independent byte regeneration",
     )
     consumer_without_routing = re.sub(r"(?m)^\s*runs-on:.*$", "", consumer)
     if "github.event.pull_request.head" in consumer_without_routing or "github.head_ref" in consumer_without_routing:

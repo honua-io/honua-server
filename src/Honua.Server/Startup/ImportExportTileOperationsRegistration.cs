@@ -233,10 +233,8 @@ internal static class ImportExportTileOperationsRegistration
                 Honua.Core.Features.ControlPlane.Abstractions.IJobExecutor,
                 TileCacheJobExecutor>());
 
-        // The submission service depends on the durable execution-job store/queue, which are
-        // present when the durable job substrate is entitled and Redis is connected — NOT when
-        // durability was attested (honua-server#4502; attestation decides what is advertised,
-        // not what is composed). Mirrors AddGeoprocessing by keying on the store itself.
+        // The submission service depends on the durable execution-job store and queue, which are
+        // present when the system database is. Mirrors AddGeoprocessing by keying on the store itself.
         // Gating registration on the store keeps GetService<ITileCacheJobService>() from
         // throwing on a missing dependency in stores-less dev/test profiles; in those
         // profiles the admin endpoint simply uses the in-process channel path.

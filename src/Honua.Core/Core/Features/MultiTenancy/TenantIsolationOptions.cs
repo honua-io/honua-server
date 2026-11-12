@@ -8,7 +8,7 @@ public sealed class TenantIsolationOptions
 {
     public const string SectionName = "MultiTenancy";
 
-    public bool Enabled { get; set; }
+    public bool Enabled { get; set; } = true;
 
     public string? DefaultTenantId { get; set; } = "public";
 

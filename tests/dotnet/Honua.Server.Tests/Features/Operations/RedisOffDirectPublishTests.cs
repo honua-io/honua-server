@@ -119,7 +119,7 @@ public sealed class RedisOffDirectPublishTests
         var refusal = await Assert.ThrowsAsync<CapabilityUnavailableException>(
             () => invoker.SubmitAsync(PublishRequest(), Caller(AdminRole)));
 
-        refusal.MissingDependency.Should().Be(CapabilityUnavailableCodes.RedisDependency);
+        refusal.MissingDependency.Should().Be(CapabilityUnavailableCodes.SystemDatabaseDependency);
         refusal.Capability.Should().Be(CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
         await publishing.DidNotReceiveWithAnyArgs().PublishLayerAsync(default!, default!, default);
     }
@@ -139,7 +139,7 @@ public sealed class RedisOffDirectPublishTests
             },
             Caller(AdminRole)));
 
-        refusal.MissingDependency.Should().Be(CapabilityUnavailableCodes.RedisDependency);
+        refusal.MissingDependency.Should().Be(CapabilityUnavailableCodes.SystemDatabaseDependency);
     }
 
     [UnitTest]
@@ -157,7 +157,7 @@ public sealed class RedisOffDirectPublishTests
             },
             Caller(AdminRole)));
 
-        refusal.MissingDependency.Should().Be(CapabilityUnavailableCodes.RedisDependency);
+        refusal.MissingDependency.Should().Be(CapabilityUnavailableCodes.SystemDatabaseDependency);
     }
 
     [Theory]
@@ -238,7 +238,7 @@ public sealed class RedisOffDirectPublishTests
         var refusal = await Assert.ThrowsAsync<CapabilityUnavailableException>(
             () => invoker.SubmitAsync(StylePresetRequest(), Caller(AdminRole)));
 
-        refusal.MissingDependency.Should().Be(CapabilityUnavailableCodes.RedisDependency);
+        refusal.MissingDependency.Should().Be(CapabilityUnavailableCodes.SystemDatabaseDependency);
         refusal.Capability.Should().Be(CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
         await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
     }
@@ -268,7 +268,7 @@ public sealed class RedisOffDirectPublishTests
             },
             Caller(AdminRole)));
 
-        refusal.MissingDependency.Should().Be(CapabilityUnavailableCodes.RedisDependency);
+        refusal.MissingDependency.Should().Be(CapabilityUnavailableCodes.SystemDatabaseDependency);
     }
 
     [UnitTest]
@@ -278,9 +278,9 @@ public sealed class RedisOffDirectPublishTests
         durable.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns<OperationHandle?>(_ => throw new CapabilityUnavailableException(
                 CapabilityUnavailableCodes.DurableControlPlaneDetail,
-                CapabilityUnavailableCodes.RedisDependency,
-                CapabilityUnavailableCodes.RedisRemediation,
-                CapabilityUnavailableCodes.RedisRemediationRef));
+                CapabilityUnavailableCodes.SystemDatabaseDependency,
+                CapabilityUnavailableCodes.SystemDatabaseRemediation,
+                CapabilityUnavailableCodes.SystemDatabaseRemediationRef));
         var store = new NonDurableDirectOperationInstanceStore(durable, [ServicePublishOperation.OperationId]);
         var direct = Envelope("opinst-direct", ServicePublishOperation.OperationId);
         var governed = Envelope("opinst-governed", "admin.layer.filter.set");
