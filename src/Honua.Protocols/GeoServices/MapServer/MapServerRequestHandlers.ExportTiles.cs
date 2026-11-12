@@ -429,7 +429,8 @@ internal static partial class MapServerEndpoints
             .Select(static layer => CreateRenderLayerDescriptorFromV2(
                 layer.Layer.StorageLayerId,
                 HasMapServerGeometry(layer.Layer.Resource),
-                layer.Layer.Resource.ReadGeometryType()))
+                layer.Layer.Resource.ReadGeometryType()) with
+            { Resource = layer.Layer.Resource })
             .ToArray();
 
         return (new ExportTilesPlan(
