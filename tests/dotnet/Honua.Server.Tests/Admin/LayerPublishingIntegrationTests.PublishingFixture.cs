@@ -74,6 +74,7 @@ public sealed partial class LayerPublishingIntegrationTests
             await ClearMissingSridAsync();
             await ServerTestData.SeedAsync(Host.Postgres, Host.CurrentSchema!);
             await ServerTestData.EnsureFixtureAttachmentsAsync(Host.Postgres, "honua");
+            // Reseeding clears honua.data_connections, including the fixture test connection.
             await Host.EnsureTestSecureConnectionAsync();
             using var scope = Host.Services.CreateScope();
             var provider = scope.ServiceProvider.GetRequiredService<TestMetadataV2GraphProvider>();

@@ -764,11 +764,6 @@ public sealed class WebAppFixture : IAsyncLifetime
         return _currentSchema;
     }
 
-    /// <summary>
-    /// Registers the test secure connection when it is absent. Initialization calls this;
-    /// class-scoped fixtures call it again before each case so a reused host keeps the
-    /// connection a fresh host would have.
-    /// </summary>
     public Task EnsureTestSecureConnectionAsync()
         => Honua.TestKit.Mixins.WebAppFixtureSecureConnectionMixin.EnsureTestSecureConnectionAsync(_serviceScope);
 
