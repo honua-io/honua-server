@@ -18,7 +18,10 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.Protocols.GeoServices.FeatureServer;
+using Honua.Server.Features.Operations;
 using Honua.Core.Queries.Filters;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
@@ -118,6 +121,8 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             {
                 services.AddSingleton<IAuditLog, PersistedTestAuditLog>();
             }
+            UseInMemoryAuthenticationState(services);
+            RemoveDurableOperationHostedServices(services);
             services.AddScoped<ISqlFilterTranslator, AllowAllSqlFilterTranslator>();
         });
         builder.ConfigureAppConfiguration((context, configBuilder) =>
@@ -140,6 +145,31 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                 ["FileStorage:LocalStorage:CreateDirectoryIfNotExists"] = "true"
             });
         });
+    }
+
+    // Authentication state belongs to this database-free host, including when
+    // a test selects Production to exercise its authentication policy.
+    private static void UseInMemoryAuthenticationState(IServiceCollection services)
+    {
+        services.RemoveAll<IAdminApiKeyStore>();
+        services.AddSingleton<IAdminApiKeyStore, InMemoryAdminApiKeyStore>();
+        services.RemoveAll<ITokenReplayStore>();
+        services.AddSingleton<ITokenReplayStore, InMemoryTokenReplayStore>();
+        services.RemoveAll<ISecurityTokenStore>();
+        services.AddSingleton<ISecurityTokenStore, InMemorySecurityTokenStore>();
+    }
+
+    // Durable operation startup checks and reconcilers require real persistence.
+    private static void RemoveDurableOperationHostedServices(IServiceCollection services)
+    {
+        Type[] durableOperationServices =
+            [typeof(OperationRuntimeStartupValidator), typeof(PlannedProposalReconciler), typeof(QueuedOperationReconciler)];
+        foreach (var descriptor in services.Where(descriptor =>
+                     descriptor.ServiceType == typeof(IHostedService) &&
+                     durableOperationServices.Contains(descriptor.ImplementationType)).ToArray())
+        {
+            services.Remove(descriptor);
+        }
     }
 
     private sealed class NullSecureConnectionRegistry : ISecureConnectionRegistry
