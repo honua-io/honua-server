@@ -29,6 +29,7 @@ public static partial class EndpointRegistry
         .. AdminAlertEndpoints,
         .. AdminImportEndpoints,
         .. AdminOperationEndpoints,
+        .. AssetEndpoints,
         .. PortalSharingEndpoints,
         .. GeocodeEndpoints,
         .. FeatureServerEndpoints,
