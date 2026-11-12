@@ -22,12 +22,8 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Two-node proof that tile-export and geoprocessing submissions share one admission lease
-/// and one durable active set (#4691). Each node is an independent store,
-/// evaluator, and coordinator; the tile-export and geoprocessing services on a node share
-/// that node's coordinator. The services under test are the shipped ones.
-/// </summary>
+// Two nodes, each with its own store, evaluator and coordinator; the shipped tile-export and
+// geoprocessing services on a node share that node's coordinator, lease and durable active set.
 [Protocol(TestProtocols.GPServer)]
 public sealed class TileExportAdmissionSharedLeaseTests
     : IClassFixture<DatabaseFixtureAdapter>, IAsyncLifetime

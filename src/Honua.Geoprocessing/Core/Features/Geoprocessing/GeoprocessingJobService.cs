@@ -827,7 +827,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var effectiveProtocolMetadata = protocolMetadata?.ContainsKey(GpProcessReleaseAdmission.ProcessParam) == true
             ? protocolMetadata
             : ResolveEffectiveProtocolControls(protocolMetadata, workload);
-        var now = DateTimeOffset.UtcNow;
 
         async Task<bool> ConfirmKeyedReplayAsync(CancellationToken replayToken)
         {
@@ -1025,6 +1024,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     };
                 }
 
+                // Stamped inside the admission window: created_at is the rate-window charge time.
+                var now = DateTimeOffset.UtcNow;
                 jobRecord = new ExecutionJobRecord
                 {
                     OperationId = jobId,
