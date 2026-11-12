@@ -56,6 +56,12 @@ public sealed record StacCollection
     [JsonPropertyName("license")]
     public required string License { get; init; }
 
+    [JsonPropertyName("language")]
+    public LanguageMember? Language { get; init; }
+
+    [JsonPropertyName("themes")]
+    public ImmutableArray<ThemeMember>? Themes { get; init; }
+
     [JsonPropertyName("providers")]
     public ImmutableArray<StacProvider>? Providers { get; init; }
 

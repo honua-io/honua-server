@@ -210,4 +210,56 @@ public sealed record OgcRecordProperties
     [JsonPropertyName("layerIds")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ImmutableArray<int>? LayerIds { get; init; }
+
+    [JsonPropertyName("keywords")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ImmutableArray<string>? Keywords { get; init; }
+
+    [JsonPropertyName("themes")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ImmutableArray<ThemeMember>? Themes { get; init; }
+
+    [JsonPropertyName("language")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public LanguageMember? Language { get; init; }
+
+    [JsonPropertyName("license")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? License { get; init; }
+
+    [JsonPropertyName("rights")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Rights { get; init; }
+
+    [JsonPropertyName("contacts")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ImmutableArray<OgcRecordContact>? Contacts { get; init; }
+}
+
+public sealed record OgcRecordContact
+{
+    [JsonPropertyName("name")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Name { get; init; }
+
+    [JsonPropertyName("organization")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Organization { get; init; }
+
+    [JsonPropertyName("emails")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ImmutableArray<OgcRecordContactEmail>? Emails { get; init; }
+
+    [JsonPropertyName("links")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ImmutableArray<Link>? Links { get; init; }
+
+    [JsonPropertyName("roles")]
+    public required ImmutableArray<string> Roles { get; init; }
+}
+
+public sealed record OgcRecordContactEmail
+{
+    [JsonPropertyName("value")]
+    public required string Value { get; init; }
 }

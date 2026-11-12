@@ -13,6 +13,12 @@ internal static class StacConstants
 
     public const int MaxSearchLimit = 10_000;
 
+    internal static class Extensions
+    {
+        public const string Language = "https://stac-extensions.github.io/language/v1.0.0/schema.json";
+        public const string Themes = "https://stac-extensions.github.io/themes/v1.0.0/schema.json";
+    }
+
     internal static class Conformance
     {
         public const string Core = "https://api.stacspec.org/v1.0.0/core";

@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -541,7 +542,8 @@ internal static class CollectionsEndpoints
         var itemsBaseHref = $"{baseUrl}/ogc/features/collections/{Uri.EscapeDataString(collectionId)}/items";
         var collectionSegment = Uri.EscapeDataString(collectionId);
         var collectionLinks = ImmutableArray.CreateBuilder<Link>();
-        var governance = resource.Metadata.WithServiceGovernanceFallbacks(service?.Metadata);
+        var descriptive = DescriptiveMetadataResolver.ForDataset(snapshot.Graph, resource, service, publication);
+        var governance = DescriptiveMetadataResolver.GovernanceFor(snapshot.Graph, resource, service);
 
         // Self link
         collectionLinks.Add(Link.Create(
@@ -761,7 +763,10 @@ internal static class CollectionsEndpoints
             Id = collectionId,
             Title = displayName,
             Description = description,
-            Attribution = governance.Attribution,
+            Attribution = descriptive.Attribution,
+            Keywords = DescriptiveMembers.Keywords(descriptive.Keywords),
+            Themes = DescriptiveMembers.Themes(descriptive.Themes),
+            Language = DescriptiveMembers.Language(descriptive.Language),
             Links = collectionLinks.ToImmutable(),
             Extent = extent,
             Crs = supportedCrs,

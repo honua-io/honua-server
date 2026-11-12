@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation;
@@ -509,15 +510,13 @@ internal static class OgcRecordsEndpoints
             .Distinct()
             .ToImmutableArray();
 
-        var properties = new OgcRecordProperties
+        var properties = OgcRecordDescriptive.Apply(new OgcRecordProperties
         {
-            Title = serviceMetadata.Title ?? service.EffectivePublicName,
-            Description = serviceMetadata.Description,
             Type = "service",
             ResourceType = "Service",
             ExternalIds = ImmutableArray.Create(serviceMetadata.Name),
             LayerIds = layerIds
-        };
+        }, DescriptiveMetadataResolver.ForService(snapshot.Graph, service));
 
         return new CatalogRecord(
             new OgcRecordFeature
@@ -575,15 +574,13 @@ internal static class OgcRecordsEndpoints
             links.Add(Link.Create($"{baseUrl}{GeoServicesServiceUrls.CanonicalPath(snapshot.Graph, featureServerService)}/FeatureServer/{layerIdString}", RelationTypes.Alternate, MediaTypes.Json, "FeatureServer layer"));
         }
 
-        var properties = new OgcRecordProperties
+        var properties = OgcRecordDescriptive.Apply(new OgcRecordProperties
         {
-            Title = resource.Metadata.Title ?? resource.Metadata.Name,
-            Description = resource.Metadata.Description,
             Type = "dataset",
             ResourceType = "Layer",
             GeometryType = resource.ReadGeometryType().ToString(),
             ExternalIds = ImmutableArray.Create(layerIdString, resource.Metadata.Name)
-        };
+        }, DescriptiveMetadataResolver.ForDataset(snapshot.Graph, resource, service, publication));
 
         return new CatalogRecord(
             new OgcRecordFeature

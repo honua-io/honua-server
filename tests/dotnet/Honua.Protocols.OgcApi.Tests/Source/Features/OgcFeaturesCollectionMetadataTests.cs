@@ -64,4 +64,27 @@ public sealed class OgcFeaturesCollectionMetadataTests : IAsyncLifetime
             link.GetProperty("href").GetString() == "https://spdx.org/licenses/MIT.html" &&
             link.GetProperty("title").GetString() == "MIT");
     }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}")]
+    public async Task GetCollection_EditedKeywordsThemesAndLanguage_AppearInCollection()
+    {
+        _fixture.MutateV2ResourceObjectMetadata(0, metadata => metadata with
+        {
+            Keywords = [" trails ", "TRAILS", "recreation"],
+            Themes = ["TRAN"],
+            Language = "fr",
+        });
+
+        var response = await _fixture.Client.GetAsync("/ogc/features/collections/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+        root.GetProperty("keywords").EnumerateArray().Select(keyword => keyword.GetString()).Should().Equal("trails", "recreation");
+        var theme = root.GetProperty("themes")[0];
+        theme.GetProperty("scheme").GetString().Should().Be("http://publications.europa.eu/resource/authority/data-theme");
+        theme.GetProperty("concepts")[0].GetProperty("id").GetString().Should().Be("TRAN");
+        root.GetProperty("language").GetProperty("code").GetString().Should().Be("fr");
+    }
 }

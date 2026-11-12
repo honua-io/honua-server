@@ -35,6 +35,15 @@ public sealed record CollectionInfo
     [JsonPropertyName("attribution")]
     public string? Attribution { get; init; }
 
+    [JsonPropertyName("keywords")]
+    public ImmutableArray<string>? Keywords { get; init; }
+
+    [JsonPropertyName("themes")]
+    public ImmutableArray<ThemeMember>? Themes { get; init; }
+
+    [JsonPropertyName("language")]
+    public LanguageMember? Language { get; init; }
+
     [JsonPropertyName("links")]
     public required ImmutableArray<Link> Links { get; init; }
 

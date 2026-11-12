@@ -320,6 +320,9 @@ public sealed class WebAppFixture : IAsyncLifetime
     public MetadataV2GraphSnapshot GetCurrentV2GraphSnapshot()
         => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.GetCurrentSnapshot(this);
 
+    public void MutateV2Graph(Func<MetadataV2Graph, MetadataV2Graph> mutate)
+        => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.MutateGraph(this, mutate);
+
     /// <summary>
     /// Mutates the common metadata block for the canonical resource published at
     /// <paramref name="layerIndex"/>.

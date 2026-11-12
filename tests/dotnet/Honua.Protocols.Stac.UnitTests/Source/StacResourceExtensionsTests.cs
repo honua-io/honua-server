@@ -11,6 +11,52 @@ namespace Honua.Server.Tests.Features.Protocols.Stac;
 
 public sealed class StacResourceExtensionsTests
 {
+    private static readonly string[] OldExtensionKeywords = ["old-extension"];
+    private static readonly string[] ImageryKeywords = [" imagery ", "IMAGERY"];
+
+    [UnitTest]
+    public void ResolveKeywords_DatasetKeywordsDeclared_PrefersNormalizedDatasetKeywords()
+    {
+        var dataset = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Keywords = [" coastal ", "", "COASTAL", "survey"],
+                Labels = new Dictionary<string, string> { ["old-label"] = "operations" }
+            },
+            Extensions = new Dictionary<string, JsonElement>
+            {
+                ["stac"] = JsonSerializer.SerializeToElement(new { keywords = OldExtensionKeywords })
+            }
+        };
+
+        dataset.ResolveKeywords()!.Value.Should().Equal("coastal", "survey");
+    }
+
+    [UnitTest]
+    public void ResolveKeywords_DatasetKeywordsEmpty_DoesNotResurrectExtensionOrLabelKeywords()
+    {
+        var dataset = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Keywords = ["", " "],
+                Labels = new Dictionary<string, string> { ["operations"] = "internal" }
+            },
+            Extensions = new Dictionary<string, JsonElement>
+            {
+                ["stac"] = JsonSerializer.SerializeToElement(new { keywords = ImageryKeywords })
+            }
+        };
+
+        dataset.ResolveKeywords().Should().BeNull();
+        (dataset with { Extensions = new Dictionary<string, JsonElement>() })
+            .ResolveKeywords().Should().BeNull();
+        (dataset with { Metadata = dataset.Metadata with { Keywords = [] } })
+            .ResolveKeywords().Should().BeNull();
+        new MetadataV2Resource().ResolveKeywords().Should().BeNull();
+    }
+
     [UnitTest]
     public void ResolveLicense_PrefersEveryResourceDeclarationBeforeServiceFallback()
     {

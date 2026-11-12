@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Protocols.Stac.Services;
@@ -81,38 +82,14 @@ internal static class StacResourceExtensions
     public static ImmutableArray<string>? ResolveKeywords(this MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
-        var keywords = ReadStringArray(resource, "keywords");
-        if (keywords is null || keywords.Value.Length == 0)
-        {
-            return ResourceTagsAsKeywords(resource);
-        }
-        return keywords;
+        var keywords = DescriptiveMetadataResolver.NormalizedTerms(resource.Metadata.Keywords);
+        return keywords.Count == 0 ? null : [.. keywords];
     }
 
     public static ImmutableArray<string>? ResolveDeclaredExtensions(this MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         return ReadStringArray(resource, "extensions");
-    }
-
-    private static ImmutableArray<string>? ResourceTagsAsKeywords(MetadataV2Resource resource)
-    {
-        // STAC keywords are now sourced from the resource's labels (the v2
-        // Kubernetes-style label dictionary). A label entry with empty value is
-        // treated as a bare tag.
-        var labels = resource.Metadata?.Labels;
-        if (labels is null || labels.Count == 0)
-        {
-            return null;
-        }
-
-        var normalized = labels.Keys
-            .Where(static keyword => !string.IsNullOrWhiteSpace(keyword))
-            .Select(static keyword => keyword.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToImmutableArray();
-
-        return normalized.Length == 0 ? null : normalized;
     }
 
     private static string? ReadString(MetadataV2Resource resource, string propertyName)

@@ -19,6 +19,8 @@ namespace Honua.Server.Tests.Features.Protocols.Stac;
 [Protocol(TestProtocols.Stac)]
 public sealed class StacCollectionsTests : IAsyncLifetime
 {
+    private static readonly string[] OldExtensionKeywords = ["old-extension"];
+
     private static readonly string[] ExpectedCollectionKeywords = ["imagery", "ops-demo"];
     private static readonly string[] ExpectedCollectionExtensions =
     [
@@ -122,9 +124,11 @@ public sealed class StacCollectionsTests : IAsyncLifetime
             stacExtension: JsonSerializer.SerializeToElement(new
             {
                 license = "CC-BY-4.0",
-                keywords = ExpectedCollectionKeywords,
                 extensions = ExpectedCollectionExtensions
             }));
+        _fixture.MutateV2ResourceObjectMetadata(
+            WebAppFixture.TestLayerId,
+            metadata => metadata with { Keywords = ExpectedCollectionKeywords });
 
         var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
         var response = await _fixture.Client.GetAsync($"/stac/collections/{collectionId}");
@@ -145,6 +149,70 @@ public sealed class StacCollectionsTests : IAsyncLifetime
             .Select(static element => element.GetString())
             .Should()
             .BeEquivalentTo(ExpectedCollectionExtensions);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task GetCollection_EditedThemesAndLanguage_DeclareTheirStacExtensions()
+    {
+        _fixture.MutateV2ResourceObjectMetadata(
+            WebAppFixture.TestLayerId,
+            metadata => metadata with { Themes = ["ENVI"], Language = "de" });
+
+        using var response = await _fixture.Client.GetAsync(
+            $"/stac/collections/{WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture)}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = json.RootElement;
+        root.GetProperty("language").GetProperty("code").GetString().Should().Be("de");
+        root.GetProperty("themes")[0].GetProperty("concepts")[0].GetProperty("id").GetString().Should().Be("ENVI");
+        var declared = root.GetProperty("stac_extensions").EnumerateArray().Select(value => value.GetString()).ToArray();
+        declared.Should().Contain("https://stac-extensions.github.io/language/v1.0.0/schema.json")
+            .And.Contain("https://stac-extensions.github.io/themes/v1.0.0/schema.json");
+    }
+
+    [IntegrationTheory]
+    [InlineData("/stac/collections", "coastal")]
+    [InlineData("/stac/collections/0", "coastal")]
+    [InlineData("/stac/collections", null)]
+    [InlineData("/stac/collections/0", null)]
+    [Operation(Operations.Query)]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections")]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task GetCollections_EditedDatasetKeywords_OverrideExtensionAndLabels(string path, string? keyword)
+    {
+        _fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
+            stacExtension: JsonSerializer.SerializeToElement(new { keywords = OldExtensionKeywords }));
+        _fixture.MutateV2ResourceObjectMetadata(
+            WebAppFixture.TestLayerId,
+            metadata => metadata with
+            {
+                Keywords = keyword is null ? [] : [keyword],
+                Labels = new Dictionary<string, string> { ["old-label"] = "operations" }
+            });
+
+        using var response = await _fixture.Client.GetAsync(path);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var collection = json.RootElement.TryGetProperty("collections", out var collections)
+            ? collections.EnumerateArray().Single(candidate =>
+                candidate.GetProperty("id").GetString() == WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture))
+            : json.RootElement;
+        if (keyword is null)
+        {
+            (collection.TryGetProperty("keywords", out var emittedKeywords) &&
+                emittedKeywords.ValueKind != JsonValueKind.Null).Should().BeFalse();
+        }
+        else
+        {
+            collection.GetProperty("keywords").EnumerateArray()
+                .Select(value => value.GetString()).Should().Equal(keyword);
+        }
     }
 
     [IntegrationTest]

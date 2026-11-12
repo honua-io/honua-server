@@ -112,7 +112,7 @@ internal sealed class StacMappingService
             coordinateTransformService,
             cancellationToken).ConfigureAwait(false);
 
-        return new StacCollection
+        var collection = new StacCollection
         {
             Id = collectionId,
             Title = displayName,
@@ -121,9 +121,25 @@ internal sealed class StacMappingService
             Providers = BuildProviders(governance),
             Extent = extent,
             Keywords = resource.ResolveKeywords(),
+            Language = DescriptiveMembers.Language(governance.Language),
+            Themes = DescriptiveMembers.Themes(resource.Metadata.Themes),
             Links = links.ToImmutable(),
-            StacExtensions = resource.ResolveDeclaredExtensions()
         };
+        return collection with { StacExtensions = DeclareEmittedExtensions(resource.ResolveDeclaredExtensions(), collection) };
+    }
+
+    private static ImmutableArray<string>? DeclareEmittedExtensions(ImmutableArray<string>? declared, StacCollection collection)
+    {
+        var extensions = declared ?? [];
+        if (collection.Language is not null && !extensions.Contains(StacConstants.Extensions.Language))
+        {
+            extensions = extensions.Add(StacConstants.Extensions.Language);
+        }
+        if (collection.Themes is not null && !extensions.Contains(StacConstants.Extensions.Themes))
+        {
+            extensions = extensions.Add(StacConstants.Extensions.Themes);
+        }
+        return extensions.IsEmpty ? null : extensions;
     }
 
     private static ImmutableArray<StacProvider>? BuildProviders(MetadataV2ObjectMetadata metadata)

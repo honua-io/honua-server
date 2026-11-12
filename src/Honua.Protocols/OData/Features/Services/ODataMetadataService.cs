@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text;
+using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.OData.Models;
@@ -47,15 +48,16 @@ internal sealed partial class ODataMetadataService
         "Performance",
         "CA1822:Mark members as static",
         Justification = "Kept as an instance method to preserve the service API shape.")]
-    public string GenerateMetadataDocumentV2(IEnumerable<MetadataV2Resource> resources)
+    public string GenerateMetadataDocumentV2(IEnumerable<MetadataV2Resource> resources, DescriptiveMetadata catalog)
     {
         ArgumentNullException.ThrowIfNull(resources);
+        ArgumentNullException.ThrowIfNull(catalog);
         // Intentional broad catch: metadata generation must never 500 the $metadata
         // endpoint; already logged (Log.MetadataFallback) and downgraded to the static
         // fallback document.
         try
         {
-            return GenerateODataMetadataV2(resources.ToArray());
+            return GenerateODataMetadataV2(resources.ToArray(), catalog);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -134,13 +136,16 @@ internal sealed partial class ODataMetadataService
             """;
     }
 
-    private static string GenerateODataMetadataV2(MetadataV2Resource[] resources)
+    private static string GenerateODataMetadataV2(MetadataV2Resource[] resources, DescriptiveMetadata catalog)
     {
         var sb = new StringBuilder();
         sb.AppendLine("""<?xml version="1.0" encoding="utf-8"?>""");
         sb.AppendLine("""<edmx:Edmx Version="4.01" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">""");
         sb.AppendLine("""  <edmx:Reference Uri="http://vocabs.odata.org/capabilities/v1">""");
         sb.AppendLine("""    <edmx:Include Namespace="Org.OData.Capabilities.V1" Alias="Capabilities"/>""");
+        sb.AppendLine("""  </edmx:Reference>""");
+        sb.AppendLine("""  <edmx:Reference Uri="https://oasis-tcs.github.io/odata-vocabularies/vocabularies/Org.OData.Core.V1.xml">""");
+        sb.AppendLine("""    <edmx:Include Namespace="Org.OData.Core.V1" Alias="Core"/>""");
         sb.AppendLine("""  </edmx:Reference>""");
         sb.AppendLine("  <edmx:DataServices>");
         sb.AppendLine("""    <Schema Namespace="Honua" xmlns="http://docs.oasis-open.org/odata/ns/edm">""");
@@ -213,6 +218,7 @@ internal sealed partial class ODataMetadataService
         sb.AppendLine("          </Record>");
         sb.AppendLine("        </Annotation>");
         sb.AppendLine("      </Annotations>");
+        AppendDescriptionAnnotations(sb, catalog);
         sb.AppendLine("      <Annotations Target=\"Honua.Container/Layers\">");
         sb.AppendLine("        <Annotation Term=\"Capabilities.FilterRestrictions\">");
         sb.AppendLine("          <Record>");
@@ -226,6 +232,19 @@ internal sealed partial class ODataMetadataService
 
         return sb.ToString();
     }
+
+    private static void AppendDescriptionAnnotations(StringBuilder sb, DescriptiveMetadata catalog)
+    {
+        sb.AppendLine("      <Annotations Target=\"Honua.Container\">");
+        sb.AppendLine($"        <Annotation Term=\"Core.Description\" String=\"{Attribute(catalog.Title)}\"/>");
+        if (catalog.Description is { } description)
+        {
+            sb.AppendLine($"        <Annotation Term=\"Core.LongDescription\" String=\"{Attribute(description)}\"/>");
+        }
+        sb.AppendLine("      </Annotations>");
+    }
+
+    private static string Attribute(string value) => System.Security.SecurityElement.Escape(value);
 
     private static (string GeometryEdmType, string SridAttribute) ResolveGeometryEdmTypeV2(
         MetadataV2Resource[] resources)
