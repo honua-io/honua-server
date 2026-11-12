@@ -28,8 +28,7 @@
     <TargetFramework>$(HonuaTargetFramework)</TargetFramework>. Set the HonuaTargetFramework
     environment variable to retarget: MSBuild reads it as this property and
     scripts/ci/honua-target-framework.sh reads it for output paths, so both move together.
-    A net11.0 trial build also needs SDK 11, which global.json (10.0 SDKs only) refuses:
-    run it with a global.json that pins 11.0.100 or with global.json moved aside.
+    A net11.0 trial build also needs SDK 11.
     Not inherited by separately built trees with their own Directory.Build.props
     (docker/worker-customcode-dotnet/harness, the gp-dotnet template).
   -->
