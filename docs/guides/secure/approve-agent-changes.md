@@ -21,14 +21,15 @@ older deployment.
 
 An agent is any caller on the MCP endpoint, or a request made with an API key
 that carries the `agent` grant. When an agent changes a service access policy
-or a layer's access settings, or publishes (a layer, a service or Studio
-content), the server files a proposal instead of making the change, and the agent receives `RequiresApproval` with the proposal
+or publishes (a layer, a service or Studio content), the server files a
+proposal instead of making the change, and the agent receives `RequiresApproval` with the proposal
 reference. Holding an administrator key does not exempt an agent, and operator
 policy rules cannot remove this requirement. A direct admin API call from an
 agent for either change is refused with an approval-required error that says
-how to submit it for approval. Agents cannot change role permissions, OAuth
-scopes or content-publication sharing at all; make those changes yourself in
-Console.
+how to submit it for approval. Some changes are refused for agents outright:
+a layer's access settings, enabling or refreshing a layer, role permissions,
+OAuth scopes, and Console content publications and their sharing. Make those
+changes yourself in Console.
 
 Give each agent its own key with the `agent` grant and only the grants its task
 needs. Do not give an agent the bootstrap admin password or a full-admin key. An

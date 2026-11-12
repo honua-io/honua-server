@@ -21,7 +21,7 @@ public sealed partial class LayerPublishingIntegrationTests
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
     [Endpoint("POST /api/v1/operations/{id}/submit")]
-    public async Task McpPublishService_AgentRequestFilesProposal_HumanPublicationIsReadableByFreshClient()
+    public async Task McpPublishService_AgentRequestDoesNotPublish_HumanPublicationIsReadableByFreshClient()
     {
         await McpPublicationFixtureSetup.InstallPromotionStoresAsync(_fixture);
         using var errors = new McpPublicationErrorCapture();

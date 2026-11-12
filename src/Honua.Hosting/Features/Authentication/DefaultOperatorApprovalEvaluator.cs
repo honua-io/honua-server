@@ -18,7 +18,7 @@ internal sealed class DefaultOperatorApprovalEvaluator(
 
         // A server-minted approved-operation credential exists only after a person approved this exact
         // method and path, which admin authorization has already matched.
-        if (principal.IsInRole(AdminApiKeyPermission.ApprovedOperationRole))
+        if (AdminApiKeyPermission.IsServerMintedApprovedOperation(principal) && !AgentPrincipal.IsAgent(principal))
         {
             OperatorAuthorizationLog.ApprovalNotRequired(
                 logger, userId, request.ResourceType, request.Operation);

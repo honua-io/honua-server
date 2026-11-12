@@ -9,6 +9,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -63,14 +64,42 @@ public sealed class AgentApprovalExemptionTests
     }
 
     [UnitTest]
-    public void Evaluate_ApprovedOperationReplay_Publish_IsNotRequiredAgain()
+    public void Evaluate_ServerMintedApprovedOperation_Publish_IsNotRequiredAgain()
+    {
+        var identity = new ClaimsIdentity(
+            [new Claim(ClaimTypes.Role, AdminApiKeyPermission.ApprovedOperationRole)], "ApiKey");
+        CanonicalSecurityActor.StampFrameworkClaim(identity, AdminApiKeyPermission.PermissionClaimType,
+            AdminApiKeyPermission.CreateApprovedOperationGrant("POST", "/api/v1/admin/connections/c1/layers"));
+
+        var result = CreateEvaluator().Evaluate(new ClaimsPrincipal(identity), PublishRequest);
+
+        result.IsRequired.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Evaluate_ApprovedOperationRoleFromIdentityProvider_Publish_StillRequiresApproval()
     {
         var principal = new ClaimsPrincipal(new ClaimsIdentity(
-            [new Claim(ClaimTypes.Role, AdminApiKeyPermission.ApprovedOperationRole)], "ApiKey"));
+            [
+                new Claim(ClaimTypes.Role, AdminApiKeyPermission.ApprovedOperationRole),
+                new Claim(AdminApiKeyPermission.PermissionClaimType,
+                    AdminApiKeyPermission.CreateApprovedOperationGrant("POST", "/api/v1/admin/connections/c1/layers")),
+            ],
+            "oidc"));
 
         var result = CreateEvaluator().Evaluate(principal, PublishRequest);
 
-        result.IsRequired.Should().BeFalse();
+        result.IsRequired.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void MarkRequestPrincipal_UppercaseMcpRoute_AddsAgentRole()
+    {
+        var context = CreateContext("/MCP", CreateAdmin());
+
+        AgentPrincipal.MarkRequestPrincipal(context);
+
+        AgentPrincipal.IsAgent(context.User).Should().BeTrue();
     }
 
     [UnitTest]

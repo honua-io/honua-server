@@ -31,7 +31,8 @@ internal static class ContentPublicationEndpoints
         group.MapPost("/", HandlePublish)
             .WithDisplayName("Publish Content Artifact")
             .WithSummary("Publishes a new immutable artifact version and claims a server-owned route.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .AddEndpointFilter(Honua.Server.Features.Admin.AgentApprovalFilter.AccessGrants);
 
         group.MapGet("/", HandleList)
             .WithDisplayName("List Content Publications")
@@ -51,12 +52,14 @@ internal static class ContentPublicationEndpoints
         group.MapPost("/{publicationId}/republish", HandleRepublish)
             .WithDisplayName("Republish Content Artifact")
             .WithSummary("Creates a new immutable version and moves the active route pointer to it.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .AddEndpointFilter(Honua.Server.Features.Admin.AgentApprovalFilter.AccessGrants);
 
         group.MapPost("/{publicationId}/rollback", HandleRollback)
             .WithDisplayName("Roll Back Content Route")
             .WithSummary("Moves the active route pointer to an earlier immutable version and records the rollback pointer.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .AddEndpointFilter(Honua.Server.Features.Admin.AgentApprovalFilter.AccessGrants);
 
         group.MapPatch("/{publicationId}/policy", HandleUpdatePolicy)
             .WithDisplayName("Update Content Publication Policy")

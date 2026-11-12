@@ -67,8 +67,38 @@ public sealed partial class ProposalEndpointsTests
         var grants = await agent.PutAsJsonAsync(
             $"/api/v1/admin/roles/{Guid.NewGuid()}/permissions", new { permissions = new[] { new { service = "roads", layer = "*", operation = "read" } } });
 
-        await AssertAgentApprovalRefusalAsync(enable);
+        await AssertAgentApprovalRefusalAsync(enable, "in Console");
         await AssertAgentApprovalRefusalAsync(grants, "in Console");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/publications")]
+    [Endpoint("PUT /api/v1/admin/oauth-scopes")]
+    public async Task ContentPublicationAndOAuthScopes_AgentKey_AreRefused()
+    {
+        using var agent = await CreateKeyClientAsync("agent-content-and-scopes", ["admin", AgentKeyPermissions[2]]);
+
+        var publication = await agent.PostAsJsonAsync("/api/v1/console/publications", new { routeSlug = "roads", title = "Roads" });
+        var scope = await agent.PutAsJsonAsync("/api/v1/admin/oauth-scopes", new { scope = "roads.read" });
+
+        await AssertAgentApprovalRefusalAsync(publication, "in Console");
+        await AssertAgentApprovalRefusalAsync(scope, "in Console");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/operations/{id}/submit")]
+    public async Task SubmitOtherGatedOperation_AgentKey_IsRefusedWhateverTheApprovalSettings()
+    {
+        using var agent = await CreateKeyClientAsync("agent-fields-operation", AgentKeyPermissions);
+        var request = new OperationInvokeRequest
+        {
+            Parameters = new Dictionary<string, string?>(StringComparer.Ordinal) { ["layerId"] = "1" },
+        };
+
+        var response = await agent.PostAsJsonAsync("/api/v1/operations/admin.layer.fields.set/submit", request, JsonOptions);
+
+        await AssertAgentApprovalRefusalAsync(response, "in Console");
+        _executor.ExecutionCount.Should().Be(0);
     }
 
     [IntegrationTest]
@@ -87,9 +117,11 @@ public sealed partial class ProposalEndpointsTests
 
         var response = await replay.PostAsJsonAsync(path, new { schema = "public", table = "roads", layerName = "Roads" });
 
+        // Connection c1 does not exist: getting past the filter and the approval gate ends in the handler.
         var body = await response.Content.ReadAsStringAsync();
         body.Should().NotContain("urn:honua:approval-required");
         response.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized, body);
+        response.StatusCode.Should().NotBe(HttpStatusCode.Forbidden, body);
     }
 
     [IntegrationTest]

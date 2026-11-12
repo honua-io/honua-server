@@ -6,19 +6,21 @@ using Honua.Server.Features.Admin.Models;
 
 namespace Honua.Server.Features.Admin;
 
-// Changes to who can read, write or reach published content need one human approval when an agent
-// asks. The refusal does not depend on OperatorApproval settings. An approved proposal replays
-// with a server-minted credential, which is not an agent, so it passes.
+// Changes to who can read, write or reach published content need a person when an agent asks.
+// Access-policy changes and layer publishes can be filed as proposals and replay here with a
+// server-minted credential, which is not an agent; the other changes are made in Console. The
+// refusal does not depend on OperatorApproval settings.
 internal static class AgentApprovalFilter
 {
     internal const string AccessPolicyRef = "operator.agent.access-policy";
     internal const string PublishRef = "operator.agent.publish";
     internal const string AccessGrantsRef = "operator.agent.access-grants";
+    internal const string OperationRef = "operator.agent.operation";
 
     private const string ProposalGuidance = OperatorApprovalGate.AgentApprovalGuidance;
 
-    private const string ConsoleGuidance =
-        "Agent changes to access grants and public sharing need a person: ask one to make this change in Console. " +
+    internal const string ConsoleGuidance =
+        "Agent changes to layers, access grants and published content need a person: ask one to make this change in Console. " +
         "Do not retry with another credential.";
 
     public static ValueTask<object?> AccessPolicy(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
@@ -26,6 +28,9 @@ internal static class AgentApprovalFilter
 
     public static ValueTask<object?> Publish(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
         => Refuse(invocation, next, PublishRef, ProposalGuidance);
+
+    public static ValueTask<object?> LayerState(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
+        => Refuse(invocation, next, PublishRef, ConsoleGuidance);
 
     public static ValueTask<object?> AccessGrants(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
         => Refuse(invocation, next, AccessGrantsRef, ConsoleGuidance);

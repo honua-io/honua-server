@@ -20,7 +20,7 @@ internal static class AgentPrincipal
     public static bool IsAgent(ClaimsPrincipal principal)
     {
         ArgumentNullException.ThrowIfNull(principal);
-        return principal.IsInRole(AgentApprovalRule.AgentRole) || HasAgentGrant(principal);
+        return HasAgentRole(principal) || HasAgentGrant(principal);
     }
 
     // The policy context's roles, with the agent role whenever the principal is an agent, so the
@@ -43,7 +43,7 @@ internal static class AgentPrincipal
         ArgumentNullException.ThrowIfNull(context);
         var principal = context.User;
         if (principal.Identity?.IsAuthenticated != true
-            || principal.IsInRole(AgentApprovalRule.AgentRole)
+            || HasAgentRole(principal)
             || !IsAgentRequest(context))
         {
             return;
@@ -61,6 +61,9 @@ internal static class AgentPrincipal
             await next(context).ConfigureAwait(false);
         });
     }
+
+    private static bool HasAgentRole(ClaimsPrincipal principal)
+        => AgentApprovalRule.IsAgent([.. principal.FindAll(ClaimTypes.Role).Select(static claim => claim.Value)]);
 
     private static bool HasAgentGrant(ClaimsPrincipal principal)
         => principal.FindAll(AdminApiKeyPermission.PermissionClaimType)

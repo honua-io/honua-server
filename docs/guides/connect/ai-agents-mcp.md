@@ -108,8 +108,8 @@ Give an agent its own key with the `agent` grant, never the bootstrap admin pass
 
 - An access-policy change or a publish (`honua_admin_services_access_policy_set`, `honua_admin_layer_publish`, `honua_publish_service`, or the same operations through `POST /api/v1/operations/{operationId}/submit`) does not execute. It files a proposal and returns `status: "RequiresApproval"` with its `proposalId`. A person approves it in Console **Approvals**; see [approve an agent-proposed change](../secure/approve-agent-changes.md).
 - The administrator exemption from approval does not apply, even when the key also carries `admin` or `admin:write`. A direct admin REST call to change an access policy or publish a layer is refused with `type: "urn:honua:approval-required"`, and the message says how to submit the change for approval.
-- The same applies to a layer's access settings, enabling a layer, and Studio publication; Studio content an agent proposes waits for approval even when the caller is an administrator.
-- Role permissions, OAuth scopes and content-publication sharing cannot be changed by an agent at all; a person makes those changes in Console.
+- A Studio publication an agent requests is a proposal too, even when the caller is an administrator.
+- Some changes are refused for an agent and must be made by a person in Console: a layer's access settings, enabling, disabling or refreshing a layer, role permissions, OAuth scopes, and publishing, republishing or rolling back Console content publications or changing their sharing.
 - The key cannot create, rotate or revoke API keys, so it cannot mint itself a key without the `agent` grant.
 
 This rule is built in and applies whether or not `Operations:Policy` is enabled and whatever the `OperatorApproval` settings are; operator policy rules cannot remove it.
