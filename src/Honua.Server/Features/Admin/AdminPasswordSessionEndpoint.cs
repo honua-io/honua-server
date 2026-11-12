@@ -20,12 +20,10 @@ internal sealed class AdminPasswordSessionEndpoint(
             return TypedResults.BadRequest();
         }
 
-        var validation = await authenticator.ValidateAsync(request.Password, context.RequestAborted).ConfigureAwait(false);
+        var validation = await authenticator.ValidateAsync(context, request.Password).ConfigureAwait(false);
         if (validation.Success?.Principal is not { } principal)
         {
-            return validation.Rejection is ApiKeyRejection.AdminPasswordUnavailable or ApiKeyRejection.CredentialStoreUnavailable
-                ? StandardErrorHelpers.CreateServiceUnavailable(context, "Administrator sign-in is unavailable.")
-                : TypedResults.Unauthorized();
+            return AdminPasswordAuthenticator.Reject(context, validation);
         }
 
         try
