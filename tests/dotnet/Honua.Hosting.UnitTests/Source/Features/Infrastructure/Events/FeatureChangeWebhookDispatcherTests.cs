@@ -1,18 +1,17 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Net;
-using System.Reflection;
 using System.Net.Http;
+using System.Reflection;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Infrastructure.Events;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Events;
 
@@ -20,6 +19,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Events;
 public sealed class FeatureChangeWebhookDispatcherTests
 {
     private const string PublicIpLiteralWebhookUrl = "https://1.1.1.1/feature-change";
+    private const string CursorName = FeatureChangeWebhookDispatcher.StreamName;
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
@@ -37,57 +37,17 @@ public sealed class FeatureChangeWebhookDispatcherTests
     [Operation(Operations.TestInfrastructure)]
     public async Task DeliverWithRetryAsync_WhenWebhookUrlIsUnsafe_DoesNotSendRequest()
     {
-        var store = new InMemoryFeatureChangeEventStore(
-            Options.Create(new FeatureChangeEventOptions()),
-            null);
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         var handler = new CountingHandler();
         using var httpClient = new HttpClient(handler);
         httpClientFactory.CreateClient("feature-change-webhook").Returns(httpClient);
 
-        var dispatcher = new FeatureChangeWebhookDispatcher(
-            store,
-            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
-            null,
-            httpClientFactory,
-            Options.Create(new FeatureChangeWebhookOptions
-            {
-                Enabled = true,
-                Url = "https://localhost/webhook",
-                Secret = "super-secret",
-                MaxAttempts = 1
-            }),
-            NullLogger<FeatureChangeWebhookDispatcher>.Instance);
+        using var dispatcher = CreateDispatcher(new DispatcherStores(), httpClientFactory, "https://localhost/webhook");
 
-        await InvokeDeliverWithRetryAsync(dispatcher, CreateEvent(), CancellationToken.None);
+        await InvokeDeliverWithRetryAsync(dispatcher, CreateEvent(1), CancellationToken.None);
 
         httpClientFactory.DidNotReceive().CreateClient("feature-change-webhook");
         Assert.Equal(0, handler.SendCount);
-    }
-
-    [UnitTest]
-    [Operation(Operations.TestInfrastructure)]
-    public async Task TryLoadDeliveredCursorAsync_WhenCursorCacheThrows_ReturnsFalse()
-    {
-        var store = new InMemoryFeatureChangeEventStore(
-            Options.Create(new FeatureChangeEventOptions()),
-            null);
-        var cache = new ThrowingDistributedCache();
-        var dispatcher = new FeatureChangeWebhookDispatcher(
-            store,
-            cache,
-            null,
-            Substitute.For<IHttpClientFactory>(),
-            Options.Create(new FeatureChangeWebhookOptions
-            {
-                Enabled = false
-            }),
-            NullLogger<FeatureChangeWebhookDispatcher>.Instance);
-
-        var loaded = await InvokeTryLoadDeliveredCursorAsync(dispatcher, CancellationToken.None);
-
-        await cache.WaitForReadAttemptAsync().WaitAsync(TimeSpan.FromSeconds(1));
-        Assert.False(loaded);
     }
 
     [UnitTest]
@@ -136,380 +96,134 @@ public sealed class FeatureChangeWebhookDispatcherTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task ExecuteAsync_WhenDistributedCacheConfiguredWithoutRedis_DoesNotDispatch()
+    public async Task ExecuteAsync_OnFirstStart_InitialisesCursorToHeadAndDeliversNothingOlder()
     {
-        var store = new TrackingFeatureChangeEventStore();
-        var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        var dispatcher = new FeatureChangeWebhookDispatcher(
-            store,
-            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
-            null,
-            httpClientFactory,
-            Options.Create(new FeatureChangeWebhookOptions
-            {
-                Enabled = true,
-                Url = "https://hooks.example.com/feature-change",
-                Secret = "super-secret",
-                MaxAttempts = 1
-            }),
-            NullLogger<FeatureChangeWebhookDispatcher>.Instance);
-
-        using var cts = new CancellationTokenSource();
-        var executeTask = InvokeExecuteAsync(dispatcher, cts.Token);
-
-        await Task.Delay(100);
-        Assert.Equal(0, store.QueryCallCount);
-        httpClientFactory.DidNotReceive().CreateClient("feature-change-webhook");
-
-        await CancelAndAwaitDispatcherShutdownAsync(cts, executeTask);
-    }
-
-    [UnitTest]
-    [Operation(Operations.TestInfrastructure)]
-    public async Task ExecuteAsync_WhenEventAlreadyMarkedCompleted_AdvancesCursorWithoutSendingWebhook()
-    {
-        var store = new SingleEventFeatureChangeEventStore(CreateEvent());
-        var database = Substitute.For<IDatabase>();
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        redis.GetDatabase().Returns(database);
-        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-
-        database.LockTakeAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
-            .Returns(call =>
-            {
-                var key = call.ArgAt<RedisKey>(0).ToString();
-                return Task.FromResult(!string.Equals(key, "featurechange:webhook:delivery:evt-1", StringComparison.Ordinal));
-            });
-        database.LockExtendAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
-            .Returns(Task.FromResult(true));
-        database.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
-            .Returns(call =>
-            {
-                var key = call.ArgAt<RedisKey>(0).ToString();
-                if (string.Equals(key, "featurechange:webhook:delivered-cursor", StringComparison.Ordinal))
-                {
-                    return RedisValue.Null;
-                }
-
-                if (string.Equals(key, "featurechange:webhook:delivery:evt-1", StringComparison.Ordinal))
-                {
-                    return (RedisValue)"completed";
-                }
-
-                return RedisValue.Null;
-            });
-        database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), Arg.Any<bool>(), Arg.Any<When>(), Arg.Any<CommandFlags>())
-            .Returns(call =>
-            {
-                var key = call.ArgAt<RedisKey>(0).ToString();
-                var when = call.ArgAt<When>(4);
-                return Task.FromResult(
-                    !(string.Equals(key, "featurechange:webhook:delivery:evt-1", StringComparison.Ordinal) && when == When.NotExists));
-            });
-
-        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+        var stores = new DispatcherStores(new ListFeatureChangeEventStore(CreateEvent(1), CreateEvent(3)));
         var handler = new CountingHandler();
         using var httpClient = new HttpClient(handler);
-        httpClientFactory.CreateClient("feature-change-webhook").Returns(httpClient);
-
-        var dispatcher = new FeatureChangeWebhookDispatcher(
-            store,
-            null,
-            redis,
-            httpClientFactory,
-            Options.Create(new FeatureChangeWebhookOptions
-            {
-                Enabled = true,
-                Url = PublicIpLiteralWebhookUrl,
-                Secret = "super-secret",
-                MaxAttempts = 1
-            }),
-            NullLogger<FeatureChangeWebhookDispatcher>.Instance);
+        using var dispatcher = CreateDispatcher(stores, CreateHttpClientFactory(httpClient));
 
         using var cts = new CancellationTokenSource();
         var executeTask = InvokeExecuteAsync(dispatcher, cts.Token);
 
         await WaitForConditionAsync(
-            () => ReadDeliveredCursor(dispatcher) == 1L,
+            () => stores.Events.QueriedCursors.Contains(3L),
             TimeSpan.FromSeconds(3),
-            TimeSpan.FromMilliseconds(50));
+            TimeSpan.FromMilliseconds(20));
 
+        Assert.Equal(3L, stores.Cursors.Read(CursorName));
+        Assert.DoesNotContain(0L, stores.Events.QueriedCursors);
         Assert.Equal(0, handler.SendCount);
-        Assert.Equal(1L, ReadDeliveredCursor(dispatcher));
 
         await CancelAndAwaitDispatcherShutdownAsync(cts, executeTask);
     }
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task TryLoadDeliveredCursorAsync_WhenRedisRecovers_AdvancesMonotonically()
+    public async Task ExecuteAsync_WhenEventsAreDelivered_AdvancesStoredCursor()
     {
-        var store = new TrackingFeatureChangeEventStore();
-        var database = Substitute.For<IDatabase>();
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        var readCount = 0;
-
-        redis.GetDatabase().Returns(database);
-        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-        database.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
-            .Returns(callInfo =>
-            {
-                readCount++;
-                if (readCount == 1)
-                {
-                    throw new InvalidOperationException("boom");
-                }
-
-                return "5";
-            });
-
-        var dispatcher = new FeatureChangeWebhookDispatcher(
-            store,
-            null,
-            redis,
-            Substitute.For<IHttpClientFactory>(),
-            Options.Create(new FeatureChangeWebhookOptions
-            {
-                Enabled = false
-            }),
-            NullLogger<FeatureChangeWebhookDispatcher>.Instance);
-
-        var first = await InvokeTryLoadDeliveredCursorAsync(dispatcher, CancellationToken.None);
-        var second = await InvokeTryLoadDeliveredCursorAsync(dispatcher, CancellationToken.None);
-        var deliveredCursor = ReadDeliveredCursor(dispatcher);
-
-        Assert.False(first);
-        Assert.True(second);
-        Assert.Equal(5L, deliveredCursor);
-    }
-
-    [UnitTest]
-    [Operation(Operations.TestInfrastructure)]
-    public async Task ExecuteAsync_RenewsRedisLeaseWhileWebhookDeliveryIsInFlight()
-    {
-        var database = Substitute.For<IDatabase>();
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        redis.GetDatabase().Returns(database);
-        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-
-        database.LockTakeAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
-            .Returns(Task.FromResult(true));
-        database.LockExtendAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
-            .Returns(Task.FromResult(true));
-
-        var coordinator = new RedisLeaseCoordinator(redis, "featurechange:webhook:lease", TimeSpan.FromMinutes(10));
-        Assert.True(await coordinator.TryAcquireOrExtendAsync());
-
-        using var cts = new CancellationTokenSource();
-        var maintainMethod = typeof(RedisLeaseCoordinator).GetMethod(
-            "MaintainLeaseAsync",
-            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-        Assert.NotNull(maintainMethod);
-
-        var maintainTask = (Task)maintainMethod!.Invoke(
-            coordinator,
-            [TimeSpan.FromMilliseconds(50), cts.Token])!;
-
-        // Poll for at least 2 lease extensions with a generous timeout so CI-load scheduler
-        // jitter doesn't intermittently fail the test. Original fixed 250ms wait failed under
-        // contention when the Task scheduler delayed the first renewal past ~150ms.
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
-        var extendCalls = 0;
-        while (DateTime.UtcNow < deadline)
-        {
-            extendCalls = database.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(IDatabase.LockExtendAsync));
-            if (extendCalls >= 2)
-            {
-                break;
-            }
-            await Task.Delay(TimeSpan.FromMilliseconds(50));
-        }
-        Assert.True(extendCalls >= 2, $"expected at least two lease extensions while delivery was in flight, but saw {extendCalls}");
-
-        cts.Cancel();
-        await maintainTask;
-
-        Assert.Equal(1, database.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(IDatabase.LockTakeAsync)));
-    }
-
-    [UnitTest]
-    [Operation(Operations.TestInfrastructure)]
-    public async Task ExecuteAsync_RenewsRedisDeliveryClaimWhileWebhookDeliveryIsInFlight()
-    {
-        var store = new SingleEventFeatureChangeEventStore(CreateEvent());
-        var database = Substitute.For<IDatabase>();
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        redis.GetDatabase().Returns(database);
-        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-
-        database.LockTakeAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
-            .Returns(Task.FromResult(true));
-        database.LockExtendAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
-            .Returns(Task.FromResult(true));
-        database.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
-            .Returns(RedisValue.Null);
-        database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), Arg.Any<bool>(), Arg.Any<When>(), Arg.Any<CommandFlags>())
-            .Returns(Task.FromResult(true));
-
-        var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        var handler = new CancellationAwareHandler();
+        var stores = new DispatcherStores(new ListFeatureChangeEventStore(CreateEvent(2), CreateEvent(5), CreateEvent(9)));
+        stores.Cursors.Seed(CursorName, 2);
+        var handler = new CountingHandler();
         using var httpClient = new HttpClient(handler);
-        httpClientFactory.CreateClient("feature-change-webhook").Returns(httpClient);
-
-        var dispatcher = new FeatureChangeWebhookDispatcher(
-            store,
-            null,
-            redis,
-            httpClientFactory,
-            Options.Create(new FeatureChangeWebhookOptions
-            {
-                Enabled = true,
-                Url = PublicIpLiteralWebhookUrl,
-                Secret = "super-secret",
-                MaxAttempts = 1,
-                RequestTimeoutSeconds = 30
-            }),
-            NullLogger<FeatureChangeWebhookDispatcher>.Instance);
+        using var dispatcher = CreateDispatcher(stores, CreateHttpClientFactory(httpClient));
 
         using var cts = new CancellationTokenSource();
         var executeTask = InvokeExecuteAsync(dispatcher, cts.Token);
 
-        await handler.WaitForRequestAsync().WaitAsync(TimeSpan.FromSeconds(3));
-
-        // Allow CI-load scheduler jitter to delay the renewal loop beyond its first
-        // one-second interval while the webhook request remains in flight.
         await WaitForConditionAsync(
-            () => database.ReceivedCalls().Any(call =>
-                call.GetMethodInfo().Name == nameof(IDatabase.LockExtendAsync) &&
-                string.Equals(call.GetArguments()[0]?.ToString(), "featurechange:webhook:delivery:evt-1", StringComparison.Ordinal)),
-            TimeSpan.FromSeconds(10),
-            TimeSpan.FromMilliseconds(100));
+            () => stores.Cursors.Read(CursorName) == 9L,
+            TimeSpan.FromSeconds(3),
+            TimeSpan.FromMilliseconds(20));
 
-        var claimExtendCalls = database.ReceivedCalls().Count(call =>
-            call.GetMethodInfo().Name == nameof(IDatabase.LockExtendAsync) &&
-            string.Equals(call.GetArguments()[0]?.ToString(), "featurechange:webhook:delivery:evt-1", StringComparison.Ordinal));
+        Assert.Equal(9L, stores.Cursors.Read(CursorName));
+        Assert.Equal(2, handler.SendCount);
 
-        Assert.True(claimExtendCalls >= 1, $"expected at least one delivery-claim renewal while webhook delivery was in flight, but saw {claimExtendCalls}");
-
-        cts.Cancel();
-        await handler.WaitForCancellationAsync().WaitAsync(TimeSpan.FromSeconds(10));
-        await AwaitDispatcherShutdownAsync(cts, executeTask);
+        await CancelAndAwaitDispatcherShutdownAsync(cts, executeTask);
     }
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task ExecuteAsync_WhenDeliveryClaimLeaseIsLost_CancelsInFlightWebhookRequest()
+    public async Task ExecuteAsync_WhenAnotherOwnerHoldsLease_DeliversNothing()
     {
-        var store = new SingleEventFeatureChangeEventStore(CreateEvent());
-        var database = Substitute.For<IDatabase>();
-        var redis = Substitute.For<IConnectionMultiplexer>();
-        redis.GetDatabase().Returns(database);
-        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-        var deliveryClaimLockTakeCount = 0;
-
-        database.LockTakeAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
-            .Returns(call =>
-            {
-                var key = call.ArgAt<RedisKey>(0).ToString();
-                if (string.Equals(key, "featurechange:webhook:delivery:evt-1", StringComparison.Ordinal))
-                {
-                    deliveryClaimLockTakeCount++;
-                    return Task.FromResult(deliveryClaimLockTakeCount == 1);
-                }
-
-                return Task.FromResult(true);
-            });
-        database.LockExtendAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
-            .Returns(call =>
-            {
-                var key = call.ArgAt<RedisKey>(0).ToString();
-                return Task.FromResult(!string.Equals(key, "featurechange:webhook:delivery:evt-1", StringComparison.Ordinal));
-            });
-        database.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
-            .Returns(RedisValue.Null);
-        database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), Arg.Any<bool>(), Arg.Any<When>(), Arg.Any<CommandFlags>())
-            .Returns(Task.FromResult(true));
-
-        var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        var handler = new CancellationAwareHandler();
+        var leases = new InMemoryLeaseStore();
+        var stores = new DispatcherStores(new ListFeatureChangeEventStore(CreateEvent(1)), leases);
+        stores.Cursors.Seed(CursorName, 0);
+        leases.HoldForOtherOwner(CursorName);
+        var handler = new CountingHandler();
         using var httpClient = new HttpClient(handler);
-        httpClientFactory.CreateClient("feature-change-webhook").Returns(httpClient);
-
-        var dispatcher = new FeatureChangeWebhookDispatcher(
-            store,
-            null,
-            redis,
-            httpClientFactory,
-            Options.Create(new FeatureChangeWebhookOptions
-            {
-                Enabled = true,
-                Url = PublicIpLiteralWebhookUrl,
-                Secret = "super-secret",
-                MaxAttempts = 1,
-                RequestTimeoutSeconds = 30
-            }),
-            NullLogger<FeatureChangeWebhookDispatcher>.Instance);
+        using var dispatcher = CreateDispatcher(stores, CreateHttpClientFactory(httpClient));
 
         using var cts = new CancellationTokenSource();
         var executeTask = InvokeExecuteAsync(dispatcher, cts.Token);
 
-        await handler.WaitForRequestAsync().WaitAsync(TimeSpan.FromSeconds(3));
-
         await WaitForConditionAsync(
-            () => database.ReceivedCalls().Any(call =>
-                call.GetMethodInfo().Name == nameof(IDatabase.LockExtendAsync) &&
-                string.Equals(call.GetArguments()[0]?.ToString(), "featurechange:webhook:delivery:evt-1", StringComparison.Ordinal)),
+            () => leases.AcquireAttempts >= 2,
             TimeSpan.FromSeconds(5),
-            TimeSpan.FromMilliseconds(100));
+            TimeSpan.FromMilliseconds(20));
 
-        var claimExtendCalls = database.ReceivedCalls().Count(call =>
-            call.GetMethodInfo().Name == nameof(IDatabase.LockExtendAsync) &&
-            string.Equals(call.GetArguments()[0]?.ToString(), "featurechange:webhook:delivery:evt-1", StringComparison.Ordinal));
-
-        Assert.True(
-            claimExtendCalls >= 1,
-            $"expected at least one delivery-claim renewal attempt before cancellation, but saw {claimExtendCalls}");
-
-        await handler.WaitForCancellationAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.True(leases.AcquireAttempts >= 2);
+        Assert.Empty(stores.Events.QueriedCursors);
+        Assert.Equal(0, handler.SendCount);
+        Assert.Equal(0L, stores.Cursors.Read(CursorName));
 
         await CancelAndAwaitDispatcherShutdownAsync(cts, executeTask);
     }
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task ExecuteAsync_WhenDurableEventStoreIsUnavailable_DoesNotDispatch()
+    public async Task ExecuteAsync_WhenLeaseIsLostDuringDelivery_CancelsInFlightWebhookRequest()
     {
-        var store = new UnavailableFeatureChangeEventStore();
-        var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        var dispatcher = new FeatureChangeWebhookDispatcher(
-            store,
-            null,
-            null,
-            httpClientFactory,
-            Options.Create(new FeatureChangeWebhookOptions
-            {
-                Enabled = true,
-                Url = "https://hooks.example.com/feature-change",
-                Secret = "super-secret",
-                MaxAttempts = 1
-            }),
-            NullLogger<FeatureChangeWebhookDispatcher>.Instance);
+        var leases = new InMemoryLeaseStore();
+        var stores = new DispatcherStores(new ListFeatureChangeEventStore(CreateEvent(1)), leases);
+        stores.Cursors.Seed(CursorName, 0);
+        var handler = new CancellationAwareHandler();
+        using var httpClient = new HttpClient(handler);
+        using var dispatcher = CreateDispatcher(stores, CreateHttpClientFactory(httpClient));
 
         using var cts = new CancellationTokenSource();
         var executeTask = InvokeExecuteAsync(dispatcher, cts.Token);
 
-        await Task.Delay(100);
-        Assert.Equal(0, store.QueryCallCount);
-        httpClientFactory.DidNotReceive().CreateClient("feature-change-webhook");
+        await handler.WaitForRequestAsync().WaitAsync(TimeSpan.FromSeconds(3));
+        leases.HoldForOtherOwner(CursorName);
+
+        await handler.WaitForCancellationAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(0L, stores.Cursors.Read(CursorName));
 
         await CancelAndAwaitDispatcherShutdownAsync(cts, executeTask);
     }
 
-    private static FeatureChangeEvent CreateEvent()
+    private static FeatureChangeWebhookDispatcher CreateDispatcher(
+        DispatcherStores stores,
+        IHttpClientFactory httpClientFactory,
+        string url = PublicIpLiteralWebhookUrl)
+        => new(
+            stores.Events,
+            stores.Cursors,
+            stores.Leases,
+            httpClientFactory,
+            Options.Create(new FeatureChangeWebhookOptions
+            {
+                Enabled = true,
+                Url = url,
+                Secret = "super-secret",
+                MaxAttempts = 1,
+                RequestTimeoutSeconds = 30
+            }),
+            NullLogger<FeatureChangeWebhookDispatcher>.Instance);
+
+    private static IHttpClientFactory CreateHttpClientFactory(HttpClient httpClient)
+    {
+        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+        httpClientFactory.CreateClient("feature-change-webhook").Returns(httpClient);
+        return httpClientFactory;
+    }
+
+    private static FeatureChangeEvent CreateEvent(long cursor)
         => new()
         {
-            EventId = "evt-1",
-            Cursor = 1,
+            EventId = $"evt-{cursor}",
+            Cursor = cursor,
             Timestamp = DateTimeOffset.UtcNow,
             ServiceId = "svc",
             LayerId = 42,
@@ -576,67 +290,47 @@ public sealed class FeatureChangeWebhookDispatcherTests
         Task executeTask)
     {
         cancellationTokenSource.Cancel();
-        await AwaitDispatcherShutdownAsync(cancellationTokenSource, executeTask);
-    }
-
-    private static async Task AwaitDispatcherShutdownAsync(
-        CancellationTokenSource cancellationTokenSource,
-        Task executeTask)
-    {
         try
         {
             await executeTask.WaitAsync(TimeSpan.FromSeconds(5));
         }
         catch (OperationCanceledException) when (cancellationTokenSource.IsCancellationRequested)
         {
-            // ExecuteAsync may either observe cancellation at an awaited operation or exit
-            // cleanly after the loop guard sees the cancellation request.
+            // ExecuteAsync either observes cancellation at an await or exits at the loop guard.
         }
     }
 
-    private static async Task<bool> InvokeTryLoadDeliveredCursorAsync(
-        FeatureChangeWebhookDispatcher dispatcher,
-        CancellationToken cancellationToken)
+    private sealed record DispatcherStores(ListFeatureChangeEventStore Events, InMemoryLeaseStore? Leases = null)
     {
-        var method = typeof(FeatureChangeWebhookDispatcher).GetMethod(
-            "TryLoadDeliveredCursorAsync",
-            BindingFlags.Instance | BindingFlags.NonPublic);
+        public DispatcherStores()
+            : this(new ListFeatureChangeEventStore())
+        {
+        }
 
-        Assert.NotNull(method);
-
-        var task = method!.Invoke(
-            dispatcher,
-            new object[] { cancellationToken }) as Task<bool>;
-        Assert.NotNull(task);
-        return await task!;
-    }
-
-    private static long ReadDeliveredCursor(FeatureChangeWebhookDispatcher dispatcher)
-    {
-        var field = typeof(FeatureChangeWebhookDispatcher).GetField(
-            "_deliveredCursor",
-            BindingFlags.Instance | BindingFlags.NonPublic);
-        Assert.NotNull(field);
-        return (long)field!.GetValue(dispatcher)!;
+        public InMemoryStreamCursorStore Cursors { get; } = new();
     }
 
     private sealed class CountingHandler : HttpMessageHandler
     {
-        public int SendCount { get; private set; }
+        private int _sendCount;
+
+        public int SendCount => Volatile.Read(ref _sendCount);
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            SendCount++;
+            Interlocked.Increment(ref _sendCount);
             // Ownership transfers to the HttpClient pipeline/caller, which disposes it; not this handler's responsibility.
-            return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK));
+            return Task.FromResult<HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK));
         }
     }
+
     private sealed class CancellationAwareHandler : HttpMessageHandler
     {
         private readonly TaskCompletionSource _requestStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _requestCancelled = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public Task WaitForRequestAsync() => _requestStarted.Task;
+
         public Task WaitForCancellationAsync() => _requestCancelled.Task;
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -656,15 +350,14 @@ public sealed class FeatureChangeWebhookDispatcherTests
         }
     }
 
-    private sealed class TrackingFeatureChangeEventStore : IFeatureChangeEventStore
+    private sealed class ListFeatureChangeEventStore(params FeatureChangeEvent[] events) : IFeatureChangeEventStore
     {
-        public int QueryCallCount { get; private set; }
+        private readonly ConcurrentQueue<long> _queriedCursors = new();
 
-        public Task<FeatureChangeEvent> AppendAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
+        public IReadOnlyCollection<long> QueriedCursors => _queriedCursors.ToArray();
 
         public Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(0L);
+            => Task.FromResult(events.Length == 0 ? 0L : events.Max(featureEvent => featureEvent.Cursor));
 
         public Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
             long? cursor,
@@ -673,86 +366,55 @@ public sealed class FeatureChangeWebhookDispatcherTests
             int limit,
             CancellationToken cancellationToken = default)
         {
-            QueryCallCount++;
-            return Task.FromResult<IReadOnlyList<FeatureChangeEvent>>([]);
+            var after = cursor ?? 0;
+            _queriedCursors.Enqueue(after);
+            return Task.FromResult<IReadOnlyList<FeatureChangeEvent>>(
+                events.Where(featureEvent => featureEvent.Cursor > after)
+                    .OrderBy(featureEvent => featureEvent.Cursor)
+                    .Take(limit)
+                    .ToArray());
         }
     }
 
-    private sealed class SingleEventFeatureChangeEventStore(FeatureChangeEvent featureEvent) : IFeatureChangeEventStore
+    private sealed class InMemoryStreamCursorStore : IStreamCursorStore
     {
-        private readonly FeatureChangeEvent _featureEvent = featureEvent;
+        private readonly ConcurrentDictionary<string, long> _positions = new(StringComparer.Ordinal);
 
-        public Task<FeatureChangeEvent> AppendAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
+        public long? Read(string name) => _positions.TryGetValue(name, out var position) ? position : null;
 
-        public Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(_featureEvent.Cursor);
+        public void Seed(string name, long position) => _positions[name] = position;
 
-        public Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
-            long? cursor,
-            DateTimeOffset? from,
-            DateTimeOffset? to,
-            int limit,
-            CancellationToken cancellationToken = default)
+        public Task<long?> ReadAsync(string name, CancellationToken ct) => Task.FromResult(Read(name));
+
+        public Task WriteAsync(string name, long position, CancellationToken ct)
         {
-            if ((cursor ?? 0) >= _featureEvent.Cursor)
-            {
-                return Task.FromResult<IReadOnlyList<FeatureChangeEvent>>([]);
-            }
-
-            return Task.FromResult<IReadOnlyList<FeatureChangeEvent>>([_featureEvent]);
+            _positions.AddOrUpdate(name, position, (_, stored) => Math.Max(stored, position));
+            return Task.CompletedTask;
         }
     }
 
-    private sealed class UnavailableFeatureChangeEventStore : IFeatureChangeEventStore, IFeatureChangeEventStoreHealth
+    private sealed class InMemoryLeaseStore : ILeaseStore
     {
-        public int QueryCallCount { get; private set; }
+        private readonly ConcurrentDictionary<string, string> _owners = new(StringComparer.Ordinal);
+        private int _acquireAttempts;
 
-        public bool CanPersistEvents => false;
+        public int AcquireAttempts => Volatile.Read(ref _acquireAttempts);
 
-        public bool IsUsingInMemoryFallback => false;
+        public void HoldForOtherOwner(string leaseKey) => _owners[leaseKey] = "other-owner";
 
-        public Task<FeatureChangeEvent> AppendAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(0L);
-
-        public Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
-            long? cursor,
-            DateTimeOffset? from,
-            DateTimeOffset? to,
-            int limit,
-            CancellationToken cancellationToken = default)
+        public Task<bool> TryAcquireAsync(LeaseClaim claim, TimeSpan duration, CancellationToken cancellationToken = default)
         {
-            QueryCallCount++;
-            return Task.FromResult<IReadOnlyList<FeatureChangeEvent>>([]);
+            Interlocked.Increment(ref _acquireAttempts);
+            return Task.FromResult(_owners.TryAdd(claim.LeaseKey, claim.OwnerId));
+        }
+
+        public Task<bool> RenewAsync(LeaseClaim claim, TimeSpan duration, CancellationToken cancellationToken = default)
+            => Task.FromResult(_owners.TryGetValue(claim.LeaseKey, out var owner) && owner == claim.OwnerId);
+
+        public Task ReleaseAsync(LeaseClaim claim, CancellationToken cancellationToken = default)
+        {
+            _owners.TryRemove(new KeyValuePair<string, string>(claim.LeaseKey, claim.OwnerId));
+            return Task.CompletedTask;
         }
     }
-
-    private sealed class ThrowingDistributedCache : IDistributedCache
-    {
-        private readonly TaskCompletionSource _readAttempted = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public Task WaitForReadAttemptAsync() => _readAttempted.Task;
-
-        public byte[]? Get(string key)
-        {
-            _readAttempted.TrySetResult();
-            throw new InvalidOperationException("boom");
-        }
-
-        public Task<byte[]?> GetAsync(string key, CancellationToken token = default)
-        {
-            _readAttempted.TrySetResult();
-            throw new InvalidOperationException("boom");
-        }
-        public void Refresh(string key) => throw new InvalidOperationException("boom");
-        public Task RefreshAsync(string key, CancellationToken token = default) => throw new InvalidOperationException("boom");
-        public void Remove(string key) => throw new InvalidOperationException("boom");
-        public Task RemoveAsync(string key, CancellationToken token = default) => throw new InvalidOperationException("boom");
-        public void Set(string key, byte[] value, DistributedCacheEntryOptions options) => throw new InvalidOperationException("boom");
-        public Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default) => throw new InvalidOperationException("boom");
-    }
-
 }

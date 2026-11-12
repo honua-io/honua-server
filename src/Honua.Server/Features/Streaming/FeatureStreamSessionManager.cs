@@ -8,46 +8,28 @@ using System.Threading.Channels;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 
 namespace Honua.Server.Features.Streaming;
 
 internal sealed class FeatureStreamSessionManager : IDisposable
 {
     internal const string DefaultSubscriptionId = "default";
-    private static readonly RedisChannel BroadcastChannel = new("featurechange:stream:broadcast", RedisChannel.PatternMode.Literal);
-    private static readonly TimeSpan ClusterBroadcastRecoveryInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan RoutabilityRefreshInterval = TimeSpan.FromSeconds(1);
     private const int RecentEventIdCapacity = 128;
     private const int SubscriberSecurityRefreshParallelism = 8;
 
-    private const int MaxClusterBroadcastBacklog = 1024;
     private readonly ConcurrentDictionary<Guid, SessionEntry> _sessions = new();
-    private readonly ConcurrentQueue<string> _clusterBroadcastBacklog = new();
-    private readonly object _clusterBroadcastLock = new();
     private readonly IOptions<FeatureStreamOptions> _options;
     private readonly ILogger<FeatureStreamSessionManager> _logger;
     private readonly FeatureStreamMetrics _metrics;
-    private readonly IConnectionMultiplexer? _redis;
     private readonly FeatureStreamRoutabilityGuard? _routabilityGuard;
     private readonly IServiceScopeFactory? _serviceScopeFactory;
     private readonly SemaphoreSlim _routabilityRefreshGate = new(1, 1);
-    private readonly SemaphoreSlim _clusterBroadcastDispatchGate = new(1, 1);
-    private ISubscriber? _subscriber;
-    private readonly Timer? _clusterBroadcastRecoveryTimer;
-    private readonly string _instanceId = Guid.NewGuid().ToString("N");
-    private bool _clusterBroadcastEnabled;
     private int _activeSessionCount;
     private readonly object _admissionLock = new();
     private readonly Dictionary<string, int> _partitionSessionCounts = new(StringComparer.Ordinal);
     private long _slowConsumerDrops;
     private long _heartbeatsSent;
-    private int _clusterBroadcastUnavailableLogged;
-    private int _clusterBroadcastFailedLogged;
-    private int _clusterBroadcastRecoveryInProgress;
-    private int _clusterBroadcastBacklogCount;
-    private long _clusterBroadcastBacklogDropped;
-    private bool _clusterBroadcastBacklogDropLogged;
     private long _nextRoutabilityRefreshTimestamp;
     private int _lastRoutabilityRefreshSucceeded = 1;
 
@@ -55,41 +37,14 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         IOptions<FeatureStreamOptions> options,
         ILogger<FeatureStreamSessionManager> logger,
         FeatureStreamMetrics metrics,
-        IConnectionMultiplexer? redis = null,
         FeatureStreamRoutabilityGuard? routabilityGuard = null,
         IServiceScopeFactory? serviceScopeFactory = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
-        _redis = redis;
         _routabilityGuard = routabilityGuard;
         _serviceScopeFactory = serviceScopeFactory;
-
-        if (_redis is null)
-        {
-            return;
-        }
-
-        try
-        {
-            _subscriber = _redis.GetSubscriber();
-            _subscriber.Subscribe(BroadcastChannel, HandleClusterBroadcast);
-            _clusterBroadcastEnabled = true;
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Intentional broad catch: cluster broadcast subscribe is best-effort during
-            // construction. A Redis outage here must not prevent the session manager (and
-            // single-node feature streaming) from starting; the recovery timer retries.
-            LogClusterBroadcastUnavailableOnce(ex);
-        }
-
-        _clusterBroadcastRecoveryTimer = new Timer(
-            _ => TryRecoverClusterBroadcast(),
-            null,
-            ClusterBroadcastRecoveryInterval,
-            ClusterBroadcastRecoveryInterval);
     }
 
     public long SlowConsumerDrops => Interlocked.Read(ref _slowConsumerDrops);
@@ -244,22 +199,8 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         return await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public ClusterBroadcastBacklogSnapshot GetClusterBroadcastBacklogSnapshot()
-    {
-        lock (_clusterBroadcastLock)
-        {
-            return new ClusterBroadcastBacklogSnapshot(
-                Configured: _redis is not null,
-                Enabled: _clusterBroadcastEnabled,
-                BacklogDepth: _clusterBroadcastBacklogCount,
-                Dropped: _clusterBroadcastBacklogDropped);
-        }
-    }
-
     private void UpdateGaugeSnapshot()
-        => _metrics.RecordGaugeSnapshot(
-            Volatile.Read(ref _activeSessionCount),
-            Volatile.Read(ref _clusterBroadcastBacklogCount));
+        => _metrics.RecordGaugeSnapshot(Volatile.Read(ref _activeSessionCount));
 
     public void RecordReplayEventsDelivered(string transport, long count)
         => _metrics.RecordReplayEventsDelivered(transport, count);
@@ -391,101 +332,8 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         return true;
     }
 
-    public int Broadcast(FeatureStreamMessage message)
-    {
-        var delivered = BroadcastLocally(message);
-
-        if (message.IsHeartbeat)
-        {
-            return delivered;
-        }
-
-        if (_redis is null)
-        {
-            // Single-node mode: there are no cross-node consumers, so skip the
-            // cluster serialization and never accumulate a backlog that nothing
-            // could ever flush.
-            return delivered;
-        }
-
-        var payload = JsonSerializer.Serialize(
-            new FeatureStreamBroadcastMessage
-            {
-                OriginInstanceId = _instanceId,
-                Envelope = message.Envelope,
-                GeometryEnvelope = message.GeometryEnvelope,
-                PropertiesJson = message.PropertiesJson
-            },
-            FeatureStreamJsonContext.Default.FeatureStreamBroadcastMessage);
-
-        lock (_clusterBroadcastLock)
-        {
-            if (_clusterBroadcastEnabled && _subscriber is not null)
-            {
-                TryFlushClusterBroadcastBacklogLocked();
-                if (TryPublishClusterBroadcastLocked(payload))
-                {
-                    return delivered;
-                }
-            }
-
-            EnqueueClusterBroadcastBacklogLocked(payload);
-            TryRecoverClusterBroadcastLocked();
-        }
-
-        return delivered;
-    }
-
-    private bool TryPublishClusterBroadcastLocked(string payload)
-    {
-        if (!_clusterBroadcastEnabled || _subscriber is null)
-        {
-            return false;
-        }
-
-        try
-        {
-            // Fire-and-forget: Broadcast() runs synchronously on the feature-edit
-            // hot path while holding the process-wide cluster lock, so it must not
-            // block on a Redis round trip. Cross-node delivery is best-effort —
-            // missed live events are recovered through the durable event store and
-            // the cross-node poll.
-            _subscriber.Publish(BroadcastChannel, payload, CommandFlags.FireAndForget);
-            return true;
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Intentional broad catch: this is a best-effort cross-node publish on the
-            // feature-edit hot path. Failure falls back to the retry backlog instead of
-            // propagating and interrupting the local broadcast.
-            LogClusterBroadcastFailedOnce(ex);
-            return false;
-        }
-    }
-
-    // Callers must hold the lock while a retry is queued.
-    private void EnqueueClusterBroadcastBacklogLocked(string payload)
-    {
-        _clusterBroadcastBacklog.Enqueue(payload);
-        _clusterBroadcastBacklogCount++;
-        UpdateGaugeSnapshot();
-
-        while (_clusterBroadcastBacklogCount > MaxClusterBroadcastBacklog &&
-               _clusterBroadcastBacklog.TryDequeue(out _))
-        {
-            _clusterBroadcastBacklogCount--;
-            _clusterBroadcastBacklogDropped++;
-            _metrics.RecordClusterBroadcastDropped();
-            if (!_clusterBroadcastBacklogDropLogged)
-            {
-                _clusterBroadcastBacklogDropLogged = true;
-                FeatureStreamLog.ClusterBroadcastBacklogOverflowed(
-                    _logger,
-                    MaxClusterBroadcastBacklog,
-                    _clusterBroadcastBacklogDropped);
-            }
-        }
-    }
+    // Delivers to this task's sessions; every task receives each change from the change log.
+    public int Broadcast(FeatureStreamMessage message) => BroadcastLocally(message);
 
     private int BroadcastLocally(FeatureStreamMessage message)
     {
@@ -575,154 +423,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
 
         return true;
-    }
-
-    private void HandleClusterBroadcast(RedisChannel channel, RedisValue value)
-    {
-        if (!_clusterBroadcastEnabled || value.IsNullOrEmpty)
-        {
-            return;
-        }
-
-        try
-        {
-            var payload = JsonSerializer.Deserialize(
-                value.ToString(),
-                FeatureStreamJsonContext.Default.FeatureStreamBroadcastMessage);
-
-            if (payload is null ||
-                string.Equals(payload.OriginInstanceId, _instanceId, StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            _ = HandleClusterBroadcastAsync(payload);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Intentional broad catch: this handles an inbound Redis pub/sub callback for
-            // a cross-node broadcast. A malformed or unexpected payload must not throw back
-            // into StackExchange.Redis's dispatch thread; log and drop the message.
-            LogClusterBroadcastFailedOnce(ex);
-        }
-    }
-
-    private async Task HandleClusterBroadcastAsync(FeatureStreamBroadcastMessage payload)
-    {
-        await _clusterBroadcastDispatchGate.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            if (!await RefreshRoutabilityAsync().ConfigureAwait(false))
-            {
-                return;
-            }
-
-            BroadcastLocally(FeatureStreamMessage.Data(
-                payload.Envelope,
-                payload.GeometryEnvelope,
-                payload.PropertiesJson));
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            LogClusterBroadcastFailedOnce(ex);
-        }
-        finally
-        {
-            _clusterBroadcastDispatchGate.Release();
-        }
-    }
-
-    private void TryRecoverClusterBroadcast()
-    {
-        try
-        {
-            lock (_clusterBroadcastLock)
-            {
-                TryRecoverClusterBroadcastLocked();
-            }
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Intentionally generic: this runs on the recurring cluster-broadcast recovery
-            // timer callback. A single failed recovery attempt must not kill the timer or
-            // the host; log and let the next tick retry.
-            LogClusterBroadcastUnavailableOnce(ex);
-        }
-    }
-
-    private void TryRecoverClusterBroadcastLocked()
-    {
-        if (_redis is null)
-        {
-            return;
-        }
-
-        if (!_clusterBroadcastEnabled)
-        {
-            if (Interlocked.Exchange(ref _clusterBroadcastRecoveryInProgress, 1) != 0)
-            {
-                return;
-            }
-
-            try
-            {
-                _subscriber ??= _redis.GetSubscriber();
-                _subscriber.Subscribe(BroadcastChannel, HandleClusterBroadcast);
-                _clusterBroadcastEnabled = true;
-
-                // Re-arm the once-per-episode failure logs so the next outage is
-                // visible to operators instead of degrading silently after the
-                // first incident in the process lifetime.
-                Interlocked.Exchange(ref _clusterBroadcastUnavailableLogged, 0);
-                Interlocked.Exchange(ref _clusterBroadcastFailedLogged, 0);
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                // Intentional broad catch: this is a best-effort re-subscribe attempt inside
-                // the recovery loop; Redis may still be unavailable, so log and leave
-                // cluster broadcast disabled for the next recovery tick to retry.
-                LogClusterBroadcastUnavailableOnce(ex);
-                return;
-            }
-            finally
-            {
-                Volatile.Write(ref _clusterBroadcastRecoveryInProgress, 0);
-            }
-        }
-
-        TryFlushClusterBroadcastBacklogLocked();
-    }
-
-    private void TryFlushClusterBroadcastBacklogLocked()
-    {
-        if (!_clusterBroadcastEnabled || _subscriber is null)
-        {
-            return;
-        }
-
-        while (_clusterBroadcastBacklog.TryPeek(out var payload))
-        {
-            try
-            {
-                _subscriber.Publish(BroadcastChannel, payload, CommandFlags.FireAndForget);
-                if (_clusterBroadcastBacklog.TryDequeue(out _))
-                {
-                    _clusterBroadcastBacklogCount--;
-                }
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                // Intentional broad catch: this is a per-payload attempt inside the backlog
-                // flush loop; one failed publish must not abort the flush of the remaining
-                // backlog entries, so log and leave the rest queued for the next attempt.
-                LogClusterBroadcastFailedOnce(ex);
-                return;
-            }
-        }
-
-        // Backlog fully drained: re-arm the overflow log for the next episode.
-        _clusterBroadcastBacklogDropLogged = false;
-        UpdateGaugeSnapshot();
     }
 
     public void BroadcastHeartbeat()
@@ -881,21 +581,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
     public void Dispose()
     {
-        _clusterBroadcastRecoveryTimer?.Dispose();
-        if (_subscriber is not null)
-        {
-            try
-            {
-                _subscriber.Unsubscribe(BroadcastChannel, HandleClusterBroadcast);
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                // Intentional broad catch: best-effort shutdown; the connection owner will
-                // close the Redis subscription anyway.
-                FeatureStreamLog.ClusterUnsubscribeFailed(_logger, ex);
-            }
-        }
-
         foreach (var (_, entry) in _sessions)
         {
             entry.Cts.Cancel();
@@ -907,22 +592,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         {
             _partitionSessionCounts.Clear();
             Interlocked.Exchange(ref _activeSessionCount, 0);
-        }
-    }
-
-    private void LogClusterBroadcastUnavailableOnce(Exception exception)
-    {
-        if (Interlocked.Exchange(ref _clusterBroadcastUnavailableLogged, 1) == 0)
-        {
-            FeatureStreamLog.ClusterBroadcastUnavailable(_logger, exception);
-        }
-    }
-
-    private void LogClusterBroadcastFailedOnce(Exception exception)
-    {
-        if (Interlocked.Exchange(ref _clusterBroadcastFailedLogged, 1) == 0)
-        {
-            FeatureStreamLog.ClusterBroadcastFailed(_logger, exception);
         }
     }
 
@@ -1352,13 +1021,3 @@ internal readonly record struct FeatureStreamMessage
         new() { IsHeartbeat = true };
 }
 
-internal sealed record FeatureStreamBroadcastMessage
-{
-    public required string OriginInstanceId { get; init; }
-
-    public required FeatureStreamEnvelope Envelope { get; init; }
-
-    public double[]? GeometryEnvelope { get; init; }
-
-    public string? PropertiesJson { get; init; }
-}

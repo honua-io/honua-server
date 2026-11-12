@@ -2,28 +2,27 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.ControlPlane;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Events.Outbox;
 using Honua.Infrastructure.Extensions;
+using Honua.Server.Features.Realtime;
 using Honua.Server.Features.Streaming;
 using Honua.Server.Features.Streaming.Conformance;
-using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 
 namespace Honua.Server.Startup;
 
-// With no Redis the event store is explicit in-memory; an unconfigured store is not unhealthy, and an unreachable store is.
-internal static partial class FeatureEventsAndStreamingRegistration
+// Feature-change events are read from the PostgreSQL change log (ADR-0085); streams follow it through the realtime fan-out provider.
+internal static class FeatureEventsAndStreamingRegistration
 {
     public static IServiceCollection AddHonuaFeatureEventsAndStreaming(
         this IServiceCollection services,
-        IConfiguration configuration,
-        bool requiresDurableDistributedEvents)
+        IConfiguration configuration)
     {
         services.Configure<FeatureChangeEventOptions>(
             configuration.GetSection(FeatureChangeEventOptions.SectionName));
@@ -31,29 +30,16 @@ internal static partial class FeatureEventsAndStreamingRegistration
         services.AddOptions<FeatureChangeWebhookOptions>()
             .Bind(configuration.GetSection(FeatureChangeWebhookOptions.SectionName))
             .ValidateOnStart();
-        services.AddSingleton<IFeatureChangeEventStore>(sp =>
-        {
-            var redis = sp.GetService<IConnectionMultiplexer>();
-
-            // Durability can only be enforced against a Redis that is actually configured.
-            // No Redis registered => single-node/serverless deployment: degrade to explicit
-            // node-local in-memory storage (ADR-0017 fallback pattern) instead of reporting
-            // the store permanently unhealthy (#1618). When Redis IS configured, the strict
-            // environments keep requiring it, so a real Redis outage still fails readiness.
-            var allowInMemoryFallback = !requiresDurableDistributedEvents || redis is null;
-            if (requiresDurableDistributedEvents && redis is null)
-            {
-                LogSingleNodeInMemoryEventStore(
-                    sp.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(FeatureEventsAndStreamingRegistration).FullName!));
-            }
-
-            return new InMemoryFeatureChangeEventStore(
-                sp.GetRequiredService<IOptions<FeatureChangeEventOptions>>(),
-                redis,
-                allowInMemoryFallback);
-        });
-        services.AddSingleton<IFeatureChangeEventStoreHealth>(sp =>
-            (IFeatureChangeEventStoreHealth)sp.GetRequiredService<IFeatureChangeEventStore>());
+        services.AddSingleton(sp => new PostgresFeatureChangeLog(
+            sp.GetRequiredService<JobStoreDatabase>(),
+            sp.GetRequiredService<IOptions<RealtimeOptions>>(),
+            TimeProvider.System));
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IRealtimeFamilySource, PostgresFeatureChangeLog>(
+            sp => sp.GetRequiredService<PostgresFeatureChangeLog>()));
+        services.AddSingleton<PostgresFeatureChangeEventStore>();
+        services.AddSingleton<IFeatureChangeEventStore>(sp => sp.GetRequiredService<PostgresFeatureChangeEventStore>());
+        services.AddSingleton<IFeatureChangeEventStoreHealth>(sp => sp.GetRequiredService<PostgresFeatureChangeEventStore>());
+        services.AddSingleton<IStreamCursorStore, PostgresStreamCursorStore>();
 
         // Feature-stream session manager and streaming publisher (#501)
         services.AddOptions<FeatureStreamOptions>()
@@ -67,7 +53,6 @@ internal static partial class FeatureEventsAndStreamingRegistration
                 sp.GetRequiredService<IOptions<FeatureStreamOptions>>(),
                 sp.GetRequiredService<ILogger<FeatureStreamSessionManager>>(),
                 sp.GetRequiredService<FeatureStreamMetrics>(),
-                sp.GetService<IConnectionMultiplexer>(),
                 routabilityGuard: sp.GetRequiredService<FeatureStreamRoutabilityGuard>(),
                 serviceScopeFactory: sp.GetRequiredService<IServiceScopeFactory>()));
         // Broker-agnostic event-bus sinks (#357). The publish path fans committed
@@ -116,8 +101,8 @@ internal static partial class FeatureEventsAndStreamingRegistration
         services.AddSingleton<FeatureChangeEventSinkBroadcaster>();
         services.AddSingleton<IFeatureChangeEventPublisher>(sp =>
             new FeatureStreamPublisher(
-                sp.GetRequiredService<IFeatureChangeEventStore>(),
-                sp.GetRequiredService<FeatureStreamSessionManager>(),
+                sp.GetRequiredService<IRealtimeWakeSignal>(),
+                sp.GetRequiredService<PostgresFeatureChangeLog>(),
                 sp.GetRequiredService<ILogger<FeatureStreamPublisher>>(),
                 sp.GetRequiredService<FeatureChangeEventSinkBroadcaster>()));
         services.AddSingleton<FeatureMutationEventService>();
@@ -151,6 +136,10 @@ internal static partial class FeatureEventsAndStreamingRegistration
         }
         services.AddScoped<FeatureStreamDependencies>();
         services.AddHostedService<FeatureStreamHeartbeatService>();
+        if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
+        {
+            services.AddHostedService<FeatureStreamRealtimeRelay>();
+        }
 
         // Controlled-conformance mutation workflow (#3038). Options are bound and validated
         // unconditionally so a misconfigured source fails at startup, but the lease registry,
@@ -174,20 +163,12 @@ internal static partial class FeatureEventsAndStreamingRegistration
         services.AddHostedService(sp =>
             new FeatureChangeWebhookDispatcher(
                 sp.GetRequiredService<IFeatureChangeEventStore>(),
-                sp.GetService<IDistributedCache>(),
-                sp.GetService<IConnectionMultiplexer>(),
+                sp.GetRequiredService<IStreamCursorStore>(),
+                sp.SharedLeaseStore(),
                 sp.GetRequiredService<IHttpClientFactory>(),
                 sp.GetRequiredService<IOptions<FeatureChangeWebhookOptions>>(),
                 sp.GetRequiredService<ILogger<FeatureChangeWebhookDispatcher>>()));
 
         return services;
     }
-
-    [LoggerMessage(
-        EventId = 5110,
-        Level = LogLevel.Warning,
-        Message = "No Redis is configured; feature-change events use node-local in-memory storage (single-node mode). " +
-                  "Events do not survive restarts and are not shared across nodes. " +
-                  "Configure ConnectionStrings:redis for durable multi-node event storage.")]
-    private static partial void LogSingleNodeInMemoryEventStore(ILogger logger);
 }

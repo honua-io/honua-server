@@ -66,11 +66,9 @@ public static class PostgresComponentServices
             null, sp.GetRequiredService<IResponseCache>(), null,
             sp.GetRequiredService<IServiceScopeFactory>(), null,
             sp.GetRequiredService<ILogger<OutputCacheInvalidationService>>()));
-        // Supported node-local production event store/publisher. Streaming transports,
-        // webhooks and background outbox delivery are verified by the full host lanes.
-        builder.Services.AddOptions<FeatureChangeEventOptions>();
-        builder.Services.AddSingleton<IFeatureChangeEventStore, InMemoryFeatureChangeEventStore>();
-        builder.Services.AddSingleton<IFeatureChangeEventPublisher, FeatureChangeEventPublisher>();
+        // Streaming transports, webhooks and background outbox delivery are verified by the full
+        // host lanes; edits here reach the change log through the trigger alone.
+        builder.Services.AddSingleton<IFeatureChangeEventPublisher, ChangeLogOnlyFeatureChangeEventPublisher>();
         builder.Services.AddSingleton<FeatureMutationEventService>();
         builder.Services.AddApiKeyAuthentication(builder.Configuration);
         builder.Services.Configure<ApiKeyAuthenticationOptions>(options =>

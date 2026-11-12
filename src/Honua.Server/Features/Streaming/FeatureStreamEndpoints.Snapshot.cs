@@ -446,18 +446,10 @@ internal static partial class FeatureStreamEndpoints
         // A reconnect whose cursor remains inside the retained event window takes the delta-only
         // replay path and never reads the feature store. Do not let a temporary feature-read
         // outage block a resume the event store can satisfy by itself (#3206 review).
-        var cursorValue = context.Request.Query["cursor"].ToString();
-        long? cursor = long.TryParse(cursorValue, CultureInfo.InvariantCulture, out var parsedCursor)
-            ? parsedCursor
-            : null;
-        if (!cursor.HasValue && isSse)
-        {
-            var lastEventId = context.Request.Headers["Last-Event-ID"].ToString();
-            if (long.TryParse(lastEventId, CultureInfo.InvariantCulture, out var parsedLastEventId))
-            {
-                cursor = parsedLastEventId;
-            }
-        }
+        // A position from another cursor epoch cannot be resumed, so it takes a fresh snapshot.
+        var cursor = FeatureStreamCursor.Parse(
+            context.Request.Query["cursor"].ToString(),
+            isSse ? context.Request.Headers["Last-Event-ID"].ToString() : null).Position;
 
         if (cursor.HasValue &&
             await ResolveResnapshotReasonAsync(

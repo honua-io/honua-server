@@ -54,7 +54,7 @@ internal sealed partial class FeatureStreamPublisher(
         var logged = string.IsNullOrWhiteSpace(request.EventId)
             ? null
             : await log.ReadByEventIdAsync(request.EventId, cancellationToken).ConfigureAwait(false);
-        sinkBroadcaster.Dispatch(logged ?? FromRequest(request));
+        sinkBroadcaster.Dispatch(logged ?? FromRequest(request), CancellationToken.None);
     }
 
     private static FeatureChangeEvent FromRequest(FeatureChangeEventRequest request)

@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using Honua.Core.Features.Realtime;
 using Honua.Infrastructure.Events;
 
 namespace Honua.Server.Features.Streaming;
@@ -22,7 +23,7 @@ internal static partial class FeatureStreamEndpoints
         if (id.HasValue)
         {
             await response.WriteAsync(
-                string.Concat("id: ", id.Value.ToString(CultureInfo.InvariantCulture), "\n"),
+                string.Concat("id: ", FeatureStreamCursor.Format(id.Value), "\n"),
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -33,6 +34,15 @@ internal static partial class FeatureStreamEndpoints
                 "data: ", json, "\n\n"),
             cancellationToken).ConfigureAwait(false);
     }
+
+    private static Task WriteSseResetAsync(HttpResponse response, string reason, long head, CancellationToken cancellationToken)
+        => WriteSseEventAsync(
+            response,
+            "reset",
+            new FeatureStreamResetFrame { Reason = reason, Head = FeatureStreamCursor.Format(head) },
+            FeatureStreamJsonContext.Default.FeatureStreamResetFrame,
+            null,
+            cancellationToken);
 
     private static async Task WriteSseTerminalErrorAsync(
         HttpResponse response,
@@ -75,18 +85,16 @@ internal static partial class FeatureStreamEndpoints
         var sessionManager = deps.SessionManager;
         var eventStore = deps.EventStore;
         var options = deps.Options.Value;
-        var cursorParam = context.Request.Query["cursor"].ToString();
-        long? cursor = long.TryParse(cursorParam, CultureInfo.InvariantCulture, out var c) ? c : null;
-
-        // Also check Last-Event-ID header (standard SSE reconnect mechanism).
-        if (!cursor.HasValue)
+        var requested = FeatureStreamCursor.Parse(
+            context.Request.Query["cursor"].ToString(),
+            context.Request.Headers["Last-Event-ID"].ToString());
+        if (requested.Kind == FeatureStreamCursorKind.Invalid)
         {
-            var lastEventId = context.Request.Headers["Last-Event-ID"].ToString();
-            if (long.TryParse(lastEventId, CultureInfo.InvariantCulture, out var lei))
-            {
-                cursor = lei;
-            }
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
         }
+
+        var cursor = requested.Position;
 
         // Seal the live boundary before announcing admission. A client may commit
         // immediately after receiving headers; taking this cursor afterwards can
@@ -111,6 +119,12 @@ internal static partial class FeatureStreamEndpoints
                 FeatureStreamJsonContext.Default.FeatureStreamStatusFrame,
                 null,
                 context.RequestAborted).ConfigureAwait(false);
+
+            if (requested.Kind == FeatureStreamCursorKind.Epoch)
+            {
+                await WriteSseResetAsync(context.Response, RealtimeResetReasons.CursorEpoch, initialLiveCursor, context.RequestAborted)
+                    .ConfigureAwait(false);
+            }
 
             if (subscriptionFilter is not null)
             {

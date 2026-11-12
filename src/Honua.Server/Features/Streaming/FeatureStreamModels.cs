@@ -229,6 +229,14 @@ internal sealed record FeatureStreamSnapshotGeoJsonFeature
     public Dictionary<string, JsonElement>? Properties { get; init; }
 }
 
+// Tells the client its position cannot be resumed: resynchronize, then continue after Head.
+internal sealed record FeatureStreamResetFrame
+{
+    public required string Reason { get; init; }
+
+    public required string Head { get; init; }
+}
+
 internal sealed record FeatureStreamStatusFrame
 {
     public string Type { get; init; } = "status";
@@ -353,12 +361,6 @@ internal sealed record StreamTemporalFilter(
     string? EndField,
     DateTimeOffset? Start,
     DateTimeOffset? End);
-
-internal readonly record struct ClusterBroadcastBacklogSnapshot(
-    bool Configured,
-    bool Enabled,
-    int BacklogDepth,
-    long Dropped);
 
 internal sealed record FeatureStreamSessionInfo(
     Guid SessionId,

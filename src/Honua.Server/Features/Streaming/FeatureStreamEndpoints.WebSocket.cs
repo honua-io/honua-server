@@ -30,8 +30,8 @@ internal static partial class FeatureStreamEndpoints
         var sessionManager = deps.SessionManager;
         var eventStore = deps.EventStore;
         var options = deps.Options.Value;
-        var cursorParam = context.Request.Query["cursor"].ToString();
-        long? cursor = long.TryParse(cursorParam, CultureInfo.InvariantCulture, out var c) ? c : null;
+        // A position from another cursor epoch, or none, starts live at the head.
+        var cursor = FeatureStreamCursor.Parse(context.Request.Query["cursor"].ToString(), lastEventId: null).Position;
         var initialLiveCursor = cursor.HasValue ? 0
             : await eventStore.GetCurrentCursorAsync(context.RequestAborted).ConfigureAwait(false);
         using var webSocket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);

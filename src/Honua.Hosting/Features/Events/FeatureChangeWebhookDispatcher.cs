@@ -1,55 +1,38 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
-using System.Globalization;
-using System.Linq;
 using System.Text.Json;
-using Microsoft.Extensions.Caching.Distributed;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Events;
 
+// One task across the cluster delivers: the lease holder. Without a lease store the process is the
+// only deliverer. Delivery is at least once: the cursor is written after the webhook accepts an event.
 internal sealed partial class FeatureChangeWebhookDispatcher(
     IFeatureChangeEventStore store,
-    IDistributedCache? distributedCache,
-    IConnectionMultiplexer? redis,
+    IStreamCursorStore cursors,
+    ILeaseStore? leases,
     IHttpClientFactory httpClientFactory,
     IOptions<FeatureChangeWebhookOptions> options,
     ILogger<FeatureChangeWebhookDispatcher> logger) : BackgroundService
 {
-    private const string DeliveredCursorKey = "featurechange:webhook:delivered-cursor";
-    private const string DispatchLeaseKey = "featurechange:webhook:lease";
-    private const string DeliveryStateKeyPrefix = "featurechange:webhook:delivery:";
+    internal const string StreamName = "feature-change-webhook";
+    private const int BatchSize = 100;
     private static readonly TimeSpan IdlePollInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan DispatchLeaseDuration = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan LeaseRenewalInterval = TimeSpan.FromSeconds(1);
-    private static readonly TimeSpan DeliveryClaimTtl = TimeSpan.FromMinutes(2);
-    private static readonly TimeSpan DeliveryCompletedTtl = TimeSpan.FromDays(7);
-    private const string DeliveryStateCompleted = "completed";
     private readonly IFeatureChangeEventStore _store = store ?? throw new ArgumentNullException(nameof(store));
-    private readonly IDistributedCache? _distributedCache = distributedCache;
-    private readonly IConnectionMultiplexer? _redis = redis;
-    private readonly IDatabase? _redisDb = redis?.GetDatabase();
+    private readonly IStreamCursorStore _cursors = cursors ?? throw new ArgumentNullException(nameof(cursors));
     private readonly IHttpClientFactory _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
     private readonly FeatureChangeWebhookOptions _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     private readonly ILogger<FeatureChangeWebhookDispatcher> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    private readonly RedisLeaseCoordinator _leaseCoordinator = new(redis, DispatchLeaseKey, DispatchLeaseDuration);
-    private readonly IFeatureChangeEventStoreHealth? _storeHealth = store as IFeatureChangeEventStoreHealth;
-    // In-memory fallback for the Redis completed-delivery markers. Values are completion
-    // timestamps (UTC ticks) so entries can be expired with the same TTL the Redis path
-    // uses instead of growing without bound for the lifetime of the process.
-    private readonly ConcurrentDictionary<string, long> _completedDeliveries = new(StringComparer.Ordinal);
-    private const int CompletedDeliveriesSweepThreshold = 1_000;
-    private static readonly TimeSpan CompletedDeliveriesSweepInterval = TimeSpan.FromMinutes(1);
-    private long _lastCompletedDeliveriesSweepTicks;
+    private readonly LeaseHolder? _lease = leases is null ? null : new LeaseHolder(leases, StreamName, DispatchLeaseDuration);
     private int _invalidConfigurationLogged;
-    private int _eventStoreUnavailableLogged;
-    private int _unsafeDistributedModeLogged;
     private int _unsafeWebhookUrlLogged;
-    private long _deliveredCursor;
-    private volatile bool _cursorSyncRequired;
+
+    // Null until read under the lease; cleared when the lease is lost, because another holder may have moved it.
+    private long? _deliveredCursor;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -59,170 +42,20 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
             {
                 try
                 {
-                    if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.Url))
+                    if (!await RunPassAsync(stoppingToken).ConfigureAwait(false))
                     {
                         await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
-                        continue;
-                    }
-
-                    if (string.IsNullOrWhiteSpace(_options.Secret))
-                    {
-                        LogWebhookConfigurationInvalidOnce();
-                        await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
-                        continue;
-                    }
-
-                    if (_storeHealth is { CanPersistEvents: false })
-                    {
-                        LogEventStoreUnavailableOnce();
-                        await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
-                        continue;
-                    }
-
-                    if (_distributedCache != null &&
-                        !_leaseCoordinator.IsConfigured)
-                    {
-                        LogUnsafeDistributedModeOnce();
-                        await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
-                        continue;
-                    }
-
-                    if (_leaseCoordinator.IsConfigured &&
-                        !await _leaseCoordinator.TryAcquireOrExtendAsync().ConfigureAwait(false))
-                    {
-                        await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
-                        continue;
-                    }
-
-                    if (!await EnsureDeliveredCursorReadyAsync(stoppingToken).ConfigureAwait(false))
-                    {
-                        await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
-                        continue;
-                    }
-
-                    using var leaseRenewalCts = _leaseCoordinator.IsConfigured
-                        ? CancellationTokenSource.CreateLinkedTokenSource(stoppingToken)
-                        : null;
-                    using var processingCts = _leaseCoordinator.IsConfigured
-                        ? CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, _leaseCoordinator.LeaseLostToken)
-                        : null;
-                    var leaseRenewalTask = leaseRenewalCts is null
-                        ? Task.CompletedTask
-                        : _leaseCoordinator.MaintainLeaseAsync(LeaseRenewalInterval, leaseRenewalCts.Token);
-                    var processingToken = processingCts?.Token ?? stoppingToken;
-
-                    try
-                    {
-                        var validation = await FeatureChangeWebhookUrlValidation
-                            .ValidateAsync(_options.Url, processingToken)
-                            .ConfigureAwait(false);
-                        if (!validation.IsValid || validation.Uri == null)
-                        {
-                            LogWebhookUrlRejectedOnce(validation.ErrorMessage ?? FeatureChangeWebhookUrlValidation.InvalidHttpsUrlMessage);
-                            await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
-                            continue;
-                        }
-
-                        var pending = await _store.QueryAsync(_deliveredCursor, null, null, limit: 100, processingToken).ConfigureAwait(false);
-                        if (pending.Count == 0)
-                        {
-                            await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
-                            continue;
-                        }
-
-                        foreach (var featureEvent in pending)
-                        {
-                            processingToken.ThrowIfCancellationRequested();
-
-                            if (_leaseCoordinator.IsConfigured &&
-                                !await _leaseCoordinator.TryAcquireOrExtendAsync().ConfigureAwait(false))
-                            {
-                                break;
-                            }
-
-                            var deliveryClaim = await TryAcquireDeliveryClaimAsync(featureEvent.EventId).ConfigureAwait(false);
-                            if (deliveryClaim.Result == DeliveryClaimResult.InProgress)
-                            {
-                                break;
-                            }
-
-                            if (deliveryClaim.Result == DeliveryClaimResult.Completed)
-                            {
-                                _deliveredCursor = featureEvent.Cursor;
-                                if (!await TryPersistDeliveredCursorAsync(_deliveredCursor, processingToken).ConfigureAwait(false))
-                                {
-                                    break;
-                                }
-
-                                continue;
-                            }
-
-                            processingToken.ThrowIfCancellationRequested();
-
-                            using var deliveryClaimRenewalCts = deliveryClaim.LeaseCoordinator is null
-                                ? null
-                                : CancellationTokenSource.CreateLinkedTokenSource(processingToken);
-                            using var deliveryProcessingCts = deliveryClaim.LeaseCoordinator is null
-                                ? null
-                                : CancellationTokenSource.CreateLinkedTokenSource(
-                                    processingToken,
-                                    deliveryClaim.LeaseCoordinator.LeaseLostToken);
-                            var deliveryClaimRenewalTask = deliveryClaimRenewalCts is null
-                                ? Task.CompletedTask
-                                : deliveryClaim.LeaseCoordinator!.MaintainLeaseAsync(LeaseRenewalInterval, deliveryClaimRenewalCts.Token);
-                            var deliveryToken = deliveryProcessingCts?.Token ?? processingToken;
-
-                            try
-                            {
-                                var delivered = await DeliverWithRetryAsync(featureEvent, validation.Uri, deliveryToken).ConfigureAwait(false);
-                                if (!delivered)
-                                {
-                                    break;
-                                }
-
-                                await MarkDeliveryCompletedAsync(featureEvent.EventId).ConfigureAwait(false);
-                                _deliveredCursor = featureEvent.Cursor;
-                                if (!await TryPersistDeliveredCursorAsync(_deliveredCursor, processingToken).ConfigureAwait(false))
-                                {
-                                    break;
-                                }
-                            }
-                            catch (OperationCanceledException) when (deliveryClaim.LeaseCoordinator?.LeaseLostToken.IsCancellationRequested == true)
-                            {
-                                break;
-                            }
-                            finally
-                            {
-                                if (deliveryClaimRenewalCts is not null)
-                                {
-                                    deliveryClaimRenewalCts.Cancel();
-                                    await deliveryClaimRenewalTask.ConfigureAwait(false);
-                                }
-
-                                deliveryClaim.LeaseCoordinator?.Dispose();
-                            }
-                        }
-                    }
-                    finally
-                    {
-                        if (leaseRenewalCts is not null)
-                        {
-                            leaseRenewalCts.Cancel();
-                            await leaseRenewalTask.ConfigureAwait(false);
-                        }
                     }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
                     throw;
                 }
-                catch (OperationCanceledException) when (_leaseCoordinator.IsConfigured && _leaseCoordinator.LeaseLostToken.IsCancellationRequested)
+                catch (OperationCanceledException) when (_lease is { HasLease: false })
                 {
                     await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
                 }
-                // Intentional: this is a long-running background dispatch loop; an unexpected
-                // fault from a single pass must not kill the host — log, back off, and let the
-                // outer while loop retry on the next poll interval.
+                // A single failed pass must not stop the host; the next poll retries it.
                 catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     LogDispatcherLoopFailed(_logger, ex);
@@ -232,99 +65,158 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
         }
         finally
         {
-            await _leaseCoordinator.ReleaseAsync().ConfigureAwait(false);
+            if (_lease is not null)
+            {
+                await _lease.ReleaseAsync().ConfigureAwait(false);
+            }
         }
     }
 
     public override void Dispose()
     {
-        _leaseCoordinator.Dispose();
+        _lease?.Dispose();
         base.Dispose();
     }
 
-    private async Task<bool> EnsureDeliveredCursorReadyAsync(CancellationToken cancellationToken)
+    // Returns true when a full pass delivered events, so more may be waiting.
+    private async Task<bool> RunPassAsync(CancellationToken stoppingToken)
     {
-        if (_redisDb == null &&
-            _distributedCache == null)
+        if (!IsDeliveryConfigured() || !await TryHoldLeaseAsync(stoppingToken).ConfigureAwait(false))
         {
-            return true;
+            return false;
         }
 
-        return _cursorSyncRequired
-            ? await TrySyncDeliveredCursorAsync(cancellationToken).ConfigureAwait(false)
-            : await TryLoadDeliveredCursorAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task<bool> TryLoadDeliveredCursorAsync(CancellationToken cancellationToken)
-    {
+        using var renewalCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        using var processingCts = _lease is null
+            ? CancellationTokenSource.CreateLinkedTokenSource(stoppingToken)
+            : CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, _lease.LeaseLostToken);
+        var renewalTask = _lease?.MaintainAsync(LeaseRenewalInterval, renewalCts.Token) ?? Task.CompletedTask;
         try
         {
-            await RefreshDeliveredCursorAsync(cancellationToken).ConfigureAwait(false);
-            _cursorSyncRequired = false;
+            return await DeliverPendingAsync(processingCts.Token).ConfigureAwait(false);
+        }
+        finally
+        {
+            await renewalCts.CancelAsync().ConfigureAwait(false);
+            await renewalTask.ConfigureAwait(false);
+        }
+    }
+
+    private bool IsDeliveryConfigured()
+    {
+        if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.Url))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(_options.Secret))
+        {
+            LogWebhookConfigurationInvalidOnce();
+            return false;
+        }
+
+        return true;
+    }
+
+    private async Task<bool> TryHoldLeaseAsync(CancellationToken cancellationToken)
+    {
+        if (_lease is null)
+        {
             return true;
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+
+        var heldBefore = _lease.HasLease;
+        if (!await _lease.TryAcquireOrExtendAsync(cancellationToken).ConfigureAwait(false))
         {
-            throw;
+            _deliveredCursor = null;
+            return false;
         }
-        // Intentional: cursor load is best-effort — a failure to read the persisted
-        // delivery cursor falls back to the in-memory cursor rather than failing the
-        // dispatcher's startup/poll cycle.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
+
+        if (!heldBefore)
+        {
+            _deliveredCursor = null;
+        }
+
+        return true;
+    }
+
+    private async Task<bool> DeliverPendingAsync(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_options.Url))
+        {
+            return false;
+        }
+
+        var validation = await FeatureChangeWebhookUrlValidation
+            .ValidateAsync(_options.Url, cancellationToken)
+            .ConfigureAwait(false);
+        if (!validation.IsValid || validation.Uri == null)
+        {
+            LogWebhookUrlRejectedOnce(validation.ErrorMessage ?? FeatureChangeWebhookUrlValidation.InvalidHttpsUrlMessage);
+            return false;
+        }
+
+        var cursor = await TryLoadDeliveredCursorAsync(cancellationToken).ConfigureAwait(false);
+        if (cursor is null)
+        {
+            return false;
+        }
+
+        var pending = await _store.QueryAsync(cursor, null, null, BatchSize, cancellationToken).ConfigureAwait(false);
+        foreach (var featureEvent in pending)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!await DeliverWithRetryAsync(featureEvent, validation.Uri, cancellationToken).ConfigureAwait(false) ||
+                !await TryAdvanceCursorAsync(featureEvent.Cursor, cancellationToken).ConfigureAwait(false))
+            {
+                return false;
+            }
+        }
+
+        return pending.Count > 0;
+    }
+
+    // A first start begins at the head, so enabling the webhook never replays history.
+    private async Task<long?> TryLoadDeliveredCursorAsync(CancellationToken cancellationToken)
+    {
+        if (_deliveredCursor is { } loaded)
+        {
+            return loaded;
+        }
+
+        try
+        {
+            var stored = await _cursors.ReadAsync(StreamName, cancellationToken).ConfigureAwait(false);
+            if (stored is null)
+            {
+                stored = await _store.GetCurrentCursorAsync(cancellationToken).ConfigureAwait(false);
+                await _cursors.WriteAsync(StreamName, stored.Value, cancellationToken).ConfigureAwait(false);
+            }
+
+            _deliveredCursor = stored;
+            return stored;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
         {
             LogCursorLoadFailed(_logger, ex);
-            return false;
+            return null;
         }
     }
 
-    private async Task<bool> TryPersistDeliveredCursorAsync(long cursor, CancellationToken cancellationToken)
+    // The in-memory cursor advances even when the write fails, so this process does not resend the
+    // event; the next successful write covers it.
+    private async Task<bool> TryAdvanceCursorAsync(long position, CancellationToken cancellationToken)
     {
+        _deliveredCursor = position;
         try
         {
-            await PersistDeliveredCursorAsync(cursor, cancellationToken).ConfigureAwait(false);
-            _cursorSyncRequired = false;
+            await _cursors.WriteAsync(StreamName, position, cancellationToken).ConfigureAwait(false);
             return true;
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
         {
-            throw;
-        }
-        // Intentional: cursor persistence is best-effort — a failure updates the in-memory
-        // cursor and flags a re-sync for the next pass rather than failing delivery, since
-        // the durable outbox row already records dispatch progress.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            Volatile.Write(ref _deliveredCursor, cursor);
-            _cursorSyncRequired = true;
             LogCursorPersistFailed(_logger, ex);
             return false;
-        }
-    }
-
-    private async Task<bool> TrySyncDeliveredCursorAsync(CancellationToken cancellationToken)
-    {
-        return await TryPersistDeliveredCursorAsync(
-                Volatile.Read(ref _deliveredCursor),
-                cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    private async Task RefreshDeliveredCursorAsync(CancellationToken cancellationToken)
-    {
-        var loadedCursor = await LoadDeliveredCursorAsync(cancellationToken).ConfigureAwait(false);
-
-        while (true)
-        {
-            var currentCursor = Volatile.Read(ref _deliveredCursor);
-            if (loadedCursor <= currentCursor)
-            {
-                return;
-            }
-
-            if (Interlocked.CompareExchange(ref _deliveredCursor, loadedCursor, currentCursor) == currentCursor)
-            {
-                return;
-            }
         }
     }
 
@@ -359,136 +251,11 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
             cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<DeliveryClaimState> TryAcquireDeliveryClaimAsync(string eventId)
-    {
-        if (_redisDb != null)
-        {
-            var claimLease = new RedisLeaseCoordinator(_redis, GetDeliveryStateKey(eventId), DeliveryClaimTtl);
-            if (await claimLease.TryAcquireOrExtendAsync().ConfigureAwait(false))
-            {
-                return new DeliveryClaimState(DeliveryClaimResult.Acquired, claimLease);
-            }
-
-            claimLease.Dispose();
-            var stateKey = GetDeliveryStateKey(eventId);
-            var existingState = await _redisDb.StringGetAsync(stateKey).ConfigureAwait(false);
-            return string.Equals(existingState.ToString(), DeliveryStateCompleted, StringComparison.Ordinal)
-                ? new DeliveryClaimState(DeliveryClaimResult.Completed, null)
-                : new DeliveryClaimState(DeliveryClaimResult.InProgress, null);
-        }
-
-        return _completedDeliveries.ContainsKey(eventId)
-            ? new DeliveryClaimState(DeliveryClaimResult.Completed, null)
-            : new DeliveryClaimState(DeliveryClaimResult.Acquired, null);
-    }
-
-    private async Task MarkDeliveryCompletedAsync(string eventId)
-    {
-        if (_redisDb != null)
-        {
-            await _redisDb.StringSetAsync(
-                    GetDeliveryStateKey(eventId),
-                    DeliveryStateCompleted,
-                    DeliveryCompletedTtl)
-                .ConfigureAwait(false);
-            return;
-        }
-
-        SweepExpiredCompletedDeliveries();
-        _completedDeliveries[eventId] = DateTimeOffset.UtcNow.UtcTicks;
-    }
-
-    private void SweepExpiredCompletedDeliveries()
-    {
-        if (_completedDeliveries.Count < CompletedDeliveriesSweepThreshold)
-        {
-            return;
-        }
-
-        var nowTicks = DateTimeOffset.UtcNow.UtcTicks;
-        var lastSweepTicks = Volatile.Read(ref _lastCompletedDeliveriesSweepTicks);
-        if (nowTicks - lastSweepTicks < CompletedDeliveriesSweepInterval.Ticks ||
-            Interlocked.CompareExchange(ref _lastCompletedDeliveriesSweepTicks, nowTicks, lastSweepTicks) != lastSweepTicks)
-        {
-            return;
-        }
-
-        var expirationCutoff = nowTicks - DeliveryCompletedTtl.Ticks;
-        foreach (var entry in _completedDeliveries.Where(entry => entry.Value <= expirationCutoff))
-        {
-            _completedDeliveries.TryRemove(entry);
-        }
-    }
-
-    private async Task<long> LoadDeliveredCursorAsync(CancellationToken cancellationToken)
-    {
-        if (_redisDb != null)
-        {
-            var redisValue = await _redisDb.StringGetAsync(DeliveredCursorKey).ConfigureAwait(false);
-            return long.TryParse(redisValue.ToString(), out var parsedRedisCursor) ? parsedRedisCursor : 0L;
-        }
-
-        if (_distributedCache == null)
-        {
-            return Volatile.Read(ref _deliveredCursor);
-        }
-
-        var cacheValue = await _distributedCache.GetStringAsync(DeliveredCursorKey, cancellationToken).ConfigureAwait(false);
-        return long.TryParse(cacheValue, out var parsedCacheCursor) ? parsedCacheCursor : 0L;
-    }
-
-    private async Task PersistDeliveredCursorAsync(long cursor, CancellationToken cancellationToken)
-    {
-        if (_redisDb != null)
-        {
-            await _redisDb.StringSetAsync(
-                    DeliveredCursorKey,
-                    cursor.ToString(CultureInfo.InvariantCulture),
-                    TimeSpan.FromDays(7))
-                .ConfigureAwait(false);
-            return;
-        }
-
-        if (_distributedCache == null)
-        {
-            Volatile.Write(ref _deliveredCursor, cursor);
-            return;
-        }
-
-        await _distributedCache.SetStringAsync(
-                DeliveredCursorKey,
-                cursor.ToString(CultureInfo.InvariantCulture),
-                new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(7) },
-                cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    private static string GetDeliveryStateKey(string eventId) => $"{DeliveryStateKeyPrefix}{eventId}";
-
-    private enum DeliveryClaimResult
-    {
-        Acquired,
-        InProgress,
-        Completed
-    }
-
-    private readonly record struct DeliveryClaimState(
-        DeliveryClaimResult Result,
-        RedisLeaseCoordinator? LeaseCoordinator);
-
     private void LogWebhookConfigurationInvalidOnce()
     {
         if (Interlocked.Exchange(ref _invalidConfigurationLogged, 1) == 0)
         {
             LogWebhookConfigurationInvalid(_logger);
-        }
-    }
-
-    private void LogEventStoreUnavailableOnce()
-    {
-        if (Interlocked.Exchange(ref _eventStoreUnavailableLogged, 1) == 0)
-        {
-            LogEventStoreUnavailable(_logger);
         }
     }
 
@@ -500,24 +267,13 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
         }
     }
 
-    private void LogUnsafeDistributedModeOnce()
-    {
-        if (Interlocked.Exchange(ref _unsafeDistributedModeLogged, 1) == 0)
-        {
-            LogUnsafeDistributedMode(_logger);
-        }
-    }
-
     [LoggerMessage(EventId = 9101, Level = LogLevel.Warning, Message = "Feature change webhook is enabled but secret is missing; delivery is disabled.")]
     private static partial void LogWebhookConfigurationInvalid(ILogger logger);
 
-    [LoggerMessage(EventId = 9110, Level = LogLevel.Warning, Message = "Feature change webhook delivery is disabled because durable event storage is unavailable in this environment.")]
-    private static partial void LogEventStoreUnavailable(ILogger logger);
-
-    [LoggerMessage(EventId = 9106, Level = LogLevel.Warning, Message = "Feature change webhook cursor load failed; continuing with in-memory cursor state.")]
+    [LoggerMessage(EventId = 9106, Level = LogLevel.Warning, Message = "Feature change webhook cursor load failed; retrying.")]
     private static partial void LogCursorLoadFailed(ILogger logger, Exception exception);
 
-    [LoggerMessage(EventId = 9107, Level = LogLevel.Warning, Message = "Feature change webhook cursor persistence failed; continuing with in-memory cursor state.")]
+    [LoggerMessage(EventId = 9107, Level = LogLevel.Warning, Message = "Feature change webhook cursor persistence failed; retrying.")]
     private static partial void LogCursorPersistFailed(ILogger logger, Exception exception);
 
     [LoggerMessage(EventId = 9108, Level = LogLevel.Warning, Message = "Feature change webhook dispatch loop failed; retrying.")]
@@ -525,7 +281,4 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
 
     [LoggerMessage(EventId = 9105, Level = LogLevel.Warning, Message = "Feature change webhook delivery is disabled because the configured URL is unsafe: {Reason}")]
     private static partial void LogWebhookUrlRejected(ILogger logger, string reason);
-
-    [LoggerMessage(EventId = 9109, Level = LogLevel.Warning, Message = "Feature change webhook delivery requires Redis lease coordination when distributed cache is enabled; delivery is disabled in fallback mode.")]
-    private static partial void LogUnsafeDistributedMode(ILogger logger);
 }
