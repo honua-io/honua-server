@@ -72,14 +72,18 @@ class Inventory(unittest.TestCase):
         self.assertEqual("2026.1-rc.2-amd64-aaaaaaaaaaaa", matrix["include"][0]["key"])
 
     def test_add_is_idempotent_and_refuses_conflicting_identity(self):
+        def entry(registered_at):
+            return {"release": "2026.1-rc.2", "image": IMAGE, "platform": "linux/amd64",
+                    "sourceRevision": REVISION, "registeredAt": registered_at}
+
         inv = inventory()
-        self.assertTrue(ri.inventory_add(inv, "2026.1-rc.2", IMAGE, "linux/amd64", REVISION, "2026-11-30"))
-        self.assertFalse(ri.inventory_add(inv, "2026.1-rc.2", IMAGE, "linux/amd64", REVISION, "2026-12-01"))
+        self.assertTrue(ri.inventory_add(inv, entry("2026-11-30")))
+        self.assertFalse(ri.inventory_add(inv, entry("2026-12-01")))
         self.assertEqual(1, len(inv["images"]))
         with self.assertRaises(ValueError):
-            ri.inventory_add(inv, "2026.1-rc.2", IMAGE, "linux/amd64", "e" * 40, "2026-11-30")
+            ri.inventory_add(inv, dict(entry("2026-11-30"), sourceRevision="e" * 40))
         with self.assertRaises(ValueError):
-            ri.inventory_add(inventory(), "2026.1-rc.1", IMAGE, "linux/amd64", REVISION, "2026-11-30")
+            ri.inventory_add(inventory(), dict(entry("2026-11-30"), release="2026.1-rc.1"))
 
 
 class Vex(unittest.TestCase):

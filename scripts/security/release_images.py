@@ -126,15 +126,16 @@ def inventory_matrix(inventory):
     return {"include": include}, len(include)
 
 
-def inventory_add(inventory, release, image, platform, revision, registered_at):
+def inventory_add(inventory, entry):
+    """Register one image entry (release, image, platform, sourceRevision, registeredAt)."""
     images = validate_inventory(inventory)
-    for entry in images:
-        if entry["image"] == image and entry["platform"] == platform:
-            _require(entry["release"] == release and entry["sourceRevision"] == revision,
+    for existing in images:
+        if existing["image"] == entry["image"] and existing["platform"] == entry["platform"]:
+            _require(existing["release"] == entry["release"]
+                     and existing["sourceRevision"] == entry["sourceRevision"],
                      "Image is already registered with a different release or source revision")
             return False
-    images.append({"release": release, "image": image, "platform": platform,
-                   "sourceRevision": revision, "registeredAt": registered_at})
+    images.append({key: entry[key] for key in ("release", "image", "platform", "sourceRevision", "registeredAt")})
     images.sort(key=lambda e: (e["release"], e["platform"], e["image"]))
     validate_inventory(inventory)
     return True
@@ -302,17 +303,17 @@ def assert_single_manifest(manifest):
 
 # ---------------------------------------------------------------- CLI
 
-def main(argv=None):
+def _build_parser():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
-    p = sub.add_parser("inventory-validate"); p.add_argument("--file", default=INVENTORY)
-    p = sub.add_parser("inventory-matrix"); p.add_argument("--file", default=INVENTORY)
+    sub.add_parser("inventory-validate").add_argument("--file", default=INVENTORY)
+    sub.add_parser("inventory-matrix").add_argument("--file", default=INVENTORY)
     p = sub.add_parser("inventory-add")
     p.add_argument("--file", default=INVENTORY)
     for name in ("release", "image", "platform", "revision"):
         p.add_argument(f"--{name}", required=True)
     p.add_argument("--registered-at", default=datetime.date.today().isoformat())
-    p = sub.add_parser("vex-validate"); p.add_argument("--file", default=VEX_SOURCE)
+    sub.add_parser("vex-validate").add_argument("--file", default=VEX_SOURCE)
     p = sub.add_parser("vex-generate")
     p.add_argument("--file", default=VEX_SOURCE)
     p.add_argument("--image", action="append", default=[])
@@ -325,62 +326,100 @@ def main(argv=None):
     p.add_argument("--unregistered", action="store_true",
                    help="verdict a release image before it is added to the inventory")
     p = sub.add_parser("report")
-    p.add_argument("--verdicts", required=True)
+    for name in ("verdicts", "public", "private"):
+        p.add_argument(f"--{name}", required=True)
     p.add_argument("--inventory", default=INVENTORY)
-    p.add_argument("--public", required=True)
-    p.add_argument("--private", required=True)
     p.add_argument("--today", default=datetime.date.today().isoformat())
-    p = sub.add_parser("platform-manifest"); p.add_argument("--platform", choices=PLATFORMS, required=True)
+    sub.add_parser("platform-manifest").add_argument("--platform", choices=PLATFORMS, required=True)
     sub.add_parser("assert-single-manifest")
-    args = parser.parse_args(argv)
+    return parser
 
-    if args.command == "inventory-validate":
-        print(f"{len(validate_inventory(_load_json(args.file)))} supported release image(s)")
-    elif args.command == "inventory-matrix":
-        matrix, count = inventory_matrix(_load_json(args.file))
-        print(f"matrix={json.dumps(matrix, separators=(',', ':'))}")
-        print(f"count={count}")
-    elif args.command == "inventory-add":
-        inventory = _load_json(args.file)
-        changed = inventory_add(inventory, args.release, args.image, args.platform, args.revision,
-                                args.registered_at)
-        if changed:
-            _write_json(args.file, inventory)
-        print("registered" if changed else "already registered")
-    elif args.command == "vex-validate":
-        print(f"{len(validate_vex_source(_load_json(args.file)))} VEX decision(s)")
-    elif args.command == "vex-generate":
-        _write_json(args.output, generate_openvex(_load_json(args.file), args.image, args.timestamp, args.name))
-    elif args.command == "verdict":
-        identity = _load_json(args.identity)
-        if args.unregistered:
-            candidate = single_entry_inventory({"release": args.release, "image": identity.get("image"),
-                                   "platform": identity.get("platform"),
-                                   "sourceRevision": identity.get("sourceRevision"),
-                                   "registeredAt": datetime.date.today().isoformat()})
-            entries = validate_inventory(candidate)
-        else:
-            entries = [e for e in validate_inventory(_load_json(INVENTORY))
-                       if e["image"] == identity.get("image") and e["platform"] == identity.get("platform")
-                       and e["release"] == args.release]
-        _require(len(entries) == 1, "Scanned image is not in the supported inventory")
-        result = verdict(identity, entries[0], _load_json(args.trivy))
-        _write_json(args.output, result)
-        print(json.dumps({k: result[k] for k in ("key", "status", "findingCount")}
-                         | {"blocking": len(result["blockingFindings"]),
-                            "vexSuppressed": len(result["suppressedFindings"])}))
-    elif args.command == "report":
-        verdicts = [_load_json(path) for path in sorted(Path(args.verdicts).rglob("*-verdict.json"))]
-        expected = [scan_key(e) for e in validate_inventory(_load_json(args.inventory))]
-        public, private = report(verdicts, expected, datetime.date.fromisoformat(args.today))
-        _write_json(args.public, public)
-        _write_json(args.private, private)
-        print(json.dumps(public))
-    elif args.command == "platform-manifest":
-        print(platform_manifest(json.load(sys.stdin), args.platform))
-    elif args.command == "assert-single-manifest":
-        assert_single_manifest(json.load(sys.stdin))
-        print("single image manifest without attestations")
+
+def _cmd_inventory_validate(args):
+    print(f"{len(validate_inventory(_load_json(args.file)))} supported release image(s)")
+
+
+def _cmd_inventory_matrix(args):
+    matrix, count = inventory_matrix(_load_json(args.file))
+    print(f"matrix={json.dumps(matrix, separators=(',', ':'))}")
+    print(f"count={count}")
+
+
+def _cmd_inventory_add(args):
+    inventory = _load_json(args.file)
+    entry = {"release": args.release, "image": args.image, "platform": args.platform,
+             "sourceRevision": args.revision, "registeredAt": args.registered_at}
+    changed = inventory_add(inventory, entry)
+    if changed:
+        _write_json(args.file, inventory)
+    print("registered" if changed else "already registered")
+
+
+def _cmd_vex_validate(args):
+    print(f"{len(validate_vex_source(_load_json(args.file)))} VEX decision(s)")
+
+
+def _cmd_vex_generate(args):
+    _write_json(args.output, generate_openvex(_load_json(args.file), args.image, args.timestamp, args.name))
+
+
+def _verdict_entries(args, identity):
+    if args.unregistered:
+        candidate = single_entry_inventory({"release": args.release, "image": identity.get("image"),
+                                            "platform": identity.get("platform"),
+                                            "sourceRevision": identity.get("sourceRevision"),
+                                            "registeredAt": datetime.date.today().isoformat()})
+        return validate_inventory(candidate)
+    return [e for e in validate_inventory(_load_json(INVENTORY))
+            if e["image"] == identity.get("image") and e["platform"] == identity.get("platform")
+            and e["release"] == args.release]
+
+
+def _cmd_verdict(args):
+    identity = _load_json(args.identity)
+    entries = _verdict_entries(args, identity)
+    _require(len(entries) == 1, "Scanned image is not in the supported inventory")
+    result = verdict(identity, entries[0], _load_json(args.trivy))
+    _write_json(args.output, result)
+    print(json.dumps({k: result[k] for k in ("key", "status", "findingCount")}
+                     | {"blocking": len(result["blockingFindings"]),
+                        "vexSuppressed": len(result["suppressedFindings"])}))
+
+
+def _cmd_report(args):
+    verdicts = [_load_json(path) for path in sorted(Path(args.verdicts).rglob("*-verdict.json"))]
+    expected = [scan_key(e) for e in validate_inventory(_load_json(args.inventory))]
+    public, private = report(verdicts, expected, datetime.date.fromisoformat(args.today))
+    _write_json(args.public, public)
+    _write_json(args.private, private)
+    print(json.dumps(public))
+
+
+def _cmd_platform_manifest(args):
+    print(platform_manifest(json.load(sys.stdin), args.platform))
+
+
+def _cmd_assert_single_manifest(_args):
+    assert_single_manifest(json.load(sys.stdin))
+    print("single image manifest without attestations")
+
+
+COMMANDS = {
+    "inventory-validate": _cmd_inventory_validate,
+    "inventory-matrix": _cmd_inventory_matrix,
+    "inventory-add": _cmd_inventory_add,
+    "vex-validate": _cmd_vex_validate,
+    "vex-generate": _cmd_vex_generate,
+    "verdict": _cmd_verdict,
+    "report": _cmd_report,
+    "platform-manifest": _cmd_platform_manifest,
+    "assert-single-manifest": _cmd_assert_single_manifest,
+}
+
+
+def main(argv=None):
+    args = _build_parser().parse_args(argv)
+    COMMANDS[args.command](args)
     return 0
 
 
