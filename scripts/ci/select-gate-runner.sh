@@ -15,11 +15,14 @@ readonly HEARTBEAT_PARAMETER=/honua-lane-build-host/gate-runner/heartbeat
 readonly WAIT_SECONDS="${GATE_RUNNER_WAIT_SECONDS:-180}"
 readonly POLL_SECONDS="${GATE_RUNNER_POLL_SECONDS:-10}"
 readonly HEARTBEAT_MAX_AGE_SECONDS=90
-# The producer and Fast jobs start together; format waits for whichever ends first.
+# Producer admission is independent of the heavy shard pool.
 readonly REQUIRED_IDLE_RUNNERS=2
+
+heavy_ready=false
 
 select_runner() {
   echo "runner=$1" >> "${GITHUB_OUTPUT}"
+  echo "heavy_ready=${heavy_ready}" >> "${GITHUB_OUTPUT}"
   echo "PR Gate compute: $1 ($2)"
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     echo "PR Gate compute: \`$1\` ($2)" >> "${GITHUB_STEP_SUMMARY}"
@@ -37,11 +40,20 @@ host_state() {
   local instance heartbeat
   instance="$(group_field "Instances[?LifecycleState=='InService'] | [0].InstanceId")" || return 1
   heartbeat="$(aws ssm get-parameter --name "${HEARTBEAT_PARAMETER}" --query Parameter.Value --output text)" || return 1
-  jq -r --arg instance "${instance}" --argjson now "$(date +%s)" \
+  jq -c --arg instance "${instance}" --argjson now "$(date +%s)" \
     --argjson max_age "${HEARTBEAT_MAX_AGE_SECONDS}" --argjson required "${REQUIRED_IDLE_RUNNERS}" '
-      if .instance != $instance or ($now - (.at // 0)) > $max_age then "booting"
-      elif .idle >= $required then "ready"
-      else "busy" end' <<< "${heartbeat}"
+      def integer: if type == "number" then floor == . else false end;
+      def heavy_available:
+        if (.heavy | type) != "object" then false
+        else .heavy.version == 1 and (.heavy.idle | integer)
+          and .heavy.idle >= 1 and .heavy.idle <= 8 end;
+      if ($instance | startswith("i-") | not) or .instance != $instance
+        or (.at | integer | not) or .at > $now or ($now - .at) > $max_age then
+        {state: "booting", heavy_ready: false}
+      else
+        {state: (if (.idle | integer) and .idle >= $required then "ready" else "busy" end),
+         heavy_ready: heavy_available}
+      end' <<< "${heartbeat}"
 }
 
 label="${HONUA_PR_GATE_RUNNER:-}"
@@ -56,7 +68,9 @@ fi
 
 deadline=$((SECONDS + WAIT_SECONDS))
 while true; do
-  state="$(host_state)" || state=unreadable
+  proof="$(host_state)" || proof='{"state":"unreadable","heavy_ready":false}'
+  heavy_ready="$(jq -r '.heavy_ready == true' <<< "${proof}")"
+  state="$(jq -r '.state' <<< "${proof}")"
   case "${state}" in
     ready) select_runner "${label}" "build host has ${REQUIRED_IDLE_RUNNERS} idle runners" ;;
     busy) select_runner "${HOSTED_RUNNER}" "build-host runners busy" ;;
