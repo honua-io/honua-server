@@ -792,3 +792,13 @@ If mergeability becomes clean between the live query and enable mutation, only
 GitHub's specific clean-status response ends neutrally; other API errors fail.
 
 PR Gate and native-image impact observers record `source-run-draft-admission` when the latest `PR Gate / Runner select` and `PR Gate / Build and tests` outcomes at or before the source attempt were both skipped (a partial rerun keeps earlier outcomes); these attempts emit no promotion receipt. Ready-run failures remain observable.
+
+## Admin authentication capacity split (12 November 2026)
+
+The former authentication/credentials shard now has four jobs: authentication
+and operator bearer; OAuth and OIDC; API keys; client certificates. Each retains
+the original routing paths, project and 22/32-minute budgets. Required checks
+are unchanged. Children inherit the parent's conservative 21.7-minute dispatch
+rank, including existing PR budget deferral, until scheduled trunk CI measures
+them. The coverage guard proves exact ownership of the former selection.
+See [the capacity evidence and qualification requirement](shard-timeout-budgets.md#admin-authentication-capacity-split-12-november-2026).

@@ -490,7 +490,7 @@ public sealed class GeoServerImportWorkspaceScopingTests
             CancellationToken cancellationToken = default)
             => Task.FromResult(new PublishedLayerSummary
             {
-                LayerId = 200,
+                StorageLayerId = 200,
                 LayerName = request.LayerName ?? request.Table,
                 Schema = request.Schema,
                 Table = request.Table,

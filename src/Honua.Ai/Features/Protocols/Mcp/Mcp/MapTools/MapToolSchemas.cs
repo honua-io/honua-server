@@ -54,17 +54,17 @@ internal static class MapToolSchemas
     private const string QueryFeaturesArgumentSchemaJson = """
         {
           "type": "object",
-          "required": ["serviceId", "layerId"],
+          "required": ["serviceId", "serviceLayerIndex"],
           "properties": {
             "serviceId": {
               "type": "string",
               "minLength": 1,
-              "description": "Published service identifier or name (from honua_list_layers.serviceId)."
+              "description": "Service ID or name from honua_list_layers.serviceId."
             },
-            "layerId": {
+            "serviceLayerIndex": {
               "type": "integer",
               "minimum": 0,
-              "description": "Service-local layer index (from honua_list_layers.layerId)."
+              "description": "Service-local index from honua_list_layers."
             },
             "where": {
               "type": "string",
@@ -141,17 +141,17 @@ internal static class MapToolSchemas
               "description": "Ordered layers to draw, bottom-to-top.",
               "items": {
                 "type": "object",
-                "required": ["serviceId", "layerId"],
+                "required": ["serviceId", "serviceLayerIndex"],
                 "properties": {
                   "serviceId": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "Published service identifier or name (from honua_list_layers.serviceId)."
+                    "description": "Service ID or name from honua_list_layers.serviceId."
                   },
-                  "layerId": {
+                  "serviceLayerIndex": {
                     "type": "integer",
                     "minimum": 0,
-                    "description": "Service-local layer index (from honua_list_layers.layerId)."
+                    "description": "Service-local index from honua_list_layers."
                   }
                 }
               }
@@ -203,8 +203,8 @@ internal static class MapToolSchemas
 
     public static readonly JsonElement RenderMapArgumentSchema = Parse(RenderMapArgumentSchemaJson);
 
-    // No required fields: styleId, serviceId+layerId, and the empty (list) call
-    // are all valid. Optional serviceId/layerId are the reference-implementation
+    // No required fields: styleId, serviceId+serviceLayerIndex, and the empty (list) call
+    // are all valid. Optional serviceId/serviceLayerIndex are the reference-implementation
     // shape for resolving a published layer's primary style.
     private const string GetStyleArgumentSchemaJson = """
         {
@@ -213,17 +213,17 @@ internal static class MapToolSchemas
             "styleId": {
               "type": "string",
               "minLength": 1,
-              "description": "Catalog style identifier (style_…) to resolve. Omit to resolve serviceId+layerId's primary style, or to list the available styles when neither is given."
+              "description": "Catalog style identifier (style_…) to resolve. Omit to resolve serviceId+serviceLayerIndex's primary style, or to list the available styles when neither is given."
             },
             "serviceId": {
               "type": "string",
               "minLength": 1,
-              "description": "Published service identifier or name (from honua_list_layers.serviceId). Paired with layerId, resolves that layer's primary/default style when styleId is omitted."
+              "description": "Service ID or name from honua_list_layers. Pair with serviceLayerIndex when styleId is omitted."
             },
-            "layerId": {
+            "serviceLayerIndex": {
               "type": "integer",
               "minimum": 0,
-              "description": "Service-local layer index (from honua_list_layers.layerId). Paired with serviceId, resolves that layer's primary/default style when styleId is omitted."
+              "description": "Service-local index from honua_list_layers; used when styleId is omitted."
             },
             "encoding": {
               "type": "string",
@@ -243,7 +243,7 @@ internal static class MapToolSchemas
     private const string ApplyStylePresetArgumentSchemaJson = """
         {
           "type": "object",
-          "required": ["serviceId", "layerId", "styleId"],
+          "required": ["serviceId", "serviceLayerIndex", "styleId"],
           "properties": {
             "dryRun": {
               "type": "boolean",
@@ -253,12 +253,12 @@ internal static class MapToolSchemas
             "serviceId": {
               "type": "string",
               "minLength": 1,
-              "description": "Published service identifier or name whose layer is being styled (from honua_list_layers.serviceId)."
+              "description": "Service ID or name from honua_list_layers."
             },
-            "layerId": {
+            "serviceLayerIndex": {
               "type": "integer",
               "minimum": 0,
-              "description": "Service-local layer index to apply the preset to (from honua_list_layers.layerId)."
+              "description": "Service-local index from honua_list_layers."
             },
             "styleId": {
               "type": "string",

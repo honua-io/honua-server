@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/apply_style_preset.result.schema.json",
+  "title": "apply_style_preset result payload",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "description": "Style operation result identity. Canonical operation handle fields remain owned by honua-server.",
+  "allOf": [
+    {
+      "$ref": "../common/service-layer-reference.schema.json"
+    }
+  ],
+  "required": [
+    "styleId"
+  ],
+  "properties": {
+    "styleId": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

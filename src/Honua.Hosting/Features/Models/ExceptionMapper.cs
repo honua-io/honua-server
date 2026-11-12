@@ -64,6 +64,13 @@ internal static class ExceptionMapper
 
         return exception switch
         {
+            InvalidPersistedExportProgressException invalidProgress => (
+                StatusCodes.Status409Conflict,
+                "Invalid persisted export progress",
+                invalidProgress.Message,
+                null
+            ),
+
             // Domain exceptions with safe messages
             ValidationException validationEx => (
                 StatusCodes.Status400BadRequest,
@@ -243,7 +250,8 @@ internal static class ExceptionMapper
 
     private static bool IsSafeException(Exception exception)
     {
-        return exception is ValidationException
+        return exception is InvalidPersistedExportProgressException
+            || exception is ValidationException
             || exception is ResourceNotFoundException
             || exception is ResourceConflictException
             || exception is ServiceUnavailableException;
