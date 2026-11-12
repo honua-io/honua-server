@@ -135,7 +135,7 @@ public sealed class StudioAiProxyPromptBudgetTests
                 {
                     Id = callId,
                     Name = tool,
-                    Arguments = JsonDocument.Parse(arguments).RootElement.Clone()
+                    Arguments = JsonElement.Parse(arguments)
                 }
             ]
         });

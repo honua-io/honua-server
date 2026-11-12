@@ -5,35 +5,17 @@ name: OGC API Building-Block Conformance
 # CQL2, MVT/TMS 2.0, Maps, and Schemathesis validators that do not belong to an
 # ETS profile. Every run builds and checks the exact candidate source SHA.
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
-    branches: [trunk]
-    # The server image build context plus the validators and their fixtures.
-    paths:
-      - 'src/**'
-      - 'eng/**'
-      - 'Dockerfile'
-      - '.dockerignore'
-      - '.editorconfig'
-      - 'Directory.Build.props'
-      - 'Directory.Build.targets'
-      - 'Directory.Packages.props'
-      - 'NuGet.config'
-      - 'Honua.sln'
-      - 'docs/developer/api-specs/admin-api.json'
-      - 'docs/gis/data/**'
-      - 'tests/fixtures/ai-builder/**'
-      - 'scripts/docker/restore-dotnet-with-github-packages.sh'
-      - 'scripts/conformance/ogcapi/**'
-      - 'scripts/ci/lib/isolate-test-compose.sh'
-      - 'docker/cite/ogc-api-features/**'
-      - '.github/workflows/ogc-api-building-block-conformance.yml'
-  schedule:
-    - cron: '0 7 * * 1'
   workflow_dispatch:
     inputs:
       source_sha:
         description: 'Full source SHA to certify (defaults to the selected ref)'
+        required: false
+        type: string
+        default: ''
+
+  workflow_call:
+    inputs:
+      source_sha:
         required: false
         type: string
         default: ''
@@ -43,13 +25,8 @@ permissions:
   contents: read
   packages: read
 
-concurrency:
-  group: ogc-api-building-block-conformance-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
 jobs:
   conformance:
-    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     name: OGC API building-block conformance
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -57,7 +34,7 @@ jobs:
       - name: Resolve exact candidate source
         id: candidate
         env:
-          REQUESTED_SOURCE_SHA: ${{ inputs.source_sha || github.event.pull_request.head.sha || github.sha }}
+          REQUESTED_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
         run: |
           set -euo pipefail
           if [[ ! "$REQUESTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
@@ -72,28 +49,7 @@ jobs:
           ref: ${{ steps.candidate.outputs.sha }}
           fetch-depth: 2
 
-      # Only the immutable base supplies executable classification policy.
-      # A missing or failed classifier leaves the ordinary checks enabled.
-      - name: Classify validated generated-only diff
-        id: generated-only
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TRUSTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          echo 'generated_only=false' >> "$GITHUB_OUTPUT"
-          if [[ "$GITHUB_EVENT_NAME" == pull_request && "$TRUSTED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            if ! git cat-file -e "${TRUSTED_BASE_SHA}^{commit}" 2>/dev/null; then
-              git fetch --no-tags --depth=1 origin "$TRUSTED_BASE_SHA" || exit 0
-            fi
-            policy="${RUNNER_TEMP}/generated-output-diff.py"
-            if git show "${TRUSTED_BASE_SHA}:scripts/ci/generated-output-diff.py" > "$policy"; then
-              python3 "$policy" --github-output
-            fi
-          fi
-
       - name: Verify exact candidate checkout
-        if: steps.generated-only.outputs.generated_only != 'true'
         run: |
           set -euo pipefail
           actual="$(git rev-parse HEAD)"
@@ -104,23 +60,17 @@ jobs:
           }
 
       - name: Set up Docker Buildx
-        if: steps.generated-only.outputs.generated_only != 'true'
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       # Reads the JIT layer cache that ci.yml, cite and the nightly build write.
       - name: Log in to GHCR for build cache
-        if: steps.generated-only.outputs.generated_only != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # A pull-request head is candidate-controlled code. Package credentials
-      # are only available to trusted repository refs; fork PRs use the same
-      # exact-candidate build path with empty BuildKit secrets.
       - name: Build exact candidate server image (trusted package feed)
-        if: steps.generated-only.outputs.generated_only != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -137,22 +87,7 @@ jobs:
           provenance: false
           sbom: false
 
-      - name: Build exact candidate server image (untrusted PR, no repository token)
-        if: steps.generated-only.outputs.generated_only != 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          file: ./Dockerfile
-          push: false
-          load: true
-          tags: honua-server:ogcapi-${{ steps.candidate.outputs.sha }}
-          build-args: |
-            HONUA_GIT_SHA=${{ steps.candidate.outputs.sha }}
-          provenance: false
-          sbom: false
-
       - name: Verify candidate image identity
-        if: steps.generated-only.outputs.generated_only != 'true'
         run: |
           set -euo pipefail
           image="honua-server:ogcapi-${{ steps.candidate.outputs.sha }}"
@@ -163,11 +98,10 @@ jobs:
           }
 
       - name: Prepare evidence directory
-        if: always() && steps.generated-only.outputs.generated_only != 'true'
+        if: always()
         run: mkdir -p ogcapi-conformance-results
 
       - name: Set up Node.js
-        if: steps.generated-only.outputs.generated_only != 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.x'
@@ -175,7 +109,6 @@ jobs:
           cache-dependency-path: scripts/conformance/ogcapi/package-lock.json
 
       - name: Install OGC validator dependencies
-        if: steps.generated-only.outputs.generated_only != 'true'
         run: |
           set -euo pipefail
           npm ci --prefix scripts/conformance/ogcapi
@@ -185,7 +118,6 @@ jobs:
           echo "$RUNNER_TEMP/ogcapi-venv/bin" >> "$GITHUB_PATH"
 
       - name: Run exact-candidate OGC API validators
-        if: steps.generated-only.outputs.generated_only != 'true'
         env:
           HONUA_CONFORMANCE_SOURCE_SHA: ${{ steps.candidate.outputs.sha }}
           HONUA_CONFORMANCE_SERVER_IMAGE: honua-server:ogcapi-${{ steps.candidate.outputs.sha }}
@@ -194,7 +126,7 @@ jobs:
         run: bash scripts/conformance/ogcapi/run-building-block-conformance.sh
 
       - name: Upload OGC API conformance evidence
-        if: always() && steps.generated-only.outputs.generated_only != 'true'
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ogc-api-building-block-conformance-${{ github.run_id }}

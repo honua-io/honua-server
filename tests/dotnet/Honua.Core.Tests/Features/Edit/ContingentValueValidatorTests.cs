@@ -161,7 +161,7 @@ public sealed class ContingentValueValidatorTests
         => new() { Type = "range", Range = [JsonElementOf(min.ToString(System.Globalization.CultureInfo.InvariantCulture)), JsonElementOf(max.ToString(System.Globalization.CultureInfo.InvariantCulture))] };
 
     private static JsonElement JsonElementOf(string json)
-        => JsonDocument.Parse(json).RootElement.Clone();
+        => JsonElement.Parse(json);
 
     private static Dictionary<string, object?> Attributes(params (string Key, object? Value)[] pairs)
     {

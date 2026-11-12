@@ -11,13 +11,9 @@ internal sealed class CacheHealthResponse
 
     public bool CacheEnabled { get; init; }
 
-    public bool FallbackEnabled { get; init; }
-
     public string? KeyPrefix { get; init; }
 
     public int DefaultTtlSeconds { get; init; }
-
-    public int RetryIntervalSeconds { get; init; }
 
     public RedisServerInfoResponse? RedisServerInfo { get; init; }
 

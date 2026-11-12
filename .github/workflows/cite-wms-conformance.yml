@@ -1,11 +1,6 @@
 name: OGC WMS CITE Conformance Tests
 
 on:
-  # Tier: nightly — conformance suites are external and heavyweight.
-  # PR/push triggers removed in #485. See docs/internal/ci/gate-model.md.
-  schedule:
-    # Run weekly to track WMS conformance drift
-    - cron: '0 6 * * 3'
   workflow_dispatch:
     inputs:
       profile:
@@ -18,18 +13,31 @@ on:
           - minimal
           - full
 
+  workflow_call:
+    inputs:
+      profile:
+        required: false
+        type: string
+        default: default
+      server_image:
+        required: false
+        type: string
+        default: ''
+      source_sha:
+        required: false
+        type: string
+        default: ''
+
 permissions:
   contents: read
   packages: write
-
-concurrency:
-  group: cite-wms-conformance-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   cite:
     uses: ./.github/workflows/cite-conformance-common.yml
     with:
+      honua-image: ${{ inputs.server_image || '' }}
+      tested-honua-git-sha: ${{ inputs.server_image != '' && inputs.source_sha || github.sha }}
       suite: wms
       display-name: WMS
       runner-script: ./scripts/conformance/cite/run-cite-wms-tests.sh

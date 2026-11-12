@@ -61,6 +61,7 @@ class TrunkAffectedWorkflowTests(unittest.TestCase):
         self.assertIn("scripts/ci/trunk-suspect-range.sh", scripts)
 
     def test_only_selective_runs_carry_the_title_certification_ignores(self):
+        sys.path.insert(0, str(ROOT / "scripts/ci"))
         spec = importlib.util.spec_from_file_location("certified_selector", CERTIFIED_SELECTOR)
         selector = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(selector)
@@ -298,7 +299,140 @@ class RuntimeBaseTests(unittest.TestCase):
             self.assertIn("needs.changes.outputs.selective_base", json.dumps(jobs[job_name]))
         self.assertEqual(jobs["server-tests"]["strategy"]["max-parallel"],
                          "${{ inputs.selective_base && "
-                         "fromJson(needs.targeted-shards.outputs.affected_max_parallel) || 24 }}")
+                         "fromJson(needs.targeted-shards.outputs.affected_max_parallel) || 16 }}")
+
+
+FULL_HEAD, PRIOR_HEAD, NEWER_HEAD = "c" * 40, "b" * 40, "d" * 40
+
+
+def trunk_run(run_id, head, title):
+    event = "schedule" if title == "CI " else "workflow_dispatch"
+    return {"id": run_id, "head_sha": head, "display_title": title, "status": "in_progress",
+            "event": event}
+
+
+class SupersedeTrailingRunsTests(unittest.TestCase):
+    """Never let one trunk head hold a full and a selective matrix of hosted runners."""
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, str(ROOT / "scripts/ci"))
+        spec = importlib.util.spec_from_file_location(
+            "supersede_trailing_runs", ROOT / "scripts/ci/supersede_trailing_runs.py")
+        cls.module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.module)
+
+    def contains(self, covering_head, head):
+        order = [PRIOR_HEAD, FULL_HEAD, NEWER_HEAD]
+        return order.index(head) <= order.index(covering_head)
+
+    def decide(self, strategy, runs, own_id, own_head):
+        with patch.object(self.module, "contains", side_effect=self.contains):
+            return strategy(runs, own_id, own_head)
+
+    def test_full_run_cancels_selective_runs_at_or_before_its_head_only(self):
+        runs = [trunk_run(1, FULL_HEAD, "CI "),
+                trunk_run(2, FULL_HEAD, "CI affected aaaa..cccc"),
+                {**trunk_run(3, PRIOR_HEAD, "CI affected aaaa..bbbb"), "status": "pending"},
+                trunk_run(4, NEWER_HEAD, "CI affected cccc..dddd"),
+                trunk_run(5, PRIOR_HEAD, "CI ")]
+        message, cancellations = self.decide(self.module.supersede_from_full_run, runs, 1, FULL_HEAD)
+        self.assertEqual(cancellations, [2, 3])
+        self.assertIn("(2)", message)
+
+    def test_full_run_without_covered_selective_runs_cancels_nothing(self):
+        runs = [trunk_run(1, FULL_HEAD, "CI "), trunk_run(4, NEWER_HEAD, "CI affected cccc..dddd")]
+        _, cancellations = self.decide(self.module.supersede_from_full_run, runs, 1, FULL_HEAD)
+        self.assertEqual(cancellations, [])
+
+    def test_selective_run_cancels_itself_under_a_started_covering_full_run(self):
+        for status in ("in_progress", "queued"):
+            runs = [{**trunk_run(9, NEWER_HEAD, "CI "), "status": status},
+                    trunk_run(2, FULL_HEAD, "CI affected aaaa..cccc")]
+            message, cancellations = self.decide(
+                self.module.supersede_own_selective_run, runs, 2, FULL_HEAD)
+            self.assertEqual(cancellations, [2], status)
+            self.assertIn("covers this head", message)
+
+    def test_selective_run_continues_without_a_started_covering_full_run(self):
+        cases = {"full run held by concurrency": [{**trunk_run(9, NEWER_HEAD, "CI "), "status": "pending"}],
+                 "full run at an older head": [trunk_run(9, PRIOR_HEAD, "CI ")],
+                 "only other selective runs": [trunk_run(4, NEWER_HEAD, "CI affected cccc..dddd")],
+                 "titled dispatch of unknown scope": [trunk_run(9, NEWER_HEAD, "CI train-42")],
+                 "manual dispatch without a title": [
+                     {**trunk_run(9, NEWER_HEAD, "CI "), "event": "workflow_dispatch"}]}
+        for case, runs in cases.items():
+            own = trunk_run(2, FULL_HEAD, "CI affected aaaa..cccc")
+            _, cancellations = self.decide(
+                self.module.supersede_own_selective_run, runs + [own], 2, FULL_HEAD)
+            self.assertEqual(cancellations, [], case)
+
+    def test_compare_status_decides_containment(self):
+        responses = {"ahead": True, "identical": True, "behind": False, "diverged": False}
+        for status, expected in responses.items():
+            with patch.dict(os.environ, {"GITHUB_REPOSITORY": "honua-io/honua-server"}), \
+                    patch.object(self.module, "gh_api", return_value={"status": status}) as api:
+                self.assertEqual(self.module.contains(FULL_HEAD, PRIOR_HEAD), expected, status)
+            api.assert_called_once_with(
+                f"repos/honua-io/honua-server/compare/{PRIOR_HEAD}...{FULL_HEAD}")
+
+    def run_main(self, scope, gh_api):
+        with tempfile.TemporaryDirectory() as directory:
+            summary = Path(directory) / "summary.md"
+            environment = {"GITHUB_RUN_ID": "2", "GITHUB_SHA": FULL_HEAD,
+                           "GITHUB_REPOSITORY": "honua-io/honua-server",
+                           "GITHUB_STEP_SUMMARY": str(summary)}
+            with patch.dict(os.environ, environment), \
+                    patch.object(sys, "argv", ["supersede_trailing_runs.py", scope]), \
+                    patch.object(self.module, "gh_api", side_effect=gh_api), \
+                    patch("sys.stdout"):
+                self.module.main()
+            return summary.read_text()
+
+    def test_summary_is_written_before_a_self_cancellation(self):
+        observed = []
+
+        def gh_api(endpoint, method="GET"):
+            if method == "POST":
+                observed.append((endpoint, Path(os.environ["GITHUB_STEP_SUMMARY"]).read_text()))
+                return {}
+            if "status=in_progress" in endpoint:
+                return {"workflow_runs": [trunk_run(9, FULL_HEAD, "CI ")]}
+            return {"workflow_runs": []}
+
+        self.run_main("selective", gh_api)
+        self.assertEqual(len(observed), 1)
+        endpoint, summary_at_cancel = observed[0]
+        self.assertTrue(endpoint.endswith("actions/runs/2/cancel"))
+        self.assertIn("covers this head", summary_at_cancel)
+
+    def test_unavailable_history_cancels_nothing_and_warns(self):
+        def gh_api(endpoint, method="GET"):
+            if method == "POST":
+                raise AssertionError("no run may be cancelled without history")
+            raise subprocess.CalledProcessError(1, "gh")
+
+        self.assertIn("history unavailable", self.run_main("full", gh_api))
+
+    def test_failed_cancellation_warns_without_failing(self):
+        def gh_api(endpoint, method="GET"):
+            if method == "POST":
+                raise subprocess.CalledProcessError(1, "gh")
+            if "status=in_progress" in endpoint:
+                return {"workflow_runs": [trunk_run(3, FULL_HEAD, "CI affected aaaa..cccc")]}
+            return {"workflow_runs": []}
+
+        self.assertIn("Cancelling selective runs", self.run_main("full", gh_api))
+
+    def test_job_runs_on_trunk_full_and_selective_runs_with_cancel_permission(self):
+        job = workflow("ci.yml")["jobs"]["supersede-trailing-runs"]
+        self.assertEqual(job["permissions"], {"actions": "write", "contents": "read"})
+        self.assertIn("github.ref == 'refs/heads/trunk'", job["if"])
+        self.assertNotIn("pull_request", job["if"])
+        step = job["steps"][-1]
+        self.assertEqual(step["env"]["RUN_SCOPE"],
+                         "${{ (inputs.selective_base && !inputs.full_ci) && 'selective' || 'full' }}")
+        self.assertIn('supersede_trailing_runs.py "${RUN_SCOPE}"', step["run"])
 
 
 if __name__ == "__main__":

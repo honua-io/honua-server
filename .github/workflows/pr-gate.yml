@@ -102,7 +102,7 @@ jobs:
     if: always() && !cancelled() && (needs.runner-select.result == 'success' || github.event.pull_request.draft == true)
     name: PR Gate / ${{ matrix.check }}
     needs: runner-select
-    runs-on: ${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && needs.runner-select.outputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 45
     # Format and both analyzer partitions run independently after runner selection.
     strategy:
@@ -164,7 +164,7 @@ jobs:
   fast-tests:
     name: PR Gate / Fast and architecture (${{ matrix.test-group }})
     needs: runner-select
-    runs-on: ${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && needs.runner-select.outputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 45
     # Each group compiles only its own test roots; the producer and the analyzer
     # job compile the diff's affected closure.
@@ -252,7 +252,7 @@ jobs:
   server-test-producer:
     name: PR Gate / Server test producer
     needs: runner-select
-    runs-on: ${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && needs.runner-select.outputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 45
     outputs:
       producer-attempt: ${{ steps.managed-producer.outputs.producer-attempt }}
@@ -340,7 +340,7 @@ jobs:
     # silently un-gates trunk or leaves pull requests waiting forever.
     name: PR Gate / Build and tests
     needs: runner-select
-    runs-on: ${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && needs.runner-select.outputs.runner || 'ubuntu-latest' }}
     # Runtime toolchain proofs run in the full CI workflow.
     timeout-minutes: 75
     outputs:
@@ -675,7 +675,7 @@ jobs:
     # refs/pull/N/merge ref has the base-branch tip as its first parent. The
     # same reasoning scopes scripts/ci/compute-lean-gate-build-scope.sh.
     if: github.event_name == 'pull_request' && !github.event.pull_request.draft
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 10
     outputs:
       # A docs-only diff skips selection and publishes `skip`, which the
@@ -777,7 +777,9 @@ jobs:
       && needs.affected-shards-select.outputs.skip != 'true'
       && needs.affected-shards-select.outputs.matrix_include != '[]'
     needs: [affected-shards-select, pr-gate, server-test-producer]
-    runs-on: ubuntu-latest
+    # Even matrix indices run on the build host's honua-heavy runners when
+    # vars.HONUA_HEAVY_RUNNER holds their runner JSON; fork code never does.
+    runs-on: ${{ vars.HONUA_HEAVY_RUNNER && (endsWith(format('{0}', strategy.job-index), '0') || endsWith(format('{0}', strategy.job-index), '2') || endsWith(format('{0}', strategy.job-index), '4') || endsWith(format('{0}', strategy.job-index), '6') || endsWith(format('{0}', strategy.job-index), '8')) && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || 'ubuntu-latest' }}
     # The shard's OWN outer budget from .github/ci-shards.json, exactly as
     # ci.yml::server-tests applies it. Substituting a flat cap here would make
     # this lane time out on shards the trailing matrix runs comfortably, which
@@ -791,7 +793,6 @@ jobs:
       TESTCONTAINERS_RYUK_DISABLED: false
       TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
       HONUA_TEST_CONFIGURATION: Release
-      HONUA_TEST_DB_URL: ${{ toJSON(matrix.needs_postgres) != 'false' && format('Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=ci-{0}-{1}', github.run_id, github.run_attempt) || '' }}
     services:
       postgres:
         # Service images pull before checkout; use the verified linux/amd64
@@ -802,8 +803,9 @@ jobs:
           POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
+        # An ephemeral host port: several self-hosted runners share one host.
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -865,6 +867,7 @@ jobs:
         id: shard
         env:
           HONUA_SERVER_TEST_SHARD_NAME: ${{ matrix.shard_name }}
+          HONUA_TEST_DB_URL: ${{ toJSON(matrix.needs_postgres) != 'false' && format('Host=localhost;Port={2};Database=honua_test;Username=honua;Password=ci-{0}-{1}', github.run_id, github.run_attempt, job.services.postgres.ports['5432']) || '' }}
           HONUA_SERVER_TEST_FILTER: ${{ matrix.filter }}
           HONUA_SERVER_TEST_LOG_NAME: ${{ matrix.log_name }}
           HONUA_SERVER_TEST_TIMEOUT_MINUTES: ${{ matrix.test_timeout_minutes }}
@@ -892,7 +895,7 @@ jobs:
     name: PR Gate / Affected shards
     if: always() && github.event_name == 'pull_request' && !github.event.pull_request.draft
     needs: [affected-shards-select, affected-shard, server-test-producer]
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       # The publisher lives in the workflow's commit. Without this checkout the
@@ -951,7 +954,7 @@ jobs:
     # merge-authority guard on trunk one merge later). Run the same two guard
     # scripts here, gated on the diff so every other PR pays nothing.
     name: PR Gate / CI Router Validation
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - name: Await exact-head review
@@ -1070,9 +1073,10 @@ jobs:
         run: |
           # The verdict step below interprets the exit code; this step must reach it.
           set +e -uo pipefail
+          tfm="$(scripts/ci/honua-target-framework.sh)" || { echo "::error::cannot resolve the server target framework" >&2; exit 1; }
           python3 scripts/ci/n1-reader-compat.py \
             --output "artifacts/pr-gate/n1-reader-compat" \
-            --candidate-dll src/Honua.Server/bin/Release/net10.0/Honua.Server.dll \
+            --candidate-dll "src/Honua.Server/bin/Release/${tfm}/Honua.Server.dll" \
             --candidate-sha "${GITHUB_SHA}" \
             --candidate-head-sha "${HEAD_SHA}" \
             --base-ref HEAD^1
@@ -1141,7 +1145,7 @@ jobs:
     name: PR Gate
     if: always()
     needs: [pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer]
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - name: Require build, tests, format, CI router validation, and affected shards

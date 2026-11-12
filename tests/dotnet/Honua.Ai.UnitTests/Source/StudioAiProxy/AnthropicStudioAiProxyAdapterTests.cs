@@ -163,9 +163,9 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
                 {
                     Name = "list_incidents",
                     Description = "List incidents.",
-                    InputSchema = JsonDocument.Parse("{}").RootElement.Clone(),
-                    Annotations = JsonDocument.Parse("{\"readOnlyHint\":true}").RootElement.Clone(),
-                    OutputSchema = JsonDocument.Parse("{\"type\":\"object\"}").RootElement.Clone()
+                    InputSchema = JsonElement.Parse("{}"),
+                    Annotations = JsonElement.Parse("{\"readOnlyHint\":true}"),
+                    OutputSchema = JsonElement.Parse("{\"type\":\"object\"}")
                 }
             ]
         };
@@ -246,7 +246,7 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
                         {
                             Id = "toolu_123",
                             Name = "list_incidents",
-                            Arguments = JsonDocument.Parse("""{"status":"open"}""").RootElement.Clone()
+                            Arguments = JsonElement.Parse("""{"status":"open"}""")
                         }
                     ]
                 },
@@ -486,7 +486,7 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
             {
                 Name = "list_incidents",
                 Description = "List open incidents.",
-                InputSchema = System.Text.Json.JsonDocument.Parse("""{"type":"object","properties":{"status":{"type":"string"}}}""").RootElement
+                InputSchema = System.Text.Json.JsonElement.Parse("""{"type":"object","properties":{"status":{"type":"string"}}}""")
             }
         ]
     };

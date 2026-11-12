@@ -42,6 +42,22 @@ CloudFront limits how many invalidations may be in progress. When it is busy the
 
 An admin request that told the CDN carries the response header `Honua-Cdn-Invalidation: submitted`, or `failed` when CloudFront refused. A failure never undoes the change and never blocks a rollback; a release operation records it in the operation's warnings. Until the invalidation is repeated, cached responses expire with their lifetime.
 
+Every invalidation is logged once as a purge record (event 10311): the reason (`admin`, `edit`, `release` or `operation`), the change it belongs to, the task that sent it, the CloudFront outcome and invalidation id, and the paths. For an admin change, the change is the `X-Correlation-ID` returned to the admin request, so you can find the purge a given change caused.
+
+## The server's own cache on several tasks
+
+Pro editions also keep cached metadata, tiles and styles in each task's memory. Each entry is keyed by the catalog revision, so after a change on any task every other task stops replaying its entries within the revision check interval (`Cache__MetadataGraphRevalidationSeconds`, default 2 s). An entry for a layer, service, collection or scene is stored only after its access check allowed an anonymous caller, and no entry lives longer than the CDN lifetime of its response, so a task never hands the CDN an older copy after a purge.
+
+Responses on cached routes carry an RFC 9211 `Cache-Status` header for this cache:
+
+| Value | Meaning |
+| --- | --- |
+| `Honua; hit; ttl=240; detail="revision=..."` | Replayed from the task's cache; the entry lives up to 240 s more (a shorter per-tileset lifetime is not known on a replay) |
+| `Honua; fwd=miss; detail="revision=..."` | Rendered for this request |
+| `Honua; fwd=bypass` | Not looked up: the request carries a credential, is signed in, is not a plain GET, or the cache is not available in this edition |
+
+The revision is the catalog revision the response was keyed by; two tasks that answer with different revisions have not both seen the latest change yet.
+
 ## Steps
 
 1. Tell the service which distribution to invalidate. Without this setting nothing is invalidated and lifetimes are the only control.
@@ -86,6 +102,7 @@ SharedCache__Emergency__Layers__1=roads/1
 - Request a public tile without credentials and check that `Cache-Control` starts with `public, max-age=60, s-maxage=300`.
 - Request the same tile with an API key and check that `Cache-Control` is `private, no-store`.
 - Secure a layer, then request it anonymously through the CDN: the request is refused.
+- Request a public tile twice from the same task and check that `Cache-Status` goes from `Honua; fwd=miss` to `Honua; hit`.
 
 ## Troubleshoot
 
