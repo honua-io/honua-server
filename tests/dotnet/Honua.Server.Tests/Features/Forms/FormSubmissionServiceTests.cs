@@ -1013,7 +1013,7 @@ public sealed class FormSubmissionServiceTests
         };
 
     private static JsonElement Json(string json)
-        => JsonDocument.Parse(json).RootElement.Clone();
+        => JsonElement.Parse(json);
 
     private sealed class FakeFormPackageStore : IFormPackageStore
     {

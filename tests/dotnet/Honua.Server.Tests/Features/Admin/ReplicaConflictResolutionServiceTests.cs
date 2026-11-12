@@ -614,7 +614,7 @@ public sealed class ReplicaConflictResolutionServiceTests
                 Inputs = new ReplicaConflictResolutionInputs(
                     new Dictionary<string, JsonElement>
                     {
-                        ["name"] = JsonDocument.Parse("\"merged\"").RootElement.Clone(),
+                        ["name"] = JsonElement.Parse("\"merged\""),
                     },
                     GeometrySource: null),
             });
@@ -730,7 +730,7 @@ public sealed class ReplicaConflictResolutionServiceTests
                 Inputs = new ReplicaConflictResolutionInputs(
                     new Dictionary<string, JsonElement>
                     {
-                        ["name"] = JsonDocument.Parse("\"different\"").RootElement.Clone(),
+                        ["name"] = JsonElement.Parse("\"different\""),
                     },
                     GeometrySource: null),
             });
@@ -982,7 +982,7 @@ public sealed class ReplicaConflictResolutionServiceTests
             Inputs = new ReplicaConflictResolutionInputs(
                 new Dictionary<string, JsonElement>
                 {
-                    [fieldName] = JsonDocument.Parse("\"merged\"").RootElement.Clone(),
+                    [fieldName] = JsonElement.Parse("\"merged\""),
                 },
                 GeometrySource: null),
         };

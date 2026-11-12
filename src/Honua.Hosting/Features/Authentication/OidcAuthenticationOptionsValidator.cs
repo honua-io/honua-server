@@ -161,6 +161,19 @@ internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidato
             errors.Add("Generic.ClientId cannot be empty when Generic OIDC is enabled");
         }
 
+        if (!string.IsNullOrWhiteSpace(generic.LogoutEndpoint) &&
+            (!Uri.TryCreate(generic.LogoutEndpoint, UriKind.Absolute, out var logoutUri) ||
+             logoutUri.Scheme != "https" || !string.IsNullOrEmpty(logoutUri.UserInfo) ||
+             !string.IsNullOrEmpty(logoutUri.Query) || !string.IsNullOrEmpty(logoutUri.Fragment)))
+        {
+            errors.Add("Generic.LogoutEndpoint must be an absolute HTTPS URL without credentials, query or fragment");
+        }
+
+        if (generic.UseCognitoLogout && string.IsNullOrWhiteSpace(generic.LogoutEndpoint))
+        {
+            errors.Add("Generic.LogoutEndpoint is required when Generic.UseCognitoLogout is enabled");
+        }
+
         // Display name validation
         if (string.IsNullOrWhiteSpace(generic.DisplayName))
         {

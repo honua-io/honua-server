@@ -1745,7 +1745,7 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
 
         // JSON text: [""odd\\<type>+","Point","Point Z","Polygon"]
         encoded.Should().Be("[\"\\u0022odd\\\\\\u003Ctype\\u003E\\u002B\",\"Point\",\"Point Z\",\"Polygon\"]");
-        JsonDocument.Parse(encoded).RootElement.EnumerateArray().Select(element => element.GetString())
+        JsonElement.Parse(encoded).EnumerateArray().Select(element => element.GetString())
             .Should().Equal("\"odd\\<type>+", "Point", "Point Z", "Polygon");
         GeoParquetFeatureWriter.SerializeGeometryTypes([]).Should().Be("[]");
     }

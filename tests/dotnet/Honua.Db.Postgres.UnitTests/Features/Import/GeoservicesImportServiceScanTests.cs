@@ -477,7 +477,7 @@ public sealed class GeoservicesImportServiceScanTests
             _expectedToken = expectedToken;
             _fieldsJson = fieldsJson;
             _countJson = countJson;
-            _spatialReference = JsonDocument.Parse(spatialReferenceJson).RootElement.Clone();
+            _spatialReference = JsonElement.Parse(spatialReferenceJson);
         }
 
         public int RequestCount { get; private set; }

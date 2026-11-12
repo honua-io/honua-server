@@ -622,7 +622,7 @@ public sealed class ExecutionAdmissionMultiNodeTests
     private async Task<(IReadOnlyList<Attempt> Attempts, ActiveSampler Sampler)> BurstAsync(
         IReadOnlyList<Func<Task<Attempt>>> submissions)
     {
-        var sampler = new ActiveSampler();
+        var sampler = new ActiveSampler(ReadPartition, ReadCost);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var stop = new CancellationTokenSource();
 
@@ -795,79 +795,6 @@ public sealed class ExecutionAdmissionMultiNodeTests
     /// Independent observer of the durable active set: the maximum global count and the maximum
     /// per-partition count and cost weight seen at any sample during a burst.
     /// </summary>
-    private sealed class ActiveSampler
-    {
-        private readonly object _sync = new();
-
-        public int Samples { get; private set; }
-
-        public int MaxGlobal { get; private set; }
-
-        public Dictionary<string, int> MaxPerPartition { get; } = new(StringComparer.Ordinal);
-
-        public Dictionary<string, double> MaxCostPerPartition { get; } = new(StringComparer.Ordinal);
-
-        public async Task RunAsync(IExecutionJobStore store, CancellationToken cancellationToken)
-        {
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                await SampleAsync(store);
-                try
-                {
-                    await Task.Delay(TimeSpan.FromMilliseconds(2), cancellationToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    return;
-                }
-            }
-        }
-
-        public async Task SampleAsync(IExecutionJobStore store)
-        {
-            var active = await store.ListActiveAsync();
-            lock (_sync)
-            {
-                Samples++;
-                MaxGlobal = Math.Max(MaxGlobal, active.Count);
-                foreach (var partition in active.GroupBy(ReadPartition))
-                {
-                    MaxPerPartition[partition.Key] = Math.Max(
-                        MaxPerPartition.GetValueOrDefault(partition.Key), partition.Count());
-                    MaxCostPerPartition[partition.Key] = Math.Max(
-                        MaxCostPerPartition.GetValueOrDefault(partition.Key), partition.Sum(ReadCost));
-                }
-            }
-        }
-    }
-
-    /// <summary>
-    /// Holds every wrapped node's record creation until <c>parties</c> nodes have reached it (or a
-    /// timeout passes), forcing all evaluations to complete before any record becomes visible.
-    /// </summary>
-    private sealed class Rendezvous(int parties, TimeSpan timeout)
-    {
-        private readonly TaskCompletionSource _allArrived = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private int _arrived;
-
-        public bool AllArrived => _allArrived.Task.IsCompleted;
-
-        public InterceptingJobStore Wrap(IExecutionJobStore inner) => new(inner)
-        {
-            BeforeCreate = ArriveAsync
-        };
-
-        private async Task ArriveAsync()
-        {
-            if (Interlocked.Increment(ref _arrived) >= parties)
-            {
-                _allArrived.TrySetResult();
-            }
-
-            await Task.WhenAny(_allArrived.Task, Task.Delay(timeout));
-        }
-    }
-
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
     {
         public T CurrentValue => value;

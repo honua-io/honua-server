@@ -177,7 +177,7 @@ public sealed class MigrationCatalogReconcilerTests
                         {
                             CodedValues =
                             [
-                                new MetadataV2CodedValue { Code = JsonDocument.Parse("\"R\"").RootElement, Name = "Residential" }
+                                new MetadataV2CodedValue { Code = JsonElement.Parse("\"R\""), Name = "Residential" }
                             ]
                         }
                     }
@@ -578,8 +578,8 @@ public sealed class MigrationCatalogReconcilerTests
                         Type = "codedValue",
                         CodedValues =
                         [
-                            new MetadataV2CodedValue { Code = JsonDocument.Parse("\"R\"").RootElement, Name = "Residential" },
-                            new MetadataV2CodedValue { Code = JsonDocument.Parse("\"C\"").RootElement, Name = "Commercial" }
+                            new MetadataV2CodedValue { Code = JsonElement.Parse("\"R\""), Name = "Residential" },
+                            new MetadataV2CodedValue { Code = JsonElement.Parse("\"C\""), Name = "Commercial" }
                         ]
                     }
                 }
@@ -860,7 +860,7 @@ public sealed class MigrationCatalogReconcilerTests
             Subtypes = subtypes
                 .Select(s => new MetadataV2Subtype
                 {
-                    Code = JsonDocument.Parse($"\"{s.Code}\"").RootElement,
+                    Code = JsonElement.Parse($"\"{s.Code}\""),
                     Name = s.Name
                 })
                 .ToArray()
