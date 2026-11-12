@@ -40,6 +40,34 @@ public sealed class StudioHumanDraftPolicyTests
     }
 
     [UnitTheory]
+    [InlineData(StudioDraftOperations.Update, null, "draft-owner")]
+    [InlineData(StudioDraftOperations.Delete, null, "draft-owner")]
+    [InlineData(StudioDraftOperations.Update, "other-owner", "draft-owner")]
+    [InlineData(StudioDraftOperations.Delete, "other-owner", "draft-owner")]
+    [InlineData(StudioDraftOperations.Update, "draft-owner", null)]
+    [InlineData(StudioDraftOperations.Delete, "draft-owner", " ")]
+    public async Task EvaluateAsync_UpdateOrDeleteWithoutMatchingStoredOwner_RequiresApproval(
+        string operationId, string? storedOwner, string? principalId)
+    {
+        var policy = CreatePolicy(new GuardrailDecision(GuardrailTier.RequiresApproval,
+            OperationClass.StudioDraftMutation, HonuaEdition.Enterprise, "default-policy"));
+        var decision = await policy.EvaluateAsync(
+            StudioDraftOperations.BuildDescriptors().Single(item => item.OperationId == operationId),
+            new OperationRequest
+            {
+                OperationId = operationId,
+                VerifiedStudioDraftOwnerId = storedOwner,
+                GatewayRequest = new OperationGatewayRequest
+                {
+                    OperationId = operationId,
+                    Kind = OperationClass.StudioDraftMutation,
+                },
+            }, new OperationPolicyContext { PrincipalId = principalId });
+
+        decision.Kind.Should().Be(PolicyDecisionKind.RequireApproval);
+    }
+
+    [UnitTheory]
     [InlineData(GuardrailTier.RequiresApproval, "operator-override", null)]
     [InlineData(GuardrailTier.Blocked, "operator-override", null)]
     [InlineData(GuardrailTier.RequiresApproval, "default-policy", "studio.publication_proposal")]
@@ -104,22 +132,28 @@ public sealed class StudioHumanDraftPolicyTests
         string operationId, GuardrailTier tier = GuardrailTier.RequiresApproval,
         string source = "default-policy", string? action = null)
     {
-        var ladder = Substitute.For<IGuardrailLadder>();
-        var guardrail = new GuardrailDecision(tier, OperationClass.StudioDraftMutation, HonuaEdition.Enterprise, source);
-        ladder.Resolve(OperationClass.StudioDraftMutation).Returns(guardrail);
-        ladder.Resolve(OperationClass.StudioDraftMutation, Arg.Any<string?>()).Returns(guardrail);
-        var policy = new CanonicalOperationPolicyDecisionPoint(new CanonicalOperationPolicyConfiguration(Options.Create(new OperationPolicyOptions())),
-            ladder, resolveInitiation: _ => Task.FromResult((OperationInitiationKind.Human, OperationInitiationChannel.InteractiveOidc)));
+        var policy = CreatePolicy(new GuardrailDecision(tier, OperationClass.StudioDraftMutation, HonuaEdition.Enterprise, source));
         return policy.EvaluateAsync(StudioDraftOperations.BuildDescriptors().Single(item => item.OperationId == operationId),
             new OperationRequest
             {
                 OperationId = operationId,
+                VerifiedStudioDraftOwnerId = "draft-owner",
                 GatewayRequest = new OperationGatewayRequest
                 {
                     OperationId = operationId,
                     Kind = OperationClass.StudioDraftMutation,
                     ActionDiscriminator = action
                 }
-            }, new OperationPolicyContext());
+            }, new OperationPolicyContext { PrincipalId = "draft-owner" });
     }
+
+    private static CanonicalOperationPolicyDecisionPoint CreatePolicy(GuardrailDecision guardrail)
+    {
+        var ladder = Substitute.For<IGuardrailLadder>();
+        ladder.Resolve(OperationClass.StudioDraftMutation).Returns(guardrail);
+        ladder.Resolve(OperationClass.StudioDraftMutation, Arg.Any<string?>()).Returns(guardrail);
+        return new CanonicalOperationPolicyDecisionPoint(new CanonicalOperationPolicyConfiguration(Options.Create(new OperationPolicyOptions())),
+            ladder, resolveInitiation: _ => Task.FromResult((OperationInitiationKind.Human, OperationInitiationChannel.InteractiveOidc)));
+    }
+
 }

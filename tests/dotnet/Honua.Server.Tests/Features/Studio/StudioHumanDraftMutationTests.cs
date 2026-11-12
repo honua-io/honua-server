@@ -118,7 +118,11 @@ public sealed class StudioHumanDraftMutationTests : IAsyncLifetime
 
         if (ownership == "own")
         {
-            response.StatusCode.Should().Be(delete ? HttpStatusCode.NoContent : HttpStatusCode.OK, body);
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            if (delete)
+            {
+                (await store.GetDraftAsync(draftId)).Should().BeNull();
+            }
         }
         else
         {

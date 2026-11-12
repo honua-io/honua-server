@@ -639,7 +639,8 @@ internal sealed class StudioRollbackExecutor(IStudioPackageLifecycleService life
 
 internal sealed class StudioDraftMutationRuntime(
     IOperationInvoker invoker,
-    IOperationInstanceStore instanceStore) : IStudioDraftMutationRuntime
+    IOperationInstanceStore instanceStore,
+    IStudioPackageStore? draftStore = null) : IStudioDraftMutationRuntime
 {
     public Task<StudioDraftMutationReceipt<StudioPackageDraft>> CreateAsync(
         CreateStudioPackageDraftCommand command,
@@ -811,8 +812,18 @@ internal sealed class StudioDraftMutationRuntime(
         CancellationToken cancellationToken,
         IReadOnlyDictionary<string, string>? pendingResourceIds = null)
     {
+        Guid? draftId = payload switch
+        {
+            StudioDraftUpdatePayload update => update.DraftId,
+            StudioDraftDeletePayload delete => delete.DraftId,
+            _ => null,
+        };
+        var storedOwnerId = draftStore is not null && draftId.HasValue
+            ? (await draftStore.GetDraftAsync(draftId.Value, cancellationToken).ConfigureAwait(false))?.OwnerId
+            : null;
         var request = new OperationRequest
         {
+            VerifiedStudioDraftOwnerId = storedOwnerId,
             OperationId = operationId,
             Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
             {

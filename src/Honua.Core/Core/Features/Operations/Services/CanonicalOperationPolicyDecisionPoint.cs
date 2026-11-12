@@ -69,6 +69,7 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
             ? _legacyGuardrails.Resolve(gatewayRequest.Kind)
             : _legacyGuardrails.Resolve(gatewayRequest.Kind, gatewayRequest.ActionDiscriminator);
         if (IsDefaultPrivateDraftApproval(guardrail, gatewayRequest, descriptor.OperationId)
+            && IsOwnedDraftMutation(request, context)
             && await IsInteractiveHumanAsync(cancellationToken).ConfigureAwait(false))
         {
             return PolicyDecision.Allowed;
@@ -90,6 +91,11 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
             },
         };
     }
+
+    private static bool IsOwnedDraftMutation(OperationRequest request, OperationPolicyContext context) =>
+        request.OperationId is not (StudioDraftMutationContext.UpdateOperationId or StudioDraftMutationContext.DeleteOperationId)
+        || (!string.IsNullOrWhiteSpace(context.PrincipalId)
+            && string.Equals(request.VerifiedStudioDraftOwnerId, context.PrincipalId, StringComparison.Ordinal));
 
     private async Task<bool> IsInteractiveHumanAsync(CancellationToken cancellationToken)
     {
