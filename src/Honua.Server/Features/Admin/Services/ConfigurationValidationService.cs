@@ -601,6 +601,7 @@ internal static class ConfigurationValidationService
             "soak-candidate-db-password",
 
             // CI harness defaults.
+            "worker-smoke",
             "ci-admin-password",
             "ci-docker-admin-password",
             "ci-aot-boundary-password",

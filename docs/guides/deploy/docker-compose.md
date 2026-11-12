@@ -73,8 +73,8 @@ sed -i.orig \
 rm -f .env.production.orig
 ```
 
-Production with Redis refuses to start until a PKCS#12 certificate encrypts the
-operation key ring that Redis holds. Generate it under `secrets/` at the archive root. A
+Production refuses to start until a PKCS#12 certificate encrypts the operation key
+ring that the database holds. Generate it under `secrets/` at the archive root. A
 one-shot step in the Compose file sets it to owner root, group 1001 (the server's
 group), mode `0640` before the server starts; the block removes any earlier copy
 first because you cannot overwrite that root-owned file.

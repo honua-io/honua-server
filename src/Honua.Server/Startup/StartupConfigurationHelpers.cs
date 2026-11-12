@@ -31,12 +31,27 @@ internal static class StartupConfigurationHelpers
             return false;
         }
 
+        var knownNetworks = ParseKnownNetworks(configuration);
+        var protoHeaderName = configuration["ForwardedHeaders:ProtoHeaderName"];
+
         services.Configure<ForwardedHeadersOptions>(options =>
         {
             options.ForwardedHeaders = ForwardedHeaders.XForwardedFor |
                                        ForwardedHeaders.XForwardedProto |
                                        ForwardedHeaders.XForwardedHost;
             options.ForwardLimit = configuration.GetValue<int?>("ForwardedHeaders:ForwardLimit") ?? 1;
+
+            // A TLS-terminating edge in front of an HTTP load balancer reports the client scheme in its
+            // own header, because the balancer overwrites X-Forwarded-Proto with its own hop's scheme.
+            if (!string.IsNullOrWhiteSpace(protoHeaderName))
+            {
+                options.ForwardedProtoHeaderName = protoHeaderName.Trim();
+            }
+
+            foreach (var network in knownNetworks)
+            {
+                options.KnownIPNetworks.Add(network);
+            }
 
             var knownProxies = configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() ?? [];
             // Not a simple .Where(): the filter condition depends on IPAddress.TryParse's
@@ -51,6 +66,23 @@ internal static class StartupConfigurationHelpers
         });
 
         return true;
+    }
+
+    private static List<System.Net.IPNetwork> ParseKnownNetworks(IConfiguration configuration)
+    {
+        var networks = new List<System.Net.IPNetwork>();
+        foreach (var entry in configuration.GetSection("ForwardedHeaders:KnownNetworks").Get<string[]>() ?? [])
+        {
+            if (!System.Net.IPNetwork.TryParse(entry.Trim(), out var network))
+            {
+                throw new InvalidOperationException(
+                    $"ForwardedHeaders:KnownNetworks entry '{entry}' is not a CIDR range such as 10.0.0.0/16.");
+            }
+
+            networks.Add(network);
+        }
+
+        return networks;
     }
 
     public static void ResolveEnvironmentSecretReferences(ConfigurationManager configuration)
