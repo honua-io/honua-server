@@ -6,6 +6,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -410,7 +411,7 @@ public sealed class ExecutionAdmissionEvaluatorTests
     // Shared rate window: counted jobs, failing closed when the count is unreadable
     // -----------------------------------------------------------------------
 
-    [Fact]
+    [UnitTest]
     public async Task Evaluate_SharedCountAtTheLimit_ThrottlesWithTheCountedSubmissions()
     {
         var options = DefaultOptions();
@@ -425,7 +426,7 @@ public sealed class ExecutionAdmissionEvaluatorTests
         decision.Snapshot.SubmissionsInWindow.Should().Be(3);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Evaluate_SharedCountBelowTheLimit_AdmitsAndCountsThisSubmission()
     {
         var options = DefaultOptions();
@@ -443,7 +444,7 @@ public sealed class ExecutionAdmissionEvaluatorTests
             Arg.Any<CancellationToken>());
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Evaluate_SharedCountUnavailable_DeniesBackpressureInsteadOfPerNodeFallback()
     {
         // The window has 100 free slots, so the process-local bucket would have admitted every
