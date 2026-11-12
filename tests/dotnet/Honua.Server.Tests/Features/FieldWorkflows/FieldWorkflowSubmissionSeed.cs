@@ -9,12 +9,10 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.FieldWorkflows;
 
-/// <summary>
-/// Seeds a published form package and a completed (accepted) submission row
-/// directly through the shared <see cref="IFormPackageStore"/>. This exercises
-/// the same durable schema the runtime submission path writes to, without
-/// depending on the target service advertising edit capabilities.
-/// </summary>
+// Seeds a published form package and a completed (accepted) submission row
+// directly through the shared IFormPackageStore. This exercises
+// the same durable schema the runtime submission path writes to, without
+// depending on the target service advertising edit capabilities.
 internal static class FieldWorkflowSubmissionSeed
 {
     public static async Task<Guid> SeedSubmissionAsync(IServiceProvider services, string title, string suffix, string name)

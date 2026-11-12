@@ -5,10 +5,8 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Holds every wrapped node's record creation until <c>parties</c> nodes have reached it (or a
-/// timeout passes), forcing all evaluations to complete before any record becomes visible.
-/// </summary>
+// Holds every wrapped node's record creation until `parties` nodes have reached it (or a
+// timeout passes), forcing all evaluations to complete before any record becomes visible.
 internal sealed class Rendezvous(int parties, TimeSpan timeout)
 {
     private readonly TaskCompletionSource _allArrived = new(TaskCreationOptions.RunContinuationsAsynchronously);

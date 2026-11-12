@@ -6,10 +6,8 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Records the highest number (and cost) of active execution records seen globally and per
-/// partition while concurrent admission tests run.
-/// </summary>
+// Records the highest number (and cost) of active execution records seen globally and per
+// partition while concurrent admission tests run.
 internal sealed class ActiveSampler(
     Func<ExecutionJobRecord, string> partitionKey,
     Func<ExecutionJobRecord, double> cost)
