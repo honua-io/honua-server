@@ -14,4 +14,10 @@ namespace Honua.Core.Features.Assets;
 [JsonSerializable(typeof(AssetValidationProblem))]
 [JsonSerializable(typeof(AssetCommandConflict))]
 [JsonSerializable(typeof(IReadOnlyList<string>))]
+[JsonSerializable(typeof(WorkTaskCreateRequest))]
+[JsonSerializable(typeof(WorkTaskTransitionRequest))]
+[JsonSerializable(typeof(WorkTask))]
+[JsonSerializable(typeof(WorkTaskCommandResponse))]
+[JsonSerializable(typeof(WorkTaskListResult))]
+[JsonSerializable(typeof(WorkTaskHistoryResult))]
 public sealed partial class AssetsJsonContext : JsonSerializerContext;
