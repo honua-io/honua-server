@@ -145,7 +145,9 @@ public sealed class PublishResultToolTests
         descriptor.OutputSchema.Should().NotBeNull();
         var schema = descriptor.OutputSchema!.Value;
         schema.GetProperty("properties").TryGetProperty("serviceId", out _).Should().BeTrue();
-        schema.GetProperty("properties").TryGetProperty("layerId", out _).Should().BeTrue();
+        schema.GetProperty("properties").TryGetProperty("storageLayerId", out _).Should().BeTrue();
+        schema.GetProperty("properties").TryGetProperty("serviceLayerIndex", out _).Should().BeTrue();
+        schema.GetProperty("properties").TryGetProperty("layerId", out _).Should().BeFalse();
 
         // Only sourceId is required, mirroring the standard publish_result schema.
         var input = descriptor.InputSchema;
@@ -156,7 +158,7 @@ public sealed class PublishResultToolTests
     [UnitTest]
     [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_publish_result")]
-    public async Task PublishResult_WhenCompleted_PromotesArtifactViaServicePublish_AndReturnsServiceIdAndLayerId()
+    public async Task PublishResult_WhenCompleted_PromotesArtifactViaServicePublish_AndReturnsDistinctSelectors()
     {
         OperationRequest? captured = null;
         var invoker = new FakeInvoker((request, _) =>
@@ -176,7 +178,8 @@ public sealed class PublishResultToolTests
                     Summary = "Published layer 'Parcels within 500m of flood zone' (id 7) to service 'flood_analysis'.",
                     Details = new Dictionary<string, string>(StringComparer.Ordinal)
                     {
-                        ["layerId"] = "7",
+                        ["storageLayerId"] = "741",
+                        ["serviceLayerIndex"] = "7",
                         ["serviceName"] = "flood_analysis",
                     }
                 }
@@ -200,7 +203,9 @@ public sealed class PublishResultToolTests
         content.GetProperty("requiresApproval").GetBoolean().Should().BeFalse();
         // The layer the agent chains straight into honua_query_features.
         content.GetProperty("serviceId").GetString().Should().Be("flood_analysis");
-        content.GetProperty("layerId").GetString().Should().Be("7");
+        content.GetProperty("storageLayerId").GetString().Should().Be("741");
+        content.GetProperty("serviceLayerIndex").GetString().Should().Be("7");
+        content.TryGetProperty("layerId", out _).Should().BeFalse();
         content.GetProperty("serviceUri").GetString().Should().Be("honua://published-services/flood_analysis");
         content.GetProperty("metadataRevision").GetInt64().Should().Be(42);
         content.GetProperty("sourceJobId").GetString().Should().Be(JobId);
@@ -237,7 +242,8 @@ public sealed class PublishResultToolTests
                 Summary = "ok",
                 Details = new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    ["layerId"] = "3",
+                    ["storageLayerId"] = "42",
+                    ["serviceLayerIndex"] = "3",
                     ["serviceName"] = "svc",
                 }
             }
@@ -249,7 +255,8 @@ public sealed class PublishResultToolTests
 
         var result = await tool.InvokeAsync(AuthenticatedContext(invoker), arguments, CancellationToken.None);
 
-        result.StructuredContent!.Value.GetProperty("layerId").GetString().Should().Be("3");
+        result.StructuredContent!.Value.GetProperty("serviceLayerIndex").GetString().Should().Be("3");
+        result.StructuredContent!.Value.GetProperty("storageLayerId").GetString().Should().Be("42");
     }
 
     [UnitTest]

@@ -27,6 +27,9 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
         await _fixture.InitializeAsync();
     }
 
+    private string StylePublicationId => _fixture.GetCurrentV2GraphSnapshot().Graph.Publications
+        .First(publication => publication.ResourceId == "res-layer-0" && publication.LayerIndex == WebAppFixture.TestLayerId).Metadata.Id;
+
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
@@ -169,10 +172,10 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("GET /api/styles/{layerId}.json")]
+    [Endpoint("GET /api/styles/{publicationId}.json")]
     public async Task GetStyle_ReturnsMapLibreStyle()
     {
-        var response = await _fixture.Client.GetAsync($"/api/styles/{WebAppFixture.TestLayerId}.json");
+        var response = await _fixture.Client.GetAsync($"/api/styles/{Uri.EscapeDataString(StylePublicationId)}.json");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -186,22 +189,14 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("GET /api/styles/{layerId}.json")]
-    public async Task GetStyle_DeprecatedLayerIdAlias_EmitsDeprecationHeaders()
+    [Endpoint("GET /api/styles/{publicationId}.json")]
+    public async Task GetStyle_PublicationId_DoesNotAdvertiseStorageAliasDeprecation()
     {
-        var response = await _fixture.Client.GetAsync($"/api/styles/{WebAppFixture.TestLayerId}.json");
+        using var response = await _fixture.Client.GetAsync($"/api/styles/{Uri.EscapeDataString(StylePublicationId)}.json");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        // The layerId-keyed alias is deprecated in favour of /ogc/styles/{styleId}
-        // (ADR-0048) but kept working; it must advertise advisory deprecation.
-        response.Headers.TryGetValues("Deprecation", out var deprecation).Should().BeTrue();
-        deprecation!.Should().Contain("true");
-        response.Headers.Contains("Sunset").Should().BeTrue();
-        response.Headers.TryGetValues("Link", out var link).Should().BeTrue();
-        link!.Should().Contain(value =>
-            value.Contains("/ogc/styles", StringComparison.Ordinal)
-            && value.Contains("successor-version", StringComparison.Ordinal));
+        response.Headers.Contains("Deprecation").Should().BeFalse();
+        response.Headers.Contains("Sunset").Should().BeFalse();
     }
 
     private Task<HttpResponseMessage> GetStyleFromTileJsonAsync(string styleUrl)

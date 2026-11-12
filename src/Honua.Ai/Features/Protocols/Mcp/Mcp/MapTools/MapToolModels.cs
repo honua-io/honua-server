@@ -42,7 +42,7 @@ internal sealed class McpListLayersOutput
     public IReadOnlyList<McpLayerSummary> Layers { get; set; } = [];
 }
 
-internal sealed class McpLayerSummary
+internal class McpLayerSummary
 {
     [JsonPropertyName("serviceId")]
     public string ServiceId { get; set; } = string.Empty;
@@ -50,11 +50,11 @@ internal sealed class McpLayerSummary
     [JsonPropertyName("serviceName")]
     public string ServiceName { get; set; } = string.Empty;
 
-    [JsonPropertyName("layerId")]
-    public int LayerId { get; set; }
+    [JsonPropertyName("serviceLayerIndex")]
+    public int ServiceLayerIndex { get; set; }
 
     [JsonPropertyName("studioSourceId")]
-    public string StudioSourceId => StudioCatalogSourceIdentity.Create(ServiceId, LayerId);
+    public string StudioSourceId => StudioCatalogSourceIdentity.Create(ServiceId, ServiceLayerIndex);
 
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
@@ -100,45 +100,15 @@ internal sealed class McpDescribeLayerArgument
     [JsonPropertyName("serviceId")]
     public string? ServiceId { get; set; }
 
-    [JsonPropertyName("layerId")]
-    public int? LayerId { get; set; }
+    [JsonPropertyName("serviceLayerIndex")]
+    public int? ServiceLayerIndex { get; set; }
 
     [JsonPropertyName("includeRowCount")]
     public bool? IncludeRowCount { get; set; }
 }
 
-internal sealed class McpDescribeLayerOutput
+internal sealed class McpDescribeLayerOutput : McpLayerSummary
 {
-    [JsonPropertyName("serviceId")]
-    public string ServiceId { get; set; } = string.Empty;
-
-    [JsonPropertyName("serviceName")]
-    public string ServiceName { get; set; } = string.Empty;
-
-    [JsonPropertyName("layerId")]
-    public int LayerId { get; set; }
-
-    [JsonPropertyName("studioSourceId")]
-    public string StudioSourceId => StudioCatalogSourceIdentity.Create(ServiceId, LayerId);
-
-    [JsonPropertyName("name")]
-    public string Name { get; set; } = string.Empty;
-
-    [JsonPropertyName("type")]
-    public string Type { get; set; } = string.Empty;
-
-    [JsonPropertyName("geometryType")]
-    public string GeometryType { get; set; } = string.Empty;
-
-    [JsonPropertyName("srid")]
-    public int? Srid { get; set; }
-
-    [JsonPropertyName("extent")]
-    public McpExtent? Extent { get; set; }
-
-    [JsonPropertyName("description")]
-    public string? Description { get; set; }
-
     [JsonPropertyName("rowCount")]
     public long? RowCount { get; set; }
 
@@ -173,8 +143,8 @@ internal sealed class McpQueryFeaturesArgument
     [JsonPropertyName("serviceId")]
     public string? ServiceId { get; set; }
 
-    [JsonPropertyName("layerId")]
-    public int? LayerId { get; set; }
+    [JsonPropertyName("serviceLayerIndex")]
+    public int? ServiceLayerIndex { get; set; }
 
     [JsonPropertyName("where")]
     public string? Where { get; set; }
@@ -215,8 +185,8 @@ internal sealed class McpQueryFeaturesOutput
     [JsonPropertyName("serviceId")]
     public string ServiceId { get; set; } = string.Empty;
 
-    [JsonPropertyName("layerId")]
-    public int LayerId { get; set; }
+    [JsonPropertyName("serviceLayerIndex")]
+    public int ServiceLayerIndex { get; set; }
 
     [JsonPropertyName("returnedCount")]
     public int ReturnedCount { get; set; }
@@ -294,8 +264,8 @@ internal sealed class McpRenderLayerRef
     [JsonPropertyName("serviceId")]
     public string? ServiceId { get; set; }
 
-    [JsonPropertyName("layerId")]
-    public int? LayerId { get; set; }
+    [JsonPropertyName("serviceLayerIndex")]
+    public int? ServiceLayerIndex { get; set; }
 }
 
 internal sealed class McpRenderMapOutput
@@ -330,8 +300,8 @@ internal sealed class McpRenderedLayer
     [JsonPropertyName("serviceId")]
     public string ServiceId { get; set; } = string.Empty;
 
-    [JsonPropertyName("layerId")]
-    public int LayerId { get; set; }
+    [JsonPropertyName("serviceLayerIndex")]
+    public int ServiceLayerIndex { get; set; }
 
     [JsonPropertyName("styleId")]
     public string? StyleId { get; set; }
@@ -380,8 +350,8 @@ internal sealed class McpGetStyleArgument
     [JsonPropertyName("serviceId")]
     public string? ServiceId { get; set; }
 
-    [JsonPropertyName("layerId")]
-    public int? LayerId { get; set; }
+    [JsonPropertyName("serviceLayerIndex")]
+    public int? ServiceLayerIndex { get; set; }
 
     [JsonPropertyName("encoding")]
     public string? Encoding { get; set; }
@@ -450,8 +420,8 @@ internal sealed class McpApplyStylePresetArgument
     [JsonPropertyName("serviceId")]
     public string? ServiceId { get; set; }
 
-    [JsonPropertyName("layerId")]
-    public int? LayerId { get; set; }
+    [JsonPropertyName("serviceLayerIndex")]
+    public int? ServiceLayerIndex { get; set; }
 
     [JsonPropertyName("styleId")]
     public string? StyleId { get; set; }
@@ -506,8 +476,8 @@ internal sealed class McpApplyStylePresetOutput
     [JsonPropertyName("serviceId")]
     public string ServiceId { get; set; } = string.Empty;
 
-    [JsonPropertyName("layerId")]
-    public int LayerId { get; set; }
+    [JsonPropertyName("serviceLayerIndex")]
+    public int ServiceLayerIndex { get; set; }
 
     [JsonPropertyName("styleId")]
     public string StyleId { get; set; } = string.Empty;

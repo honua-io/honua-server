@@ -60,7 +60,7 @@ public sealed partial class LayerPublishingIntegrationTests
     public async Task PublishNamespace_SameScopeAppendsWithoutRetaggingExistingLayer()
     {
         var first = await PublishLayerAsync(NamespaceRequest("maps"));
-        _layerId = first.LayerId;
+        _layerId = first.StorageLayerId;
         await CreatePostGisTableAsync(_fixture.Postgres.ConnectionString, _nonCanonicalIdTableName);
         var request = new PublishLayerRequest
         {
@@ -73,13 +73,13 @@ public sealed partial class LayerPublishingIntegrationTests
             GeometryColumn = "geom"
         };
         var second = await PublishLayerAsync(request);
-        second.LayerId.Should().NotBe(first.LayerId);
+        second.StorageLayerId.Should().NotBe(first.StorageLayerId);
         var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
         var service = graph.Services.Single(candidate => candidate.Metadata.Name == _serviceName);
         var publications = graph.Publications.Where(candidate => candidate.ServiceId == service.Metadata.Id).ToArray();
         publications.Should().HaveCount(4);
         publications.Should().OnlyContain(candidate => candidate.Metadata.Namespace == "maps" && candidate.Metadata.Tenant == "public");
-        publications.Select(candidate => candidate.LayerIndex).Distinct().Should().BeEquivalentTo([first.LayerId, second.LayerId]);
+        publications.Select(candidate => candidate.LayerIndex).Distinct().Should().BeEquivalentTo([first.StorageLayerId, second.StorageLayerId]);
     }
 
     [IntegrationTest]
@@ -88,10 +88,10 @@ public sealed partial class LayerPublishingIntegrationTests
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     [Endpoint("GET /api/v1/admin/connections/{id}/layers")]
-    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{layerId}/enabled")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{storageLayerId}/enabled")]
     [Endpoint("PUT /api/v1/admin/connections/{id}/layers/enabled")]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers/extents/refresh")]
-    [Endpoint("POST /api/v1/admin/connections/{id}/layers/{layerId}/features/refresh")]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers/{storageLayerId}/features/refresh")]
     public async Task PublishNamespace_ScopesEntireGraphIgnoresWireTenantAndServesOwner()
     {
         var connectionMetadata = new MetadataV2ObjectMetadata
@@ -121,7 +121,7 @@ public sealed partial class LayerPublishingIntegrationTests
             JsonContent.Create(request));
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Created, body);
-        _layerId = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(body, _jsonOptions)!.Data!.LayerId;
+        _layerId = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(body, _jsonOptions)!.Data!.StorageLayerId;
 
         var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
         graph.Connections.Single(candidate => candidate.Metadata.Id == connectionMetadata.Id).Metadata
@@ -184,7 +184,7 @@ public sealed partial class LayerPublishingIntegrationTests
         using var response = await _client.PostAsync($"/api/v1/admin/connections/{_connectionId}/layers", JsonContent.Create(request));
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Created, body);
-        _layerId = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(body, _jsonOptions)!.Data!.LayerId;
+        _layerId = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(body, _jsonOptions)!.Data!.StorageLayerId;
         var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
         var service = graph.Services.Single(candidate => candidate.Metadata.Name == _serviceName);
         service.Metadata.Namespace.Should().BeNull();

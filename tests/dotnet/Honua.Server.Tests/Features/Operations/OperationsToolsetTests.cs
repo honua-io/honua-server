@@ -917,7 +917,7 @@ public sealed class OperationsToolsetTests
             ConnectionId = "connection-1",
             Parameters = new Dictionary<string, string?>
             {
-                ["layerId"] = "7",
+                ["storageLayerId"] = "7",
                 ["enabled"] = "true"
             }
         };
@@ -932,7 +932,8 @@ public sealed class OperationsToolsetTests
         replay.TenantId.Should().Be("requester-tenant");
         replay.SchemaName.Should().Be("tenant_schema");
         replay.Request.ConnectionId.Should().Be("connection-1");
-        replay.Request.Parameters.Should().Contain("layerId", "7").And.Contain("enabled", "true");
+        replay.Request.Parameters.Should().Contain("storageLayerId", "7").And.Contain("enabled", "true")
+            .And.NotContainKey("layerId");
     }
 
     [UnitTest]
@@ -980,7 +981,7 @@ public sealed class OperationsToolsetTests
             ConnectionId = "connection-1",
             Parameters = new Dictionary<string, string?>
             {
-                ["layerId"] = "7",
+                ["storageLayerId"] = "7",
                 ["enabled"] = "true"
             }
         }, new OperationPolicyContext
@@ -1681,7 +1682,7 @@ public sealed class OperationsToolsetTests
             .PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishedLayerSummary
             {
-                LayerId = 7,
+                StorageLayerId = 7,
                 LayerName = "Parcels",
                 Schema = "public",
                 Table = "parcels",
@@ -1702,9 +1703,9 @@ public sealed class OperationsToolsetTests
         handle.Status.Should().Be(OperationHandleStatus.Completed);
         handle.MetadataRevision.Should().Be(expectedRevision);
         handle.Result.Should().NotBeNull();
-        handle.Result!.Details["layerId"].Should().Be("7");
+        handle.Result!.Details["storageLayerId"].Should().Be("7");
         handle.Result.Details["metadataRevision"].Should().Be("42");
-        await graphProvider.DidNotReceive().GetCurrentAsync(Arg.Any<CancellationToken>());
+        await graphProvider.Received(1).GetCurrentAsync(Arg.Any<CancellationToken>());
 
         // Policy was Allow → publish was actually invoked with the mapped request.
         await publishing.Received(1).PublishLayerAsync(
@@ -1722,7 +1723,7 @@ public sealed class OperationsToolsetTests
         publishing.PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishedLayerSummary
             {
-                LayerId = 7,
+                StorageLayerId = 7,
                 LayerName = "Parcels",
                 Schema = "public",
                 Table = "parcels",
