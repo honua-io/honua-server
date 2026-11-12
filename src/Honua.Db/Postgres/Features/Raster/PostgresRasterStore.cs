@@ -3,6 +3,7 @@
 
 using System.Buffers.Binary;
 using System.Collections.Frozen;
+using System.Data;
 using System.Data.Common;
 using System.Globalization;
 using System.Security.Cryptography;
@@ -722,7 +723,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         var xmaxOrd = reader.GetOrdinal("xmax");
         var ymaxOrd = reader.GetOrdinal("ymax");
 
-        var data = reader.IsDBNull(dataOrd) ? Array.Empty<byte>() : (byte[])reader[dataOrd];
+        var data = await ReadExportDataAsync(reader, dataOrd, cancellationToken).ConfigureAwait(false);
         if (query.OutputFormat == RasterFormat.Raw)
         {
             return PostgresRasterRawDecoder.Decode(data);
@@ -940,7 +941,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         var xmaxOrd = reader.GetOrdinal("xmax");
         var ymaxOrd = reader.GetOrdinal("ymax");
 
-        var data = reader.IsDBNull(dataOrd) ? Array.Empty<byte>() : (byte[])reader[dataOrd];
+        var data = await ReadExportDataAsync(reader, dataOrd, cancellationToken).ConfigureAwait(false);
         if (query.OutputFormat == RasterFormat.Raw)
         {
             return PostgresRasterRawDecoder.Decode(data);
@@ -2255,12 +2256,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         var sridOrd = reader.GetOrdinal("srid");
         var bandCountOrd = reader.GetOrdinal("band_count");
         var pixelTypeOrd = reader.GetOrdinal("pixel_type");
-        var xminOrd = reader.GetOrdinal("xmin");
-        var yminOrd = reader.GetOrdinal("ymin");
-        var xmaxOrd = reader.GetOrdinal("xmax");
-        var ymaxOrd = reader.GetOrdinal("ymax");
 
-        var data = reader.IsDBNull(dataOrd) ? Array.Empty<byte>() : (byte[])reader[dataOrd];
+        var data = await ReadExportDataAsync(reader, dataOrd, cancellationToken).ConfigureAwait(false);
         if (query.OutputFormat == RasterFormat.Raw)
         {
             return PostgresRasterRawDecoder.Decode(data);
@@ -2281,16 +2278,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             Srid = srid,
             BandCount = bandCount,
             PixelType = pixelType,
-            Extent = reader.IsDBNull(xminOrd) || reader.IsDBNull(yminOrd) || reader.IsDBNull(xmaxOrd) || reader.IsDBNull(ymaxOrd)
-                ? null
-                : new RasterExtent
-                {
-                    XMin = reader.GetDouble(xminOrd),
-                    YMin = reader.GetDouble(yminOrd),
-                    XMax = reader.GetDouble(xmaxOrd),
-                    YMax = reader.GetDouble(ymaxOrd),
-                    Srid = srid
-                }
+            Extent = ReadOptionalExtent(reader, srid)
         };
     }
 
@@ -5117,13 +5105,36 @@ internal sealed class PostgresRasterStore : IRasterStore
         // (honua-server#4792); aligned inputs pass through unchanged.
         => RasterMosaicSql.CreateMosaicAggregateExpression(mergeStrategy, ordering, attributeSort, alignToSourceCte: "source");
 
+    private static async Task<byte[]> ReadExportDataAsync(DbDataReader reader, int dataOrdinal, CancellationToken cancellationToken)
+        => await reader.IsDBNullAsync(dataOrdinal, cancellationToken).ConfigureAwait(false)
+            ? Array.Empty<byte>()
+            : await reader.GetFieldValueAsync<byte[]>(dataOrdinal, cancellationToken).ConfigureAwait(false);
+
+    private static RasterExtent? ReadOptionalExtent(DbDataReader reader, int? srid)
+    {
+        var xmin = ReadOptionalDouble(reader, reader.GetOrdinal("xmin"));
+        var ymin = ReadOptionalDouble(reader, reader.GetOrdinal("ymin"));
+        var xmax = ReadOptionalDouble(reader, reader.GetOrdinal("xmax"));
+        var ymax = ReadOptionalDouble(reader, reader.GetOrdinal("ymax"));
+        return xmin is null || ymin is null || xmax is null || ymax is null
+            ? null
+            : new RasterExtent { XMin = xmin.Value, YMin = ymin.Value, XMax = xmax.Value, YMax = ymax.Value, Srid = srid };
+    }
+
+    private static double? ReadOptionalDouble(DbDataReader reader, int ordinal)
+        => reader.IsDBNull(ordinal) ? null : reader.GetDouble(ordinal);
+
     private static async Task<DbDataReader> ExecuteRasterExportReaderAsync(
         DbCommand command,
         CancellationToken cancellationToken)
     {
         try
         {
-            return await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            // Sequential access streams the encoded raster column instead of buffering the whole row;
+            // readers consume columns in SELECT order.
+            return await command.ExecuteReaderAsync(
+                CommandBehavior.SequentialAccess | CommandBehavior.SingleRow,
+                cancellationToken).ConfigureAwait(false);
         }
         catch (PostgresException ex) when (
             ex.SqlState == "XX000" &&
