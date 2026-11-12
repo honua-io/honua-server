@@ -88,6 +88,7 @@ public sealed class GatedBootExitTests
         var dumpPath = Path.Join(dumpDirectory, "gated-boot.dmp");
         var dumpsBefore = SnapshotCrashDumps(serverDirectory, dumpDirectory);
 
+        using var keyRing = TemporaryKeyRingCertificate.Create();
         var start = new ProcessStartInfo
         {
             FileName = "bash",
@@ -119,6 +120,7 @@ public sealed class GatedBootExitTests
         start.Environment["Security__ConnectionEncryption__MasterKey"] =
             "gated-boot-refusal-connection-encryption-key";
         start.Environment["Security__ConnectionEncryption__Salt"] = "Z2F0ZWQtYm9vdC1yZWZ1c2FsLXNhbHQ=";
+        keyRing.ApplyTo(start.Environment);
         start.Environment["DOTNET_DbgEnableMiniDump"] = "1";
         start.Environment["DOTNET_DbgMiniDumpName"] = dumpPath;
         start.Environment["COMPlus_DbgEnableMiniDump"] = "1";

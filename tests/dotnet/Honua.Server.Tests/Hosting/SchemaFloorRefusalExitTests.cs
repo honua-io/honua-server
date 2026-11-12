@@ -62,6 +62,7 @@ public sealed class SchemaFloorRefusalExitTests
         }.ConnectionString;
         await SeedUnmatchedRasterBaselineAsync(connectionString);
 
+        using var keyRing = TemporaryKeyRingCertificate.Create();
         var start = new ProcessStartInfo
         {
             FileName = "dotnet",
@@ -89,6 +90,7 @@ public sealed class SchemaFloorRefusalExitTests
         start.Environment["Security__ConnectionEncryption__MasterKey"] =
             "schema-floor-refusal-connection-encryption-key";
         start.Environment["Security__ConnectionEncryption__Salt"] = "c2NoZW1hLWZsb29yLXJlZnVzYWwtc2FsdA==";
+        keyRing.ApplyTo(start.Environment);
 
         using var process = new Process { StartInfo = start };
         process.Start().Should().BeTrue();

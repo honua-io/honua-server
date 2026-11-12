@@ -41,6 +41,7 @@ public sealed class PreflightRefusalExitTests
         var serverAssembly = Path.Join(serverDirectory, "Honua.Server.dll");
         File.Exists(serverAssembly).Should().BeTrue("the cached test payload contains the server runtime ({0})", serverDirectory);
 
+        using var keyRing = TemporaryKeyRingCertificate.Create();
         var start = new ProcessStartInfo
         {
             FileName = "dotnet",
@@ -67,6 +68,7 @@ public sealed class PreflightRefusalExitTests
         start.Environment["Security__ConnectionEncryption__MasterKey"] =
             "preflight-refusal-connection-encryption-key";
         start.Environment["Security__ConnectionEncryption__Salt"] = "cHJlZmxpZ2h0LXJlZnVzYWwtc2FsdA==";
+        keyRing.ApplyTo(start.Environment);
 
         using var process = new Process { StartInfo = start };
         process.Start().Should().BeTrue();
