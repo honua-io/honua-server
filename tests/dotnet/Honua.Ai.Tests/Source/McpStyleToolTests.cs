@@ -118,7 +118,7 @@ public sealed class McpStyleToolTests
 
         var response = await DispatchAsync(
             GetStyleTool.ToolName,
-            $$"""{ "serviceId": "{{ServiceId}}", "layerId": {{LayerIndex}} }""",
+            $$"""{ "serviceId": "{{ServiceId}}", "serviceLayerIndex": {{LayerIndex}} }""",
             catalog: catalog);
 
         response!.Error.Should().BeNull();
@@ -164,7 +164,7 @@ public sealed class McpStyleToolTests
 
         var response = await DispatchAsync(
             ApplyStylePresetTool.ToolName,
-            $$"""{ "serviceId": "{{ServiceId}}", "layerId": {{LayerIndex}}, "styleId": "{{PresetStyleId}}" }""",
+            $$"""{ "serviceId": "{{ServiceId}}", "serviceLayerIndex": {{LayerIndex}}, "styleId": "{{PresetStyleId}}" }""",
             catalog: catalog,
             graphSync: graphSync);
 
@@ -172,7 +172,7 @@ public sealed class McpStyleToolTests
         var structured = response.Result!.Value.GetProperty("structuredContent");
         structured.GetProperty("styleId").GetString().Should().Be(PresetStyleId);
         structured.GetProperty("applied").GetBoolean().Should().BeTrue();
-        structured.GetProperty("layerId").GetInt32().Should().Be(LayerIndex);
+        structured.GetProperty("serviceLayerIndex").GetInt32().Should().Be(LayerIndex);
 
         // The preset was bound as the layer's primary style and the graph reconciled.
         await catalog.Received(1).AssociateLayerAsync(StorageLayerId, PresetStyleId, 0, Arg.Any<CancellationToken>());
@@ -193,7 +193,7 @@ public sealed class McpStyleToolTests
 
         var response = await DispatchAsync(
             ApplyStylePresetTool.ToolName,
-            $$"""{ "serviceId": "{{ServiceId}}", "layerId": {{LayerIndex}}, "styleId": "style_missing" }""",
+            $$"""{ "serviceId": "{{ServiceId}}", "serviceLayerIndex": {{LayerIndex}}, "styleId": "style_missing" }""",
             catalog: catalog,
             graphSync: graphSync);
 
@@ -232,7 +232,7 @@ public sealed class McpStyleToolTests
 
         var response = await DispatchAsync(
             ApplyStylePresetTool.ToolName,
-            $$"""{ "serviceId": "{{ServiceId}}", "layerId": {{LayerIndex}}, "styleId": "{{PresetStyleId}}" }""",
+            $$"""{ "serviceId": "{{ServiceId}}", "serviceLayerIndex": {{LayerIndex}}, "styleId": "{{PresetStyleId}}" }""",
             catalog: catalog,
             graphSync: graphSync);
 
@@ -263,7 +263,7 @@ public sealed class McpStyleToolTests
 
         var response = await DispatchAsync(
             ApplyStylePresetTool.ToolName,
-            $$"""{ "serviceId": "{{ServiceId}}", "layerId": {{LayerIndex}}, "styleId": "{{PresetStyleId}}" }""",
+            $$"""{ "serviceId": "{{ServiceId}}", "serviceLayerIndex": {{LayerIndex}}, "styleId": "{{PresetStyleId}}" }""",
             catalog: catalog,
             graphSync: graphSync,
             adminAuthorized: adminAuthorized,
@@ -298,7 +298,7 @@ public sealed class McpStyleToolTests
         var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
         var response = await DispatchAsync(
             ApplyStylePresetTool.ToolName,
-            $$"""{ "serviceId": "{{ServiceId}}", "layerId": {{LayerIndex}}, "styleId": "{{PresetStyleId}}" }""",
+            $$"""{ "serviceId": "{{ServiceId}}", "serviceLayerIndex": {{LayerIndex}}, "styleId": "{{PresetStyleId}}" }""",
             catalog: catalog, graphSync: graphSync, policyDecision: policyDecision);
 
         response!.Error.Should().BeNull();
@@ -334,7 +334,7 @@ public sealed class McpStyleToolTests
                 replay.Request.DryRun.Should().Be(dryRun);
                 replay.Request.OperationId.Should().Be(StylePresetOperation.OperationId);
                 replay.Request.Parameters["serviceId"].Should().Be(ServiceId);
-                replay.Request.Parameters["layerId"].Should().Be("0");
+                replay.Request.Parameters["serviceLayerIndex"].Should().Be("0");
                 replay.Request.Parameters["styleId"].Should().Be(PresetStyleId);
                 replay.Request.Parameters["expectedPublicationId"].Should().Be("pub-parcels");
                 replay.Request.Parameters["expectedResourceId"].Should().Be(ResourceId);
@@ -350,7 +350,7 @@ public sealed class McpStyleToolTests
             });
 
         var response = await DispatchAsync(ApplyStylePresetTool.ToolName,
-            $$"""{ "serviceId": "{{ServiceId}}", "layerId": {{LayerIndex}}, "styleId": "{{PresetStyleId}}", "dryRun": {{(dryRun ? "true" : "false")}} }""",
+            $$"""{ "serviceId": "{{ServiceId}}", "serviceLayerIndex": {{LayerIndex}}, "styleId": "{{PresetStyleId}}", "dryRun": {{(dryRun ? "true" : "false")}} }""",
             catalog: catalog, graphSync: graphSync,
             policyDecision: PolicyDecisionKind.RequireApproval, approvalBridge: bridge);
 
@@ -376,7 +376,7 @@ public sealed class McpStyleToolTests
         catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
         var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
         var response = await DispatchAsync(ApplyStylePresetTool.ToolName,
-            $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"styleId":"{{PresetStyleId}}","dryRun":true}""",
+            $$"""{"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}},"styleId":"{{PresetStyleId}}","dryRun":true}""",
             catalog: catalog, graphSync: graphSync, policyDecision: PolicyDecisionKind.DryRunFirst);
 
         response!.Error.Should().BeNull();
@@ -405,7 +405,7 @@ public sealed class McpStyleToolTests
         catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
         var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
         var response = await DispatchAsync(ApplyStylePresetTool.ToolName,
-            $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
+            $$"""{"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
             catalog: catalog, graphSync: graphSync,
             includeApprovalRuntime: includeApprovalRuntime, includeOperationRuntime: includeOperationRuntime,
             includeGraphSyncRuntime: includeGraphSyncRuntime);
@@ -436,7 +436,7 @@ public sealed class McpStyleToolTests
             .Returns(Task.FromException(cancelled ? new OperationCanceledException() : new InvalidOperationException("projection failed")));
 
         var response = await DispatchAsync(ApplyStylePresetTool.ToolName,
-            $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
+            $$"""{"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
             catalog: catalog, graphSync: graphSync);
         response!.Error.Should().BeNull();
         var result = response.Result!.Value;
@@ -457,7 +457,7 @@ public sealed class McpStyleToolTests
         catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
         var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
         var response = await DispatchAsync(ApplyStylePresetTool.ToolName,
-            $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
+            $$"""{"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
             catalog: catalog, graphSync: graphSync);
         response!.Result!.Value.GetProperty("isError").GetBoolean().Should().BeTrue();
         await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
@@ -485,7 +485,7 @@ public sealed class McpStyleToolTests
                 AuditId = "tier-style-audit",
             });
         var response = await DispatchAsync(ApplyStylePresetTool.ToolName,
-            $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
+            $$"""{"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
             catalog: catalog, graphSync: graphSync, license: license, approvalBridge: bridge,
             policyOptions: new OperationPolicyOptions
             {
@@ -512,7 +512,7 @@ public sealed class McpStyleToolTests
         catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
         var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
         var response = await DispatchAsync(ApplyStylePresetTool.ToolName,
-            $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
+            $$"""{"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
             catalog: catalog, graphSync: graphSync, instanceStore: new UnavailableOperationInstanceStore());
         var result = response!.Result!.Value;
         result.GetProperty("isError").GetBoolean().Should().BeTrue();
@@ -541,7 +541,7 @@ public sealed class McpStyleToolTests
             new UnavailableOperationInstanceStore());
 
         var response = await DispatchAsync(ApplyStylePresetTool.ToolName,
-            $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
+            $$"""{"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
             catalog: catalog, graphSync: graphSync, instanceStore: instanceStore);
 
         response!.Error.Should().BeNull();
@@ -600,7 +600,7 @@ public sealed class McpStyleToolTests
                 };
             });
         var response = await DispatchAsync(ApplyStylePresetTool.ToolName,
-            $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
+            $$"""{"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
             catalog: catalog, graphSync: graphSync, graphProvider: graph,
             policyDecision: PolicyDecisionKind.RequireApproval, approvalBridge: bridge);
         response!.Result!.Value.GetProperty("structuredContent").GetProperty("approvalRequired").GetBoolean().Should().BeTrue();
@@ -704,7 +704,7 @@ public sealed class McpStyleToolTests
             Parameters = new Dictionary<string, string?>
             {
                 ["serviceId"] = ServiceId,
-                ["layerId"] = LayerIndex.ToString(CultureInfo.InvariantCulture),
+                ["serviceLayerIndex"] = LayerIndex.ToString(CultureInfo.InvariantCulture),
                 ["styleId"] = PresetStyleId,
             },
         }, context);
@@ -719,7 +719,8 @@ public sealed class McpStyleToolTests
         }
         var activity = recorded.Should().ContainSingle().Subject;
         activity.GetTagItem("service.id").Should().Be(ServiceId);
-        activity.GetTagItem("layer.id").Should().Be(LayerIndex.ToString(CultureInfo.InvariantCulture));
+        activity.GetTagItem("layer.service_index").Should().Be(LayerIndex.ToString(CultureInfo.InvariantCulture));
+        activity.GetTagItem("layer.id").Should().BeNull();
         activity.GetTagItem("style.id").Should().Be(PresetStyleId);
         activity.GetTagItem("storage.layer.id").Should().Be(StorageLayerId);
         activity.GetTagItem("operation.result").Should().Be(outcome);
@@ -759,7 +760,7 @@ public sealed class McpStyleToolTests
 
         var response = await DispatchAsync(
             RenderMapTool.ToolName,
-            $$"""{ "layers":[{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}], "bbox":[-10,-10,10,10] }""",
+            $$"""{ "layers":[{"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}}}], "bbox":[-10,-10,10,10] }""",
             catalog: catalog,
             renderer: renderer);
 
@@ -784,7 +785,7 @@ public sealed class McpStyleToolTests
 
         var response = await DispatchAsync(
             ApplyStylePresetTool.ToolName,
-            $$"""{ "serviceId": "{{ServiceId}}", "layerId": {{LayerIndex}}, "styleId": "{{PresetStyleId}}" }""",
+            $$"""{ "serviceId": "{{ServiceId}}", "serviceLayerIndex": {{LayerIndex}}, "styleId": "{{PresetStyleId}}" }""",
             catalog: catalog);
 
         response!.Error.Should().BeNull();
@@ -819,7 +820,7 @@ public sealed class McpStyleToolTests
 
         var response = await DispatchAsync(
             RenderMapTool.ToolName,
-            $$"""{ "layers":[{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}], "bbox":[-10,-10,10,10] }""",
+            $$"""{ "layers":[{"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}}}], "bbox":[-10,-10,10,10] }""",
             catalog: catalog,
             renderer: renderer);
 
@@ -860,7 +861,7 @@ public sealed class McpStyleToolTests
 
         var response = await DispatchAsync(
             RenderMapTool.ToolName,
-            $$"""{ "layers":[{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}], "bbox":[-10,-10,10,10] }""",
+            $$"""{ "layers":[{"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}}}], "bbox":[-10,-10,10,10] }""",
             catalog: catalog,
             renderer: renderer);
 
@@ -894,7 +895,7 @@ public sealed class McpStyleToolTests
 
         var response = await DispatchAsync(
             RenderMapTool.ToolName,
-            $$"""{ "layers":[{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}], "bbox":[-10,-10,10,10] }""",
+            $$"""{ "layers":[{"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}}}], "bbox":[-10,-10,10,10] }""",
             catalog: catalog,
             renderer: renderer);
 
@@ -949,7 +950,7 @@ public sealed class McpStyleToolTests
 
         var response = await DispatchAsync(
             RenderMapTool.ToolName,
-            $$"""{ "layers":[{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}], "bbox":[-10,-10,10,10] }""",
+            $$"""{ "layers":[{"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}}}], "bbox":[-10,-10,10,10] }""",
             catalog: catalog,
             renderer: renderer);
 
@@ -984,7 +985,7 @@ public sealed class McpStyleToolTests
 
         var response = await DispatchAsync(
             RenderMapTool.ToolName,
-            $$"""{ "layers":[{"serviceId":"{{ServiceId}}","layerId":1},{"serviceId":"{{ServiceId}}","layerId":0}], "bbox":[-10,-10,10,10] }""",
+            $$"""{ "layers":[{"serviceId":"{{ServiceId}}","serviceLayerIndex":1},{"serviceId":"{{ServiceId}}","serviceLayerIndex":0}], "bbox":[-10,-10,10,10] }""",
             renderer: renderer,
             graphProvider: graph);
 
@@ -1018,7 +1019,7 @@ public sealed class McpStyleToolTests
 
         var response = await DispatchAsync(
             RenderMapTool.ToolName,
-            $$"""{ "layers":[{"serviceId":"{{ServiceId}}","layerId":0},{"serviceId":"{{ServiceId}}","layerId":1}], "bbox":[-10,-10,10,10] }""",
+            $$"""{ "layers":[{"serviceId":"{{ServiceId}}","serviceLayerIndex":0},{"serviceId":"{{ServiceId}}","serviceLayerIndex":1}], "bbox":[-10,-10,10,10] }""",
             renderer: renderer,
             graphProvider: graph);
 

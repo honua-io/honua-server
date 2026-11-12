@@ -2598,6 +2598,9 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         // so this throwing test stub must satisfy them explicitly. Only the
         // ValidateServiceV2Async path is exercised by these tests; the rest forward
         // the same simulated failure for completeness.
+        public Task<ResourceValidationResult<MetadataV2Resource>> ValidateStorageLayerV2Async(
+            int storageLayerId, CancellationToken cancellationToken = default) => throw exception;
+
         public Task<ResourceValidationResult<MetadataV2Resource>> ValidateLayerV2Async(
             int layerId,
             CancellationToken cancellationToken = default)
