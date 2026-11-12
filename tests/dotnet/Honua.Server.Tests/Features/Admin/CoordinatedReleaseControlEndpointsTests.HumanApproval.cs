@@ -147,15 +147,10 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests
 
         var responses = await Task.WhenAll(human.SubmitGateReviewAsync(operation.OperationId, route, first),
             human.SubmitGateReviewAsync(operation.OperationId, route, second));
-        try
-        {
-            responses.Count(response => response.StatusCode == HttpStatusCode.OK).Should().Be(1);
-            responses.Count(response => response.IsSuccessStatusCode).Should().Be(1);
-        }
-        finally
-        {
-            foreach (var response in responses) response.Dispose();
-        }
+        using var firstResponse = responses[0];
+        using var secondResponse = responses[1];
+        responses.Count(response => response.StatusCode == HttpStatusCode.OK).Should().Be(1);
+        responses.Count(response => response.IsSuccessStatusCode).Should().Be(1);
         var stored = (await _workflowStore.GetAsync(operation.OperationId))!;
         stored.Version.Should().Be(operation.Version + 1);
         CoordinatedReleaseApprovalBinding.HasExecutionAuthority(stored, gate).Should().BeTrue();

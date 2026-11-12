@@ -93,8 +93,9 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        try { await _fixture.DisposeAsync(); }
-        finally { await _redis.DisposeAsync(); _identityProvider.Dispose(); }
+        using var identityProvider = _identityProvider;
+        await using var redis = _redis;
+        await _fixture.DisposeAsync();
     }
 
     [IntegrationTest]

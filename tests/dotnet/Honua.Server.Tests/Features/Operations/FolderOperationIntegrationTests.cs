@@ -75,8 +75,8 @@ public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) 
         await DeletePublishConnectionAsync();
         _proposer.Dispose();
         _approver.Dispose();
-        try { await _fixture.DisposeAsync(); }
-        finally { _identity.Dispose(); }
+        using var identity = _identity;
+        await _fixture.DisposeAsync();
     }
 
     [IntegrationTest]
