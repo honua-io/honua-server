@@ -244,6 +244,71 @@ public sealed class ServingImageBoundaryTests
     }
 
     [ArchitectureTest]
+    public void TagReleases_ShouldScanEachCandidateDigestBeforeAnyArchitectureTag()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        const string Deploy = ".github/workflows/deploy.yml";
+        const string Platform = ".github/workflows/deploy-platform-images.yml";
+        var expectations = new[]
+        {
+            (Path: Deploy, Candidate: "- name: Build native-AOT candidate by digest",
+                Gate: "- name: Gate native-AOT tag release on fixable HIGH/CRITICAL vulnerabilities",
+                Publication: "- name: Publish verified native-AOT architecture tags",
+                Digest: "steps.aot_candidate.outputs.digest"),
+            (Path: Deploy, Candidate: "- name: Build JIT candidate by digest",
+                Gate: "- name: Gate JIT tag release on fixable HIGH/CRITICAL vulnerabilities",
+                Publication: "- name: Publish JIT architecture tags",
+                Digest: "steps.build.outputs.digest"),
+            (Path: Platform, Candidate: "- name: Build native-AOT platform candidate by digest",
+                Gate: "- name: Gate native-AOT tag release on fixable HIGH/CRITICAL vulnerabilities",
+                Publication: "- name: Publish verified native-AOT platform architecture tags",
+                Digest: "steps.aot_candidate.outputs.digest"),
+            (Path: Platform, Candidate: "- name: Build JIT platform candidate by digest",
+                Gate: "- name: Gate JIT platform tag release on fixable HIGH/CRITICAL vulnerabilities",
+                Publication: "- name: Publish JIT platform architecture tags",
+                Digest: "steps.build.outputs.digest")
+        };
+
+        foreach (var expectation in expectations)
+        {
+            var workflow = File.ReadAllText(Path.Join(repositoryRoot, expectation.Path)).ReplaceLineEndings("\n");
+            var candidateIndex = workflow.IndexOf(expectation.Candidate, StringComparison.Ordinal);
+            candidateIndex.Should().BeGreaterThan(-1, expectation.Path);
+            var gateIndex = workflow.IndexOf(expectation.Gate, candidateIndex, StringComparison.Ordinal);
+            gateIndex.Should().BeGreaterThan(candidateIndex, $"{expectation.Path} must gate {expectation.Candidate}");
+            var publicationIndex = workflow.IndexOf(expectation.Publication, gateIndex, StringComparison.Ordinal);
+            publicationIndex.Should().BeGreaterThan(gateIndex,
+                $"{expectation.Path} must scan the candidate before {expectation.Publication}");
+
+            var candidate = workflow[candidateIndex..gateIndex];
+            candidate.Should().Contain("push-by-digest=true", expectation.Path);
+            candidate.Should().NotContain("tags:", $"{expectation.Path} must not tag before the gate");
+            var gate = workflow[gateIndex..publicationIndex];
+            gate.Should().Contain("startsWith(github.ref, 'refs/tags/v')", expectation.Path);
+            gate.Should().Contain(expectation.Digest, $"{expectation.Path} must scan the digest it promotes");
+            gate.Should().Contain("scripts/ci/trivy-release-gate.sh \"$CANDIDATE\"", expectation.Path);
+            gate.Should().NotContain("continue-on-error", expectation.Path);
+            if (expectation.Path == Platform)
+            {
+                gate.Should().Contain("github.event_name == 'push'", "scan_only dispatches stay advisory");
+            }
+        }
+
+        foreach (var path in new[] { Deploy, Platform })
+        {
+            var workflow = File.ReadAllText(Path.Join(repositoryRoot, path));
+            workflow.Should().NotContain("push: true", $"{path} must publish tags only by promoting a scanned digest");
+            workflow.Should().Contain("TRIVY_IMAGE: aquasec/trivy:0.68.1@sha256:", $"{path} must pin Trivy by digest");
+        }
+
+        var gateScript = File.ReadAllText(Path.Join(repositoryRoot, "scripts/ci/trivy-release-gate.sh"));
+        gateScript.Should().Contain("--exit-code 1");
+        gateScript.Should().Contain("--ignorefile /work/.trivyignore-release");
+        gateScript.Should().Contain("--severity HIGH,CRITICAL");
+        gateScript.Should().Contain("--ignore-unfixed", "the gate blocks only findings with an upstream fix, by design");
+    }
+
+    [ArchitectureTest]
     public void ReleaseBundle_ShouldReserveLatestTagsForGaPromotion()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();

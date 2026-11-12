@@ -29,7 +29,7 @@ env:
   # Empty when a dispatch opts out of ACR: every ACR step and target is keyed on this value.
   ACR_LOGIN_SERVER: ${{ !(github.event_name == 'workflow_dispatch' && inputs.skip_acr == true) && vars.ACR_LOGIN_SERVER || '' }}
   ACR_REPOSITORY: ${{ vars.ACR_REPOSITORY }}
-  TRIVY_IMAGE: aquasec/trivy:0.68.1
+  TRIVY_IMAGE: aquasec/trivy:0.68.1@sha256:a93fd67162843c0f749002af9245fe9a2e5edc41445bd71d3949c803e95ef05b
   PUBLISH_IMAGES: ${{ github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.scan_only != true) }}
 
 concurrency:
@@ -373,6 +373,16 @@ jobs:
             echo "serving_candidate=$serving_candidate" >> "$GITHUB_OUTPUT"
           fi
 
+      # On v* tag pushes no public tag is assigned until the exact candidate digest passes the blocking
+      # Trivy gate (fixable HIGH/CRITICAL only, by design; see scripts/ci/trivy-release-gate.sh).
+      # scan_only dispatches never publish, so their scans stay advisory.
+      - name: Gate native-AOT tag release on fixable HIGH/CRITICAL vulnerabilities
+        if: ${{ env.PUBLISH_IMAGES == 'true' && contains(matrix.image_key, 'aot') && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          CANDIDATE: ${{ steps.targets.outputs.scan_image }}@${{ steps.aot_candidate.outputs.digest }}
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
+        run: scripts/ci/trivy-release-gate.sh "$CANDIDATE"
+
       - name: Publish verified native-AOT platform architecture tags
         if: ${{ env.PUBLISH_IMAGES == 'true' && contains(matrix.image_key, 'aot') }}
         shell: bash
@@ -403,7 +413,7 @@ jobs:
             --staging-tag "boundary-candidate-${{ matrix.image_key }}-${{ matrix.arch }}-${{ github.sha }}" \
             --authfile "$HOME/.docker/config.json"
 
-      - name: Build and push JIT platform image
+      - name: Build JIT platform candidate by digest
         id: build
         if: ${{ env.PUBLISH_IMAGES == 'true' && contains(matrix.image_key, 'aot') == false }}
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
@@ -411,8 +421,7 @@ jobs:
           context: .
           file: ${{ matrix.dockerfile }}
           platforms: ${{ matrix.platform }}
-          push: true
-          tags: ${{ steps.arch_tags.outputs.tags }}
+          outputs: type=image,name=${{ steps.targets.outputs.scan_image }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           # Immutable deployment identity (#3038). This workflow publishes the ECS JIT and AOT
           # variants, and .git is excluded from the build context, so without this the argument
@@ -428,6 +437,31 @@ jobs:
           cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:${{ matrix.cache_scope }}-${{ matrix.arch }},mode=max
           provenance: ${{ matrix.provenance }}
           sbom: ${{ matrix.sbom }}
+
+      # On v* tag pushes no public tag is assigned until the exact candidate digest passes the blocking
+      # Trivy gate (fixable HIGH/CRITICAL only, by design; see scripts/ci/trivy-release-gate.sh).
+      # scan_only dispatches never publish, so their scans stay advisory.
+      - name: Gate JIT platform tag release on fixable HIGH/CRITICAL vulnerabilities
+        if: ${{ env.PUBLISH_IMAGES == 'true' && contains(matrix.image_key, 'aot') == false && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          CANDIDATE: ${{ steps.targets.outputs.scan_image }}@${{ steps.build.outputs.digest }}
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
+        run: scripts/ci/trivy-release-gate.sh "$CANDIDATE"
+
+      - name: Publish JIT platform architecture tags
+        if: ${{ env.PUBLISH_IMAGES == 'true' && contains(matrix.image_key, 'aot') == false }}
+        shell: bash
+        env:
+          CANDIDATE: ${{ steps.targets.outputs.scan_image }}@${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.arch_tags.outputs.tags }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends skopeo
+          printf '%s\n' "$TAGS" | python3 scripts/ci/promote-verified-image.py \
+            --candidate "$CANDIDATE" \
+            --staging-tag "candidate-${{ matrix.image_key }}-${{ matrix.arch }}-${{ github.sha }}" \
+            --authfile "$HOME/.docker/config.json"
 
       - name: Build local image for security scan
         if: ${{ env.PUBLISH_IMAGES != 'true' }}
@@ -483,7 +517,8 @@ jobs:
           upload-artifact: true
           upload-release-assets: false
 
-      # Two passes over the same image, because "what is worth paging on" and
+      # Two advisory passes over the same image follow (the blocking v* tag gate ran earlier, before
+      # any public tag, as a separate pass with .trivyignore-release), because "what is worth paging on" and
       # "what is worth recording" are different questions (honua-server#3036):
       #
       #   1. Actionable -> GitHub Security tab. HIGH/CRITICAL *with an upstream fix
@@ -526,7 +561,7 @@ jobs:
             --output "/work/$SARIF_OUTPUT" \
             "$SCAN_LOCAL"
 
-      # Deliberately NO --ignorefile in either pass. Trivy excludes anything the ignore file
+      # Deliberately NO --ignorefile in either advisory pass (the earlier tag gate is separate). Trivy excludes anything the ignore file
       # names, including after a fix ships, so applying it here would make the inventory
       # incomplete and applying it above would defeat the automatic move into actionable SARIF.
       - name: Run Trivy vulnerability scanner (full inventory, including unfixed)
@@ -557,19 +592,6 @@ jobs:
         with:
           sarif_file: ${{ matrix.sarif_output }}-${{ matrix.arch }}.sarif
           category: ${{ matrix.sarif_category }}-${{ matrix.arch }}
-
-      # A v* tag publishes its release manifests only when this passes: publish-manifests needs
-      # every build-and-push leg to succeed. Release images use the release allowlist.
-      - name: Gate tag release on fixable HIGH/CRITICAL vulnerabilities
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          SCAN_LOCAL: ${{ steps.scan_prep.outputs.scan_local }}
-          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
-        run: >-
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/work:ro"
-          -v "$TRIVY_CACHE_DIR:/root/.cache/trivy" "$TRIVY_IMAGE" image --scanners vuln --skip-version-check
-          --severity HIGH,CRITICAL --ignore-unfixed --ignorefile /work/.trivyignore-release
-          --exit-code 1 --format table "$SCAN_LOCAL"
 
       - name: Upload Trivy unfixed-inclusive inventory
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
