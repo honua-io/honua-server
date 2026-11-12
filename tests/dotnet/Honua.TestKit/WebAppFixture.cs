@@ -732,11 +732,11 @@ public sealed class WebAppFixture : IAsyncLifetime
     }
 
     /// <summary>
-    /// Audit-A2 follow-up: the secure-connection bootstrap now lives on
-    /// <see cref="Mixins.WebAppFixtureSecureConnectionMixin"/>. This wrapper preserves the call
-    /// site shape that <c>InitializeAsync</c> / <c>CreateIsolatedSchemaAsync</c> use.
+    /// Registers the test secure connection when it is absent. Initialization calls this;
+    /// class-scoped fixtures call it again before each case so a reused host keeps the
+    /// connection a fresh host would have.
     /// </summary>
-    private Task EnsureTestSecureConnectionAsync()
+    public Task EnsureTestSecureConnectionAsync()
         => Honua.TestKit.Mixins.WebAppFixtureSecureConnectionMixin.EnsureTestSecureConnectionAsync(_serviceScope);
 
     private async Task SeedSchemaAsync(string schemaName)
