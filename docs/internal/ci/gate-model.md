@@ -356,7 +356,15 @@ host and read its heartbeat, nothing else) and runs
 
 Draft Format and admission/control jobs also use the fork-guarded light selector;
 with `HONUA_LIGHT_RUNNER` unset they stay hosted. The existing
-even-index affected-shard routing is unchanged by this early-job allocation. Under
+even-index affected-shard split additionally requires independent version-1 heavy
+availability from the same current-instance heartbeat. An integer idle-heavy count
+from 1 through 8 permits the configured heavy JSON selector; absent, invalid,
+stale, future-dated or replaced-instance proof keeps shards hosted. Producer
+admission still requires two idle gate runners. The selector forwards heavy proof
+through the existing Build and tests dependency, without adding aggregate needs.
+The heartbeat records availability at selection time; it does not reserve runners.
+Until MAIN activates the reviewed additive honua-iac heartbeat, heavy shards fall
+back to hosted. Under
 `REVIEW_FIRST_MODE: enforce` the selection steps skip and the gate stays hosted:
 the review release reruns only failed jobs, so attempt 2 would reuse a choice
 made at admission and could queue on a host that has since stopped.

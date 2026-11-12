@@ -802,3 +802,8 @@ are unchanged. Children inherit the parent's conservative 21.7-minute dispatch
 rank, including existing PR budget deferral, until scheduled trunk CI measures
 them. The coverage guard proves exact ownership of the former selection.
 See [the capacity evidence and qualification requirement](shard-timeout-budgets.md#admin-authentication-capacity-split-12-november-2026).
+
+PR Gate heavy shard routing also requires current-instance, fresh version-1 heavy
+pool availability, independently of the two-producer idle threshold. The existing
+even/odd split and required dependencies remain. Missing or invalid additive
+heartbeat proof selects hosted runners; deployment is MAIN-owned.

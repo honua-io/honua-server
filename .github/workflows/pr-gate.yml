@@ -70,6 +70,7 @@ jobs:
       id-token: write
     outputs:
       runner: ${{ steps.select.outputs.runner || 'ubuntu-latest' }}
+      heavy_ready: ${{ steps.select.outputs.heavy_ready || 'false' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: vars.HONUA_PR_GATE_RUNNER != '' && env.REVIEW_FIRST_MODE != 'enforce'
@@ -344,6 +345,7 @@ jobs:
     # Runtime toolchain proofs run in the full CI workflow.
     timeout-minutes: 75
     outputs:
+      heavy_ready: ${{ needs.runner-select.outputs.heavy_ready }}
       docs_only: ${{ steps.docs-only.outputs.docs_only }}
       generated_only: ${{ steps.generated-only.outputs.generated_only }}
       skip: ${{ (steps.docs-only.outputs.docs_only == 'true' || steps.generated-only.outputs.generated_only == 'true') && 'true' || 'false' }}
@@ -778,8 +780,8 @@ jobs:
       && needs.affected-shards-select.outputs.matrix_include != '[]'
     needs: [affected-shards-select, pr-gate, server-test-producer]
     # Even matrix indices run on the build host's honua-heavy runners when
-    # vars.HONUA_HEAVY_RUNNER holds their runner JSON; fork code never does.
-    runs-on: ${{ vars.HONUA_HEAVY_RUNNER && (endsWith(format('{0}', strategy.job-index), '0') || endsWith(format('{0}', strategy.job-index), '2') || endsWith(format('{0}', strategy.job-index), '4') || endsWith(format('{0}', strategy.job-index), '6') || endsWith(format('{0}', strategy.job-index), '8')) && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || 'ubuntu-latest' }}
+    # fresh pool proof and vars.HONUA_HEAVY_RUNNER are present; forks stay hosted.
+    runs-on: ${{ needs.pr-gate.outputs.heavy_ready == 'true' && vars.HONUA_HEAVY_RUNNER && (endsWith(format('{0}', strategy.job-index), '0') || endsWith(format('{0}', strategy.job-index), '2') || endsWith(format('{0}', strategy.job-index), '4') || endsWith(format('{0}', strategy.job-index), '6') || endsWith(format('{0}', strategy.job-index), '8')) && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || 'ubuntu-latest' }}
     # The shard's OWN outer budget from .github/ci-shards.json, exactly as
     # ci.yml::server-tests applies it. Substituting a flat cap here would make
     # this lane time out on shards the trailing matrix runs comfortably, which
