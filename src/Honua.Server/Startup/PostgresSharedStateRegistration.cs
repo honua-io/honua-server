@@ -6,11 +6,13 @@ using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Coordination;
+using Honua.Core.Features.Studio.Drafts;
 using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Infrastructure.Security;
 using Honua.Server.Features.Operations;
 using Honua.Server.Features.Infrastructure.SecurityState;
+using Honua.Server.Features.Studio.Drafts;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 
@@ -63,6 +65,7 @@ internal static class PostgresSharedStateRegistration
         services.AddSharedOrLocal<IIdempotencyReservationStore, PostgresIdempotencyReservationStore>(
             static () => new InMemoryIdempotencyReservationStore());
         services.AddSharedOrLocal<ITokenReplayStore, PostgresTokenReplayStore>(static () => new InMemoryTokenReplayStore());
+        services.AddPackageDrafts();
 
         services.AddRetentionSweep<PostgresOperationProposalStore>();
         services.AddRetentionSweep<PostgresWorkflowOperationStore>();
@@ -72,12 +75,27 @@ internal static class PostgresSharedStateRegistration
         services.AddRetentionSweep<PostgresSecurityTokenStore>();
         services.AddRetentionSweep<PostgresTokenReplayStore>();
         services.AddRetentionSweep<PostgresIdempotencyReservationStore>();
+        services.AddRetentionSweep<PostgresPackageDraftBacking>();
         return services;
     }
 
     // The lease store needs the system database; a host without one has no shared leases.
     public static ILeaseStore? SharedLeaseStore(this IServiceProvider provider)
         => provider.GetService<NpgsqlDataSource>() is null ? null : provider.GetService<ILeaseStore>();
+
+    private static void AddPackageDrafts(this IServiceCollection services)
+    {
+        services.TryAddSingleton<PostgresPackageDraftBacking>();
+        services.RemoveAll<IPackageDraftStore>();
+        services.AddSingleton<IPackageDraftStore>(provider =>
+        {
+            var retention = provider.GetService<PackageDraftRetentionOptions>() ?? new PackageDraftRetentionOptions();
+            var time = provider.GetService<TimeProvider>() ?? TimeProvider.System;
+            return provider.GetService<NpgsqlDataSource>() is not null
+                ? new PackageDraftLedger(provider.GetRequiredService<PostgresPackageDraftBacking>(), retention, time)
+                : new InMemoryPackageDraftStore(retention, time);
+        });
+    }
 
     // The shared store on a host with a system database, a process-local one otherwise.
     private static void AddSharedOrLocal<TService, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TShared>(

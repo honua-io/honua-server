@@ -10,7 +10,7 @@ namespace Honua.Core.Features.Studio.Drafts;
 /// <see cref="IPackageDraftStore"/>. The backing decides whether the bytes are
 /// process-local or shared; this type does not.
 /// </summary>
-internal sealed class PackageDraftLedger : IPackageDraftStore
+public sealed class PackageDraftLedger : IPackageDraftStore
 {
     private readonly IPackageDraftBacking _backing;
     private readonly PackageDraftRetentionOptions _retention;
