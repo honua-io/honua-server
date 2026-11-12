@@ -679,7 +679,7 @@ jobs:
   # The inventory and VEX decisions are data that every image scan depends on: check them
   # on the pull request that changes them, not first in the nightly.
   security-data-check:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
     name: Supported images and VEX decisions are valid
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -820,7 +820,7 @@ jobs:
 
   supported-release-image-report:
     needs: [supported-release-inventory, supported-release-image-scan]
-    if: ${{ !cancelled() && needs.supported-release-inventory.result == 'success' && needs.supported-release-inventory.outputs.count != '0' }}
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && needs.supported-release-inventory.result == 'success' && needs.supported-release-inventory.outputs.count != '0' }}
     name: Report release image findings
     runs-on: ubuntu-latest
     timeout-minutes: 10
