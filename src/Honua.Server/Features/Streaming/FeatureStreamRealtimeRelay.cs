@@ -21,6 +21,10 @@ internal sealed partial class FeatureStreamRealtimeRelay(
     private static readonly TimeSpan _retryDelay = TimeSpan.FromSeconds(1);
 
     private long? _relayed;
+    private IRealtimeSubscription? _subscription;
+
+    // The position the relay's current subscription has reached; 0 until it has read its start.
+    internal long Position => Volatile.Read(ref _subscription)?.Position ?? 0;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -48,6 +52,7 @@ internal sealed partial class FeatureStreamRealtimeRelay(
             new BoundedChannelOptions(Capacity) { SingleReader = true, FullMode = BoundedChannelFullMode.Wait });
         await using var subscription = provider.Subscribe(
             new RealtimeSubscriptionRequest(RealtimeFamily.Features, [], _relayed, channel.Writer));
+        Volatile.Write(ref _subscription, subscription);
         await foreach (var delivery in channel.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
         {
             switch (delivery)

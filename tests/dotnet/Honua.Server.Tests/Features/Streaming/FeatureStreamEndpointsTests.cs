@@ -173,9 +173,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
                 rest.RootElement.GetRawText().Should().NotContain("private-rest-value");
             }
 
-            var store = fixture.GetService<IFeatureChangeEventStore>();
-            var publisher = fixture.GetService<IFeatureChangeEventPublisher>();
-            var anchor = await store.AppendAsync(new FeatureChangeEventRequest
+            var anchor = await fixture.AppendChangeAsync(new FeatureChangeEventRequest
             {
                 ServiceId = "test",
                 LayerId = 0,
@@ -188,7 +186,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
             {
                 foreach (var id in restrictRows ? new long[] { 100, 101, 102 } : new long[] { 102 })
                 {
-                    await publisher.PublishAsync(new FeatureChangeEventRequest
+                    await fixture.AppendChangeAsync(new FeatureChangeEventRequest
                     {
                         ServiceId = "test",
                         LayerId = 0,
@@ -209,7 +207,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
                 await PublishAsync();
             }
 
-            var position = snapshot ? "mode=snapshot-then-delta" : $"cursor={anchor.Cursor}";
+            var position = snapshot ? "mode=snapshot-then-delta" : $"cursor={FeatureStreamCursor.Format(anchor.Cursor)}";
             var path = $"/api/v1/streaming/features?layers=0&{position}&clientLabel=policy-test";
             var sawSnapshot = false;
             void CheckSnapshot(JsonElement frame)
@@ -538,9 +536,8 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
         subscribedB.GetProperty("status").GetString().Should().Be("subscribed");
 
         // Publish one event matching both subscriptions.
-        var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
         const string serviceId = "test";
-        await publisher.PublishAsync(new FeatureChangeEventRequest
+        await _fixture.AppendChangeAsync(new FeatureChangeEventRequest
         {
             ServiceId = serviceId,
             LayerId = 0,
@@ -613,9 +610,8 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
         // broadcast had raced ahead and queued a frame for sub-fence (the
         // unsubscribe and broadcast are not strongly ordered cross-thread),
         // the writer must drop any queued sub-fence frame as stale-generation.
-        var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
         const string serviceId = "test";
-        await publisher.PublishAsync(new FeatureChangeEventRequest
+        await _fixture.AppendChangeAsync(new FeatureChangeEventRequest
         {
             ServiceId = serviceId,
             LayerId = 0,
@@ -805,13 +801,11 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
         var wsClient = _fixture.CreateWebSocketClient();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
 
-        var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
-        var eventStore = _fixture.GetService<IFeatureChangeEventStore>();
         var sessionManager = _fixture.GetService<FeatureStreamSessionManager>();
 
         // Publish one event so the replay path advances the writer's replayCursor.
         const string serviceId = "test";
-        await publisher.PublishAsync(new FeatureChangeEventRequest
+        var stored = await _fixture.AppendChangeAsync(new FeatureChangeEventRequest
         {
             ServiceId = serviceId,
             LayerId = 0,
@@ -821,11 +815,8 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
             RequestId = "req-fence-cursor-replay"
         });
 
-        var stored = (await eventStore.QueryAsync(null, null, null, 500))
-            .Single(e => e.ServiceId == serviceId);
-
         using var ws = await wsClient.ConnectAsync(
-            new Uri($"ws://localhost/api/v1/streaming/features?clientLabel=fence-cursor&cursor={stored.Cursor - 1}"),
+            new Uri($"ws://localhost/api/v1/streaming/features?clientLabel=fence-cursor&cursor={FeatureStreamCursor.Format(stored.Cursor - 1)}"),
             cts.Token);
 
         // Drain handshake plus the replayed event to confirm replayCursor is past stored.Cursor.
@@ -903,8 +894,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     // Regression for review finding "Control-frame subscriptions are excluded
     // from durable cross-node polling". Sessions opened without query filters
     // by non-admin clients previously had no onPoll installed at all — control-
-    // frame subscribes added later relied solely on local broadcast / Redis
-    // pub/sub. A cross-node event that landed only in the durable store (not
+    // frame subscribes added later relied solely on live broadcast. A cross-node event that landed only in the durable store (not
     // seen by Broadcast on this node) was lost. After the fix, the writer
     // always installs onPoll and snapshots active control subscriptions on
     // each interval, replaying each from its per-subscription poll watermark
@@ -935,12 +925,12 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
                         ["FeatureStreaming:CrossNodeSyncInterval"] = "00:00:00.100"
                     });
                 });
-            });
+            })
+            .WithoutRealtimeRelay();
 
         await fixture.InitializeAsync();
         try
         {
-            var eventStore = fixture.GetService<IFeatureChangeEventStore>();
             var wsClient = fixture.CreateWebSocketClient();
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
 
@@ -962,11 +952,10 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
             subscribed.GetProperty("status").GetString().Should().Be("subscribed");
             subscribed.GetProperty("subscriptionId").GetString().Should().Be("control-poll");
 
-            // Append directly to the durable store, bypassing FeatureStreamPublisher.
-            // This simulates a peer node persisting an event without this node's
-            // Broadcast / Redis pub/sub fan-out picking it up.
+            // With the relay removed, this change reaches the session only through
+            // the durable-store poll, as a change this node's relay missed would.
             const string crossNodeServiceId = "test";
-            await eventStore.AppendAsync(new FeatureChangeEventRequest
+            await fixture.AppendChangeAsync(new FeatureChangeEventRequest
             {
                 ServiceId = crossNodeServiceId,
                 LayerId = 0,
@@ -1051,12 +1040,11 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
         var sessionId = sessionManager.GetSessions()
             .Single(s => s.ClientLabel == "watermark-advance").SessionId;
 
-        var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
         const string serviceId = "test";
         const int eventCount = 4;
         for (var i = 0; i < eventCount; i++)
         {
-            await publisher.PublishAsync(new FeatureChangeEventRequest
+            await _fixture.AppendChangeAsync(new FeatureChangeEventRequest
             {
                 ServiceId = serviceId,
                 LayerId = 0,
@@ -1152,12 +1140,12 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
                         ["FeatureStreaming:CrossNodeSyncInterval"] = "00:00:00.150"
                     });
                 });
-            });
+            })
+            .WithoutRealtimeRelay();
 
         await fixture.InitializeAsync();
         try
         {
-            var eventStore = fixture.GetService<IFeatureChangeEventStore>();
             var sessionManager = fixture.GetService<FeatureStreamSessionManager>();
             var wsClient = fixture.CreateWebSocketClient();
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -1205,12 +1193,11 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
             // hot-channel WhenAny path when the deadline elapses.
             await Task.Delay(TimeSpan.FromMilliseconds(200), cts.Token);
 
-            // Inject a store-only event that bypasses Broadcast/Redis pub/sub.
-            // It can only reach the subscription through the cross-node poll
-            // path. Pre-fix, continuous outbound traffic would prevent the
+            // With the relay removed, this change can only reach the subscription
+            // through the durable-store poll. Pre-fix, continuous outbound traffic would prevent the
             // poll from firing and this event would never arrive.
             const string crossNodeServiceId = "test";
-            await eventStore.AppendAsync(new FeatureChangeEventRequest
+            await fixture.AppendChangeAsync(new FeatureChangeEventRequest
             {
                 ServiceId = crossNodeServiceId,
                 LayerId = 0,
@@ -1292,7 +1279,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
 
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/streaming/features?cursor=1");
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/streaming/features?cursor=features:1");
             request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
 
             using var response = await fixture.Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
@@ -1646,11 +1633,9 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_ReplayEnvelope_IncludesFullSdkContractFields()
     {
-        var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
-        var eventStore = _fixture.GetService<IFeatureChangeEventStore>();
         const string serviceId = "test";
 
-        await publisher.PublishAsync(new FeatureChangeEventRequest
+        var stored = await _fixture.AppendChangeAsync(new FeatureChangeEventRequest
         {
             SourceId = "postgres-cdc",
             ServiceId = serviceId,
@@ -1665,12 +1650,9 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
             PropertiesJson = """{"name":"Honolulu","status":"active"}"""
         });
 
-        var stored = (await eventStore.QueryAsync(null, null, null, 500))
-            .Single(e => e.ServiceId == serviceId);
-
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
-            $"/api/v1/streaming/features?layers=0&cursor={stored.Cursor - 1}");
+            $"/api/v1/streaming/features?layers=0&cursor={FeatureStreamCursor.Format(stored.Cursor - 1)}");
         request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -1922,8 +1904,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
                 "unfiltered-routability",
                 cts.Token);
 
-            var publisher = fixture.GetService<IFeatureChangeEventPublisher>();
-            await publisher.PublishAsync(new FeatureChangeEventRequest
+            await fixture.AppendChangeAsync(new FeatureChangeEventRequest
             {
                 ServiceId = ServiceOnlyFilterStreamLayerCatalog.ServiceName,
                 LayerId = ServiceOnlyFilterStreamLayerCatalog.RetiredStorageLayerId,
@@ -1932,7 +1913,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
                 Protocol = "rest",
                 RequestId = "req-unfiltered-retired",
             });
-            await publisher.PublishAsync(new FeatureChangeEventRequest
+            await fixture.AppendChangeAsync(new FeatureChangeEventRequest
             {
                 ServiceId = ServiceOnlyFilterStreamLayerCatalog.ServiceName,
                 LayerId = ServiceOnlyFilterStreamLayerCatalog.RoutableStorageLayerId,
@@ -2076,7 +2057,6 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_FreshConnect_DeliversFirstLiveEvent()
     {
-        var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
         var uniqueId = Guid.NewGuid().ToString("N")[..8];
         const string serviceId = "test";
 
@@ -2090,7 +2070,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // Publish a live event while connected.
-        await publisher.PublishAsync(new FeatureChangeEventRequest
+        await _fixture.AppendChangeAsync(new FeatureChangeEventRequest
         {
             ServiceId = serviceId,
             LayerId = 0,
@@ -2186,15 +2166,14 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Reconnect_WithCursor_ReplaysMissedEvents()
     {
-        var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
-        var eventStore = _fixture.GetService<IFeatureChangeEventStore>();
         var uniqueId = Guid.NewGuid().ToString("N")[..8];
         const string serviceId = "test";
+        var ownEvents = new List<FeatureChangeEvent>();
 
         // Publish 5 events on the fixture's active metadata route.
         for (var i = 0; i < 5; i++)
         {
-            await publisher.PublishAsync(new FeatureChangeEventRequest
+            ownEvents.Add(await _fixture.AppendChangeAsync(new FeatureChangeEventRequest
             {
                 ServiceId = serviceId,
                 LayerId = 0,
@@ -2202,13 +2181,9 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
                 Operation = "create",
                 Protocol = "rest",
                 RequestId = $"req-{uniqueId}-{i}"
-            });
+            }));
         }
 
-        // Query all events and filter to this test's by service ID to get exact cursors.
-        var allEvents = await eventStore.QueryAsync(null, null, null, 500);
-        var ownEvents = allEvents.Where(e => e.ServiceId == serviceId).ToList();
-        ownEvents.Should().HaveCount(5);
 
         // Replay from the 2nd event's cursor — should return events 3, 4, 5.
         var replayCursor = ownEvents[1].Cursor;
@@ -2216,7 +2191,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
 
         // Open an actual SSE connection with the cursor to exercise the real replay path.
         using var request = new HttpRequestMessage(HttpMethod.Get,
-            $"/api/v1/streaming/features?cursor={replayCursor}");
+            $"/api/v1/streaming/features?cursor={FeatureStreamCursor.Format(replayCursor)}");
         request.Headers.Accept.Add(
             new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
 
@@ -2286,15 +2261,14 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Reconnect_WithLiveEventsPublishedDuringReplay_DeliversAll()
     {
-        var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
-        var eventStore = _fixture.GetService<IFeatureChangeEventStore>();
         var uniqueId = Guid.NewGuid().ToString("N")[..8];
         const string serviceId = "test";
+        var ownEvents = new List<FeatureChangeEvent>();
 
         // Publish 5 initial events.
         for (var i = 0; i < 5; i++)
         {
-            await publisher.PublishAsync(new FeatureChangeEventRequest
+            ownEvents.Add(await _fixture.AppendChangeAsync(new FeatureChangeEventRequest
             {
                 ServiceId = serviceId,
                 LayerId = 0,
@@ -2302,18 +2276,15 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
                 Operation = "create",
                 Protocol = "rest",
                 RequestId = $"req-{uniqueId}-{i}"
-            });
+            }));
         }
 
         // Get cursor from event 2 — events 3, 4, 5 will be replayed.
-        var allEvents = await eventStore.QueryAsync(null, null, null, 500);
-        var ownEvents = allEvents.Where(e => e.ServiceId == serviceId).ToList();
-        ownEvents.Should().HaveCount(5);
         var replayCursor = ownEvents[1].Cursor;
 
         // Open SSE connection with cursor.
         using var request = new HttpRequestMessage(HttpMethod.Get,
-            $"/api/v1/streaming/features?cursor={replayCursor}");
+            $"/api/v1/streaming/features?cursor={FeatureStreamCursor.Format(replayCursor)}");
         request.Headers.Accept.Add(
             new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
 
@@ -2324,7 +2295,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
         // Publish 3 more live events while the stream is connected.
         for (var i = 5; i < 8; i++)
         {
-            await publisher.PublishAsync(new FeatureChangeEventRequest
+            ownEvents.Add(await _fixture.AppendChangeAsync(new FeatureChangeEventRequest
             {
                 ServiceId = serviceId,
                 LayerId = 0,
@@ -2332,14 +2303,11 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
                 Operation = "update",
                 Protocol = "rest",
                 RequestId = $"req-{uniqueId}-{i}"
-            });
+            }));
         }
 
-        // Re-query to get all 8 events' cursors. Expected: events 3-8 (skip 1, 2).
-        var updatedEvents = await eventStore.QueryAsync(null, null, null, 500);
-        var allOwnEvents = updatedEvents.Where(e => e.ServiceId == serviceId).ToList();
-        allOwnEvents.Should().HaveCount(8);
-        var expectedCursors = allOwnEvents.Skip(2).Select(e => e.Cursor).ToList();
+        // Expected: events 3-8 (skip 1, 2).
+        var expectedCursors = ownEvents.Skip(2).Select(e => e.Cursor).ToList();
 
         // Read SSE stream and collect events from this test.
         var receivedCursors = new List<long>();

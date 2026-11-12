@@ -1,162 +1,106 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.Core.Features.Metadata.Abstractions;
-using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.ControlPlane;
 using Honua.Infrastructure.Events;
+using Honua.Server.Features.Realtime;
 using Honua.Server.Features.Streaming;
 using Honua.TestKit.Attributes;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Honua.Server.Tests.Infrastructure.Telemetry;
+using Npgsql;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
-/// <summary>
-/// Unit tests for the feature-stream publisher verifying that events are
-/// persisted then broadcast to live sessions.
-/// </summary>
-public sealed class FeatureStreamPublisherTests : IDisposable
+public sealed class FeatureStreamPublisherTests
 {
-    private readonly FeatureStreamSessionManager _sessionManager;
-    private readonly InMemoryFeatureChangeEventStore _store;
-    private readonly FeatureStreamPublisher _publisher;
-
-    public FeatureStreamPublisherTests()
-    {
-        var storeOptions = Options.Create(new FeatureChangeEventOptions { MaxRetainedEvents = 100 });
-        _store = new InMemoryFeatureChangeEventStore(storeOptions, null);
-
-        var streamOptions = Options.Create(new FeatureStreamOptions { MaxBufferPerConnection = 256 });
-        _sessionManager = new FeatureStreamSessionManager(streamOptions, NullLogger<FeatureStreamSessionManager>.Instance, TestTelemetry.CreateFeatureStreamMetrics());
-
-        _publisher = new FeatureStreamPublisher(
-            _store,
-            _sessionManager,
-            NullLogger<FeatureStreamPublisher>.Instance);
-    }
-
-    public void Dispose() => _sessionManager.Dispose();
+    private readonly CountingWakeSignal _wake = new();
 
     [UnitTest]
-    public async Task PublishAsync_PersistsEventAndBroadcasts()
+    public async Task PublishAsync_AnyChange_WakesTheRealtimeDispatcher()
     {
-        using var session = _sessionManager.CreateSession("WebSocket", null);
+        var publisher = CreatePublisher(sinks: null);
 
-        await _publisher.PublishAsync(new FeatureChangeEventRequest
+        await publisher.PublishAsync(CreateRequest(eventId: "evt-wake"));
+
+        Assert.Equal(1, _wake.Count);
+    }
+
+    [UnitTest]
+    public async Task PublishStrictAsync_AnyChange_WakesTheRealtimeDispatcher()
+    {
+        var publisher = CreatePublisher(sinks: null);
+
+        await publisher.PublishStrictAsync(CreateRequest(eventId: "evt-wake-strict"));
+
+        Assert.Equal(1, _wake.Count);
+    }
+
+    [UnitTest]
+    public async Task PublishStrictAsync_SinksDisabled_DoesNotReadTheChangeLog()
+    {
+        // The log is unreachable, so any read would throw.
+        var sink = new SignalingSink();
+        var disabled = CreateBroadcaster(sink, enabled: false);
+        var publisher = CreatePublisher(disabled);
+
+        await publisher.PublishStrictAsync(CreateRequest(eventId: "evt-no-sinks"));
+
+        Assert.Equal(1, _wake.Count);
+        Assert.False(sink.Signal.Task.IsCompleted);
+    }
+
+    [UnitTest]
+    public async Task PublishAsync_RequestWithoutEventId_DispatchesTheRequestWithCursorZero()
+    {
+        var sink = new SignalingSink();
+        var publisher = CreatePublisher(CreateBroadcaster(sink));
+        var request = CreateRequest(eventId: null) with
         {
-            ServiceId = "svc-1",
-            LayerId = 0,
-            ObjectId = 42,
-            Operation = "create",
-            Protocol = "rest",
-            RequestId = "req-pub-1"
-        });
+            ChangedAttributes = new Dictionary<string, object?> { ["status"] = "active" },
+            GeometryChanged = true
+        };
 
-        // Verify event was persisted.
-        var stored = await _store.QueryAsync(null, null, null, 10);
-        Assert.Single(stored);
-        Assert.Equal("insert", stored[0].Operation);
+        await publisher.PublishAsync(request);
 
-        // Verify event was broadcast to the session.
-        Assert.True(session.Reader.TryRead(out var msg));
-        Assert.False(msg.IsHeartbeat);
-        Assert.Equal(stored[0].Cursor, msg.Envelope.Cursor);
-        Assert.Equal("svc-1", msg.Envelope.ServiceId);
+        var received = await sink.Signal.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(0, received.Cursor);
+        Assert.Equal("svc-1", received.ServiceId);
+        Assert.Equal(42, received.ObjectId);
+        Assert.Equal("req-pub", received.RequestId);
+        Assert.False(string.IsNullOrWhiteSpace(received.EventId));
+        Assert.Equal("active", received.ChangedAttributes!["status"]);
+        Assert.True(received.GeometryChanged);
     }
 
     [UnitTest]
-    public async Task PublishAsync_NoSessionsDoesNotThrow()
+    public async Task PublishAsync_WhenChangeLogReadFails_LogsTheEventAndSkipsTheSinks()
     {
-        // No sessions connected — publish should complete without error.
-        await _publisher.PublishAsync(new FeatureChangeEventRequest
-        {
-            ServiceId = "svc-1",
-            LayerId = 0,
-            ObjectId = 1,
-            Operation = "update",
-            Protocol = "rest",
-            RequestId = "req-pub-2"
-        });
-
-        var stored = await _store.QueryAsync(null, null, null, 10);
-        Assert.Single(stored);
-    }
-
-    [UnitTest]
-    public async Task PublishAsync_WhenAppendFails_LogsTheDroppedEventAndDoesNotBroadcast()
-    {
-        using var session = _sessionManager.CreateSession("WebSocket", null);
+        var sink = new SignalingSink();
         var logger = new RecordingLogger<FeatureStreamPublisher>();
-        var publisher = new FeatureStreamPublisher(
-            new ThrowingFeatureChangeEventStore(),
-            _sessionManager,
-            logger);
+        var publisher = new FeatureStreamPublisher(_wake, UnreachableChangeLog(), logger, CreateBroadcaster(sink));
 
-        await publisher.PublishAsync(new FeatureChangeEventRequest
-        {
-            EventId = "evt-dropped",
-            ServiceId = "svc-1",
-            LayerId = 4,
-            ObjectId = 17,
-            Operation = "update",
-            Protocol = "rest",
-            RequestId = "req-pub-fail"
-        });
+        await publisher.PublishAsync(CreateRequest(eventId: "evt-dropped") with { LayerId = 4, ObjectId = 17 });
 
-        Assert.False(session.Reader.TryRead(out _));
+        Assert.Equal(1, _wake.Count);
+        Assert.False(sink.Signal.Task.IsCompleted);
         var warning = Assert.Single(logger.Messages);
         Assert.Contains("evt-dropped", warning, StringComparison.Ordinal);
         Assert.Contains("layer 4 object 17", warning, StringComparison.Ordinal);
     }
 
     [UnitTest]
-    public async Task PublishStrictAsync_WhenAppendFails_ThrowsAndDoesNotBroadcast()
+    public async Task PublishStrictAsync_WhenChangeLogReadFails_Throws()
     {
-        // The outbox dispatcher keeps the row for retry only if a failed append surfaces.
-        using var session = _sessionManager.CreateSession("WebSocket", null);
-        var publisher = new FeatureStreamPublisher(
-            new ThrowingFeatureChangeEventStore(),
-            _sessionManager,
-            NullLogger<FeatureStreamPublisher>.Instance);
+        // The outbox dispatcher keeps the row for retry only if the failure surfaces.
+        var sink = new SignalingSink();
+        var publisher = CreatePublisher(CreateBroadcaster(sink));
 
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await publisher.PublishStrictAsync(new FeatureChangeEventRequest
-            {
-                ServiceId = "svc-1",
-                LayerId = 0,
-                ObjectId = 1,
-                Operation = "update",
-                Protocol = "rest",
-                RequestId = "req-strict-fail"
-            }));
+        await Assert.ThrowsAnyAsync<Exception>(() => publisher.PublishStrictAsync(CreateRequest(eventId: "evt-strict-fail")));
 
-        Assert.False(session.Reader.TryRead(out _));
-    }
-
-    [UnitTest]
-    public async Task PublishStrictAsync_OnSuccess_PersistsAndBroadcasts()
-    {
-        // Strict path keeps the streaming fan-out so dispatcher-published events still
-        // reach live subscribers with the same envelope contract as the inline path.
-        using var session = _sessionManager.CreateSession("WebSocket", null);
-
-        await _publisher.PublishStrictAsync(new FeatureChangeEventRequest
-        {
-            ServiceId = "svc-strict",
-            LayerId = 0,
-            ObjectId = 7,
-            Operation = "create",
-            Protocol = "outbox",
-            RequestId = "req-strict-ok"
-        });
-
-        var stored = await _store.QueryAsync(null, null, null, 10);
-        Assert.Single(stored);
-        Assert.True(session.Reader.TryRead(out var msg));
-        Assert.Equal("svc-strict", msg.Envelope.ServiceId);
+        Assert.Equal(1, _wake.Count);
+        Assert.False(sink.Signal.Task.IsCompleted);
     }
 
     [UnitTest]
@@ -267,131 +211,44 @@ public sealed class FeatureStreamPublisherTests : IDisposable
         Assert.Null(envelope.GeometryCrs);
     }
 
-    [UnitTest]
-    public async Task PublishAsync_WithChangedData_PersistsAndBroadcastsDelta()
-    {
-        using var session = _sessionManager.CreateSession("WebSocket", null);
-        var attrs = new Dictionary<string, object?> { ["status"] = "active" };
+    private FeatureStreamPublisher CreatePublisher(FeatureChangeEventSinkBroadcaster? sinks)
+        => new(_wake, UnreachableChangeLog(), NullLogger<FeatureStreamPublisher>.Instance, sinks);
 
-        await _publisher.PublishAsync(new FeatureChangeEventRequest
-        {
-            ServiceId = "svc-delta",
-            LayerId = 2,
-            ObjectId = 99,
-            Operation = "update",
-            Protocol = "rest",
-            RequestId = "req-delta-1",
-            ChangedAttributes = attrs,
-            GeometryChanged = true
-        });
-
-        var stored = await _store.QueryAsync(null, null, null, 10);
-        Assert.Single(stored);
-        Assert.NotNull(stored[0].ChangedAttributes);
-        Assert.Equal("active", stored[0].ChangedAttributes!["status"]);
-        Assert.True(stored[0].GeometryChanged);
-
-        Assert.True(session.Reader.TryRead(out var msg));
-        Assert.NotNull(msg.Envelope.ChangedAttributes);
-        Assert.True(msg.Envelope.GeometryChanged);
-    }
-
-    [UnitTest]
-    public async Task PublishAsync_WhenSinksEnabled_FansEventToSink()
-    {
-        // Event-bus sink fan-out (#357): a committed edit reaches every registered
-        // sink with the same persisted envelope after durable append and streaming.
-        var sink = new SignalingSink();
-        var broadcaster = new FeatureChangeEventSinkBroadcaster(
+    private static FeatureChangeEventSinkBroadcaster CreateBroadcaster(IFeatureChangeEventSink sink, bool enabled = true)
+        => new(
             [sink],
-            Options.Create(new FeatureChangeEventSinkOptions { Enabled = true }),
+            Options.Create(new FeatureChangeEventSinkOptions { Enabled = enabled }),
             NullLogger<FeatureChangeEventSinkBroadcaster>.Instance);
-        var publisher = new FeatureStreamPublisher(
-            _store,
-            _sessionManager,
-            NullLogger<FeatureStreamPublisher>.Instance,
-            sinkBroadcaster: broadcaster);
 
-        await publisher.PublishAsync(new FeatureChangeEventRequest
-        {
-            ServiceId = "svc-sink",
-            LayerId = 0,
-            ObjectId = 11,
-            Operation = "create",
-            Protocol = "rest",
-            RequestId = "req-sink-1"
-        });
-
-        var received = await sink.Signal.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal("svc-sink", received.ServiceId);
+    private static PostgresFeatureChangeLog UnreachableChangeLog()
+    {
+        var dataSource = NpgsqlDataSource.Create("Host=unreachable.invalid");
+        dataSource.Dispose();
+        return new PostgresFeatureChangeLog(
+            new JobStoreDatabase(dataSource),
+            Options.Create(new RealtimeOptions()),
+            TimeProvider.System);
     }
 
-    [UnitTest]
-    public async Task PublishStrictAsync_WhenRoutabilityRefreshFails_StillDispatchesToSink()
-    {
-        var sink = new SignalingSink();
-        var broadcaster = new FeatureChangeEventSinkBroadcaster(
-            [sink],
-            Options.Create(new FeatureChangeEventSinkOptions { Enabled = true }),
-            NullLogger<FeatureChangeEventSinkBroadcaster>.Instance);
-        using var services = new ServiceCollection()
-            .AddScoped<IMetadataV2GraphProvider>(_ => new ThrowingMetadataV2GraphProvider())
-            .BuildServiceProvider();
-        using var manager = new FeatureStreamSessionManager(
-            Options.Create(new FeatureStreamOptions { MaxBufferPerConnection = 256 }),
-            NullLogger<FeatureStreamSessionManager>.Instance,
-            TestTelemetry.CreateFeatureStreamMetrics(),
-            routabilityGuard: new FeatureStreamRoutabilityGuard(),
-            serviceScopeFactory: services.GetRequiredService<IServiceScopeFactory>());
-        using var session = manager.CreateSession("WebSocket", "metadata-failure");
-        var publisher = new FeatureStreamPublisher(
-            _store,
-            manager,
-            NullLogger<FeatureStreamPublisher>.Instance,
-            sinkBroadcaster: broadcaster);
-
-        await publisher.PublishStrictAsync(new FeatureChangeEventRequest
+    private static FeatureChangeEventRequest CreateRequest(string? eventId)
+        => new()
         {
-            ServiceId = "svc-sink-on-metadata-failure",
+            EventId = eventId,
+            ServiceId = "svc-1",
             LayerId = 0,
-            ObjectId = 13,
-            Operation = "update",
-            Protocol = "outbox",
-            RequestId = "req-sink-metadata-failure",
-        });
-
-        var received = await sink.Signal.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal("svc-sink-on-metadata-failure", received.ServiceId);
-        Assert.False(session.Reader.TryRead(out _));
-    }
-
-    [UnitTest]
-    public async Task PublishAsync_WithNoOpSinkOnly_DoesNotThrow()
-    {
-        // Default deployment: only the no-op sink is registered. Publishing must
-        // behave exactly as the storage+streaming path with no observable effect.
-        var broadcaster = new FeatureChangeEventSinkBroadcaster(
-            [new NoOpFeatureChangeEventSink()],
-            Options.Create(new FeatureChangeEventSinkOptions { Enabled = true }),
-            NullLogger<FeatureChangeEventSinkBroadcaster>.Instance);
-        var publisher = new FeatureStreamPublisher(
-            _store,
-            _sessionManager,
-            NullLogger<FeatureStreamPublisher>.Instance,
-            sinkBroadcaster: broadcaster);
-
-        await publisher.PublishAsync(new FeatureChangeEventRequest
-        {
-            ServiceId = "svc-noop",
-            LayerId = 0,
-            ObjectId = 12,
+            ObjectId = 42,
             Operation = "update",
             Protocol = "rest",
-            RequestId = "req-noop-1"
-        });
+            RequestId = "req-pub"
+        };
 
-        var stored = await _store.QueryAsync(null, null, null, 10);
-        Assert.Single(stored);
+    private sealed class CountingWakeSignal : IRealtimeWakeSignal
+    {
+        private int _count;
+
+        public int Count => Volatile.Read(ref _count);
+
+        public void Wake() => Interlocked.Increment(ref _count);
     }
 
     private sealed class SignalingSink : IFeatureChangeEventSink
@@ -406,34 +263,6 @@ public sealed class FeatureStreamPublisherTests : IDisposable
             Signal.TrySetResult(featureEvent);
             return Task.CompletedTask;
         }
-    }
-
-    private sealed class ThrowingFeatureChangeEventStore : IFeatureChangeEventStore
-    {
-        public Task<FeatureChangeEvent> AppendAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
-            => throw new InvalidOperationException("boom");
-
-        public Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(0L);
-
-        public Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
-            long? cursor,
-            DateTimeOffset? from,
-            DateTimeOffset? to,
-            int limit,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<FeatureChangeEvent>>([]);
-    }
-
-    private sealed class ThrowingMetadataV2GraphProvider : IMetadataV2GraphProvider
-    {
-        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
-            => throw new InvalidOperationException("metadata unavailable");
-
-        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(
-            long revision,
-            CancellationToken cancellationToken = default)
-            => throw new InvalidOperationException("metadata unavailable");
     }
 
     private sealed class RecordingLogger<T> : ILogger<T>

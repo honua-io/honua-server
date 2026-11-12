@@ -125,8 +125,8 @@ public sealed class FeatureMutationOutboxScopeTests
         // dispatcher only appends the canonical event at T2 (e.g., Postgres claim lease
         // expired and recovery re-claimed the row hours later), replay/from filtering
         // should still see T1 — not T2. We capture the mutation timestamp once in
-        // BuildEntry and serialize it into the outbox payload so InMemoryFeatureChangeEventStore.AppendAsync
-        // honors it instead of falling back to its DateTimeOffset.UtcNow default.
+        // BuildEntry and serialize it into the outbox payload so the dispatched event carries it
+        // instead of the dispatch time.
         var publisher = Substitute.For<IFeatureChangeEventPublisher>();
         var capability = Substitute.For<IOutboxCapabilityProvider>();
         capability.SupportsTransactionalOutbox.Returns(true);

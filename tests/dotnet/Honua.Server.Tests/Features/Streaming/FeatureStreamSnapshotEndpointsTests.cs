@@ -90,7 +90,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         baseline.EventIds.Should().HaveCount(baseline.Sequences.Count);
         baseline.EventIds.Take(baseline.EventIds.Count - 1).Should().OnlyContain(id => id == null,
             "an unfinished baseline must not publish a resumable SSE id");
-        baseline.EventIds[^1].Should().Be(baselineCursor.ToString(CultureInfo.InvariantCulture),
+        baseline.EventIds[^1].Should().Be(FeatureStreamCursor.Format(baselineCursor),
             "snapshot-end checkpoints the baseline cursor once the baseline is whole");
 
         // One correlated mutation through the canonical GeoServices edit pipeline.
@@ -406,12 +406,11 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
 
         // Interleave admitted (layer 0) and rejected (layer 4242) events. The rejected ones
         // consume global cursor values the subscription never sees.
-        var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
         var run = Guid.NewGuid().ToString("N")[..8];
         const int AdmittedCount = 4;
         for (var i = 0; i < AdmittedCount; i++)
         {
-            await publisher.PublishAsync(new FeatureChangeEventRequest
+            await _fixture.AppendChangeAsync(new FeatureChangeEventRequest
             {
                 ServiceId = TestServiceId,
                 LayerId = 4242,
@@ -421,7 +420,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
                 RequestId = $"skip-{run}-{i}"
             }, cts.Token);
 
-            await publisher.PublishAsync(new FeatureChangeEventRequest
+            await _fixture.AppendChangeAsync(new FeatureChangeEventRequest
             {
                 ServiceId = TestServiceId,
                 LayerId = 0,
@@ -467,22 +466,21 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
 
-        // The in-memory retained window floors at 100 entries, so the cap has to be set
-        // explicitly and then overflowed for the earliest cursors to be trimmed away.
+        // The resumable window is capped at 100 changes, then overflowed so the earliest
+        // generations fall out of it.
         var fixture = CreateFixtureWithDeploymentConfig(new Dictionary<string, string?>
         {
-            ["FeatureChangeEvents:MaxRetainedEvents"] = "100"
+            ["Realtime:ResumeMaxEvents"] = "100"
         });
 
         await fixture.InitializeAsync();
         try
         {
-            var publisher = fixture.GetService<IFeatureChangeEventPublisher>();
             var eventStore = fixture.GetService<IFeatureChangeEventStore>();
 
             for (var i = 0; i < 220; i++)
             {
-                await publisher.PublishAsync(new FeatureChangeEventRequest
+                await fixture.AppendChangeAsync(new FeatureChangeEventRequest
                 {
                     ServiceId = TestServiceId,
                     LayerId = 0,
@@ -497,7 +495,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             oldestRetained.Should().BeGreaterThan(2,
                 "the retained window must have been trimmed for this test to be meaningful");
 
-            using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot&cursor=1");
+            using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot&cursor=features:1");
             var response = await fixture.CreateAdminClient()
                 .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
             response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -511,10 +509,10 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             beginFrame.GetProperty("reason").GetString().Should().Be("cursor-expired");
             beginFrame.GetProperty("sequence").GetInt64().Should().Be(0);
 
-            // An explicit cursor=0 means "resume from the beginning", not "no cursor": it
+            // An explicit features:0 cursor means "resume from the beginning", not "no cursor": it
             // must be validated against the retained window like any other value, or a
             // client resuming at 0 after trimming silently loses the trimmed history.
-            using var zeroRequest = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot&cursor=0");
+            using var zeroRequest = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot&cursor=features:0");
             var zeroResponse = await fixture.CreateAdminClient()
                 .SendAsync(zeroRequest, HttpCompletionOption.ResponseHeadersRead, cts.Token);
             zeroResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -542,7 +540,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         var current = await eventStore.GetCurrentCursorAsync(cts.Token);
 
         using var request = BuildSseRequest(
-            $"/api/v1/streaming/features?layers=0&mode=snapshot&cursor={current + 5000}");
+            $"/api/v1/streaming/features?layers=0&mode=snapshot&cursor={FeatureStreamCursor.Format(current + 5000)}");
         var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -560,13 +558,12 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
-        var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
-        var eventStore = _fixture.GetService<IFeatureChangeEventStore>();
         var run = Guid.NewGuid().ToString("N")[..8];
+        var own = new List<FeatureChangeEvent>();
 
         for (var i = 0; i < 3; i++)
         {
-            await publisher.PublishAsync(new FeatureChangeEventRequest
+            own.Add(await _fixture.AppendChangeAsync(new FeatureChangeEventRequest
             {
                 ServiceId = TestServiceId,
                 LayerId = 0,
@@ -574,15 +571,11 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
                 Operation = "update",
                 Protocol = "rest",
                 RequestId = $"replay-{run}-{i}"
-            }, cts.Token);
+            }, cts.Token));
         }
 
-        var events = await eventStore.QueryAsync(null, null, null, 500, cts.Token);
-        var own = events.Where(e => e.RequestId.StartsWith($"replay-{run}", StringComparison.Ordinal)).ToList();
-        own.Should().HaveCount(3);
-
         using var request = BuildSseRequest(
-            $"/api/v1/streaming/features?layers=0&mode=snapshot&cursor={own[0].Cursor}");
+            $"/api/v1/streaming/features?layers=0&mode=snapshot&cursor={FeatureStreamCursor.Format(own[0].Cursor)}");
         var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -612,9 +605,8 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
         using var reader = new StreamReader(stream, Encoding.UTF8);
 
-        var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
         var run = Guid.NewGuid().ToString("N")[..8];
-        await publisher.PublishAsync(new FeatureChangeEventRequest
+        await _fixture.AppendChangeAsync(new FeatureChangeEventRequest
         {
             ServiceId = TestServiceId,
             LayerId = 0,
@@ -819,63 +811,17 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
-    public async Task Sse_ReplayWindowTrimmedAfterBaseline_EndsBeforeSendingPostGapDelta()
-    {
-        // The retained floor can advance after EmitSnapshotAsync revalidates it but before
-        // replay performs its first query. Returning cursor+2 simulates that exact TOCTOU:
-        // cursor+1 was trimmed after snapshot-end, while a later event is still retained.
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-
-        var fixture = new WebAppFixture()
-            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
-            .ConfigureServices(services =>
-            {
-                var original = services.Last(d => d.ServiceType == typeof(IFeatureChangeEventStore));
-                services.Remove(original);
-                services.Add(ServiceDescriptor.Describe(
-                    typeof(IFeatureChangeEventStore),
-                    sp => new ReplayGapEventStore(CreateEventStore(sp, original)),
-                    original.Lifetime));
-            });
-
-        await fixture.InitializeAsync();
-        try
-        {
-            using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot");
-            var response = await fixture.CreateAdminClient()
-                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-            using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
-            using var reader = new StreamReader(stream, Encoding.UTF8);
-
-            var baseline = await ReadBaselineAsync(reader, cts.Token);
-            baseline.End.GetProperty("complete").GetBoolean().Should().BeTrue(
-                "the replay window is still intact at the snapshot's post-scan revalidation");
-
-            var postGapDelta = await ReadUntilEventAsync(reader, FeatureChange, cts.Token);
-            postGapDelta.Should().BeNull(
-                "a cursor jump discovered by replay must end the stream before stale state is checkpointed");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_SnapshotMode_FullyExpiredHistory_EmitsCompleteReplacementSnapshot()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var fixture = CreateFixtureWithEventStoreDecorator(
-            inner => new FullyExpiredEventStore(inner, currentCursor: 37));
+            _ => new FullyExpiredEventStore(currentCursor: 37));
 
         await fixture.InitializeAsync();
         try
         {
             using var request = BuildSseRequest(
-                "/api/v1/streaming/features?layers=0&mode=snapshot&cursor=0");
+                "/api/v1/streaming/features?layers=0&mode=snapshot&cursor=features:0");
             var response = await fixture.CreateAdminClient()
                 .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
             response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -888,7 +834,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             baseline.Begin.GetProperty("cursor").GetInt64().Should().Be(37);
             baseline.End.GetProperty("complete").GetBoolean().Should().BeTrue(
                 "the fully expired predecessor history has no missing successor after the captured cursor");
-            baseline.EventIds[^1].Should().Be("37",
+            baseline.EventIds[^1].Should().Be("features:37",
                 "a complete replacement snapshot is a resumable checkpoint");
         }
         finally
@@ -903,14 +849,14 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var fixture = CreateFixtureWithEventStoreDecorator(
-            inner => new FullyExpiredEventStore(inner, currentCursor: 37));
+            _ => new FullyExpiredEventStore(currentCursor: 37));
 
         await fixture.InitializeAsync();
         try
         {
             var wsClient = fixture.CreateWebSocketClient();
             using var ws = await wsClient.ConnectAsync(
-                new Uri("ws://localhost/api/v1/streaming/features?layers=0&mode=snapshot&cursor=0"),
+                new Uri("ws://localhost/api/v1/streaming/features?layers=0&mode=snapshot&cursor=features:0"),
                 cts.Token);
 
             JsonElement end = default;
@@ -930,133 +876,6 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
                 "WebSocket must accept the same known-empty successor window as SSE");
 
             await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/streaming/features")]
-    public async Task Sse_ReplayBatchWithInteriorGap_EndsBeforeSendingAnyDelta()
-    {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-        var fixture = CreateFixtureWithEventStoreDecorator(
-            inner => new InteriorReplayGapEventStore(inner));
-
-        await fixture.InitializeAsync();
-        try
-        {
-            using var request = BuildSseRequest(
-                "/api/v1/streaming/features?layers=0&mode=snapshot&cursor=0");
-            var response = await fixture.CreateAdminClient()
-                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-            using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
-            using var reader = new StreamReader(stream, Encoding.UTF8);
-            var delta = await ReadUntilEventAsync(reader, FeatureChange, cts.Token);
-
-            delta.Should().BeNull(
-                "the whole replay batch must be checked before cursor N+1 is emitted ahead of a missing N+2");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/streaming/features")]
-    public async Task WebSocket_ReplayBatchWithInteriorGap_ClosesBeforeSendingAnyDelta()
-    {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-        var fixture = CreateFixtureWithEventStoreDecorator(
-            inner => new InteriorReplayGapEventStore(inner));
-
-        await fixture.InitializeAsync();
-        try
-        {
-            var wsClient = fixture.CreateWebSocketClient();
-            using var ws = await wsClient.ConnectAsync(
-                new Uri("ws://localhost/api/v1/streaming/features?layers=0&mode=snapshot&cursor=0"),
-                cts.Token);
-
-            var sawDelta = await ReceiveFeatureChangeBeforeCloseAsync(ws, cts.Token);
-            sawDelta.Should().BeFalse(
-                "WebSocket replay must reject an interior cursor gap before sending any member of the batch");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/streaming/features")]
-    public async Task Sse_EmptyReplayBeforeDurableHead_EndsBeforeLiveHandoff()
-    {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-        var fixture = CreateFixtureWithEventStoreDecorator(
-            inner => new MissingReplayTailEventStore(inner, returnContiguousPrefix: false));
-
-        await fixture.InitializeAsync();
-        try
-        {
-            using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot");
-            var response = await fixture.CreateAdminClient()
-                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-            using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
-            using var reader = new StreamReader(stream, Encoding.UTF8);
-            var baseline = await ReadBaselineAsync(reader, cts.Token);
-            baseline.End.GetProperty("complete").GetBoolean().Should().BeTrue(
-                "the durable head advances only after the snapshot retention check");
-
-            var delta = await ReadUntilEventAsync(reader, FeatureChange, cts.Token);
-            delta.Should().BeNull(
-                "an empty Redis result must be retried against the durable head and fail closed "
-                + "when the required tail payload remains unavailable");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/streaming/features")]
-    public async Task WebSocket_ShortReplayBeforeDurableHead_ClosesAfterContiguousPrefix()
-    {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-        var fixture = CreateFixtureWithEventStoreDecorator(
-            inner => new MissingReplayTailEventStore(inner, returnContiguousPrefix: true));
-
-        await fixture.InitializeAsync();
-        try
-        {
-            var wsClient = fixture.CreateWebSocketClient();
-            using var ws = await wsClient.ConnectAsync(
-                new Uri("ws://localhost/api/v1/streaming/features?layers=0&mode=snapshot"),
-                cts.Token);
-
-            JsonElement frame;
-            do
-            {
-                frame = await ReceiveWebSocketJsonAsync(ws, cts.Token);
-            }
-            while (frame.GetProperty("type").GetString() != SnapshotEnd);
-
-            var prefix = await ReceiveWebSocketJsonAsync(ws, cts.Token);
-            prefix.GetProperty("type").GetString().Should().Be(FeatureChange);
-            prefix.GetProperty("cursor").GetInt64().Should().Be(1);
-
-            var sawAnotherDelta = await ReceiveFeatureChangeBeforeCloseAsync(ws, cts.Token);
-            sawAnotherDelta.Should().BeFalse(
-                "a short contiguous Redis batch must not hand off to live delivery while the "
-                + "already-observed durable tail is missing");
         }
         finally
         {
@@ -1502,7 +1321,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         await fixture.InitializeAsync();
         try
         {
-            using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot&cursor=0");
+            using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot&cursor=features:0");
             using var response = await fixture.CreateAdminClient()
                 .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
 
@@ -1531,7 +1350,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             wsClient.ConfigureRequest = request =>
             {
                 request.Headers["Accept"] = "text/event-stream";
-                request.Headers["Last-Event-ID"] = "0";
+                request.Headers["Last-Event-ID"] = "features:0";
             };
 
             var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -1683,10 +1502,6 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     private sealed class TrimmedWindowEventStore(IFeatureChangeEventStore inner, long oldestRetained)
         : IFeatureChangeEventStore
     {
-        public Task<FeatureChangeEvent> AppendAsync(
-            FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
-            => inner.AppendAsync(request, cancellationToken);
-
         public Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default)
             => inner.GetCurrentCursorAsync(cancellationToken);
 
@@ -1700,64 +1515,13 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Simulates retention advancing between the snapshot's final floor check and its first
-    /// replay query. The floor delegates normally, while replay exposes a first retained event
-    /// one position beyond the cursor the client requires.
-    /// </summary>
-    private sealed class ReplayGapEventStore(IFeatureChangeEventStore inner) : IFeatureChangeEventStore
-    {
-        public Task<FeatureChangeEvent> AppendAsync(
-            FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
-            => inner.AppendAsync(request, cancellationToken);
-
-        public Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default)
-            => inner.GetCurrentCursorAsync(cancellationToken);
-
-        public Task<long> GetOldestRetainedCursorAsync(CancellationToken cancellationToken = default)
-            => inner.GetOldestRetainedCursorAsync(cancellationToken);
-
-        public Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
-            long? cursor, DateTimeOffset? from, DateTimeOffset? to, int limit,
-            CancellationToken cancellationToken = default)
-        {
-            if (!cursor.HasValue)
-            {
-                return inner.QueryAsync(cursor, from, to, limit, cancellationToken);
-            }
-
-            IReadOnlyList<FeatureChangeEvent> gap =
-            [
-                new FeatureChangeEvent
-                {
-                    EventId = "post-gap-event",
-                    Cursor = cursor.Value + 2,
-                    Timestamp = DateTimeOffset.UtcNow,
-                    SourceId = TestServiceId,
-                    ServiceId = TestServiceId,
-                    LayerId = 0,
-                    ObjectId = 1,
-                    Operation = "update",
-                    Protocol = "test",
-                    RequestId = "post-gap-request",
-                    PropertiesJson = "{}"
-                }
-            ];
-            return Task.FromResult(gap);
-        }
-    }
-
-    /// <summary>
     /// Represents a quiescent stream whose durable cursor survived after every retained payload
     /// expired. Older resume cursors still require replacement, but a snapshot captured at the
     /// current cursor has a known-empty successor window and is complete.
     /// </summary>
-    private sealed class FullyExpiredEventStore(IFeatureChangeEventStore inner, long currentCursor)
+    private sealed class FullyExpiredEventStore(long currentCursor)
         : IFeatureChangeEventStore
     {
-        public Task<FeatureChangeEvent> AppendAsync(
-            FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
-            => inner.AppendAsync(request, cancellationToken);
-
         public Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(currentCursor);
 
@@ -1772,130 +1536,6 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             long? cursor, DateTimeOffset? from, DateTimeOffset? to, int limit,
             CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<FeatureChangeEvent>>([]);
-    }
-
-    /// <summary>
-    /// Returns a replay batch with its first successor intact and one missing payload in the
-    /// middle, matching Redis after individual payload eviction leaves sorted-set tombstones.
-    /// </summary>
-    private sealed class InteriorReplayGapEventStore(IFeatureChangeEventStore inner)
-        : IFeatureChangeEventStore
-    {
-        public Task<FeatureChangeEvent> AppendAsync(
-            FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
-            => inner.AppendAsync(request, cancellationToken);
-
-        public Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(0L);
-
-        public Task<long> GetOldestRetainedCursorAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(0L);
-
-        public Task<FeatureChangeRetentionWindow> GetRetentionWindowAsync(
-            CancellationToken cancellationToken = default)
-            => Task.FromResult(FeatureChangeRetentionWindow.KnownEmpty(currentCursor: 0));
-
-        public Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
-            long? cursor, DateTimeOffset? from, DateTimeOffset? to, int limit,
-            CancellationToken cancellationToken = default)
-        {
-            if (!cursor.HasValue)
-            {
-                return inner.QueryAsync(cursor, from, to, limit, cancellationToken);
-            }
-
-            IReadOnlyList<FeatureChangeEvent> gap =
-            [
-                CreateReplayEvent(cursor.Value + 1, "before-interior-gap"),
-                CreateReplayEvent(cursor.Value + 3, "after-interior-gap")
-            ];
-            return Task.FromResult(gap);
-        }
-
-        private static FeatureChangeEvent CreateReplayEvent(long cursor, string eventId)
-            => new()
-            {
-                EventId = eventId,
-                Cursor = cursor,
-                Timestamp = DateTimeOffset.UtcNow,
-                SourceId = TestServiceId,
-                ServiceId = TestServiceId,
-                LayerId = 0,
-                ObjectId = cursor,
-                Operation = "update",
-                Protocol = "test",
-                RequestId = eventId,
-                PropertiesJson = "{}"
-            };
-    }
-
-    /// <summary>
-    /// Simulates a tail payload expiring after snapshot retention validation. The first replay
-    /// query is empty or returns a contiguous prefix; only the subsequent durable-window read
-    /// exposes a head beyond that result. A retry still cannot retrieve the required tail.
-    /// </summary>
-    private sealed class MissingReplayTailEventStore(
-        IFeatureChangeEventStore inner,
-        bool returnContiguousPrefix) : IFeatureChangeEventStore
-    {
-        private int _queryCount;
-
-        public Task<FeatureChangeEvent> AppendAsync(
-            FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
-            => inner.AppendAsync(request, cancellationToken);
-
-        public Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(0L);
-
-        public Task<long> GetOldestRetainedCursorAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(0L);
-
-        public Task<FeatureChangeRetentionWindow> GetRetentionWindowAsync(
-            CancellationToken cancellationToken = default)
-        {
-            if (Volatile.Read(ref _queryCount) == 0)
-            {
-                return Task.FromResult(FeatureChangeRetentionWindow.KnownEmpty(currentCursor: 0));
-            }
-
-            var currentCursor = returnContiguousPrefix ? 2 : 1;
-            return Task.FromResult(FeatureChangeRetentionWindow.Retained(currentCursor, oldestRetainedCursor: 1));
-        }
-
-        public Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
-            long? cursor, DateTimeOffset? from, DateTimeOffset? to, int limit,
-            CancellationToken cancellationToken = default)
-        {
-            if (!cursor.HasValue)
-            {
-                return inner.QueryAsync(cursor, from, to, limit, cancellationToken);
-            }
-
-            var queryCount = Interlocked.Increment(ref _queryCount);
-            if (!returnContiguousPrefix || queryCount > 1)
-            {
-                return Task.FromResult<IReadOnlyList<FeatureChangeEvent>>([]);
-            }
-
-            IReadOnlyList<FeatureChangeEvent> prefix =
-            [
-                new FeatureChangeEvent
-                {
-                    EventId = "contiguous-prefix",
-                    Cursor = cursor.Value + 1,
-                    Timestamp = DateTimeOffset.UtcNow,
-                    SourceId = TestServiceId,
-                    ServiceId = TestServiceId,
-                    LayerId = 0,
-                    ObjectId = 1,
-                    Operation = "update",
-                    Protocol = "test",
-                    RequestId = "contiguous-prefix",
-                    PropertiesJson = "{}"
-                }
-            ];
-            return Task.FromResult(prefix);
-        }
     }
 
     private static IFeatureChangeEventStore CreateEventStore(
@@ -2283,52 +1923,5 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
 
         using var document = JsonDocument.Parse(builder.ToString());
         return document.RootElement.Clone();
-    }
-
-    private static async Task<bool> ReceiveFeatureChangeBeforeCloseAsync(
-        WebSocket socket,
-        CancellationToken cancellationToken)
-    {
-        var buffer = new byte[64 * 1024];
-        var builder = new StringBuilder();
-
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            builder.Clear();
-            WebSocketReceiveResult result;
-            do
-            {
-                try
-                {
-                    result = await socket.ReceiveAsync(
-                        new ArraySegment<byte>(buffer),
-                        cancellationToken);
-                }
-                catch (Exception ex) when (ex is WebSocketException or IOException or ObjectDisposedException)
-                {
-                    // A fail-closed server close surfaces through the in-memory TestHost transport
-                    // either as a clean Close frame or as an abrupt socket teardown
-                    // (IOException wrapping ObjectDisposedException). Both mean "closed without
-                    // handing off another delta", which is exactly what these gap tests assert.
-                    return false;
-                }
-
-                if (result.MessageType == WebSocketMessageType.Close)
-                {
-                    return false;
-                }
-
-                builder.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
-            }
-            while (!result.EndOfMessage);
-
-            using var document = JsonDocument.Parse(builder.ToString());
-            if (document.RootElement.GetProperty("type").GetString() == FeatureChange)
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 }

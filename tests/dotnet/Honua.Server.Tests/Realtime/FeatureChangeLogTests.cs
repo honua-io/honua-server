@@ -27,7 +27,7 @@ public sealed class FeatureChangeLogTests(DatabaseFixtureAdapter database) : ICl
     [IntegrationTest(Timeout = 120000)]
     public async Task ReadAsync_DirectSqlEdits_AreEventsWithGenerationCursorsAndDatabaseProtocol()
     {
-        await using var layer = await TestLayer.CreateAsync(database, 734201);
+        await using var layer = await FeatureChangeTestLayer.CreateAsync(database, 734201);
         var before = await layer.HeadAsync();
         var objectId = await layer.InsertAsync("""{"name":"a","count":1}""");
         await layer.UpdateAsync(objectId, """{"name":"a","count":2}""");
@@ -58,7 +58,7 @@ public sealed class FeatureChangeLogTests(DatabaseFixtureAdapter database) : ICl
     [IntegrationTest(Timeout = 120000)]
     public async Task ReadAsync_BranchRows_AreNotEvents()
     {
-        await using var layer = await TestLayer.CreateAsync(database, 734202);
+        await using var layer = await FeatureChangeTestLayer.CreateAsync(database, 734202);
         var before = await layer.HeadAsync();
         await layer.InsertBranchChangeAsync();
         var objectId = await layer.InsertAsync("""{"name":"default"}""");
@@ -73,7 +73,7 @@ public sealed class FeatureChangeLogTests(DatabaseFixtureAdapter database) : ICl
     [IntegrationTest(Timeout = 120000)]
     public async Task ReadWindowAsync_CountLimit_MovesTheFirstResumablePositionPastOlderChanges()
     {
-        await using var layer = await TestLayer.CreateAsync(database, 734203);
+        await using var layer = await FeatureChangeTestLayer.CreateAsync(database, 734203);
         for (var i = 0; i < 4; i++)
         {
             await layer.InsertAsync("""{"n":1}""");
@@ -92,7 +92,7 @@ public sealed class FeatureChangeLogTests(DatabaseFixtureAdapter database) : ICl
     [IntegrationTest(Timeout = 120000)]
     public async Task Dispatcher_FeaturesFamily_DeliversLiveAndResumesAfterAGeneration()
     {
-        await using var layer = await TestLayer.CreateAsync(database, 734204);
+        await using var layer = await FeatureChangeTestLayer.CreateAsync(database, 734204);
         var log = CreateLog();
         var dispatcher = new RealtimeDispatcher(
             new PostgresRealtimeEventLog(new JobStoreDatabase(database.DataSource)),
@@ -121,7 +121,7 @@ public sealed class FeatureChangeLogTests(DatabaseFixtureAdapter database) : ICl
     [IntegrationTest(Timeout = 120000)]
     public async Task FeatureChangeTrigger_Insert_NotifiesTheFeaturesChannel()
     {
-        await using var layer = await TestLayer.CreateAsync(database, 734205);
+        await using var layer = await FeatureChangeTestLayer.CreateAsync(database, 734205);
         await using var listener = await database.DataSource.OpenConnectionAsync();
         var notified = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         listener.Notification += (_, notification) => notified.TrySetResult(notification.Channel);
@@ -167,116 +167,6 @@ public sealed class FeatureChangeLogTests(DatabaseFixtureAdapter database) : ICl
         while (!condition())
         {
             await Task.Delay(20, timeout.Token);
-        }
-    }
-
-    // One layer of honua.features with the change-tracking trigger, removed with its changes on dispose.
-    private sealed class TestLayer(DatabaseFixtureAdapter database, int layerId) : IAsyncDisposable
-    {
-        public int LayerId => layerId;
-
-        public string Scope => layerId.ToString(CultureInfo.InvariantCulture);
-
-        public static async Task<TestLayer> CreateAsync(DatabaseFixtureAdapter database, int layerId)
-        {
-            var layer = new TestLayer(database, layerId);
-            await layer.ExecuteAsync("""
-                CREATE TABLE IF NOT EXISTS honua.features (
-                    objectid BIGSERIAL PRIMARY KEY,
-                    layer_id INT NOT NULL,
-                    geometry GEOMETRY,
-                    attributes JSONB,
-                    created_at TIMESTAMPTZ DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ DEFAULT NOW());
-                DROP TRIGGER IF EXISTS trigger_track_feature_changes ON honua.features;
-                CREATE TRIGGER trigger_track_feature_changes
-                    AFTER INSERT OR UPDATE OR DELETE ON honua.features
-                    FOR EACH ROW EXECUTE FUNCTION honua.track_feature_changes();
-                """);
-            await layer.CleanupAsync();
-            return layer;
-        }
-
-        public Task<long> HeadAsync()
-            => ScalarAsync<long>("SELECT COALESCE(max(generation), 0) FROM honua.feature_changes");
-
-        public Task<long> InsertAsync(string attributes)
-            => ScalarAsync<long>(
-                """
-                INSERT INTO honua.features (layer_id, geometry, attributes)
-                VALUES (@layer, ST_SetSRID(ST_MakePoint(1, 2), 4326), @attributes::jsonb)
-                RETURNING objectid
-                """,
-                ("attributes", attributes));
-
-        public Task UpdateAsync(long objectId, string attributes)
-            => ExecuteAsync(
-                "UPDATE honua.features SET attributes = @attributes::jsonb WHERE objectid = @object AND layer_id = @layer",
-                ("attributes", attributes),
-                ("object", objectId));
-
-        public Task DeleteAsync(long objectId)
-            => ExecuteAsync("DELETE FROM honua.features WHERE objectid = @object AND layer_id = @layer", ("object", objectId));
-
-        public Task InsertBranchChangeAsync()
-            => ExecuteAsync("""
-                INSERT INTO honua.feature_changes (generation, layer_id, objectid, operation, changed_at, version_id)
-                VALUES (nextval('honua.sync_generation'), @layer, 1, 2, now(), gen_random_uuid())
-                """);
-
-        public async Task<IReadOnlyList<long>> GenerationsAsync()
-        {
-            await using var connection = await database.DataSource.OpenConnectionAsync();
-            await using var command = new NpgsqlCommand(
-                "SELECT generation FROM honua.feature_changes WHERE layer_id = @layer AND version_id IS NULL ORDER BY generation",
-                connection);
-            command.Parameters.AddWithValue("layer", layerId);
-            await using var reader = await command.ExecuteReaderAsync();
-            var generations = new List<long>();
-            while (await reader.ReadAsync())
-            {
-                generations.Add(reader.GetInt64(0));
-            }
-
-            return generations;
-        }
-
-        public async ValueTask DisposeAsync() => await CleanupAsync();
-
-        private Task CleanupAsync()
-            => ExecuteAsync("""
-                DELETE FROM honua.features WHERE layer_id = @layer;
-                DELETE FROM honua.feature_changes WHERE layer_id = @layer;
-                """);
-
-        private async Task ExecuteAsync(string sql, params (string Name, object Value)[] parameters)
-        {
-            await using var connection = await database.DataSource.OpenConnectionAsync();
-            await using var command = Command(sql, connection, parameters);
-            _ = await command.ExecuteNonQueryAsync();
-        }
-
-        private async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)
-        {
-            await using var connection = await database.DataSource.OpenConnectionAsync();
-            await using var command = Command(sql, connection, parameters);
-            return (T)Convert.ChangeType((await command.ExecuteScalarAsync())!, typeof(T), CultureInfo.InvariantCulture);
-        }
-
-        private NpgsqlCommand Command(string sql, NpgsqlConnection connection, (string Name, object Value)[] parameters)
-        {
-            var command = new NpgsqlCommand(sql, connection);
-            if (sql.Contains("@layer", StringComparison.Ordinal))
-            {
-                command.Parameters.AddWithValue("layer", layerId);
-            }
-
-            foreach (var (name, value) in parameters)
-            {
-                command.Parameters.AddWithValue(name, value);
-            }
-
-            return command;
         }
     }
 }

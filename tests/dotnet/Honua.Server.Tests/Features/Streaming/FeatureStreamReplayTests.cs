@@ -8,107 +8,84 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
-/// <summary>
-/// Unit tests for durable feature-stream replay continuity.
-/// </summary>
 public sealed class FeatureStreamReplayTests
 {
     [UnitTest]
-    public void HasReplayWindowGap_ContiguousAndSkippedCursors_DistinguishesWindowLoss()
+    public async Task EnsureReplayableAfterAsync_CursorBeforeOldestRetained_ThrowsReplayWindowGap()
     {
-        Assert.False(FeatureStreamEndpoints.HasReplayWindowGap(41, 42));
-        Assert.True(FeatureStreamEndpoints.HasReplayWindowGap(41, 43));
+        var store = FakeFeatureChangeEventStore.WithRetentionWindow(
+            FeatureChangeRetentionWindow.Retained(currentCursor: 60, oldestRetainedCursor: 50));
+
+        await Assert.ThrowsAsync<FeatureStreamEndpoints.FeatureStreamReplayWindowGapException>(
+            () => EnsureReplayableAfterAsync(store, replayCursor: 41));
     }
 
     [UnitTest]
-    public void TryFindReplayWindowGap_InteriorGap_ReturnsMissingBoundary()
+    public async Task EnsureReplayableAfterAsync_CursorJustBeforeOldestRetained_Returns()
     {
-        IReadOnlyList<FeatureChangeEvent> events =
-        [
-            CreateEvent(42),
-            CreateEvent(44)
-        ];
+        var store = FakeFeatureChangeEventStore.WithRetentionWindow(
+            FeatureChangeRetentionWindow.Retained(currentCursor: 60, oldestRetainedCursor: 50));
 
-        var found = FeatureStreamEndpoints.TryFindReplayWindowGap(
-            events,
-            requestedCursor: 41,
-            out var previousCursor,
-            out var firstAvailableCursor);
-
-        Assert.True(found);
-        Assert.Equal(42, previousCursor);
-        Assert.Equal(44, firstAvailableCursor);
+        await EnsureReplayableAfterAsync(store, replayCursor: 49);
     }
 
     [UnitTest]
-    public async Task ValidateReplayTailAsync_AdvancedDurableHead_ReturnsRetryBoundary()
+    public async Task EnsureReplayableAfterAsync_GenerationGapsInsideTheWindow_Returns()
     {
-        var store = new FixedRetentionWindowEventStore(
-            FeatureChangeRetentionWindow.Retained(currentCursor: 43, oldestRetainedCursor: 1));
+        var store = new FakeFeatureChangeEventStore();
+        store.Append(CreateRequest(1), cursorGap: 3);
+        store.Append(CreateRequest(2), cursorGap: 5);
 
-        var requiredThroughCursor = await FeatureStreamEndpoints.ValidateReplayTailAsync(
+        await EnsureReplayableAfterAsync(store, replayCursor: 0);
+        await EnsureReplayableAfterAsync(store, replayCursor: 5);
+    }
+
+    [UnitTest]
+    public async Task EnsureReplayableAfterAsync_CursorAtHead_Returns()
+    {
+        var store = FakeFeatureChangeEventStore.WithRetentionWindow(
+            FeatureChangeRetentionWindow.Retained(currentCursor: 60, oldestRetainedCursor: 50));
+
+        await EnsureReplayableAfterAsync(store, replayCursor: 60);
+    }
+
+    [UnitTest]
+    public async Task EnsureReplayableAfterAsync_IndeterminateWindow_ThrowsReplayWindowGap()
+    {
+        var store = FakeFeatureChangeEventStore.WithRetentionWindow(
+            FeatureChangeRetentionWindow.Indeterminate(currentCursor: 60));
+
+        await Assert.ThrowsAsync<FeatureStreamEndpoints.FeatureStreamReplayWindowGapException>(
+            () => EnsureReplayableAfterAsync(store, replayCursor: 60));
+    }
+
+    [UnitTest]
+    public async Task EnsureReplayableAfterAsync_EmptyLogBehindHead_ThrowsReplayWindowGap()
+    {
+        var store = FakeFeatureChangeEventStore.WithRetentionWindow(
+            FeatureChangeRetentionWindow.KnownEmpty(currentCursor: 60));
+
+        await Assert.ThrowsAsync<FeatureStreamEndpoints.FeatureStreamReplayWindowGapException>(
+            () => EnsureReplayableAfterAsync(store, replayCursor: 10));
+    }
+
+    private static Task EnsureReplayableAfterAsync(IFeatureChangeEventStore store, long replayCursor)
+        => FeatureStreamEndpoints.EnsureReplayableAfterAsync(
             store,
-            replayCursor: 42,
-            requiredThroughCursor: 42,
+            replayCursor,
             NullLogger.Instance,
             Guid.NewGuid(),
             subscriptionId: "test",
             CancellationToken.None);
 
-        Assert.Equal(43, requiredThroughCursor);
-    }
-
-    [UnitTest]
-    public async Task ValidateReplayTailAsync_RetryStillBelowObservedHead_FailsClosed()
-    {
-        var store = new FixedRetentionWindowEventStore(
-            FeatureChangeRetentionWindow.Retained(currentCursor: 43, oldestRetainedCursor: 1));
-
-        await Assert.ThrowsAsync<FeatureStreamEndpoints.FeatureStreamReplayWindowGapException>(
-            () => FeatureStreamEndpoints.ValidateReplayTailAsync(
-                store,
-                replayCursor: 42,
-                requiredThroughCursor: 43,
-                NullLogger.Instance,
-                Guid.NewGuid(),
-                subscriptionId: "test",
-                CancellationToken.None));
-    }
-
-    private static FeatureChangeEvent CreateEvent(long cursor)
+    private static FeatureChangeEventRequest CreateRequest(long objectId)
         => new()
         {
-            EventId = $"event-{cursor}",
-            Cursor = cursor,
-            Timestamp = DateTimeOffset.UtcNow,
-            SourceId = "test",
             ServiceId = "test",
             LayerId = 0,
-            ObjectId = cursor,
+            ObjectId = objectId,
             Operation = "update",
             Protocol = "test",
-            RequestId = $"request-{cursor}"
+            RequestId = $"request-{objectId}"
         };
-
-    private sealed class FixedRetentionWindowEventStore(FeatureChangeRetentionWindow window)
-        : IFeatureChangeEventStore
-    {
-        public Task<FeatureChangeEvent> AppendAsync(
-            FeatureChangeEventRequest request,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(window.CurrentCursor);
-
-        public Task<FeatureChangeRetentionWindow> GetRetentionWindowAsync(
-            CancellationToken cancellationToken = default) => Task.FromResult(window);
-
-        public Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
-            long? cursor,
-            DateTimeOffset? from,
-            DateTimeOffset? to,
-            int limit,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<FeatureChangeEvent>>([]);
-    }
 }

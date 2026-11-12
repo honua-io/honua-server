@@ -8,7 +8,7 @@ resource: "honua://capability/streaming.feature-subscriptions"
 
 Receive an event for every feature insert, update, and delete — pushed to your endpoint as a signed webhook or streamed live over WebSocket/SSE.
 
-**Prerequisites:** A writable layer (see [Edit features](edit-features.md)). Streaming is an Experimental surface and is disabled by default: it works on a single node, and delivery across several nodes needs an optional Redis add-on. To use it, enable `Capabilities:Experimental:realtime.feature-streams:Enabled=true` in addition to the required license. Webhook configuration requires restart access to the server's environment; replay and session admin require an admin API key.
+**Prerequisites:** A writable layer (see [Edit features](edit-features.md)). Streaming is an Experimental surface and is disabled by default: every node delivers every committed change, including edits made directly in the database, because streams read the PostgreSQL change log. To use it, enable `Capabilities:Experimental:realtime.feature-streams:Enabled=true` in addition to the required license. Webhook configuration requires restart access to the server's environment; replay and session admin require an admin API key.
 
 Every write — FeatureServer, OGC API Features, OData (including `$batch`), WFS 2.0 transactions, and gRPC `ApplyEdits` — publishes one normalized envelope: `eventId`, `timestamp`, `serviceId`, `layerId`, `objectId`, `operation` (`insert`|`update`|`delete`), `protocol`, `requestId`, plus geometry/attributes when available. Delivery is at-least-once on every channel; always dedupe on `eventId`.
 
@@ -39,7 +39,7 @@ printf '%s.%s' "$TIMESTAMP" "$RAW_BODY" | openssl dgst -sha256 -hmac "$WEBHOOK_H
 
 > Use `createHonuaServerRealtimeSubscription` from `@honua/sdk-js/realtime` and subscribe with `layerId: 0`; the SDK handles the SSE endpoint and event decoding.
 
-SSE subscriptions are fixed by query parameters (`serviceId`, `layers`, `bbox`, `filter` CQL2, `datetime`) at connect time; each `feature-change` event's SSE `id:` is a cursor, so `EventSource` reconnects resume automatically (or pass `cursor=` explicitly).
+SSE subscriptions are fixed by query parameters (`serviceId`, `layers`, `bbox`, `filter` CQL2, `datetime`) at connect time; each `feature-change` event's SSE `id:` is a cursor of the form `features:<generation>`, so `EventSource` reconnects resume automatically (or pass `cursor=` explicitly). A cursor without the `features:` prefix comes from an earlier server version: the stream sends a `reset` event with reason `cursor-epoch` and continues live, so resynchronize from a snapshot. Any other malformed cursor is rejected with `400`.
 
 ### 4. Stream over WebSocket with dynamic subscriptions
 
@@ -122,7 +122,7 @@ The workflow is three requests, and the third belongs in a `finally` block:
 
 > Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/feature-events/replay?limit=100`.
 
-Page with `cursor` (and optional `from`/`to` ISO 8601 bounds, `limit` 1–1000): process each event idempotently, persist the returned `nextCursor`, repeat while `hasMore=true`. Retention is in-memory and capped by `FeatureChangeEvents__MaxRetainedEvents` (default 20000); on PostgreSQL a transactional outbox makes publication atomic with the row mutation.
+Page with `cursor` (and optional `from`/`to` ISO 8601 bounds, `limit` 1–1000): process each event idempotently, persist the returned `nextCursor`, repeat while `hasMore=true`. Events are read from the PostgreSQL change log, which every edit writes in its own transaction. A cursor stays resumable for `Realtime__Retention__features` (default 24 hours) and at most `Realtime__ResumeMaxEvents` (default 10000) events behind the newest change.
 
 ### 8. Manage live sessions (admin)
 
