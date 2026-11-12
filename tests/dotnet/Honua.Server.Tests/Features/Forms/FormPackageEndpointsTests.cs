@@ -17,6 +17,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -30,7 +31,12 @@ namespace Honua.Server.Tests.Features.Forms;
 public sealed class FormPackageEndpointsTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture()
-        .WithTestLicense(HonuaEdition.Pro);
+        .WithTestLicense(HonuaEdition.Pro)
+        .ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        });
 
     public async Task InitializeAsync()
     {
@@ -50,6 +56,7 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
                 migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!));
         });
         await _fixture.InitializeAsync();
+        _fixture.Client.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword);
         await ServerTestData.EnsureFixtureAttachmentsAsync(_fixture.Postgres, "honua");
         await EnableEditingCapabilitiesAsync();
     }

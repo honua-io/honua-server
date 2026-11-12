@@ -557,6 +557,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.AgentAdministrator_CannotManageCertificateCredentials",
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.DisableProfile_ExistingProfile_ReturnsDisabledProfile"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -571,6 +572,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.AgentAdministrator_CannotManageCertificateCredentials",
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.DisableMapping_ExistingMapping_ReturnsDisabledMapping"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -585,6 +587,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.AgentAdministrator_CannotManageCertificateCredentials",
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.RemoveRevocation_ExistingRevocation_ReturnsOk"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -17319,6 +17322,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Forms.FormPackageEndpointsTests.AgentAdministrator_CannotPublishFormPackage",
         "Honua.Server.Tests.Features.Forms.FormPackageEndpointsTests.PackageLifecycle_DraftValidatePublishReadReopenAndUpdate_Works"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -19048,6 +19052,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.SceneDatasetEndpointsTests.AgentAdministrator_CannotRegisterOrWidenSceneAccess",
         "Honua.Server.Tests.Features.Admin.SceneDatasetEndpointsTests.FindAsync_ActiveScene_ReturnsServingModel",
         "Honua.Server.Tests.Features.Admin.SceneDatasetEndpointsTests.FindAsync_DeactivatedScene_ReturnsNull",
         "Honua.Server.Tests.Features.Admin.SceneDatasetEndpointsTests.FindAsync_ProtectedScene_PropagatesAccessPolicy",
@@ -19132,6 +19137,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.AgentAdministrator_CannotManageCertificateCredentials",
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.CreateProfile_RevocationStatusUnknownIsFatal_RoundTrips",
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.CreateProfile_ValidRequest_ReturnsCreated",
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.CreateProfile_WithAcceptedIssuerSubjectsButNoChainTrust_ReturnsBadRequest",
@@ -19150,6 +19156,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.AgentAdministrator_CannotManageCertificateCredentials",
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.CreateMapping_ValidRequest_ReturnsCreated",
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.CreateMapping_WithBlankMatchValue_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.CreateMapping_WithBlankPrincipalId_ReturnsBadRequest",
@@ -19167,7 +19174,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.AddRevocation_ValidRequest_ReturnsCreated"
+        "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.AddRevocation_ValidRequest_ReturnsCreated",
+        "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.AgentAdministrator_CannotManageCertificateCredentials"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "experimental",
@@ -26144,6 +26152,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.SceneDatasetEndpointsTests.AgentAdministrator_CannotRegisterOrWidenSceneAccess",
         "Honua.Server.Tests.Features.Admin.SceneDatasetEndpointsTests.Update_ChangesFieldsAndBumpsRevision"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -26158,6 +26167,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.AgentAdministrator_CannotManageCertificateCredentials",
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.UpdateProfile_ExistingProfile_ReturnsUpdatedRevision"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -26172,6 +26182,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.AgentAdministrator_CannotManageCertificateCredentials",
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.UpdateMapping_ExistingMapping_ReturnsUpdatedMapping"
       ],
       "proof_ledger_surface": "control-plane-admin",
