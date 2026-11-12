@@ -496,16 +496,14 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Seeds a real 2-D "crater rim" DEM: a flat floor tile plus four raster tiles
-    /// (north/south/east/west bands, newer acquisition date so the mosaic "newest wins"
-    /// rule overrides the floor within each band's footprint) that together form a
-    /// complete hollow square ring around the Web Mercator origin (the observer position
-    /// used by every ridge test above). All rasters are stored directly in EPSG:3857
-    /// meters, matching <see cref="HoldFullWorldRasterAsync"/>/<see cref="HoldSeQuadrantRasterAsync"/>,
-    /// so <see cref="RingInnerRadiusMeters"/>/<see cref="RingOuterRadiusMeters"/> are exact
-    /// (not degree-approximated) distances from the observer.
-    /// </summary>
+    // Seeds a real 2-D "crater rim" DEM: a flat floor tile plus four raster tiles
+    // (north/south/east/west bands, newer acquisition date so the mosaic "newest wins"
+    // rule overrides the floor within each band's footprint) that together form a
+    // complete hollow square ring around the Web Mercator origin (the observer position
+    // used by every ridge test above). All rasters are stored directly in EPSG:3857
+    // meters, matching HoldFullWorldRasterAsync/HoldSeQuadrantRasterAsync,
+    // so RingInnerRadiusMeters/RingOuterRadiusMeters are exact
+    // (not degree-approximated) distances from the observer.
     private Task<IAsyncDisposable> HoldRidgeRingRasterAsync()
     {
         var floorTime = RasterIntegrationTestData.WestAcquisition;

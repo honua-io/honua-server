@@ -18,101 +18,124 @@ internal static class LercTestDecoder
         var offset = 0;
         while (offset < data.Length)
         {
-            var blob = data.AsSpan(offset);
-            Encoding.ASCII.GetString(blob[..6]).Should().Be("Lerc2 ");
-            BinaryPrimitives.ReadInt32LittleEndian(blob[6..]).Should().Be(3);
-            var checksum = BinaryPrimitives.ReadUInt32LittleEndian(blob[10..]);
-            BinaryPrimitives.ReadInt32LittleEndian(blob[14..]).Should().Be(height);
-            BinaryPrimitives.ReadInt32LittleEndian(blob[18..]).Should().Be(width);
-            var validCount = BinaryPrimitives.ReadInt32LittleEndian(blob[22..]);
-            var blobSize = BinaryPrimitives.ReadInt32LittleEndian(blob[30..]);
-            var dataType = BinaryPrimitives.ReadInt32LittleEndian(blob[34..]);
-            var zMin = BinaryPrimitives.ReadDoubleLittleEndian(blob[46..]);
-            var zMax = BinaryPrimitives.ReadDoubleLittleEndian(blob[54..]);
-            blob = blob[..blobSize];
-            Fletcher32(blob[14..]).Should().Be(checksum, "the LERC2 checksum covers every byte after it");
-
+            var header = ReadHeader(data.AsSpan(offset), width, height) with { BytesPerSample = bytesPerSample };
+            ReadOnlySpan<byte> blob = data.AsSpan(offset, header.BlobSize);
             var pixels = width * height;
-            var valid = new bool[pixels];
-            var maskBytes = BinaryPrimitives.ReadInt32LittleEndian(blob[62..]);
-            var position = 66;
-            if (validCount == pixels)
-            {
-                Array.Fill(valid, true);
-            }
-            else if (validCount > 0)
-            {
-                var mask = new List<byte>();
-                var end = position + maskBytes;
-                while (true)
-                {
-                    var count = BinaryPrimitives.ReadInt16LittleEndian(blob[position..]);
-                    position += 2;
-                    if (count == short.MinValue)
-                    {
-                        break;
-                    }
-
-                    if (count > 0)
-                    {
-                        mask.AddRange(blob.Slice(position, count).ToArray());
-                        position += count;
-                    }
-                    else
-                    {
-                        mask.AddRange(Enumerable.Repeat(blob[position], -count));
-                        position++;
-                    }
-                }
-
-                position.Should().Be(end);
-                for (var pixel = 0; pixel < pixels; pixel++)
-                {
-                    valid[pixel] = (mask[pixel / 8] & (0x80 >> (pixel % 8))) != 0;
-                }
-            }
-
-            valid.Count(static bit => bit).Should().Be(validCount);
-            var values = new double[pixels];
-            var raw = new byte[pixels * bytesPerSample];
-            // codeql[cs/equality-on-floats]: mirrors the encoder's exact constant-band check; a tolerance would expect samples the blob does not store
-            if (validCount > 0 && zMin == zMax)
-            {
-                position.Should().Be(blobSize, "a constant band carries no samples");
-                for (var pixel = 0; pixel < pixels; pixel++)
-                {
-                    values[pixel] = valid[pixel] ? zMin : 0;
-                }
-            }
-            else if (validCount > 0)
-            {
-                blob[position++].Should().Be(1, "samples are stored in one sweep");
-                for (var pixel = 0; pixel < pixels; pixel++)
-                {
-                    if (!valid[pixel])
-                    {
-                        continue;
-                    }
-
-                    var sample = blob.Slice(position, bytesPerSample);
-                    sample.CopyTo(raw.AsSpan(pixel * bytesPerSample));
-                    values[pixel] = dataType switch
-                    {
-                        1 => sample[0],
-                        6 => BinaryPrimitives.ReadSingleLittleEndian(sample),
-                        _ => throw new NotSupportedException($"Test reader does not decode dataType {dataType}."),
-                    };
-                    position += bytesPerSample;
-                }
-
-                position.Should().Be(blobSize);
-            }
-
-            bands.Add(new LercBand(values, valid, raw));
-            offset += blobSize;
+            var (valid, position) = ReadValidityMask(blob, pixels, header.ValidCount);
+            valid.Count(static bit => bit).Should().Be(header.ValidCount);
+            bands.Add(ReadSamples(blob[position..], header, valid));
+            offset += header.BlobSize;
         }
 
         return bands;
+    }
+
+    private readonly record struct LercHeader(
+        int ValidCount, int BlobSize, int DataType, double ZMin, double ZMax, int BytesPerSample = 1);
+
+    private static LercHeader ReadHeader(ReadOnlySpan<byte> blob, int width, int height)
+    {
+        Encoding.ASCII.GetString(blob[..6]).Should().Be("Lerc2 ");
+        BinaryPrimitives.ReadInt32LittleEndian(blob[6..]).Should().Be(3);
+        var checksum = BinaryPrimitives.ReadUInt32LittleEndian(blob[10..]);
+        BinaryPrimitives.ReadInt32LittleEndian(blob[14..]).Should().Be(height);
+        BinaryPrimitives.ReadInt32LittleEndian(blob[18..]).Should().Be(width);
+        var header = new LercHeader(
+            ValidCount: BinaryPrimitives.ReadInt32LittleEndian(blob[22..]),
+            BlobSize: BinaryPrimitives.ReadInt32LittleEndian(blob[30..]),
+            DataType: BinaryPrimitives.ReadInt32LittleEndian(blob[34..]),
+            ZMin: BinaryPrimitives.ReadDoubleLittleEndian(blob[46..]),
+            ZMax: BinaryPrimitives.ReadDoubleLittleEndian(blob[54..]));
+        Fletcher32(blob[14..header.BlobSize]).Should().Be(checksum, "the LERC2 checksum covers every byte after it");
+        return header;
+    }
+
+    private static (bool[] Valid, int Position) ReadValidityMask(ReadOnlySpan<byte> blob, int pixels, int validCount)
+    {
+        var valid = new bool[pixels];
+        var maskBytes = BinaryPrimitives.ReadInt32LittleEndian(blob[62..]);
+        var position = 66;
+        if (validCount == pixels)
+        {
+            Array.Fill(valid, true);
+        }
+        else if (validCount > 0)
+        {
+            var mask = new List<byte>();
+            var end = position + maskBytes;
+            while (true)
+            {
+                var count = BinaryPrimitives.ReadInt16LittleEndian(blob[position..]);
+                position += 2;
+                if (count == short.MinValue)
+                {
+                    break;
+                }
+
+                if (count > 0)
+                {
+                    mask.AddRange(blob.Slice(position, count).ToArray());
+                    position += count;
+                }
+                else
+                {
+                    mask.AddRange(Enumerable.Repeat(blob[position], -count));
+                    position++;
+                }
+            }
+
+            position.Should().Be(end);
+            for (var pixel = 0; pixel < pixels; pixel++)
+            {
+                valid[pixel] = (mask[pixel / 8] & (0x80 >> (pixel % 8))) != 0;
+            }
+        }
+
+        return (valid, position);
+    }
+
+    // samples starts after the mask; a fully consumed blob ends at samples.Length.
+    private static LercBand ReadSamples(ReadOnlySpan<byte> samples, LercHeader header, bool[] valid)
+    {
+        var bytesPerSample = header.BytesPerSample;
+        var pixels = valid.Length;
+        var values = new double[pixels];
+        var raw = new byte[pixels * bytesPerSample];
+        // codeql[cs/equality-on-floats]: mirrors the encoder's exact constant-band check; a tolerance would expect samples the blob does not store
+        if (header.ValidCount > 0 && header.ZMin == header.ZMax)
+        {
+            samples.Length.Should().Be(0, "a constant band carries no samples");
+            for (var pixel = 0; pixel < pixels; pixel++)
+            {
+                values[pixel] = valid[pixel] ? header.ZMin : 0;
+            }
+        }
+        else if (header.ValidCount > 0)
+        {
+            var position = 0;
+            samples[position++].Should().Be(1, "samples are stored in one sweep");
+            for (var pixel = 0; pixel < pixels; pixel++)
+            {
+                if (!valid[pixel])
+                {
+                    continue;
+                }
+
+                var sample = samples.Slice(position, bytesPerSample);
+                sample.CopyTo(raw.AsSpan(pixel * bytesPerSample));
+                values[pixel] = header.DataType switch
+                {
+                    1 => sample[0],
+                    6 => BinaryPrimitives.ReadSingleLittleEndian(sample),
+                    _ => throw new NotSupportedException($"Test reader does not decode dataType {header.DataType}."),
+                };
+                position += bytesPerSample;
+            }
+
+            position.Should().Be(samples.Length);
+        }
+
+        return new LercBand(values, valid, raw);
     }
 
     private static uint Fletcher32(ReadOnlySpan<byte> bytes)
