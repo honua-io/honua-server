@@ -20,7 +20,7 @@ are installed. A doctor result verifies only its reported checks; a successful
 `run` and inspected output are execution evidence.
 
 Custom Python/.NET tools can use the [Python](https://github.com/honua-io/honua-samples/tree/4efc272e58789ec17ebec2125cec06304b2ce4e4/templates/gp-python/README.md) and [.NET](https://github.com/honua-io/honua-samples/tree/4efc272e58789ec17ebec2125cec06304b2ce4e4/templates/gp-dotnet/README.md) templates.
-Its receipts and progress events remain local and unsanitized. These local tools
+Their receipts and progress events remain local and unsanitized. These local tools
 do not add MCP capabilities or authorize a remote deployment. Discover the live
 MCP surface before proposing remote inspection, retries, or deployment actions.
 
