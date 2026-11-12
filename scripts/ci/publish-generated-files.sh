@@ -29,22 +29,22 @@ remote_branch="${remote_branch%%[[:space:]]*}"
 source_sha="$(git rev-parse HEAD)"
 remote_trunk="$(git ls-remote --exit-code origin refs/heads/trunk)"
 remote_trunk="${remote_trunk%%[[:space:]]*}"
+mapfile -d '' -t candidate_files < <(git diff --name-only -z HEAD -- "${GENERATED_FILES[@]}")
 # A first attempt on trunk publishes on its validated source even if trunk has
 # moved: the PR is an ordinary branch behind trunk, PR Gate tests the merge, and
 # generated-only admission (base == source) falls back to the full checks.
-# Ordering: GitHub replaces a pending run in this concurrency group with the
-# newer trigger, so a first attempt never runs after a newer one. A rerun
-# (attempt > 1) or a local run can replay an old SHA after a newer publisher,
-# and a dispatch on another ref never validated trunk, so those refuse.
+# Run scheduling does not guarantee source order. Reruns, local runs and
+# non-trunk refs refuse a moved trunk; first attempts also check the existing
+# publication's source below before replacing it.
 if [[ "$source_sha" != "$remote_trunk" ]]; then
   if [[ "${GITHUB_RUN_ATTEMPT:-}" != 1 || "${GITHUB_REF:-}" != refs/heads/trunk ]]; then
     echo "Validated source $source_sha; trunk is now $remote_trunk. No stale projections published (rerun, local run or non-trunk ref)."
     exit 0
   fi
-  # Output that trunk already carries (a merged automation PR, an author's
-  # regeneration) must not reopen as a no-op or a textual merge of projections.
-  git fetch --quiet --no-tags --depth=1 origin refs/heads/trunk
-  if git diff --quiet FETCH_HEAD -- "${GENERATED_FILES[@]}"; then
+  # Compare only files changed by this candidate, preserving independent
+  # generated changes already on trunk when this contribution has landed.
+  git fetch --quiet --no-tags origin "$remote_trunk"
+  if (( ${#candidate_files[@]} == 0 )) || git diff --quiet FETCH_HEAD -- "${candidate_files[@]}"; then
     echo "Trunk $(git rev-parse FETCH_HEAD) already carries these projections; nothing to publish."
     exit 0
   fi
@@ -55,6 +55,25 @@ fi
 if git diff --quiet HEAD -- "${GENERATED_FILES[@]}"; then
   echo 'Generated files are up to date; nothing to publish.'
   exit 0
+fi
+# A completed newer publisher may predate this run's lease observation.
+# Fetch the captured head, then compare sources; the lease still guards changes
+# after that observation. Checkout's shallow history cannot prove ancestry.
+if [[ -n "$remote_branch" ]]; then
+  fetch_args=(--quiet --no-tags)
+  if [[ "$(git rev-parse --is-shallow-repository)" == true ]]; then
+    fetch_args+=(--unshallow)
+  fi
+  git fetch "${fetch_args[@]}" origin "$remote_branch" refs/heads/trunk
+  published_source="$(git show -s --format=%B "$remote_branch" | sed -n 's/^Generated-From: //p')"
+  if [[ -z "$published_source" || "$published_source" != "$(git rev-parse "$remote_branch^")" ]]; then
+    echo 'Cannot verify existing publication source; preserving automation branch.' >&2
+    exit 1
+  fi
+  if ! git merge-base --is-ancestor "$published_source" "$source_sha"; then
+    echo "Preserving publication from newer or unrelated source $published_source; candidate source is $source_sha."
+    exit 0
+  fi
 fi
 : "${GH_TOKEN:?MERGE_TRAIN_TOKEN is required to publish a PR and trigger its admission checks}"
 git diff --stat HEAD -- "${GENERATED_FILES[@]}"
