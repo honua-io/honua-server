@@ -27,8 +27,8 @@ public sealed class PostgresMcpRequestStoreTests(DatabaseFixtureAdapter database
         await harness.CreateMcpSessionStore().SaveAsync(Record("busy-session"), _idleTimeout, CancellationToken.None);
 
         var states = await Task.WhenAll(Enumerable.Range(0, 33).Select(index =>
-            harness.CreateMcpSessionStore().UpdateRequestAsync("busy-session", Alice, $"request-{index}",
-                Guid.NewGuid().ToString("N"), McpRequestOperation.Register, CancellationToken.None)));
+            harness.CreateMcpSessionStore().UpdateRequestAsync(new McpActiveRequest("busy-session", Alice, $"request-{index}",
+                Guid.NewGuid().ToString("N")), McpRequestOperation.Register, CancellationToken.None)));
 
         states.Count(state => state == McpRequestState.Active).Should().Be(McpRequestBounds.PerSession);
         states.Count(state => state == McpRequestState.Capacity).Should().Be(1);
@@ -45,13 +45,39 @@ public sealed class PostgresMcpRequestStoreTests(DatabaseFixtureAdapter database
             await store.SaveAsync(Record($"session-{session}"), _idleTimeout, CancellationToken.None);
             for (var request = 0; request < 30; request++)
             {
-                var state = await store.UpdateRequestAsync($"session-{session}", Alice, $"request-{request}",
-                    Guid.NewGuid().ToString("N"), McpRequestOperation.Register, CancellationToken.None);
+                var state = await store.UpdateRequestAsync(new McpActiveRequest($"session-{session}", Alice, $"request-{request}",
+                    Guid.NewGuid().ToString("N")), McpRequestOperation.Register, CancellationToken.None);
                 admitted += state == McpRequestState.Active ? 1 : 0;
             }
         }
 
         admitted.Should().Be(McpRequestBounds.PerPrincipal);
+    }
+
+    [IntegrationTest]
+    public async Task Register_ExpiredSessionsWithoutSweep_DoNotConsumePrincipalCapacity()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.CreateMcpSessionStore();
+        for (var session = 0; session < 4; session++)
+        {
+            var sessionId = $"expired-{session}";
+            await store.SaveAsync(Record(sessionId), _idleTimeout, CancellationToken.None);
+            for (var request = 0; request < McpRequestBounds.PerSession; request++)
+            {
+                var state = await store.UpdateRequestAsync(new McpActiveRequest(sessionId, Alice, $"request-{request}",
+                    "generation"), McpRequestOperation.Register, CancellationToken.None);
+                state.Should().Be(McpRequestState.Active);
+            }
+        }
+
+        await harness.ExecuteAsync($"UPDATE {harness.Table("mcp_sessions")} SET expires_at = now() - interval '1 second'");
+        await store.SaveAsync(Record("live-session"), _idleTimeout, CancellationToken.None);
+
+        var admitted = await store.UpdateRequestAsync(new McpActiveRequest("live-session", Alice, "new-request", "generation"),
+            McpRequestOperation.Register, CancellationToken.None);
+
+        admitted.Should().Be(McpRequestState.Active, "expired sessions cannot run requests even before retention sweeps them");
     }
 
     [IntegrationTest]
@@ -68,7 +94,7 @@ public sealed class PostgresMcpRequestStoreTests(DatabaseFixtureAdapter database
         (await Update(store, "second", McpRequestOperation.Register)).Should().Be(McpRequestState.Active);
 
         static Task<McpRequestState> Update(IMcpRequestStore store, string generation, McpRequestOperation operation)
-            => store.UpdateRequestAsync("once-session", Alice, "request", generation, operation, CancellationToken.None);
+            => store.UpdateRequestAsync(new McpActiveRequest("once-session", Alice, "request", generation), operation, CancellationToken.None);
     }
 
     [IntegrationTest]

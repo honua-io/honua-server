@@ -32,8 +32,7 @@ public sealed partial class McpSessionSharedStoreTests
         public Exception? RequestReadException { get; set; }
 
         public Task<McpRequestState> UpdateRequestAsync(
-            string sessionId, string principalKey, string requestKey, string generation,
-            McpRequestOperation operation, CancellationToken cancellationToken)
+            McpActiveRequest request, McpRequestOperation operation, CancellationToken cancellationToken)
         {
             ThrowIfFailing();
             if (operation == McpRequestOperation.Read && RequestReadException is { } failure)
@@ -43,7 +42,7 @@ public sealed partial class McpSessionSharedStoreTests
 
             var requests = LazyInitializer.EnsureInitialized(ref _requests, () => new McpMemoryRequestStore(
                 (id, principal) => TryGetLive(id, out var record) && record.PrincipalKey == principal, time));
-            return requests.UpdateRequestAsync(sessionId, principalKey, requestKey, generation, operation, cancellationToken);
+            return requests.UpdateRequestAsync(request, operation, cancellationToken);
         }
 
 
@@ -114,11 +113,18 @@ public sealed partial class McpSessionSharedStoreTests
                 throw failure;
             }
 
+            if (BeforePoll is { } beforePoll)
+            {
+                await beforePoll(cancellationToken);
+            }
+
             Interlocked.Increment(ref _polls);
             var endedSessions = request.SessionIds.Where(id => !TryGetLive(id, out _)).ToArray();
             var endedRequests = await McpRequestPoll.ReadEachAsync(this, request.Requests, cancellationToken);
             return new McpPollResult(endedSessions, endedRequests);
         }
+
+        public Func<CancellationToken, Task>? BeforePoll { get; set; }
 
         public int Polls => _polls;
 

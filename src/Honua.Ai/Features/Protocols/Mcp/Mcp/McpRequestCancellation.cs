@@ -93,8 +93,7 @@ internal sealed partial class McpSessionManager
     }
 
     private Task<McpRequestState> UpdateAsync(McpActiveRequest request, McpRequestOperation operation, CancellationToken cancellationToken)
-        => RequestStore.UpdateRequestAsync(request.SessionId, request.PrincipalKey, request.RequestKey, request.Generation,
-            operation, cancellationToken).WaitAsync(cancellationToken);
+        => RequestStore.UpdateRequestAsync(request, operation, cancellationToken).WaitAsync(cancellationToken);
 
     internal async Task CancelRequestAsync(
         string sessionId, string principalKey, JsonElement id, CancellationToken cancellationToken)
@@ -106,7 +105,7 @@ internal sealed partial class McpSessionManager
 
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         budget.CancelAfter(TimeSpan.FromSeconds(2));
-        await RequestStore.UpdateRequestAsync(sessionId, principalKey, key, string.Empty,
+        await RequestStore.UpdateRequestAsync(new McpActiveRequest(sessionId, principalKey, key, string.Empty),
             McpRequestOperation.Cancel, budget.Token).WaitAsync(budget.Token).ConfigureAwait(false);
     }
 

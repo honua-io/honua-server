@@ -45,6 +45,39 @@ public sealed class McpRequestCancellationTests
         Assert.True(store.Polls >= 1);
     }
 
+    [UnitTest]
+    public async Task StopAsync_DuringPoll_CancelsAndJoinsPollingAndStopsLocalWork()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var exited = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var store = new McpSessionSharedStoreTests.FakeSharedSessionStore(TimeProvider.System)
+        {
+            BeforePoll = async token =>
+            {
+                entered.SetResult();
+                try
+                {
+                    await Task.Delay(Timeout.Infinite, token);
+                }
+                finally
+                {
+                    exited.SetResult();
+                }
+            }
+        };
+        var manager = new McpSessionManager(store: store);
+        var session = (await manager.TryCreateSessionAsync(Alice, false, null, CancellationToken.None))!;
+        var (lease, _) = await manager.StartRequestAsync(session, Alice, Id("7"), CancellationToken.None);
+        await using var request = Assert.IsType<McpSessionManager.McpRequestLease>(lease);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(4));
+
+        await manager.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(4));
+
+        Assert.True(exited.Task.IsCompletedSuccessfully);
+        Assert.True(request.Token.IsCancellationRequested);
+        Assert.True(store.Contains(session));
+    }
+
     [UnitTheory]
     [InlineData(Bob, "7")]
     [InlineData("actor:alice|tenant:b", "7")]
@@ -111,7 +144,7 @@ public sealed class McpRequestCancellationTests
     {
         var store = new McpMemoryRequestStore((_, _) => true, TimeProvider.System);
         Task<McpRequestState> Update(string session, string principal, string id, McpRequestOperation operation) =>
-            store.UpdateRequestAsync(session, principal, id, "generation", operation, CancellationToken.None);
+            store.UpdateRequestAsync(new McpActiveRequest(session, principal, id, "generation"), operation, CancellationToken.None);
         for (var i = 0; i < McpRequestBounds.PerPrincipal; i++)
         {
             Assert.Equal(McpRequestState.Active,
@@ -131,7 +164,7 @@ public sealed class McpRequestCancellationTests
         var time = new MutableTimeProvider();
         var store = new McpMemoryRequestStore((_, _) => true, time);
         Task<McpRequestState> Update(McpRequestOperation operation) =>
-            store.UpdateRequestAsync("session", Alice, "id", "generation", operation, CancellationToken.None);
+            store.UpdateRequestAsync(new McpActiveRequest("session", Alice, "id", "generation"), operation, CancellationToken.None);
         Assert.Equal(McpRequestState.Active, await Update(McpRequestOperation.Register));
         time.Advance(McpRequestBounds.Lifetime - TimeSpan.FromSeconds(1));
         Assert.Equal(McpRequestState.Active, await Update(McpRequestOperation.Read));
@@ -147,7 +180,7 @@ public sealed class McpRequestCancellationTests
     {
         var store = new McpMemoryRequestStore((s, p) => s == "session" && p == Alice, TimeProvider.System);
         async Task<McpRequestState> Update(string generation, McpRequestOperation operation) =>
-            await store.UpdateRequestAsync("session", Alice, "typed-id", generation, operation, CancellationToken.None);
+            await store.UpdateRequestAsync(new McpActiveRequest("session", Alice, "typed-id", generation), operation, CancellationToken.None);
 
         Assert.Equal(McpRequestState.Active, await Update("old", McpRequestOperation.Register));
         Assert.Equal(McpRequestState.Active, await Update("old", McpRequestOperation.Finish));
@@ -155,7 +188,7 @@ public sealed class McpRequestCancellationTests
         Assert.Equal(McpRequestState.Missing, await Update("old", McpRequestOperation.Finish));
         Assert.Equal(McpRequestState.Missing, await Update("old", McpRequestOperation.Read));
         Assert.Equal(McpRequestState.Active, await Update("new", McpRequestOperation.Read));
-        Assert.Equal(McpRequestState.Missing, await store.UpdateRequestAsync("session", Bob, "typed-id", "new",
+        Assert.Equal(McpRequestState.Missing, await store.UpdateRequestAsync(new McpActiveRequest("session", Bob, "typed-id", "new"),
             McpRequestOperation.Finish, CancellationToken.None));
         Assert.Equal(McpRequestState.Active, await Update("new", McpRequestOperation.Read));
     }

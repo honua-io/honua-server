@@ -64,8 +64,10 @@ BEGIN
         RETURN 'duplicate';
     END IF;
     IF (SELECT count(*) FROM $HonuaSchema$.mcp_requests WHERE session_id = p_session_id) >= p_per_session
-        OR (SELECT count(*) FROM $HonuaSchema$.mcp_requests
-            WHERE principal_key = p_principal_key AND expires_at > now()) >= p_per_principal THEN
+        OR (SELECT count(*) FROM $HonuaSchema$.mcp_requests AS request
+            JOIN $HonuaSchema$.mcp_sessions AS session ON session.session_id = request.session_id
+            WHERE request.principal_key = p_principal_key AND request.expires_at > now()
+                AND session.expires_at > now()) >= p_per_principal THEN
         RETURN 'capacity';
     END IF;
     INSERT INTO $HonuaSchema$.mcp_requests (session_id, request_key, principal_key, generation, expires_at)

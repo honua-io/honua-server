@@ -13,10 +13,8 @@ namespace Honua.Server.Features.Infrastructure.McpSessions;
 internal sealed partial class PostgresMcpSessionStore
 {
     public Task<McpRequestState> UpdateRequestAsync(
-        string sessionId, string principalKey, string requestKey, string generation,
-        McpRequestOperation operation, CancellationToken cancellationToken)
+        McpActiveRequest request, McpRequestOperation operation, CancellationToken cancellationToken)
     {
-        var request = new McpActiveRequest(sessionId, principalKey, requestKey, generation);
         return operation switch
         {
             McpRequestOperation.Register => RegisterAsync(request, cancellationToken),
@@ -115,7 +113,7 @@ internal sealed partial class PostgresMcpSessionStore
                     ? McpRequestState.Cancelled
                     : McpRequestState.Missing;
             },
-            StatementRepeat.SafeToRepeat,
+            StatementRepeat.NotAfterSend,
             cancellationToken);
 
     // Removes this generation only, so a delayed finish never removes a later run of the same id.

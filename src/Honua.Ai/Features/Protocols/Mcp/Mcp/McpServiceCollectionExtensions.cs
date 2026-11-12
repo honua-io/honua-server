@@ -82,6 +82,7 @@ internal static class McpServiceCollectionExtensions
                 statelessTokens,
                 options.MaxSessionsPerPrincipal);
         });
+        services.AddHostedService(static sp => sp.GetRequiredService<McpSessionManager>());
         return services;
     }
 

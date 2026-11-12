@@ -10,8 +10,7 @@ internal enum McpRequestState { Missing, Active, Cancelled, Duplicate, Capacity 
 internal interface IMcpRequestStore
 {
     Task<McpRequestState> UpdateRequestAsync(
-        string sessionId, string principalKey, string requestKey, string generation,
-        McpRequestOperation operation, CancellationToken cancellationToken);
+        McpActiveRequest request, McpRequestOperation operation, CancellationToken cancellationToken);
 }
 
 // One request this node is running, identified down to its generation.
@@ -44,8 +43,7 @@ internal static class McpRequestPoll
         var ended = new List<McpActiveRequest>();
         foreach (var request in requests)
         {
-            var state = await store.UpdateRequestAsync(request.SessionId, request.PrincipalKey, request.RequestKey,
-                request.Generation, McpRequestOperation.Read, cancellationToken).ConfigureAwait(false);
+            var state = await store.UpdateRequestAsync(request, McpRequestOperation.Read, cancellationToken).ConfigureAwait(false);
             if (state != McpRequestState.Active)
             {
                 ended.Add(request);
