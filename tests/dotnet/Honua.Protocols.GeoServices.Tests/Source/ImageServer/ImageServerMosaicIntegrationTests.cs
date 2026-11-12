@@ -22,13 +22,18 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 [Protocol(TestProtocols.ImageServer)]
 public sealed class ImageServerMosaicIntegrationTests
 {
+    private static readonly string[] UnsupportedOrderingMosaicRules =
+    [
+        "{\"mosaicMethod\":\"esriMosaicCenter\"}",
+        "{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"AcquisitionDate\",\"sortValue\":\"2024/01/10\"}",
+    ];
+
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/query")]
     [Operation(Operations.Query)]
     public async Task QueryCatalog_ListsAllRastersWithAcquisitionDates()
     {
-        var fixture = await CreateFixtureAsync();
-        try
+        await WithSeededMosaicAsync(async fixture =>
         {
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/query?f=json&returnGeometry=false");
@@ -54,11 +59,7 @@ public sealed class ImageServerMosaicIntegrationTests
                 attributes.GetProperty("PixelType").GetString().Should().Be("32BF");
                 attributes.GetProperty("CreatedAt").GetInt64().Should().BeGreaterThan(0);
             }
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        });
     }
 
     [IntegrationTest]
@@ -66,8 +67,7 @@ public sealed class ImageServerMosaicIntegrationTests
     [Operation(Operations.Identify)]
     public async Task Identify_UsesSpatialMosaicSelectionAcrossMultipleRasters()
     {
-        var fixture = await CreateFixtureAsync();
-        try
+        await WithSeededMosaicAsync(async fixture =>
         {
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/identify?geometry=3.5,1&geometryType=esriGeometryPoint&f=json");
@@ -75,11 +75,7 @@ public sealed class ImageServerMosaicIntegrationTests
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             json.RootElement.GetProperty("properties").GetProperty("Band_1").GetDouble().Should().Be(40);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        });
     }
 
     [IntegrationTest]
@@ -87,8 +83,7 @@ public sealed class ImageServerMosaicIntegrationTests
     [Operation(Operations.Identify)]
     public async Task Identify_WithNewestMergeRule_ReturnsNewestRasterValueAndCatalogItems()
     {
-        var fixture = await CreateFixtureAsync();
-        try
+        await WithSeededMosaicAsync(async fixture =>
         {
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/identify" +
@@ -108,11 +103,7 @@ public sealed class ImageServerMosaicIntegrationTests
             json.RootElement.GetProperty("name").GetString().Should().Be("overlap-newest");
             json.RootElement.GetProperty("objectId").GetInt64().Should().Be(overlapId);
             json.RootElement.GetProperty("properties").GetProperty("Band_1").GetDouble().Should().Be(5);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        });
     }
 
     [IntegrationTest]
@@ -120,8 +111,7 @@ public sealed class ImageServerMosaicIntegrationTests
     [Operation(Operations.Identify)]
     public async Task Identify_WithMaxMergeRule_ReturnsMaximumPixelValue()
     {
-        var fixture = await CreateFixtureAsync();
-        try
+        await WithSeededMosaicAsync(async fixture =>
         {
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/identify" +
@@ -130,11 +120,7 @@ public sealed class ImageServerMosaicIntegrationTests
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             json.RootElement.GetProperty("properties").GetProperty("Band_1").GetDouble().Should().Be(20);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        });
     }
 
     // #4064: (1.5, 1) lies inside both "west" (constant 20) and "overlap-newest" (constant 5). The
@@ -145,8 +131,7 @@ public sealed class ImageServerMosaicIntegrationTests
     [Operation(Operations.Identify)]
     public async Task Identify_WithLockRasterMosaicRule_ReturnsLockedRasterPixelAndObjectId()
     {
-        var fixture = await CreateFixtureAsync();
-        try
+        await WithSeededMosaicAsync(async fixture =>
         {
             var catalogResponse = await fixture.Client.GetAsync(
                 $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/query?f=json&returnGeometry=false");
@@ -188,11 +173,7 @@ public sealed class ImageServerMosaicIntegrationTests
             {
                 lockedElsewhere.RootElement.GetProperty("value").GetString().Should().Be("NoData");
             }
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        });
     }
 
     // #4064: identify resolves the contested pixel at (1.5, 1) with the same ordering exportImage
@@ -203,8 +184,7 @@ public sealed class ImageServerMosaicIntegrationTests
     [Operation(Operations.Identify)]
     public async Task Identify_WithOrderingMosaicMethods_ResolvesContestedPixelLikeExport()
     {
-        var fixture = await CreateFixtureAsync();
-        try
+        await WithSeededMosaicAsync(async fixture =>
         {
             foreach (var (mosaicRule, expected) in new[]
                      {
@@ -223,11 +203,7 @@ public sealed class ImageServerMosaicIntegrationTests
                 json.RootElement.GetProperty("value").GetString().Should().Be(expected, mosaicRule);
             }
 
-            foreach (var unsupported in new[]
-                     {
-                         "{\"mosaicMethod\":\"esriMosaicCenter\"}",
-                         "{\"mosaicMethod\":\"esriMosaicAttribute\",\"sortField\":\"AcquisitionDate\",\"sortValue\":\"2024/01/10\"}"
-                     })
+            foreach (var unsupported in UnsupportedOrderingMosaicRules)
             {
                 var response = await fixture.Client.GetAsync(
                     $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/identify?geometry=1.5,1&geometryType=esriGeometryPoint&sr=4326&f=json&mosaicRule={Uri.EscapeDataString(unsupported)}");
@@ -235,11 +211,7 @@ public sealed class ImageServerMosaicIntegrationTests
                 using var error = JsonDocument.Parse(content);
                 error.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(501, content);
             }
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        });
     }
 
     // #4064: a real 4-band PostGIS raster with constant bands 17, 22.5, 39, 45 over lon/lat [0, 2].
@@ -252,7 +224,7 @@ public sealed class ImageServerMosaicIntegrationTests
     {
         const double mercatorX = 55659.74539663678; // 6378137 * rad(0.5)
         const double mercatorY = 166998.3137529217; // 6378137 * ln(tan(pi/4 + rad(1.5)/2))
-        var fixture = await CreateFixtureAsync(seedRasters: false);
+        var fixture = await CreateFixtureAsync();
         try
         {
             await fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
@@ -319,19 +291,14 @@ public sealed class ImageServerMosaicIntegrationTests
     [Operation(Operations.Identify)]
     public async Task Identify_WithTimeOnCommunityEdition_ReturnsPaymentRequired()
     {
-        var fixture = await CreateFixtureAsync(HonuaEdition.Community);
-        try
+        await WithSeededMosaicAsync(async fixture =>
         {
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/identify" +
                 "?geometry=1.5,1&geometryType=esriGeometryPoint&time=2024-02-15T00:00:00Z&f=json");
 
             await response.AssertGeoServicesErrorAsync(402);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        }, HonuaEdition.Community);
     }
 
     [IntegrationTest]
@@ -339,8 +306,7 @@ public sealed class ImageServerMosaicIntegrationTests
     [Operation(Operations.Identify)]
     public async Task Identify_WithTimeOnProEdition_WhenNewestLayerSnapshotMissesPoint_ReturnsNoData()
     {
-        var fixture = await CreateFixtureAsync(HonuaEdition.Pro);
-        try
+        await WithSeededMosaicAsync(async fixture =>
         {
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/identify" +
@@ -352,11 +318,7 @@ public sealed class ImageServerMosaicIntegrationTests
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             json.RootElement.GetProperty("value").GetString().Should().Be("NoData");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        }, HonuaEdition.Pro);
     }
 
     [IntegrationTest]
@@ -364,8 +326,7 @@ public sealed class ImageServerMosaicIntegrationTests
     [Operation(Operations.GetServiceInfo)]
     public async Task GetServiceInfo_AggregatesExtentAndTimeExtentAcrossLayerRasters()
     {
-        var fixture = await CreateFixtureAsync();
-        try
+        await WithSeededMosaicAsync(async fixture =>
         {
             var response = await fixture.Client.GetAsync($"/rest/services/{WebAppFixture.TestLayerId}/ImageServer?f=json");
 
@@ -380,11 +341,7 @@ public sealed class ImageServerMosaicIntegrationTests
             var timeExtent = json.RootElement.GetProperty("timeInfo").GetProperty("timeExtent");
             timeExtent[0].GetInt64().Should().Be(RasterIntegrationTestData.WestAcquisition.ToUnixTimeMilliseconds());
             timeExtent[1].GetInt64().Should().Be(RasterIntegrationTestData.OverlapAcquisition.ToUnixTimeMilliseconds());
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        });
     }
 
     [IntegrationTest]
@@ -392,8 +349,7 @@ public sealed class ImageServerMosaicIntegrationTests
     [Operation(Operations.GetServiceInfo)]
     public async Task GetServiceInfo_ServesBandStatisticsFromPersistedMosaicSnapshot()
     {
-        var fixture = await CreateFixtureAsync();
-        try
+        await WithSeededMosaicAsync(async fixture =>
         {
             // The first request backfills the persisted layer-level statistics snapshot (#1639).
             var first = await fixture.Client.GetAsync($"/rest/services/{WebAppFixture.TestLayerId}/ImageServer?f=json");
@@ -407,19 +363,15 @@ public sealed class ImageServerMosaicIntegrationTests
             // Tamper with the persisted snapshot. The next request must serve the tampered
             // value verbatim, proving service metadata is read from persisted statistics and
             // never recomputed from the raster pixels per request.
-            // #2020: honua.raster_layer_statistics is a literal, process-global catalog table
-            // (not search_path isolated), so route this UPDATE through the shared seed advisory
-            // lock to keep parallel [Collection("Database")] tests off the 40P01 deadlock path.
-            var tampered = 0;
-            await fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
+            // The surrounding seed lock already serializes this write to the process-global table.
+            await using (var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema))
+            await using (var command = connection.CreateCommand())
             {
-                await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema);
-                await using var command = connection.CreateCommand();
                 command.CommandText = "UPDATE honua.raster_layer_statistics SET max_value = 12345 WHERE layer_id = @layerId;";
                 command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
-                tampered = await command.ExecuteNonQueryAsync();
-            });
-            tampered.Should().BeGreaterThan(0, "the first request must have persisted the mosaic statistics");
+                var tampered = await command.ExecuteNonQueryAsync();
+                tampered.Should().BeGreaterThan(0, "the first request must have persisted the mosaic statistics");
+            }
 
             var second = await fixture.Client.GetAsync($"/rest/services/{WebAppFixture.TestLayerId}/ImageServer?f=json");
             second.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -427,11 +379,7 @@ public sealed class ImageServerMosaicIntegrationTests
             {
                 json.RootElement.GetProperty("maxValues")[0].GetDouble().Should().Be(12345);
             }
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        });
     }
 
     [IntegrationTest]
@@ -439,8 +387,7 @@ public sealed class ImageServerMosaicIntegrationTests
     [Operation(Operations.Export)]
     public async Task ExportImage_AsInlineJpegMosaic_AppliesCompressionQuality()
     {
-        var fixture = await CreateFixtureAsync();
-        try
+        await WithSeededMosaicAsync(async fixture =>
         {
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/exportImage" +
@@ -449,11 +396,7 @@ public sealed class ImageServerMosaicIntegrationTests
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             response.Content.Headers.ContentType?.MediaType.Should().Be("image/jpeg");
             (await response.Content.ReadAsByteArrayAsync()).Should().NotBeEmpty();
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        });
     }
 
     [IntegrationTest]
@@ -464,64 +407,53 @@ public sealed class ImageServerMosaicIntegrationTests
         // Regression for #2364: CreateExportImageRequest (the POST body/query merge builder)
         // did not map the `time` parameter, so POST exportImage silently ignored it and always
         // returned the default (newest) mosaic — diverging from the GET path, which binds time.
-        var fixture = await CreateFixtureAsync(HonuaEdition.Pro, seedRasters: false);
-        try
+        await WithSeededMosaicAsync(async fixture =>
         {
-            // honua.raster_data is process-global. Hold the seed advisory lock across the
-            // three-request comparison so another collection cannot replace the raster rows
-            // after GET and before POST (#3593).
-            await RasterIntegrationTestData.RunWithIssue522MosaicAsync(fixture, async () =>
+            // bbox=1,0,3,2 straddles the overlap-newest raster (value 5, Feb 1). At time
+            // 2024-01-20 that raster is excluded, so the slice shows the older west/east
+            // rasters (values 20/40) instead — a visibly different mosaic than the default.
+            const string bbox = "?bbox=1,0,3,2&size=64,32&format=png&f=image";
+            const string time = "2024-01-20T00:00:00Z";
+
+            var getWithTime = await fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/exportImage{bbox}&time={time}");
+            getWithTime.StatusCode.Should().Be(HttpStatusCode.OK);
+            var getWithTimeBytes = await getWithTime.Content.ReadAsByteArrayAsync();
+
+            using var postWithTimeContent = new FormUrlEncodedContent(new[]
             {
-                // bbox=1,0,3,2 straddles the overlap-newest raster (value 5, Feb 1). At time
-                // 2024-01-20 that raster is excluded, so the slice shows the older west/east
-                // rasters (values 20/40) instead — a visibly different mosaic than the default.
-                const string bbox = "?bbox=1,0,3,2&size=64,32&format=png&f=image";
-                const string time = "2024-01-20T00:00:00Z";
-
-                var getWithTime = await fixture.Client.GetAsync(
-                    $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/exportImage{bbox}&time={time}");
-                getWithTime.StatusCode.Should().Be(HttpStatusCode.OK);
-                var getWithTimeBytes = await getWithTime.Content.ReadAsByteArrayAsync();
-
-                using var postWithTimeContent = new FormUrlEncodedContent(new[]
-                {
-                    new KeyValuePair<string, string>("bbox", "1,0,3,2"),
-                    new KeyValuePair<string, string>("size", "64,32"),
-                    new KeyValuePair<string, string>("format", "png"),
-                    new KeyValuePair<string, string>("time", time),
-                    new KeyValuePair<string, string>("f", "image"),
-                });
-                var postWithTime = await fixture.Client.PostAsync(
-                    $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/exportImage",
-                    postWithTimeContent);
-                postWithTime.StatusCode.Should().Be(HttpStatusCode.OK);
-                var postWithTimeBytes = await postWithTime.Content.ReadAsByteArrayAsync();
-
-                using var postNewestContent = new FormUrlEncodedContent(new[]
-                {
-                    new KeyValuePair<string, string>("bbox", "1,0,3,2"),
-                    new KeyValuePair<string, string>("size", "64,32"),
-                    new KeyValuePair<string, string>("format", "png"),
-                    new KeyValuePair<string, string>("f", "image"),
-                });
-                var postNewest = await fixture.Client.PostAsync(
-                    $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/exportImage",
-                    postNewestContent);
-                postNewest.StatusCode.Should().Be(HttpStatusCode.OK);
-                var postNewestBytes = await postNewest.Content.ReadAsByteArrayAsync();
-
-                // POST with time must honor the requested slice: it agrees with GET for the same
-                // time, and differs from the default (newest) mosaic. Before the fix POST dropped
-                // `time`, so postWithTime == postNewest and postWithTime != getWithTime.
-                postWithTimeBytes.Should().NotBeEmpty();
-                postWithTimeBytes.Should().Equal(getWithTimeBytes, "POST and GET exportImage must honor time identically");
-                postWithTimeBytes.Should().NotEqual(postNewestBytes, "POST exportImage must apply the requested temporal slice, not the default newest mosaic");
+                new KeyValuePair<string, string>("bbox", "1,0,3,2"),
+                new KeyValuePair<string, string>("size", "64,32"),
+                new KeyValuePair<string, string>("format", "png"),
+                new KeyValuePair<string, string>("time", time),
+                new KeyValuePair<string, string>("f", "image"),
             });
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+            var postWithTime = await fixture.Client.PostAsync(
+                $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/exportImage",
+                postWithTimeContent);
+            postWithTime.StatusCode.Should().Be(HttpStatusCode.OK);
+            var postWithTimeBytes = await postWithTime.Content.ReadAsByteArrayAsync();
+
+            using var postNewestContent = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("bbox", "1,0,3,2"),
+                new KeyValuePair<string, string>("size", "64,32"),
+                new KeyValuePair<string, string>("format", "png"),
+                new KeyValuePair<string, string>("f", "image"),
+            });
+            var postNewest = await fixture.Client.PostAsync(
+                $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/exportImage",
+                postNewestContent);
+            postNewest.StatusCode.Should().Be(HttpStatusCode.OK);
+            var postNewestBytes = await postNewest.Content.ReadAsByteArrayAsync();
+
+            // POST with time must honor the requested slice: it agrees with GET for the same
+            // time, and differs from the default (newest) mosaic. Before the fix POST dropped
+            // `time`, so postWithTime == postNewest and postWithTime != getWithTime.
+            postWithTimeBytes.Should().NotBeEmpty();
+            postWithTimeBytes.Should().Equal(getWithTimeBytes, "POST and GET exportImage must honor time identically");
+            postWithTimeBytes.Should().NotEqual(postNewestBytes, "POST exportImage must apply the requested temporal slice, not the default newest mosaic");
+        }, HonuaEdition.Pro);
     }
 
     [IntegrationTest]
@@ -533,69 +465,61 @@ public sealed class ImageServerMosaicIntegrationTests
         // cover x[0,4] y[0,2] (west 20, overlap-newest 5, east 40); bbox [-4,-2,4,2] at 80x40 is
         // 0.1-degree pixels, so the data is 40x20 = 800 pixels in the upper-right quarter and every
         // other pixel must be NoData. Before the fix the 80x40 image was the data alone, stretched.
-        var fixture = await CreateFixtureAsync(seedRasters: false);
-        try
+        await WithSeededMosaicAsync(async fixture =>
         {
-            await RasterIntegrationTestData.RunWithIssue522MosaicAsync(fixture, async () =>
+            const string export = "?bbox=-4,-2,4,2&size=80,40&format=tiff&interpolation=RSP_NearestNeighbor";
+
+            var jsonResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/exportImage{export}&f=json");
+            var jsonContent = await jsonResponse.Content.ReadAsStringAsync();
+            jsonResponse.StatusCode.Should().Be(HttpStatusCode.OK, jsonContent);
+            using (var json = JsonDocument.Parse(jsonContent))
             {
-                const string export = "?bbox=-4,-2,4,2&size=80,40&format=tiff&interpolation=RSP_NearestNeighbor";
+                json.RootElement.GetProperty("width").GetInt32().Should().Be(80);
+                json.RootElement.GetProperty("height").GetInt32().Should().Be(40);
+                var extent = json.RootElement.GetProperty("extent");
+                extent.GetProperty("xmin").GetDouble().Should().BeApproximately(-4, 1e-9);
+                extent.GetProperty("ymin").GetDouble().Should().BeApproximately(-2, 1e-9);
+                extent.GetProperty("xmax").GetDouble().Should().BeApproximately(4, 1e-9);
+                extent.GetProperty("ymax").GetDouble().Should().BeApproximately(2, 1e-9);
+                extent.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+            }
 
-                var jsonResponse = await fixture.Client.GetAsync(
-                    $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/exportImage{export}&f=json");
-                var jsonContent = await jsonResponse.Content.ReadAsStringAsync();
-                jsonResponse.StatusCode.Should().Be(HttpStatusCode.OK, jsonContent);
-                using (var json = JsonDocument.Parse(jsonContent))
-                {
-                    json.RootElement.GetProperty("width").GetInt32().Should().Be(80);
-                    json.RootElement.GetProperty("height").GetInt32().Should().Be(40);
-                    var extent = json.RootElement.GetProperty("extent");
-                    extent.GetProperty("xmin").GetDouble().Should().BeApproximately(-4, 1e-9);
-                    extent.GetProperty("ymin").GetDouble().Should().BeApproximately(-2, 1e-9);
-                    extent.GetProperty("xmax").GetDouble().Should().BeApproximately(4, 1e-9);
-                    extent.GetProperty("ymax").GetDouble().Should().BeApproximately(2, 1e-9);
-                    extent.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
-                }
+            var imageResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/exportImage{export}&f=image");
+            imageResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var image = await imageResponse.Content.ReadAsByteArrayAsync();
 
-                var imageResponse = await fixture.Client.GetAsync(
-                    $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/exportImage{export}&f=image");
-                imageResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-                var image = await imageResponse.Content.ReadAsByteArrayAsync();
+            await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                WITH decoded AS (SELECT ST_FromGDALRaster(@data, 4326) AS rast)
+                SELECT ST_Width(rast), ST_Height(rast),
+                       ST_XMin(ST_Envelope(rast)), ST_YMin(ST_Envelope(rast)),
+                       ST_XMax(ST_Envelope(rast)), ST_YMax(ST_Envelope(rast)),
+                       (ST_SummaryStats(rast, 1, true)).count,
+                       ST_Value(rast, 1, ST_SetSRID(ST_MakePoint(0.55, 1.05), 4326)),
+                       ST_Value(rast, 1, ST_SetSRID(ST_MakePoint(3.55, 1.05), 4326)),
+                       ST_Value(rast, 1, ST_SetSRID(ST_MakePoint(-2.05, 1.05), 4326)),
+                       ST_Value(rast, 1, ST_SetSRID(ST_MakePoint(2.05, -1.05), 4326))
+                FROM decoded;
+                """;
+            command.Parameters.AddWithValue("data", image);
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
 
-                await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema);
-                await using var command = connection.CreateCommand();
-                command.CommandText = """
-                    WITH decoded AS (SELECT ST_FromGDALRaster(@data, 4326) AS rast)
-                    SELECT ST_Width(rast), ST_Height(rast),
-                           ST_XMin(ST_Envelope(rast)), ST_YMin(ST_Envelope(rast)),
-                           ST_XMax(ST_Envelope(rast)), ST_YMax(ST_Envelope(rast)),
-                           (ST_SummaryStats(rast, 1, true)).count,
-                           ST_Value(rast, 1, ST_SetSRID(ST_MakePoint(0.55, 1.05), 4326)),
-                           ST_Value(rast, 1, ST_SetSRID(ST_MakePoint(3.55, 1.05), 4326)),
-                           ST_Value(rast, 1, ST_SetSRID(ST_MakePoint(-2.05, 1.05), 4326)),
-                           ST_Value(rast, 1, ST_SetSRID(ST_MakePoint(2.05, -1.05), 4326))
-                    FROM decoded;
-                    """;
-                command.Parameters.AddWithValue("data", image);
-                await using var reader = await command.ExecuteReaderAsync();
-                (await reader.ReadAsync()).Should().BeTrue();
-
-                reader.GetInt32(0).Should().Be(80);
-                reader.GetInt32(1).Should().Be(40);
-                reader.GetDouble(2).Should().BeApproximately(-4, 1e-9);
-                reader.GetDouble(3).Should().BeApproximately(-2, 1e-9);
-                reader.GetDouble(4).Should().BeApproximately(4, 1e-9);
-                reader.GetDouble(5).Should().BeApproximately(2, 1e-9);
-                reader.GetInt64(6).Should().Be(800);
-                reader.GetDouble(7).Should().Be(20, "only the west raster covers x=0.55");
-                reader.GetDouble(8).Should().Be(40, "only the east raster covers x=3.55");
-                reader.IsDBNull(9).Should().BeTrue("x=-2.05 is west of every raster");
-                reader.IsDBNull(10).Should().BeTrue("y=-1.05 is south of every raster");
-            });
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+            reader.GetInt32(0).Should().Be(80);
+            reader.GetInt32(1).Should().Be(40);
+            reader.GetDouble(2).Should().BeApproximately(-4, 1e-9);
+            reader.GetDouble(3).Should().BeApproximately(-2, 1e-9);
+            reader.GetDouble(4).Should().BeApproximately(4, 1e-9);
+            reader.GetDouble(5).Should().BeApproximately(2, 1e-9);
+            reader.GetInt64(6).Should().Be(800);
+            reader.GetDouble(7).Should().Be(20, "only the west raster covers x=0.55");
+            reader.GetDouble(8).Should().Be(40, "only the east raster covers x=3.55");
+            reader.IsDBNull(9).Should().BeTrue("x=-2.05 is west of every raster");
+            reader.IsDBNull(10).Should().BeTrue("y=-1.05 is south of every raster");
+        });
     }
 
     [IntegrationTest]
@@ -606,21 +530,13 @@ public sealed class ImageServerMosaicIntegrationTests
         // #4061: time-aware Esri clients send epoch milliseconds, the form timeInfo.timeExtent
         // advertises. 2024-01-20 selects the newest batch at or before it, east (Jan 15), which is
         // the only raster at x=2.5 in that batch (value 40).
-        var fixture = await CreateFixtureAsync(HonuaEdition.Pro, seedRasters: false);
-        try
+        await WithSeededMosaicAsync(async fixture =>
         {
-            await RasterIntegrationTestData.RunWithIssue522MosaicAsync(fixture, async () =>
-            {
-                var instant = new DateTimeOffset(2024, 1, 20, 0, 0, 0, TimeSpan.Zero);
+            var instant = new DateTimeOffset(2024, 1, 20, 0, 0, 0, TimeSpan.Zero);
 
-                (await IdentifyBand1Async(fixture, 2.5, $"{instant.ToUnixTimeMilliseconds()}")).Should().Be(40);
-                (await IdentifyBand1Async(fixture, 2.5, "2024-01-20T00:00:00Z")).Should().Be(40);
-            });
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+            (await IdentifyBand1Async(fixture, 2.5, $"{instant.ToUnixTimeMilliseconds()}")).Should().Be(40);
+            (await IdentifyBand1Async(fixture, 2.5, "2024-01-20T00:00:00Z")).Should().Be(40);
+        }, HonuaEdition.Pro);
     }
 
     [IntegrationTest]
@@ -631,33 +547,25 @@ public sealed class ImageServerMosaicIntegrationTests
         // #4061: time=<start>,<end> (epoch ms, either bound may be null) selects the newest batch
         // inside the window. Batches: west Jan 1 (20, x[0,2]), east Jan 15 (40, x[2,4]),
         // overlap-newest Feb 1 (5, x[1,3]).
-        var fixture = await CreateFixtureAsync(HonuaEdition.Pro, seedRasters: false);
-        try
+        await WithSeededMosaicAsync(async fixture =>
         {
-            await RasterIntegrationTestData.RunWithIssue522MosaicAsync(fixture, async () =>
-            {
-                var dec31 = Ms(2023, 12, 31);
-                var jan02 = Ms(2024, 1, 2);
-                var jan10 = Ms(2024, 1, 10);
-                var jan16 = Ms(2024, 1, 16);
-                var jan20 = Ms(2024, 1, 20);
+            var dec31 = Ms(2023, 12, 31);
+            var jan02 = Ms(2024, 1, 2);
+            var jan10 = Ms(2024, 1, 10);
+            var jan16 = Ms(2024, 1, 16);
+            var jan20 = Ms(2024, 1, 20);
 
-                (await IdentifyBand1Async(fixture, 1.5, $"{dec31},{jan10}")).Should().Be(20);
-                (await IdentifyBand1Async(fixture, 2.5, $"{jan10},{jan20}")).Should().Be(40);
-                (await IdentifyBand1Async(fixture, 1.5, $"{jan16},null")).Should().Be(5);
-                (await IdentifyBand1Async(fixture, 1.5, $"{jan02},{jan10}")).Should().BeNull(
-                    "no acquisition falls inside the window, so no raster is selected");
+            (await IdentifyBand1Async(fixture, 1.5, $"{dec31},{jan10}")).Should().Be(20);
+            (await IdentifyBand1Async(fixture, 2.5, $"{jan10},{jan20}")).Should().Be(40);
+            (await IdentifyBand1Async(fixture, 1.5, $"{jan16},null")).Should().Be(5);
+            (await IdentifyBand1Async(fixture, 1.5, $"{jan02},{jan10}")).Should().BeNull(
+                "no acquisition falls inside the window, so no raster is selected");
 
-                var reversed = await fixture.Client.GetAsync(
-                    $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/identify" +
-                    $"?geometry=1.5,1&geometryType=esriGeometryPoint&f=json&time={jan20},{jan10}");
-                await reversed.AssertGeoServicesErrorAsync(400);
-            });
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+            var reversed = await fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/identify" +
+                $"?geometry=1.5,1&geometryType=esriGeometryPoint&f=json&time={jan20},{jan10}");
+            await reversed.AssertGeoServicesErrorAsync(400);
+        }, HonuaEdition.Pro);
     }
 
     [IntegrationTest]
@@ -665,30 +573,22 @@ public sealed class ImageServerMosaicIntegrationTests
     [Operation(Operations.Query)]
     public async Task QueryCatalog_WithEsriTimeExtent_ReturnsNewestBatchInsideWindow()
     {
-        var fixture = await CreateFixtureAsync(HonuaEdition.Pro, seedRasters: false);
-        try
+        await WithSeededMosaicAsync(async fixture =>
         {
-            await RasterIntegrationTestData.RunWithIssue522MosaicAsync(fixture, async () =>
+            foreach (var time in new[] { $"{Ms(2024, 1, 10)},{Ms(2024, 1, 20)}", $"{Ms(2024, 1, 20)}" })
             {
-                foreach (var time in new[] { $"{Ms(2024, 1, 10)},{Ms(2024, 1, 20)}", $"{Ms(2024, 1, 20)}" })
-                {
-                    var response = await fixture.Client.GetAsync(
-                        $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/query?f=json&returnGeometry=false&time={time}");
-                    var content = await response.Content.ReadAsStringAsync();
-                    response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+                var response = await fixture.Client.GetAsync(
+                    $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/query?f=json&returnGeometry=false&time={time}");
+                var content = await response.Content.ReadAsStringAsync();
+                response.StatusCode.Should().Be(HttpStatusCode.OK, content);
 
-                    using var json = JsonDocument.Parse(content);
-                    var features = json.RootElement.GetProperty("features");
-                    features.GetArrayLength().Should().Be(1, $"only the east batch (Jan 15) matches time={time}");
-                    features[0].GetProperty("attributes").GetProperty("AcquisitionDate").GetInt64()
-                        .Should().Be(RasterIntegrationTestData.EastAcquisition.ToUnixTimeMilliseconds());
-                }
-            });
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+                using var json = JsonDocument.Parse(content);
+                var features = json.RootElement.GetProperty("features");
+                features.GetArrayLength().Should().Be(1, $"only the east batch (Jan 15) matches time={time}");
+                features[0].GetProperty("attributes").GetProperty("AcquisitionDate").GetInt64()
+                    .Should().Be(RasterIntegrationTestData.EastAcquisition.ToUnixTimeMilliseconds());
+            }
+        }, HonuaEdition.Pro);
     }
 
     [IntegrationTest]
@@ -700,32 +600,24 @@ public sealed class ImageServerMosaicIntegrationTests
     {
         // #4061: before the fix every ImageServer operation answered 400 to time=<start>,<end>.
         // The Jan 10 - Jan 20 window selects only east (constant 40).
-        var fixture = await CreateFixtureAsync(HonuaEdition.Pro, seedRasters: false);
-        try
+        await WithSeededMosaicAsync(async fixture =>
         {
-            await RasterIntegrationTestData.RunWithIssue522MosaicAsync(fixture, async () =>
-            {
-                var time = $"{Ms(2024, 1, 10)},{Ms(2024, 1, 20)}";
-                var root = $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer";
+            var time = $"{Ms(2024, 1, 10)},{Ms(2024, 1, 20)}";
+            var root = $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer";
 
-                var export = await fixture.Client.GetAsync($"{root}/exportImage?bbox=2,0,4,2&size=8,8&format=png&f=image&time={time}");
-                export.StatusCode.Should().Be(HttpStatusCode.OK, await export.Content.ReadAsStringAsync());
-                export.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+            var export = await fixture.Client.GetAsync($"{root}/exportImage?bbox=2,0,4,2&size=8,8&format=png&f=image&time={time}");
+            export.StatusCode.Should().Be(HttpStatusCode.OK, await export.Content.ReadAsStringAsync());
+            export.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
 
-                var samples = await fixture.Client.GetAsync($"{root}/getSamples?geometry=2.5,1&geometryType=esriGeometryPoint&f=json&time={time}");
-                var samplesContent = await samples.Content.ReadAsStringAsync();
-                samples.StatusCode.Should().Be(HttpStatusCode.OK, samplesContent);
-                samplesContent.Should().Contain("40");
+            var samples = await fixture.Client.GetAsync($"{root}/getSamples?geometry=2.5,1&geometryType=esriGeometryPoint&f=json&time={time}");
+            var samplesContent = await samples.Content.ReadAsStringAsync();
+            samples.StatusCode.Should().Be(HttpStatusCode.OK, samplesContent);
+            samplesContent.Should().Contain("40");
 
-                var statistics = await fixture.Client.GetAsync($"{root}/computeStatisticsHistograms?f=json&time={time}");
-                var statisticsContent = await statistics.Content.ReadAsStringAsync();
-                statistics.StatusCode.Should().Be(HttpStatusCode.OK, statisticsContent);
-            });
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+            var statistics = await fixture.Client.GetAsync($"{root}/computeStatisticsHistograms?f=json&time={time}");
+            var statisticsContent = await statistics.Content.ReadAsStringAsync();
+            statistics.StatusCode.Should().Be(HttpStatusCode.OK, statisticsContent);
+        }, HonuaEdition.Pro);
     }
 
     // #4792: a layer that mixes native resolutions made every union-backed ImageServer operation
@@ -741,16 +633,15 @@ public sealed class ImageServerMosaicIntegrationTests
     [Operation(Operations.GetServiceInfo, Operations.Export, Operations.Identify)]
     public async Task ImageServerOperations_WithMixedResolutionMosaic_AreServedFromTheAlignedUnion()
     {
-        var fixture = await CreateFixtureAsync(seedRasters: false);
-        try
+        RasterSeed[] mixedResolution =
+        [
+            new RasterSeed("coarse", 2, 2, 0, 2, 1, -1, 20,
+                RasterIntegrationTestData.WestAcquisition, RasterIntegrationTestData.WestAcquisition),
+            new RasterSeed("fine", 2, 2, 1, 2, 0.5, -0.5, 5,
+                RasterIntegrationTestData.OverlapAcquisition, RasterIntegrationTestData.OverlapAcquisition),
+        ];
+        await WithLayerRastersAsync(mixedResolution, async fixture =>
         {
-            await RasterIntegrationTestData.ReplaceLayerRastersAsync(
-                fixture,
-                WebAppFixture.TestLayerId,
-                new RasterSeed("coarse", 2, 2, 0, 2, 1, -1, 20,
-                    RasterIntegrationTestData.WestAcquisition, RasterIntegrationTestData.WestAcquisition),
-                new RasterSeed("fine", 2, 2, 1, 2, 0.5, -0.5, 5,
-                    RasterIntegrationTestData.OverlapAcquisition, RasterIntegrationTestData.OverlapAcquisition));
             var root = $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer";
 
             var info = await fixture.Client.GetAsync($"{root}?f=json");
@@ -794,11 +685,7 @@ public sealed class ImageServerMosaicIntegrationTests
                 band.GetProperty("min").GetDouble().Should().Be(5);
                 band.GetProperty("max").GetDouble().Should().Be(20);
             }
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        });
     }
 
     private static long Ms(int year, int month, int day)
@@ -827,10 +714,8 @@ public sealed class ImageServerMosaicIntegrationTests
     [Operation(Operations.Query, Operations.PerformanceTesting)]
     public async Task QueryRasters_ForTenOverlappingRasters_CompletesWithinTwoSeconds()
     {
-        var fixture = await CreateFixtureAsync();
-        try
+        await WithLayerRastersAsync(RasterIntegrationTestData.CreateOverlappingRasterStack(count: 10), async fixture =>
         {
-            await RasterIntegrationTestData.SeedOverlappingRasterStackAsync(fixture, count: 10);
             var store = fixture.GetService<IRasterStore>();
             var query = new RasterSelectionQuery
             {
@@ -846,6 +731,21 @@ public sealed class ImageServerMosaicIntegrationTests
 
             rasters.Should().HaveCount(10);
             stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2));
+        });
+    }
+
+    private static Task WithSeededMosaicAsync(Func<WebAppFixture, Task> test, HonuaEdition? edition = null)
+        => WithLayerRastersAsync(RasterIntegrationTestData.CreateIssue522Mosaic(), test, edition);
+
+    // honua.raster_data is shared by every fixture in the process and other collections reseed
+    // layer 0 in parallel, so each test holds the seed lock from the seed through its last read.
+    private static async Task WithLayerRastersAsync(
+        IReadOnlyList<RasterSeed> rasters, Func<WebAppFixture, Task> test, HonuaEdition? edition = null)
+    {
+        var fixture = await CreateFixtureAsync(edition);
+        try
+        {
+            await RasterIntegrationTestData.RunWithLayerRastersAsync(fixture, rasters, () => test(fixture));
         }
         finally
         {
@@ -853,9 +753,7 @@ public sealed class ImageServerMosaicIntegrationTests
         }
     }
 
-    private static async Task<WebAppFixture> CreateFixtureAsync(
-        HonuaEdition? edition = null,
-        bool seedRasters = true)
+    private static async Task<WebAppFixture> CreateFixtureAsync(HonuaEdition? edition = null)
     {
         var fixture = new WebAppFixture();
         if (edition.HasValue)
@@ -864,11 +762,6 @@ public sealed class ImageServerMosaicIntegrationTests
         }
 
         await fixture.InitializeAsync();
-        if (seedRasters)
-        {
-            await RasterIntegrationTestData.SeedIssue522MosaicAsync(fixture);
-        }
-
         return fixture;
     }
 }

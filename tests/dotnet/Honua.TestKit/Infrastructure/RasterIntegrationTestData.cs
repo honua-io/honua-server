@@ -38,23 +38,33 @@ public static class RasterIntegrationTestData
         Func<Task> action,
         int layerId = WebAppFixture.TestLayerId)
     {
+        return RunWithLayerRastersAsync(fixture, CreateIssue522Mosaic(), action, layerId);
+    }
+
+    // Seeds and runs the action under one schema-mutation lock hold, so no parallel collection can
+    // replace the process-global honua.raster_data rows between the seed and the reads. The lock is
+    // not reentrant across connections: the action must not take it again.
+    public static Task RunWithLayerRastersAsync(
+        WebAppFixture fixture,
+        IReadOnlyList<RasterSeed> rasters,
+        Func<Task> action,
+        int layerId = WebAppFixture.TestLayerId)
+    {
         ArgumentNullException.ThrowIfNull(fixture);
+        ArgumentNullException.ThrowIfNull(rasters);
         ArgumentNullException.ThrowIfNull(action);
 
         return fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
         {
-            await ReplaceLayerRastersUnderLockAsync(fixture, layerId, CreateIssue522Mosaic()).ConfigureAwait(false);
+            await ReplaceLayerRastersUnderLockAsync(fixture, layerId, rasters).ConfigureAwait(false);
             await action().ConfigureAwait(false);
         });
     }
 
-    public static Task SeedOverlappingRasterStackAsync(
-        WebAppFixture fixture,
-        int count,
-        int layerId = WebAppFixture.TestLayerId)
+    public static RasterSeed[] CreateOverlappingRasterStack(int count)
     {
         var baseTime = new DateTimeOffset(2024, 3, 1, 0, 0, 0, TimeSpan.Zero);
-        var rasters = Enumerable.Range(0, count)
+        return Enumerable.Range(0, count)
             .Select(index => new RasterSeed(
                 Name: $"overlap-{index + 1}",
                 Width: 2,
@@ -67,8 +77,6 @@ public static class RasterIntegrationTestData
                 AcquisitionDate: baseTime.AddMinutes(index),
                 CreatedAt: baseTime.AddMinutes(index)))
             .ToArray();
-
-        return ReplaceLayerRastersAsync(fixture, layerId, rasters);
     }
 
     public static byte[] CreatePointSelectionGeometry(double x, double y)
@@ -92,7 +100,7 @@ public static class RasterIntegrationTestData
         }).ConfigureAwait(false);
     }
 
-    private static RasterSeed[] CreateIssue522Mosaic()
+    public static RasterSeed[] CreateIssue522Mosaic()
         =>
         [
             new RasterSeed("west", 2, 2, 0, 2, 1, -1, 20, WestAcquisition, WestAcquisition),
