@@ -27,6 +27,22 @@ internal static class AssetTestData
         await command.ExecuteNonQueryAsync();
     }
 
+    public static async Task ExecuteAsync(WebAppFixture fixture, string sql)
+    {
+        await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public static async Task<object?> ScalarAsync(WebAppFixture fixture, string sql)
+    {
+        await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        return await command.ExecuteScalarAsync();
+    }
+
     // The fixture layer's seed differs from base-schema, so tests read real object IDs and coordinates from the layer.
     public static async Task<IReadOnlyList<(string AssetId, double X)>> DiscoverAssetsAsync(WebAppFixture fixture)
     {
