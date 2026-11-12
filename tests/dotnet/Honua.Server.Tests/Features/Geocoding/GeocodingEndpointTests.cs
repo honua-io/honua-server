@@ -672,6 +672,50 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
+    public async Task BatchGeocode_ResultIdEchoesRecordObjectId_FallingBackToOneBasedPosition()
+    {
+        // GeoServices clients (the .NET SDK BatchGeocodeDetailedAsync, ArcGIS clients) correlate
+        // batch results by ResultID == the submitted record's OBJECTID (#7417). A record without
+        // an OBJECTID gets its one-based position. ResultID must hold on the location and in its
+        // attributes, even when outFields narrows the attributes.
+        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
+            SupportsSuggest: true,
+            SupportsBatch: true,
+            SupportsStructuredInput: false,
+            SupportsBiasing: true)), grantEnterpriseForBatch: true);
+        using var client = factory.CreateClient();
+
+        var addresses = """{"records":[{"attributes":{"OBJECTID":1,"SingleLine":"1600 Pennsylvania Ave NW"}},{"attributes":{"OBJECTID":2,"SingleLine":"380 New York St"}},{"attributes":{"OBJECTID":"17","SingleLine":"1 Main St"}},{"attributes":{"SingleLine":"2 Main St"}}]}""";
+        foreach (var outFields in new[] { "*", "Match_addr" })
+        {
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["addresses"] = addresses,
+                ["outFields"] = outFields,
+                ["f"] = "json"
+            });
+
+            using var response = await client.PostAsync("/rest/services/World/GeocodeServer/geocodeAddresses", content);
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var locations = payload.RootElement.GetProperty("locations");
+            Assert.Equal(4, locations.GetArrayLength());
+
+            int[] expected = [1, 2, 17, 4];
+            for (var i = 0; i < expected.Length; i++)
+            {
+                Assert.Equal(expected[i], locations[i].GetProperty("resultId").GetInt32());
+                Assert.Equal(
+                    expected[i].ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    locations[i].GetProperty("attributes").GetProperty("ResultID").GetString());
+            }
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
     public async Task GeocodeServerMetadata_AdvertisesSupportsSuggest_WhenProviderSupports()

@@ -611,7 +611,7 @@ internal sealed class GeocodingHandler(
         // under the "addresses" parameter, e.g. addresses={"records":[{"attributes":{...}}]}.
         // Accept that as the primary name and fall back to "records" for direct callers.
         var recordsJson = GetValue(values, "addresses") ?? GetValue(values, "records");
-        if (!TryParseRecords(recordsJson, out var queries, out var parseError))
+        if (!TryParseRecords(recordsJson, out var queries, out var recordIds, out var parseError))
         {
             GeocodingLog.BatchRecordsParseFailed(_logger, parseError ?? "Unknown parse error");
             return StandardErrorHelpers.CreateBadRequest(context, parseError ?? "Invalid records parameter.");
@@ -676,15 +676,17 @@ internal sealed class GeocodingHandler(
             // The coordinator returns one candidate slot per submitted record, in request order,
             // including explicit "no match" slots (NaN coordinates) for blank or zero-candidate
             // inputs. We emit one location per candidate so the locations array stays 1:1 and in
-            // order with the input records, and stamp each with a ResultID derived from the
-            // candidate's correlation attribute (falling back to its positional index) so clients
-            // can map results back to inputs even when an input produced no match.
+            // order with the input records. The candidate's correlation attribute (or its position)
+            // names the zero-based input index; the emitted ResultID is that record's OBJECTID, or
+            // its one-based position when the record has none, as GeoServices clients correlate
+            // batch results by ResultID == OBJECTID (#7417). ResultID is stamped both on the
+            // location and in its attributes, for match and no-match slots alike.
             var candidates = result.Data ?? [];
             var reprojectedLocations = new List<GeocodeAddressLocation>(candidates.Count);
             for (var index = 0; index < candidates.Count; index++)
             {
                 var candidate = candidates[index];
-                var resultId = ResolveResultId(candidate, index);
+                var resultId = ResolveClientResultId(ResolveResultId(candidate, index), recordIds!);
 
                 var isMatch = !double.IsNaN(candidate.X) && !double.IsNaN(candidate.Y);
                 GeocodePoint? location = null;
@@ -714,7 +716,9 @@ internal sealed class GeocodingHandler(
                     Address = candidate.Address,
                     Score = candidate.Score,
                     Location = location,
-                    Attributes = ProjectAttributes(GeoServicesAddressAttributes(candidate), outFields)
+                    Attributes = WithResultId(
+                        ProjectAttributes(GeoServicesAddressAttributes(candidate), outFields),
+                        resultId)
                 });
             }
 
@@ -741,9 +745,14 @@ internal sealed class GeocodingHandler(
         }
     }
 
-    private static bool TryParseRecords(string? recordsJson, out List<string>? queries, out string? error)
+    private static bool TryParseRecords(
+        string? recordsJson,
+        out List<string>? queries,
+        out List<int?>? recordIds,
+        out string? error)
     {
         queries = null;
+        recordIds = null;
         error = null;
 
         if (string.IsNullOrWhiteSpace(recordsJson))
@@ -773,6 +782,7 @@ internal sealed class GeocodingHandler(
             }
 
             queries = new List<string>(recordsArray.GetArrayLength());
+            recordIds = [.. recordsArray.EnumerateArray().Select(ExtractObjectIdFromRecord)];
             List<int>? invalidIndices = null;
             var index = 0;
             // Not a simple .Select(): the loop branches into two different accumulators
@@ -826,6 +836,25 @@ internal sealed class GeocodingHandler(
             error = "records parameter contains invalid JSON.";
             return false;
         }
+    }
+
+    // Reads the GeoServices record correlation id (attributes.OBJECTID, number or numeric string).
+    private static int? ExtractObjectIdFromRecord(JsonElement record)
+    {
+        if (record.ValueKind != JsonValueKind.Object ||
+            !record.TryGetProperty("attributes", out var attributes) ||
+            attributes.ValueKind != JsonValueKind.Object ||
+            !attributes.TryGetProperty("OBJECTID", out var objectId))
+        {
+            return null;
+        }
+
+        return objectId.ValueKind switch
+        {
+            JsonValueKind.Number when objectId.TryGetInt32(out var number) => number,
+            JsonValueKind.String when int.TryParse(objectId.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) => parsed,
+            _ => null
+        };
     }
 
     private static string? ExtractAddressFromRecord(JsonElement record)
@@ -1335,6 +1364,19 @@ internal sealed class GeocodingHandler(
 
         return positionalIndex;
     }
+
+    // Maps a zero-based input index to the ResultID a GeoServices client expects: the submitted
+    // record's OBJECTID, or the one-based position when the record carried none (#7417).
+    private static int ResolveClientResultId(int inputIndex, List<int?> recordIds)
+        => inputIndex >= 0 && inputIndex < recordIds.Count && recordIds[inputIndex] is { } objectId
+            ? objectId
+            : inputIndex + 1;
+
+    private static Dictionary<string, string?> WithResultId(IReadOnlyDictionary<string, string?> attributes, int resultId)
+        => new(attributes, StringComparer.Ordinal)
+        {
+            [Honua.Geocoding.Features.Geocoding.Domain.GeocodeCandidate.ResultIdAttribute] = resultId.ToString(CultureInfo.InvariantCulture)
+        };
 
     private static IReadOnlyDictionary<string, string?> GeoServicesAddressAttributes(
         Honua.Geocoding.Features.Geocoding.Domain.GeocodeCandidate candidate)
