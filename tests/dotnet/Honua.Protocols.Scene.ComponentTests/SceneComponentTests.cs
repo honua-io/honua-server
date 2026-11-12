@@ -114,7 +114,7 @@ public sealed class SceneComponentTests
             });
             app.UseAuthentication();
             app.UseAuthorization();
-            app.UseWhen(context => OutputCachingRegistration.HasLiveOutputCacheEntitlements(context.RequestServices, false),
+            app.UseWhen(context => OutputCachingRegistration.HasLiveOutputCacheEntitlements(context.RequestServices),
                 static entitled => entitled.UseOutputCache());
             app.MapSceneEndpoints();
         });
