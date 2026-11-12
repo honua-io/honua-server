@@ -21,6 +21,60 @@ public sealed partial class ProposalEndpointsTests
     private const string ConsoleGuidance = "ask one to make this change in Console";
 
     [IntegrationTest]
+    [Theory]
+    [InlineData("new-owner")]
+    [InlineData(null)]
+    [Endpoint("PUT /api/v1/console/content/{id}")]
+    public async Task ContentOwnership_AgentKey_CannotTransferOrClearOwner(string? newOwner)
+    {
+        using var human = await CreateKeyClientAsync("human-content-owner", HumanKeyPermissions);
+        using var agent = await CreateKeyClientAsync("agent-content-owner", AgentKeyPermissions);
+        var name = $"ownership-{Guid.NewGuid():N}";
+        using var created = await human.PostAsJsonAsync("/api/v1/console/content",
+            new { name, itemType = "dashboard", visibility = "personal", ownerId = "original-owner" });
+        created.StatusCode.Should().Be(HttpStatusCode.Created, await created.Content.ReadAsStringAsync());
+        using var original = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var data = original.RootElement.GetProperty("data");
+        var path = $"/api/v1/console/content/{data.GetProperty("id").GetString()}";
+        var update = new
+        {
+            name, itemType = "dashboard", visibility = "personal", ownerId = newOwner,
+            generation = data.GetProperty("generation").GetInt64(),
+        };
+
+        using var denied = await agent.PutAsJsonAsync(path, update);
+        await AssertAgentApprovalRefusalAsync(denied, ConsoleGuidance, AgentApprovalFilter.ContentVisibilityRef);
+        using var unchanged = await human.GetAsync(path);
+        unchanged.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var stored = JsonDocument.Parse(await unchanged.Content.ReadAsStringAsync());
+        stored.RootElement.GetProperty("data").GetProperty("ownerId").GetString().Should().Be("original-owner");
+        stored.RootElement.GetProperty("data").GetProperty("generation").GetInt64()
+            .Should().Be(data.GetProperty("generation").GetInt64());
+
+        using var allowed = await human.PutAsJsonAsync(path, update);
+        allowed.StatusCode.Should().Be(HttpStatusCode.OK, await allowed.Content.ReadAsStringAsync());
+        using var transferred = JsonDocument.Parse(await allowed.Content.ReadAsStringAsync());
+        transferred.RootElement.GetProperty("data").GetProperty("ownerId").GetString().Should().Be(newOwner);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/content")]
+    public async Task ContentOwnership_AgentKey_CannotCreateForAnotherOwner()
+    {
+        using var agent = await CreateKeyClientAsync("agent-content-create", AgentKeyPermissions);
+        using var denied = await agent.PostAsJsonAsync("/api/v1/console/content", new
+        {
+            name = $"delegated-{Guid.NewGuid():N}", itemType = "dashboard",
+            visibility = "personal", ownerId = "another-owner",
+        });
+        await AssertAgentApprovalRefusalAsync(denied, ConsoleGuidance, AgentApprovalFilter.ContentVisibilityRef);
+
+        using var own = await agent.PostAsJsonAsync("/api/v1/console/content",
+            new { name = $"own-{Guid.NewGuid():N}", itemType = "dashboard", visibility = "personal" });
+        own.StatusCode.Should().Be(HttpStatusCode.Created, await own.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/console/content/{id}/open-data/stac/publish")]
     public async Task PublishStac_AgentAdministratorKey_RequiresHumanApproval()
     {
