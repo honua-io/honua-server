@@ -102,6 +102,45 @@ public sealed class MetadataV2GraphSnapshotCache : IMetadataV2GraphCacheInvalida
         }
     }
 
+    // The last snapshot this node loaded, kept until it is invalidated even after its lifetime ends, so a caller can
+    // ask the database whether it is still current instead of reloading it.
+    public bool TryGetExpired(string environment, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out MetadataV2GraphSnapshot? snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(environment);
+        snapshot = null;
+        if (!_slots.TryGetValue(environment, out var slot)
+            || slot.State is not { Snapshot: { IsCompletedSuccessfully: true } loaded } state
+            || !IsExpired(state, _timeProvider.GetTimestamp()))
+        {
+            return false;
+        }
+
+        snapshot = loaded.Result;
+        return true;
+    }
+
+    // The database confirmed this revision is still current: keep serving it for another lifetime.
+    public void Renew(string environment, string currentEtag)
+    {
+        ArgumentNullException.ThrowIfNull(environment);
+        ArgumentNullException.ThrowIfNull(currentEtag);
+        var ttl = _options.Value.MetadataGraphTtl;
+        if (ttl <= TimeSpan.Zero || !_slots.TryGetValue(environment, out var slot))
+        {
+            return;
+        }
+
+        lock (slot.Gate)
+        {
+            if (slot.State is { Snapshot: { IsCompletedSuccessfully: true } snapshot } state
+                && string.Equals(snapshot.Result.Etag, currentEtag, StringComparison.Ordinal))
+            {
+                var now = _timeProvider.GetTimestamp();
+                slot.State = state with { ExpiresAtTicks = now + (long)(ttl.TotalSeconds * _timeProvider.TimestampFrequency) };
+            }
+        }
+    }
+
     private static bool IsExpired(SlotState state, long nowTicks)
     {
         if (nowTicks >= state.ExpiresAtTicks)

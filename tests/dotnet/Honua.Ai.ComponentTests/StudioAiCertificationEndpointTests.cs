@@ -117,6 +117,7 @@ public sealed class StudioAiCertificationEndpointTests
             builder.Services.AddStudioAiProxy(builder.Configuration);
             builder.Services.AddHttpClient("studio-ai-proxy").ConfigurePrimaryHttpMessageHandler(() => upstream);
             builder.Services.AddApiKeyAuthentication(builder.Configuration);
+            builder.Services.AddOidcAuthentication(builder.Configuration);
             builder.Services.Configure<ApiKeyAuthenticationOptions>(options =>
             {
                 options.AdminPassword = adminKey;

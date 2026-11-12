@@ -67,6 +67,16 @@ need fresh human reviews. Already claimed legacy executions and submitted child
 operations retain their recorded authority and may drain. Deploy Server before
 the Console companion; automation can continue proposing and monitoring work.
 
+## Browser session CSRF protection
+
+Cookie-authenticated clients must fetch `GET /api/v1/admin/auth/csrf` over HTTPS
+and send its `requestToken` in the `X-Honua-CSRF` header for unsafe requests,
+including sign-in, bearer issuance and logout. Keep cookies on the same origin.
+Fetch a fresh token after password or OIDC sign-in because the token is bound to
+the current identity. Coordinate this server update with the Console client.
+See [browser sign-in](../guides/secure/authentication.md) for the session and
+separate-origin bearer flows.
+
 ## Migration Baseline
 
 Before regenerating or upgrading SDK artifacts:
