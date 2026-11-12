@@ -102,7 +102,7 @@ jobs:
     if: always() && !cancelled() && (needs.runner-select.result == 'success' || github.event.pull_request.draft == true)
     name: PR Gate / ${{ matrix.check }}
     needs: runner-select
-    runs-on: ${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && needs.runner-select.outputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 45
     # Format and both analyzer partitions run independently after runner selection.
     strategy:
@@ -164,7 +164,7 @@ jobs:
   fast-tests:
     name: PR Gate / Fast and architecture (${{ matrix.test-group }})
     needs: runner-select
-    runs-on: ${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && needs.runner-select.outputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 45
     # Each group compiles only its own test roots; the producer and the analyzer
     # job compile the diff's affected closure.
@@ -252,7 +252,7 @@ jobs:
   server-test-producer:
     name: PR Gate / Server test producer
     needs: runner-select
-    runs-on: ${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && needs.runner-select.outputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 45
     outputs:
       producer-attempt: ${{ steps.managed-producer.outputs.producer-attempt }}
@@ -340,7 +340,7 @@ jobs:
     # silently un-gates trunk or leaves pull requests waiting forever.
     name: PR Gate / Build and tests
     needs: runner-select
-    runs-on: ${{ needs.runner-select.outputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && needs.runner-select.outputs.runner || 'ubuntu-latest' }}
     # Runtime toolchain proofs run in the full CI workflow.
     timeout-minutes: 75
     outputs:
@@ -675,7 +675,7 @@ jobs:
     # refs/pull/N/merge ref has the base-branch tip as its first parent. The
     # same reasoning scopes scripts/ci/compute-lean-gate-build-scope.sh.
     if: github.event_name == 'pull_request' && !github.event.pull_request.draft
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 10
     outputs:
       # A docs-only diff skips selection and publishes `skip`, which the
@@ -892,7 +892,7 @@ jobs:
     name: PR Gate / Affected shards
     if: always() && github.event_name == 'pull_request' && !github.event.pull_request.draft
     needs: [affected-shards-select, affected-shard, server-test-producer]
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       # The publisher lives in the workflow's commit. Without this checkout the
@@ -951,7 +951,7 @@ jobs:
     # merge-authority guard on trunk one merge later). Run the same two guard
     # scripts here, gated on the diff so every other PR pays nothing.
     name: PR Gate / CI Router Validation
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - name: Await exact-head review
@@ -1141,7 +1141,7 @@ jobs:
     name: PR Gate
     if: always()
     needs: [pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer]
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - name: Require build, tests, format, CI router validation, and affected shards
