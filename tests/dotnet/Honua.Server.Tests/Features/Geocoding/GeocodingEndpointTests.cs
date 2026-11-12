@@ -1845,7 +1845,9 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
                     Attributes: new Dictionary<string, string?>(StringComparer.Ordinal)
                     {
                         ["Provider"] = Name,
-                        ["Match_addr"] = request.Queries[i]
+                        ["Match_addr"] = request.Queries[i],
+                        // Real providers stamp the zero-based input index (BaseGeocodeProvider).
+                        [CoreGeocodeCandidate.ResultIdAttribute] = i.ToString(System.Globalization.CultureInfo.InvariantCulture)
                     },
                     ProviderId: $"fake-batch-{i}"));
             }
