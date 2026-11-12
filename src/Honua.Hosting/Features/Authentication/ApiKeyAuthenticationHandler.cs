@@ -30,6 +30,8 @@ internal sealed class ApiKeyAuthenticationHandler(
     private const string AuthRealm = "Honua Admin";
     private const string AdminAuthenticationNotConfigured = "Admin authentication not configured";
     private const string RequestNotPermittedMessage = "This API key is not permitted from this origin or network.";
+    private const string SourceRefusedMessage = "Too many failed authentication attempts from this source";
+    private static readonly object SourceRefusedRetryAfterKey = new();
     private static readonly Guid DevelopmentBypassActorId = new("00000000-0000-0000-0000-000000000001");
     internal static readonly Guid BootstrapAdminActorId = new("00000000-0000-0000-0000-000000000002");
 
@@ -50,19 +52,10 @@ internal sealed class ApiKeyAuthenticationHandler(
             return CreateSuccessfulAuthenticationResult(Scheme.Name, "dev-bypass", DevelopmentBypassActorId);
         }
 
-        // Extract API key from explicit header, or from Basic auth compatibility mode.
-        var providedApiKey = GetApiKeyFromHeader();
-        if (string.IsNullOrEmpty(providedApiKey))
+        var (providedApiKey, extractionFailure) = ReadPresentedApiKey();
+        if (extractionFailure is not null)
         {
-            if (TryGetApiKeyFromBasicAuthorizationHeader(out providedApiKey, out var basicFailure))
-            {
-                // Basic auth compatibility successfully extracted the API key.
-            }
-            else if (!string.IsNullOrEmpty(basicFailure))
-            {
-                Context.Items[AuthFailureMessageKey] = basicFailure;
-                return AuthenticateResult.Fail(basicFailure);
-            }
+            return extractionFailure;
         }
 
         if (string.IsNullOrEmpty(providedApiKey))
@@ -78,6 +71,34 @@ internal sealed class ApiKeyAuthenticationHandler(
             ApiKeyRequestContext.From(Context),
             Logger,
             Context.RequestAborted);
+        return ToAuthenticateResult(validation);
+    }
+
+    // The explicit header wins; Basic auth compatibility supplies the key otherwise.
+    private (string? ApiKey, AuthenticateResult? Failure) ReadPresentedApiKey()
+    {
+        var providedApiKey = GetApiKeyFromHeader();
+        if (!string.IsNullOrEmpty(providedApiKey))
+        {
+            return (providedApiKey, null);
+        }
+
+        if (TryGetApiKeyFromBasicAuthorizationHeader(out providedApiKey, out var basicFailure))
+        {
+            return (providedApiKey, null);
+        }
+
+        if (string.IsNullOrEmpty(basicFailure))
+        {
+            return (null, null);
+        }
+
+        Context.Items[AuthFailureMessageKey] = basicFailure;
+        return (null, AuthenticateResult.Fail(basicFailure));
+    }
+
+    private AuthenticateResult ToAuthenticateResult(ApiKeyValidation validation)
+    {
         switch (validation.Rejection)
         {
             case ApiKeyRejection.None:
@@ -93,6 +114,9 @@ internal sealed class ApiKeyAuthenticationHandler(
             case ApiKeyRejection.CredentialStoreUnavailable:
                 Context.Items[AuthFailureMessageKey] = "credential store unavailable";
                 return AuthenticateResult.Fail("credential store unavailable");
+            case ApiKeyRejection.SourceRefused:
+                Context.Items[SourceRefusedRetryAfterKey] = validation.RetryAfter;
+                return AuthenticateResult.Fail(SourceRefusedMessage);
             case ApiKeyRejection.RequestNotPermitted:
                 // Refusal already logged by ValidateApiKeyAsync with the key id and restriction.
                 Context.Items[AuthFailureMessageKey] = RequestNotPermittedMessage;
@@ -122,7 +146,52 @@ internal sealed class ApiKeyAuthenticationHandler(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(dependencies);
+        return await CountAttemptAsync(
+            dependencies.BeginAttempt(request?.ClientIp, providedApiKey),
+            () => CompareApiKeyAsync(providedApiKey, schemeName, dependencies, request, logger, cancellationToken)).ConfigureAwait(false);
+    }
 
+    internal static async Task<ApiKeyValidation> ValidateAdminPasswordAsync(
+        AdminPasswordAttempt attempt,
+        ApiKeyAuthenticationDependencies dependencies,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(dependencies);
+        return await CountAttemptAsync(
+            dependencies.BeginAttempt(attempt.ClientIp, attempt.Password),
+            () => CompareAdminPasswordAsync(attempt, dependencies, logger, cancellationToken)).ConfigureAwait(false);
+    }
+
+    // A refused source is answered before any credential is compared, so a refusal says nothing about the credential.
+    private static async Task<ApiKeyValidation> CountAttemptAsync(
+        AuthenticationAttempt attempt, Func<Task<ApiKeyValidation>> compare)
+    {
+        using (attempt)
+        {
+            if (attempt.RetryAfter is { } retryAfter)
+            {
+                return new ApiKeyValidation(null, ApiKeyRejection.SourceRefused, RetryAfter: retryAfter);
+            }
+
+            var validation = await compare().ConfigureAwait(false);
+            if (validation.CountsAsFailure)
+            {
+                attempt.CountFailure();
+            }
+
+            return validation;
+        }
+    }
+
+    private static async Task<ApiKeyValidation> CompareApiKeyAsync(
+        string providedApiKey,
+        string schemeName,
+        ApiKeyAuthenticationDependencies dependencies,
+        ApiKeyRequestContext? request,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
         var storeUnavailable = false;
         if (dependencies.AdminApiKeyStore is not null)
         {
@@ -164,14 +233,15 @@ internal sealed class ApiKeyAuthenticationHandler(
             }
         }
 
-        var passwordValidation = await ValidateAdminPasswordAsync(new AdminPasswordAttempt(providedApiKey, schemeName),
+        var passwordValidation = await CompareAdminPasswordAsync(new AdminPasswordAttempt(providedApiKey, schemeName),
             dependencies, logger, cancellationToken).ConfigureAwait(false);
+        // A mismatch during a store outage still counts: the break-glass password was compared.
         return storeUnavailable && passwordValidation.Rejection is ApiKeyRejection.AdminPasswordNotConfigured or ApiKeyRejection.InvalidKey
-            ? new ApiKeyValidation(null, ApiKeyRejection.CredentialStoreUnavailable)
+            ? new ApiKeyValidation(null, ApiKeyRejection.CredentialStoreUnavailable, CountsAsFailure: passwordValidation.CountsAsFailure)
             : passwordValidation;
     }
 
-    internal static async Task<ApiKeyValidation> ValidateAdminPasswordAsync(
+    private static async Task<ApiKeyValidation> CompareAdminPasswordAsync(
         AdminPasswordAttempt attempt,
         ApiKeyAuthenticationDependencies dependencies,
         ILogger logger,
@@ -201,9 +271,7 @@ internal sealed class ApiKeyAuthenticationHandler(
         // Perform constant-time comparison to prevent timing attacks
         if (!IsApiKeyValid(attempt.Password, configuredPassword))
         {
-            return new ApiKeyValidation(
-                null,
-                ApiKeyRejection.InvalidKey);
+            return new ApiKeyValidation(null, ApiKeyRejection.InvalidKey, CountsAsFailure: true);
         }
 
         AuthenticationLog.ApiKeyAuthenticationSuccessful(logger);
@@ -570,6 +638,11 @@ internal sealed class ApiKeyAuthenticationHandler(
             return Task.CompletedTask;
         }
 
+        if (Context.Items[SourceRefusedRetryAfterKey] is TimeSpan retryAfter)
+        {
+            return TooManyAttemptsResponse.Create(Context, retryAfter).ExecuteAsync(Context);
+        }
+
         Response.Headers.Append("WWW-Authenticate", $"ApiKey realm=\"{AuthRealm}\", header=\"{ApiKeyHeader}\"");
         if (_authOptions.EnableBasicAuthCompatibility)
         {
@@ -606,6 +679,13 @@ internal enum ApiKeyRejection
 
     // A valid key is still refused when its referrer or IP restriction misses the request.
     RequestNotPermitted,
+
+    // The client address is refused after repeated failures; no credential was compared.
+    SourceRefused,
 }
 
-internal readonly record struct ApiKeyValidation(AuthenticateResult? Success, ApiKeyRejection Rejection);
+internal readonly record struct ApiKeyValidation(
+    AuthenticateResult? Success,
+    ApiKeyRejection Rejection,
+    TimeSpan? RetryAfter = null,
+    bool CountsAsFailure = false);

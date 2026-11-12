@@ -14,10 +14,18 @@ internal sealed class AdminPasswordAuthenticator(
     ApiKeyAuthenticationDependencies dependencies,
     ILogger<AdminAuthEndpoints.AdminAuthEndpointsLog> logger)
 {
-    internal Task<ApiKeyValidation> ValidateAsync(string password, CancellationToken cancellationToken) =>
+    internal Task<ApiKeyValidation> ValidateAsync(HttpContext context, string password) =>
         ApiKeyAuthenticationHandler.ValidateAdminPasswordAsync(
-            new AdminPasswordAttempt(password, OidcAuthenticationExtensions.AdminSessionScheme),
-            dependencies, logger, cancellationToken);
+            new AdminPasswordAttempt(password, OidcAuthenticationExtensions.AdminSessionScheme, context.Connection.RemoteIpAddress),
+            dependencies, logger, context.RequestAborted);
+
+    internal static IResult Reject(HttpContext context, ApiKeyValidation validation) => validation.Rejection switch
+    {
+        ApiKeyRejection.SourceRefused => TooManyAttemptsResponse.Create(context, validation.RetryAfter ?? TimeSpan.Zero),
+        ApiKeyRejection.AdminPasswordUnavailable or ApiKeyRejection.CredentialStoreUnavailable
+            => StandardErrorHelpers.CreateServiceUnavailable(context, "Administrator sign-in is unavailable."),
+        _ => TypedResults.Unauthorized(),
+    };
 
     internal static AdminAuthSessionClaim[] CreateClaims(ClaimsPrincipal principal) =>
         principal.Claims.Select(claim => new AdminAuthSessionClaim
@@ -47,12 +55,10 @@ internal sealed class AdminPasswordTokenEndpoint(
             return TypedResults.BadRequest();
         }
 
-        var validation = await authenticator.ValidateAsync(request.Password, context.RequestAborted).ConfigureAwait(false);
+        var validation = await authenticator.ValidateAsync(context, request.Password).ConfigureAwait(false);
         if (validation.Success?.Principal is not { } principal)
         {
-            return validation.Rejection is ApiKeyRejection.AdminPasswordUnavailable or ApiKeyRejection.CredentialStoreUnavailable
-                ? StandardErrorHelpers.CreateServiceUnavailable(context, "Administrator sign-in is unavailable.")
-                : TypedResults.Unauthorized();
+            return AdminPasswordAuthenticator.Reject(context, validation);
         }
 
         var issuance = bearerTokenService.Issue(AdminPasswordAuthenticator.CreateClaims(principal),

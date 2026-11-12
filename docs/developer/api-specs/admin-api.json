@@ -19333,6 +19333,24 @@
           "401": {
             "description": "The password is not valid, or no administrator password is configured."
           },
+          "429": {
+            "description": "Too many failed attempts from this client address; the source is refused until the `Retry-After` interval elapses.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the client address may try again.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAuthProblemResponse"
+                }
+              }
+            }
+          },
           "503": {
             "description": "Administrator sign-in is unavailable: the configured administrator password could not be resolved, or the shared session store could not create the session.",
             "content": {
@@ -19407,6 +19425,24 @@
           },
           "401": {
             "description": "The password is not valid, or no administrator password is configured."
+          },
+          "429": {
+            "description": "Too many failed attempts from this client address; the source is refused until the `Retry-After` interval elapses.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the client address may try again.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAuthProblemResponse"
+                }
+              }
+            }
           },
           "503": {
             "description": "The configured administrator password could not be resolved, or operator bearer issuance is not configured on this server.",
