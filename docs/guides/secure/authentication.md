@@ -332,7 +332,6 @@ path. The pending login cookie uses `SameSite=Lax` for the provider redirect; th
 authenticated session cookie uses `SameSite=Strict`. On landing, Console refreshes
 its session identity and CSRF token before sending authenticated mutations.
 
-
 For Amazon Cognito, configure the user-pool issuer as `Authority` and the hosted
 login domain separately for logout:
 
