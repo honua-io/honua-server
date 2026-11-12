@@ -4,7 +4,9 @@
 using Honua.Core.Features.Console.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Console;
 using Honua.Server.Features.Console.Models;
+using Honua.Server.Features.Console.Services;
 
 namespace Honua.Server.Features.Admin;
 
@@ -37,10 +39,32 @@ internal static class AgentApprovalFilter
         => Refuse(invocation, next, LayerStateRef, ConsoleGuidance);
 
     // Any visibility beyond personal, or a team scope, puts content in front of a new audience.
-    public static ValueTask<object?> ContentVisibility(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
-        => invocation.Arguments.Any(static argument => WidensVisibility(argument))
-            ? Refuse(invocation, next, ContentVisibilityRef, ConsoleGuidance)
-            : next(invocation);
+    public static async ValueTask<object?> ContentVisibility(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
+    {
+        var context = invocation.HttpContext;
+        if (!AgentPrincipal.IsAgent(context.User))
+            return await next(invocation).ConfigureAwait(false);
+
+        var changesAudience = invocation.Arguments.Any(static argument => WidensVisibility(argument));
+        if (invocation.Arguments.OfType<CreateConsoleContentItemRequest>().FirstOrDefault() is { OwnerId: not null } create)
+        {
+            changesAudience |= !string.Equals(create.OwnerId, ConsolePrincipal.ResolveActorId(context.User), StringComparison.Ordinal);
+        }
+
+        if (!changesAudience && invocation.Arguments.OfType<UpdateConsoleContentItemRequest>().FirstOrDefault() is { } update)
+        {
+            var store = context.RequestServices.GetRequiredService<ProjectedConsoleContentStore>();
+            var id = context.Request.RouteValues["id"]?.ToString();
+            if (id is not null && await store.GetAsync(id, context.RequestAborted).ConfigureAwait(false) is { } existing)
+            {
+                changesAudience = !string.Equals(update.OwnerId, existing.OwnerId, StringComparison.Ordinal);
+            }
+        }
+
+        return changesAudience
+            ? OperatorApprovalGate.AgentApprovalRequired(context, ContentVisibilityRef, ConsoleGuidance)
+            : await next(invocation).ConfigureAwait(false);
+    }
 
     private static bool WidensVisibility(object? argument) => argument switch
     {

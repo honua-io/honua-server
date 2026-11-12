@@ -71,6 +71,15 @@ public sealed partial class ProposalEndpointsTests
         using var own = await agent.PostAsJsonAsync("/api/v1/console/content",
             new { name = $"own-{Guid.NewGuid():N}", itemType = "dashboard", visibility = "personal" });
         own.StatusCode.Should().Be(HttpStatusCode.Created, await own.Content.ReadAsStringAsync());
+        using var ownContent = JsonDocument.Parse(await own.Content.ReadAsStringAsync());
+        var ownData = ownContent.RootElement.GetProperty("data");
+        using var edited = await agent.PutAsJsonAsync($"/api/v1/console/content/{ownData.GetProperty("id").GetString()}", new
+        {
+            name = $"edited-{Guid.NewGuid():N}", itemType = "dashboard", visibility = "personal",
+            ownerId = ownData.GetProperty("ownerId").GetString(),
+            generation = ownData.GetProperty("generation").GetInt64(),
+        });
+        edited.StatusCode.Should().Be(HttpStatusCode.OK, await edited.Content.ReadAsStringAsync());
     }
 
     [IntegrationTest]
