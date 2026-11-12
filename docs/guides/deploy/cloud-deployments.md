@@ -136,6 +136,8 @@ excluded until it is re-established on a live Fargate task (honua-release#98).
 
   The limit is two hops because the ALB appends the private address of the CloudFront VPC origin interface after the viewer address CloudFront wrote; both of those addresses come from the VPC, so the server resolves the viewer and ignores any addresses the viewer sent itself.
 
+  Do not forward the viewer's `X-Forwarded-Host` in the origin request policy: neither CloudFront nor the ALB overwrites it, and the server applies it from a trusted hop. Set `Public__BaseUrl` (and `HostValidation__AllowedHosts__<n>` if you list hosts) to the distribution's host.
+
   Do not set `ASPNETCORE_FORWARDEDHEADERS_ENABLED`: it trusts forwarded headers from every peer and reads the ALB's `X-Forwarded-Proto`.
 - Canary rollouts: provision a stable and a canary ECS service on two ALB target groups, then drive weighted traffic shifts through Honua's deploy API (backend `honua-aws-ecs-alb`) with an automatic telemetry gate — see [Upgrade and roll back](upgrade-and-rollback.md).
 
@@ -265,7 +267,7 @@ A Lambda API function runs as many execution environments, and an MCP client's r
 
 ### Background file imports run on AWS Batch
 
-A Lambda instance is frozen as soon as it returns a response, so the API function never runs a background file import itself. With Redis on and the GP Batch workload configured (`ControlPlane__ExecutionWorkloads__0__*`, `Backend=honua-aws-batch`), the API stages the upload in file storage and submits a `FileImport` execution job to that same Batch queue and job definition. The job definition runs the generic server image. The batch backend starts it with `HONUA_OPERATION_ID` and `HONUA_JOB_KIND=FileImport`, so it runs in the execution-worker profile: it downloads the staged file, imports it, and exits. `GET /api/v1/admin/import/jobs/{jobId}` reports `runner: batch` and the Batch job id as `instanceId`. A dedicated `Kind=FileImport` workload takes precedence over the GP workload when one is configured. Imports larger than about 6 GiB ask for a larger job-definition tier through `batch.ephemeral_gib`.
+A Lambda instance is frozen as soon as it returns a response, so the API function never runs a background file import itself. With Redis on and the GP Batch workload configured (`ControlPlane__ExecutionWorkloads__0__*`, `Backend=honua-aws-batch` and `TargetKind=AwsBatch`; `TargetKind` defaults to `KubernetesJob` on every workload, and the server refuses to start when the two disagree), the API stages the upload in file storage and submits a `FileImport` execution job to that same Batch queue and job definition. The job definition runs the generic server image. The batch backend starts it with `HONUA_OPERATION_ID` and `HONUA_JOB_KIND=FileImport`, so it runs in the execution-worker profile: it downloads the staged file, imports it, and exits. `GET /api/v1/admin/import/jobs/{jobId}` reports `runner: batch` and the Batch job id as `instanceId`. A dedicated `Kind=FileImport` workload takes precedence over the GP workload when one is configured. Imports larger than about 6 GiB ask for a larger job-definition tier through `batch.ephemeral_gib`.
 
 A batch worker cannot read the API instance's local disk, so this path needs shared file storage on both the API function and the Batch job definition:
 
@@ -363,14 +365,6 @@ az functionapp config container set --name honua-prod --resource-group honua \
 | ElastiCache (Redis OSS / Valkey) | Replication with Multi-AZ failover plus optional snapshots; Redis 7 offers no AOF, so the last writes before a failure can be lost |
 | Self-managed Redis | `appendonly yes`, `appendfsync everysec` (or `always`), `maxmemory-policy noeviction` |
 
-At startup the server tries to read the policy (`INFO persistence` plus `CONFIG GET` for `appendonly`, `appendfsync` and `maxmemory-policy`). It publishes the result as information, never as a gate. The capability manifest (`GET /api/v1/capabilities/manifest`) shows it under `limits.job.redisDurability`:
-
-- `status: "attested"`: the policy was read and is durable.
-- `status: "unverified"`, `cause: "RedisAttestationUnavailable"`: the policy could not be read. ElastiCache and MemoryDB block `CONFIG`, so this is what a managed cell reports. No action is needed.
-- `status: "not-durable"`, with `RedisPersistenceDisabled`, `RedisWritePolicyUnsafe` or `RedisEvictionPolicyUnsafe`: the policy was read and is not durable.
-
-In all three cases `operations.proposals` and `jobs.runner` report `available: true`, `limits.job.durableJobRuntimeAvailable` is `true`, and the `redis` health entry stays `Healthy` with the outcome in its data. Those capabilities read `dependency-unavailable` only when Redis is absent or did not connect at startup, and `license-required` when it is unentitled. `Jobs__RequireDurableStore=true` makes the server refuse to start unless the status is `attested`. ElastiCache and MemoryDB can never satisfy it, so leave it unset there.
-
 On **serverless** substrates a frozen or torn-down process keeps no state of its own, so Redis is the only home for acknowledged job and proposal state. Choose MemoryDB, or accept ElastiCache's replication-and-snapshot durability knowingly.
 
 **The local batch-compute backends are single-host only.** The in-process `local` backend and the child-process `honua-local-process` pool track launched jobs in an in-process registry that cannot survive a host restart or be observed from another node. They are the zero-dependency executors for single-host / air-gapped deployments; they **cannot** work on:
@@ -394,7 +388,6 @@ against a deployed environment.
 
 - **Serverless cold starts time out** — use the `-aot` image variants and confirm `HONUA_SKIP_MIGRATIONS=true`; migrations during cold start are the usual culprit.
 - **Job/import endpoints return `503`** — durable jobs, queued imports, and workflows require Redis (ElastiCache / Azure Cache for Redis); serverless patterns without Redis don't host them.
-- **Logs show "Redis durability attestation: unverified" or "not-durable"**: this is information. The governed control plane and jobs stay enabled. `unverified` is expected on ElastiCache and MemoryDB, which block `CONFIG`. `not-durable` means the policy was read and does not protect acknowledged writes. Change it only if you need that durability (see the durability paragraphs above).
 - **Admin calls return 401** — confirm the secret store value actually reaches the container env as `HONUA_ADMIN_PASSWORD` and requests send it in the `X-API-Key` header.
 
 ## Next steps

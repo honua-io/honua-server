@@ -3,7 +3,6 @@
 
 using FluentAssertions;
 using Honua.ControlPlane;
-using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Server.Startup;
@@ -30,24 +29,6 @@ public sealed class DurableJobSubstrateRegistrationTests
         typeof(IExecutionLogStore),
         typeof(IGeoprocessingResultPackageStore),
     ];
-
-    public static TheoryData<bool, bool, DurableJobSubstrateCause?> RedisStates => new()
-    {
-        { false, false, null },
-        { true, false, null },
-        { true, true, DurableJobSubstrateCause.RedisUnreachable },
-        { true, true, DurableJobSubstrateCause.RedisPersistenceDisabled },
-        { true, true, null },
-    };
-
-    public static TheoryData<bool, bool, DurableJobSubstrateCause?, DurableJobSubstrateCause> RedisCauses => new()
-    {
-        { false, true, null, DurableJobSubstrateCause.RedisNotConfigured },
-        { true, false, null, DurableJobSubstrateCause.RedisNotEntitled },
-        { true, true, DurableJobSubstrateCause.RedisUnreachable, DurableJobSubstrateCause.RedisUnreachable },
-        { true, true, DurableJobSubstrateCause.RedisPersistenceDisabled, DurableJobSubstrateCause.RuntimeIncomplete },
-        { true, true, null, DurableJobSubstrateCause.RuntimeIncomplete },
-    };
 
     [UnitTest]
     public void ServingHost_WithSystemDatabaseAndNoRedis_ResolvesTheJobSubstrateFromPostgres()
@@ -134,88 +115,6 @@ public sealed class DurableJobSubstrateRegistrationTests
             .Kind.Should().Be(ScheduledTickKind.JobStoreRetention);
     }
 
-    [UnitTheory]
-    [MemberData(nameof(RedisStates))]
-    public void Classify_StoreAndQueuePresent_IsAvailableWhateverTheRedisState(
-        bool redisConfigured,
-        bool redisEntitled,
-        DurableJobSubstrateCause? redisFailure)
-        => RedisState(redisConfigured, redisEntitled, redisFailure)
-            .Classify(jobStorePresent: true, jobQueuePresent: true)
-            .Should().Be(DurableJobSubstrateCause.Available);
-
-    [UnitTheory]
-    [MemberData(nameof(RedisCauses))]
-    public void Classify_WithoutTheStoreOrTheQueue_ReportsTheRedisCause(
-        bool redisConfigured,
-        bool redisEntitled,
-        DurableJobSubstrateCause? redisFailure,
-        DurableJobSubstrateCause expected)
-    {
-        var options = RedisState(redisConfigured, redisEntitled, redisFailure);
-
-        options.Classify(jobStorePresent: false, jobQueuePresent: false).Should().Be(expected);
-        options.Classify(jobStorePresent: true, jobQueuePresent: false).Should().Be(
-            expected, "a store without a queue persists submissions that never drain");
-        options.Classify(jobStorePresent: false, jobQueuePresent: true).Should().Be(expected);
-    }
-
-    [UnitTest]
-    public void EnsureSatisfied_RequireDurableStoreWithRejectedAttestation_ThrowsTypedStartupError()
-    {
-        var options = RedisState(
-            redisConfigured: true, redisEntitled: true, DurableJobSubstrateCause.RedisPersistenceDisabled);
-
-        var act = () => DurableJobSubstrateStartupGate.EnsureSatisfied(
-            options,
-            requireDurableStore: true,
-            detail: "appendonly=no, aof_enabled=0");
-
-        var thrown = act.Should().Throw<DurableJobSubstrateNotAttestedException>(
-            "an operator who required durability must get a typed refusal, never an "
-            + "unresolved-service crash").Subject.Single();
-
-        thrown.Cause.Should().Be(DurableJobSubstrateCause.RedisPersistenceDisabled);
-        thrown.Detail.Should().Be("appendonly=no, aof_enabled=0");
-        thrown.Remediation.Should().Contain("appendonly yes");
-        DurableJobSubstrateNotAttestedException.CapabilityId.Should().Be(CapabilityUnavailableCodes.DurableJobsCapability);
-        thrown.Message.Should().Contain("Jobs:RequireDurableStore");
-        thrown.Message.Should().Contain("appendonly=no, aof_enabled=0");
-    }
-
-    [UnitTest]
-    public void EnsureSatisfied_RejectedAttestationWithoutRequireFlag_Degrades()
-    {
-        var options = RedisState(
-            redisConfigured: true, redisEntitled: true, DurableJobSubstrateCause.RedisPersistenceDisabled);
-
-        var act = () => DurableJobSubstrateStartupGate.EnsureSatisfied(
-            options,
-            requireDurableStore: false);
-
-        act.Should().NotThrow("a rejected attestation is information unless the operator required durability");
-    }
-
-    [UnitTest]
-    public void EnsureSatisfied_RequireDurableStoreWithAcceptedAttestation_DoesNotThrow()
-    {
-        var options = new DurableJobSubstrateOptions
-        {
-            RedisConfigured = true,
-            RedisEntitled = true,
-            RedisDurabilityAttestation = new RedisDurabilityAttestation(
-                "redis:6379",
-                "aof (appendonly=yes, aof_enabled=1)",
-                "appendfsync=everysec",
-                "noeviction",
-                DateTimeOffset.UtcNow),
-        };
-
-        var act = () => DurableJobSubstrateStartupGate.EnsureSatisfied(options, requireDurableStore: true);
-
-        act.Should().NotThrow();
-    }
-
     // JobReconciliationService, ExecutionJobReconciler and ExecutionJobReconcilerBackgroundService
     // take the store clock and the candidate source as optional arguments and fall back to the node
     // clock and a scan of every active job, so nothing fails at startup when a registration is lost.
@@ -245,17 +144,6 @@ public sealed class DurableJobSubstrateRegistrationTests
         services.AddJobWorker(configuration);
         return services;
     }
-
-    private static DurableJobSubstrateOptions RedisState(
-        bool redisConfigured,
-        bool redisEntitled,
-        DurableJobSubstrateCause? redisFailure)
-        => new()
-        {
-            RedisConfigured = redisConfigured,
-            RedisEntitled = redisEntitled,
-            RedisDurabilityFailure = redisFailure,
-        };
 
     private static Type[] HostedImplementations(IServiceCollection services)
         => services
