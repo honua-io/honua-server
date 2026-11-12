@@ -484,33 +484,6 @@ public sealed class TileExportAdmissionSharedLeaseTests
         }
     }
 
-    /// <summary>
-    /// Holds every wrapped node's record creation until <c>parties</c> nodes have reached it (or a
-    /// timeout passes), forcing the evaluations to complete before any record becomes visible.
-    /// </summary>
-    private sealed class Rendezvous(int parties, TimeSpan timeout)
-    {
-        private readonly TaskCompletionSource _allArrived = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private int _arrived;
-
-        public bool AllArrived => _allArrived.Task.IsCompleted;
-
-        public InterceptingJobStore Wrap(IExecutionJobStore inner) => new(inner)
-        {
-            BeforeCreate = ArriveAsync
-        };
-
-        private async Task ArriveAsync()
-        {
-            if (Interlocked.Increment(ref _arrived) >= parties)
-            {
-                _allArrived.TrySetResult();
-            }
-
-            await _allArrived.Task.WaitAsync(timeout).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-        }
-    }
-
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
     {
         public T CurrentValue => value;

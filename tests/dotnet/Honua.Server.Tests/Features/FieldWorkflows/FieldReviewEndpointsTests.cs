@@ -6,10 +6,8 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.FieldWorkflows.Review;
-using Honua.Core.Features.Forms.Packages;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.FieldWorkflows;
 
@@ -134,62 +132,8 @@ public sealed class FieldReviewEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    /// <summary>
-    /// Seeds a published form package and a completed (accepted) submission row
-    /// directly through the shared <see cref="IFormPackageStore"/>. This exercises
-    /// the same durable schema the runtime submission path writes to, without
-    /// depending on the target service advertising edit capabilities.
-    /// </summary>
-    private async Task<Guid> SeedSubmissionAsync(string suffix, string name)
-    {
-        using var scope = _fixture.Services.CreateScope();
-        var store = scope.ServiceProvider.GetRequiredService<IFormPackageStore>();
-
-        var draft = await store.SaveDraftAsync(CreatePackage("Field review " + suffix), "test-admin");
-        var published = await store.PublishAsync(
-            draft.FormId,
-            draft.Version,
-            new FormPackageValidationResult { IsValid = true },
-            "test-admin")
-            ?? throw new InvalidOperationException("Failed to publish seeded form package.");
-
-        var submission = new FormSubmissionRequest
-        {
-            IdempotencyKey = suffix,
-            Operation = FormSubmissionOperations.Create,
-            ClientId = "field-client-1",
-            Values = new Dictionary<string, JsonElement>
-            {
-                ["name"] = JsonElement.Parse(JsonSerializer.Serialize(name))
-            }
-        };
-
-        var submissionId = Guid.NewGuid();
-        var claimed = await store.CreateSubmissionAsync(
-            submissionId,
-            suffix,
-            "actor-hash-" + suffix,
-            "request-hash-" + suffix,
-            published,
-            submission,
-            "pending");
-        claimed.Should().BeTrue();
-
-        await store.CompleteSubmissionAsync(
-            submissionId,
-            new FormSubmissionResponse
-            {
-                SubmissionId = submissionId,
-                Status = "accepted",
-                FormId = published.FormId,
-                FormVersion = published.Version,
-                Operation = FormSubmissionOperations.Create,
-                TargetFeatureId = 1
-            },
-            "accepted");
-
-        return submissionId;
-    }
+    private Task<Guid> SeedSubmissionAsync(string suffix, string name)
+        => new FieldSubmissionSeeder(_fixture.Services, "Field review").SeedAsync(suffix, name);
 
     private async Task<long> CountAuditAsync(Guid submissionId, string action)
     {
@@ -238,37 +182,4 @@ public sealed class FieldReviewEndpointsTests : IAsyncLifetime
 
     private static StringContent JsonContent<T>(T value, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> jsonTypeInfo)
         => new(JsonSerializer.Serialize(value, jsonTypeInfo), Encoding.UTF8, "application/json");
-
-    private static FormPackageDocument CreatePackage(string title)
-        => new()
-        {
-            Title = title,
-            Target = new FormTargetDefinition
-            {
-                ServiceId = WebAppFixture.TestServiceId,
-                LayerId = WebAppFixture.TestLayerId
-            },
-            Sections =
-            [
-                new FormSectionDefinition { SectionId = "main", Label = "Main", FieldIds = ["name"] }
-            ],
-            Fields =
-            [
-                new FormFieldDefinition
-                {
-                    FieldId = "name",
-                    Label = "Name",
-                    Type = "text",
-                    TargetField = "name",
-                    Required = true,
-                    SectionId = "main"
-                }
-            ],
-            SubmitPolicy = new FormSubmitPolicy
-            {
-                AllowedOperations = [FormSubmissionOperations.Create],
-                RequiresGeometry = true
-            },
-            OfflinePolicy = new FormOfflinePolicy { Enabled = true }
-        };
 }
