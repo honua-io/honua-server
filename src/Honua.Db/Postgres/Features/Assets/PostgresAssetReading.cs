@@ -19,7 +19,14 @@ internal static class PostgresAssetReading
         return true;
     }
 
+    // Boxing a nullable struct through (object?) trips CA1508's flow analysis; unwrap it explicitly.
+    public static object DbValue<T>(T? value)
+        where T : struct
+        => value.HasValue ? value.Value : DBNull.Value;
+
     public static string? OptionalString(DbDataReader reader, int ordinal) => reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
 
     public static DateTimeOffset RequiredTime(DbDataReader reader, int ordinal) => new(reader.GetDateTime(ordinal), TimeSpan.Zero);
+
+    public static DateTimeOffset? OptionalTime(DbDataReader reader, int ordinal) => reader.IsDBNull(ordinal) ? null : RequiredTime(reader, ordinal);
 }
