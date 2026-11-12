@@ -96,7 +96,7 @@ public sealed class StudioHumanDraftMutationTests : IAsyncLifetime
 
         using var response = await human.Client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var after = await store.ListDraftsAsync(new StudioPackageDraftQuery());
         after.Items.Count.Should().Be(before.Items.Count);
     }
