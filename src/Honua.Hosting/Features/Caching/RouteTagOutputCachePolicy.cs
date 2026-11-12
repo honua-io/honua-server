@@ -43,6 +43,7 @@ internal sealed class RouteTagOutputCachePolicy : IOutputCachePolicy
         {
             context.CacheVaryByRules.VaryByValues[CatalogRevisionKey] = snapshot.Etag;
             context.CacheVaryByRules.VaryByValues["honua-service-tenant"] = TenantScopeHelpers.ResolveRequestTenantId(context.HttpContext) ?? string.Empty;
+            OutputCacheStatus.UseCatalogRevision(context.HttpContext, snapshot.Etag);
         }
     }
 
@@ -60,9 +61,7 @@ internal sealed class RouteTagOutputCachePolicy : IOutputCachePolicy
     // Only a GET to an endpoint that opted into output caching can be looked up or stored; the base policy also sees
     // every other request, and those must not pay for a catalog read.
     private static bool MayUseOutputCache(HttpContext context)
-        => HttpMethods.IsGet(context.Request.Method)
-           && context.GetEndpoint()?.Metadata is { } metadata
-           && (metadata.GetMetadata<IOutputCachePolicy>() is not null || metadata.GetMetadata<OutputCacheAttribute>() is not null);
+        => HttpMethods.IsGet(context.Request.Method) && OutputCacheStatus.RouteUsesOutputCache(context);
 
     private static async ValueTask<MetadataV2GraphSnapshot?> CurrentCatalogAsync(HttpContext context, CancellationToken cancellationToken)
         => context.RequestServices.GetService<IMetadataV2GraphProvider>() is { } provider

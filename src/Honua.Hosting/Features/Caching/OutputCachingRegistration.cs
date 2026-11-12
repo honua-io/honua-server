@@ -98,6 +98,8 @@ internal static class OutputCachingRegistration
                 {
                     policy.VaryByValue(static context => ResolveTestSchemaOutputCacheKey(context));
                 }
+
+                policy.AddPolicy<OutputCacheStatusPolicy>();
             }, excludeDefaultPolicy: true);
 
             // Service metadata caching policy
