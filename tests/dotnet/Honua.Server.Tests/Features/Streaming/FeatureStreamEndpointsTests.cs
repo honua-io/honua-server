@@ -2215,18 +2215,10 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
 
     // ─── AC: Reconnect with cursor replays missed events ────────────────
 
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/streaming/features")]
-    public async Task Reconnect_WithCursor_ReplaysMissedEvents()
+    private static async Task PublishCreateEventsAsync(
+        IFeatureChangeEventPublisher publisher, string serviceId, string uniqueId, int count)
     {
-        await StartDefaultApplicationAsync();
-        var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
-        var eventStore = _fixture.GetService<IFeatureChangeEventStore>();
-        var uniqueId = Guid.NewGuid().ToString("N")[..8];
-        const string serviceId = "test";
-
-        // Publish 5 events on the fixture's active metadata route.
-        for (var i = 0; i < 5; i++)
+        for (var i = 0; i < count; i++)
         {
             await publisher.PublishAsync(new FeatureChangeEventRequest
             {
@@ -2238,6 +2230,20 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
                 RequestId = $"req-{uniqueId}-{i}"
             });
         }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Reconnect_WithCursor_ReplaysMissedEvents()
+    {
+        await StartDefaultApplicationAsync();
+        var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
+        var eventStore = _fixture.GetService<IFeatureChangeEventStore>();
+        var uniqueId = Guid.NewGuid().ToString("N")[..8];
+        const string serviceId = "test";
+
+        // Publish 5 events on the fixture's active metadata route.
+        await PublishCreateEventsAsync(publisher, serviceId, uniqueId, count: 5);
 
         // Query all events and filter to this test's by service ID to get exact cursors.
         var allEvents = await eventStore.QueryAsync(null, null, null, 500);
@@ -2327,18 +2333,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
         const string serviceId = "test";
 
         // Publish 5 initial events.
-        for (var i = 0; i < 5; i++)
-        {
-            await publisher.PublishAsync(new FeatureChangeEventRequest
-            {
-                ServiceId = serviceId,
-                LayerId = 0,
-                ObjectId = i,
-                Operation = "create",
-                Protocol = "rest",
-                RequestId = $"req-{uniqueId}-{i}"
-            });
-        }
+        await PublishCreateEventsAsync(publisher, serviceId, uniqueId, count: 5);
 
         // Get cursor from event 2 — events 3, 4, 5 will be replayed.
         var allEvents = await eventStore.QueryAsync(null, null, null, 500);

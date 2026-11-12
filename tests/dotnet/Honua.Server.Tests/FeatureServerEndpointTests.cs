@@ -255,49 +255,10 @@ public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
 
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database.CoreEndpoints")]
-public sealed class FeatureServerEndpointTests
-    : IClassFixture<FeatureServerEndpointTests.QueryApplicationFixture>, IAsyncLifetime
+public sealed partial class FeatureServerEndpointTests
 {
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;
-    private WebAppFixture _fixture;
-    private WebAppFixture? _isolatedApplication;
-
-    public FeatureServerEndpointTests(QueryApplicationFixture queryApplication)
-    {
-        _fixture = queryApplication.Application;
-    }
-
-    // Metadata and query cases share one seeded Pro application for the class; they must not
-    // write features or metadata. Cases that edit, reseed or mutate metadata call
-    // UseIsolatedApplicationAsync for their own application and schema.
-    public sealed class QueryApplicationFixture : IAsyncLifetime
-    {
-        public WebAppFixture Application { get; } = CreateApplication();
-
-        public Task InitializeAsync() => InitializeApplicationAsync(Application);
-
-        public Task DisposeAsync() => Application.DisposeAsync();
-    }
-
-    public Task InitializeAsync() => Task.CompletedTask;
-
-    public Task DisposeAsync() => _isolatedApplication?.DisposeAsync() ?? Task.CompletedTask;
-
-    private static WebAppFixture CreateApplication() => new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
-
-    private static async Task InitializeApplicationAsync(WebAppFixture application)
-    {
-        await application.InitializeAsync();
-        application.EnableV2ServiceEditingCapabilities(TestServiceId, ["Create", "Update", "Delete"]);
-    }
-
-    private async Task UseIsolatedApplicationAsync()
-    {
-        _isolatedApplication = CreateApplication();
-        await InitializeApplicationAsync(_isolatedApplication);
-        _fixture = _isolatedApplication;
-    }
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
@@ -431,7 +392,6 @@ public sealed class FeatureServerEndpointTests
     public async Task GetLayerMetadata_WithSubtypes_ReturnsSubtypeFieldAndSubtypes()
     {
         await UseIsolatedApplicationAsync();
-
         // honua-server#1378 (#1254): an Esri subtype set carried on the canonical
         // resource must be served on the FeatureServer layer metadata as
         // subtypeField / subtypes / defaultSubtypeCode, reusing the shared domain mapper
@@ -1819,7 +1779,6 @@ public sealed class FeatureServerEndpointTests
     public async Task QueryFeatures_WithManyObjectIds_DoesNotApplyDefaultRecordLimit()
     {
         await UseIsolatedApplicationAsync();
-
         await _fixture.EnsureLargeTestDatasetAsync();
 
         _fixture.CurrentSchema.Should().NotBeNullOrWhiteSpace();
@@ -2956,7 +2915,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_ServiceLevel_WithLayerPayload_ReturnsPerLayerResults()
     {
         await UseIsolatedApplicationAsync();
-
         var request = """
             [
                 {
@@ -3000,7 +2958,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_ServiceLevel_AddsOnly_IncludesEmptyUpdateAndDeleteResults()
     {
         await UseIsolatedApplicationAsync();
-
         // Regression (#1775): a real Esri FeatureServer always includes per-layer
         // updateResults and deleteResults (empty arrays when none). arcpy's `da` driver
         // raises without them. An adds-only payload must still emit all three arrays.
@@ -3056,7 +3013,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_LayerLevel_AddsOnly_IncludesEmptyUpdateAndDeleteResults()
     {
         await UseIsolatedApplicationAsync();
-
         // Regression (#4100): Esri clients expect all three result arrays even when the
         // request contains only one edit kind.
         var request = """
@@ -3105,7 +3061,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_ServiceLevel_WithMalformedJson_DoesNotLeakParserDetails()
     {
         await UseIsolatedApplicationAsync();
-
         var malformedRequest = """[{"id":0,"adds":[{"attributes":{"name":"bad"}}]""";
         using var content = new StringContent(malformedRequest, Encoding.UTF8, "application/json");
 
@@ -3127,7 +3082,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_ServiceLevel_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
     {
         await UseIsolatedApplicationAsync();
-
         var request = """[{"id":0,"adds":[{"attributes":{"name":"bad"}}]}]""";
         using var content = new StringContent(request, Encoding.UTF8, "text/plain");
 
@@ -3146,7 +3100,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_ServiceLevel_WithUseGlobalIdsEnabled_ReturnsBadRequest()
     {
         await UseIsolatedApplicationAsync();
-
         var request = """
             [
               {
@@ -3177,7 +3130,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_WithAddOperation_ReturnsNewObjectId()
     {
         await UseIsolatedApplicationAsync();
-
         // Arrange
         var editsRequest = new ApplyEditsRequest
         {
@@ -3246,7 +3198,6 @@ public sealed class FeatureServerEndpointTests
         bool onQueryString)
     {
         await UseIsolatedApplicationAsync();
-
         var name = $"noop-{Guid.NewGuid():N}";
 
         var response = await PostLayerApplyEditsFormAsync(name, control, value, onQueryString);
@@ -3283,7 +3234,6 @@ public sealed class FeatureServerEndpointTests
         string expectedError)
     {
         await UseIsolatedApplicationAsync();
-
         var name = $"rejected-{Guid.NewGuid():N}";
 
         var response = await PostLayerApplyEditsFormAsync(name, control, value, onQueryString);
@@ -3301,7 +3251,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_ReturnEditMomentTrue_ReportsWhenEditsWereApplied(bool onQueryString)
     {
         await UseIsolatedApplicationAsync();
-
         // #4105: the ArcGIS Maps SDK for JavaScript sends returnEditMoment=true whenever it holds an
         // edit session; the server reports its own clock after committing, so the moment lies between
         // wall-clock readings taken before and after the request.
@@ -3343,7 +3292,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_ServiceLevel_ReturnEditMomentTrue_ReportsPerLayerEditMoment()
     {
         await UseIsolatedApplicationAsync();
-
         var name = $"service-moment-{Guid.NewGuid():N}";
         using var form = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -3423,7 +3371,6 @@ public sealed class FeatureServerEndpointTests
         string expectedError)
     {
         await UseIsolatedApplicationAsync();
-
         var edits = """
             [{"id":0,"adds":[{"attributes":{"name":"form controls"}}]}]
             """;
@@ -3446,7 +3393,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_ServiceLevel_AttachmentPayload_IsRejectedInsteadOfDropped()
     {
         await UseIsolatedApplicationAsync();
-
         var request = """
             [{
               "id": 0,
@@ -3470,7 +3416,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_RejectsEditKindMissingFromDeclaredCapabilities()
     {
         await UseIsolatedApplicationAsync();
-
         _fixture.EnableV2ServiceEditingCapabilities(TestServiceId, ["Update"]);
         using var content = new StringContent(
             "{\"adds\":[{\"attributes\":{\"name\":\"undeclared create\"}}]}",
@@ -3490,7 +3435,6 @@ public sealed class FeatureServerEndpointTests
     public async Task Calculate_AcceptsEsriValueAndSqlExpressionForms()
     {
         await UseIsolatedApplicationAsync();
-
         var addPayload = """
             {"features":[{"attributes":{"name":"calculate source","description":"before"}}]}
             """;
@@ -3530,7 +3474,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_RetriedAddWithSameIdempotencyKey_CreatesExactlyOneFeature()
     {
         await UseIsolatedApplicationAsync();
-
         // Server-side at-most-once (#2250): a client that retries an add carrying the same
         // Idempotency-Key must not create a duplicate feature; the retry replays the original
         // response (the same objectId) and the layer ends up with exactly one new row.
@@ -3610,7 +3553,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_RetryAfterValidationRollbackWithSameIdempotencyKey_RepeatsRollbackInsteadOfConflict()
     {
         await UseIsolatedApplicationAsync();
-
         // #3052: the rollbackOnFailure validation-failure response returns before the handler
         // records a replay value, so before the fix the reservation taken by TryReserveAsync stayed
         // held for the whole reservation window. A client retrying inside that window found no
@@ -3657,7 +3599,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_RetryAfterZeroRowCommitWithSameIdempotencyKey_ReattemptsInsteadOfConflict()
     {
         await UseIsolatedApplicationAsync();
-
         // #3052: a committed-but-zero-row edit is deliberately NOT recorded so a genuine retry is
         // re-attempted rather than replaying a no-op failure — but before the fix the still-held
         // reservation blocked exactly that retry with a 409, contradicting the branch's own intent.
@@ -3708,7 +3649,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_WhileAnotherRequestHoldsTheSameIdempotencyKey_ReportsConflict()
     {
         await UseIsolatedApplicationAsync();
-
         // The reservation's real purpose (BH5-001) must survive the #3052 release change: while a
         // reservation is genuinely held, a second request carrying the same key must be rejected as a
         // conflict rather than executing a duplicate edit. Reserving directly through the store makes
@@ -3799,7 +3739,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_WithCalculationRule_PopulatesTargetFieldOnAdd()
     {
         await UseIsolatedApplicationAsync();
-
         // honua-server#1271: a calculation attribute rule attached to the resource must
         // fire on applyEdits and populate its target field before write. The 'description'
         // string field is part of the seeded test layer schema, so we drive a constant
@@ -3868,7 +3807,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_WithConstraintRule_RejectsViolatingEditWithCleanError()
     {
         await UseIsolatedApplicationAsync();
-
         // honua-server#1271: a constraint attribute rule that evaluates to false must
         // reject the edit through the standard per-feature edit-error shape (not a 500).
         var rule = new MetadataV2AttributeRule
@@ -3924,7 +3862,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_WithUnsupportedRuleExpression_DoesNotFailEdit()
     {
         await UseIsolatedApplicationAsync();
-
         // honua-server#1271: a constraint whose Arcade expression is outside the supported
         // safe subset must be routed out of scope (skipped) rather than failing the edit.
         var rule = new MetadataV2AttributeRule
@@ -3975,7 +3912,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_WithAddOperationAndCallerObjectId_ReturnsGeneratedObjectId()
     {
         await UseIsolatedApplicationAsync();
-
         var editsRequest = new ApplyEditsRequest
         {
             Adds =
@@ -4021,7 +3957,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_WithUpdateOperation_ReturnsUpdatedObjectId()
     {
         await UseIsolatedApplicationAsync();
-
         // Arrange - First add a feature to update
         var addRequest = new ApplyEditsRequest
         {
@@ -4090,7 +4025,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_WithDeleteOperation_ReturnsDeletedObjectId()
     {
         await UseIsolatedApplicationAsync();
-
         // Arrange - First add a feature to delete
         var addRequest = new ApplyEditsRequest
         {
@@ -4148,7 +4082,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_WithMixedOperations_ReturnsCorrectResults()
     {
         await UseIsolatedApplicationAsync();
-
         // Arrange - First add a feature to update/delete
         var setupRequest = new ApplyEditsRequest
         {
@@ -4248,7 +4181,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_WithInvalidUpdate_ReturnsError()
     {
         await UseIsolatedApplicationAsync();
-
         // Arrange - Try to update non-existent feature
         var updateRequest = new ApplyEditsRequest
         {
@@ -4290,7 +4222,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_WithUseGlobalIdsEnabled_ReturnsBadRequest()
     {
         await UseIsolatedApplicationAsync();
-
         var payload = """
             {
               "adds": [
@@ -4318,7 +4249,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_WithUnsupportedFormat_ReturnsBadRequest()
     {
         await UseIsolatedApplicationAsync();
-
         var payload = """
             {
               "adds": [
@@ -4350,7 +4280,6 @@ public sealed class FeatureServerEndpointTests
     public async Task AddFeatures_WithFeaturePayload_ReturnsAddResults()
     {
         await UseIsolatedApplicationAsync();
-
         var payload = """
             {
               "features": [
@@ -4390,7 +4319,6 @@ public sealed class FeatureServerEndpointTests
     public async Task UpdateFeatures_WithFeaturePayload_ReturnsUpdateResults()
     {
         await UseIsolatedApplicationAsync();
-
         var addPayload = """
             {
               "features": [
@@ -4450,7 +4378,6 @@ public sealed class FeatureServerEndpointTests
     public async Task UpdateFeatures_WithAttributeOnlyPayload_PreservesExistingGeometryAndAttributes()
     {
         await UseIsolatedApplicationAsync();
-
         var addPayload = """
             {
               "features": [
@@ -4517,7 +4444,6 @@ public sealed class FeatureServerEndpointTests
     public async Task DeleteFeatures_WithObjectIdsPayload_ReturnsDeleteResults()
     {
         await UseIsolatedApplicationAsync();
-
         var addPayload = """
             {
               "features": [
@@ -4569,7 +4495,6 @@ public sealed class FeatureServerEndpointTests
     public async Task DeleteFeatures_WithMalformedObjectIdsDelimiter_ReturnsBadRequest()
     {
         await UseIsolatedApplicationAsync();
-
         var deletePayload = """
             {
               "objectIds": "1,,2",
@@ -4591,7 +4516,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_WithGeometryTypeMismatch_FailsPerFeatureWithoutStoring()
     {
         await UseIsolatedApplicationAsync();
-
         // Bug A regression: a polygon must not be accepted/stored on an esriGeometryPoint layer.
         var editsRequest = """
             {
@@ -4638,7 +4562,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_WithMatchingPointGeometry_Succeeds()
     {
         await UseIsolatedApplicationAsync();
-
         // Bug A guard: a valid point geometry must still be accepted on a point layer.
         var editsRequest = """
             {
@@ -4673,7 +4596,6 @@ public sealed class FeatureServerEndpointTests
     public async Task ApplyEdits_ServiceLevel_DefaultRollbackOnFailure_RollsBackAllLayerEdits()
     {
         await UseIsolatedApplicationAsync();
-
         // Bug B regression: with rollbackOnFailure=true a valid add must NOT persist when a
         // sibling edit targeting the same layer fails. The two array elements both target
         // layer 0; the failing update (objectid that does not exist) must roll back the add.
@@ -4726,7 +4648,6 @@ public sealed class FeatureServerEndpointTests
     public async Task DeleteFeatures_WithWhereClauseInBody_DeletesMatchingFeatures()
     {
         await UseIsolatedApplicationAsync();
-
         // Bug C regression: deleteFeatures must honor a where clause (here in the request body)
         // to select rows, not just explicit objectIds.
         var marker = $"bugC-where-{Guid.NewGuid():N}";
@@ -4783,7 +4704,6 @@ public sealed class FeatureServerEndpointTests
     public async Task DeleteFeatures_WithGeometryFilterInQuery_DeletesMatchingFeatures()
     {
         await UseIsolatedApplicationAsync();
-
         // Bug C regression: deleteFeatures must honor a spatial (geometry) filter for selection.
         var marker = $"bugC-geom-{Guid.NewGuid():N}";
         var addPayload = $$"""
