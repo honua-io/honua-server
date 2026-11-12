@@ -611,13 +611,16 @@ internal sealed class GeocodingHandler(
         // under the "addresses" parameter, e.g. addresses={"records":[{"attributes":{...}}]}.
         // Accept that as the primary name and fall back to "records" for direct callers.
         var recordsJson = GetValue(values, "addresses") ?? GetValue(values, "records");
-        if (!TryParseRecords(recordsJson, out var queries, out var recordIds, out var parseError))
+        var parsedRecords = ParseRecords(recordsJson);
+        if (parsedRecords.Error is { } parseError)
         {
-            GeocodingLog.BatchRecordsParseFailed(_logger, parseError ?? "Unknown parse error");
-            return StandardErrorHelpers.CreateBadRequest(context, parseError ?? "Invalid records parameter.");
+            GeocodingLog.BatchRecordsParseFailed(_logger, parseError);
+            return StandardErrorHelpers.CreateBadRequest(context, parseError);
         }
 
-        if (queries is null || queries.Count == 0)
+        var queries = parsedRecords.Queries;
+        var recordIds = parsedRecords.RecordIds;
+        if (queries.Count == 0)
         {
             return StandardErrorHelpers.CreateBadRequest(context, "records parameter is required and must contain at least one address.");
         }
@@ -745,20 +748,13 @@ internal sealed class GeocodingHandler(
         }
     }
 
-    private static bool TryParseRecords(
-        string? recordsJson,
-        out List<string>? queries,
-        out List<int?>? recordIds,
-        out string? error)
-    {
-        queries = null;
-        recordIds = null;
-        error = null;
+    private sealed record ParsedRecords(List<string> Queries, List<int?> RecordIds, string? Error);
 
+    private static ParsedRecords ParseRecords(string? recordsJson)
+    {
         if (string.IsNullOrWhiteSpace(recordsJson))
         {
-            error = "records parameter is required and must contain at least one address.";
-            return false;
+            return new([], [], "records parameter is required and must contain at least one address.");
         }
 
         try
@@ -777,12 +773,11 @@ internal sealed class GeocodingHandler(
             }
             else
             {
-                error = "records must be a JSON array or an object with a 'records' array property.";
-                return false;
+                return new([], [], "records must be a JSON array or an object with a 'records' array property.");
             }
 
-            queries = new List<string>(recordsArray.GetArrayLength());
-            recordIds = [.. recordsArray.EnumerateArray().Select(ExtractObjectIdFromRecord)];
+            var queries = new List<string>(recordsArray.GetArrayLength());
+            List<int?> recordIds = [.. recordsArray.EnumerateArray().Select(ExtractObjectIdFromRecord)];
             List<int>? invalidIndices = null;
             var index = 0;
             // Not a simple .Select(): the loop branches into two different accumulators
@@ -798,9 +793,7 @@ internal sealed class GeocodingHandler(
                     }
                     catch (GeocodeRequestException ex)
                     {
-                        queries = null;
-                        error = ex.Message;
-                        return false;
+                        return new([], [], ex.Message);
                     }
 
                     queries.Add(address);
@@ -816,25 +809,22 @@ internal sealed class GeocodingHandler(
 
             if (invalidIndices is { Count: > 0 })
             {
-                queries = null;
-                error = invalidIndices.Count == 1
+                var error = invalidIndices.Count == 1
                     ? $"Record at index {invalidIndices[0]} does not contain a valid address."
                     : $"Records at indices {string.Join(", ", invalidIndices)} do not contain valid addresses.";
-                return false;
+                return new([], [], error);
             }
 
             if (queries.Count == 0)
             {
-                error = "No valid address records found in the request.";
-                return false;
+                return new([], [], "No valid address records found in the request.");
             }
 
-            return true;
+            return new(queries, recordIds, null);
         }
         catch (JsonException)
         {
-            error = "records parameter contains invalid JSON.";
-            return false;
+            return new([], [], "records parameter contains invalid JSON.");
         }
     }
 
