@@ -19,7 +19,6 @@ using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -30,7 +29,7 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-public sealed class FeatureServerQueryExecutorTests
+public sealed partial class FeatureServerQueryExecutorTests
 {
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
@@ -492,41 +491,6 @@ public sealed class FeatureServerQueryExecutorTests
         using var document = JsonDocument.Parse(json);
         document.RootElement.GetProperty("features").GetArrayLength().Should().Be(2);
         document.RootElement.GetProperty("exceededTransferLimit").GetBoolean().Should().BeTrue();
-    }
-
-    [global::Xunit.Trait("Tier", "Fast")]
-    [Theory]
-    [InlineData("json")]
-    [InlineData("geojson")]
-    public async Task StreamQueryAsync_FailureAfterResponseStarted_AbortsTheConnection(string format)
-    {
-        var streamingStore = Substitute.For<IStreamingFeatureStore>();
-        streamingStore.StreamFeaturesAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(FeaturesThenFailure(failAfter: 200));
-        var sut = CreateSut(Substitute.For<IFeatureReader>(), streamingStore);
-        var context = CreateHttpContext();
-        var body = (MemoryStream)context.Response.Body;
-        context.Features.Set<IHttpResponseFeature>(new StartedOnFirstWriteResponseFeature(body));
-        var lifetime = new RecordingLifetimeFeature();
-        context.Features.Set<IHttpRequestLifetimeFeature>(lifetime);
-        var service = CreateService();
-        var resource = CreateResource();
-
-        var act = () => sut.StreamQueryAsync(
-            service,
-            resource,
-            CreatePublication(service, resource),
-            7,
-            new FeatureQuery { Limit = 2_000 },
-            new QueryParameters { F = format, ReturnGeometry = false },
-            outputSrid: null,
-            context: context,
-            cancellationToken: CancellationToken.None);
-
-        // A started 200 that ends cleanly would hand the client a truncated page as if it were complete.
-        await act.Should().ThrowAsync<TimeoutException>();
-        body.Length.Should().BePositive();
-        lifetime.Aborted.Should().BeTrue();
     }
 
     [global::Xunit.Trait("Tier", "Fast")]
@@ -1314,31 +1278,6 @@ public sealed class FeatureServerQueryExecutorTests
         context.Response.Body.Seek(0, SeekOrigin.Begin);
         using var reader = new StreamReader(context.Response.Body);
         return await reader.ReadToEndAsync();
-    }
-
-    private static async IAsyncEnumerable<Feature> FeaturesThenFailure(int failAfter)
-    {
-        await Task.Yield();
-        for (var id = 1L; id <= failAfter; id++)
-        {
-            yield return CreateFeature(id, "feature");
-        }
-
-        throw new TimeoutException("statement timeout");
-    }
-
-    private sealed class StartedOnFirstWriteResponseFeature(MemoryStream body) : HttpResponseFeature
-    {
-        public override bool HasStarted => body.Length > 0;
-    }
-
-    private sealed class RecordingLifetimeFeature : IHttpRequestLifetimeFeature
-    {
-        public bool Aborted { get; private set; }
-
-        public CancellationToken RequestAborted { get; set; }
-
-        public void Abort() => Aborted = true;
     }
 
     private static async IAsyncEnumerable<Feature> StreamFeatures(IEnumerable<Feature> features)
