@@ -2,15 +2,21 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Security.Claims;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Console.Domain;
+using Honua.Server.Features.Console;
+using Honua.Server.Features.Console.Models;
+using Honua.Server.Features.Console.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -54,6 +60,49 @@ public sealed partial class ProposalEndpointsTests
         allowed.StatusCode.Should().Be(HttpStatusCode.OK, await allowed.Content.ReadAsStringAsync());
         using var transferred = JsonDocument.Parse(await allowed.Content.ReadAsStringAsync());
         transferred.RootElement.GetProperty("data").GetProperty("ownerId").GetString().Should().Be(newOwner);
+    }
+
+    [IntegrationTheory]
+    [InlineData("new-owner")]
+    [InlineData(null)]
+    [Endpoint("PUT /api/v1/console/content/{id}")]
+    public async Task ContentOwnership_OmittedGeneration_RejectsConcurrentOwnerChange(string? newOwner)
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<ProjectedConsoleContentStore>();
+        var original = await store.CreateAsync(new ConsoleContentItem
+        {
+            Id = Guid.NewGuid().ToString(), Name = "ownership-race",
+            ItemType = ConsoleContentItemType.Dashboard,
+            Visibility = ConsoleVisibility.Personal, OwnerId = "original-owner",
+        });
+        var context = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Role, "agent")], "test"));
+        context.Request.RouteValues["id"] = original.Id;
+        var request = new UpdateConsoleContentItemRequest
+        {
+            Name = original.Name, ItemType = original.ItemType,
+            Visibility = ConsoleVisibility.Personal, OwnerId = original.OwnerId,
+        };
+        var delegated = false;
+
+        await AgentApprovalFilter.ContentVisibility(EndpointFilterInvocationContext.Create(context, request), async invocation =>
+        {
+            delegated = true;
+            // A human changes the owner after authorization and before the handler reads or writes.
+            await store.UpdateAsync(original with { OwnerId = newOwner });
+            var current = (await store.GetAsync(original.Id))!;
+            var boundRequest = invocation.GetArgument<UpdateConsoleContentItemRequest>(0);
+            var projected = ConsoleContentMapper.FromUpdateRequest(original.Id, boundRequest, current, context.User);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => store.UpdateAsync(projected));
+            return null;
+        });
+
+        delegated.Should().BeTrue();
+        var persisted = (await store.GetAsync(original.Id))!;
+        persisted.OwnerId.Should().Be(newOwner);
+        persisted.Generation.Should().Be(original.Generation + 1);
     }
 
     [IntegrationTest]
