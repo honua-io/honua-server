@@ -227,6 +227,9 @@ runs:
         echo "mode=${GATE_BUILD_MODE}" >> "${GITHUB_OUTPUT}"
         echo "filter=${GATE_BUILD_FILTER}" >> "${GITHUB_OUTPUT}"
 
+    # The self-hosted producer has a 10 GiB user-slice budget, shared with
+    # runner services. Bound both project workers and each compiler runtime;
+    # ancestor CPU quotas alone did not prevent 26 MSBuild / 16 csc processes.
     - name: Restore selected build scope
       if: inputs.phase != 'test'
       shell: bash
@@ -234,6 +237,9 @@ runs:
         GATE_BUILD_MODE: ${{ steps.producer-scope.outputs.mode }}
         GATE_BUILD_FILTER: ${{ steps.producer-scope.outputs.filter }}
         GATE_RUN_FORMAT: ${{ inputs.run-format }}
+        DOTNET_PROCESSOR_COUNT: '4'
+        DOTNET_CLI_USE_MSBUILD_SERVER: 'false'
+        MSBUILDDISABLENODEREUSE: '1'
       run: |
         # Inline format loads Honua.sln even when --include limits diagnostics.
         # Keep its complete restore; separate format jobs restore independently.
@@ -242,7 +248,7 @@ runs:
           [[ -f "${GATE_BUILD_FILTER}" ]] || { echo "::error::Missing selected build filter"; exit 1; }
           target="${GATE_BUILD_FILTER}"
         fi
-        scripts/ci/dotnet-restore-retry.sh "${target}" --property:Configuration=Release
+        scripts/ci/dotnet-restore-retry.sh "${target}" --property:Configuration=Release -maxcpucount:4
 
     # Composite-action steps do not support `timeout-minutes`, so each bounded
     # step wraps its command in coreutils `timeout` (exit 124 => step fails).
@@ -253,13 +259,16 @@ runs:
         GATE_BUILD_MODE: ${{ steps.producer-scope.outputs.mode }}
         GATE_BUILD_FILTER: ${{ steps.producer-scope.outputs.filter }}
         GATE_RUN_ANALYZERS: ${{ inputs.run-analyzers }}
+        DOTNET_PROCESSOR_COUNT: '4'
+        DOTNET_CLI_USE_MSBUILD_SERVER: 'false'
+        MSBUILDDISABLENODEREUSE: '1'
       run: |
         if [[ "${GATE_BUILD_MODE}" == "affected" || "${GATE_BUILD_MODE}" == "test-roots" ]]; then
           timeout "${{ inputs.build-timeout-minutes }}m" \
             dotnet build "${GATE_BUILD_FILTER}" \
               --no-restore \
               --configuration Release \
-              -graphBuild \
+              -graphBuild -maxcpucount:4 \
               /p:TreatWarningsAsErrors=true \
               /p:RunAnalyzers="${GATE_RUN_ANALYZERS}" \
               /p:UseSharedCompilation=false
@@ -268,7 +277,7 @@ runs:
             dotnet build Honua.sln \
               --no-restore \
               --configuration Release \
-              -graphBuild \
+              -graphBuild -maxcpucount:4 \
               /p:TreatWarningsAsErrors=true \
               /p:RunAnalyzers="${GATE_RUN_ANALYZERS}" \
               /p:UseSharedCompilation=false
