@@ -21,6 +21,18 @@ public sealed partial class ProposalEndpointsTests
     private const string ConsoleGuidance = "ask one to make this change in Console";
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/console/content/{id}/open-data/stac/publish")]
+    public async Task PublishStac_AgentAdministratorKey_RequiresHumanApproval()
+    {
+        using var agent = await CreateKeyClientAsync("agent-stac-publication", AgentKeyPermissions);
+
+        using var response = await agent.PostAsJsonAsync(
+            $"/api/v1/console/content/{Guid.NewGuid()}/open-data/stac/publish", new { });
+
+        await AssertAgentApprovalRefusalAsync(response, ConsoleGuidance, AgentApprovalFilter.AccessGrantsRef);
+    }
+
+    [IntegrationTest]
     [Endpoint("PUT /api/v1/console/content/{id}/share/access")]
     [Endpoint("PATCH /api/v1/console/content/{id}")]
     [Endpoint("DELETE /api/v1/admin/rls-policies/{id}")]

@@ -43,6 +43,11 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
             return Task.FromResult(PolicyDecision.Allowed);
         }
 
+        if (AgentApprovalRule.Applies(request.OperationId, context.Roles))
+        {
+            return Task.FromResult(AgentApprovalRule.Decision);
+        }
+
         // Autonomous actions have already passed the registered autonomy evaluator.
         // Carry that decision into this single PDP instead of masquerading it as an
         // approved proposal (proposal identity must only identify a real proposal).
@@ -51,10 +56,7 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
             return Task.FromResult(PolicyDecision.Allowed);
         }
 
-        // An admin Studio publication executes before the proposal guardrail. The
-        // outcome is scoped to that one operation so it cannot loosen any other class.
-        // It is not an approved proposal: the same principal must not be sent through
-        // the approve route (honua-server#5207).
+        // Human administrators may publish directly; agents use the approval floor above.
         if (string.Equals(context.AuthorizationOutcome, StudioDraftMutationContext.AdminDirectPublicationOutcome, StringComparison.Ordinal)
             && string.Equals(request.OperationId, StudioDraftMutationContext.PublicationOperationId, StringComparison.Ordinal)
             && !AgentApprovalRule.IsAgent(context.Roles))

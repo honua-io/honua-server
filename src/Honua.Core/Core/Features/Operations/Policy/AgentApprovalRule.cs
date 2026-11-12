@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Studio.Abstractions;
 
 namespace Honua.Core.Features.Operations.Policy;
 
@@ -23,6 +24,7 @@ public static class AgentApprovalRule
         "admin.services.access-policy.set",
         "admin.layer.publish",
         "service.publish",
+        StudioDraftMutationContext.PublicationOperationId,
     };
 
     public static bool IsGated(string operationId) => GatedOperationIds.Contains(operationId);

@@ -4,6 +4,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
@@ -14,8 +15,9 @@ using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
-using Honua.TestKit.Extensions;
+using Honua.Server.Tests.Features.Admin;
 using Honua.TestKit;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
@@ -25,30 +27,24 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Tests.Features.Studio;
 
-/// <summary>
-/// An admin API key publishing a saved Studio version from
-/// <c>honua_studio_propose_publication</c> receives the active share URL in that
-/// call. A caller who is not admin still gets a proposal and no share URL
-/// (honua-server#5207). Licensing is disabled, the 2026.1 posture in which a
-/// publication request would otherwise wait for approval.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
 {
     private const string JsonMediaType = "application/json";
-    private const string Issuer = "https://idp.example.com";
-    private const string Audience = "honua-mcp-client-id";
+    private const string Issuer = AdminAuthEndpointsTests.TestOidcIssuer;
+    private const string Audience = AdminAuthEndpointsTests.TestOidcAudience;
     private const string SigningKey = "studio-admin-publication-signing-key-at-least-32-chars";
     private const string Tenant = "tenant-a";
 
     private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
     private readonly RedisFixture _redis = new();
+    private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
 
     public async Task InitializeAsync()
     {
         await _redis.InitializeAsync();
-        _fixture
+        HumanApprovalHttpClient.Configure(_fixture, _identityProvider)
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -80,29 +76,46 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
     {
         await _fixture.DisposeAsync();
         await _redis.DisposeAsync();
+        _identityProvider.Dispose();
     }
 
     [IntegrationTest]
     [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_propose_publication")]
     [Endpoint("GET /api/v1/studio/published/{*route}")]
-    public async Task AdminKey_ProposePublication_PublishesAndReturnsTheActiveRoute()
+    public async Task AdminKey_ProposePublication_RequiresHumanBeforePublishingActiveRoute()
     {
         using var admin = _fixture.CreateAdminClient();
         var route = $"/maps/admin-{Guid.NewGuid():N}";
 
         var (proposed, itemId) = await ProposeAsync(admin, route, "public");
 
-        proposed.GetProperty("status").GetString().Should().Be("Published");
-        proposed.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeFalse();
-        proposed.TryGetProperty("proposalId", out _).Should().BeFalse();
-        var shareUrl = proposed.GetProperty("shareUrl").GetString();
-        shareUrl.Should().Be(StudioPublishedRoutes.BuildActiveUrl(route));
-
+        proposed.GetProperty("status").GetString().Should().Be("AwaitingApproval");
+        proposed.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeTrue();
+        proposed.TryGetProperty("shareUrl", out _).Should().BeFalse();
+        var proposalId = proposed.GetProperty("proposalId").GetString()!;
         var lifecycle = _fixture.Services.GetRequiredService<IStudioPackageLifecycleService>();
+        (await lifecycle.GetPointersAsync(itemId))!.PublishedVersionId.Should().BeNull();
+        var shareUrl = StudioPublishedRoutes.BuildActiveUrl(route);
+        using var anonymous = _fixture.CreateClient();
+        using var unpublished = await anonymous.GetAsync(shareUrl);
+        unpublished.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        using var approver = await HumanApprovalHttpClient.AuthenticateAsync(
+            _fixture, _identityProvider, "studio-human-publisher", Tenant);
+        using var approval = await approver.ApproveAsync(proposalId);
+        var approvalBody = await approval.Content.ReadAsStringAsync();
+        approval.StatusCode.Should().Be(HttpStatusCode.OK, approvalBody);
+        using var decision = JsonDocument.Parse(approvalBody);
+        decision.RootElement.GetProperty("status").GetString().Should().Be("Succeeded", approvalBody);
+        decision.RootElement.GetProperty("approvalChannel").GetString().Should().Be("console-interactive-oidc");
         (await lifecycle.GetPointersAsync(itemId))!.PublishedVersionId.Should().NotBeNull();
 
-        using var anonymous = _fixture.CreateClient();
+        var publication = await lifecycle.GetActivePublicationRequestByRouteAsync(route);
+        publication.Should().NotBeNull();
+        publication!.Status.Should().Be(StudioPublicationRequestStatus.Accepted);
+        publication.PublicationUrl.Should().Be(shareUrl);
+
         using var published = await anonymous.GetAsync(shareUrl);
         published.StatusCode.Should().Be(HttpStatusCode.OK, await published.Content.ReadAsStringAsync());
     }
@@ -130,7 +143,40 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
         unpublished.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests")]
+    public async Task AgentBearer_RestPublication_RequiresHumanApproval()
+    {
+        using var agent = CreateBearerClient(CreateToken("studio-rest-agent", "admin", "agent"));
+        var route = $"/maps/rest-agent-{Guid.NewGuid():N}";
+        var version = await SaveVersionAsync(agent);
+        var itemId = version.GetProperty("itemId").GetGuid();
+        var lifecycle = _fixture.Services.GetRequiredService<IStudioPackageLifecycleService>();
+        var versionId = version.GetProperty("versionId").GetGuid();
+
+        using var response = await agent.PostAsJsonAsync(
+            $"/api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests",
+            new { intent = new { route, visibility = "public" } });
+
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted, body);
+        (await lifecycle.GetPointersAsync(itemId))!.PublishedVersionId.Should().BeNull();
+        using var anonymous = _fixture.CreateClient();
+        using var unpublished = await anonymous.GetAsync(StudioPublishedRoutes.BuildActiveUrl(route));
+        unpublished.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
     private static async Task<(JsonElement Proposed, Guid ItemId)> ProposeAsync(HttpClient client, string route, string visibility)
+    {
+        var version = await SaveVersionAsync(client);
+        var itemId = version.GetProperty("itemId").GetGuid();
+        var proposed = await CallToolAsync(client, "honua_studio_propose_publication",
+            $$"""{"itemId":"{{itemId:D}}","versionId":"{{version.GetProperty("versionId").GetGuid():D}}","contentHash":"{{version.GetProperty("contentHash").GetString()}}","route":"{{route}}","visibility":"{{visibility}}"}""");
+        return (proposed, itemId);
+    }
+
+    private static async Task<JsonElement> SaveVersionAsync(HttpClient client)
     {
         var packageKey = $"admin-publish-{Guid.NewGuid():N}";
         var created = await CallToolAsync(client, "honua_studio_create_draft",
@@ -145,12 +191,7 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
 
         var saved = await CallToolAsync(client, "honua_studio_save_version",
             $$"""{"draftId":"{{draftId:D}}","generation":{{generation}}}""");
-        var version = saved.GetProperty("version");
-
-        var itemId = version.GetProperty("itemId").GetGuid();
-        var proposed = await CallToolAsync(client, "honua_studio_propose_publication",
-            $$"""{"itemId":"{{itemId:D}}","versionId":"{{version.GetProperty("versionId").GetGuid():D}}","contentHash":"{{version.GetProperty("contentHash").GetString()}}","route":"{{route}}","visibility":"{{visibility}}"}""");
-        return (proposed, itemId);
+        return saved.GetProperty("version").Clone();
     }
 
     private HttpClient CreateBearerClient(string token)
@@ -190,20 +231,20 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
         return document.RootElement.Clone();
     }
 
-    private static string CreateToken(string subject)
+    private static string CreateToken(string subject, params string[] roles)
     {
         var credentials = new SigningCredentials(
             new SymmetricSecurityKey(Encoding.UTF8.GetBytes(SigningKey)), SecurityAlgorithms.HmacSha256);
         var token = new JwtSecurityToken(
             issuer: Issuer,
             audience: Audience,
-            claims:
-            [
+            claims: new Claim[]
+            {
                 new Claim("sub", subject),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
                 new Claim("tid", Tenant),
                 new Claim("scope", OperatorScopeCatalog.Full),
-            ],
+            }.Concat(roles.Select(role => new Claim("role", role))),
             expires: DateTime.UtcNow.AddMinutes(30),
             signingCredentials: credentials);
         return new JwtSecurityTokenHandler().WriteToken(token);

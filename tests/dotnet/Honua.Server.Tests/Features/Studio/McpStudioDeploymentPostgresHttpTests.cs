@@ -16,8 +16,9 @@ using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Db.Postgres.Features.Publishing;
 using Honua.Db.Postgres.Features.Studio;
-using Honua.TestKit.Extensions;
+using Honua.Server.Tests.Features.Admin;
 using Honua.TestKit;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
@@ -36,19 +37,20 @@ namespace Honua.Server.Tests.Features.Studio;
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
 {
-    private const string Issuer = "https://idp.example.com";
-    private const string Audience = "honua-mcp-client-id";
+    private const string Issuer = AdminAuthEndpointsTests.TestOidcIssuer;
+    private const string Audience = AdminAuthEndpointsTests.TestOidcAudience;
     private const string SigningKey = "studio-deployment-signing-key-at-least-32-characters";
     private const string TenantA = "tenant-a";
     private const string TenantB = "tenant-b";
 
     private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
     private readonly RedisFixture _redis = new();
+    private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
 
     public async Task InitializeAsync()
     {
         await _redis.InitializeAsync();
-        _fixture.ConfigureWebHost(builder =>
+        HumanApprovalHttpClient.Configure(_fixture, _identityProvider).ConfigureWebHost(builder =>
         {
             builder.UseEnvironment("Test");
             builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
@@ -95,6 +97,7 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
     {
         await _fixture.DisposeAsync();
         await _redis.DisposeAsync();
+        _identityProvider.Dispose();
     }
 
     [IntegrationTest]
@@ -123,9 +126,24 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
 
         var published = await CallToolAsync(admin, "honua_studio_propose_publication",
             $$"""{"itemId":"{{itemId:D}}","versionId":"{{versionId:D}}","contentHash":"{{contentHash}}","route":"{{route}}","visibility":"public"}""");
-        published.GetProperty("status").GetString().Should().Be("Published");
-        var deploymentId = published.GetProperty("deploymentId").GetString();
-        var resourceUri = published.GetProperty("deploymentResourceUri").GetString();
+        published.GetProperty("status").GetString().Should().Be("AwaitingApproval");
+        published.TryGetProperty("shareUrl", out _).Should().BeFalse();
+        using var approvalScope = _fixture.Services.CreateScope();
+        var lifecycle = approvalScope.ServiceProvider.GetRequiredService<IStudioPackageLifecycleService>();
+        (await lifecycle.GetPointersAsync(itemId))!.PublishedVersionId.Should().BeNull();
+        using var approver = await HumanApprovalHttpClient.AuthenticateAsync(
+            _fixture, _identityProvider, "deployment-human-publisher", TenantA);
+        using var approval = await approver.ApproveAsync(published.GetProperty("proposalId").GetString()!);
+        var approvalBody = await approval.Content.ReadAsStringAsync();
+        approval.StatusCode.Should().Be(HttpStatusCode.OK, approvalBody);
+        using var decision = JsonDocument.Parse(approvalBody);
+        decision.RootElement.GetProperty("status").GetString().Should().Be("Succeeded", approvalBody);
+        var publication = await lifecycle.GetActivePublicationRequestByRouteAsync(route);
+        publication.Should().NotBeNull();
+        publication!.Status.Should().Be(StudioPublicationRequestStatus.Accepted);
+        publication.PublicationUrl.Should().Be(StudioPublishedRoutes.BuildActiveUrl(route));
+        var deploymentId = publication.DeploymentId;
+        var resourceUri = publication.DeploymentResourceUri;
         deploymentId.Should().NotBeNullOrWhiteSpace();
         resourceUri.Should().Be($"honua://deployments/{deploymentId}");
 
