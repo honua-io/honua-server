@@ -347,8 +347,9 @@ project's own network. Change `HONUA_HTTP_PORT` if `18080` is taken, and set
 
 Keep `secrets/`. Losing it means losing the database and audit-chain verification keys. The serving server and the package's manager use distinct audit keys; preserve both across restarts and upgrades. Before the server starts, the one-shot Compose step sets each secret file's group to 1001, the image's gid, so the server can read it; the files stay yours with mode `0640`.
 
-Production stores operation secrets in Redis. The server will not start until a certificate
-encrypts that key ring, so a copy of Redis does not hold both the secrets and the keys. This
+Production stores operation secrets and their key ring in PostgreSQL. The server will not
+start until a certificate encrypts that key ring, so a copy of the database does not hold
+both the secrets and the keys. This
 file is not a license. Generate a local RSA PKCS#12 and keep it private on the host. The
 published image runs as uid 1001 and gid 1001. Before the server starts, Compose runs a
 one-shot root step that sets the mount to owner root, group 1001, mode `0640`. That mode

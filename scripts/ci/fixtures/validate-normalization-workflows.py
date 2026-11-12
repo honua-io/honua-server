@@ -124,11 +124,15 @@ def validate(
     require(producer, "persist-credentials: false", "untrusted checkout must not persist credentials")
     require(producer, "  generate:\n", "untrusted generation must have an isolated job")
     require(producer, "  produce:\n", "envelope packaging must have an isolated job")
-    require(
-        producer,
-        "if: github.event.action != 'edited' || github.event.changes.base.ref.from != null",
-        "edited events must run only when the PR base changes",
+    generate_admission = producer.split("  generate:\n", 1)[1].split("    runs-on:", 1)[0]
+    expected_admission = (
+        "    if: >-\n"
+        "      (github.event_name != 'pull_request' || !github.event.pull_request.draft)\n"
+        "      && (github.event.action != 'edited' || github.event.changes.base.ref.from != null)\n"
     )
+    if not generate_admission.endswith(expected_admission):
+        raise AssertionError(
+            "generation must skip drafts and run edited events only when the PR base changes")
     generate_block = producer.split("  generate:\n", 1)[1].split("  produce:\n", 1)[0]
     produce_block = producer.split("  produce:\n", 1)[1]
     require(generate_block, "uses: ./.github/actions/setup-dotnet-ci", "generation must configure .NET")
@@ -275,7 +279,8 @@ def validate(
         "candidate only; independent PR Gate required",
         "candidate output must remain excluded from the accuracy audit without PR Gate corroboration",
     )
-    if "github.event.pull_request.head" in consumer or "github.head_ref" in consumer:
+    consumer_without_routing = re.sub(r"(?m)^\s*runs-on:.*$", "", consumer)
+    if "github.event.pull_request.head" in consumer_without_routing or "github.head_ref" in consumer_without_routing:
         raise AssertionError("workflow_run consumer must not check out the PR head")
     if "git push" in consumer or "git apply" in consumer:
         raise AssertionError("the consumer must not mutate a branch through a shell checkout")
