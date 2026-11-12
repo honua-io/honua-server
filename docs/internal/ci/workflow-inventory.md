@@ -615,7 +615,7 @@ router promotion or manual override) builds the whole solution. Consumers reuse 
 artifacts. Server shards retain descending measured `dispatch_rank` order and
 run at most six at once for every `selective_base` dispatch (twelve above 30 selected shards), including router
 promotions and explicit full-coverage overrides. Full coverage still selects
-every shard; scheduled and non-selective full runs retain 24 concurrent shards. Expensive AOT, Docker,
+every shard; scheduled and non-selective full runs run at most 16 concurrent shards. Expensive AOT, Docker,
 Postgres compatibility, browser, Python, MCP and quickstart lanes use
 `scripts/ci/affected-ci-lanes.py` to select their own inputs. Native, container
 and MCP checks conservatively include every runtime source or project change,
@@ -749,7 +749,11 @@ the twice-daily full run. A broad newest merge retains every selected shard.
 Affected shard concurrency is six, or twelve when more than 30 shards remain
 selected (`scripts/ci/trailing_selection.py` owns both numbers and the
 threshold), including full-coverage routing fallbacks; manual and scheduled
-full runs retain 24. A
+full runs run 16 at once. On 12 Nov (03:30-04:00 UTC) a full run at 24 held
+28 of the org's 60 hosted runners while other pull request workflows held
+20-35, and PR Gate jobs waited a median 7.3 minutes (3 seconds before and after).
+Sixteen gives PR Gate eight more runners; the 1,272 shard-minutes of a full
+matrix then take about 79 minutes instead of 53. A
 134-shard affected run took 214 minutes at six while PR Gate job queueing stayed
 at a two-second median; twelve halves that so a broad run finishes before the
 next full run. Required PR gates
