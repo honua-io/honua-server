@@ -127,6 +127,7 @@ internal sealed record ExecutionJobRow(
         Add(ExecutionJobLookupDimensions.Backend, job.Spec.Backend);
         Add(ExecutionJobLookupDimensions.Queue, ExecutionJobMetadata.ResolveQueue(job));
         Add(ExecutionJobLookupDimensions.RequestedBy, job.Audit.RequestedBy);
+        Add(ExecutionJobLookupDimensions.AdmissionRate, job.AdmissionRatePrincipal);
         Add(ExecutionJobLookupDimensions.Correlation, job.Audit.CorrelationId);
         Add(ExecutionJobLookupDimensions.Trace, ExecutionJobMetadata.GetParameter(job, ExecutionJobParameterKeys.TraceId));
         Add(ExecutionJobLookupDimensions.Definition, ExecutionJobMetadata.GetParameter(job, ExecutionJobParameterKeys.DefinitionId));
@@ -179,4 +180,5 @@ internal static class ExecutionJobLookupDimensions
     public const string ChangeSet = "change-set";
     public const string Alert = "alert";
     public const string OrchestrationRun = "run";
+    public const string AdmissionRate = "admission-rate";
 }
