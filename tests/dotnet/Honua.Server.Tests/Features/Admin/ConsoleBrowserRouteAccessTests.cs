@@ -27,6 +27,7 @@ public sealed class ConsoleBrowserRouteAccessTests : IAsyncLifetime
     private const string ConsoleOrigin = "https://console.example.com";
     private const string AdminPassword = "test-admin-key";
     private const string OperatorBearerSigningKey = "operator-bearer-signing-key-at-least-32-bytes-long";
+    private const string ConsoleEnvironmentId = "console-test-env";
 
     private static readonly HttpStatusCode[] CredentialDenials =
         [HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden];
@@ -42,6 +43,7 @@ public sealed class ConsoleBrowserRouteAccessTests : IAsyncLifetime
             builder.UseSetting("Cors:AllowedOrigins:0", ConsoleOrigin);
             builder.UseSetting("Authentication:OperatorBearer:Enabled", "true");
             builder.UseSetting("Authentication:OperatorBearer:SigningKey", OperatorBearerSigningKey);
+            builder.UseSetting("Studio:Session:EnvironmentId", ConsoleEnvironmentId);
         });
 
     public Task InitializeAsync() => _fixture.InitializeAsync();
@@ -56,6 +58,7 @@ public sealed class ConsoleBrowserRouteAccessTests : IAsyncLifetime
     [InlineData("/scenes/console-missing/tileset.json")]
     [InlineData("/api/v1/studio/package-families")]
     [InlineData("/api/v1/studio/ai/capabilities")]
+    [InlineData("/api/v1/studio/session")]
     [Endpoint("GET /rest/services")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     [Endpoint("GET /api/styles/{layerId:int}.json")]
@@ -63,6 +66,7 @@ public sealed class ConsoleBrowserRouteAccessTests : IAsyncLifetime
     [Endpoint("GET /scenes/{sceneId}/tileset.json")]
     [Endpoint("GET /api/v1/studio/package-families")]
     [Endpoint("GET /api/v1/studio/ai/capabilities")]
+    [Endpoint("GET /api/v1/studio/session")]
     public async Task ConsoleRoute_CrossOriginOperatorBearer_MatchesSameOriginSession(string route)
     {
         using var session = await SignInSameOriginAsync();
@@ -109,14 +113,39 @@ public sealed class ConsoleBrowserRouteAccessTests : IAsyncLifetime
             .ContainEquivalentOf("Mcp-Session-Id");
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("/api/v1/studio/package-families")]
+    [InlineData("/api/v1/studio/session")]
     [Endpoint("GET /api/v1/studio/package-families")]
-    public async Task ConsoleRoute_WithoutCredential_StaysProtected()
+    [Endpoint("GET /api/v1/studio/session")]
+    public async Task ConsoleRoute_WithoutCredential_StaysProtected(string route)
     {
         using var anonymous = _fixture.CreateClient();
-        using var response = await anonymous.GetAsync("/api/v1/studio/package-families");
+        using var response = await anonymous.GetAsync(route);
 
         CredentialDenials.Should().Contain(response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/session")]
+    public async Task StudioSession_CookieAndCrossOriginBearer_ReturnServerOwnedBootstrap()
+    {
+        using var session = await SignInSameOriginAsync();
+        using var bearer = await SignInCrossOriginAsync();
+
+        foreach (var client in new[] { session, bearer })
+        {
+            using var response = await client.GetAsync("/api/v1/studio/session");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Headers.CacheControl?.NoStore.Should().BeTrue();
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var data = document.RootElement.GetProperty("data");
+            data.GetProperty("authenticated").GetBoolean().Should().BeTrue();
+            data.GetProperty("principalId").GetString().Should().NotBeNullOrWhiteSpace();
+            data.GetProperty("environmentId").GetString().Should().Be(ConsoleEnvironmentId);
+            data.GetProperty("sourcePathBase").GetString().Should().BeEmpty();
+        }
     }
 
     private async Task<HttpClient> SignInSameOriginAsync()
