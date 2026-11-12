@@ -125,16 +125,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def honua_target_framework() -> str:
-    """Target framework of the server build (#7380), read like scripts/ci/honua-target-framework.sh
-    (the HonuaTargetFramework environment variable, which MSBuild also reads, wins)."""
-    override = os.environ.get("HonuaTargetFramework")
-    if override:
-        return override
-    props = (REPO_ROOT / "Directory.Build.props").read_text(encoding="utf-8")
-    match = re.search(r"<HonuaTargetFramework Condition=\"[^\"]*\">([^<]+)</HonuaTargetFramework>", props)
-    if not match:
-        raise RuntimeError("no HonuaTargetFramework default in Directory.Build.props")
-    return match.group(1)
+    """Target framework of the server build, from the shared scripts/ci/honua-target-framework.sh."""
+    return subprocess.run(
+        [str(REPO_ROOT / "scripts/ci/honua-target-framework.sh"), str(REPO_ROOT)],
+        capture_output=True, text=True, check=True).stdout.strip()
 
 
 class GateError(RuntimeError):

@@ -24,7 +24,7 @@
   </PropertyGroup>
 
   <!--
-    One target framework for every project in this build (#7380). Projects say
+    One target framework for every project in this build. Projects say
     <TargetFramework>$(HonuaTargetFramework)</TargetFramework>. Set the HonuaTargetFramework
     environment variable to retarget: MSBuild reads it as this property and
     scripts/ci/honua-target-framework.sh reads it for output paths, so both move together.

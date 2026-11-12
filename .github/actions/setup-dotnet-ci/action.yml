@@ -38,7 +38,7 @@ runs:
         }
         # A newer preinstalled SDK must not win dotnet's default resolution.
         # setup-dotnet installs here, adds this host to PATH and exports DOTNET_ROOT.
-        # This is a job-private installation; global.json (#7380) still bounds which SDK may build.
+        # This is a job-private installation; global.json still bounds which SDK may build.
         printf 'DOTNET_INSTALL_DIR=%s/honua-managed-sdk/%s\n' "${RUNNER_TEMP}" "${EXPECTED_DOTNET_SDK}" >> "${GITHUB_ENV}"
 
     - name: Setup .NET

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Print the target framework every Honua project builds for (#7380): the HonuaTargetFramework
+# Print the target framework every Honua project builds for: the HonuaTargetFramework
 # environment variable when set, otherwise its default in Directory.Build.props. MSBuild reads the same
 # environment variable as the property, so one setting moves both the build and these output paths
 # (src/Honua.Server/bin/Release/<tfm>/...).

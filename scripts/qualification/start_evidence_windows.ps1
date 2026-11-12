@@ -9,7 +9,7 @@ if (-not $NoBuild) {
     dotnet build (Join-Path $repo 'src/Honua.Server/Honua.Server.csproj') --configuration Release -maxcpucount:4
     if ($LASTEXITCODE -ne 0) { throw 'Native server build failed.' }
 }
-# Same rule as scripts/ci/honua-target-framework.sh (#7380): the HonuaTargetFramework variable, else the props default.
+# Same rule as scripts/ci/honua-target-framework.sh (Windows has no bash): the HonuaTargetFramework variable, else the props default.
 $tfm = $env:HonuaTargetFramework
 if (-not $tfm) {
     $props = Get-Content -Raw -LiteralPath (Join-Path $repo 'Directory.Build.props')

@@ -1070,9 +1070,10 @@ jobs:
         run: |
           # The verdict step below interprets the exit code; this step must reach it.
           set +e -uo pipefail
+          tfm="$(scripts/ci/honua-target-framework.sh)" || { echo "::error::cannot resolve the server target framework" >&2; exit 1; }
           python3 scripts/ci/n1-reader-compat.py \
             --output "artifacts/pr-gate/n1-reader-compat" \
-            --candidate-dll "src/Honua.Server/bin/Release/$(scripts/ci/honua-target-framework.sh)/Honua.Server.dll" \
+            --candidate-dll "src/Honua.Server/bin/Release/${tfm}/Honua.Server.dll" \
             --candidate-sha "${GITHUB_SHA}" \
             --candidate-head-sha "${HEAD_SHA}" \
             --base-ref HEAD^1
