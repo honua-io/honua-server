@@ -7,7 +7,7 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-public sealed class McpRequestCancellationTests
+public sealed partial class McpRequestCancellationTests
 {
     private const string Alice = "actor:alice|tenant:a";
     private const string Bob = "actor:bob|tenant:a";
@@ -71,6 +71,8 @@ public sealed class McpRequestCancellationTests
         var session = (await manager.TryCreateSessionAsync(Alice, false, null, CancellationToken.None))!;
         var (lease, _) = await manager.StartRequestAsync(session, Alice, Id("7"), CancellationToken.None);
         await using var request = Assert.IsType<McpSessionManager.McpRequestLease>(lease);
+        var lifetime = manager.GetLifetimeToken(session);
+        Assert.True(manager.TryGetReader(session, out var reader));
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(4));
 
         if (dispose)
@@ -87,6 +89,9 @@ public sealed class McpRequestCancellationTests
         Assert.True(exited.Task.IsCompletedSuccessfully);
         Assert.True(request.Token.IsCancellationRequested);
         Assert.True(store.Contains(session));
+        Assert.True(lifetime.IsCancellationRequested);
+        await reader.Completion.WaitAsync(TimeSpan.FromSeconds(4));
+        Assert.False(manager.TryCreateSession(Alice, out _));
     }
 
     [UnitTheory]

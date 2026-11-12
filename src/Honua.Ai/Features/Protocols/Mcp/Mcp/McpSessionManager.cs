@@ -160,6 +160,12 @@ internal sealed partial class McpSessionManager
         var now = _timeProvider.GetUtcNow();
         lock (_capacityGate)
         {
+            if (_stopping)
+            {
+                sessionId = string.Empty;
+                return false;
+            }
+
             SweepExpired(now);
 
             var key = principalKey ?? AnonymousPrincipalKey;
@@ -322,7 +328,7 @@ internal sealed partial class McpSessionManager
         var now = _timeProvider.GetUtcNow();
         lock (_capacityGate)
         {
-            if (WasRemoved(record.SessionId, now))
+            if (_stopping || WasRemoved(record.SessionId, now))
             {
                 return false;
             }

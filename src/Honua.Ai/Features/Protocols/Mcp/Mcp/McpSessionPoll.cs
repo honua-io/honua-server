@@ -43,10 +43,13 @@ internal sealed partial class McpSessionManager : IHostedService, IAsyncDisposab
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         Task polling;
-        lock (_pollGate)
+        lock (_capacityGate)
         {
-            _stopping = true;
-            polling = _pollTask;
+            lock (_pollGate)
+            {
+                _stopping = true;
+                polling = _pollTask;
+            }
         }
 
         await _pollLifetime.CancelAsync().ConfigureAwait(false);
@@ -57,6 +60,7 @@ internal sealed partial class McpSessionManager : IHostedService, IAsyncDisposab
         finally
         {
             StopAll(_runningRequests.Keys);
+            EndSessions(_sessions.Keys.ToArray());
         }
     }
 
@@ -100,9 +104,9 @@ internal sealed partial class McpSessionManager : IHostedService, IAsyncDisposab
         {
             return await polling.WaitAsync(budget.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
-            // Join the cancelled store operation before the host disposes its dependencies.
+            // Budget expiry also needs a join: cancellation cleanup may outlive the timeout.
             await polling.ConfigureAwait(false);
             throw;
         }
@@ -158,8 +162,17 @@ internal sealed partial class McpSessionManager : IHostedService, IAsyncDisposab
 
     private void WatchRequest(McpRequestLease lease)
     {
-        _runningRequests.TryAdd(lease, 0);
-        EnsurePolling();
+        lock (_pollGate)
+        {
+            if (!_stopping)
+            {
+                _runningRequests.TryAdd(lease, 0);
+                EnsurePolling();
+                return;
+            }
+        }
+
+        lease.Stop();
     }
 
     private void UnwatchRequest(McpRequestLease lease) => _runningRequests.TryRemove(lease, out _);

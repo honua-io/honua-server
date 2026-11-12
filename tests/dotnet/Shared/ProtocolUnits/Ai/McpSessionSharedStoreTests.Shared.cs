@@ -31,10 +31,17 @@ public sealed partial class McpSessionSharedStoreTests
 
         public Exception? RequestReadException { get; set; }
 
-        public Task<McpRequestState> UpdateRequestAsync(
+        public Func<CancellationToken, Task>? BeforeRegister { get; set; }
+
+        public async Task<McpRequestState> UpdateRequestAsync(
             McpActiveRequest request, McpRequestOperation operation, CancellationToken cancellationToken)
         {
             ThrowIfFailing();
+            if (operation == McpRequestOperation.Register && BeforeRegister is { } beforeRegister)
+            {
+                await beforeRegister(cancellationToken);
+            }
+
             if (operation == McpRequestOperation.Read && RequestReadException is { } failure)
             {
                 throw failure;
@@ -42,7 +49,7 @@ public sealed partial class McpSessionSharedStoreTests
 
             var requests = LazyInitializer.EnsureInitialized(ref _requests, () => new McpMemoryRequestStore(
                 (id, principal) => TryGetLive(id, out var record) && record.PrincipalKey == principal, time));
-            return requests.UpdateRequestAsync(request, operation, cancellationToken);
+            return await requests.UpdateRequestAsync(request, operation, cancellationToken);
         }
 
 
