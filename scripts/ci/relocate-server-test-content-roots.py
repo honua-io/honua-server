@@ -22,12 +22,17 @@ class Relocator:
         self.destination = Path(destination).resolve()
         self.producer = absolute_root(metadata['repo_root'])
 
-    def relocate(self, value, mvc=False):
-        if mvc and value == '~':
+    def relocate_mvc(self, value):
+        if value == '~':
             return value
+        if not absolute_root(value).is_relative_to(self.producer):
+            raise ValueError(f'MVC content root outside producer checkout: {value!r}')
+        return self.relocate(value)
+
+    def relocate(self, value):
         root = absolute_root(value)
         if not root.is_relative_to(self.producer):
-            if mvc or not Path(root).is_dir():
+            if not Path(root).is_dir():
                 raise ValueError(f'Content root unavailable in consumer: {value!r}')
             return value
         relative = root.relative_to(self.producer)
@@ -41,7 +46,7 @@ class Relocator:
         if path.name == 'MvcTestingAppManifest.json':
             if not isinstance(data, dict):
                 raise ValueError(f'MVC manifest must be an object: {path}')
-            data = {key: self.relocate(value, mvc=True) for key, value in data.items()}
+            data = {key: self.relocate_mvc(value) for key, value in data.items()}
         else:
             if not isinstance(data, dict):
                 raise ValueError(f'Static web assets manifest must be an object: {path}')
