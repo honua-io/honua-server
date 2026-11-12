@@ -15,33 +15,19 @@ Subcommands:
 
 import argparse
 import datetime
-import hashlib
 import importlib.util
 import json
 from pathlib import Path
 import re
 import sys
-from urllib.parse import quote, unquote
 
 ROOT = Path(__file__).resolve().parents[2]
 INVENTORY = ROOT / "eng/security/supported-images.json"
 VEX_SOURCE = ROOT / "eng/security/vex-statements.json"
-IMAGE_REPOSITORY = "ghcr.io/honua-io/honua-server"
-IMAGE_PATTERN = re.compile(r"ghcr\.io/honua-io/honua-server@sha256:[0-9a-f]{64}")
 RELEASE_PATTERN = re.compile(r"\d{4}\.\d+(\.\d+)?(-rc\.\d+)?")
 PLATFORMS = ("linux/amd64", "linux/arm64")
-JUSTIFICATIONS = {
-    "component_not_present",
-    "vulnerable_code_not_present",
-    "vulnerable_code_not_in_execute_path",
-    "vulnerable_code_cannot_be_controlled_by_adversary",
-    "inline_mitigations_already_exist",
-}
-VULNERABILITY_PATTERN = re.compile(r"(CVE-\d{4}-\d{4,}|GHSA(-[23456789cfghjmpqrvwx]{4}){3})")
-PURL_PATTERN = re.compile(r"pkg:(deb|apk|rpm|nuget|npm|golang|pypi|maven|generic)/[^@?#\s]+@[^?#\s]+(\?[^#\s]+)?")
 # Fix deadlines (SECURITY.md): days from first detection.
 DEADLINE_DAYS = {"CRITICAL": 7, "HIGH": 30}
-OPENVEX_CONTEXT = "https://openvex.dev/ns/v0.2.0"
 INDEX_MEDIA_TYPES = {
     "application/vnd.oci.image.index.v1+json",
     "application/vnd.docker.distribution.manifest.list.v2+json",
@@ -60,17 +46,23 @@ def _write_json(path, value):
     Path(path).write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
 
-def _require(condition, message):
-    if not condition:
-        raise ValueError(message)
-
-
-def _load_existing_image_scan():
-    spec = importlib.util.spec_from_file_location(
-        "existing_image_scan", Path(__file__).with_name("existing-image-scan.py"))
+def _load_sibling(name, filename):
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name(filename))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _load_existing_image_scan():
+    return _load_sibling("existing_image_scan", "existing-image-scan.py")
+
+
+_vex = _load_sibling("release_vex", "release_vex.py")
+IMAGE_PATTERN = _vex.IMAGE_PATTERN
+_require = _vex.require
+validate_vex_source = _vex.validate_vex_source
+oci_purl = _vex.oci_purl
+generate_openvex = _vex.generate_openvex
 
 
 # ---------------------------------------------------------------- inventory
@@ -139,85 +131,6 @@ def inventory_add(inventory, entry):
     images.sort(key=lambda e: (e["release"], e["platform"], e["image"]))
     validate_inventory(inventory)
     return True
-
-
-# ---------------------------------------------------------------- VEX
-
-def validate_vex_source(source):
-    _require(isinstance(source, dict), "VEX source must be an object")
-    _require(source.get("schemaVersion") == 1, "VEX source schemaVersion must be 1")
-    _require(isinstance(source.get("author"), str) and source["author"].strip(), "VEX author is required")
-    statements = source.get("statements")
-    _require(isinstance(statements, list), "VEX statements must be a list")
-    seen = set()
-    for statement in statements:
-        _require(isinstance(statement, dict), "VEX statement must be an object")
-        vulnerability = statement.get("vulnerability")
-        _require(isinstance(vulnerability, str) and VULNERABILITY_PATTERN.fullmatch(vulnerability),
-                 f"Invalid vulnerability id: {vulnerability!r}")
-        _require(statement.get("status") == "not_affected",
-                 f"{vulnerability}: only not_affected decisions belong in the VEX source")
-        _require(statement.get("justification") in JUSTIFICATIONS,
-                 f"{vulnerability}: justification must be one of {sorted(JUSTIFICATIONS)}")
-        for field in ("impactStatement", "evidence"):
-            text = statement.get(field)
-            _require(isinstance(text, str) and len(text.strip()) >= 40,
-                     f"{vulnerability}: {field} must explain the decision (at least 40 characters)")
-        _require(isinstance(statement.get("reviewedAt"), str)
-                 and re.fullmatch(r"\d{4}-\d{2}-\d{2}", statement["reviewedAt"]),
-                 f"{vulnerability}: reviewedAt must be a YYYY-MM-DD date")
-        packages = statement.get("packages")
-        _require(isinstance(packages, list) and packages, f"{vulnerability}: packages are required")
-        for purl in packages:
-            _require(isinstance(purl, str) and PURL_PATTERN.fullmatch(purl),
-                     f"{vulnerability}: package must be a versioned purl, got {purl!r}")
-            version = purl.split("@", 1)[1].split("?", 1)[0]
-            _require(":" not in unquote(version),
-                     f"{vulnerability}: put a Debian epoch in the epoch= qualifier, not the version ({purl})")
-            key = (vulnerability, purl)
-            _require(key not in seen, f"Duplicate VEX decision: {vulnerability} {purl}")
-            seen.add(key)
-    return statements
-
-
-def oci_purl(image):
-    _require(IMAGE_PATTERN.fullmatch(image), "VEX products must be immutable honua-server digests")
-    digest = image.split("@", 1)[1]
-    return (f"pkg:oci/honua-server@{quote(digest, safe='')}"
-            f"?repository_url={quote(IMAGE_REPOSITORY, safe='')}")
-
-
-def generate_openvex(source, images, timestamp, document_name):
-    """Image products scope each decision to those digests; with no images the
-    decisions apply to the named package versions in any scanned artifact."""
-    statements = validate_vex_source(source)
-    _require(re.fullmatch(r"[A-Za-z0-9._-]+", document_name), "Invalid VEX document name")
-    out = []
-    for statement in statements:
-        if images:
-            products = [{"@id": oci_purl(image),
-                         "subcomponents": [{"@id": purl} for purl in statement["packages"]]}
-                        for image in images]
-        else:
-            products = [{"@id": purl} for purl in statement["packages"]]
-        out.append({
-            "vulnerability": {"name": statement["vulnerability"]},
-            "timestamp": f"{statement['reviewedAt']}T00:00:00Z",
-            "products": products,
-            "status": statement["status"],
-            "justification": statement["justification"],
-            "impact_statement": statement["impactStatement"],
-        })
-    body = json.dumps({"images": sorted(images), "statements": out}, sort_keys=True).encode()
-    return {
-        "@context": OPENVEX_CONTEXT,
-        "@id": f"https://github.com/honua-io/honua-server/vex/{document_name}/{hashlib.sha256(body).hexdigest()[:16]}",
-        "author": source["author"],
-        "timestamp": timestamp,
-        "version": 1,
-        "tooling": "honua-server scripts/security/release_images.py",
-        "statements": out,
-    }
 
 
 # ---------------------------------------------------------------- verdicts

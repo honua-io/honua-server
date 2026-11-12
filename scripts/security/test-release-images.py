@@ -100,7 +100,7 @@ class Vex(unittest.TestCase):
 
     def test_release_document_scopes_decisions_to_the_release_digests(self):
         doc = ri.generate_openvex(SOURCE, [IMAGE, OTHER], "2026-11-30T00:00:00Z", "2026.1-rc.2")
-        self.assertEqual(ri.OPENVEX_CONTEXT, doc["@context"])
+        self.assertEqual("https://openvex.dev/ns/v0.2.0", doc["@context"])
         products = doc["statements"][0]["products"]
         self.assertEqual(["pkg:oci/honua-server@sha256%3A" + "a" * 64
                           + "?repository_url=ghcr.io%2Fhonua-io%2Fhonua-server",
