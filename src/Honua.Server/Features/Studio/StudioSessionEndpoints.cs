@@ -10,12 +10,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Studio;
 
-/// <summary>
-/// The browser Console's Studio session bootstrap. It replaces the Console host's
-/// <c>/api/agent-workspace/session</c> proxy: the static Console calls it with its session cookie
-/// or operator bearer and learns who it is, which environment it is talking to and where the API
-/// lives. Nothing here is read from the request beyond the authenticated identity.
-/// </summary>
 internal static partial class StudioSessionEndpoints
 {
     internal const string EnvironmentIdKey = "Studio:Session:EnvironmentId";
@@ -83,7 +77,6 @@ internal static partial class StudioSessionEndpoints
             StudioApiJsonContext.Default.ApiResponseStudioSessionBootstrap);
     }
 
-    /// <summary>The configured environment id, the default when unset, or null when invalid.</summary>
     internal static string? ResolveEnvironmentId(IConfiguration configuration)
     {
         var configured = configuration[EnvironmentIdKey];
@@ -95,11 +88,6 @@ internal static partial class StudioSessionEndpoints
         return EnvironmentIdPattern().IsMatch(configured) ? configured : null;
     }
 
-    /// <summary>
-    /// The configured API path base (for a server behind a path-prefixing proxy), else the request's
-    /// own PathBase; without a trailing slash, empty at the root, and null when the configured value
-    /// is not an absolute path.
-    /// </summary>
     internal static string? ResolveSourcePathBase(IConfiguration configuration, PathString requestPathBase)
     {
         var configured = configuration[SourcePathBaseKey];

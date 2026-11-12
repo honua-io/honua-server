@@ -8,10 +8,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Studio;
 
-/// <summary>
-/// The Studio session bootstrap reads its environment id and API path base only from server
-/// configuration and the request's PathBase, and fails closed on a value the Console cannot use.
-/// </summary>
 public sealed class StudioSessionEndpointsTests
 {
     [Theory]
