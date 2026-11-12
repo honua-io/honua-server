@@ -96,9 +96,11 @@ public sealed class StudioHumanDraftMutationTests : IAsyncLifetime
         var draftId = createdBody.RootElement.GetProperty("data").GetProperty("draftId").GetGuid();
         var store = _fixture.Services.GetRequiredService<IStudioPackageStore>();
         var draft = (await store.GetDraftAsync(draftId))!;
+        var ownerId = draft.OwnerId;
+        ownerId.Should().NotBeNullOrWhiteSpace();
         draft = (await store.UpdateDraftAsync(draft with
         {
-            OwnerId = ownership switch { "own" => human.ActorId, "other" => "another-canonical-actor", _ => null }
+            OwnerId = ownership switch { "own" => ownerId, "other" => "another-canonical-actor", _ => null }
         }))!;
         var path = $"/api/v1/studio/package-drafts/{draftId:D}";
         using var update = new StringContent(JsonSerializer.Serialize(new UpdateStudioPackageDraftRequest
@@ -106,7 +108,7 @@ public sealed class StudioHumanDraftMutationTests : IAsyncLifetime
             PackageKey = draft.PackageKey,
             WorkspaceId = draft.WorkspaceId,
             // A requested owner must not substitute for the persisted owner's evidence.
-            OwnerId = human.ActorId,
+            OwnerId = ownerId,
             Envelope = draft.Envelope,
             Generation = draft.Generation,
         }, StudioApiJsonContext.Default.UpdateStudioPackageDraftRequest), Encoding.UTF8, "application/json");
