@@ -28,10 +28,12 @@ public static class RasterIntegrationTestData
     public static readonly DateTimeOffset EastAcquisition = new(2024, 1, 15, 0, 0, 0, TimeSpan.Zero);
     public static readonly DateTimeOffset OverlapAcquisition = new(2024, 2, 1, 0, 0, 0, TimeSpan.Zero);
 
-    public static Task SeedIssue522MosaicAsync(WebAppFixture fixture, int layerId = WebAppFixture.TestLayerId)
-    {
-        return ReplaceLayerRastersAsync(fixture, layerId, CreateIssue522Mosaic());
-    }
+    // Seeds the issue-522 mosaic and keeps the seed lock until the handle is disposed; see
+    // HoldLayerRastersAsync.
+    public static Task<IAsyncDisposable> HoldIssue522MosaicAsync(
+        WebAppFixture fixture,
+        int layerId = WebAppFixture.TestLayerId)
+        => HoldLayerRastersAsync(fixture, layerId, CreateIssue522Mosaic());
 
     public static Task RunWithIssue522MosaicAsync(
         WebAppFixture fixture,
@@ -92,19 +94,31 @@ public static class RasterIntegrationTestData
         return new WKBWriter().Write(factory.CreatePoint(new Coordinate(x, y)));
     }
 
-    public static async Task ReplaceLayerRastersAsync(
+    // Replaces the layer's rasters under the shared seed advisory lock and keeps holding the
+    // lock until the returned handle is disposed, so no parallel fixture seed (whose
+    // honua.layers cleanup cascades to honua.raster_data) can delete or re-add rows before the
+    // test's reads finish. Use it as
+    // `await using var rasters = await HoldLayerRastersAsync(...)` at the top of the case.
+    public static async Task<IAsyncDisposable> HoldLayerRastersAsync(
         WebAppFixture fixture,
         int layerId,
         params RasterSeed[] rasters)
     {
         ArgumentNullException.ThrowIfNull(fixture);
+        ArgumentNullException.ThrowIfNull(rasters);
 
-        // #2020: serialize the global honua.raster_data DELETE + INSERT(s) under the schema-mutation
-        // advisory lock (multi-statement, parameterized, on one schema-scoped connection).
-        await fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
+        var lease = await fixture.Postgres.AcquireSchemaMutationLockAsync().ConfigureAwait(false);
+        try
         {
             await ReplaceLayerRastersUnderLockAsync(fixture, layerId, rasters).ConfigureAwait(false);
-        }).ConfigureAwait(false);
+        }
+        catch
+        {
+            await lease.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+
+        return lease;
     }
 
     private static RasterSeed[] CreateIssue522Mosaic()

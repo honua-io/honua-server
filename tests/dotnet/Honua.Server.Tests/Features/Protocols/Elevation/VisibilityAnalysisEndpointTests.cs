@@ -42,7 +42,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/line-of-sight")]
     public async Task PostLineOfSight_WithCoveredFlatTerrain_ReportsVisible()
     {
-        await SeedFullWorldRasterAsync(100);
+        await using var heldRasters = await HoldFullWorldRasterAsync(100);
 
         var response = await _fixture.Client.PostAsJsonAsync(
             "/elevation/0/line-of-sight",
@@ -78,7 +78,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/line-of-sight")]
     public async Task PostLineOfSight_ObserverEqualsTarget_ReturnsUnprocessableEntity()
     {
-        await SeedFullWorldRasterAsync(100);
+        await using var heldRasters = await HoldFullWorldRasterAsync(100);
 
         var response = await _fixture.Client.PostAsJsonAsync(
             "/elevation/0/line-of-sight",
@@ -99,7 +99,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/line-of-sight")]
     public async Task PostLineOfSight_MissingCoordinates_ReturnsBadRequest()
     {
-        await SeedFullWorldRasterAsync(100);
+        await using var heldRasters = await HoldFullWorldRasterAsync(100);
 
         using var content = new StringContent("{}", Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
@@ -115,7 +115,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/line-of-sight")]
     public async Task PostLineOfSight_WithMixedResolutionMosaic_ReturnsActionableUnprocessableEntity()
     {
-        await SeedMixedResolutionMosaicAsync();
+        await using var heldRasters = await HoldMixedResolutionMosaicAsync();
 
         var response = await _fixture.Client.PostAsJsonAsync(
             "/elevation/0/line-of-sight",
@@ -144,7 +144,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
         // (outside coverage) must not be coerced to 0.0 and reported visible.
         // The service now fails the request rather than fabricating sea-level
         // terrain, so the endpoint maps it to a 404 and never claims visibility.
-        await SeedSeQuadrantRasterAsync(50);
+        await using var heldRasters = await HoldSeQuadrantRasterAsync(50);
 
         // Both endpoints are in the uncovered north-west quadrant.
         var response = await _fixture.Client.PostAsJsonAsync(
@@ -169,7 +169,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/viewshed")]
     public async Task PostViewshed_WithCoveredFlatTerrain_ReturnsVisibleSamples()
     {
-        await SeedFullWorldRasterAsync(50);
+        await using var heldRasters = await HoldFullWorldRasterAsync(50);
 
         var response = await _fixture.Client.PostAsJsonAsync(
             "/elevation/0/viewshed",
@@ -206,7 +206,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/viewshed")]
     public async Task PostViewshed_NonPositiveRadius_ReturnsUnprocessableEntity()
     {
-        await SeedFullWorldRasterAsync(50);
+        await using var heldRasters = await HoldFullWorldRasterAsync(50);
 
         var response = await _fixture.Client.PostAsJsonAsync(
             "/elevation/0/viewshed",
@@ -228,7 +228,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/viewshed")]
     public async Task PostViewshed_MissingObserver_ReturnsBadRequest()
     {
-        await SeedFullWorldRasterAsync(50);
+        await using var heldRasters = await HoldFullWorldRasterAsync(50);
 
         using var content = new StringContent("{\"radiusMeters\":1000}", Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
@@ -271,7 +271,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/line-of-sight")]
     public async Task PostLineOfSight_TargetInsideRidgeRing_IsVisible()
     {
-        await SeedRidgeRingRasterAsync();
+        await using var heldRasters = await HoldRidgeRingRasterAsync();
 
         var response = await _fixture.Client.PostAsJsonAsync(
             "/elevation/0/line-of-sight",
@@ -300,7 +300,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/line-of-sight")]
     public async Task PostLineOfSight_TargetBeyondRidgeRing_IsBlockedByIntervalRidge()
     {
-        await SeedRidgeRingRasterAsync();
+        await using var heldRasters = await HoldRidgeRingRasterAsync();
 
         var response = await _fixture.Client.PostAsJsonAsync(
             "/elevation/0/line-of-sight",
@@ -329,7 +329,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/viewshed")]
     public async Task PostViewshed_RidgeRingTerrain_OccludesFarSamplesButNotNearSamples()
     {
-        await SeedRidgeRingRasterAsync();
+        await using var heldRasters = await HoldRidgeRingRasterAsync();
 
         var response = await _fixture.Client.PostAsJsonAsync(
             "/elevation/0/viewshed",
@@ -382,7 +382,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
         // viewshed that ignored the observer offset entirely would pass both. Same terrain,
         // same request, observer lifted well above the 3000 m rim: the far samples the
         // ground-level observer cannot see must become visible.
-        await SeedRidgeRingRasterAsync();
+        await using var heldRasters = await HoldRidgeRingRasterAsync();
 
         var response = await _fixture.Client.PostAsJsonAsync(
             "/elevation/0/viewshed",
@@ -433,7 +433,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
         const int samplesPerRay = 10;
         const double radiusMeters = 4000.0;
 
-        await SeedFullWorldRasterAsync(50);
+        await using var heldRasters = await HoldFullWorldRasterAsync(50);
 
         var response = await _fixture.Client.PostAsJsonAsync(
             "/elevation/0/viewshed",
@@ -502,11 +502,11 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     /// rule overrides the floor within each band's footprint) that together form a
     /// complete hollow square ring around the Web Mercator origin (the observer position
     /// used by every ridge test above). All rasters are stored directly in EPSG:3857
-    /// meters, matching <see cref="SeedFullWorldRasterAsync"/>/<see cref="SeedSeQuadrantRasterAsync"/>,
+    /// meters, matching <see cref="HoldFullWorldRasterAsync"/>/<see cref="HoldSeQuadrantRasterAsync"/>,
     /// so <see cref="RingInnerRadiusMeters"/>/<see cref="RingOuterRadiusMeters"/> are exact
     /// (not degree-approximated) distances from the observer.
     /// </summary>
-    private Task SeedRidgeRingRasterAsync()
+    private Task<IAsyncDisposable> HoldRidgeRingRasterAsync()
     {
         var floorTime = RasterIntegrationTestData.WestAcquisition;
         var ridgeTime = RasterIntegrationTestData.EastAcquisition;
@@ -519,7 +519,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
         const double cell = 250;
         const double floorHalfExtent = RingOuterRadiusMeters * 3;
 
-        return RasterIntegrationTestData.ReplaceLayerRastersAsync(
+        return RasterIntegrationTestData.HoldLayerRastersAsync(
             _fixture,
             WebAppFixture.TestLayerId,
             new RasterSeed(
@@ -584,8 +584,8 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
                 Srid: 3857));
     }
 
-    private Task SeedFullWorldRasterAsync(double elevationMeters)
-        => RasterIntegrationTestData.ReplaceLayerRastersAsync(
+    private Task<IAsyncDisposable> HoldFullWorldRasterAsync(double elevationMeters)
+        => RasterIntegrationTestData.HoldLayerRastersAsync(
             _fixture,
             WebAppFixture.TestLayerId,
             new RasterSeed(
@@ -601,8 +601,8 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
                 CreatedAt: RasterIntegrationTestData.WestAcquisition,
                 Srid: 3857));
 
-    private Task SeedSeQuadrantRasterAsync(double elevationMeters)
-        => RasterIntegrationTestData.ReplaceLayerRastersAsync(
+    private Task<IAsyncDisposable> HoldSeQuadrantRasterAsync(double elevationMeters)
+        => RasterIntegrationTestData.HoldLayerRastersAsync(
             _fixture,
             WebAppFixture.TestLayerId,
             new RasterSeed(
@@ -618,8 +618,8 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
                 CreatedAt: RasterIntegrationTestData.WestAcquisition,
                 Srid: 3857));
 
-    private Task SeedMixedResolutionMosaicAsync()
-        => RasterIntegrationTestData.ReplaceLayerRastersAsync(
+    private Task<IAsyncDisposable> HoldMixedResolutionMosaicAsync()
+        => RasterIntegrationTestData.HoldLayerRastersAsync(
             _fixture,
             WebAppFixture.TestLayerId,
             new RasterSeed(
