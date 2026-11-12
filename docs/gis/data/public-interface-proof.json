@@ -854,7 +854,7 @@
     },
     {
       "surfaceId": "asset-tasks",
-      "displayName": "Task-first asset management (asset profiles, tasks)",
+      "displayName": "Task-first asset management (asset profiles, tasks, completion)",
       "surfaceKind": "http-route-family",
       "protocol": "Admin API",
       "canonicalIdentifier": "/api/v1/{assets,tasks}/**",
@@ -869,13 +869,14 @@
       "proofs": [
         {
           "proofClass": "route-coverage",
-          "proofMechanism": "EndpointRegistry coverage with AssetProfileEndpointsTests and WorkTaskEndpointsTests integration tests (CAS, receipts, history).",
+          "proofMechanism": "EndpointRegistry coverage with AssetProfileEndpointsTests, WorkTaskEndpointsTests and WorkTaskCompletionTests integration tests (CAS, receipts, history, atomic completion).",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.Assets.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Assets/AssetProfileEndpointsTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Assets/WorkTaskEndpointsTests.cs"
+            "tests/dotnet/Honua.Server.Tests/Features/Assets/WorkTaskEndpointsTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Assets/WorkTaskCompletionTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
