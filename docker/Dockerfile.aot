@@ -13,8 +13,8 @@
 # they cannot load. On Alpine every f=parquet request returned the typed 501, and gcompat +
 # libatomic loaded the library but segfaulted the server on the first request. These are the
 # same Ubuntu-based SDK/runtime-deps digests as docker/Dockerfile.lambda.aot.
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b
-ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:62028293921f5bd6db3d9f9119cd29cd926dfd3c2336da23b09f425e40c3c832
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3db8bf01cdc5981f6ee35fbdf3ff4fb
+ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:9cab4d7d886226d47b5489ef9abf0544e2f109fde11a8acc190217610af26c00
 
 # Build stage with security hardening
 # Extract restore inputs with their directory structure. Ordinary source edits,
