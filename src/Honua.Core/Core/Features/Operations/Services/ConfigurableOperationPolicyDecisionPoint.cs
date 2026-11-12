@@ -34,15 +34,17 @@ public sealed class ConfigurableOperationPolicyDecisionPoint : IOperationPolicyD
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        if (AgentApprovalRule.Applies(request.OperationId, context.Roles))
-        {
-            return Task.FromResult(AgentApprovalRule.Decision);
-        }
+        var requiresAgentApproval = AgentApprovalRule.Applies(request.OperationId, context.Roles);
+
+        Task<PolicyDecision> Complete(PolicyDecision decision) => Task.FromResult(
+            requiresAgentApproval && decision.Kind != PolicyDecisionKind.Deny
+                ? AgentApprovalRule.Decision
+                : decision);
 
         // Disabled policy is a pass-through allow — identical to the Community default.
         if (!_options.Enabled)
         {
-            return Task.FromResult(PolicyDecision.Allowed);
+            return Complete(PolicyDecision.Allowed);
         }
 
         var rules = Composition.Rules;
@@ -58,13 +60,13 @@ public sealed class ConfigurableOperationPolicyDecisionPoint : IOperationPolicyD
             // executed without an operator-authored rule.
             if (i >= Composition.OperatorRuleCount && rule.Decision == PolicyDecisionKind.Allow)
             {
-                return Task.FromResult(new PolicyDecision { Kind = PolicyDecisionKind.Allow, Reason = rule.Reason });
+                return Complete(new PolicyDecision { Kind = PolicyDecisionKind.Allow, Reason = rule.Reason });
             }
 
-            return Task.FromResult(ResolveDecision(rule.Decision, rule.Reason, rule.ApprovalLane, request));
+            return Complete(ResolveDecision(rule.Decision, rule.Reason, rule.ApprovalLane, request));
         }
 
-        return Task.FromResult(ResolveDecision(
+        return Complete(ResolveDecision(
             _options.DefaultDecision,
             _options.DefaultReason,
             _options.DefaultApprovalLane,
