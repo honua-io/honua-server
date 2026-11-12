@@ -73,9 +73,9 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         AiExecutionContext? executionContext = null)
     {
         string? requiredCredentialFingerprint = null;
-        return new(options, request, "/v1/messages", (snapshot, original, model, identity) =>
+        return new(options, request, "/v1/messages", invocation =>
         {
-            var scope = new AnthropicContinuationStore.Scope(snapshot, original, model, identity);
+            var scope = new AnthropicContinuationStore.Scope(invocation.CopyOptions(), invocation.Request, invocation.Model, invocation.ExecutionContext);
             var body = JsonSerializer.SerializeToUtf8Bytes(BuildRequest(scope), StudioAiProxyJsonContext.Default.AnthropicProxyRequest);
             requiredCredentialFingerprint = scope.RestoredCredentials.SingleOrDefault();
             return body;
