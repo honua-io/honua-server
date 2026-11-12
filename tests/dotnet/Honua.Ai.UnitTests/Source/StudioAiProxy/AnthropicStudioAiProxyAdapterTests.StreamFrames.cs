@@ -221,6 +221,24 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
     }
 
     [UnitTheory]
+    [InlineData("{\"type\":\"tool_use\",\"id\":\"tool_1\",\"name\":\"example_tool\"}", "{\"type\":\"text_delta\",\"text\":\"visible\"}", "text_delta", "tool_use")]
+    [InlineData("{\"type\":\"text\"}", "{\"type\":\"input_json_delta\",\"partial_json\":\"{}\"}", "input_json_delta", "text")]
+    public async Task StreamAsync_DeltaForOtherBlockType_FailsClosedWithoutVisibleOutput(
+        string block, string delta, string expectedDeltaType, string expectedBlockType)
+    {
+        var fixture = "data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-opus-5-5\"}}\n"
+            + $"data: {{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{block}}}\n"
+            + $"data: {{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{delta}}}\n";
+
+        var events = await CollectAsync(CreateAdapter(fixture), ToolFreeRequest());
+
+        var failure = events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.Error).Subject;
+        failure.ErrorCode.Should().Be(StudioAiStreamGrammarValidator.InvalidStreamCode);
+        failure.ErrorMessage.Should().Be($"Provider returned invalid stream event type 'content_block_delta' (delta type '{expectedDeltaType}', block type '{expectedBlockType}').");
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.TextDelta || e.Type == StudioAiChatEventType.ToolCallDelta);
+    }
+
+    [UnitTheory]
     [InlineData("\"index\":0,")]
     [InlineData("")]
     public async Task StreamAsync_TextDeltaOutsideOpenBlock_FailsClosedWithoutVisibleText(string deltaIndex)
