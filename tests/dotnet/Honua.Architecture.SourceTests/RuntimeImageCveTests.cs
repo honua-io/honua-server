@@ -27,7 +27,7 @@ public sealed class RuntimeImageCveTests
             runtimeStage.Should().Contain("apt-get upgrade -y", relativePath);
             runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' zlib1g", relativePath);
             runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' apt", relativePath);
-            runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' libapt-pkg6.0t64", relativePath);
+            runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' libapt-pkg7.0", relativePath);
             runtimeStage.Should().NotContain("dpkg-query -W -f '$${Version}'",
                 $"{relativePath} must pass dpkg-query ${{Version}}; a doubled dollar emits a leading dollar and compare-versions rejects the epoch");
             runtimeStage.Should().Contain("HEALTHCHECK", relativePath);
@@ -70,7 +70,7 @@ public sealed class RuntimeImageCveTests
         runtimeStage.Should().Contain("apt-get upgrade -y");
         runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' zlib1g");
         runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' apt");
-        runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' libapt-pkg6.0t64");
+        runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' libapt-pkg7.0");
         runtimeStage.Should().NotContain("dpkg-query -W -f '$${Version}'");
         runtimeStage.Should().NotContain("wget");
     }

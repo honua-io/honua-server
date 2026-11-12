@@ -13,7 +13,7 @@
 # (/Dockerfile) and Honua.Server.csproj stay GDAL-free; this Dockerfile does not
 # build or modify them.
 
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3db8bf01cdc5981f6ee35fbdf3ff4fb
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0.404-resolute@sha256:f685dd6b5a970778b53cead9a11cf54206c4b4fc3c97e4424a59b8bff9aa43d7
 # GDAL base ships gdalwarp / ogr2ogr / gdal_translate / gdalmdiminfo etc.
 # NOTE: must be the `ubuntu-full` variant, not `ubuntu-small` — the small image
 # omits the NetCDF/HDF5 drivers required by the multidimensional coverage

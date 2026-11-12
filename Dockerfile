@@ -10,8 +10,8 @@
 # These ARG defaults are the single source of truth for the mirrored bases:
 # scripts/ci/base-image-mirrors.sh reads them and the nightly `mirror-base-images`
 # job mirrors exactly what it prints, so no second digest list needs updating.
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3db8bf01cdc5981f6ee35fbdf3ff4fb
-ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0@sha256:bfd912c83295ce66d4b706ebb8541b9f14259b0e76fbb88b2751f58ce2399d2e
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0.404-resolute@sha256:f685dd6b5a970778b53cead9a11cf54206c4b4fc3c97e4424a59b8bff9aa43d7
+ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0.15-resolute@sha256:b5e72aa3bc183d98a0fc5739c583201a4b97bdbaadcb9dcd1b69d428a8bd172b
 
 # Build stage
 # Extract restore inputs with their directory structure. Ordinary source edits,
@@ -116,7 +116,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       -p:PublishAot=false \
       -p:DebugType=None \
       -p:DebugSymbols=false \
-      -p:HonuaNobleRuntimePublish=true \
+      -p:HonuaUbuntuRuntimePublish=true \
       $EXTRA_MSBUILD_ARGS && \
     rm -rf /app/wwwroot/admin && \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
@@ -124,18 +124,17 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 # Runtime stage
 FROM ${DOTNET_ASPNET_IMAGE} AS runtime
 
-# The current upstream digest predates available OS fixes. The revision is
-# echoed in the upgrade RUN so a bump invalidates the cached apt layer.
-# 2026-10-08: pick up libfreetype6 2.13.2+dfsg-1ubuntu0.2 (CVE-2026-95512).
-# 2026-10-29: pick up libbrotli1 1.1.0-2ubuntu0.1 (CVE-2026-111497).
-# 2026-10-30: pick up zlib1g 1:1.3.dfsg-3.1ubuntu2.3 (CVE-2026-85091).
+# Ubuntu 26.04 (resolute). The revision is echoed in the upgrade RUN so a bump
+# invalidates the cached apt layer. The version floors are the resolute fixes for
+# CVE-2026-111497 (libbrotli1), CVE-2026-95512 (libfreetype6, via fontconfig) and
+# CVE-2026-85091 (zlib1g), and the resolute security-pocket apt.
 # dpkg-query needs the version field with one dollar. Two dollars emit a leading dollar and fail the epoch check.
 ARG RUNTIME_PACKAGE_REVISION=20261105
 
 # Security: Install runtime dependencies. The glibc runtime is required by
 # ParquetSharp's native library, which backs the GeoParquet writer.
 # The base is digest-pinned; compatible security updates and dependency versions
-# intentionally follow that Debian snapshot's configured repositories.
+# intentionally follow that Ubuntu snapshot's configured repositories.
 # hadolint ignore=DL3005,DL3008
 RUN echo "runtime package revision ${RUNTIME_PACKAGE_REVISION}" && \
     apt-get update && \
@@ -147,10 +146,11 @@ RUN echo "runtime package revision ${RUNTIME_PACKAGE_REVISION}" && \
     libbrotli1 \
     libgssapi-krb5-2 \
     tzdata && \
-    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' libbrotli1)" ge "1.1.0-2ubuntu0.1" && \
-    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' zlib1g)" ge "1:1.3.dfsg-3.1ubuntu2.3" && \
-    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' apt)" ge "2.8.4ubuntu0.1" && \
-    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' libapt-pkg6.0t64)" ge "2.8.4ubuntu0.1" && \
+    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' libbrotli1)" ge "1.2.0-3ubuntu0.1" && \
+    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' libfreetype6)" ge "2.14.2+dfsg-1ubuntu0.2" && \
+    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' zlib1g)" ge "1:1.3.dfsg+really1.3.1-1ubuntu3.2" && \
+    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' apt)" ge "3.2.1ubuntu0.1" && \
+    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' libapt-pkg7.0)" ge "3.2.1ubuntu0.1" && \
     rm -rf /var/lib/apt/lists/* /tmp/*
 
 # Security: Create non-root user with minimal privileges
