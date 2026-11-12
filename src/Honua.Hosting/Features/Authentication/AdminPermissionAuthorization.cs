@@ -34,8 +34,7 @@ internal sealed class AdminPermissionAuthorizationHandler(
         }
         else
         {
-            AuthenticationLog.AdminPermissionDenied(
-                _logger, method ?? "(unknown)", context.User.Identity?.AuthenticationType ?? "(unknown)");
+            AuthenticationLog.ScopedAdminKeyDenied(_logger, method ?? "(unknown)");
             // Do not call context.Fail(): leaving the requirement unmet yields a 403
             // and lets other handlers/requirements report their own outcome.
         }

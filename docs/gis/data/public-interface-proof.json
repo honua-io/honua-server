@@ -180,7 +180,9 @@
       "endpointPrefixes": [
         "/api/v1/admin/"
       ],
-      "endpointExactMatches": [],
+      "endpointExactMatches": [
+        "/admin/auth/callback"
+      ],
       "endpointContains": [],
       "operationKeys": [],
       "proofs": [
