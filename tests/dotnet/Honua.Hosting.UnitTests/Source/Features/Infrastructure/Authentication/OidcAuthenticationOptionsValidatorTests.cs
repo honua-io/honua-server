@@ -16,32 +16,6 @@ public class OidcAuthenticationOptionsValidatorTests
 {
     private readonly OidcAuthenticationOptionsValidator _validator = new();
 
-    [UnitTheory]
-    [InlineData(null, false, true)]
-    [InlineData(null, true, false)]
-    [InlineData("https://login.example.com/logout", true, true)]
-    [InlineData("http://login.example.com/logout", true, false)]
-    [InlineData("/logout", true, false)]
-    [InlineData("https://user@login.example.com/logout", true, false)]
-    [InlineData("https://login.example.com/logout?client_id=other", true, false)]
-    [InlineData("https://login.example.com/logout#fragment", true, false)]
-    public void Validate_GenericLogout_RequiresExplicitHttpsEndpoint(string? endpoint, bool cognito, bool expected)
-    {
-        var options = new OidcAuthenticationOptions
-        {
-            Generic = new GenericOidcProviderOptions
-            {
-                Enabled = true,
-                Authority = "https://issuer.example.com",
-                ClientId = "configured-client",
-                LogoutEndpoint = endpoint,
-                UseCognitoLogout = cognito
-            }
-        };
-
-        Assert.Equal(expected, _validator.Validate(null, options).Succeeded);
-    }
-
     [UnitTest]
     public void BindOptions_ConfiguredArraysReplaceDefaults_AfterConfigurationOverlay()
     {

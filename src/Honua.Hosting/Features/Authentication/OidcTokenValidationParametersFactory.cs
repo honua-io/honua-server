@@ -1,9 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 
@@ -71,11 +68,6 @@ internal static class OidcTokenValidationParametersFactory
             var pairing = audiencesByIssuer;
             parameters.AudienceValidator = (tokenAudiences, securityToken, validationParameters) =>
             {
-                if (AcceptClientIdAudience(options, securityToken))
-                {
-                    return true;
-                }
-
                 var issuer = securityToken?.Issuer;
                 if (!string.IsNullOrWhiteSpace(issuer) && pairing.TryGetValue(issuer, out var allowedForIssuer))
                 {
@@ -96,44 +88,6 @@ internal static class OidcTokenValidationParametersFactory
         }
 
         return new BuildResult(parameters, authorities);
-    }
-
-    // This opt-in applies only to access tokens from the configured generic issuer.
-    // A present aud must still pass normal audience validation. Broker ID tokens use
-    // NarrowToProvider and never take this fallback.
-    internal static bool AcceptClientIdAudience(OidcAuthenticationOptions options, SecurityToken? token)
-    {
-        if (options.Generic is not { IsValid: true, AcceptClientIdAsAudience: true } provider ||
-            !string.Equals(token?.Issuer, provider.Authority?.Trim(), StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        IEnumerable<Claim> claims = token switch
-        {
-            JwtSecurityToken jwt => jwt.Claims,
-            JsonWebToken jwt => jwt.Claims,
-            _ => []
-        };
-        var values = claims.ToArray();
-        var hasAudience = token switch
-        {
-            JwtSecurityToken jwt => jwt.Payload.ContainsKey("aud"),
-            JsonWebToken jwt => jwt.TryGetPayloadValue<object>("aud", out _),
-            _ => true
-        };
-        if (hasAudience)
-        {
-            return false;
-        }
-
-        var clientIds = values.Where(claim => claim.Type == "client_id").ToArray();
-        var tokenUses = values.Where(claim => claim.Type == "token_use").ToArray();
-        return clientIds.Length == 1 && tokenUses.Length == 1 &&
-            clientIds[0].ValueType == ClaimValueTypes.String &&
-            tokenUses[0].ValueType == ClaimValueTypes.String &&
-            string.Equals(clientIds[0].Value, provider.ClientId?.Trim(), StringComparison.Ordinal) &&
-            string.Equals(tokenUses[0].Value, "access", StringComparison.Ordinal);
     }
 
     // Parameters are limited to the provider that started the broker flow so a token from another configured authority cannot be substituted.
