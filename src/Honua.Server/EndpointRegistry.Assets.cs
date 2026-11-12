@@ -15,6 +15,7 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/tasks"),
         new("GET", "/api/v1/tasks/{taskId}"),
         new("POST", "/api/v1/tasks/{taskId}/transitions"),
+        new("POST", "/api/v1/tasks/{taskId}/completion"),
         new("GET", "/api/v1/tasks/{taskId}/history"),
     ];
 }

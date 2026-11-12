@@ -31,6 +31,7 @@ internal static class WorkTaskEndpoints
 
         MapReads(tasks);
         MapCommands(tasks);
+        MapCompletion(tasks);
         return endpoints;
     }
 
@@ -88,6 +89,23 @@ internal static class WorkTaskEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .Produces<AssetCommandConflict>(StatusCodes.Status409Conflict);
 
+
+    }
+
+    private static void MapCompletion(RouteGroupBuilder tasks)
+    {
+        tasks.MapPost("/{taskId:guid}/completion", HandleComplete)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .WithName("CompleteWorkTask")
+            .WithSummary("Complete an in-progress task: records the inspection or service record and advances the asset summary atomically.")
+            .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]))
+            .Accepts<WorkTaskCompletionRequest>("application/json")
+            .Produces<WorkTaskCommandResponse>()
+            .Produces<AssetValidationProblem>(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .Produces<AssetCommandConflict>(StatusCodes.Status409Conflict);
+
     }
 
     private static Task<IResult> HandleList(HttpContext context, [FromServices] WorkTaskService service)
@@ -101,6 +119,9 @@ internal static class WorkTaskEndpoints
 
     private static Task<IResult> HandleTransition(HttpContext context, [FromServices] WorkTaskService service, Guid taskId)
         => service.TransitionAsync(context, taskId);
+
+    private static Task<IResult> HandleComplete(HttpContext context, [FromServices] WorkTaskCompletionService service, Guid taskId)
+        => service.CompleteAsync(context, taskId);
 
     private static Task<IResult> HandleHistory(HttpContext context, [FromServices] WorkTaskService service, Guid taskId)
         => service.HistoryAsync(context, taskId);
