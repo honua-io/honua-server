@@ -44,6 +44,7 @@ internal static partial class SceneDatasetEndpoints
             .Produces<SceneDatasetSummary[]>(StatusCodes.Status200OK);
 
         _ = group.MapPost("/", HandleRegisterScene)
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
             .WithName("RegisterSceneDataset")
             .WithSummary("Register a new scene dataset.")
             .Accepts<RegisterSceneDatasetRequest>("application/json")
@@ -58,6 +59,7 @@ internal static partial class SceneDatasetEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound);
 
         _ = group.MapPut("/{id:guid}", HandleUpdateScene)
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
             .WithName("UpdateSceneDataset")
             .WithSummary("Update mutable fields of a scene dataset.")
             .Accepts<UpdateSceneDatasetRequest>("application/json")

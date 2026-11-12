@@ -12,6 +12,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Forms.Packages;
 using Honua.Db.Postgres.Features.Attachments;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
@@ -54,6 +55,27 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("POST /api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/publish")]
+    public async Task AgentAdministrator_CannotPublishFormPackage()
+    {
+        var draft = await CreateDraftAsync(CreatePackage("Agent publication"));
+        var key = await _fixture.Services.GetRequiredService<IAdminApiKeyStore>().CreateAsync(
+            "form-agent", ["admin", "agent"], null, "test", CancellationToken.None);
+        using var agent = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", key.Key));
+
+        using var response = await agent.PostAsync(
+            $"/api/v1/admin/forms/packages/{draft.FormId}/versions/1/publish", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("ask one to make this change in Console");
+        var current = await GetJsonAsync($"/api/v1/admin/forms/packages/{draft.FormId}",
+            FormPackageJsonContext.Default.FormPackageVersion);
+        current.Status.Should().Be(FormPackageStatus.Draft);
+        current.PublishedAt.Should().BeNull();
+    }
 
     [IntegrationTest]
     [Operation(Operations.Configuration)]

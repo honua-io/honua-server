@@ -102,7 +102,7 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
         unpublished.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         using var approver = await HumanApprovalHttpClient.AuthenticateAsync(
-            _fixture, _identityProvider, "studio-human-publisher", Tenant);
+            _fixture, _identityProvider, "studio-human-publisher");
         using var approval = await approver.ApproveAsync(proposalId);
         var approvalBody = await approval.Content.ReadAsStringAsync();
         approval.StatusCode.Should().Be(HttpStatusCode.OK, approvalBody);

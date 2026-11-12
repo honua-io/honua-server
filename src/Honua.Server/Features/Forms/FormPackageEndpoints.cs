@@ -5,6 +5,7 @@ using Honua.Core.Features.Forms.Packages;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Licensing;
+using Honua.Server.Features.Admin;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Forms;
@@ -73,6 +74,7 @@ internal static class FormPackageEndpoints
             .Produces<FormPackageValidationResult>();
 
         admin.MapPost("/{formId}/versions/{packageVersion:int}/publish", HandlePublish)
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
             .WithName("PublishFormPackageDraft")
             .WithSummary("Validate and publish an immutable package version.")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]))
