@@ -60,6 +60,9 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-admin-key");
             builder.UseSetting("Public:BaseUrl", PublicBaseUrl);
+            // Tenant claim and X-Honua-Tenant override checks only run with multi-tenancy on,
+            // which is opt-in since #7290.
+            builder.UseSetting("MultiTenancy:Enabled", "true");
 
             // Reuse the multi-authority OIDC stack (#2849) — a single generic
             // provider validated against a static symmetric key so tokens can be
