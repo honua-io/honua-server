@@ -65,7 +65,7 @@ internal sealed class ExecutionAdmissionCoordinator
         var options = _options?.CurrentValue;
         if (_leases is null || options is null || !options.Enabled)
         {
-            return new Lease(this, token: null, TimeSpan.Zero, retryAfterSeconds: 0);
+            return new Lease(this, claim: null, TimeSpan.Zero, retryAfterSeconds: 0);
         }
 
         try
