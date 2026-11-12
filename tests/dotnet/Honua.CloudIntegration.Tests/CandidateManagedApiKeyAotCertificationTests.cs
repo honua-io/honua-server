@@ -429,7 +429,6 @@ public sealed class CandidateManagedApiKeyAotCertificationTests(ITestOutputHelpe
                     "-e", "POSTGRES_USER=honua", "-e", $"POSTGRES_PASSWORD={DatabasePassword}", "-e", "POSTGRES_DB=honua",
                     PostgresImage
                 ]);
-                // The registry configuration the server's durability attestation expects.
                 await Docker.RunCheckedAsync(
                 [
                     "run", "-d", "--name", redis, "--network", network, RedisImage,

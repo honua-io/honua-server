@@ -208,24 +208,31 @@ proxy and deployment host.
 
 ## Redis is optional; PostGIS is not
 
-PostGIS owns the catalog, layer metadata and feature data and is required.
+PostGIS owns the catalog, layer metadata and feature data and is required. Its
+system database (`ConnectionStrings__DefaultConnection`) also holds the governed
+control plane and durable jobs: operation proposals and approvals, operation
+records, geoprocessing jobs and their queue, imports, and tile and export jobs.
 
-Redis is optional for **serving**, but it is required for the **governed control
-plane**. Without Redis, a host still serves every protocol, and the admin REST API
-and Console still connect sources, import, publish layers, configure services,
-style and render. It cannot persist the following, and refuses them with a typed
-`dependency-unavailable` receipt naming `redis`:
+Redis is optional. Publishing a workflow package to a Schedule target still
+needs it: the durable workflow definition store is composed only with a Redis
+connection (`ConnectionStrings__Redis`). Without one, the publication is refused with a typed
+`dependency-unavailable` receipt naming `workflow-definition-store`, and no
+publication record is written. Publish to another target, or configure Redis.
+
+A host started without a system database still serves every protocol, and the
+admin REST API and Console still connect sources, publish layers, configure
+services, style and render. It refuses the following with a typed
+`dependency-unavailable` receipt naming `system-database`:
 
 - governed operation proposals and approvals (`/api/v1/admin/proposals`,
   `honua_propose_*`), including any operation whose policy decision is
   "require approval";
 - typed operations invoked through MCP (the `honua_admin_*` tools), whose
-  durable operation record is also Redis-backed in Production;
+  durable operation record is in the system database in Production;
 - durable geoprocessing jobs and workflows (`jobs.runner`);
 - Studio drafts.
 
-A server without Redis still serves, configures, styles and renders, so two
-operations execute directly without Redis: publishing a service
+Two operations still execute directly on such a host: publishing a service
 (`service.publish`) and applying a style preset to a published layer
 (`style.apply-preset`). When `Operations:Policy` allows the caller (an `admin`
 or `scoped-admin-key` role, such as an `admin:write` API key),
@@ -240,54 +247,25 @@ handle carries `durable: false` (and the evidence reference
 `honua_render_map` and the OGC styles endpoints are reads and do not use the
 operation runtime. A caller the policy denies gets a `Denied` handle. A publish
 or style preset whose policy decision is "require approval" still refuses with
-the typed `redis` receipt, because it needs a governed proposal. Geoprocessing
+the typed `system-database` receipt, because it needs a governed proposal. Geoprocessing
 plans that need approval, Studio compositions and publication requests, proposals and approvals, and the
 `honua_admin_*` tools keep the typed refusal.
 
-On a Development or Test host without Redis, Studio drafts still compose against a
+On a Development or Test host without a system database, Studio drafts still compose against a
 volatile operation store (create, validate, preview-plan and save a content version
 succeed), but a publish-request that needs separate-principal approval is refused with
-the same typed receipt: HTTP 503 `capability-unavailable` with `missingDependency: "redis"`
+the same typed receipt: HTTP 503 `capability-unavailable` with `missingDependency: "system-database"`
 and `capability: "operations.proposals"`, and the draft is left unchanged.
 
-The governed tools are still advertised on a Redis-off host, so an agent sees the
+The governed tools are still advertised on such a host, so an agent sees the
 same catalog everywhere. The capability manifest (`GET /api/v1/capabilities/manifest`)
 tells it in advance which ones will refuse: `operations.proposals` and
-`jobs.runner` report `available: false` with `reasonCode: "dependency-unavailable"`
-(or `"license-required"` when Redis is configured but not entitled).
-
-**What "required" means: present and working, not a proven durability policy.**
-The governed control plane needs Redis to be configured, entitled and
-connected. Background jobs (geoprocessing, imports, tile and export jobs) are
-stored in PostgreSQL and do not need Redis. The control plane does not need a particular persistence policy (owner
-ruling, 2026-10-10). At startup the server still reads the Redis policy
-(`appendonly`, `appendfsync`, `maxmemory-policy`) and publishes the result in the
-capability manifest as `limits.job.redisDurability.status`. The value is
-`attested`, `unverified` (the policy could not be read, as on managed Redis
-that blocks `CONFIG`) or `not-durable` (the policy was read and is not
-durable). The result never disables `operations.proposals` or `jobs.runner`.
-
-A Redis started with `--appendonly yes --appendfsync everysec --maxmemory-policy
-noeviction` keeps proposals and workflow state across restarts and reports `attested`.
-A stock `redis:7` image also works. The manifest then reports `not-durable`, and
-a Redis restart can lose recent proposals and workflow state. If you would rather the server refuse to
-start unless the policy is `attested`, set `Jobs__RequireDurableStore=true`
-(see [Redis durability](troubleshooting.md#redis-durability)).
-
-### Redis is configured but not entitled
-
-Redis is included with persistent storage, but installing Redis does not grant
-paid features. Durable jobs, workflows, queued imports, proposals and shared coordination need
-both Redis configuration and the applicable `caching.redis` licence entitlement.
-Without the dependency those operations return a typed `dependency-unavailable`
-receipt; without the entitlement the receipt is `license-required`.
-Do not add a development edition grant to a Production deployment.
+`jobs.runner` report `available: false` with `reasonCode: "dependency-unavailable"`.
 
 To omit Redis, remove `ConnectionStrings__Redis`, the `honua.depends_on.redis`
 entry, the `redis` service and the `redis` volume declaration from `compose.yaml`.
-Keep a single server instance. Restore those four entries and provide the
-appropriate licence before enabling durable operations. A persisted Redis volume
-must be retained if it already contains proposal or workflow state.
+Restore those four entries before publishing workflows to a Schedule target. A
+persisted Redis volume must be retained if it already contains workflow definitions.
 
 ## Backup and recovery
 
