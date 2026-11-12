@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>preview</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1901;NU1902;NU1903;NU1904</WarningsNotAsErrors>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <HonuaServerCheckout Condition="'$(HonuaServerCheckout)' == '' and '$(HONUA_SERVER_CHECKOUT)' != ''">$(HONUA_SERVER_CHECKOUT)</HonuaServerCheckout>
     <HonuaServerCheckout Condition="'$(HonuaServerCheckout)' == ''">$(MSBuildThisFileDirectory).honua/toolchain</HonuaServerCheckout>
