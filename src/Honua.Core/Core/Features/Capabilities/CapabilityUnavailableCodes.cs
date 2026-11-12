@@ -66,8 +66,8 @@ public static class CapabilityUnavailableCodes
 
     public const string WorkflowDefinitionStoreRemediation =
         "Publish to a target other than Schedule, or set ConnectionStrings__Redis to a reachable " +
-        "Redis instance that the licence entitles ('caching.redis') and restart the server; the " +
-        "durable workflow definition store is composed only with that connection.";
+        "Redis instance and restart the server; the durable workflow definition store is composed " +
+        "only with that connection.";
 
     public const string WorkflowDefinitionStoreRemediationRef =
         "https://honua.io/docs/guides/deploy/docker-compose/#redis-is-optional-postgis-is-not";

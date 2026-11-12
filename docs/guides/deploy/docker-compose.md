@@ -213,10 +213,9 @@ system database (`ConnectionStrings__DefaultConnection`) also holds the governed
 control plane and durable jobs: operation proposals and approvals, operation
 records, geoprocessing jobs and their queue, imports, and tile and export jobs.
 
-Redis is optional. One feature still needs it: publishing a workflow package to
-a Schedule target. Its durable workflow definition store is composed only with a
-Redis connection (`ConnectionStrings__Redis`) that the licence entitles
-(`caching.redis`). Without one, the publication is refused with a typed
+Redis is optional. Publishing a workflow package to a Schedule target still
+needs it: the durable workflow definition store is composed only with a Redis
+connection (`ConnectionStrings__Redis`). Without one, the publication is refused with a typed
 `dependency-unavailable` receipt naming `workflow-definition-store`, and no
 publication record is written. Publish to another target, or configure Redis.
 
