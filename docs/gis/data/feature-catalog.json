@@ -1145,6 +1145,22 @@
       "capability": "ai.mcp-discovery"
     },
     {
+      "id": "get-admin-auth-callback",
+      "route": "/admin/auth/callback",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.BrowserCallback_ExchangesCodeAndRedirectsToStoredConsolePath",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.BrowserCallback_InvalidProviderResponse_DoesNotAuthenticate",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.BrowserCallback_WithoutPendingSession_IsRejected"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "identity.oidc"
+    },
+    {
       "id": "get-admin-services-foldername-servicename-servicetype",
       "route": "/admin/services/{folderName}/{serviceName}.{serviceType}",
       "method": "GET",
@@ -1532,6 +1548,21 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "get-api-v1-admin-auth-csrf",
+      "route": "/api/v1/admin/auth/csrf",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_RequiresHttps",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_WithoutOidc_CreatesSecureSessionAndProtectsLogout"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "get-api-v1-admin-auth-providers-providerkey-logout-url",
       "route": "/api/v1/admin/auth/providers/{providerKey}/logout-url",
       "method": "GET",
@@ -1676,6 +1707,8 @@
         "Honua.Server.Tests.AdminEndpointTests.GetConfiguration_WhenPublicBaseUrlProvidedViaAlias_UsesEnvironmentSourceAndCurrentValue",
         "Honua.Server.Tests.AdminEndpointTests.GetConfiguration_WorkspaceEnvVarsHaveDefaults",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.IssueOperatorBearer_WithAuthenticatedSession_ReturnsForwardableBearerThatAuthorizesAdminApi",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_WithoutOidc_CreatesSecureSessionAndProtectsLogout",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordToken_AllowedOrigin_IssuesUsableBearerWithoutCookies",
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetConfig_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.Authentication_WithInvalidApiKey_ShouldReturn401",
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.Authentication_WithoutApiKey_ShouldReturn401",
@@ -6403,6 +6436,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_WithoutOidc_CanAccessStudio",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.ReplayProtectionEnabled_BearerReusedOnHttpApi_IsAdmittedWithinLifetimeAndReplaysAcrossSurfaces",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpModernBearerAuthenticationTests.Get_OrdinaryHttpWithModernHeaders_RefusesModernToken",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpModernBearerAuthenticationTests.ReplayProtectionEnabled_BearerReuse_IsAllowedOnlyWithinTheSameModernSurface",
@@ -16559,7 +16593,8 @@
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.AdminApi_WithForgedOperatorBearer_IsRejected",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.IssueOperatorBearer_WhenFeatureNotConfigured_ReturnsServiceUnavailable",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.IssueOperatorBearer_WithAuthenticatedSession_ReturnsForwardableBearerThatAuthorizesAdminApi",
-        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.IssueOperatorBearer_WithoutAuthenticatedSession_ReturnsUnauthorized"
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.IssueOperatorBearer_WithoutAuthenticatedSession_ReturnsUnauthorized",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_WithoutOidc_IssuesBearerWithDurableMcpIdentity"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -16582,6 +16617,22 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "post-api-v1-admin-auth-password-token",
+      "route": "/api/v1/admin/auth/password-token",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordToken_AllowedOrigin_IssuesUsableBearerWithoutCookies",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordToken_InvalidPassword_IsUnauthorized",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordToken_UntrustedRequest_IsRejected"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "post-api-v1-admin-auth-providers-providerkey-authorize-url",
       "route": "/api/v1/admin/auth/providers/{providerKey}/authorize-url",
       "method": "POST",
@@ -16589,6 +16640,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.BrowserCallback_ExchangesCodeAndRedirectsToStoredConsolePath",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.BrowserCallback_InvalidProviderResponse_DoesNotAuthenticate",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.BrowserCallback_UnlistedReturnPath_IsRejected",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.CreateAuthorizeUrl_InProductionWithoutConfiguredPublicBaseUrl_ReturnsServiceUnavailable",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.CreateAuthorizeUrl_NoOidcConfigured_ReturnsNotFound",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.CreateAuthorizeUrl_SetsHttpOnlyPendingSessionCookie",
@@ -16613,6 +16667,27 @@
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.RequestToken_WithInvalidGrantType_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.RequestToken_WithMismatchedPkceState_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.RequestToken_WithoutPkceCookies_ReturnsBadRequest"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "post-api-v1-admin-auth-session",
+      "route": "/api/v1/admin/auth/session",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_InvalidPassword_IsUnauthorized",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_RequiresHttps",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_WithDifferentOrigin_IsRejected",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_WithInvalidCsrfToken_IsRejected",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_WithoutCsrf_IsRejected",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_WithoutOidc_CanAccessStudio",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_WithoutOidc_CreatesSecureSessionAndProtectsLogout",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_WithoutOidc_IssuesBearerWithDurableMcpIdentity"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -20550,6 +20625,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.McpPublishService_CompletedPublication_ReturnedResourceIsReadableByFreshClient",
         "Honua.Server.Tests.Admin.McpPublishedServicePostgresDurabilityTests.PublishTwice_QueuedCompletionAndHostRestart_ReadPersistedGraphAtExactUri",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.PasswordSignIn_WithoutOidc_IssuesBearerWithDurableMcpIdentity",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.ProposalEvidenceSecurityJourneyTests.EvidenceBoundProposal_BootstrapAdminIsRejectedBeforePersistence",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.ProposalEvidenceSecurityJourneyTests.FullProposalEvidenceJourney_EmitsExactDenominator_WithZeroSkippedScenarios",
         "Honua.Server.Tests.Features.Infrastructure.MultiTenancy.TenantDenialContractMatrixTests.TenantDenial_McpNotification_SuppressesJsonRpcResponseWithoutHandlerSideEffects",

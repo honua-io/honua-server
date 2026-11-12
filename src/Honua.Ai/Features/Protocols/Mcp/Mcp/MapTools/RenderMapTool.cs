@@ -42,8 +42,8 @@ internal sealed class RenderMapTool : IMcpTool
         Description = "Render a map image (PNG) for one or more published layers over a bbox. Layers draw bottom-to-top. Width/height are capped at 1024 px. "
             + "By default the result is a fetchable artifact reference (resource_link href) with the image dimensions and byte size in text — NOT an inline base64 image — so a multi-megabyte render never floods the model context. "
             + "Set maxInlineBytes to opt into inlining the base64 PNG when the encoded image is at or below that size. "
-            + "Each layer renders with its currently applied style (the primary style bound by honua_apply_style_preset; discover presets with honua_get_style), or its stored default style when none is applied. "
-            + "Each entry in layers reports styleId and styleRendering: 'applied' (the applied style was drawn), 'default' (no applied style; stored default drawn), or 'unsupported-style-construct' (unsupportedStyleConstructs lists what was not drawn; the server rasterizes MapLibre fill, line, and circle layers). "
+            + "Each layer renders with its currently applied style (the primary style bound by honua_apply_style_preset; discover presets with honua_get_style), or, when none is applied, its saved layer presentation (drawingInfo override) or else its stored default style. "
+            + "Each entry in layers reports styleId and styleRendering: 'applied' (the applied style was drawn), 'default' (no applied style; the saved layer presentation or stored default drawn), or 'unsupported-style-construct' (unsupportedStyleConstructs lists what was not drawn; the server rasterizes MapLibre fill, line, and circle layers). "
             + "To render analysis results as a styled map: run the analysis, then honua_publish_result to promote the result to a serviceId/serviceLayerIndex, then optionally honua_apply_style_preset, then render that layer here.",
         InputSchema = MapToolSchemas.RenderMapArgumentSchema,
         OutputSchema = McpToolOutputSchemas.RenderMapOutputSchema,

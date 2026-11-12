@@ -189,8 +189,8 @@ public sealed class McpRegistryCompositionTests
         const int ExpectedManifestTools = 72;
         const int ExpectedRosterAdditions = 7;
         const int ExpectedPublishedTools = ExpectedManifestTools + ExpectedRosterAdditions;
-        const int ExpectedExclusions = 15;
-        const string ExpectedExclusionDigest = "62eb9da003bacee33a5972b31527e5a7c964a8f60308414a33ce6087eb4efae2";
+        const int ExpectedExclusions = 18;
+        const string ExpectedExclusionDigest = "4b8e74902239822013532dac7eb7cae22e9c47e5c297ebb36741b27be7090196";
 
         await using var provider = BuildProductionOperationsComposition(new Dictionary<string, string?>());
         var surface = BuildOperationsSurface(provider);
