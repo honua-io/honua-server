@@ -11,6 +11,8 @@ from solution_projects import solution_projects
 project_closure = import_module('test-projects').closure
 
 SERVER = "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
+COLLECTOR = "tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj"
+SERVER_ROOTS = {SERVER, COLLECTOR}
 
 
 def partition(root: Path, source: Path | None, group: str) -> list[str]:
@@ -29,10 +31,12 @@ def partition(root: Path, source: Path | None, group: str) -> list[str]:
         if not projects <= members:
             raise ValueError("Analyzer filter contains unknown solution projects")
     if group == "server":
-        needed = SERVER in projects or any(SERVER in project_closure(root, project) for project in projects)
-        return [SERVER] if needed else []
+        selected = projects & SERVER_ROOTS
+        if any(SERVER in project_closure(root, project) for project in projects):
+            selected.add(SERVER)
+        return sorted(selected)
     if group == "other":
-        return sorted(projects - {SERVER})
+        return sorted(projects - SERVER_ROOTS)
     raise ValueError(f"Unknown analyzer root partition: {group}")
 
 

@@ -464,7 +464,11 @@ public sealed class ConfigurationDocumentationService
                 BuildProperty("ForwardedHeaders:ForwardLimit", "ForwardedHeaders__ForwardLimit", "integer",
                     "Maximum number of forwarded entries to process", 1),
                 BuildProperty("ForwardedHeaders:KnownProxies", "ForwardedHeaders__KnownProxies__0", "string",
-                    "Trusted proxy IP addresses for forwarded headers", null)
+                    "Trusted proxy IP addresses for forwarded headers", null),
+                BuildProperty("ForwardedHeaders:KnownNetworks", "ForwardedHeaders__KnownNetworks__0", "string",
+                    "Trusted proxy networks (CIDR) for forwarded headers", null),
+                BuildProperty("ForwardedHeaders:ProtoHeaderName", "ForwardedHeaders__ProtoHeaderName", "string",
+                    "Header carrying the client scheme (default X-Forwarded-Proto)", null)
             ]
         };
     }
@@ -954,6 +958,8 @@ public sealed class ConfigurationDocumentationService
             new() { Name = "ForwardedHeaders__Enabled", ConfigPath = "Networking", Description = "Enable forwarded headers", Default = "false", Example = "true" },
             new() { Name = "ForwardedHeaders__ForwardLimit", ConfigPath = "Networking", Description = "Forwarded headers limit", Default = "1", Example = "2" },
             new() { Name = "ForwardedHeaders__KnownProxies__0", ConfigPath = "Networking", Description = "First trusted proxy IP", Required = false, Example = "10.0.0.10" },
+            new() { Name = "ForwardedHeaders__KnownNetworks__0", ConfigPath = "Networking", Description = "First trusted proxy network (CIDR)", Required = false, Example = "10.0.0.0/16" },
+            new() { Name = "ForwardedHeaders__ProtoHeaderName", ConfigPath = "Networking", Description = "Header carrying the client scheme", Default = "X-Forwarded-Proto", Example = "CloudFront-Forwarded-Proto" },
 
             // File storage secrets
             new() { Name = "FileStorage__AwsS3__AccessKeyId", ConfigPath = "FileStorage", Description = "AWS S3 access key id", Required = false, Example = "env:HONUA_S3_KEY_ID" },
