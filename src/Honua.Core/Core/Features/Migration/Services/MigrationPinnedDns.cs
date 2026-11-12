@@ -14,8 +14,33 @@ internal readonly record struct MigrationServiceUrlPolicy(
     string DisallowedAddressMessage,
     string ConnectionFailureMessage);
 
+internal sealed record MigrationPinnedDnsClient(
+    MigrationServiceUrlPolicy Policy,
+    AsyncLocal<bool> UnsafeLocalUrlsAllowed,
+    int MaxConnectionsPerServer);
+
 internal static class MigrationPinnedDns
 {
+    internal static Func<string, CancellationToken, Task<IPAddress[]>> SystemHostAddressResolver { get; }
+        = (host, cancellationToken) => Dns.GetHostAddressesAsync(host, cancellationToken);
+
+    // Redirects are never followed and every connection re-resolves and re-checks the host,
+    // so DNS cannot change between URL validation and the socket.
+    // The unsafe-local switch is read for each connection, not when the shared handler is built.
+    internal static SocketsHttpHandler CreateHandler(
+        MigrationPinnedDnsClient client,
+        Func<string, CancellationToken, Task<IPAddress[]>>? hostAddressResolver)
+    {
+        var resolver = hostAddressResolver ?? SystemHostAddressResolver;
+        return new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            MaxConnectionsPerServer = client.MaxConnectionsPerServer,
+            ConnectCallback = (context, cancellationToken) =>
+                ConnectAsync(context, resolver, client.UnsafeLocalUrlsAllowed.Value, client.Policy, cancellationToken)
+        };
+    }
+
     internal static Uri ValidateServiceUri(string serviceUrl, bool allowUnsafeLocalUrls, MigrationServiceUrlPolicy policy)
     {
         if (!Uri.TryCreate(serviceUrl, UriKind.Absolute, out var uri) ||

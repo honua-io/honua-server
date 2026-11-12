@@ -48,13 +48,13 @@ internal sealed partial class GeoServicesRestClient
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _hostAddressResolver = hostAddressResolver ?? ((host, ct) => Dns.GetHostAddressesAsync(host, ct));
+        _hostAddressResolver = hostAddressResolver ?? MigrationPinnedDns.SystemHostAddressResolver;
     }
 
     internal static HttpMessageHandler CreatePinnedDnsHttpMessageHandler(
         Func<string, CancellationToken, Task<IPAddress[]>>? hostAddressResolver = null)
     {
-        var resolver = hostAddressResolver ?? ((host, ct) => Dns.GetHostAddressesAsync(host, ct));
+        var resolver = hostAddressResolver ?? MigrationPinnedDns.SystemHostAddressResolver;
 
         return new PinnedDnsConnector(resolver, PinnedConnectionFailures).CreateHandler(MaxConnectionsPerArcGisHost);
     }
