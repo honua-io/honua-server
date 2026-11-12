@@ -29,14 +29,29 @@ remote_branch="${remote_branch%%[[:space:]]*}"
 source_sha="$(git rev-parse HEAD)"
 remote_trunk="$(git ls-remote --exit-code origin refs/heads/trunk)"
 remote_trunk="${remote_trunk%%[[:space:]]*}"
+# A first attempt on trunk publishes on its validated source even if trunk has
+# moved: the PR is an ordinary branch behind trunk, PR Gate tests the merge, and
+# generated-only admission (base == source) falls back to the full checks.
+# Ordering: GitHub replaces a pending run in this concurrency group with the
+# newer trigger, so a first attempt never runs after a newer one. A rerun
+# (attempt > 1) or a local run can replay an old SHA after a newer publisher,
+# and a dispatch on another ref never validated trunk, so those refuse.
 if [[ "$source_sha" != "$remote_trunk" ]]; then
-  echo "Validated source $source_sha; trunk is now $remote_trunk. No stale projections published."
-  if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-    echo 'stale_source=true' >> "$GITHUB_OUTPUT"
+  if [[ "${GITHUB_RUN_ATTEMPT:-}" != 1 || "${GITHUB_REF:-}" != refs/heads/trunk ]]; then
+    echo "Validated source $source_sha; trunk is now $remote_trunk. No stale projections published (rerun, local run or non-trunk ref)."
+    exit 0
   fi
-  exit 0
+  # Output that trunk already carries (a merged automation PR, an author's
+  # regeneration) must not reopen as a no-op or a textual merge of projections.
+  git fetch --quiet --no-tags --depth=1 origin refs/heads/trunk
+  if git diff --quiet FETCH_HEAD -- "${GENERATED_FILES[@]}"; then
+    echo "Trunk $(git rev-parse FETCH_HEAD) already carries these projections; nothing to publish."
+    exit 0
+  fi
+  echo "Validated source $source_sha; trunk is now $remote_trunk. Publishing on the validated source; PR Gate checks the merge."
 fi
-# Even a clean old checkout may miss drift introduced by the new trunk.
+# A clean source can still miss drift introduced by newer trunk commits; the
+# next nightly run picks that up.
 if git diff --quiet HEAD -- "${GENERATED_FILES[@]}"; then
   echo 'Generated files are up to date; nothing to publish.'
   exit 0
@@ -63,8 +78,7 @@ git -c user.name='Mike McDougall' \
 # allowlist -- that is exactly how a disguised trunk push would read. Keep
 # this literal in sync with `branch` above by hand.
 # Use the lease captured before the freshness observation. This is a CAS of
-# the automation branch, not a lock on trunk. A stale nightly source schedules
-# a bounded fresh-head retry through the same reviewed maintenance path.
+# the automation branch, not a lock on trunk.
 # Credentials are resolved only for this push and never stored by checkout.
 git -c credential.helper= -c 'credential.helper=!gh auth git-credential' \
   push --force-with-lease="refs/heads/automation/regenerate-generated-files:${remote_branch}" \
