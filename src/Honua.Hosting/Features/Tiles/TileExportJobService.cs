@@ -183,6 +183,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
                         RequiresExclusiveLease = false
                     },
                     AdmissionCostWeight = costWeight,
+                    AdmissionRatePrincipal = principalId,
                     Spec = spec
                 };
 
