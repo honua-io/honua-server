@@ -227,10 +227,10 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
                 lease.Renewed();
             }
         }
-        // Intentionally broad once the pass has finished: a renewal cut short by the pass ending
-        // must not replace the pass's own outcome.
         catch (Exception ex) when (ex is not OutOfMemoryException && passFinished.IsCancellationRequested)
         {
+            // Intentionally broad once the pass has finished: a renewal cut short by the pass
+            // ending must not replace the pass's own outcome.
         }
         // Intentionally broad: a renewal that cannot answer cannot show leadership either, so the
         // pass stops instead of the failure surfacing after it.
