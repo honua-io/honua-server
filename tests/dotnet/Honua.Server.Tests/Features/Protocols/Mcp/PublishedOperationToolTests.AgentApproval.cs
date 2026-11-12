@@ -62,8 +62,9 @@ public sealed partial class PublishedOperationToolTests
 
         var result = await tool.InvokeAsync(http, Args("""{"serviceName":"roads","allowAnonymous":true}"""), default);
 
-        result.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("RequiresApproval");
-        result.StructuredContent.Value.GetProperty("proposalId").GetString().Should().Be("proposal-6662");
+        var content = result.StructuredContent!.Value;
+        content.GetProperty("status").GetString().Should().Be("RequiresApproval");
+        content.GetProperty("proposalId").GetString().Should().Be("proposal-6662");
         bridge.Calls.Should().Be(1);
         executor.SubmitCount.Should().Be(0);
     }
