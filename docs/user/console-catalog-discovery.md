@@ -58,9 +58,10 @@ The existing registry, detail and item routes remain under
 `/api/v1/console/catalog-endpoints/{workspaceId}`. An unmapped workspace, absent
 tenant context, or tenant mismatch returns the existing 404 contract. A configured
 workspace with no visible published entries returns an empty registry. Setting
-`MultiTenancy:Enabled=false` leaves requests without a tenant and consequently does
-not expose these mapped registries. Configure tenant resolution explicitly; do not
-use workspace mappings to infer a tenant.
+`MultiTenancy:Enabled=false` (the default) resolves requests to
+`MultiTenancy:DefaultTenantId` (`public` by default), exposing mapped registries for
+that deployment tenant. Enable multi-tenancy explicitly to resolve tenants from
+identity claims; do not use workspace mappings to infer a tenant.
 
 This first projection reports only real FeatureServer/MapServer directory entries,
 with detail and item fields derived from those entries. It does not populate
