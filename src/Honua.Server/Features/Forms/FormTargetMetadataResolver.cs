@@ -20,7 +20,12 @@ internal sealed class FormTargetMetadataResolver(IMetadataV2GraphProvider metada
         }
 
         var snapshot = await metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var service = ResolveService(snapshot, target.ServiceId);
+        return Resolve(snapshot, target);
+    }
+
+    internal static FormTargetMetadataResolution Resolve(MetadataV2GraphSnapshot snapshot, FormTargetDefinition target)
+    {
+        var service = snapshot.FindServiceByNameOrId(target.ServiceId);
         if (service is null)
         {
             return default;
@@ -44,20 +49,5 @@ internal sealed class FormTargetMetadataResolver(IMetadataV2GraphProvider metada
             : snapshot.ResolveStorageLayerId(publication);
 
         return new FormTargetMetadataResolution(service, publication, resource, storageLayerId);
-    }
-
-    private static MetadataV2Service? ResolveService(MetadataV2GraphSnapshot snapshot, string serviceId)
-    {
-        if (snapshot.Index.ServicesByName.TryGetValue(serviceId, out var byName))
-        {
-            return byName;
-        }
-
-        if (snapshot.Index.ServicesById.TryGetValue(serviceId, out var byId))
-        {
-            return byId;
-        }
-
-        return null;
     }
 }
