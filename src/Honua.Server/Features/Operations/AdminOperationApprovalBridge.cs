@@ -125,9 +125,9 @@ internal sealed partial class AdminOperationApprovalBridge(
     private static CapabilityUnavailableException ControlPlaneUnavailable()
         => new(
             CapabilityUnavailableCodes.DurableControlPlaneDetail,
-            CapabilityUnavailableCodes.RedisDependency,
-            CapabilityUnavailableCodes.RedisRemediation,
-            CapabilityUnavailableCodes.RedisRemediationRef,
+            CapabilityUnavailableCodes.SystemDatabaseDependency,
+            CapabilityUnavailableCodes.SystemDatabaseRemediation,
+            CapabilityUnavailableCodes.SystemDatabaseRemediationRef,
             CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
 
     private static OperationApprovalBridgeResult Failure(string reason) => new()

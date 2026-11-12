@@ -255,7 +255,7 @@ public sealed class LayerPublishRemoteRunnerTests
             {
                 ["AWS_LAMBDA_FUNCTION_NAME"] = frozen ? "api" : null,
             }).Build());
-            services.Configure<DurableJobSubstrateOptions>(options => { options.RedisConfigured = durable; options.RedisEntitled = durable; });
+            services.Configure<DurableJobSubstrateOptions>(options => options.SystemDatabaseConfigured = durable);
             services.Configure<LayerPublishingOptions>(options => options.AsyncPublishRowThreshold = 10000);
             services.Configure<ControlPlaneOptions>(options =>
             {

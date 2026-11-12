@@ -122,7 +122,6 @@ if replicas <= 1:
 require(multi, "config.env.Deployment__Mode", "MultiNode", "multi-node")
 require(multi, "autoscaling.enabled", "true", "multi-node")
 require(multi, "strategy.type", "Recreate", "multi-node")
-require(multi, "config.env.Cache__EnableFallback", "false", "multi-node")
 provider = multi.get("config.env.FileStorage__Provider")
 if provider not in {"AwsS3", "AzureBlob"}:
     fail("multi-node FileStorage__Provider must be AwsS3 or AzureBlob")

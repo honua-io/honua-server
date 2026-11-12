@@ -72,6 +72,7 @@ public sealed class AdminAuthClaimInfo
 
 internal sealed class AdminAuthAuthorizeUrlRequest
 {
+    public string? ReturnTo { get; init; }
 }
 
 internal sealed class AdminAuthAuthorizeUrlResponse
@@ -127,4 +128,14 @@ internal sealed class AdminAuthOidcDiscoveryDocument
 
     [System.Text.Json.Serialization.JsonPropertyName("end_session_endpoint")]
     public string? EndSessionEndpoint { get; init; }
+}
+
+internal sealed class AdminPasswordSignInRequest
+{
+    public string? Password { get; init; }
+}
+
+internal sealed class AdminCsrfResponse
+{
+    public required string RequestToken { get; init; }
 }

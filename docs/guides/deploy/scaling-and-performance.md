@@ -14,6 +14,8 @@ You'll size the database admission limits, size the per-replica cache, scale Hon
 
 1. Size database admission. Honua gates concurrent queries and pools connections per replica; keep the total under the database's `max_connections` with headroom (`max_connections >= pool_size × replicas + headroom`).
 
+   When you set `Deployment__MaxTasks` and `Database__InstanceClass` (or `Database__MaxConnections`), Honua does this for you: each task's pool maximum becomes 80% of the database limit divided by two pools per task and by the task count, the idle floor drops to 2, and concurrent queries are capped at the pool size. Values you set under `Limits__Connections__` still win. Two tasks on `db.t4g.small` get 36 connections per pool.
+
 ```bash
 Limits__Connections__MaxConnectionPoolSize=100
 Limits__Connections__MaxConcurrentQueries=200

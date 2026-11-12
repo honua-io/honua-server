@@ -63,6 +63,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     private string? _seedProfile;
     private IServiceScope? _serviceScope;
     private string? _serviceOverrideScopeId;
+    private WebAppFixture? _schemaOwner;
 
     /// <summary>
     /// Test service ID used for testing operations.
@@ -186,6 +187,12 @@ public sealed class WebAppFixture : IAsyncLifetime
 
         // Create and seed the fixture schema before the host is built so the host can
         // configure it as an operational schema (#5391). Seeding touches only the database.
+        if (_schemaOwner is not null)
+        {
+            _currentSchema = _schemaOwner.CurrentSchema
+                ?? throw new InvalidOperationException("The schema owner must be initialized before a host shares its schema.");
+        }
+
         if (string.IsNullOrWhiteSpace(_currentSchema))
         {
             _currentSchema = await postgres.CreateIsolatedSchemaAsync(nameof(WebAppFixture));
@@ -518,7 +525,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     {
         try
         {
-            if (_currentSchema is not null && _postgres is not null)
+            if (_currentSchema is not null && _postgres is not null && _schemaOwner is null)
             {
                 await _postgres.DropSchemaAsync(_currentSchema);
             }
@@ -598,6 +605,17 @@ public sealed class WebAppFixture : IAsyncLifetime
         _configureWebHost = _configureWebHost == null
             ? configureEnvironment
             : _configureWebHost + configureEnvironment;
+        return this;
+    }
+
+    /// <summary>
+    /// Runs this isolated host on another fixture's database schema, as a second task of one
+    /// deployment would. The owner must be initialized first and keeps the schema's lifetime.
+    /// </summary>
+    public WebAppFixture ShareSchemaWith(WebAppFixture owner)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        _schemaOwner = owner;
         return this;
     }
 

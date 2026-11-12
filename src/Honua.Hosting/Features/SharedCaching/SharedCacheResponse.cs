@@ -79,6 +79,18 @@ internal static class SharedCacheResponse
         AddMissingVary(context.Response, VaryFor(cacheClass));
     }
 
+    // The lifetime the CDN is given for this response, whether or not this request turns out to qualify for sharing.
+    internal static TimeSpan? SharedLifetime(HttpContext context)
+    {
+        if (DeclaredClass(context) is not { } cacheClass)
+        {
+            return null;
+        }
+
+        var options = context.RequestServices?.GetService<IOptionsMonitor<SharedCacheOptions>>()?.CurrentValue ?? ProductDefaults;
+        return TimeSpan.FromSeconds(Math.Max(0, ResolveLifetime(context, cacheClass, options).SharedMaxAgeSeconds));
+    }
+
     internal static ResponseCacheClass? DeclaredClass(HttpContext context)
         => context.GetEndpoint()?.Metadata.GetMetadata<SharedCacheClassMetadata>()?.CacheClass;
 
