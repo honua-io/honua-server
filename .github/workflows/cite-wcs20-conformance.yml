@@ -1,10 +1,6 @@
 name: OGC WCS 2.0 CITE Conformance Tests
 
 on:
-  # Tier: nightly — conformance suites are external and heavyweight.
-  # This workflow is intentionally manual/scheduled only and is not a PR/push gate.
-  schedule:
-    - cron: '30 7 * * 3'
   workflow_dispatch:
     inputs:
       profile:
@@ -18,18 +14,31 @@ on:
           - extensions
           - full
 
+  workflow_call:
+    inputs:
+      profile:
+        required: false
+        type: string
+        default: core
+      server_image:
+        required: false
+        type: string
+        default: ''
+      source_sha:
+        required: false
+        type: string
+        default: ''
+
 permissions:
   contents: read
   packages: write
-
-concurrency:
-  group: cite-wcs20-conformance-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   cite:
     uses: ./.github/workflows/cite-conformance-common.yml
     with:
+      honua-image: ${{ inputs.server_image || '' }}
+      tested-honua-git-sha: ${{ inputs.server_image != '' && inputs.source_sha || github.sha }}
       suite: wcs20
       display-name: WCS 2.0
       runner-script: ./scripts/conformance/cite/run-cite-wcs20-tests.sh
