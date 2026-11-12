@@ -159,18 +159,22 @@ jobs:
           dotnet list Honua.sln package --vulnerable "${include_flag[@]}" \
             --source https://api.nuget.org/v3/index.json --format json > vulnerability-report.json
 
-          # High/Critical fail; Moderate/Low are reported only. Advisories with no upstream
-          # fix are risk-accepted once, as <NuGetAuditSuppress> in Directory.Build.props,
-          # and the parser reads that list rather than keeping a copy here.
+          # High/Critical are annotated and open the tracking issue below; Moderate/Low are
+          # reported only. Advisories never fail the job (a newly published advisory is
+          # dependency work, not a broken build); an unreadable report (exit 2) still does.
+          # Advisories with no upstream fix are risk-accepted once, as <NuGetAuditSuppress>
+          # in Directory.Build.props, and the parser reads that list rather than keeping a
+          # copy here.
           status=0
           python3 scripts/ci/check-nuget-vulnerabilities.py vulnerability-report.json \
             --props Directory.Build.props --summary-json vulnerability-summary.json || status=$?
 
           if [ "$status" -eq 1 ]; then
             echo "vulnerable_packages=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "vulnerable_packages=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::High/Critical NuGet advisories found; see the annotations and the vulnerability report artifact."
+            exit 0
           fi
+          echo "vulnerable_packages=false" >> "$GITHUB_OUTPUT"
           exit "$status"
 
       - name: Upload vulnerability report
