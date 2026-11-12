@@ -30,13 +30,12 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
     public AnthropicStudioAiProxyAdapter(
         IHttpClientFactory httpClientFactory,
         StudioAiProxyApiKeyResolver apiKeyResolver,
-        ILogger<AnthropicStudioAiProxyAdapter> logger,
-        TimeProvider? timeProvider = null)
+        ILogger<AnthropicStudioAiProxyAdapter> logger)
     {
         _httpClientFactory = httpClientFactory;
         _apiKeyResolver = apiKeyResolver;
         _logger = logger;
-        _continuations = new AnthropicContinuationStore(timeProvider ?? TimeProvider.System);
+        _continuations = new AnthropicContinuationStore(TimeProvider.System);
     }
 
     public string Kind => StudioAiProxyConfiguration.AnthropicKind;
