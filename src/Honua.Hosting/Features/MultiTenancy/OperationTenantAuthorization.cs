@@ -20,11 +20,18 @@ internal static class OperationTenantAuthorization
         }
 
         var tenant = context.RequestServices.GetService<ITenantContext>();
-        return string.IsNullOrWhiteSpace(ownerTenantId)
-            ? string.IsNullOrWhiteSpace(tenant?.TenantId)
-                || (!options.Enabled
-                    && tenant?.Source == TenantContextSource.Default
-                    && string.Equals(tenant.TenantId, options.DefaultTenantId, StringComparison.Ordinal))
-            : string.Equals(ownerTenantId, tenant?.TenantId, StringComparison.Ordinal);
+        if (!string.IsNullOrWhiteSpace(ownerTenantId))
+        {
+            return string.Equals(ownerTenantId, tenant?.TenantId, StringComparison.Ordinal);
+        }
+
+        if (tenant is null || string.IsNullOrWhiteSpace(tenant.TenantId))
+        {
+            return true;
+        }
+
+        return !options.Enabled
+            && tenant.Source == TenantContextSource.Default
+            && string.Equals(tenant.TenantId, options.DefaultTenantId, StringComparison.Ordinal);
     }
 }
