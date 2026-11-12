@@ -64,8 +64,12 @@ class OwnedServerTests(unittest.TestCase):
             self.assertEqual(allocation(path, {"CI": "true"}), {"HTTP_PORT": "9000"})
 
     def test_inaccessible_process_descriptors_fail_explicitly(self):
-        if os.access("/proc/1/fd", os.R_OK):
-            self.skipTest("PID 1 descriptors are readable for this user")
+        try:
+            next(Path("/proc/1/fd").iterdir(), None)
+        except PermissionError:
+            pass
+        else:
+            self.skipTest("PID 1 descriptors can be listed by this runner (ptrace access, not mode bits, decides)")
         with self.assertRaisesRegex(RuntimeError, "cannot be inspected"):
             OWNED.process_ports.process_owns_listener(1, 23456)
 
