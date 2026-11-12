@@ -4,6 +4,7 @@
 using System.Buffers;
 using System.Text.Json;
 using Honua.ControlPlane;
+using Honua.Core.Features.Realtime;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -74,6 +75,100 @@ internal sealed class PostgresRealtimeEventLog(JobStoreDatabase database) : IExp
                 command.Parameters.Add(new NpgsqlParameter("families", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = families });
                 command.Parameters.Add(new NpgsqlParameter("retentions", NpgsqlDbType.Array | NpgsqlDbType.Interval) { Value = intervals });
                 return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+            },
+            StatementRepeat.SafeToRepeat,
+            cancellationToken);
+    }
+
+    // The head of every logged family: one probe per wake-up.
+    public Task<IReadOnlyDictionary<string, long>> ReadHeadsAsync(CancellationToken cancellationToken)
+        => database.ExecuteAsync<IReadOnlyDictionary<string, long>>(
+            async (connection, _, token) =>
+            {
+                await using var command = new NpgsqlCommand($"SELECT family, head FROM {_heads}", connection);
+                await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
+                var heads = new Dictionary<string, long>(StringComparer.Ordinal);
+                while (await reader.ReadAsync(token).ConfigureAwait(false))
+                {
+                    heads[reader.GetString(0)] = reader.GetInt64(1);
+                }
+
+                return heads;
+            },
+            StatementRepeat.SafeToRepeat,
+            cancellationToken);
+
+    // Up to limit events of family after the given sequence, in order; scopeKeys, when not empty,
+    // keeps only those scopes.
+    public Task<IReadOnlyList<RealtimeEvent>> ReadAfterAsync(
+        string family,
+        long after,
+        IReadOnlyCollection<string>? scopeKeys,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(family);
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        var scoped = scopeKeys is { Count: > 0 };
+        var realtimeFamily = new RealtimeFamily(family);
+        return database.ExecuteAsync<IReadOnlyList<RealtimeEvent>>(
+            async (connection, _, token) =>
+            {
+                await using var command = new NpgsqlCommand(
+                    $"""
+                    SELECT seq, scope_key, kind, payload::text, created_at FROM {_events}
+                    WHERE family = @family AND seq > @after{(scoped ? " AND scope_key = ANY(@scopes)" : string.Empty)}
+                    ORDER BY seq LIMIT @limit
+                    """,
+                    connection);
+                command.Parameters.Add(new NpgsqlParameter("family", NpgsqlDbType.Text) { Value = family });
+                command.Parameters.Add(new NpgsqlParameter("after", NpgsqlDbType.Bigint) { Value = after });
+                command.Parameters.Add(new NpgsqlParameter("limit", NpgsqlDbType.Integer) { Value = limit });
+                if (scoped)
+                {
+                    command.Parameters.Add(new NpgsqlParameter("scopes", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = scopeKeys!.ToArray() });
+                }
+
+                await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
+                var events = new List<RealtimeEvent>();
+                while (await reader.ReadAsync(token).ConfigureAwait(false))
+                {
+                    using var payload = JsonDocument.Parse(reader.GetString(3));
+                    events.Add(new RealtimeEvent(
+                        realtimeFamily,
+                        reader.GetInt64(0),
+                        reader.GetString(1),
+                        reader.GetString(2),
+                        payload.RootElement.Clone(),
+                        reader.GetFieldValue<DateTimeOffset>(4)));
+                }
+
+                return events;
+            },
+            StatementRepeat.SafeToRepeat,
+            cancellationToken);
+    }
+
+    // The retained range of a family. With nothing retained the oldest position is head + 1.
+    public Task<RealtimeLogWindow> ReadWindowAsync(string family, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(family);
+        return database.ExecuteAsync(
+            async (connection, _, token) =>
+            {
+                await using var command = new NpgsqlCommand(
+                    $"SELECT head, (SELECT min(seq) FROM {_events} WHERE family = @family) FROM {_heads} WHERE family = @family",
+                    connection);
+                command.Parameters.Add(new NpgsqlParameter("family", NpgsqlDbType.Text) { Value = family });
+                await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
+                if (!await reader.ReadAsync(token).ConfigureAwait(false))
+                {
+                    throw new ArgumentException($"'{family}' is not a realtime event family.", nameof(family));
+                }
+
+                var head = reader.GetInt64(0);
+                var oldest = reader.IsDBNull(1) ? head + 1 : reader.GetInt64(1);
+                return new RealtimeLogWindow(new RealtimeFamily(family), oldest, head);
             },
             StatementRepeat.SafeToRepeat,
             cancellationToken);

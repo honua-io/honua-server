@@ -78,6 +78,7 @@ using Honua.Server.Features.Studio;
 using Honua.PackageReview;
 using Honua.Server.Features.Operations;
 using Honua.Server.Features.Operations.Status;
+using Honua.Server.Features.Realtime;
 using Honua.Server.Features.Streaming;
 using Honua.Server.Features.Streaming.Conformance;
 using Honua.Server.Features.WorkflowPackages;
@@ -1213,6 +1214,13 @@ builder.Services.AddHonuaProvisionerBuildJobs(builder.Configuration);
 //      (Startup/FeatureEventsAndStreamingRegistration.cs)
 builder.Services.AddHonuaFeatureEventsAndStreaming(builder.Configuration, requiresDurableDistributedEvents);
 // ---- End extracted block
+
+// ---- Cross-node realtime: event log and fan-out provider (ADR-0085)
+//      (Features/Realtime/RealtimeServiceCollectionExtensions.cs)
+builder.Services.AddRealtimeFanout(
+    builder.Configuration,
+    Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(builder.Configuration));
+// ---- End block
 builder.Services.AddCollaborationSessionTransport();
 
 // v1 manifest drift webhook dispatcher removed in #1035 cutover.
