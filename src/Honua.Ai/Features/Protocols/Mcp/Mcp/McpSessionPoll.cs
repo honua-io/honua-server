@@ -52,16 +52,10 @@ internal sealed partial class McpSessionManager : IHostedService, IAsyncDisposab
             }
         }
 
+        StopAll(_runningRequests.Keys);
+        EndSessions(_sessions.Keys.ToArray());
         await _pollLifetime.CancelAsync().ConfigureAwait(false);
-        try
-        {
-            await polling.WaitAsync(cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            StopAll(_runningRequests.Keys);
-            EndSessions(_sessions.Keys.ToArray());
-        }
+        await polling.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     internal async Task PollOnceAsync(CancellationToken cancellationToken)
@@ -106,6 +100,7 @@ internal sealed partial class McpSessionManager : IHostedService, IAsyncDisposab
         }
         catch (OperationCanceledException)
         {
+            StopAll(_runningRequests.Keys);
             // Budget expiry also needs a join: cancellation cleanup may outlive the timeout.
             await polling.ConfigureAwait(false);
             throw;
