@@ -162,6 +162,84 @@
       "rule": "dataset-reference",
       "line": "        assert publication[\"resourceId\"] == resource[\"metadata\"][\"id\"]",
       "reason": "Seed regression reads the current Metadata v2 wire key literally to verify the storage mapping and STAC declaration. Preserve that contract until the deferred vocabulary migration replaces it; no alternate key is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/CatalogCapabilitiesMetadataTests.cs",
+      "rule": "graph-resource",
+      "line": "        _fixture.UpdateV2ResourceMetadata(1, spatial: new MetadataV2ResourceSpatial",
+      "reason": "Existing canonical spatial metadata contract; vocabulary migration is deferred to rc.3."
+    },
+    {
+      "path": "src/Honua.Core/Core/Features/Metadata/Crosswalk/DescriptiveMetadataResolver.cs",
+      "rule": "graph-resource",
+      "line": "        MetadataV2Graph graph, MetadataV2Resource resource, MetadataV2Service? service, MetadataV2Publication? layer = null)",
+      "reason": "Names the current Metadata v2 graph type, which the identifiers-only vocabulary rename (2.1a) rewrites mechanically; no new retired name is introduced."
+    },
+    {
+      "path": "src/Honua.Core/Core/Features/Metadata/Crosswalk/DescriptiveMetadataResolver.cs",
+      "rule": "graph-publication",
+      "line": "        MetadataV2Graph graph, MetadataV2Resource resource, MetadataV2Service? service, MetadataV2Publication? layer = null)",
+      "reason": "Names the current Metadata v2 graph type, which the identifiers-only vocabulary rename (2.1a) rewrites mechanically; no new retired name is introduced."
+    },
+    {
+      "path": "src/Honua.Core/Core/Features/Metadata/Crosswalk/DescriptiveMetadataResolver.cs",
+      "rule": "graph-resource",
+      "line": "    public static MetadataV2ObjectMetadata GovernanceFor(MetadataV2Graph graph, MetadataV2Resource resource, MetadataV2Service? service)",
+      "reason": "Names the current Metadata v2 graph type, which the identifiers-only vocabulary rename (2.1a) rewrites mechanically; no new retired name is introduced."
+    },
+    {
+      "path": "src/Honua.Core/Core/Features/Metadata/Crosswalk/DescriptiveMetadataResolver.cs",
+      "rule": "graph-resource",
+      "line": "    private static string[] SupportedCrs(MetadataV2Resource resource)",
+      "reason": "Names the current Metadata v2 graph type, which the identifiers-only vocabulary rename (2.1a) rewrites mechanically; no new retired name is introduced."
+    },
+    {
+      "path": "src/Honua.Protocols/OData/Features/Services/ODataMetadataService.cs",
+      "rule": "graph-resource",
+      "line": "    public string GenerateMetadataDocumentV2(IEnumerable<MetadataV2Resource> resources, DescriptiveMetadata catalog)",
+      "reason": "Names the current Metadata v2 graph type, which the identifiers-only vocabulary rename (2.1a) rewrites mechanically; no new retired name is introduced."
+    },
+    {
+      "path": "src/Honua.Protocols/OData/Features/Services/ODataMetadataService.cs",
+      "rule": "graph-resource",
+      "line": "    private static string GenerateODataMetadataV2(MetadataV2Resource[] resources, DescriptiveMetadata catalog)",
+      "reason": "Names the current Metadata v2 graph type, which the identifiers-only vocabulary rename (2.1a) rewrites mechanically; no new retired name is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Crosswalk/DescriptiveMetadataResolverTests.cs",
+      "rule": "graph-publication",
+      "line": "        var layer = new MetadataV2Publication { Metadata = new MetadataV2ObjectMetadata { Id = \"layer.trails\", Name = \"trails\", Title = \"Trails (public)\" } };",
+      "reason": "Names the current Metadata v2 graph type, which the identifiers-only vocabulary rename (2.1a) rewrites mechanically; no new retired name is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.Stac.UnitTests/Source/StacResourceExtensionsTests.cs",
+      "rule": "graph-resource",
+      "line": "        var dataset = new MetadataV2Resource",
+      "reason": "Names the current Metadata v2 graph type, which the identifiers-only vocabulary rename (2.1a) rewrites mechanically; no new retired name is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.Stac.UnitTests/Source/StacResourceExtensionsTests.cs",
+      "rule": "graph-resource",
+      "line": "        new MetadataV2Resource().ResolveKeywords().Should().BeNull();",
+      "reason": "Names the current Metadata v2 graph type, which the identifiers-only vocabulary rename (2.1a) rewrites mechanically; no new retired name is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Crosswalk/CrosswalkFixtures.cs",
+      "rule": "graph-resource",
+      "line": "                new MetadataV2Resource",
+      "reason": "Names the current Metadata v2 graph type, which the identifiers-only vocabulary rename (2.1a) rewrites mechanically; no new retired name is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Crosswalk/CrosswalkFixtures.cs",
+      "rule": "graph-resource",
+      "line": "                    Spatial = new MetadataV2ResourceSpatial",
+      "reason": "Names the current Metadata v2 graph type, which the identifiers-only vocabulary rename (2.1a) rewrites mechanically; no new retired name is introduced."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Crosswalk/CrosswalkFixtures.cs",
+      "rule": "graph-resource",
+      "line": "                    Temporal = new MetadataV2ResourceTemporal",
+      "reason": "Names the current Metadata v2 graph type, which the identifiers-only vocabulary rename (2.1a) rewrites mechanically; no new retired name is introduced."
     }
   ]
 }

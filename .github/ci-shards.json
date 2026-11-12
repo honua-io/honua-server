@@ -2040,7 +2040,13 @@
         "src/Honua.Protocols/OgcClassic/Wms/",
         "src/Honua.Server/Features/StaticMap/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/MetadataV2LifecycleRoutingTests.cs",
-        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/"
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/",
+        "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/",
+        "src/Honua.Core/Core/Features/Metadata/Services/",
+        "src/Honua.Protocols/OgcClassic/CatalogCapabilitiesXml.cs",
+        "src/Honua.Protocols/OgcClassic/Wcs20/",
+        "src/Honua.Protocols/OgcClassic/Wfs20/",
+        "src/Honua.Protocols/OgcClassic/Wmts/"
       ]
     },
     {

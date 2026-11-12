@@ -91,6 +91,8 @@ public abstract class OgcClassicAuthorizationProofTestBase : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
+    protected WebAppFixture Fixture => _fixture;
+
     protected HttpClient Viewer() => CreateClient(ViewerRole);
 
     protected HttpClient Outsider() => CreateClient(OutsiderRole);

@@ -7,6 +7,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Helpers;
 using MetadataV2TemporalRange = Honua.Infrastructure.Helpers.TemporalExtentHelpers.MetadataV2TemporalRange;
 using Honua.Infrastructure.Rendering;
@@ -360,13 +361,12 @@ internal static partial class WmsRequestHandlers
         string version)
     {
         var isWms111 = IsWms111Version(version);
-        var responseVersion = isWms111 ? Wms111Version : Wms13Version;
         var crsElementName = isWms111 ? "SRS" : "CRS";
         var wmsEndpoint = BaseUrlResolver.PreserveToken(
             context.Request,
             GeoServicesServiceUrls.RequestedProtocol(context, "WMS"));
         var wmsUrlPrefix = $"{wmsEndpoint}{(wmsEndpoint.Contains('?') ? '&' : '?')}";
-        var metadataUrl = $"{wmsUrlPrefix}SERVICE=WMS&REQUEST=GetCapabilities&VERSION={responseVersion}";
+
         var serviceTitle = service.Metadata.Title ?? service.EffectivePublicName;
         var serviceAbstract = service.Metadata.Description ?? "Honua WMS service";
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
@@ -408,24 +408,11 @@ internal static partial class WmsRequestHandlers
         AppendWmsKeywords(sb, service.Metadata.Keywords
             .Prepend(service.EffectivePublicName).Prepend("OGC").Prepend("WMS"), "    ");
         AppendWmsOnlineResource(sb, "    ", wmsEndpoint, isWms111);
-        sb.AppendLine("    <ContactInformation>");
-        sb.AppendLine("      <ContactPersonPrimary>");
-        sb.AppendLine("        <ContactPerson>Honua Support</ContactPerson>");
-        sb.AppendLine("        <ContactOrganization>Honua</ContactOrganization>");
-        sb.AppendLine("      </ContactPersonPrimary>");
-        sb.AppendLine("      <ContactPosition>Support Engineer</ContactPosition>");
-        sb.AppendLine("      <ContactAddress>");
-        sb.AppendLine("        <AddressType>postal</AddressType>");
-        sb.AppendLine("        <Address>1 Honua Way</Address>");
-        sb.AppendLine("        <City>Honolulu</City>");
-        sb.AppendLine("        <StateOrProvince>HI</StateOrProvince>");
-        sb.AppendLine("        <PostCode>96815</PostCode>");
-        sb.AppendLine("        <Country>US</Country>");
-        sb.AppendLine("      </ContactAddress>");
-        sb.AppendLine("      <ContactVoiceTelephone>+1-555-0100</ContactVoiceTelephone>");
-        sb.AppendLine("      <ContactFacsimileTelephone>+1-555-0101</ContactFacsimileTelephone>");
-        sb.AppendLine("      <ContactElectronicMailAddress>support@honua.local</ContactElectronicMailAddress>");
-        sb.AppendLine("    </ContactInformation>");
+        var contact = CatalogCapabilitiesXml.WmsContact(service.Metadata);
+        if (contact is not null)
+            sb.Append("    ").AppendLine(contact.ToString());
+        sb.Append("    <Fees>").Append(EscapeXml(service.Metadata.Fees ?? string.Empty)).AppendLine("</Fees>");
+        sb.Append("    <AccessConstraints>").Append(EscapeXml(service.Metadata.AccessConstraints ?? string.Empty)).AppendLine("</AccessConstraints>");
         sb.AppendLine("  </Service>");
 
         sb.AppendLine("  <Capability>");
@@ -486,37 +473,39 @@ internal static partial class WmsRequestHandlers
         sb.AppendLine("    <Layer>");
         sb.Append("      <Title>").Append(EscapeXml(serviceTitle)).AppendLine("</Title>");
         sb.Append("      <Abstract>").Append(EscapeXml(service.Metadata.Description ?? "Honua WMS root layer")).AppendLine("</Abstract>");
-        sb.Append("      <").Append(crsElementName).AppendLine(">EPSG:4326</" + crsElementName + ">");
-        sb.Append("      <").Append(crsElementName).AppendLine(">EPSG:3857</" + crsElementName + ">");
-        if (!isWms111)
-        {
-            sb.AppendLine("      <CRS>CRS:84</CRS>");
-        }
-
+        var layerCrs = preparedLayers.Select(prepared => GetWmsCapabilitiesCrs(prepared.Layer.Resource.Spatial?.SupportedCrs, version)).ToArray();
+        var commonCrs = layerCrs.Length == 0
+            ? GetWmsCapabilitiesCrs(null, version)
+            : layerCrs.Skip(1).Aggregate(layerCrs[0], (common, next) => common.Intersect(next, StringComparer.Ordinal).ToArray());
+        foreach (var crs in commonCrs)
+            sb.Append("      <").Append(crsElementName).Append('>').Append(EscapeXml(crs))
+                .Append("</").Append(crsElementName).AppendLine(">");
+        // An empty SRS denotes no common inherited CRS in WMS 1.1.1.
+        if (isWms111 && commonCrs.Length == 0)
+            sb.AppendLine("      <SRS />");
         var rootExtent = ComputeRootWgs84Extent(preparedLayers) ?? WorldWgs84Extent;
-        await AppendWmsGeographicBoundsAsync(context, sb, rootExtent, "      ", isWms111).ConfigureAwait(false);
+        await AppendWmsGeographicBoundsAsync(sb, new(rootExtent, "      ", isWms111, []), context).ConfigureAwait(false);
 
         foreach (var prepared in preparedLayers)
         {
             var layer = prepared.Layer;
             var layerName = GetWmsLayerDisplayName(layer);
-            var resourceTitle = layer.Resource.Metadata.Title ?? layer.Resource.Metadata.Name ?? layerName;
-            var layerAbstract = layer.Resource.Metadata.Description ?? $"WMS layer {layerName}";
+            var layerMetadata = layer.Resource.Metadata;
+            var resourceTitle = layerMetadata.Title ?? layerMetadata.Name ?? layerName;
+            var layerAbstract = layerMetadata.Description ?? $"WMS layer {layerName}";
 
             sb.AppendLine("      <Layer queryable=\"1\">");
             sb.Append("        <Name>").Append(EscapeXml(layerName)).AppendLine("</Name>");
             sb.Append("        <Title>").Append(EscapeXml(resourceTitle)).AppendLine("</Title>");
             sb.Append("        <Abstract>").Append(EscapeXml(layerAbstract)).AppendLine("</Abstract>");
-            AppendWmsKeywords(sb, layer.Resource.Metadata.Keywords.Prepend(layerName), "        ");
-            sb.Append("        <").Append(crsElementName).AppendLine(">EPSG:4326</" + crsElementName + ">");
-            sb.Append("        <").Append(crsElementName).AppendLine(">EPSG:3857</" + crsElementName + ">");
-            if (!isWms111)
-            {
-                sb.AppendLine("        <CRS>CRS:84</CRS>");
-            }
+            AppendWmsKeywords(sb, layerMetadata.Keywords.Prepend(layerName), "        ");
+            var crsNames = GetWmsCapabilitiesCrs(layer.Resource.Spatial?.SupportedCrs, version);
+            foreach (var crs in crsNames.Distinct(StringComparer.OrdinalIgnoreCase))
+                sb.Append("        <").Append(crsElementName).Append('>').Append(EscapeXml(crs))
+                    .Append("</").Append(crsElementName).AppendLine(">");
 
             var layerExtent = prepared.Extent ?? rootExtent;
-            await AppendWmsGeographicBoundsAsync(context, sb, layerExtent, "        ", isWms111).ConfigureAwait(false);
+            await AppendWmsGeographicBoundsAsync(sb, new(layerExtent, "        ", isWms111, crsNames), context).ConfigureAwait(false);
 
             // Preserve the CITE fixture dimensions (elevation on cite:Lakes and
             // time on cite:Autos) alongside the dynamic dimensions advertised by
@@ -524,10 +513,15 @@ internal static partial class WmsRequestHandlers
             AppendWmsCiteDimensions(sb, layer, "        ", isWms111);
             AppendWmsTemporalDimension(sb, layer, "        ", isWms111, prepared.TemporalRanges);
 
-            sb.AppendLine("        <MetadataURL type=\"TC211\">");
-            sb.AppendLine("          <Format>text/xml</Format>");
-            AppendWmsOnlineResource(sb, "          ", metadataUrl, isWms111);
-            sb.AppendLine("        </MetadataURL>");
+            var metadataLink = layer.Resource.Metadata.Links.FirstOrDefault(link =>
+                string.Equals(link.Rel, "metadata", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(link.Href));
+            if (metadataLink is not null)
+            {
+                sb.AppendLine("        <MetadataURL type=\"TC211\">");
+                sb.Append("          <Format>").Append(EscapeXml(metadataLink.Type ?? "application/xml")).AppendLine("</Format>");
+                AppendWmsOnlineResource(sb, "          ", metadataLink.Href, isWms111);
+                sb.AppendLine("        </MetadataURL>");
+            }
             sb.AppendLine("        <Style>");
             sb.AppendLine("          <Name>default</Name>");
             sb.AppendLine("          <Title>Default style</Title>");
@@ -562,6 +556,31 @@ internal static partial class WmsRequestHandlers
         sb.AppendLine("  </Capability>");
         sb.Append(isWms111 ? "</WMT_MS_Capabilities>" : "</WMS_Capabilities>").AppendLine();
         return sb.ToString();
+    }
+
+    private static string[] GetWmsCapabilitiesCrs(IReadOnlyList<MetadataV2SpatialReference>? supportedCrs, string version)
+    {
+        var crsNames = Wms130CapabilitiesCrs(supportedCrs);
+        return IsWms111Version(version) ? crsNames.Where(crs => crs != "CRS:84").ToArray() : crsNames;
+    }
+
+    private static string[] Wms130CapabilitiesCrs(IReadOnlyList<MetadataV2SpatialReference>? supportedCrs)
+    {
+        string[] defaults = ["EPSG:4326", "EPSG:3857", "CRS:84"];
+        if (supportedCrs is null || supportedCrs.Count == 0)
+            return defaults;
+
+        var declared = supportedCrs.Select(reference =>
+        {
+            var crs = reference.Crs;
+            if (string.Equals(crs, "http://www.opengis.net/def/crs/OGC/1.3/CRS84", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(crs, "urn:ogc:def:crs:OGC:1.3:CRS84", StringComparison.OrdinalIgnoreCase))
+                crs = "CRS:84";
+            if (string.IsNullOrWhiteSpace(crs) && reference.ResolveSrid() is { } srid)
+                crs = $"EPSG:{srid.ToString(CultureInfo.InvariantCulture)}";
+            return TryParseWmsCrs(crs, out _, out var normalized) ? normalized : null;
+        }).OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
+        return declared.Length == 0 ? defaults : declared;
     }
 
     private static async Task<Wgs84Extent?> TryGetLayerWgs84ExtentAsync(
@@ -638,63 +657,31 @@ internal static partial class WmsRequestHandlers
         return aggregate;
     }
 
-    private static Task AppendWmsGeographicBoundsAsync(
-        HttpContext context,
-        StringBuilder sb,
-        Wgs84Extent extent,
-        string indent,
-        bool isWms111)
-    {
-        _ = context; // reserved for future transform error reporting.
-        if (isWms111)
-        {
-            AppendWms111LatLonBoundingBox(
-                sb,
-                extent.MinLon,
-                extent.MinLat,
-                extent.MaxLon,
-                extent.MaxLat,
-                indent);
-            AppendWmsBoundingBox(
-                sb,
-                "EPSG:4326",
-                extent.MinLon,
-                extent.MinLat,
-                extent.MaxLon,
-                extent.MaxLat,
-                indent,
-                isWms111);
-        }
-        else
-        {
-            AppendWmsGeographicBoundingBox(
-                sb,
-                extent.MinLon,
-                extent.MinLat,
-                extent.MaxLon,
-                extent.MaxLat,
-                indent);
-            AppendWmsBoundingBox(
-                sb,
-                "CRS:84",
-                extent.MinLon,
-                extent.MinLat,
-                extent.MaxLon,
-                extent.MaxLat,
-                indent,
-                isWms111);
-            AppendWmsBoundingBox(
-                sb,
-                "EPSG:4326",
-                extent.MinLon,
-                extent.MinLat,
-                extent.MaxLon,
-                extent.MaxLat,
-                indent,
-                isWms111);
-        }
+    private readonly record struct WmsGeographicBounds(
+        Wgs84Extent Extent, string Indent, bool IsWms111, IReadOnlyList<string> DeclaredCrs);
 
-        return Task.CompletedTask;
+    private static async Task AppendWmsGeographicBoundsAsync(
+        StringBuilder builder, WmsGeographicBounds bounds, HttpContext context)
+    {
+        var extent = bounds.Extent;
+        if (bounds.IsWms111)
+            AppendWms111LatLonBoundingBox(builder, extent.MinLon, extent.MinLat, extent.MaxLon, extent.MaxLat, bounds.Indent);
+        else
+            AppendWmsGeographicBoundingBox(builder, extent.MinLon, extent.MinLat, extent.MaxLon, extent.MaxLat, bounds.Indent);
+
+        var geographicExtent = new SkiaMapRenderer.RenderExtent(extent.MinLon, extent.MinLat, extent.MaxLon, extent.MaxLat);
+        foreach (var crs in bounds.DeclaredCrs.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (!TryParseWmsCrs(crs, out var srid, out _))
+                continue;
+            var transformed = await TryTransformExtentAsync(context, geographicExtent, 4326, srid,
+                TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)).ConfigureAwait(false);
+            if (!transformed.IsSuccess)
+                continue;
+            var projected = transformed.Extent;
+            AppendWmsBoundingBox(builder, crs, projected.MinX, projected.MinY, projected.MaxX, projected.MaxY,
+                bounds.Indent, bounds.IsWms111);
+        }
     }
 
     private static void AppendWmsKeywords(StringBuilder builder, IEnumerable<string> keywords, string indent)
@@ -737,8 +724,8 @@ internal static partial class WmsRequestHandlers
         var outputMinY = minY;
         var outputMaxX = maxX;
         var outputMaxY = maxY;
-        if (!isWms111 &&
-            string.Equals(crs, "EPSG:4326", StringComparison.OrdinalIgnoreCase))
+        if (SpatialReferenceHelpers.TryParseCrsDefinition(crs, out var definition) &&
+            ResolveWmsBboxAxisOrder(isWms111 ? Wms111Version : Wms13Version, definition.AxisOrder) == AxisOrder.NorthEast)
         {
             outputMinX = minY;
             outputMinY = minX;

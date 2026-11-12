@@ -62,7 +62,7 @@ public sealed class ServiceIdentification
 
     [XmlArray("Keywords", Namespace = Wfs20Utilities.OwsNamespace)]
     [XmlArrayItem("Keyword", Namespace = Wfs20Utilities.OwsNamespace)]
-    public string[] Keywords { get; set; } = { "WFS", "OGC", "features", "geospatial" };
+    public string[]? Keywords { get; set; } = { "WFS", "OGC", "features", "geospatial" };
 
     [XmlElement("ServiceType", Namespace = Wfs20Utilities.OwsNamespace)]
     public string ServiceType { get; set; } = Wfs20Utilities.ServiceType;
@@ -83,7 +83,7 @@ public sealed class ServiceProvider
     public string ProviderName { get; set; } = "Honua";
 
     [XmlElement("ProviderSite", Namespace = Wfs20Utilities.OwsNamespace)]
-    public ProviderSite ProviderSite { get; set; } = new() { Href = "https://honua.io" };
+    public ProviderSite? ProviderSite { get; set; } = new() { Href = "https://honua.io" };
 
     [XmlElement("ServiceContact", Namespace = Wfs20Utilities.OwsNamespace)]
     public ServiceContact ServiceContact { get; set; } = new();

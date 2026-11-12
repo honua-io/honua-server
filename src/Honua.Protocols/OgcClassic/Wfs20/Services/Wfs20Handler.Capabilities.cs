@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Metadata.Services;
 using System.Collections;
 using System.Collections.Immutable;
 using System.Diagnostics;
@@ -57,6 +58,8 @@ internal sealed partial class Wfs20Handler
         try
         {
             var featureTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken);
+            var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var metadata = PublishedMetadataProjection.ForCapabilities(snapshot.Graph, service: null);
             var wfsUrl = BaseUrlResolver.PreserveToken(context.Request, $"{baseUrl}/wfs");
             var builtTypes = ShouldIncludeCapabilitiesSection(requestedSections, "FeatureTypeList")
                 ? await BuildFeatureTypesAsync(featureTypes, cancellationToken).ConfigureAwait(false)
@@ -66,10 +69,10 @@ internal sealed partial class Wfs20Handler
             {
                 UpdateSequence = Wfs20Utilities.CurrentUpdateSequence,
                 ServiceIdentification = ShouldIncludeCapabilitiesSection(requestedSections, "ServiceIdentification")
-                    ? new ServiceIdentification()
+                    ? CreateCatalogIdentification(metadata)
                     : null,
                 ServiceProvider = ShouldIncludeCapabilitiesSection(requestedSections, "ServiceProvider")
-                    ? new Models.ServiceProvider()
+                    ? CreateCatalogServiceProvider(metadata)
                     : null,
                 OperationsMetadata = ShouldIncludeCapabilitiesSection(requestedSections, "OperationsMetadata")
                     ? BuildOperationsMetadata(wfsUrl)
@@ -93,6 +96,31 @@ internal sealed partial class Wfs20Handler
         }
     }
 
+
+    private static ServiceIdentification CreateCatalogIdentification(MetadataV2ObjectMetadata metadata) => new()
+    {
+        Title = metadata.Title ?? "Honua WFS 2.0",
+        Abstract = metadata.Description ?? string.Empty,
+        Keywords = metadata.Keywords.Count == 0 ? null : metadata.Keywords.ToArray(),
+        Fees = metadata.Fees ?? string.Empty,
+        AccessConstraints = metadata.AccessConstraints ?? string.Empty
+    };
+
+    private static Models.ServiceProvider CreateCatalogServiceProvider(MetadataV2ObjectMetadata metadata) => new()
+    {
+        ProviderName = metadata.Publisher ?? string.Empty,
+        ProviderSite = string.IsNullOrWhiteSpace(metadata.ContactPoint?.Url)
+            ? null : new ProviderSite { Href = metadata.ContactPoint.Url },
+        ServiceContact = new ServiceContact
+        {
+            IndividualName = metadata.ContactPoint?.Name,
+            ContactInfo = metadata.ContactPoint is { } contact ? new ContactInfo
+            {
+                Address = string.IsNullOrWhiteSpace(contact.Email) ? null : new Address { ElectronicMailAddress = contact.Email },
+                OnlineResource = string.IsNullOrWhiteSpace(contact.Url) ? null : new OnlineResource { Href = contact.Url }
+            } : null
+        }
+    };
 
     public async Task<string> HandleDescribeFeatureTypeAsync(
         HttpContext context,

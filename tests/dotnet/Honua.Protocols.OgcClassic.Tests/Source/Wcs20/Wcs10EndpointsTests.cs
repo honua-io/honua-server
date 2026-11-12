@@ -99,6 +99,27 @@ public sealed class Wcs10EndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs10, "GetCapabilities")]
+    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
+    public async Task Wcs10_GetCapabilities_LicensedService_KeepsCodeListStatements()
+    {
+        _fixture.MutateV2Graph(graph => graph with
+        {
+            Metadata = graph.Metadata with { License = "CC-BY-4.0", Fees = "USD 5 per request" },
+        });
+
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/services/{WebAppFixture.TestServiceId}/wcs?SERVICE=WCS&REQUEST=GetCapabilities&VERSION=1.0.0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var service = XDocument.Parse(await response.Content.ReadAsStringAsync()).Root!
+            .Element(XName.Get("Service", Wcs10Namespace))!;
+        service.Element(XName.Get("fees", Wcs10Namespace))!.Value.Should().Be("NONE");
+        service.Element(XName.Get("accessConstraints", Wcs10Namespace))!.Value.Should().Be("NONE");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
     [InterfaceOperation(TestProtocols.Wcs10, "GetCoverage")]
     [Endpoint("GET /ogc/services/{serviceId}/wcs")]
     public async Task Wcs10_ServiceCoverageIdUsesPublicationIndexAndReadsBoundStorageLayer()

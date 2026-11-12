@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Metadata.Services;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
@@ -50,9 +51,10 @@ internal sealed partial class Wfs20Handler
         var featureTypes = await BuildFeatureTypesAsync(descriptors, cancellationToken).ConfigureAwait(false);
         var wfsUrl = BaseUrlResolver.PreserveToken(context.Request, $"{baseUrl.TrimEnd('/')}/wfs");
 
+        var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         return IsWfs10(version)
-            ? BuildWfs10Capabilities(wfsUrl, featureTypes)
-            : BuildWfs11Capabilities(wfsUrl, featureTypes, _featureReader);
+            ? BuildWfs10Capabilities(wfsUrl, featureTypes, PublishedMetadataProjection.ForCapabilities(snapshot.Graph, service: null))
+            : BuildWfs11Capabilities(wfsUrl, featureTypes, PublishedMetadataProjection.ForCapabilities(snapshot.Graph, service: null));
     }
 
     internal async Task<string> HandleLegacyDescribeFeatureTypeAsync(
@@ -212,34 +214,25 @@ internal sealed partial class Wfs20Handler
         return new LegacyXmlResult(xml, "application/xml", statusCode);
     }
 
-    internal static string BuildWfs11Capabilities(string wfsUrl, IReadOnlyList<FeatureType> featureTypes, IFeatureReader reader)
+    internal string BuildWfs11Capabilities(string wfsUrl, IReadOnlyList<FeatureType> featureTypes, MetadataV2ObjectMetadata metadata)
     {
-        var edits = reader is IFeatureDataProvider provider
+        var edits = _featureReader is IFeatureDataProvider provider
             ? provider.Capabilities.Edits
             : FeatureProviderEditCapabilities.ReadOnly;
         var sb = new StringBuilder(8192);
         sb.AppendLine("""<?xml version="1.0" encoding="UTF-8"?>""");
         sb.AppendLine($"""<wfs:WFS_Capabilities xmlns:wfs="{LegacyWfsNamespace}" xmlns:ows="{Ows10Namespace}" xmlns:ogc="{OgcFilterNamespace}" xmlns:gml="{GmlLegacyNamespace}" xmlns:{FeatureNamespacePrefix}="{FeatureNamespaceUri}" xmlns:cdf="http://www.opengis.net/cite/data" xmlns:cgf="http://www.opengis.net/cite/geometry" xmlns:xlink="{Wfs20Utilities.XLinkNamespace}" xmlns:xsi="{Wfs20Utilities.XsiNamespace}" version="1.1.0" updateSequence="{Wfs20Utilities.CurrentUpdateSequence}" xsi:schemaLocation="{LegacyWfsNamespace} http://schemas.opengis.net/wfs/1.1.0/wfs.xsd">""");
         sb.AppendLine("  <ows:ServiceIdentification>");
-        sb.AppendLine("    <ows:Title>Honua WFS 1.1.0</ows:Title>");
-        sb.AppendLine("    <ows:Abstract>Honua WFS 1.1.0 compatibility endpoint.</ows:Abstract>");
+        sb.Append("    <ows:Title>").Append(XmlEscape(metadata.Title ?? "Honua WFS 1.1.0")).AppendLine("</ows:Title>");
+        sb.Append("    <ows:Abstract>").Append(XmlEscape(metadata.Description ?? string.Empty)).AppendLine("</ows:Abstract>");
+        foreach (var keywords in CatalogCapabilitiesXml.Keywords(metadata, Ows10Namespace))
+            sb.AppendLine(keywords.ToString());
         sb.AppendLine("    <ows:ServiceType>WFS</ows:ServiceType>");
         sb.AppendLine("    <ows:ServiceTypeVersion>1.1.0</ows:ServiceTypeVersion>");
-        sb.AppendLine("    <ows:Fees>NONE</ows:Fees>");
-        sb.AppendLine("    <ows:AccessConstraints>NONE</ows:AccessConstraints>");
+        sb.Append("    <ows:Fees>").Append(XmlEscape(metadata.Fees ?? string.Empty)).AppendLine("</ows:Fees>");
+        sb.Append("    <ows:AccessConstraints>").Append(XmlEscape(metadata.AccessConstraints ?? string.Empty)).AppendLine("</ows:AccessConstraints>");
         sb.AppendLine("  </ows:ServiceIdentification>");
-        sb.AppendLine("  <ows:ServiceProvider>");
-        sb.AppendLine("    <ows:ProviderName>Honua</ows:ProviderName>");
-        sb.AppendLine($"""    <ows:ProviderSite xlink:href="{XmlEscape(wfsUrl)}" />""");
-        sb.AppendLine("    <ows:ServiceContact>");
-        sb.AppendLine("      <ows:IndividualName>Honua Support</ows:IndividualName>");
-        sb.AppendLine("      <ows:PositionName>Support</ows:PositionName>");
-        sb.AppendLine("      <ows:ContactInfo>");
-        sb.AppendLine("        <ows:OnlineResource xlink:href=\"https://honua.io\" />");
-        sb.AppendLine("      </ows:ContactInfo>");
-        sb.AppendLine("      <ows:Role>pointOfContact</ows:Role>");
-        sb.AppendLine("    </ows:ServiceContact>");
-        sb.AppendLine("  </ows:ServiceProvider>");
+        sb.AppendLine(CatalogCapabilitiesXml.Provider(metadata, Ows10Namespace).ToString());
         AppendWfs11OperationsMetadata(sb, wfsUrl);
         AppendWfs11FeatureTypeList(sb, featureTypes, edits);
         AppendWfs11FilterCapabilities(sb);
@@ -247,21 +240,21 @@ internal sealed partial class Wfs20Handler
         return sb.ToString();
     }
 
-    private static string BuildWfs10Capabilities(string wfsUrl, IReadOnlyList<FeatureType> featureTypes)
+    private static string BuildWfs10Capabilities(string wfsUrl, IReadOnlyList<FeatureType> featureTypes, MetadataV2ObjectMetadata metadata)
     {
         var sb = new StringBuilder(8192);
         sb.AppendLine("""<?xml version="1.0" encoding="UTF-8"?>""");
         sb.AppendLine($"""<WFS_Capabilities xmlns="{LegacyWfsNamespace}" xmlns:ogc="{OgcFilterNamespace}" xmlns:gml="{GmlLegacyNamespace}" xmlns:{FeatureNamespacePrefix}="{FeatureNamespaceUri}" xmlns:cdf="http://www.opengis.net/cite/data" xmlns:cgf="http://www.opengis.net/cite/geometry" xmlns:xlink="{Wfs20Utilities.XLinkNamespace}" xmlns:xsi="{Wfs20Utilities.XsiNamespace}" version="1.0.0" updateSequence="{Wfs20Utilities.CurrentUpdateSequence}" xsi:schemaLocation="{LegacyWfsNamespace} http://schemas.opengis.net/wfs/1.0.0/WFS-capabilities.xsd">""");
         sb.AppendLine("  <Service>");
         sb.AppendLine("    <Name>Honua WFS</Name>");
-        sb.AppendLine("    <Title>Honua WFS 1.0.0</Title>");
-        sb.AppendLine("    <Abstract>Honua WFS 1.0.0 compatibility endpoint.</Abstract>");
+        sb.Append("    <Title>").Append(XmlEscape(metadata.Title ?? "Honua WFS 1.0.0")).AppendLine("</Title>");
+        sb.Append("    <Abstract>").Append(XmlEscape(metadata.Description ?? string.Empty)).AppendLine("</Abstract>");
         // WFS 1.0.0 Service/OnlineResource is the top-level URL of this service, so it is
         // the deployment's own endpoint (Public:BaseUrl), never a vendor site: customers
         // serve Honua on their own domains.
         sb.AppendLine($"""    <OnlineResource>{XmlEscape(wfsUrl)}</OnlineResource>""");
-        sb.AppendLine("    <Fees>NONE</Fees>");
-        sb.AppendLine("    <AccessConstraints>NONE</AccessConstraints>");
+        sb.Append("    <Fees>").Append(XmlEscape(metadata.Fees ?? string.Empty)).AppendLine("</Fees>");
+        sb.Append("    <AccessConstraints>").Append(XmlEscape(metadata.AccessConstraints ?? string.Empty)).AppendLine("</AccessConstraints>");
         sb.AppendLine("  </Service>");
         sb.AppendLine("  <Capability>");
         sb.AppendLine("    <Request>");

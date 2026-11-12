@@ -87,6 +87,8 @@ internal sealed partial class Wcs20Handler
             new XElement(Wcs10 + "description", "Honua Web Coverage Service for raster and coverage data."),
             new XElement(Wcs10 + "name", "Honua WCS"),
             new XElement(Wcs10 + "label", "Honua WCS 1.0.0"),
+            // Intentional divergence: WCS 1.0 requires both elements and types them gml:CodeListType, a list of
+            // names that cannot carry a free-text statement; the catalog's statements are published by WCS 2.0.
             new XElement(Wcs10 + "fees", "NONE"),
             new XElement(Wcs10 + "accessConstraints", "NONE"));
 

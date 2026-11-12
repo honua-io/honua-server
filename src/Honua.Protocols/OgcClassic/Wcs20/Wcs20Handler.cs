@@ -25,6 +25,8 @@ using Microsoft.Extensions.Primitives;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
+using Honua.Core.Features.Metadata.Services;
+
 namespace Honua.Protocols.Ogc.Classic.Wcs20;
 
 internal sealed partial class Wcs20Handler
@@ -249,7 +251,7 @@ internal sealed partial class Wcs20Handler
                 cancellationToken)
             .ConfigureAwait(false);
 
-        var document = BuildCapabilitiesDocument(context, coverageResult.Coverages, supportedCrs.Uris, sections);
+        var document = BuildCapabilitiesDocument(context, coverageResult, supportedCrs.Uris, sections);
         return Xml(document);
     }
 
@@ -572,7 +574,8 @@ internal sealed partial class Wcs20Handler
                         Wcs20Utilities.ExceptionCodes.NoSuchCoverage,
                         $"Coverage '{scope.LayerId!.Value.ToString(CultureInfo.InvariantCulture)}' was not found.",
                         Wcs20Utilities.Parameters.CoverageId))
-                : new CoverageListResult([coverage.Coverage.Value], null);
+                : new CoverageListResult([coverage.Coverage.Value], null,
+                    PublishedMetadataProjection.ForCapabilities(snapshot.Graph, coverage.Coverage.Value.Service));
         }
 
         var service = ResolveService(context, snapshot, scope);
@@ -626,7 +629,7 @@ internal sealed partial class Wcs20Handler
                 entry.Publication.LayerIndex));
         }
 
-        return new CoverageListResult(coverages, null);
+        return new CoverageListResult(coverages, null, PublishedMetadataProjection.ForCapabilities(snapshot.Graph, service.Service));
     }
 
     private async Task<CoverageResolutionResult> ResolveCoverageAsync(
@@ -732,7 +735,7 @@ internal sealed partial class Wcs20Handler
         var raster = await GetPrimaryRasterWithExtentAsync(layerId, cancellationToken).ConfigureAwait(false);
         return raster is null
             ? new LayerCoverageResult(null, null)
-            : new LayerCoverageResult(new WcsCoverage(resource, layerId, raster.Value, null), null);
+            : new LayerCoverageResult(new WcsCoverage(resource, layerId, raster.Value, owningService), null);
     }
 
     private static bool TryResolveResourceForLayer(
@@ -1110,35 +1113,30 @@ internal sealed partial class Wcs20Handler
 
     private static XDocument BuildCapabilitiesDocument(
         HttpContext context,
-        IReadOnlyCollection<WcsCoverage> coverages,
+        CoverageListResult catalog,
         IReadOnlyList<string> supportedCrsUris,
         IReadOnlySet<string>? sections)
     {
+        var coverages = catalog.Coverages;
+        var metadata = catalog.Metadata ?? new MetadataV2ObjectMetadata();
         var rootChildren = new List<object>();
 
         if (IncludesSection(sections, "ServiceIdentification"))
         {
             rootChildren.Add(new XElement(Ows + "ServiceIdentification",
-                new XElement(Ows + "Title", "Honua WCS 2.0.1"),
-                new XElement(Ows + "Abstract", "Honua Web Coverage Service for raster and coverage data."),
-                new XElement(Ows + "Keywords",
-                    new XElement(Ows + "Keyword", "WCS"),
-                    new XElement(Ows + "Keyword", "coverage"),
-                    new XElement(Ows + "Keyword", "raster")),
+                new XElement(Ows + "Title", metadata.Title ?? "Honua WCS 2.0.1"),
+                new XElement(Ows + "Abstract", metadata.Description ?? string.Empty),
+                CatalogCapabilitiesXml.Keywords(metadata, Ows),
                 new XElement(Ows + "ServiceType", "WCS"),
                 new XElement(Ows + "ServiceTypeVersion", Wcs20Utilities.Version),
                 new XElement(Ows + "Profile", "http://www.opengis.net/spec/WCS_protocol-binding_get-kvp/1.0"),
-                new XElement(Ows + "Fees", "NONE"),
-                new XElement(Ows + "AccessConstraints", "NONE")));
+                new XElement(Ows + "Fees", metadata.Fees ?? string.Empty),
+                new XElement(Ows + "AccessConstraints", metadata.AccessConstraints ?? string.Empty)));
         }
 
         if (IncludesSection(sections, "ServiceProvider"))
         {
-            rootChildren.Add(new XElement(Ows + "ServiceProvider",
-                new XElement(Ows + "ProviderName", "Honua"),
-                new XElement(Ows + "ProviderSite", new XAttribute(XLink + "href", "https://honua.io")),
-                new XElement(Ows + "ServiceContact",
-                    new XElement(Ows + "Role", "pointOfContact"))));
+            rootChildren.Add(CatalogCapabilitiesXml.Provider(metadata, Ows));
         }
 
         if (IncludesSection(sections, "OperationsMetadata"))
@@ -3135,7 +3133,7 @@ internal sealed partial class Wcs20Handler
             Wcs20Utilities.XmlContentType,
             Encoding.UTF8);
 
-    private readonly record struct CoverageListResult(IReadOnlyList<WcsCoverage> Coverages, IResult? Error);
+    private readonly record struct CoverageListResult(IReadOnlyList<WcsCoverage> Coverages, IResult? Error, MetadataV2ObjectMetadata? Metadata = null);
 
     private readonly record struct CoverageResolutionResult(WcsCoverage? Coverage, IResult? Error);
 
