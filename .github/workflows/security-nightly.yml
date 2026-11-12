@@ -136,9 +136,9 @@ jobs:
       - name: Verify vulnerability gate parser
         run: python3 scripts/ci/check-nuget-vulnerabilities.test.py
 
-      # NuGet audit is disabled for this restore only: under TreatWarningsAsErrors a new
-      # advisory of any severity would fail restore before the gate below could apply its
-      # High/Critical policy and report Moderate findings.
+      # NuGet audit is skipped for this restore only: the scan below applies the
+      # High/Critical policy itself and reports Moderate findings, so restore-time
+      # advisory warnings would only duplicate it.
       - name: Restore
         run: scripts/ci/dotnet-restore-retry.sh Honua.sln -p:NuGetAudit=false
 
