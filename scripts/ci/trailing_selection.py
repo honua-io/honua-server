@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Size an affected trunk run: the shard backlog limit and the shard concurrency.
+"""Size and identify an affected trunk run: backlog limit, shard concurrency, run title.
 
 An affected dispatch shares the org's hosted runners with PR Gate. A narrow
 selection runs at the PR-safe width. A selection still above the backlog limit
@@ -13,6 +13,8 @@ import json
 import sys
 
 SHARD_BACKLOG_LIMIT = 30
+# run-name of every trunk-affected.yml dispatch; full CI runs never carry it.
+AFFECTED_RUN_TITLE_PREFIX = "CI affected "
 AFFECTED_WIDTH = 6
 BROAD_AFFECTED_WIDTH = 12
 
