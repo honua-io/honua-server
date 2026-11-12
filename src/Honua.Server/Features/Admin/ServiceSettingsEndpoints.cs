@@ -60,7 +60,8 @@ internal static partial class ServiceSettingsEndpoints
 
         group.MapPut("/{serviceName}/access-policy", HandleUpdateAccessPolicy)
             .WithDisplayName("Update Access Policy")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
+            .AddEndpointFilter(AgentAccessPolicyApprovalFilter.InvokeAsync);
 
         group.MapPut("/{serviceName}/timeinfo", HandleUpdateTimeInfo)
             .WithDisplayName("Update Time Info")

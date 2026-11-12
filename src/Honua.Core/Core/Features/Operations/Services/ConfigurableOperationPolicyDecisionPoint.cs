@@ -34,6 +34,11 @@ public sealed class ConfigurableOperationPolicyDecisionPoint : IOperationPolicyD
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
+        if (AgentApprovalRule.Applies(request.OperationId, context.Roles))
+        {
+            return Task.FromResult(AgentApprovalRule.Decision);
+        }
+
         // Disabled policy is a pass-through allow — identical to the Community default.
         if (!_options.Enabled)
         {

@@ -19,6 +19,11 @@ internal sealed class OperatorApprovalGate(
 {
     private const string ApprovalRequiredType = "urn:honua:approval-required";
 
+    internal const string AgentApprovalGuidance =
+        " Agent changes need one human approval: submit this change through the operations API " +
+        "(POST /api/v1/operations/{operationId}/submit) or the matching MCP tool, which files a proposal, " +
+        "then ask a person to approve it in Console Approvals. Do not retry with another credential.";
+
     public async Task<IResult?> EvaluateAuthorizationAsync(
         HttpContext context,
         OperatorResourceType resourceType,
@@ -95,7 +100,8 @@ internal sealed class OperatorApprovalGate(
                 Type = ApprovalRequiredType,
                 Title = "Approval required",
                 Status = StatusCodes.Status403Forbidden,
-                Detail = $"This operation requires approval (policy: {approval.PolicyRef}).",
+                Detail = $"This operation requires approval (policy: {approval.PolicyRef})."
+                    + (AgentPrincipal.IsAgent(context.User) ? AgentApprovalGuidance : string.Empty),
                 Instance = context.Request.Path.Value,
                 CorrelationId = context.TraceIdentifier,
                 PolicyRef = approval.PolicyRef,

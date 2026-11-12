@@ -228,7 +228,8 @@ A server without Redis still serves, configures, styles and renders, so two
 operations execute directly without Redis: publishing a service
 (`service.publish`) and applying a style preset to a published layer
 (`style.apply-preset`). When `Operations:Policy` allows the caller (an `admin`
-or `scoped-admin-key` role, such as an `admin:write` API key),
+or `scoped-admin-key` role, such as an `admin:write` API key, and not an agent:
+an agent's publish files a proposal, which needs Redis),
 `honua_publish_service`, `honua_apply_style_preset` and
 `POST /api/v1/operations/{service.publish|style.apply-preset}/submit` make the
 change and return the usual handle: `operationId`, `operationInstanceId`,

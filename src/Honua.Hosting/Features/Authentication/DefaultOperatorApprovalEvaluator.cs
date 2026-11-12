@@ -16,8 +16,8 @@ internal sealed class DefaultOperatorApprovalEvaluator(
         var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
                   ?? principal.FindFirstValue("sub");
 
-        // Admin exemption: admins bypass approval gates when configured.
-        if (options.Value.AdminExemptFromApproval && IsAdmin(principal))
+        // Admins bypass approval gates when configured; an agent holding an admin credential does not.
+        if (options.Value.AdminExemptFromApproval && IsAdmin(principal) && !AgentPrincipal.IsAgent(principal))
         {
             OperatorAuthorizationLog.ApprovalNotRequired(
                 logger, userId, request.ResourceType, request.Operation);

@@ -13,6 +13,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
@@ -78,7 +79,9 @@ internal sealed class PublishedOperationTool : IMcpTool
 
     private bool RequiresProposalSubmission =>
         _descriptor.ApprovalModel == OperationApprovalModel.OperatorGate
-        && (IsFolderOperation || _descriptor.OperationId is "admin.api-key.create" or "admin.api-key.revoke");
+        && (IsFolderOperation
+            || _descriptor.OperationId is "admin.api-key.create" or "admin.api-key.revoke"
+            || AgentApprovalRule.IsGated(_descriptor.OperationId));
 
     // Deterministic AND read-only invocations are the only ones safe to cache: a
     // cache must never skip a side effect or return a stale AI turn.

@@ -113,6 +113,12 @@ internal static class AdminApiKeyPermission
     {
         ArgumentNullException.ThrowIfNull(principal);
 
+        // An agent minting a key without the agent grant would leave the approval requirement behind.
+        if (AgentPrincipal.IsAgent(principal))
+        {
+            return false;
+        }
+
         var permissions = principal.FindAll(PermissionClaimType).Select(claim => claim.Value?.Trim()).ToList();
         if (permissions.Count == 0)
         {

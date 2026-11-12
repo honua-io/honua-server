@@ -14,6 +14,7 @@ using Honua.Geoprocessing;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
@@ -211,7 +212,10 @@ internal static class OperationsEndpoints
             }
         }
 
-        if (descriptor.ApprovalModel == OperationApprovalModel.OperatorGate)
+        // An agent's gated change continues to the dispatcher, whose agent approval rule files a
+        // proposal for a person to approve instead of refusing outright.
+        if (descriptor.ApprovalModel == OperationApprovalModel.OperatorGate
+            && !(AgentApprovalRule.IsGated(descriptor.OperationId) && AgentPrincipal.IsAgent(context.User)))
         {
             var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
             var approvalResult = gate.EvaluateApproval(
