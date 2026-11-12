@@ -129,7 +129,7 @@ public sealed class PersistedExportProgressTests : IAsyncLifetime
     [IntegrationTheory]
     [InlineData(true)]
     [InlineData(false)]
-    [Endpoint("GET /api/v1/admin/operations/active")]
+    [Operation(Operations.TestInfrastructure)]
     public async Task GetActiveOperationsAsync_InvalidExportRecord_ReturnsHealthyExport(bool legacyShape)
     {
         var invalidId = await SeedInvalidExportAsync(legacyShape);

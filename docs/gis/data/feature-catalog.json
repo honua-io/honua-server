@@ -3912,7 +3912,6 @@
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.ListActiveOperations_WhenFiltered_ReturnsOnlyActive",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.ListActiveOperations_WhenMixedTypesPresent_PreservesUnifiedOperationIdentityFields",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.ListActiveOperations_WhenNoneActive_ReturnsEmptyList",
-        "Honua.Server.Tests.Features.Admin.PersistedExportProgressTests.GetActiveOperationsAsync_InvalidExportRecord_ReturnsHealthyExport",
         "Honua.Server.Tests.Features.Admin.PersistedExportProgressTests.ListOperations_InvalidExportRecord_KeepsHealthyOperationsVisible"
       ],
       "proof_ledger_surface": "control-plane-admin",
