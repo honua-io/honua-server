@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 
 namespace Honua.Infrastructure.Authentication;
@@ -41,7 +43,14 @@ public static class AuthenticationExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.AddScoped<ApiKeyAuthenticationDependencies>();
+        services.AddAuthenticationFailureLimiter(configuration);
+        services.AddScoped(static provider => new ApiKeyAuthenticationDependencies(
+            provider.GetRequiredService<IOptions<ApiKeyAuthenticationOptions>>(),
+            provider.GetService<IConnectionSecretResolver>(),
+            provider.GetService<IAdminApiKeyStore>())
+        {
+            AttemptGate = provider.GetRequiredService<AuthenticationAttemptGate>(),
+        });
 
         // Live managed-user membership when OIDC is off. AddOidcAuthentication registers
         // its own transformation later and calls the same revalidation itself.
@@ -110,6 +119,19 @@ public static class AuthenticationExtensions
         });
 
         return services;
+    }
+
+    private static void AddAuthenticationFailureLimiter(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddOptions<AuthenticationFailureLimiterOptions>()
+            .Bind(configuration.GetSection(AuthenticationFailureLimiterOptions.SectionName))
+            .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<
+            IValidateOptions<AuthenticationFailureLimiterOptions>, AuthenticationFailureLimiterOptionsValidator>());
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IAuthenticationFailureLimiter, AuthenticationFailureLimiter>();
+        services.TryAddSingleton<AuthenticationAttemptGate>();
+        services.AddHostedService<AuthenticationFailureLimiterStartupCheck>();
     }
 
     // While mTLS is disabled the certificate scheme is not registered, so a valid bearer authenticates an admin request with no certificate check.

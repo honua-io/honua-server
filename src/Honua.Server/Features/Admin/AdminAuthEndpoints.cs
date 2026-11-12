@@ -65,12 +65,14 @@ internal static class AdminAuthEndpoints
         _ = group.MapPost("/session", (HttpContext context,
                 AdminPasswordSignInRequest request, AdminPasswordSessionEndpoint endpoint) => endpoint.HandleAsync(context, request))
             .WithDisplayName("Sign In Browser Administrator Session")
+            .AddEndpointFilter<RequireHttpsEndpointFilter>()
             .WithMetadata(new RequireBrowserCsrfMetadata())
             .WithMetadata(new RateLimitAttribute(5));
 
         _ = group.MapPost("/password-token", (HttpContext context,
                 AdminPasswordSignInRequest request, AdminPasswordTokenEndpoint endpoint) => endpoint.HandleAsync(context, request))
             .WithDisplayName("Sign In Browser Administrator Bearer")
+            .AddEndpointFilter<RequireHttpsEndpointFilter>()
             .WithMetadata(new RateLimitAttribute(5));
 
         _ = group.MapPost("/providers/{providerKey}/authorize-url", HandleCreateAuthorizeUrl)
@@ -891,27 +893,39 @@ internal static class AdminAuthEndpoints
     {
         try
         {
-            var discovery = await GetDiscoveryDocumentAsync(
-                httpClientFactory,
-                provider.Authority!,
-                context.RequestAborted).ConfigureAwait(false);
+            var logoutEndpoint = provider.LogoutEndpoint;
+            if (string.IsNullOrWhiteSpace(logoutEndpoint))
+            {
+                var discovery = await GetDiscoveryDocumentAsync(
+                    httpClientFactory,
+                    provider.Authority!,
+                    context.RequestAborted).ConfigureAwait(false);
+                logoutEndpoint = discovery.EndSessionEndpoint;
+            }
 
-            if (string.IsNullOrWhiteSpace(discovery.EndSessionEndpoint))
+            if (string.IsNullOrWhiteSpace(logoutEndpoint))
             {
                 return null;
             }
 
-            var parameters = new Dictionary<string, string?>
-            {
-                ["post_logout_redirect_uri"] = BuildAbsoluteUri(context, AdminPostLogoutRedirectPath)
-            };
+            var redirectUri = BuildAbsoluteUri(context, AdminPostLogoutRedirectPath);
+            var parameters = provider.UseCognitoLogout
+                ? new Dictionary<string, string?>
+                {
+                    ["client_id"] = provider.ClientId,
+                    ["logout_uri"] = redirectUri
+                }
+                : new Dictionary<string, string?>
+                {
+                    ["post_logout_redirect_uri"] = redirectUri
+                };
 
-            if (!string.IsNullOrWhiteSpace(idTokenHint))
+            if (!provider.UseCognitoLogout && !string.IsNullOrWhiteSpace(idTokenHint))
             {
                 parameters["id_token_hint"] = idTokenHint;
             }
 
-            return QueryHelpers.AddQueryString(discovery.EndSessionEndpoint, parameters);
+            return QueryHelpers.AddQueryString(logoutEndpoint, parameters);
         }
         catch (OperationCanceledException)
         {

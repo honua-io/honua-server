@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "author": "Honua security maintainers",
+  "description": "Source for the OpenVEX documents published with each release and consumed by every Trivy scan. Each entry records a not-affected decision for one exact package version, with the reason and the evidence. A package version change voids the entry, so the finding reappears for review.",
+  "statements": [
+    {
+      "vulnerability": "CVE-2025-5222",
+      "packages": [
+        "pkg:deb/ubuntu/libicu74@74.2-1ubuntu3.1"
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impactStatement": "The flaw is a stack buffer overflow in the genrb resource-bundle compiler (SRBRoot::addTag). Honua images ship only the ICU runtime libraries from libicu74; the genrb tool is not installed and none of the shipped ICU libraries contains the vulnerable code.",
+      "evidence": "In the runtime-deps 10.0.15 base, dpkg -L libicu74 lists only shared libraries, /usr/bin/genrb is absent, and no shipped libicu*.so.74 contains the SRBRoot or addTag symbols.",
+      "reviewedAt": "2026-11-11"
+    },
+    {
+      "vulnerability": "CVE-2024-56433",
+      "packages": [
+        "pkg:deb/ubuntu/passwd@4.13%2Bdfsg1-4ubuntu3.2?epoch=1",
+        "pkg:deb/ubuntu/login@4.13%2Bdfsg1-4ubuntu3.2?epoch=1"
+      ],
+      "status": "not_affected",
+      "justification": "inline_mitigations_already_exist",
+      "impactStatement": "The issue concerns the default subordinate-ID ranges that useradd assigns to new accounts. Honua adds one account at build time, as a system account with no subordinate-ID range; the base image's accounts and their /etc/subuid entries are fixed at build. The image runs as the unprivileged UID 1001 with every setuid and setgid bit removed and ships no newuidmap or newgidmap, so no process in the container can create accounts, change /etc/subuid, or use subordinate ranges.",
+      "evidence": "Dockerfile and docker/Dockerfile.aot: useradd --system at build, USER 1001:1001, find / -perm /6000 -exec chmod a-s. In the runtime-deps 10.0.15 base, /etc/passwd and /etc/subuid are root-owned 0644 (entries: ubuntu, app) and newuidmap/newgidmap are absent. These are properties of the image, independent of deployment settings.",
+      "reviewedAt": "2026-11-11"
+    }
+  ]
+}

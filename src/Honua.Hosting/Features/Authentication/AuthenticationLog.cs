@@ -104,8 +104,8 @@ internal static partial class AuthenticationLog
     [LoggerMessage(
         EventId = 4114,
         Level = LogLevel.Warning,
-        Message = "Scoped admin API key denied {Method} admin request: key permissions do not authorize this operation")]
-    public static partial void ScopedAdminKeyDenied(ILogger logger, string method);
+        Message = "Admin authorization denied {Method} request for {AuthenticationType}: principal permissions do not authorize this operation")]
+    public static partial void AdminPermissionDenied(ILogger logger, string method, string authenticationType);
 
     [LoggerMessage(
         EventId = 4115,
@@ -138,4 +138,23 @@ internal static partial class AuthenticationLog
         Level = LogLevel.Warning,
         Message = "API key {ApiKeyId} refused: the request does not satisfy the key's {Restriction} restriction")]
     public static partial void ApiKeyRequestRestrictionRefused(ILogger logger, Guid apiKeyId, ApiKeyRestrictionViolation restriction);
+
+    // The source appears as a short unkeyed hash for correlation; that hides it from casual reading, not from someone who enumerates addresses.
+    [LoggerMessage(
+        EventId = 4120,
+        Level = LogLevel.Warning,
+        Message = "Authentication refused for source {SourceHash} for {BlockSeconds}s after repeated failed attempts")]
+    public static partial void AuthenticationSourceBlocked(ILogger logger, string sourceHash, int blockSeconds);
+
+    [LoggerMessage(
+        EventId = 4121,
+        Level = LogLevel.Warning,
+        Message = "A request reached authentication without a client address; failed attempts from such requests are not counted")]
+    public static partial void AuthenticationSourceUnavailable(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 4122,
+        Level = LogLevel.Warning,
+        Message = "Failed authentication attempts are counted per connection address and ForwardedHeaders is disabled; behind a proxy every client shares the proxy's address. Enable ForwardedHeaders or list the proxy in Authentication:FailedAttempts:ExemptNetworks")]
+    public static partial void AuthenticationSourceIsConnectionAddress(ILogger logger);
 }

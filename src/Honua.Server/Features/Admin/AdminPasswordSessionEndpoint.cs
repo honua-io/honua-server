@@ -15,17 +15,15 @@ internal sealed class AdminPasswordSessionEndpoint(
     internal async Task<IResult> HandleAsync(HttpContext context, AdminPasswordSignInRequest request)
     {
         context.Response.Headers.CacheControl = "no-store";
-        if (!context.Request.IsHttps || string.IsNullOrEmpty(request.Password) || request.Password.Length > 1024)
+        if (string.IsNullOrEmpty(request.Password) || request.Password.Length > 1024)
         {
             return TypedResults.BadRequest();
         }
 
-        var validation = await authenticator.ValidateAsync(request.Password, context.RequestAborted).ConfigureAwait(false);
+        var validation = await authenticator.ValidateAsync(context, request.Password).ConfigureAwait(false);
         if (validation.Success?.Principal is not { } principal)
         {
-            return validation.Rejection is ApiKeyRejection.AdminPasswordUnavailable or ApiKeyRejection.CredentialStoreUnavailable
-                ? StandardErrorHelpers.CreateServiceUnavailable(context, "Administrator sign-in is unavailable.")
-                : TypedResults.Unauthorized();
+            return AdminPasswordAuthenticator.Reject(context, validation);
         }
 
         try

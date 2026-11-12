@@ -3,8 +3,6 @@
 
 using System.Net;
 using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
@@ -22,6 +20,7 @@ using Honua.Infrastructure.Models;
 using Honua.Server.Features.Studio.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -60,14 +59,14 @@ public sealed class StudioPublishRequestNonAttestedRedisTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _redis.StartAsync();
-        _keyRingPath = WriteKeyRingCertificate();
+        _keyRingPath = TestKeyRingCertificate.Write(KeyRingPassword);
         _fixture
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment(Environments.Production);
                 builder.UseSetting("ConnectionStrings:redis", _redis.GetConnectionString());
-                builder.UseSetting("Operations:SecretChannel:KeyRingCertificatePath", _keyRingPath);
-                builder.UseSetting("Operations:SecretChannel:KeyRingCertificatePassword", KeyRingPassword);
+                builder.UseSetting(TestKeyRingCertificate.PathKey, _keyRingPath);
+                builder.UseSetting(TestKeyRingCertificate.PasswordKey, KeyRingPassword);
                 builder.UseSetting("Licensing:Mode", "Disabled");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
@@ -186,22 +185,6 @@ public sealed class StudioPublishRequestNonAttestedRedisTests : IAsyncLifetime
 
     private HttpClient CreateAdminClient()
         => _fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
-
-    private static string WriteKeyRingCertificate()
-    {
-        using var key = RSA.Create(2048);
-        var request = new CertificateRequest(
-            "CN=Honua non-attested Redis key ring",
-            key,
-            HashAlgorithmName.SHA256,
-            RSASignaturePadding.Pkcs1);
-        using var certificate = request.CreateSelfSigned(
-            DateTimeOffset.UtcNow.AddMinutes(-1),
-            DateTimeOffset.UtcNow.AddHours(1));
-        var path = Path.Join(Path.GetTempPath(), $"honua-keyring-{Guid.NewGuid():N}.pfx");
-        File.WriteAllBytes(path, certificate.Export(X509ContentType.Pkcs12, KeyRingPassword));
-        return path;
-    }
 
     private static async Task<HttpResponseMessage> PostAsync<T>(HttpClient client, string path, T body, JsonTypeInfo<T> typeInfo)
     {

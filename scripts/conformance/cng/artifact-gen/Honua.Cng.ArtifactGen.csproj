@@ -15,7 +15,7 @@
   <PropertyGroup>
     <HonuaCngSourceRoot Condition="'$(HonuaCngSourceRoot)' == ''">$(MSBuildThisFileDirectory)../../../..</HonuaCngSourceRoot>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>$(HonuaTargetFramework)</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>preview</LangVersion>

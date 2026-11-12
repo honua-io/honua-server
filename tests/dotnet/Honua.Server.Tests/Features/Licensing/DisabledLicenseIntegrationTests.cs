@@ -11,6 +11,7 @@ using Honua.Infrastructure.Licensing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 using Honua.TestKit.Mixins;
 using Honua.TestKit.Seeding;
 using Microsoft.AspNetCore.Hosting;
@@ -28,6 +29,7 @@ namespace Honua.Server.Tests.Features.Licensing;
 public sealed class DisabledLicenseIntegrationTests
 {
     private const string AdminPassword = "Synthetic-Disabled-License-4721!";
+    private const string KeyRingPassword = "Synthetic-Disabled-License-KeyRing";
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/license")]
@@ -44,10 +46,11 @@ public sealed class DisabledLicenseIntegrationTests
         var postgres = new PostgresFixture();
         await postgres.InitializeAsync();
         var schema = await postgres.CreateIsolatedSchemaAsync(nameof(DisabledLicenseIntegrationTests));
+        var keyRingPath = TestKeyRingCertificate.Write(KeyRingPassword);
         try
         {
             await postgres.ApplySeedAsync(RepositoryPaths.Resolve("tests", "seed", "server.yaml"), schema);
-            await using var fixture = new ProductionLicenseFactory(postgres.ConnectionString, schema);
+            await using var fixture = new ProductionLicenseFactory(postgres.ConnectionString, schema, keyRingPath);
             Assert.Equal(Environments.Production, fixture.Services.GetRequiredService<IHostEnvironment>().EnvironmentName);
             Assert.All(FeatureCatalog.All, feature =>
                 Assert.True(LicenseGate.CheckEntitlement(fixture.Services, feature.Key).IsActive));
@@ -127,12 +130,13 @@ public sealed class DisabledLicenseIntegrationTests
         }
         finally
         {
+            File.Delete(keyRingPath);
             await postgres.DropSchemaAsync(schema);
             await postgres.DisposeAsync();
         }
     }
 
-    private sealed class ProductionLicenseFactory(string connectionString, string schema) : WebApplicationFactory<Program>
+    private sealed class ProductionLicenseFactory(string connectionString, string schema, string keyRingPath) : WebApplicationFactory<Program>
     {
         protected override IHost CreateHost(IHostBuilder builder)
         {
@@ -148,6 +152,8 @@ public sealed class DisabledLicenseIntegrationTests
             settings["Licensing:DevGrantEdition"] = string.Empty;
             settings["HONUA_DEV_AUTH"] = "false";
             settings["HONUA_ADMIN_PASSWORD"] = AdminPassword;
+            settings[TestKeyRingCertificate.PathKey] = keyRingPath;
+            settings[TestKeyRingCertificate.PasswordKey] = KeyRingPassword;
             builder.ConfigureHostConfiguration(configuration => configuration.AddInMemoryCollection(settings));
             return base.CreateHost(builder);
         }

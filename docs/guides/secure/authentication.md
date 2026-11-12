@@ -182,7 +182,7 @@ and survives OIDC claim sanitization, including repeated transformation. An
 issuer-supplied copy of the internal tenant claim is removed; a caller-supplied
 tenant header cannot change the binding. Credentials without an explicit
 tenant binding are rejected. An explicit empty binding preserves an invocation
-accepted with tenant resolution disabled. The
+accepted without a configured default tenant. The
 approver's session, capability and identity headers are never forwarded as execution authority;
 `admin:operation:*` grants are server-reserved and cannot be requested through
 the API-key creation endpoint. Internal replay credentials are excluded from
@@ -193,9 +193,12 @@ Proposal lists, proposal reads and decisions, and operation-handle reads are
 restricted to the tenant recorded when the operation was accepted. A record
 owned by another tenant is omitted from lists and returns `404` on direct
 access. MCP proposal resources use the same ownership boundary.
-Legacy records without a tenant owner are hidden from tenant-scoped callers;
-a platform operator can inspect those records and re-propose pending work in
-its intended tenant. Idempotency keys are scoped to the accepted tenant.
+In single-tenant mode, the configured default tenant retains access to legacy
+records without a tenant owner. Multi-tenant callers and credentials bound to
+a tenant for replay or background execution cannot use this compatibility path.
+Proposal evidence must still match the resolved tenant. A platform operator can
+inspect legacy records and re-propose pending work in its intended tenant.
+Idempotency keys are scoped to the accepted tenant.
 
 ### Browser administrator sessions
 
@@ -242,6 +245,46 @@ server's configured JWT validation. Configure the provider's SPA redirect and
 origin allowlists; never give the browser a client secret. The backend-assisted
 OIDC endpoints continue to use same-origin session cookies.
 
+#### Failed sign-in and API-key attempts
+
+The server counts failed sign-in and API-key attempts per client address and
+briefly refuses a source after repeated failures. An attempt counts when the
+presented value matches no managed key and is then compared with the configured
+administrator password and does not match it. This applies to browser session
+and password-token sign-in, `X-API-Key`, Basic compatibility, and bearer and
+`token` credentials. It still applies while the key store is unavailable. Nothing
+counts when no administrator password is configured or it cannot be resolved.
+Unknown or expired portal tokens and OIDC access tokens are not compared and do
+not count. For `generateToken`, every exchange the administrator verifier rejects
+counts. A success does not clear earlier failures; they expire with the window.
+OAuth client-credential secrets are not counted.
+
+While a source is refused, no credential from it is checked. Password sign-in
+returns `429` with `Retry-After`, and an `X-API-Key` request that the API-key
+challenge answers gets the same. Other challenges keep their usual response, a
+route that allows anonymous access serves the request anonymously, and
+`generateToken` reports its usual failure.
+
+The client address is the connection address after trusted forwarded-header
+processing. Behind a proxy, enable `ForwardedHeaders` or every client shares the
+proxy's address; the server warns at startup while `ForwardedHeaders` is off.
+List addresses that front many clients in `ExemptNetworks`. Counts are held per
+server instance, and a request without a client address is not counted.
+
+| Setting (`Authentication:FailedAttempts`) | Default | Meaning |
+|---|---:|---|
+| `Enabled` | `true` | Count failures and refuse sources. |
+| `Threshold` | `10` | Failures within `Window` that refuse a source. |
+| `Window` | `00:15:00` | Counting window, started by the first failure. |
+| `BlockDuration` | `00:15:00` | How long a source stays refused. |
+| `MaxTrackedSources` | `10000` | Addresses tracked per instance; expired entries are evicted first. |
+| `ExemptNetworks` | none | Ranges that are never counted or refused, written as a network address and prefix length: `10.0.0.0/8`, or `/32` and `/128` for one address. |
+
+`Window` and `BlockDuration` are at most one day. In Development and Test, an
+administrator password of exactly 64 lowercase hex characters is treated as a
+portal token on bearer and `token` transports and is not accepted there; use
+`X-API-Key` or a password of another shape.
+
 ### 3. Enable OIDC for browser and admin sign-in
 
 ```bash
@@ -252,7 +295,28 @@ Oidc__Generic__ClientId=honua-admin
 Oidc__Generic__ClientSecret=$OIDC_CLIENT_SECRET
 ```
 
-For a static Console sharing a public origin with the API, pin the server broker's callback:
+Single-tenant deployments use `MultiTenancy:Enabled=false` by default. Valid
+bearer tokens do not need a tenant claim: requests use `MultiTenancy:DefaultTenantId`
+(default `public`). Identity-provider tenant claims such as Entra's `tid` and
+`X-Honua-Tenant` headers do not select another tenant in this mode. Keep the
+configured default aligned with the deployment's data. Explicitly enabling
+`MultiTenancy:Enabled` opts into claim/header resolution; bearer calls to
+tenant-bound routes then require a valid tenant claim or an authorized override.
+
+To grant admin access through Cognito groups, configure the additional role claim
+and the group names that confer admin access (role claim selection requires Pro):
+
+```bash
+Oidc__ClaimsMapping__AdditionalRoleClaimTypes__0=cognito:groups
+Oidc__AdminRoles__0=deployment-admins
+Oidc__AdminRoles__1=deployment-admins
+```
+
+These mappings apply to bearer tokens and browser sign-in. `AdminRoles` belongs
+directly under `Oidc`, rather than under `ClaimsMapping`.
+
+For a separately hosted Console, or a static Console sharing a public origin with the API,
+pin the backend-assisted admin broker's callback:
 
 ```bash
 Oidc__AdminAuthCallbackUri=https://console.example.com/admin/auth/callback
@@ -279,13 +343,35 @@ path. The pending login cookie uses `SameSite=Lax` for the provider redirect; th
 authenticated session cookie uses `SameSite=Strict`. On landing, Console refreshes
 its session identity and CSRF token before sending authenticated mutations.
 
-Cognito logout requires separate deployment integration: Console's current logout
-clears its local/operator sessions and upstream server cookie jar, but does not
-clear an edge proxy's session or navigate a Cognito logout endpoint. The Server
-broker's discovery-based logout uses `post_logout_redirect_uri` ending in `/admin`;
-Cognito's managed logout requires its documented `client_id` and `logout_uri`
-parameters. Configuring this callback alone does not establish global sign-out or
-revoke an edge/Cognito login session.
+For Amazon Cognito, configure the user-pool issuer as `Authority` and the hosted
+login domain separately for logout:
+
+```bash
+Oidc__Generic__Authority=https://cognito-idp.us-west-2.amazonaws.com/us-west-2_EXAMPLE
+Oidc__Generic__ClientId=your-app-client-id
+Oidc__Generic__AcceptClientIdAsAudience=true
+Oidc__Generic__LogoutEndpoint=https://your-domain.auth.us-west-2.amazoncognito.com/logout
+Oidc__Generic__UseCognitoLogout=true
+Public__BaseUrl=https://api.example.com/honua
+```
+
+`AcceptClientIdAsAudience` is opt-in. It accepts an access token without `aud`
+only when `iss` matches this Generic provider, `token_use` is `access`, and
+`client_id` matches its configured client. A present `aud` must still validate;
+issuer, signature and expiry checks remain required. Broker ID tokens still
+require an audience. See the [Cognito access-token format](https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-using-the-access-token.html).
+
+The broker logout URL uses `client_id` and `logout_uri` in Cognito mode, including
+when discovery omits `end_session_endpoint`. Register the public `/admin` URL
+(in this example, `https://api.example.com/honua/admin`) as an allowed sign-out
+URL on the Cognito app client. `LogoutEndpoint` must be an absolute HTTPS URL
+without user information, query or fragment. Without Cognito mode, logout retains
+standard `post_logout_redirect_uri` and optional `id_token_hint` parameters.
+See [Cognito logout](https://docs.aws.amazon.com/cognito/latest/developerguide/logout-endpoint.html).
+
+The browser must navigate the generated logout URL to clear the Cognito session.
+Clearing Console's local/operator sessions and upstream cookie jar alone does
+not clear an edge proxy session or revoke Cognito tokens.
 
 Explicit `Oidc:AdminRoles` and `Oidc:Generic:Scopes` arrays replace their options
 constructor defaults. Configuration providers still merge indexed keys: when overriding
@@ -455,6 +541,7 @@ A wrong or missing key returns `401` with a `WWW-Authenticate: ApiKey` challenge
 | Symptom | Fix |
 |---|---|
 | `401` on admin endpoints | `HONUA_ADMIN_PASSWORD` unset or mismatched; confirm the `X-API-Key` header is present and the process restarted after the change. |
+| `429` with `Retry-After` on sign-in, or a correct key still refused | Repeated failed attempts from that address; wait for `Retry-After` and fix the credential the client sends. |
 | `generateToken` refuses to issue | Issuance is HTTPS-only by default — front the server with TLS (see [TLS and mTLS](tls-and-mtls.md)). |
 | Token works from one host but not another | Portal tokens are bound to `client=referer` or `client=ip`; re-issue with the binding the caller actually presents. |
 | `admin:write` or `admin:manage` key gets `403` creating, rotating or revoking API keys, changing user roles, deprovisioning users or managing OAuth clients | Expected: these routes need full-administrator authority. Use a key granted `admin`, `*` or `admin:*`, the bootstrap credential, an administrator session, or submit the change as a proposal for approval. See [Credential and identity management](../../reference/admin-api/users-roles-licensing.md#credential-and-identity-management). |

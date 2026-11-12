@@ -11486,7 +11486,7 @@
           "Operations"
         ],
         "summary": "Get Cache Health",
-        "description": "Reports cache service health, fallback state, and the effective cache configuration. Redis server info is included only when a Redis connection multiplexer is registered.",
+        "description": "Reports the health and effective configuration of the cache on the node that serves the request. Redis server info is included only when a Redis connection multiplexer is registered.",
         "operationId": "getOperationsCacheHealth",
         "responses": {
           "200": {
@@ -11570,7 +11570,7 @@
           "Operations"
         ],
         "summary": "Invalidate Cache",
-        "description": "Invalidates cached entries. Exactly one scope is selected, in precedence order: `keyPattern` (pattern removal), `scope` of `ogc-metadata` or `all`, `serviceId` plus `layerId` (layer scope), then `serviceId` alone (service catalog scope). At least one of `keyPattern`, `serviceId` or `scope` must be supplied.",
+        "description": "Invalidates cached entries. Exactly one scope is selected, in precedence order: `keyPattern` (pattern removal), `scope` of `ogc-metadata` or `all`, `serviceId` plus `layerId` (layer scope), then `serviceId` alone (service catalog scope). At least one of `keyPattern`, `serviceId` or `scope` must be supplied. Caches are per node: only the node that receives the request is cleared, and other nodes serve their entries until they expire.",
         "operationId": "invalidateOperationsCache",
         "requestBody": {
           "required": true,
@@ -19333,6 +19333,24 @@
           "401": {
             "description": "The password is not valid, or no administrator password is configured."
           },
+          "429": {
+            "description": "Too many failed attempts from this client address; the source is refused until the `Retry-After` interval elapses.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the client address may try again.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAuthProblemResponse"
+                }
+              }
+            }
+          },
           "503": {
             "description": "Administrator sign-in is unavailable: the configured administrator password could not be resolved, or the shared session store could not create the session.",
             "content": {
@@ -19407,6 +19425,24 @@
           },
           "401": {
             "description": "The password is not valid, or no administrator password is configured."
+          },
+          "429": {
+            "description": "Too many failed attempts from this client address; the source is refused until the `Retry-After` interval elapses.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the client address may try again.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAuthProblemResponse"
+                }
+              }
+            }
           },
           "503": {
             "description": "The configured administrator password could not be resolved, or operator bearer issuance is not configured on this server.",
@@ -39898,18 +39934,11 @@
           "cacheEnabled": {
             "type": "boolean"
           },
-          "fallbackEnabled": {
-            "type": "boolean"
-          },
           "keyPrefix": {
             "type": "string",
             "nullable": true
           },
           "defaultTtlSeconds": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "retryIntervalSeconds": {
             "type": "integer",
             "format": "int32"
           },

@@ -30,6 +30,8 @@ internal sealed class ApiKeyAuthenticationHandler(
     private const string AuthRealm = "Honua Admin";
     private const string AdminAuthenticationNotConfigured = "Admin authentication not configured";
     private const string RequestNotPermittedMessage = "This API key is not permitted from this origin or network.";
+    private const string SourceRefusedMessage = "Too many failed authentication attempts from this source";
+    private static readonly object SourceRefusedRetryAfterKey = new();
     private static readonly Guid DevelopmentBypassActorId = new("00000000-0000-0000-0000-000000000001");
     internal static readonly Guid BootstrapAdminActorId = new("00000000-0000-0000-0000-000000000002");
 
@@ -50,19 +52,10 @@ internal sealed class ApiKeyAuthenticationHandler(
             return CreateSuccessfulAuthenticationResult(Scheme.Name, "dev-bypass", DevelopmentBypassActorId);
         }
 
-        // Extract API key from explicit header, or from Basic auth compatibility mode.
-        var providedApiKey = GetApiKeyFromHeader();
-        if (string.IsNullOrEmpty(providedApiKey))
+        var (providedApiKey, extractionFailure) = ReadPresentedApiKey();
+        if (extractionFailure is not null)
         {
-            if (TryGetApiKeyFromBasicAuthorizationHeader(out providedApiKey, out var basicFailure))
-            {
-                // Basic auth compatibility successfully extracted the API key.
-            }
-            else if (!string.IsNullOrEmpty(basicFailure))
-            {
-                Context.Items[AuthFailureMessageKey] = basicFailure;
-                return AuthenticateResult.Fail(basicFailure);
-            }
+            return extractionFailure;
         }
 
         if (string.IsNullOrEmpty(providedApiKey))
@@ -72,12 +65,38 @@ internal sealed class ApiKeyAuthenticationHandler(
         }
 
         var validation = await ValidateApiKeyAsync(
-            providedApiKey,
-            Scheme.Name,
+            new ApiKeyPresentation(providedApiKey, Scheme.Name, ApiKeyRequestContext.From(Context)),
             _dependencies,
-            ApiKeyRequestContext.From(Context),
             Logger,
             Context.RequestAborted);
+        return ToAuthenticateResult(validation);
+    }
+
+    // The explicit header wins; Basic auth compatibility supplies the key otherwise.
+    private (string? ApiKey, AuthenticateResult? Failure) ReadPresentedApiKey()
+    {
+        var providedApiKey = GetApiKeyFromHeader();
+        if (!string.IsNullOrEmpty(providedApiKey))
+        {
+            return (providedApiKey, null);
+        }
+
+        if (TryGetApiKeyFromBasicAuthorizationHeader(out providedApiKey, out var basicFailure))
+        {
+            return (providedApiKey, null);
+        }
+
+        if (string.IsNullOrEmpty(basicFailure))
+        {
+            return (null, null);
+        }
+
+        Context.Items[AuthFailureMessageKey] = basicFailure;
+        return (null, AuthenticateResult.Fail(basicFailure));
+    }
+
+    private AuthenticateResult ToAuthenticateResult(ApiKeyValidation validation)
+    {
         switch (validation.Rejection)
         {
             case ApiKeyRejection.None:
@@ -93,6 +112,9 @@ internal sealed class ApiKeyAuthenticationHandler(
             case ApiKeyRejection.CredentialStoreUnavailable:
                 Context.Items[AuthFailureMessageKey] = "credential store unavailable";
                 return AuthenticateResult.Fail("credential store unavailable");
+            case ApiKeyRejection.SourceRefused:
+                Context.Items[SourceRefusedRetryAfterKey] = validation.RetryAfter;
+                return AuthenticateResult.Fail(SourceRefusedMessage);
             case ApiKeyRejection.RequestNotPermitted:
                 // Refusal already logged by ValidateApiKeyAsync with the key id and restriction.
                 Context.Items[AuthFailureMessageKey] = RequestNotPermittedMessage;
@@ -104,74 +126,108 @@ internal sealed class ApiKeyAuthenticationHandler(
     }
 
     // The GeoServices token transport shares this path so the same key yields the same principal, and a rejection is returned instead of logged so the caller reports it.
-    internal static Task<ApiKeyValidation> ValidateApiKeyAsync(
-        string providedApiKey,
-        string schemeName,
-        ApiKeyAuthenticationDependencies dependencies,
-        ILogger logger,
-        CancellationToken cancellationToken)
-        // No request context: a key with referrer or IP restrictions fails closed.
-        => ValidateApiKeyAsync(providedApiKey, schemeName, dependencies, request: null, logger, cancellationToken);
-
+    // A refused source is answered before the store or the password is consulted, so a refusal says nothing about the credential.
     internal static async Task<ApiKeyValidation> ValidateApiKeyAsync(
-        string providedApiKey,
-        string schemeName,
+        ApiKeyPresentation presentation,
         ApiKeyAuthenticationDependencies dependencies,
-        ApiKeyRequestContext? request,
         ILogger logger,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(dependencies);
-
-        var storeUnavailable = false;
-        if (dependencies.AdminApiKeyStore is not null)
+        if (dependencies.RefusalFor(presentation.Request?.ClientIp) is { } retryAfter)
         {
-            try
-            {
-                // One completed-reader fault is a torn Redis pipe (Lambda freeze/thaw or a
-                // timeout). Retry once so the multiplexer can reconnect and a managed key
-                // still authenticates (honua-server#6753).
-                var storedKey = await RedisClientFault.RetryCompletedReaderAsync(
-                    () => dependencies.AdminApiKeyStore.ValidateAsync(providedApiKey, cancellationToken),
-                    cancellationToken);
-                if (storedKey is not null)
-                {
-                    var violation = ApiKeyRequestRestrictions.Evaluate(storedKey.Record, request);
-                    if (violation != ApiKeyRestrictionViolation.None)
-                    {
-                        AuthenticationLog.ApiKeyRequestRestrictionRefused(logger, storedKey.Record.Id, violation);
-                        return new ApiKeyValidation(null, ApiKeyRejection.RequestNotPermitted);
-                    }
-
-                    AuthenticationLog.ApiKeyAuthenticationSuccessful(logger);
-                    return new ApiKeyValidation(
-                        CreateSuccessfulAuthenticationResult(
-                            schemeName,
-                            "admin-api-key",
-                            storedKey.Record.Id,
-                            storedKey.Record.Name,
-                            storedKey.Record.Permissions),
-                        ApiKeyRejection.None);
-                }
-            }
-            catch (Exception ex) when (RedisClientFault.IsCredentialStoreUnavailable(ex))
-            {
-                // RedisTimeoutException derives from TimeoutException, not RedisException.
-                // A second completed-reader fault is the same outage: fall through to the
-                // HONUA_ADMIN_PASSWORD break-glass comparison instead of an unhandled 500.
-                storeUnavailable = true;
-                AuthenticationLog.AdminApiKeyStoreUnavailable(logger, ex);
-            }
+            return new ApiKeyValidation(null, ApiKeyRejection.SourceRefused, RetryAfter: retryAfter);
         }
 
-        var passwordValidation = await ValidateAdminPasswordAsync(new AdminPasswordAttempt(providedApiKey, schemeName),
+        var lookup = await LookUpStoredKeyAsync(presentation, dependencies, logger, cancellationToken).ConfigureAwait(false);
+        if (lookup.Validation is { } resolved)
+        {
+            return resolved;
+        }
+
+        var passwordValidation = await ValidateAdminPasswordAsync(
+            new AdminPasswordAttempt(presentation.ApiKey, presentation.SchemeName, presentation.Request?.ClientIp),
             dependencies, logger, cancellationToken).ConfigureAwait(false);
-        return storeUnavailable && passwordValidation.Rejection is ApiKeyRejection.AdminPasswordNotConfigured or ApiKeyRejection.InvalidKey
+        return lookup.StoreUnavailable && passwordValidation.Rejection is ApiKeyRejection.AdminPasswordNotConfigured or ApiKeyRejection.InvalidKey
             ? new ApiKeyValidation(null, ApiKeyRejection.CredentialStoreUnavailable)
             : passwordValidation;
     }
 
+    // Only the password comparison holds an in-flight slot: a managed-key hit never contends, so many valid keys can be checked at once from one source.
     internal static async Task<ApiKeyValidation> ValidateAdminPasswordAsync(
+        AdminPasswordAttempt attempt,
+        ApiKeyAuthenticationDependencies dependencies,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(dependencies);
+        using var tracked = dependencies.BeginAttempt(attempt.ClientIp, attempt.Password);
+        if (tracked.RetryAfter is { } retryAfter)
+        {
+            return new ApiKeyValidation(null, ApiKeyRejection.SourceRefused, RetryAfter: retryAfter);
+        }
+
+        var validation = await CompareAdminPasswordAsync(attempt, dependencies, logger, cancellationToken).ConfigureAwait(false);
+        if (validation.CountsAsFailure)
+        {
+            tracked.CountFailure();
+        }
+
+        return validation;
+    }
+
+    private static async Task<StoredKeyLookup> LookUpStoredKeyAsync(
+        ApiKeyPresentation presentation,
+        ApiKeyAuthenticationDependencies dependencies,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        if (dependencies.AdminApiKeyStore is not { } store)
+        {
+            return new StoredKeyLookup(null, StoreUnavailable: false);
+        }
+
+        try
+        {
+            // One completed-reader fault is a torn Redis pipe (Lambda freeze/thaw or a
+            // timeout). Retry once so the multiplexer can reconnect and a managed key
+            // still authenticates.
+            var storedKey = await RedisClientFault.RetryCompletedReaderAsync(
+                () => store.ValidateAsync(presentation.ApiKey, cancellationToken),
+                cancellationToken);
+            return new StoredKeyLookup(storedKey is null ? null : ResolveStoredKey(storedKey.Record, presentation, logger), StoreUnavailable: false);
+        }
+        catch (Exception ex) when (RedisClientFault.IsCredentialStoreUnavailable(ex))
+        {
+            // RedisTimeoutException derives from TimeoutException, not RedisException.
+            // A second completed-reader fault is the same outage: fall through to the
+            // HONUA_ADMIN_PASSWORD break-glass comparison instead of an unhandled 500.
+            AuthenticationLog.AdminApiKeyStoreUnavailable(logger, ex);
+            return new StoredKeyLookup(null, StoreUnavailable: true);
+        }
+    }
+
+    private static ApiKeyValidation ResolveStoredKey(AdminApiKeyRecord record, ApiKeyPresentation presentation, ILogger logger)
+    {
+        var violation = ApiKeyRequestRestrictions.Evaluate(record, presentation.Request);
+        if (violation != ApiKeyRestrictionViolation.None)
+        {
+            AuthenticationLog.ApiKeyRequestRestrictionRefused(logger, record.Id, violation);
+            return new ApiKeyValidation(null, ApiKeyRejection.RequestNotPermitted);
+        }
+
+        AuthenticationLog.ApiKeyAuthenticationSuccessful(logger);
+        return new ApiKeyValidation(
+            CreateSuccessfulAuthenticationResult(
+                presentation.SchemeName,
+                "admin-api-key",
+                record.Id,
+                record.Name,
+                record.Permissions),
+            ApiKeyRejection.None);
+    }
+
+    private static async Task<ApiKeyValidation> CompareAdminPasswordAsync(
         AdminPasswordAttempt attempt,
         ApiKeyAuthenticationDependencies dependencies,
         ILogger logger,
@@ -201,9 +257,7 @@ internal sealed class ApiKeyAuthenticationHandler(
         // Perform constant-time comparison to prevent timing attacks
         if (!IsApiKeyValid(attempt.Password, configuredPassword))
         {
-            return new ApiKeyValidation(
-                null,
-                ApiKeyRejection.InvalidKey);
+            return new ApiKeyValidation(null, ApiKeyRejection.InvalidKey, CountsAsFailure: true);
         }
 
         AuthenticationLog.ApiKeyAuthenticationSuccessful(logger);
@@ -570,6 +624,11 @@ internal sealed class ApiKeyAuthenticationHandler(
             return Task.CompletedTask;
         }
 
+        if (Context.Items[SourceRefusedRetryAfterKey] is TimeSpan retryAfter)
+        {
+            return TooManyAttemptsResponse.Create(Context, retryAfter).ExecuteAsync(Context);
+        }
+
         Response.Headers.Append("WWW-Authenticate", $"ApiKey realm=\"{AuthRealm}\", header=\"{ApiKeyHeader}\"");
         if (_authOptions.EnableBasicAuthCompatibility)
         {
@@ -606,6 +665,18 @@ internal enum ApiKeyRejection
 
     // A valid key is still refused when its referrer or IP restriction misses the request.
     RequestNotPermitted,
+
+    // The client address is refused after repeated failures; no credential was compared.
+    SourceRefused,
 }
 
-internal readonly record struct ApiKeyValidation(AuthenticateResult? Success, ApiKeyRejection Rejection);
+// A null request has no origin, referrer or client address: a key with referrer or IP restrictions fails closed and the attempt is not counted.
+internal readonly record struct ApiKeyPresentation(string ApiKey, string SchemeName, ApiKeyRequestContext? Request);
+
+internal readonly record struct StoredKeyLookup(ApiKeyValidation? Validation, bool StoreUnavailable);
+
+internal readonly record struct ApiKeyValidation(
+    AuthenticateResult? Success,
+    ApiKeyRejection Rejection,
+    TimeSpan? RetryAfter = null,
+    bool CountsAsFailure = false);
