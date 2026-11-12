@@ -16,9 +16,9 @@ Single-provider OpenID Connect authentication with Azure AD, Google, Okta, Auth0
 | Capability key | `identity.oidc` |
 | Category | Identity |
 | Edition | Pro |
-| Surface maturity | 6 implemented |
-| Registry entries | 6 |
-| Proving tests | 24 |
+| Surface maturity | 7 implemented |
+| Registry entries | 7 |
+| Proving tests | 27 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

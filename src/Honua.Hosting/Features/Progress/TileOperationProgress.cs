@@ -20,6 +20,9 @@ internal sealed record TileOperationProgress : IOperationProgress, ICancellableO
     public long FailedTiles { get; init; }
     public long ArchiveSizeBytes { get; init; }
     public string? ArchiveFileId { get; init; }
+
+    // Tile payload compression written to the archive header ("none" or "gzip"); null for non-archive operations.
+    public string? TileCompression { get; init; }
     public string? DownloadUrl { get; init; }
     public PMTilesArtifactDescriptor? PublishedArtifact { get; init; }
     public DateTimeOffset StartedAt { get; init; }
