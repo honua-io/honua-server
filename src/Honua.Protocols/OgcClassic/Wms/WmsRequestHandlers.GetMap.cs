@@ -219,6 +219,7 @@ internal static partial class WmsRequestHandlers
         }
 
         var styleCatalog = context.RequestServices.GetRequiredService<ILayerStyleCatalog>();
+        var styleConverter = context.RequestServices.GetService<IGeoServicesStyleConverter>();
         var maxFeatures = MaxFeaturesPerLayer;
         var totalFeatureCount = 0;
 
@@ -273,6 +274,8 @@ internal static partial class WmsRequestHandlers
 
             var stylePlan = await GetRasterStylePlanAsync(
                 styleCatalog,
+                styleConverter,
+                layer.Resource,
                 layer.StorageLayerId,
                 cancellationToken).ConfigureAwait(false);
             if (!StyleTranslator.IsAnyLayerInZoomRange(stylePlan.StyleLayers, renderZoom))

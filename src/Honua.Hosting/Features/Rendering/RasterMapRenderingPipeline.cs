@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Data.Common;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -78,6 +79,9 @@ internal static class RasterMapRenderingPipeline
     internal const int MaxFeaturesPerLayer = 10_000;
     private const string InvalidSpatialReferenceMessage = "Invalid spatial reference.";
     private static readonly ConcurrentDictionary<int, CachedRasterStylePlan> _rasterStylePlanCache = new();
+    private static readonly ConcurrentDictionary<int, CachedSavedStyle> _savedDrawingInfoStyleCache = new();
+    private const string SavedDrawingInfoExtensionKey = "geoservices:drawingInfo";
+    private const string LegacyDrawingInfoExtensionKey = "drawingInfo";
 
     internal readonly record struct RenderLayerDescriptor(
         int LayerId,
@@ -86,16 +90,19 @@ internal static class RasterMapRenderingPipeline
         VerticalSelection? VerticalSelection = null,
         string? StableOrderField = null,
         MetadataV2FieldType? StableOrderFieldType = null,
-        ImmutableArray<string>? EnforcedMaskedFields = null);
+        ImmutableArray<string>? EnforcedMaskedFields = null,
+        MetadataV2Resource? Resource = null);
 
+    // With a resource, tiles draw the layer's saved presentation like export and GetMap.
     internal static RenderLayerDescriptor CreateRenderLayerDescriptorFromV2(
         int layerId,
         bool hasGeometry,
         MetadataV2GeometryType geometryType,
         VerticalSelection? verticalSelection = null,
         string? stableOrderField = null,
-        MetadataV2FieldType? stableOrderFieldType = null)
-        => new(layerId, hasGeometry, geometryType, verticalSelection, stableOrderField, stableOrderFieldType);
+        MetadataV2FieldType? stableOrderFieldType = null,
+        MetadataV2Resource? resource = null)
+        => new(layerId, hasGeometry, geometryType, verticalSelection, stableOrderField, stableOrderFieldType, Resource: resource);
 
     internal static Task<RasterTileRenderResult> RenderRasterTileV2Async(
         HttpContext context,
@@ -222,6 +229,7 @@ internal static class RasterMapRenderingPipeline
 
         var featureReader = services.GetRequiredService<IFeatureReader>();
         var styleCatalog = services.GetRequiredService<ILayerStyleCatalog>();
+        var styleConverter = services.GetService<IGeoServicesStyleConverter>();
 
         // The tile envelope is expressed in the gridset CRS (3857 for WebMercatorQuad, 4326 for
         // WorldCRS84Quad). Build the spatial filter in that CRS and let the canonical query
@@ -274,10 +282,17 @@ internal static class RasterMapRenderingPipeline
                 continue;
             }
 
-            var stylePlan = await GetRasterStylePlanAsync(
-                styleCatalog,
-                layer.LayerId,
-                cancellationToken).ConfigureAwait(false);
+            var stylePlan = layer.Resource is { } layerResource
+                ? await GetRasterStylePlanAsync(
+                    styleCatalog,
+                    styleConverter,
+                    layerResource,
+                    layer.LayerId,
+                    cancellationToken).ConfigureAwait(false)
+                : await GetRasterStylePlanAsync(
+                    styleCatalog,
+                    layer.LayerId,
+                    cancellationToken).ConfigureAwait(false);
             if (!StyleTranslator.IsAnyLayerInZoomRange(stylePlan.StyleLayers, renderZoom))
             {
                 continue;
@@ -688,6 +703,104 @@ internal static class RasterMapRenderingPipeline
 
         return plan;
     }
+
+    // A layer's saved presentation (the Console "Layer presentation" override, stored as the
+    // resource's geoservices:drawingInfo extension) is the drawingInfo FeatureServer/MapServer
+    // metadata advertise, so server-rendered images and legends draw it too. Without an override,
+    // or when the saved renderer converts to nothing renderable, the catalog style applies.
+    internal static async Task<RasterStylePlan> GetRasterStylePlanAsync(
+        ILayerStyleCatalog styleCatalog,
+        IGeoServicesStyleConverter? styleConverter,
+        MetadataV2Resource resource,
+        int storageLayerId,
+        CancellationToken cancellationToken)
+    {
+        if (styleConverter is not null
+            && ResolveSavedDrawingInfoStyle(resource, storageLayerId, styleConverter) is { } saved)
+        {
+            return saved.Plan;
+        }
+
+        return await GetRasterStylePlanAsync(styleCatalog, storageLayerId, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static bool TryGetSavedDrawingInfo(MetadataV2Resource resource, out JsonElement drawingInfo)
+    {
+        if (resource.Extensions is { } extensions
+            && (extensions.TryGetValue(SavedDrawingInfoExtensionKey, out drawingInfo)
+                || extensions.TryGetValue(LegacyDrawingInfoExtensionKey, out drawingInfo))
+            && drawingInfo.ValueKind == JsonValueKind.Object)
+        {
+            return true;
+        }
+
+        drawingInfo = default;
+        return false;
+    }
+
+    // The MapLibre JSON a saved drawingInfo converts to, for renderers that take a style document.
+    internal static string? ResolveSavedDrawingInfoMapLibreStyle(
+        MetadataV2Resource resource,
+        int storageLayerId,
+        IGeoServicesStyleConverter styleConverter)
+        => ResolveSavedDrawingInfoStyle(resource, storageLayerId, styleConverter)?.MapLibreStyleJson;
+
+    private static ConvertedSavedStyle? ResolveSavedDrawingInfoStyle(
+        MetadataV2Resource resource,
+        int storageLayerId,
+        IGeoServicesStyleConverter styleConverter)
+    {
+        if (!TryGetSavedDrawingInfo(resource, out var drawingInfo))
+        {
+            return null;
+        }
+
+        // Conversion depends on the geometry type and layer name as well as the document.
+        var key = new SavedStyleKey(
+            storageLayerId,
+            resource.ReadGeometryType(),
+            resource.Metadata.Name,
+            drawingInfo.GetRawText());
+        if (_savedDrawingInfoStyleCache.TryGetValue(storageLayerId, out var cached) && cached.Key == key)
+        {
+            return cached.Style;
+        }
+
+        var converted = ConvertSavedDrawingInfo(drawingInfo, key, styleConverter);
+        _savedDrawingInfoStyleCache[storageLayerId] = converted;
+        return converted.Style;
+    }
+
+    private static CachedSavedStyle ConvertSavedDrawingInfo(
+        JsonElement drawingInfo,
+        SavedStyleKey key,
+        IGeoServicesStyleConverter styleConverter)
+    {
+        try
+        {
+            var conversion = styleConverter.Convert(drawingInfo, key.StorageLayerId, key.LayerName, key.GeometryType);
+            var plan = BuildRasterStylePlanFromJson(conversion.MapLibreStyleJson);
+            return new CachedSavedStyle(key, plan.StyleLayers.Length > 0
+                ? new ConvertedSavedStyle(conversion.MapLibreStyleJson, plan)
+                : null);
+        }
+        catch (Exception ex) when (ex is not (OperationCanceledException or OutOfMemoryException))
+        {
+            // The admin endpoint stores any JSON object; one the converter cannot handle must not
+            // fail every render of the layer, so it falls back to the catalog style.
+            return new CachedSavedStyle(key, null);
+        }
+    }
+
+    private readonly record struct SavedStyleKey(
+        int StorageLayerId,
+        MetadataV2GeometryType GeometryType,
+        string LayerName,
+        string DrawingInfoJson);
+
+    private sealed record ConvertedSavedStyle(string MapLibreStyleJson, RasterStylePlan Plan);
+
+    private sealed record CachedSavedStyle(SavedStyleKey Key, ConvertedSavedStyle? Style);
 
     private static RasterStylePlan BuildRasterStylePlan(LayerStyleDefinition? style)
         => BuildRasterStylePlanFromJson(style?.MapLibreStyleJson);

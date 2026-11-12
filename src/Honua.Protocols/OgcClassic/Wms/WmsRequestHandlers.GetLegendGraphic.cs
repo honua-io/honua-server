@@ -93,6 +93,8 @@ internal static partial class WmsRequestHandlers
         // symbology from a style revision the map is not drawing.
         var stylePlan = await GetRasterStylePlanAsync(
             styleCatalog,
+            context.RequestServices.GetService<IGeoServicesStyleConverter>(),
+            layer.Resource,
             layer.StorageLayerId,
             cancellationToken).ConfigureAwait(false);
 

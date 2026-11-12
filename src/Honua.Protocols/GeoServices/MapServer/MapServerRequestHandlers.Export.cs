@@ -443,6 +443,8 @@ internal static partial class MapServerEndpoints
                 {
                     stylePlan = await GetRasterStylePlanAsync(
                         styleCatalog,
+                        geoServicesStyleConverter,
+                        resource,
                         layer.StorageLayerId,
                         cancellationToken).ConfigureAwait(false);
                 }
