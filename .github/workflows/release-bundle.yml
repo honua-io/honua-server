@@ -218,8 +218,16 @@ jobs:
           docker pull "$CANDIDATE"
           python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE"
 
+      # Apply the committed not-affected decisions (eng/security/vex-statements.json); the
+      # gate output lists every finding they suppress.
+      - name: Generate OpenVEX for the vulnerability gate
+        run: python3 scripts/security/release_images.py vex-generate --name release-gate --output release-gate.openvex.json
+
       - name: Fail on high or critical RC AOT vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_VEX: release-gate.openvex.json
+          TRIVY_SHOW_SUPPRESSED: 'true'
         with:
           image-ref: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
           format: table
