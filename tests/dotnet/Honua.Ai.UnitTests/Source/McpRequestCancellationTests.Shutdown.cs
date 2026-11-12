@@ -34,13 +34,19 @@ public sealed partial class McpRequestCancellationTests
         };
         await using var manager = new McpSessionManager(store: store);
         var session = (await manager.TryCreateSessionAsync(Alice, false, null, CancellationToken.None))!;
-        manager.GetLifetimeToken(session);
+        var lifetime = manager.GetLifetimeToken(session);
+        var (lease, _) = await manager.StartRequestAsync(session, Alice, Id("cleanup"), CancellationToken.None);
+        await using var request = Assert.IsType<McpSessionManager.McpRequestLease>(lease);
+        var requestCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var registration = request.Token.Register(() => requestCancelled.TrySetResult());
         var shutdown = Task.CompletedTask;
         try
         {
             await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(6));
+            await requestCancelled.Task.WaitAsync(TimeSpan.FromSeconds(1));
             shutdown = dispose ? manager.DisposeAsync().AsTask() : manager.StopAsync(CancellationToken.None);
             Assert.False(shutdown.IsCompleted);
+            Assert.True(lifetime.IsCancellationRequested);
         }
         finally
         {
