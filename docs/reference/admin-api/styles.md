@@ -14,12 +14,12 @@ All admin endpoints require admin authentication — see [Authentication](../../
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/v1/admin/metadata/layers/{layerId}/style` | Get the layer style (MapLibre + cached `drawingInfo` + revision metadata) |
-| PUT | `/api/v1/admin/metadata/layers/{layerId}/style` | Update the layer style; accepts optional `changedBy` and `changeSummary`, reports `unsupportedSymbolizers[]` with stable codes |
+| GET | `/api/v1/admin/metadata/layers/{storageLayerId}/style` | Get the layer style (MapLibre + cached `drawingInfo` + revision metadata) |
+| PUT | `/api/v1/admin/metadata/layers/{storageLayerId}/style` | Update the layer style; accepts optional `changedBy` and `changeSummary`, reports `unsupportedSymbolizers[]` with stable codes |
 
 The MapLibre payload must be a valid Style Spec v8 document with at least one layer; an empty `layers` array returns `400`. Layers that omit `source` default to the auto-injected tile source `layer-{layerId}` (source-layer `layer`). `changeSummary` is capped at 1000 characters. Unsupported symbolizer codes are `RENDERER_TYPE_UNSUPPORTED`, `SYMBOL_TYPE_UNSUPPORTED`, `PICTURE_MARKER_PARTIAL`, and `RENDERER_PAYLOAD_INCOMPLETE`; the request still succeeds with a best-effort fallback.
 
-In the authorized [API explorer](../openapi-and-explorer.md), run `PUT /api/v1/admin/metadata/layers/{layerId}/style` with this body:
+In the authorized [API explorer](../openapi-and-explorer.md), run `PUT /api/v1/admin/metadata/layers/{storageLayerId}/style` with this body:
 
 ```json
 {
@@ -42,24 +42,26 @@ In the authorized [API explorer](../openapi-and-explorer.md), run `PUT /api/v1/a
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/v1/admin/metadata/layers/{layerId}/style/import-sld` | Convert an SLD/SE 1.0 or 1.1 XML document to MapLibre style JSON and store it (1 MiB body cap) |
-| GET | `/api/v1/admin/metadata/layers/{layerId}/style/export-sld` | Export the stored MapLibre style as an `application/xml` SLD 1.0 document; diagnostic count in `X-Sld-Diagnostic-Count` |
+| POST | `/api/v1/admin/metadata/layers/{storageLayerId}/style/import-sld` | Convert an SLD/SE 1.0 or 1.1 XML document to MapLibre style JSON and store it (1 MiB body cap) |
+| GET | `/api/v1/admin/metadata/layers/{storageLayerId}/style/export-sld` | Export the stored MapLibre style as an `application/xml` SLD 1.0 document; diagnostic count in `X-Sld-Diagnostic-Count` |
 
-Run `POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld` and use `parcels.sld` as the XML request body.
+Run `POST /api/v1/admin/metadata/layers/{storageLayerId}/style/import-sld` and use `parcels.sld` as the XML request body.
 
 ## Style suggestions
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/v1/admin/metadata/layers/{layerId}/suggest-style` | Generate a suggested style for a layer from its schema and data |
+| POST | `/api/v1/admin/metadata/layers/{storageLayerId}/suggest-style` | Generate a suggested style for a layer from its schema and data |
 
-Run `POST /api/v1/admin/metadata/layers/{layerId}/suggest-style` with `{}`.
+Run `POST /api/v1/admin/metadata/layers/{storageLayerId}/suggest-style` with `{}`.
 
 ## Public style fetch and themes
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/styles/{layerId}.json` | Public MapLibre style fetch; optional `?theme=default\|dark\|colorblind-safe\|print` applies a deterministic theme transform |
+| GET | `/api/styles/{publicationId}.json` | Public MapLibre style fetch; optional `?theme=default\|dark\|colorblind-safe\|print` applies a deterministic theme transform |
+
+`publicationId` is the exact graph Layer ID, independent of its storage handle and Service-local index. Follow the style URL advertised by TileJSON or the OGC Features collection.
 
 The output cache varies per theme; the admin update endpoint invalidates every variant on each revision.
 
