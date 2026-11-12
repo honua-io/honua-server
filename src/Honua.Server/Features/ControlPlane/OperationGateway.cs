@@ -593,17 +593,18 @@ internal sealed partial class OperationGateway : IOperationGateway
         };
     }
 
-    private static OperationGatewayResult FolderProposalResult(OperationProposal existing, OperationGatewayRequest request,
-        OperationProposalPlan plan, GuardrailDecision decision, TimeProvider clock)
+    private static bool RequiresNewFolderIdempotencyKey(OperationProposal existing, OperationGatewayRequest request,
+        OperationProposalPlan plan, TimeProvider clock)
         => FolderOperationCredential.IsFolderMutation(request.OperationId ?? string.Empty) &&
-            !FolderApprovalAuthorization.MatchesExisting(existing, request.RequestedBy, plan, clock.GetUtcNow())
-            ? new OperationGatewayResult
-            {
-                Outcome = OperationGatewayOutcome.Blocked,
-                Decision = decision,
-                Message = FolderApprovalAuthorization.NewIdempotencyKeyRequired
-            }
-            : ExistingProposalResult(existing, decision, request.IdempotencyKey!);
+            !FolderApprovalAuthorization.MatchesExisting(existing, request.RequestedBy, plan, clock.GetUtcNow());
+
+    private static OperationGatewayResult NewIdempotencyKeyRequiredResult(GuardrailDecision decision)
+        => new()
+        {
+            Outcome = OperationGatewayOutcome.Blocked,
+            Decision = decision,
+            Message = FolderApprovalAuthorization.NewIdempotencyKeyRequired
+        };
 
     private async Task<OperationGatewayResult> CreateProposalAsync(
         OperationGatewayRequest request,
@@ -646,7 +647,9 @@ internal sealed partial class OperationGateway : IOperationGateway
                 .ConfigureAwait(false);
             if (existing != null)
             {
-                return FolderProposalResult(existing, request, plan, decision, clock);
+                return RequiresNewFolderIdempotencyKey(existing, request, plan, clock)
+                    ? NewIdempotencyKeyRequiredResult(decision)
+                    : ExistingProposalResult(existing, decision, request.IdempotencyKey!);
             }
         }
 
@@ -751,7 +754,9 @@ internal sealed partial class OperationGateway : IOperationGateway
                 var winner = await _proposalStore.GetAsync(proposal.ProposalId, cancellationToken).ConfigureAwait(false);
                 if (winner != null)
                 {
-                    return FolderProposalResult(winner, request, plan, decision, clock);
+                    return RequiresNewFolderIdempotencyKey(winner, request, plan, clock)
+                        ? NewIdempotencyKeyRequiredResult(decision)
+                        : ExistingProposalResult(winner, decision, request.IdempotencyKey!);
                 }
             }
 
