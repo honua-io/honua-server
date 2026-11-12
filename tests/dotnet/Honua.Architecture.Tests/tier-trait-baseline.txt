@@ -400,7 +400,6 @@ Honua.Server.Tests:Honua.Server.Tests.Features.Geoprocessing.ExecutionAdmissionE
 Honua.Server.Tests:Honua.Server.Tests.Features.Geoprocessing.ExecutionAdmissionEvaluatorTests.Evaluate_PartitionLimit_OnlyCountsMatchingKind`0()
 Honua.Server.Tests:Honua.Server.Tests.Features.Geoprocessing.ExecutionAdmissionEvaluatorTests.Evaluate_RateLimitReached_ThrottlesRate`0()
 Honua.Server.Tests:Honua.Server.Tests.Features.Geoprocessing.ExecutionAdmissionEvaluatorTests.Evaluate_RateWindow_ExpiresAfterTimeAdvances`0()
-Honua.Server.Tests:Honua.Server.Tests.Features.Geoprocessing.ExecutionAdmissionEvaluatorTests.Evaluate_SharedRateStateUnavailable_DeniesBackpressureInsteadOfPerNodeFallback`0()
 Honua.Server.Tests:Honua.Server.Tests.Features.Geoprocessing.ExecutionAdmissionEvaluatorTests.Evaluate_WhenBackpressureAndConcurrencyBothExceeded_ReportsBackpressureFirst`0()
 Honua.Server.Tests:Honua.Server.Tests.Features.Geoprocessing.ExecutionAdmissionEvaluatorTests.Evaluate_WhenConcurrencyAndRateBothExceeded_ReportsConcurrencyFirst`0()
 Honua.Server.Tests:Honua.Server.Tests.Features.Geoprocessing.ExecutionAdmissionEvaluatorTests.Evaluate_WhenDisabled_Admits`0()

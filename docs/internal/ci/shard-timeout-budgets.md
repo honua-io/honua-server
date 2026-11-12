@@ -1533,7 +1533,8 @@ methods whose names are prefixes of one another stay together. Every child excep
 lists its classes or methods intersected with the parent filter. The remaining child is
 the complement: the parent filter minus everything the others list, so new classes and
 methods have exactly one owner. Children keep the parent's paths, project, budgets and
-report flags. `dispatch_rank` holds the estimate until a full run measures the children.
+report flags. `dispatch_rank` held the estimate until the 11 Nov 2026 full runs measured
+the children (see gate-model.md).
 
 | Parent | Measured job p50 (min) | Children | Estimated child job minutes | Partition granularity |
 |---|---:|---:|---|---|
