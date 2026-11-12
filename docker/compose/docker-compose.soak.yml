@@ -34,9 +34,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    # Append-only persistence is not a nicety here: without it the server rejects the Redis
-    # durability attestation, does not advertise `jobs.runner`, and the geoprocessing queue the
-    # envelope declares (gpWorkers/gpQueueDepth) runs on a store that can lose acknowledged jobs.
+    # Append-only persistence keeps the cache and coordination state across a Redis restart.
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
     ports:
       - "127.0.0.1:${SOAK_REDIS_PORT:-6379}:6379"

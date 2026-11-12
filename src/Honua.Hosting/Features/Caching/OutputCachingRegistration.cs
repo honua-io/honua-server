@@ -54,6 +54,8 @@ internal static class OutputCachingRegistration
             {
                 policy.AddPolicy<RouteTagOutputCachePolicy>();
                 policy.AddPolicy<AnonymousOnlyOutputCachePolicy>();
+                policy.AddPolicy<RequireAnonymousGrantOutputCachePolicy>();
+                policy.AddPolicy<CapOutputCacheLifetimeAtCdnLifetimePolicy>();
                 // Safe by construction rather than by opt-out discipline: a request
                 // carrying an application-defined credential, and a response the
                 // handler marked no-store, are both excluded from the shared cache
@@ -88,6 +90,8 @@ internal static class OutputCachingRegistration
                 {
                     policy.VaryByValue(static context => ResolveTestSchemaOutputCacheKey(context));
                 }
+
+                policy.AddPolicy<OutputCacheStatusPolicy>();
             }, excludeDefaultPolicy: true);
 
             // Service metadata caching policy

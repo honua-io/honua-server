@@ -234,9 +234,9 @@ public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixt
 
         var texts = exception.Elements(ows + "ExceptionText").Select(element => element.Value).ToArray();
         texts.Should().Contain($"code: {CapabilityUnavailableCodes.ErrorCode}");
-        texts.Should().Contain($"missingDependency: {CapabilityUnavailableCodes.RedisDependency}");
+        texts.Should().Contain($"missingDependency: {CapabilityUnavailableCodes.SystemDatabaseDependency}");
         texts.Should().Contain($"capability: {CapabilityUnavailableCodes.DurableJobsCapability}");
-        texts.Should().Contain($"remediationRef: {CapabilityUnavailableCodes.RedisRemediationRef}");
+        texts.Should().Contain($"remediationRef: {CapabilityUnavailableCodes.SystemDatabaseRemediationRef}");
     }
 
     [IntegrationTest]

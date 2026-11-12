@@ -104,12 +104,6 @@ public sealed class GenericOidcProviderOptions
 
     public string? ClientSecret { get; set; }
 
-    public bool AcceptClientIdAsAudience { get; set; }
-
-    public string? LogoutEndpoint { get; set; }
-
-    public bool UseCognitoLogout { get; set; }
-
     public string CallbackPath { get; set; } = "/signin-oidc";
 
     public string SignedOutCallbackPath { get; set; } = "/signout-callback-oidc";
