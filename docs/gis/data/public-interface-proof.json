@@ -856,13 +856,14 @@
     },
     {
       "surfaceId": "asset-tasks",
-      "displayName": "Task-first asset management (asset profiles)",
+      "displayName": "Task-first asset management (asset profiles, tasks)",
       "surfaceKind": "http-route-family",
       "protocol": "Admin API",
-      "canonicalIdentifier": "/api/v1/assets/**",
+      "canonicalIdentifier": "/api/v1/{assets,tasks}/**",
       "parentSurfaceId": "control-plane-admin",
       "endpointPrefixes": [
-        "/api/v1/assets/"
+        "/api/v1/assets/",
+        "/api/v1/tasks"
       ],
       "endpointExactMatches": [],
       "endpointContains": [],
@@ -870,12 +871,13 @@
       "proofs": [
         {
           "proofClass": "route-coverage",
-          "proofMechanism": "EndpointRegistry coverage with AssetProfileEndpointsTests integration tests (CAS, receipts, validation).",
+          "proofMechanism": "EndpointRegistry coverage with AssetProfileEndpointsTests and WorkTaskEndpointsTests integration tests (CAS, receipts, history).",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.Assets.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Assets/AssetProfileEndpointsTests.cs"
+            "tests/dotnet/Honua.Server.Tests/Features/Assets/AssetProfileEndpointsTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Assets/WorkTaskEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",

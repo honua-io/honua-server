@@ -37,6 +37,9 @@ public static class AuthenticationExtensions
 
     public const string StudioLifecyclePolicy = "StudioLifecycle";
 
+    // Any authenticated principal, however it signed in; resource checks inside the handlers decide what it may do.
+    public const string AuthenticatedPolicy = "Authenticated";
+
     public const string StudioAiProxyPolicy = "StudioAiProxy";
 
     public static IServiceCollection AddApiKeyAuthentication(
@@ -111,6 +114,7 @@ public static class AuthenticationExtensions
             options.AddPolicy(TemporalRollbackExecutePolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(ConformanceMutatePolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(StudioLifecyclePolicy, policy => ConfigureStudioLifecyclePolicy(policy));
+            options.AddPolicy(AuthenticatedPolicy, policy => ConfigureAuthenticatedPolicy(policy));
             options.AddPolicy(StudioAiProxyPolicy, policy =>
             {
                 ConfigureStudioLifecyclePolicy(policy);
@@ -173,8 +177,13 @@ public static class AuthenticationExtensions
 
     private static void ConfigureStudioLifecyclePolicy(AuthorizationPolicyBuilder policy)
     {
-        _ = policy.RequireAuthenticatedUser();
+        ConfigureAuthenticatedPolicy(policy);
         _ = policy.AddRequirements(new StudioLifecycleRequirement());
+    }
+
+    private static void ConfigureAuthenticatedPolicy(AuthorizationPolicyBuilder policy)
+    {
+        _ = policy.RequireAuthenticatedUser();
         policy.AuthenticationSchemes.Add(OidcAuthenticationExtensions.CompositeScheme);
     }
 
@@ -186,6 +195,9 @@ public static class AuthenticationExtensions
 
     public static TBuilder RequireAdminAuthorization<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(AdminPolicy);
+
+    public static TBuilder RequireAuthenticatedAuthorization<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(AuthenticatedPolicy);
 
     public static TBuilder RequireAdminCredentialManagementAuthorization<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(AdminCredentialManagementPolicy);

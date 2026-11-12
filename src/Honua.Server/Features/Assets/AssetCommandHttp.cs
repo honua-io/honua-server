@@ -33,6 +33,11 @@ internal static class AssetCommandHttp
     public static string ResolveActor(HttpContext context)
         => ServiceDataEditorAuthorization.ResolveOwnerSubject(context.User) ?? AuditEvent.AnonymousActor;
 
+    // Planners are administrators (full admin keys or configured admin roles); everyone else acts as crew on the tasks
+    // of services they can edit.
+    public static WorkTaskActor ResolveTaskActor(HttpContext context)
+        => new(ResolveActor(context), ServiceDataEditorAuthorization.IsAdminPrincipal(context));
+
     // The hash covers who sent the command as well as what it asks, so reuse by another actor is a conflict, not a replay.
     public static AssetCommand CreateCommand<T>(HttpContext context, CommandSubject subject, (T Request, JsonTypeInfo<T> TypeInfo) body)
     {

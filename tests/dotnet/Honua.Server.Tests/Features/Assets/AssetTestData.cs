@@ -1,8 +1,14 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json.Nodes;
+using FluentAssertions;
+using Honua.Core.Features.Assets;
+using Honua.Core.Features.Forms.Packages;
 using Honua.TestKit;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Assets;
 
@@ -19,6 +25,65 @@ internal static class AssetTestData
                 honua.asset_command_receipts, honua.asset_summaries, honua.work_tasks, honua.asset_profiles
             """;
         await command.ExecuteNonQueryAsync();
+    }
+
+    // The fixture layer's seed differs from base-schema, so tests read real object IDs and coordinates from the layer.
+    public static async Task<IReadOnlyList<(string AssetId, double X)>> DiscoverAssetsAsync(WebAppFixture fixture)
+    {
+        var body = await fixture.Client.GetStringAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where=1%3D1&outFields=*&returnGeometry=true&resultRecordCount=20&f=json");
+        var assets = new List<(string AssetId, double X)>();
+        foreach (var feature in System.Text.Json.Nodes.JsonNode.Parse(body)!["features"]!.AsArray())
+        {
+            var objectId = feature?["attributes"]?.AsObject()
+                .FirstOrDefault(pair => string.Equals(pair.Key, "objectid", StringComparison.OrdinalIgnoreCase)).Value;
+            if (objectId is not null && feature!["geometry"]?["x"] is { } x)
+            {
+                assets.Add((objectId.ToString(), x.GetValue<double>()));
+            }
+        }
+
+        assets.Should().HaveCountGreaterThanOrEqualTo(3, body[..Math.Min(body.Length, 2000)]);
+        return assets;
+    }
+
+    public static async Task<WorkTaskFormReference> PublishFormAsync(WebAppFixture fixture)
+    {
+        using var scope = fixture.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IFormPackageStore>();
+        var draft = await store.SaveDraftAsync(
+            new FormPackageDocument
+            {
+                Title = "Asset work " + Guid.NewGuid().ToString("N"),
+                Target = new FormTargetDefinition { ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId },
+                Sections = [new FormSectionDefinition { SectionId = "main", Label = "Main", FieldIds = ["name"] }],
+            },
+            "test-admin");
+        var published = await store.PublishAsync(draft.FormId, draft.Version, new FormPackageValidationResult { IsValid = true }, "test-admin")
+            ?? throw new InvalidOperationException("The test form did not publish.");
+        return new WorkTaskFormReference { FormId = published.FormId, Version = published.Version };
+    }
+
+    // An active profile over the fixture layer keyed by objectid, with the form bound for inspections and service work.
+    public static async Task<Guid> CreateActiveProfileAsync(HttpClient client, WorkTaskFormReference form)
+    {
+        var response = await client.PostAsJsonAsync(
+            "/api/v1/assets/profiles",
+            new AssetProfileWriteRequest
+            {
+                CommandId = Guid.NewGuid(),
+                ServiceId = WebAppFixture.TestServiceId,
+                LayerId = WebAppFixture.TestLayerId,
+                Name = "Signs",
+                Fields = new AssetProfileFieldMap { AssetId = "objectid" },
+                ConditionLabels = ["Very poor", "Poor", "Fair", "Good", "Very good"],
+                InspectionFormId = form.FormId,
+                ServiceFormId = form.FormId,
+                State = AssetProfileState.Active,
+            },
+            AssetsJsonContext.Default.AssetProfileWriteRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.Created, await response.Content.ReadAsStringAsync());
+        return Guid.Parse((await ReadJsonAsync(response))["profile"]!["profileId"]!.GetValue<string>());
     }
 
     public static async Task<JsonObject> ReadJsonAsync(HttpResponseMessage response)
