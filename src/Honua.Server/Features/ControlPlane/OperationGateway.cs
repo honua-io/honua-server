@@ -40,6 +40,7 @@ internal sealed partial class OperationGateway : IOperationGateway
     private readonly OperationProposerApiKeyAuthority? _proposerKeyAuthority;
     private readonly IOperationHumanApprovalVerifier? _humanApprovalVerifier;
     private readonly OperationInitiationResolver? _initiationResolver;
+    private readonly TimeProvider _timeProvider;
 
     public OperationGateway(
         IGuardrailLadder ladder,
@@ -50,7 +51,8 @@ internal sealed partial class OperationGateway : IOperationGateway
         IOperationProposalEvidenceValidator? evidenceValidator = null,
         OperationProposerApiKeyAuthority? proposerKeyAuthority = null,
         IOperationHumanApprovalVerifier? humanApprovalVerifier = null,
-        OperationInitiationResolver? initiationResolver = null)
+        OperationInitiationResolver? initiationResolver = null,
+        TimeProvider? timeProvider = null)
     {
         _ladder = ladder;
         _proposalStore = proposalStore;
@@ -61,6 +63,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         _proposerKeyAuthority = proposerKeyAuthority;
         _humanApprovalVerifier = humanApprovalVerifier;
         _initiationResolver = initiationResolver;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async Task<OperationGatewayResult> RouteAsync(
@@ -593,10 +596,10 @@ internal sealed partial class OperationGateway : IOperationGateway
         };
     }
 
-    private static OperationGatewayResult FolderProposalResult(OperationProposal existing, OperationGatewayRequest request,
+    private OperationGatewayResult FolderProposalResult(OperationProposal existing, OperationGatewayRequest request,
         OperationProposalPlan plan, GuardrailDecision decision)
         => FolderOperationCredential.IsFolderMutation(request.OperationId ?? string.Empty) &&
-            !FolderApprovalAuthorization.MatchesExisting(existing, request.RequestedBy, plan)
+            !FolderApprovalAuthorization.MatchesExisting(existing, request.RequestedBy, plan, _timeProvider.GetUtcNow())
             ? new OperationGatewayResult
             {
                 Outcome = OperationGatewayOutcome.Blocked,

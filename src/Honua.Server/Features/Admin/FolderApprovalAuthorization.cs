@@ -127,11 +127,11 @@ internal static class FolderApprovalAuthorization
         }
     }
 
-    internal static bool MatchesExisting(OperationProposal existing, string? requesterId, OperationProposalPlan plan)
+    internal static bool MatchesExisting(OperationProposal existing, string? requesterId, OperationProposalPlan plan, DateTimeOffset now)
         => existing.RequestedBy == requesterId && existing.Plan.ExecutionPayload == plan.ExecutionPayload &&
             existing.Plan.FolderAuthorization is { } prior && plan.FolderAuthorization is { } current &&
             prior.RequesterId == current.RequesterId && prior.OperationId == current.OperationId &&
-            prior.ExpiresAt > DateTimeOffset.UtcNow && prior.SubjectId == current.SubjectId && prior.SubjectIssuer == current.SubjectIssuer &&
+            prior.ExpiresAt > now && prior.SubjectId == current.SubjectId && prior.SubjectIssuer == current.SubjectIssuer &&
             prior.SnapshotEtag == current.SnapshotEtag && prior.PolicyRevision == current.PolicyRevision &&
             prior.ServiceIds.SequenceEqual(current.ServiceIds, StringComparer.Ordinal);
 
