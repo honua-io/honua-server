@@ -20,7 +20,7 @@ internal sealed class OperatorApprovalGate(
     private const string ApprovalRequiredType = "urn:honua:approval-required";
 
     internal const string AgentApprovalGuidance =
-        " Agent changes need one human approval: submit this change through the operations API " +
+        "Agent changes need one human approval: submit this change through the operations API " +
         "(POST /api/v1/operations/{operationId}/submit) or the matching MCP tool, which files a proposal, " +
         "then ask a person to approve it in Console Approvals. Do not retry with another credential.";
 
@@ -94,25 +94,44 @@ internal sealed class OperatorApprovalGate(
                 logger, userId, resourceType, operation, approval.PolicyRef);
         }
 
-        return Results.Json(
-            new ApprovalDeniedProblemDetails
-            {
-                Type = ApprovalRequiredType,
-                Title = "Approval required",
-                Status = StatusCodes.Status403Forbidden,
-                Detail = $"This operation requires approval (policy: {approval.PolicyRef})."
-                    + (AgentPrincipal.IsAgent(context.User) ? AgentApprovalGuidance : string.Empty),
-                Instance = context.Request.Path.Value,
-                CorrelationId = context.TraceIdentifier,
-                PolicyRef = approval.PolicyRef,
-                ReasonCodes = approval.ReasonCodes,
-                ResourceType = resourceType.ToString(),
-                Operation = operation.ToString()
-            },
+        var detail = $"This operation requires approval (policy: {approval.PolicyRef}).";
+        if (operation == OperatorOperation.Publish && AgentPrincipal.IsAgent(context.User))
+        {
+            detail += " " + AgentApprovalGuidance;
+        }
+
+        return Write(ProblemFor(context, detail, approval) with
+        {
+            ResourceType = resourceType.ToString(),
+            Operation = operation.ToString(),
+        });
+    }
+
+    public static IResult AgentApprovalRequired(HttpContext context, string policyRef, string guidance)
+        => Write(ProblemFor(
+            context,
+            $"This operation requires approval (policy: {policyRef}). {guidance}",
+            ApprovalRequirement.Required(policyRef, "agent-change-requires-human-approval")));
+
+    private static ApprovalDeniedProblemDetails ProblemFor(HttpContext context, string detail, ApprovalRequirement approval)
+        => new()
+        {
+            Type = ApprovalRequiredType,
+            Title = "Approval required",
+            Status = StatusCodes.Status403Forbidden,
+            Detail = detail,
+            Instance = context.Request.Path.Value,
+            CorrelationId = context.TraceIdentifier,
+            PolicyRef = approval.PolicyRef,
+            ReasonCodes = approval.ReasonCodes,
+        };
+
+    private static IResult Write(ApprovalDeniedProblemDetails problem)
+        => Results.Json(
+            problem,
             ApprovalGateJsonContext.Default.ApprovalDeniedProblemDetails,
             statusCode: StatusCodes.Status403Forbidden,
             contentType: ProblemDetailsHelpers.ContentType);
-    }
 
     public async Task<AccessDecision> CheckAuthorizationAsync(
         ClaimsPrincipal principal,

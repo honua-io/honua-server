@@ -52,7 +52,8 @@ internal static class LayerPublishingEndpoints
             .Produces<ApiResponse<object>>(StatusCodes.Status404NotFound)
             .Produces<ApiResponse<object>>(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status500InternalServerError)
-            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
+            .AddEndpointFilter(AgentApprovalFilter.Publish);
 
         group.MapGet("/jobs/{jobId}", HandleGetLayerPublishJob)
             .WithDisplayName("Get Layer Publish Job")
@@ -62,11 +63,13 @@ internal static class LayerPublishingEndpoints
 
         group.MapPut("/{layerId:int}/enabled", HandleSetLayerEnabled)
             .WithDisplayName("Set Layer Enabled")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
+            .AddEndpointFilter(AgentApprovalFilter.Publish);
 
         group.MapPut("/enabled", HandleSetServiceLayersEnabled)
             .WithDisplayName("Set Service Layers Enabled")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
+            .AddEndpointFilter(AgentApprovalFilter.Publish);
 
         group.MapPost("/extents/refresh", HandleRefreshLayerExtents)
             .WithDisplayName("Refresh Layer Extents")

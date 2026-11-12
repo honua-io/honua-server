@@ -16,6 +16,15 @@ internal sealed class DefaultOperatorApprovalEvaluator(
         var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
                   ?? principal.FindFirstValue("sub");
 
+        // A server-minted approved-operation credential exists only after a person approved this exact
+        // method and path, which admin authorization has already matched.
+        if (principal.IsInRole(AdminApiKeyPermission.ApprovedOperationRole))
+        {
+            OperatorAuthorizationLog.ApprovalNotRequired(
+                logger, userId, request.ResourceType, request.Operation);
+            return ApprovalRequirement.NotRequired();
+        }
+
         // Admins bypass approval gates when configured; an agent holding an admin credential does not.
         if (options.Value.AdminExemptFromApproval && IsAdmin(principal) && !AgentPrincipal.IsAgent(principal))
         {

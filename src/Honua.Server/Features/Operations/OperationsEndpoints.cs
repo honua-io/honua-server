@@ -215,7 +215,7 @@ internal static class OperationsEndpoints
         // An agent's gated change continues to the dispatcher, whose agent approval rule files a
         // proposal for a person to approve instead of refusing outright.
         if (descriptor.ApprovalModel == OperationApprovalModel.OperatorGate
-            && !(AgentApprovalRule.IsGated(descriptor.OperationId) && AgentPrincipal.IsAgent(context.User)))
+            && !AgentApprovalRule.Applies(descriptor.OperationId, AgentPrincipal.EffectiveRoles(context.User)))
         {
             var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
             var approvalResult = gate.EvaluateApproval(
@@ -250,9 +250,7 @@ internal static class OperationsEndpoints
                     .GetSnapshot().Edition.ToString().ToLowerInvariant(),
                 SchemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
                 AuthorizationOutcome = authorization.AuthorizationOutcome,
-                Roles = context.User.FindAll(ClaimTypes.Role)
-                    .Select(claim => claim.Value)
-                    .ToArray(),
+                Roles = AgentPrincipal.EffectiveRoles(context.User),
                 ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(context.User),
                 RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(context.User)
                     .OrderBy(scope => scope, StringComparer.Ordinal)

@@ -23,6 +23,14 @@ internal static class AgentPrincipal
         return principal.IsInRole(AgentApprovalRule.AgentRole) || HasAgentGrant(principal);
     }
 
+    // The policy context's roles, with the agent role whenever the principal is an agent, so the
+    // operation policy and the approval gate classify the caller the same way.
+    public static string[] EffectiveRoles(ClaimsPrincipal principal)
+    {
+        var roles = principal.FindAll(ClaimTypes.Role).Select(static claim => claim.Value).Distinct(StringComparer.Ordinal);
+        return IsAgent(principal) ? [.. roles.Append(AgentApprovalRule.AgentRole).Distinct(StringComparer.OrdinalIgnoreCase)] : [.. roles];
+    }
+
     public static bool IsAgentRequest(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);

@@ -195,7 +195,7 @@ internal sealed class PublishedOperationTool : IMcpTool
             SchemaName = httpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
             AuthorizationOutcome = "authorized",
             Tier = ResolveTier(httpContext),
-            Roles = principal.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray(),
+            Roles = AgentPrincipal.EffectiveRoles(principal),
             ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(principal),
             RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(principal)
                 .OrderBy(scope => scope, StringComparer.Ordinal)

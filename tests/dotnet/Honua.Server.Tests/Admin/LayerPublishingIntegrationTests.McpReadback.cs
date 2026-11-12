@@ -20,49 +20,68 @@ public sealed partial class LayerPublishingIntegrationTests
     [Operation(Operations.Create)]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
-    public async Task McpPublishService_CompletedPublication_ReturnedResourceIsReadableByFreshClient()
+    [Endpoint("POST /api/v1/operations/{id}/submit")]
+    public async Task McpPublishService_AgentRequestFilesProposal_HumanPublicationIsReadableByFreshClient()
     {
         await McpPublicationFixtureSetup.InstallPromotionStoresAsync(_fixture);
         using var errors = new McpPublicationErrorCapture();
         _fixture.Services.GetRequiredService<ILoggerFactory>().AddProvider(errors);
         await UseServerFeatureStoreConnectionAsync();
-        using var publishResponse = await _client.PostAsJsonAsync("/mcp", new
+        var publishArguments = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["connectionId"] = _connectionId.ToString("D"),
+            ["schema"] = _schema,
+            ["table"] = _tableName,
+            ["layerName"] = "MCP readback",
+            ["serviceName"] = _serviceName,
+            ["geometryColumn"] = "geom",
+            ["geometryType"] = "Point",
+            ["srid"] = 4326,
+            ["primaryKey"] = "id",
+            ["fields"] = _idNamePopulationFields,
+        };
+
+        // Every MCP caller is an agent: its publish needs one human approval and never executes directly.
+        using var agentResponse = await _client.PostAsJsonAsync("/mcp", new
         {
             jsonrpc = "2.0",
             id = 1,
             method = "tools/call",
-            @params = new
+            @params = new { name = "honua_publish_service", arguments = publishArguments }
+        });
+        var agentBody = await agentResponse.Content.ReadAsStringAsync();
+        using (var agentDocument = JsonDocument.Parse(agentBody))
+        {
+            // This host has no durable proposal store, so the request fails closed instead of filing one.
+            var refused = agentDocument.RootElement.GetProperty("result").GetProperty("structuredContent");
+            refused.GetProperty("code").GetString().Should().Be("unavailable", agentBody);
+            refused.GetProperty("capability").GetString().Should().Be("operations.proposals", agentBody);
+        }
+
+        using var publishResponse = await _client.PostAsJsonAsync("/api/v1/operations/service.publish/submit", new
+        {
+            connectionId = _connectionId.ToString("D"),
+            serviceName = _serviceName,
+            fields = _idNamePopulationFields,
+            parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
             {
-                name = "honua_publish_service",
-                arguments = new
-                {
-                    connectionId = _connectionId.ToString("D"),
-                    schema = _schema,
-                    table = _tableName,
-                    layerName = "MCP readback",
-                    serviceName = _serviceName,
-                    geometryColumn = "geom",
-                    geometryType = "Point",
-                    srid = 4326,
-                    primaryKey = "id",
-                    fields = _idNamePopulationFields
-                }
-            }
+                ["schema"] = _schema,
+                ["table"] = _tableName,
+                ["layerName"] = "MCP readback",
+                ["geometryColumn"] = "geom",
+                ["geometryType"] = "Point",
+                ["srid"] = "4326",
+                ["primaryKey"] = "id",
+            },
         });
         var publishBody = await publishResponse.Content.ReadAsStringAsync();
-        publishResponse.StatusCode.Should().Be(HttpStatusCode.OK, publishBody);
+        publishResponse.IsSuccessStatusCode.Should().BeTrue(publishBody);
         using var publishDocument = JsonDocument.Parse(publishBody);
-        var publish = publishDocument.RootElement;
-        publish.TryGetProperty("error", out _).Should().BeFalse(publishBody);
-        var result = publish.GetProperty("result");
-        result.TryGetProperty("isError", out var isError);
-        (isError.ValueKind == JsonValueKind.True).Should().BeFalse(publishBody);
-        var completed = result.GetProperty("structuredContent");
-        completed.GetProperty("status").GetString().Should().Be("Completed", publishBody);
-        var layerId = int.Parse(completed.GetProperty("layerId").GetString()!, CultureInfo.InvariantCulture);
+        var details = publishDocument.RootElement.GetProperty("data").GetProperty("result").GetProperty("details");
+        var layerId = int.Parse(details.GetProperty("layerId").GetString()!, CultureInfo.InvariantCulture);
         _layerId = layerId;
-        var resourceUri = completed.GetProperty("serviceUri").GetString();
-        resourceUri.Should().NotBeNullOrWhiteSpace();
+        var resourceUri = Honua.Ai.Protocols.Mcp.McpResourceUris.PublishedServiceUri(
+            details.GetProperty("serviceName").GetString()!);
 
         // The published source is real PostGIS data. Do not seed a separate
         // promotion record or replace the tool's URI with an inferred identity.

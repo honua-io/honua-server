@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using System.Text.Json;
+using Honua.Infrastructure.Authentication;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -115,7 +116,7 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
         var actorId = ActorIdFor(authorization, principal);
         // Admin publication is decided here, before the proposal guardrail is applied.
         // The approve route forbids this same principal from approving a proposal they opened.
-        var isAdmin = authorization.IsAdmin(principal);
+        var isAdmin = authorization.IsAdmin(principal) && !AgentPrincipal.IsAgent(principal);
 
         var intent = new StudioPublicationIntent
         {
@@ -139,7 +140,7 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
                 CorrelationId = httpContext.TraceIdentifier,
                 IdempotencyKey = idempotencyKey,
                 AuthorizationOutcome = "authorized",
-                Roles = principal.FindAll(ClaimTypes.Role).Select(static claim => claim.Value).ToArray(),
+                Roles = AgentPrincipal.EffectiveRoles(principal),
                 ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(principal),
                 RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(principal)
                     .OrderBy(static scope => scope, StringComparer.Ordinal).ToArray(),

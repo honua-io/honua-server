@@ -56,7 +56,8 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
         // It is not an approved proposal: the same principal must not be sent through
         // the approve route (honua-server#5207).
         if (string.Equals(context.AuthorizationOutcome, StudioDraftMutationContext.AdminDirectPublicationOutcome, StringComparison.Ordinal)
-            && string.Equals(request.OperationId, StudioDraftMutationContext.PublicationOperationId, StringComparison.Ordinal))
+            && string.Equals(request.OperationId, StudioDraftMutationContext.PublicationOperationId, StringComparison.Ordinal)
+            && !AgentApprovalRule.IsAgent(context.Roles))
         {
             return Task.FromResult(PolicyDecision.Allowed);
         }

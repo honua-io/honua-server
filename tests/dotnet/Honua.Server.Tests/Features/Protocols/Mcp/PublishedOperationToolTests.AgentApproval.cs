@@ -28,6 +28,19 @@ public sealed partial class PublishedOperationToolTests
     }
 
     [UnitTest]
+    public void EnsurePrincipal_ReplacedMcpPrincipal_IsMarkedAsAgent()
+    {
+        var http = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+        http.Request.Path = "/mcp";
+        http.User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(
+            [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, "admin")], "OperatorBearer"));
+
+        var principal = Honua.Ai.Protocols.Mcp.McpAuthorizationHelper.EnsurePrincipal(http);
+
+        Honua.Infrastructure.Authentication.AgentPrincipal.IsAgent(principal).Should().BeTrue();
+    }
+
+    [UnitTest]
     public void ConfigureJourneyOperations_StillExecuteDirectly()
     {
         OperatorJourneyApproval.ForMutation("admin.connections.create", mutating: true)

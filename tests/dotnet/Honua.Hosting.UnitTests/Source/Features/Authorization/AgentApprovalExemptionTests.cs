@@ -63,6 +63,28 @@ public sealed class AgentApprovalExemptionTests
     }
 
     [UnitTest]
+    public void Evaluate_ApprovedOperationReplay_Publish_IsNotRequiredAgain()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Role, AdminApiKeyPermission.ApprovedOperationRole)], "ApiKey"));
+
+        var result = CreateEvaluator().Evaluate(principal, PublishRequest);
+
+        result.IsRequired.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void EffectiveRoles_AgentGrantWithoutRole_IncludesAgentRoleOnce()
+    {
+        var principal = CreateAdmin(
+            new Claim(AdminApiKeyPermission.PermissionClaimType, AgentPrincipal.AgentGrant),
+            new Claim(ClaimTypes.Role, "admin"));
+
+        AgentPrincipal.EffectiveRoles(principal).Should().BeEquivalentTo(["admin", AgentApprovalRule.AgentRole]);
+        AgentPrincipal.EffectiveRoles(CreateAdmin(new Claim(ClaimTypes.Role, "admin"))).Should().Equal("admin");
+    }
+
+    [UnitTest]
     public void MarkRequestPrincipal_McpRoute_AddsAgentRoleOnce()
     {
         var context = CreateContext("/mcp", CreateAdmin());

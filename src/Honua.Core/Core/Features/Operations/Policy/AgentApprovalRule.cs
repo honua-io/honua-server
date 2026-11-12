@@ -25,8 +25,6 @@ public static class AgentApprovalRule
         "service.publish",
     };
 
-    public static IReadOnlyCollection<string> OperationIds => GatedOperationIds;
-
     public static bool IsGated(string operationId) => GatedOperationIds.Contains(operationId);
 
     public static bool IsAgent(IReadOnlyList<string> roles)

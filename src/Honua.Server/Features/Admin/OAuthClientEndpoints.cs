@@ -57,7 +57,8 @@ internal static partial class OAuthClientEndpoints
 
         scopes.MapPut("/", HandleDefineScope)
             .WithDisplayName("Define OAuth Scope")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
 
         scopes.MapDelete("/{scope}", HandleDeleteScope)
             .WithDisplayName("Delete OAuth Scope")

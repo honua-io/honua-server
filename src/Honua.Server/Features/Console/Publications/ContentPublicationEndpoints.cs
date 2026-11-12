@@ -61,7 +61,8 @@ internal static class ContentPublicationEndpoints
         group.MapPatch("/{publicationId}/policy", HandleUpdatePolicy)
             .WithDisplayName("Update Content Publication Policy")
             .WithSummary("Updates server-owned visibility/share/embed/public-link policy and records an audited event.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Patch }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Patch }))
+            .AddEndpointFilter(Honua.Server.Features.Admin.AgentApprovalFilter.AccessGrants);
     }
 
     private static async Task<IResult> HandlePublish(

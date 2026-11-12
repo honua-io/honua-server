@@ -51,7 +51,8 @@ internal static partial class RoleEndpoints
 
         group.MapPost("/", HandleCreateRole)
             .WithDisplayName("Create Role")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
 
         group.MapGet("/{id:guid}", HandleGetRole)
             .WithDisplayName("Get Role")
@@ -59,7 +60,8 @@ internal static partial class RoleEndpoints
 
         group.MapPut("/{id:guid}", HandleUpdateRole)
             .WithDisplayName("Update Role")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
 
         group.MapDelete("/{id:guid}", HandleDeleteRole)
             .WithDisplayName("Delete Role")
@@ -71,7 +73,8 @@ internal static partial class RoleEndpoints
 
         group.MapPut("/{id:guid}/permissions", HandleSetPermissions)
             .WithDisplayName("Set Role Permissions")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
     }
 
     private static RoleResponse ToResponse(RoleDefinition r) => new()
