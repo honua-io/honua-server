@@ -45,7 +45,7 @@ internal abstract class RealtimeLogFanoutProvider(
     public IRealtimeSubscription Subscribe(RealtimeSubscriptionRequest request) => dispatcher.Subscribe(request);
 
     public async ValueTask<RealtimeLogWindow> GetWindowAsync(RealtimeFamily family, CancellationToken cancellationToken)
-        => await log.ReadWindowAsync(family.Name, cancellationToken).ConfigureAwait(false);
+        => await dispatcher.ReadWindowAsync(family.Name, cancellationToken).ConfigureAwait(false);
 }
 
 // One task, or tasks that each serve only their own clients: woken locally and by a slow poll.

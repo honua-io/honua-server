@@ -55,6 +55,7 @@ internal sealed class FeatureStreamRoutabilityGuard
         var exactRoutes = new HashSet<string>(StringComparer.Ordinal);
         var nameRoutes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var nameRouteServiceIds = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        var routedLayers = new HashSet<int>();
         foreach (var service in snapshot.Graph.Services)
         {
             foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
@@ -74,6 +75,7 @@ internal sealed class FeatureStreamRoutabilityGuard
                 }
 
                 exactRoutes.Add(RouteKey(service.Metadata.Id, layerId.Value));
+                routedLayers.Add(layerId.Value);
                 var nameRoute = RouteKey(service.Metadata.Name, layerId.Value);
                 nameRoutes.Add(nameRoute);
                 if (!nameRouteServiceIds.TryGetValue(nameRoute, out var serviceIds))
@@ -92,6 +94,7 @@ internal sealed class FeatureStreamRoutabilityGuard
             exactRoutes,
             nameRoutes,
             nameRouteServiceIds,
+            routedLayers,
             IsValid: true);
         while (true)
         {
@@ -126,6 +129,7 @@ internal sealed class FeatureStreamRoutabilityGuard
                 new HashSet<string>(StringComparer.Ordinal),
                 new HashSet<string>(StringComparer.OrdinalIgnoreCase),
                 new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase),
+                [],
                 IsValid: false);
             if (ReferenceEquals(Interlocked.CompareExchange(ref _state, invalid, current), current))
             {
@@ -133,6 +137,9 @@ internal sealed class FeatureStreamRoutabilityGuard
             }
         }
     }
+
+    // True when some service publishes the layer: a change made in the database names no service.
+    public bool IsLayerRoutable(int layerId) => Volatile.Read(ref _state).RoutedLayers.Contains(layerId);
 
     public bool IsRoutable(string serviceId, int layerId)
         => IsRoutable(serviceId, layerId, resolvedServiceId: null);
@@ -166,6 +173,7 @@ internal sealed class FeatureStreamRoutabilityGuard
         HashSet<string> ExactRoutes,
         HashSet<string> NameRoutes,
         Dictionary<string, HashSet<string>> NameRouteServiceIds,
+        HashSet<int> RoutedLayers,
         bool IsValid)
     {
         public static RoutabilityState Empty { get; } = new(
@@ -174,6 +182,7 @@ internal sealed class FeatureStreamRoutabilityGuard
             new HashSet<string>(StringComparer.Ordinal),
             new HashSet<string>(StringComparer.OrdinalIgnoreCase),
             new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase),
+            [],
             IsValid: false);
     }
 }

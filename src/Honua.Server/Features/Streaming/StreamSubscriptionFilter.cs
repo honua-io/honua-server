@@ -104,6 +104,43 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
         return Matches(envelope, geometryEnvelope, propertiesJson, ref parsedProperties, ref propertiesParsed);
     }
 
+    // A change made directly in the database names no service; it reaches a subscription whose
+    // service publishes the layer, or an unscoped subscription when any service publishes it.
+    private bool MatchesService(FeatureStreamEnvelope envelope)
+    {
+        if (envelope.ServiceId.Length == 0)
+        {
+            return MatchesDatabaseChangeRoute(envelope.LayerId);
+        }
+
+        if (_routabilityGuard is not null &&
+            !_routabilityGuard.IsRoutable(envelope.ServiceId, envelope.LayerId, _resolvedServiceId))
+        {
+            return false;
+        }
+
+        if (_resolvedServiceId is not null)
+        {
+            return _routabilityGuard is not null
+                   || string.Equals(envelope.ServiceId, _resolvedServiceId, StringComparison.Ordinal);
+        }
+
+        return _serviceId is null || string.Equals(envelope.ServiceId, _serviceId, _serviceIdComparison);
+    }
+
+    private bool MatchesDatabaseChangeRoute(int layerId)
+    {
+        var subscribedService = _resolvedServiceId ?? _serviceId;
+        if (_routabilityGuard is null)
+        {
+            return subscribedService is null;
+        }
+
+        return subscribedService is null
+            ? _routabilityGuard.IsLayerRoutable(layerId)
+            : _routabilityGuard.IsRoutable(subscribedService, layerId, _resolvedServiceId);
+    }
+
     internal bool Matches(
         FeatureStreamEnvelope envelope,
         double[]? geometryEnvelope,
@@ -111,21 +148,7 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
         ref IReadOnlyDictionary<string, JsonElement>? parsedProperties,
         ref bool propertiesParsed)
     {
-        if (_routabilityGuard is not null &&
-            !_routabilityGuard.IsRoutable(envelope.ServiceId, envelope.LayerId, _resolvedServiceId))
-        {
-            return false;
-        }
-
-        // 1. Service filter — cheapest, short-circuits first.
-        if (_resolvedServiceId is not null && _routabilityGuard is null &&
-            !string.Equals(envelope.ServiceId, _resolvedServiceId, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        if (_resolvedServiceId is null && _serviceId is not null &&
-            !string.Equals(envelope.ServiceId, _serviceId, _serviceIdComparison))
+        if (!MatchesService(envelope))
         {
             return false;
         }

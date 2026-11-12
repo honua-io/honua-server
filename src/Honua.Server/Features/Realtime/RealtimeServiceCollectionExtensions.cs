@@ -48,6 +48,7 @@ internal static class RealtimeServiceCollectionExtensions
 
         services.AddRealtimeEventLog(configuration);
         services.TryAddSingleton<RealtimeDispatcher>();
+        services.TryAddSingleton<IRealtimeWakeSignal>(provider => provider.GetRequiredService<RealtimeDispatcher>());
         services.TryAddSingleton<RealtimePresenceBatcher>();
 
         var crossNode = UsesPostgresProvider(configuration);

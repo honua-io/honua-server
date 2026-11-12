@@ -39,12 +39,9 @@ internal readonly record struct FeatureChangeRetentionWindow(
     }
 }
 
+// Feature changes in commit order. Cursors are change-log generations: increasing, with gaps.
 internal interface IFeatureChangeEventStore
 {
-    Task<FeatureChangeEvent> AppendAsync(
-        FeatureChangeEventRequest request,
-        CancellationToken cancellationToken = default);
-
     Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default);
 
     // An implementation that cannot determine the oldest retained cursor must fail closed, because a low guess would resume over events that are gone.

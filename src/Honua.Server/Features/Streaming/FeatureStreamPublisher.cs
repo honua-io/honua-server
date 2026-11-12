@@ -4,82 +4,83 @@
 using System.Globalization;
 using System.Text.Json;
 using Honua.Infrastructure.Events;
+using Honua.Server.Features.Realtime;
 
 namespace Honua.Server.Features.Streaming;
 
-// Live fan-out follows the durable append so clients do not miss the gap after replay.
+// Streams read changes from the change log, which the edit transaction wrote, on every task. After
+// a commit this wakes the local tail, so this task's subscribers do not wait for a notification,
+// and hands the change to the Kafka and NATS sinks.
 internal sealed partial class FeatureStreamPublisher(
-    IFeatureChangeEventStore store,
-    FeatureStreamSessionManager sessionManager,
+    IRealtimeWakeSignal wake,
+    PostgresFeatureChangeLog log,
     ILogger<FeatureStreamPublisher> logger,
     FeatureChangeEventSinkBroadcaster? sinkBroadcaster = null) : IFeatureChangeEventPublisher
 {
-    private readonly IFeatureChangeEventStore _store = store ?? throw new ArgumentNullException(nameof(store));
-    private readonly FeatureStreamSessionManager _sessionManager = sessionManager ?? throw new ArgumentNullException(nameof(sessionManager));
-    private readonly ILogger<FeatureStreamPublisher> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    private readonly FeatureChangeEventSinkBroadcaster? _sinkBroadcaster = sinkBroadcaster;
-
     public async Task PublishAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
     {
-        var durableRequest = EnsureEventId(request);
-
-        FeatureChangeEvent persisted;
+        ArgumentNullException.ThrowIfNull(request);
+        wake.Wake();
         try
         {
-            persisted = await _store.AppendAsync(durableRequest, cancellationToken).ConfigureAwait(false);
+            await DispatchToSinksAsync(request, cancellationToken).ConfigureAwait(false);
         }
-        // Best effort runs after the edit committed, so a failed append is logged with the
-        // event's identity and dropped; durable delivery is the transactional outbox's job.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
+        // Best effort runs after the edit committed, so a failed read is logged with the event's
+        // identity and the sinks skip it; durable delivery is the transactional outbox's job.
+        catch (Exception ex) when (ex is not OutOfMemoryException && ex is not OperationCanceledException)
         {
-            LogPublishDropped(_logger, durableRequest.EventId!, durableRequest.LayerId, durableRequest.ObjectId, ex);
+            LogPublishDropped(logger, request.EventId ?? string.Empty, request.LayerId, request.ObjectId, ex);
+        }
+    }
+
+    // A failed read surfaces so the outbox dispatcher keeps the row for retry.
+    public async Task PublishStrictAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        wake.Wake();
+        await DispatchToSinksAsync(request, cancellationToken).ConfigureAwait(false);
+    }
+
+    // Brokers receive the logged change, with its generation as the cursor. A change published
+    // without an outbox row is not in the log under its request's event id, so the request itself
+    // goes out, with cursor 0.
+    private async Task DispatchToSinksAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken)
+    {
+        if (sinkBroadcaster is not { HasActiveSinks: true })
+        {
             return;
         }
 
-        if (await _sessionManager.RefreshRoutabilityAsync(cancellationToken).ConfigureAwait(false))
+        var logged = string.IsNullOrWhiteSpace(request.EventId)
+            ? null
+            : await log.ReadByEventIdAsync(request.EventId, cancellationToken).ConfigureAwait(false);
+        sinkBroadcaster.Dispatch(logged ?? FromRequest(request));
+    }
+
+    private static FeatureChangeEvent FromRequest(FeatureChangeEventRequest request)
+        => new()
         {
-            BroadcastToSessions(persisted);
-        }
-
-        DispatchToSinks(persisted);
-    }
-
-    public async Task PublishStrictAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
-    {
-        // A failed durable append surfaces so the dispatcher keeps the outbox row for retry.
-        var durableRequest = EnsureEventId(request);
-        var persisted = await _store.AppendAsync(durableRequest, cancellationToken).ConfigureAwait(false);
-        if (await _sessionManager.RefreshRoutabilityAsync(cancellationToken).ConfigureAwait(false))
-        {
-            BroadcastToSessions(persisted);
-        }
-
-        DispatchToSinks(persisted);
-    }
-
-    private static FeatureChangeEventRequest EnsureEventId(FeatureChangeEventRequest request)
-        => string.IsNullOrWhiteSpace(request.EventId)
-            ? request with { EventId = Guid.NewGuid().ToString("N") }
-            : request;
-
-    private void BroadcastToSessions(FeatureChangeEvent persisted)
-    {
-        // Fan out to live streaming sessions after durable append.
-        // Enrichment data (geometry envelope + properties) is carried on the message
-        // for subscription filter evaluation during broadcast — no I/O in the hot path.
-        var envelope = ToEnvelope(persisted);
-        // Broadcast() returns the local delivery count only; cross-node fan-out is handled separately.
-        var delivered = _sessionManager.Broadcast(
-            FeatureStreamMessage.Data(envelope, persisted.GeometryEnvelope, persisted.PropertiesJson));
-
-        LogLocalEventBroadcast(_logger, delivered, persisted.Cursor);
-    }
-
-    // Broker dispatch is independent from live-stream routability. A transient metadata
-    // failure must fail the live filters closed without dropping a durably persisted event
-    // from Kafka/NATS (especially on the strict outbox path).
-    private void DispatchToSinks(FeatureChangeEvent persisted)
-        => _sinkBroadcaster?.Dispatch(persisted);
+            EventId = string.IsNullOrWhiteSpace(request.EventId) ? Guid.NewGuid().ToString("N") : request.EventId,
+            Cursor = 0,
+            Timestamp = request.Timestamp ?? DateTimeOffset.UtcNow,
+            SourceId = request.SourceId,
+            ServiceId = request.ServiceId,
+            LayerId = request.LayerId,
+            ObjectId = request.ObjectId,
+            Operation = request.Operation,
+            Protocol = request.Protocol,
+            RequestId = request.RequestId,
+            OperationInstanceId = request.OperationInstanceId,
+            CorrelationId = request.CorrelationId,
+            AuditId = request.AuditId,
+            ProposalId = request.ProposalId,
+            ChangedAttributes = request.ChangedAttributes,
+            GeometryChanged = request.GeometryChanged,
+            GeometryEnvelope = request.GeometryEnvelope,
+            PropertiesJson = request.PropertiesJson,
+            GeometryJson = request.GeometryJson,
+            GeometrySrid = request.GeometrySrid
+        };
 
     internal static FeatureStreamEnvelope ToEnvelope(FeatureChangeEvent e)
     {
@@ -158,9 +159,6 @@ internal sealed partial class FeatureStreamPublisher(
     [LoggerMessage(
         EventId = 5100,
         Level = LogLevel.Warning,
-        Message = "Feature-change event {EventId} for layer {LayerId} object {ObjectId} was dropped because the event store append failed.")]
+        Message = "Feature-change event {EventId} for layer {LayerId} object {ObjectId} was not sent to the event sinks because the change log read failed.")]
     private static partial void LogPublishDropped(ILogger logger, string eventId, int layerId, long objectId, Exception exception);
-
-    [LoggerMessage(EventId = 5103, Level = LogLevel.Debug, Message = "Feature stream event delivered locally to {Count} sessions (cursor={Cursor})")]
-    private static partial void LogLocalEventBroadcast(ILogger logger, int count, long cursor);
 }

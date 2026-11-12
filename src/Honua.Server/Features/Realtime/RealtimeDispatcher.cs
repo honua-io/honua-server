@@ -10,12 +10,16 @@ namespace Honua.Server.Features.Realtime;
 // Follows the realtime log for this task and hands each new event to this task's subscriptions
 // (specification section 6.1). One probe reads every family's head; every family with
 // subscriptions and a head ahead of its dispatched position is read in batches, in order.
-// Dispatch never waits for a subscriber: a full channel closes that subscription.
+// Dispatch never waits for a subscriber: a full channel closes that subscription. Families kept
+// outside the log (features) are read through their IRealtimeFamilySource.
 internal sealed partial class RealtimeDispatcher(
     PostgresRealtimeEventLog log,
+    IEnumerable<IRealtimeFamilySource> sources,
     IOptions<RealtimeOptions> options,
-    ILogger<RealtimeDispatcher> logger)
+    ILogger<RealtimeDispatcher> logger) : IRealtimeWakeSignal
 {
+    private readonly Dictionary<string, IRealtimeFamilySource> _sources =
+        sources.ToDictionary(source => source.Family.Name, StringComparer.Ordinal);
     private readonly Lock _gate = new();
     private readonly Dictionary<string, long> _dispatched = new(StringComparer.Ordinal);
     private readonly Dictionary<string, RealtimeSubscription[]> _subscriptions = new(StringComparer.Ordinal);
@@ -26,7 +30,23 @@ internal sealed partial class RealtimeDispatcher(
 
     public RealtimeOptions Options => options.Value;
 
-    internal PostgresRealtimeEventLog Log => log;
+    // Sequences of a logged family have no gaps except those retention leaves; a source's may.
+    public bool IsContiguous(string family) => !_sources.ContainsKey(family);
+
+    public Task<IReadOnlyList<RealtimeEvent>> ReadAfterAsync(
+        string family,
+        long after,
+        IReadOnlyCollection<string>? scopeKeys,
+        int limit,
+        CancellationToken cancellationToken)
+        => _sources.TryGetValue(family, out var source)
+            ? source.ReadAfterAsync(after, scopeKeys, limit, cancellationToken)
+            : log.ReadAfterAsync(family, after, scopeKeys, limit, cancellationToken);
+
+    public Task<RealtimeLogWindow> ReadWindowAsync(string family, CancellationToken cancellationToken)
+        => _sources.TryGetValue(family, out var source)
+            ? source.ReadWindowAsync(cancellationToken)
+            : log.ReadWindowAsync(family, cancellationToken);
 
     // Asks for a probe as soon as possible; any number of calls before it runs coalesce.
     public void Wake() => _wake.Writer.TryWrite(true);
@@ -59,7 +79,8 @@ internal sealed partial class RealtimeDispatcher(
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Writer);
-        if (!RealtimeLogFamilies.Logged.Contains(request.Family.Name, StringComparer.Ordinal))
+        if (!RealtimeLogFamilies.Logged.Contains(request.Family.Name, StringComparer.Ordinal)
+            && !_sources.ContainsKey(request.Family.Name))
         {
             throw new NotSupportedException($"The realtime log does not carry the '{request.Family.Name}' family.");
         }
@@ -80,7 +101,7 @@ internal sealed partial class RealtimeDispatcher(
     // Sets every family's dispatched position to its head, so live subscribers never see history.
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
-        var heads = await log.ReadHeadsAsync(cancellationToken).ConfigureAwait(false);
+        var heads = await ReadHeadsAsync(cancellationToken).ConfigureAwait(false);
         Dictionary<string, RealtimeSubscription[]> early;
         lock (_gate)
         {
@@ -120,7 +141,7 @@ internal sealed partial class RealtimeDispatcher(
             await InitializeAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        var heads = await log.ReadHeadsAsync(cancellationToken).ConfigureAwait(false);
+        var heads = await ReadHeadsAsync(cancellationToken).ConfigureAwait(false);
         var delivered = 0;
         foreach (var (family, head) in heads)
         {
@@ -140,17 +161,24 @@ internal sealed partial class RealtimeDispatcher(
 
             while (dispatched < head)
             {
-                var batch = await log.ReadAfterAsync(family, dispatched, null, options.Value.ReadBatchSize, cancellationToken)
+                var batch = await ReadAfterAsync(family, dispatched, null, options.Value.ReadBatchSize, cancellationToken)
                     .ConfigureAwait(false);
                 lock (_gate)
                 {
                     subscribers = _subscriptions.GetValueOrDefault(family) ?? [];
                 }
 
+                if (batch.Count == 0 && !IsContiguous(family))
+                {
+                    // The head is a position no event of this family carries (a branch row).
+                    dispatched = head;
+                    break;
+                }
+
                 // Sequences have no gaps except those retention leaves, so a missing next sequence
                 // means rows this task never dispatched were swept. Every subscriber is told to
                 // resynchronize; dispatch then carries on in order. It never skips silently.
-                if (batch.Count == 0 || batch[0].Sequence != dispatched + 1)
+                if (IsContiguous(family) && (batch.Count == 0 || batch[0].Sequence != dispatched + 1))
                 {
                     var firstAfterGap = batch.Count == 0 ? head + 1 : batch[0].Sequence;
                     foreach (var subscriber in subscribers)
@@ -184,6 +212,24 @@ internal sealed partial class RealtimeDispatcher(
         }
 
         return delivered;
+    }
+
+    // The head of every logged family and of every source.
+    private async Task<IReadOnlyDictionary<string, long>> ReadHeadsAsync(CancellationToken cancellationToken)
+    {
+        var logged = await log.ReadHeadsAsync(cancellationToken).ConfigureAwait(false);
+        if (_sources.Count == 0)
+        {
+            return logged;
+        }
+
+        var heads = new Dictionary<string, long>(logged, StringComparer.Ordinal);
+        foreach (var (family, source) in _sources)
+        {
+            heads[family] = await source.ReadHeadAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        return heads;
     }
 
     internal void Remove(RealtimeSubscription subscription)
@@ -371,10 +417,10 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
         try
         {
             var options = _dispatcher.Options;
-            var log = _dispatcher.Log;
             var family = _request.Family.Name;
-            var window = await log.ReadWindowAsync(family, cancellationToken).ConfigureAwait(false);
-            var position = StartPosition(window, options, out var reset);
+            var contiguous = _dispatcher.IsContiguous(family);
+            var window = await _dispatcher.ReadWindowAsync(family, cancellationToken).ConfigureAwait(false);
+            var position = StartPosition(window, options, contiguous, out var reset);
             if (reset is not null)
             {
                 await _request.Writer.WriteAsync(reset, cancellationToken).ConfigureAwait(false);
@@ -384,15 +430,15 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
             while (true)
             {
                 var before = position;
-                var page = await log.ReadAfterAsync(family, position, _scopes, options.ReplayBatchSize, cancellationToken)
+                var page = await _dispatcher.ReadAfterAsync(family, position, _scopes, options.ReplayBatchSize, cancellationToken)
                     .ConfigureAwait(false);
 
-                // The sweep may have run since the window was read. An unscoped page that starts
-                // right after the position proves nothing was lost; otherwise the oldest retained
-                // sequence, read after the page, says whether anything after the position is gone.
-                if (_scopes is not null || page.Count == 0 || page[0].Sequence != before + 1)
+                // The sweep may have run since the window was read. An unscoped page of a contiguous
+                // family that starts right after the position proves nothing was lost; otherwise the
+                // oldest retained position, read after the page, says whether anything after it is gone.
+                if (!contiguous || _scopes is not null || page.Count == 0 || page[0].Sequence != before + 1)
                 {
-                    var current = await log.ReadWindowAsync(family, cancellationToken).ConfigureAwait(false);
+                    var current = await _dispatcher.ReadWindowAsync(family, cancellationToken).ConfigureAwait(false);
                     if (current.Oldest > before + 1 && before < current.Head)
                     {
                         await _request.Writer.WriteAsync(
@@ -439,7 +485,9 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
     }
 
     // Where replay starts, and the reset to send first when the requested position is unusable.
-    private long StartPosition(RealtimeLogWindow window, RealtimeOptions options, out RealtimeDelivery.Reset? reset)
+    // A family with gaps bounds the resume distance in its window instead, because sequence
+    // distance is not an event count there.
+    private long StartPosition(RealtimeLogWindow window, RealtimeOptions options, bool contiguous, out RealtimeDelivery.Reset? reset)
     {
         reset = null;
         if (_request.After is not { } after)
@@ -453,7 +501,7 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
             return window.Head;
         }
 
-        if (window.Head - after > options.ResumeMaxEvents)
+        if (contiguous && window.Head - after > options.ResumeMaxEvents)
         {
             reset = new RealtimeDelivery.Reset(RealtimeResetReasons.TooFarBehind, window.Head);
             return window.Head;
