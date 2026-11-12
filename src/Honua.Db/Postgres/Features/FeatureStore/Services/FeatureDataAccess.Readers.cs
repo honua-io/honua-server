@@ -11,7 +11,7 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 internal sealed partial class FeatureDataAccess
 {
     // Row readers are synchronous: the row is already buffered once ReadAsync returns, so a
-    // per-row Task would only add an allocation (#7381). Loops over a result set pass one
+    // per-row Task would only add an allocation. Loops over a result set pass one
     // FeatureAttributeNameCache so repeated attribute names are not re-allocated per row.
     private Feature ReadFeature(NpgsqlDataReader reader, FeatureAttributeNameCache? names = null)
     {

@@ -19,7 +19,7 @@ internal static class FeatureAttributeJsonReader
     /// <summary>
     /// Reads the attributes column at <paramref name="ordinal"/>. A json/jsonb column is parsed from
     /// the UTF-8 bytes Npgsql already holds, which skips the UTF-16 copy of the whole object that
-    /// <see cref="NpgsqlDataReader.GetString(int)"/> would allocate for every row (#7381).
+    /// <see cref="NpgsqlDataReader.GetString(int)"/> would allocate for every row.
     /// </summary>
     internal static void ReadInto(
         NpgsqlDataReader reader,
@@ -88,7 +88,7 @@ internal static class FeatureAttributeJsonReader
 }
 
 /// <summary>
-/// Reuses attribute-name strings across the rows of one result set (#7381). JSONB stores object
+/// Reuses attribute-name strings across the rows of one result set. JSONB stores object
 /// keys in a fixed order (by length, then bytes), so rows of one layer present the same names at
 /// the same positions. A hit compares the name in place and returns the cached string instead of
 /// allocating a new one; a miss allocates exactly what an uncached read would. One instance per

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Honua Server CPU baseline preflight (honua-server#7382).
+# Honua Server CPU baseline preflight.
 #
 # Honua Server releases built on .NET 11 (2027.1 and later) require an x86-64-v2 CPU on x64
 # (CMPXCHG16B, LAHF/SAHF, POPCNT, SSE3, SSSE3, SSE4.1, SSE4.2) and refuse to start without it.

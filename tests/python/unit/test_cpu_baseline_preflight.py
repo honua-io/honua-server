@@ -1,4 +1,4 @@
-"""Exercise the x86-64-v2 CPU baseline preflight (honua-server#7382) against fixture cpuinfo files."""
+"""Exercise the x86-64-v2 CPU baseline preflight against fixture cpuinfo files."""
 import os
 from pathlib import Path
 import subprocess

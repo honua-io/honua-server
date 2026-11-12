@@ -94,7 +94,7 @@ public sealed class SourceAttributeJsonDocumentAllocationTests(PostgresFixture f
     public async Task ReadInto_AttributesColumn_MatchesStringReadForEveryColumnType(string columnType)
     {
         // The production reader parses json/jsonb columns from Npgsql's UTF-8 buffer and falls
-        // back to the string for any other type (#7381). Every type must yield the same values.
+        // back to the string for any other type. Every type must yield the same values.
         const string payload = """{"id":9223372036854775807,"feature_name":"Kāneʻohe 🌋","temperature":23.5,"active":true,"missing":null,"na\u006de":"quote\" and newline\n","details":{"coordinates":[1,2]}}""";
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
         await using var command = new NpgsqlCommand(

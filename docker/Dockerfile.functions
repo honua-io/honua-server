@@ -16,7 +16,7 @@
 # Custom handlers are a host feature, not a worker feature, so the bundled
 # dotnet-isolated worker is simply unused once FUNCTIONS_WORKER_RUNTIME=custom
 # is set below.
-# .NET 9 left support on 2026-11-10 (#7379), so the pin is the .NET 10 isolated
+# .NET 9 left support on 2026-11-10, so the pin is the .NET 10 isolated
 # variant of the same host. Its 10.0 tags are built on Ubuntu 24.04 (noble), not
 # bookworm; the host and start.sh entrypoint are unchanged.
 # The pinned host 4.1055.300.6 ships the ASP.NET Core and Microsoft.NETCore.App
