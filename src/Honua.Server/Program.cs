@@ -248,9 +248,6 @@ var redisConnectionString = builder.Configuration.GetConnectionString("redis")
 var redisCacheEntitled = await StartupConfigurationHelpers.IsRedisCacheEntitledAsync(
     builder.Configuration,
     builder.Environment);
-var redisOutputCacheConfigured = ObservabilityServiceCollectionExtensions.ShouldUseRedisOutputCache(
-    redisCacheEntitled,
-    redisConnectionString);
 var redisCacheConnectionString = redisCacheEntitled ? redisConnectionString : null;
 RedisDurabilityAttestation? redisDurabilityAttestation = null;
 DurableJobSubstrateCause? redisDurabilityFailure = null;
@@ -818,7 +815,7 @@ InfrastructureCompositionRoot.ConfigureTileOptions(builder.Services, builder.Con
 Honua.Infrastructure.SharedCaching.SharedCacheExtensions.AddSharedCachePolicy(builder.Services, builder.Configuration);
 
 // Configure caching options and register cache services
-InfrastructureCompositionRoot.ConfigureCaching(builder.Services, builder.Configuration, redisCacheEntitled);
+InfrastructureCompositionRoot.ConfigureCaching(builder.Services, builder.Configuration);
 
 // Configure cloud file storage for imports and attachments
 builder.Services.AddCloudFileStorage(builder.Configuration);
@@ -1086,7 +1083,6 @@ builder.Services.AddValidationServices();
 // Register feature services (FeatureServer, OGC, OData, Observability)
 builder.Services.AddServerFeatures(
     builder.Configuration,
-    redisCacheEntitled,
     builder.Environment.EnvironmentName);
 builder.Services.AddOperateObservabilityFixtures(builder.Configuration, builder.Environment);
 // PostgreSQL owns durable GP release bindings. Other providers retain the process-local
@@ -1813,16 +1809,11 @@ app.UseGeoServicesServicePaths();
 app.UseCloudDemoServiceLayerAliases();
 app.UseCloudDemoWritableFeatureGuard();
 
-// Enable output caching only for requests covered by the live entitlements required by the
-// selected backend (#2998). The backend is fixed at startup, but its output-cache entitlement and,
-// for Redis, caching.redis entitlement are rechecked per request. A runtime license replacement
-// therefore cannot keep either capability active after it is removed. Without the branch,
-// endpoint CacheOutput metadata is inert, so unentitled deployments serve identical responses —
-// just uncached.
+// The output-cache entitlement is rechecked per request, so a runtime license replacement
+// cannot keep output caching active after it is removed. Without the branch, endpoint
+// CacheOutput metadata is inert, so unentitled deployments serve identical responses, just uncached.
 app.UseWhen(
-    context => ObservabilityServiceCollectionExtensions.HasLiveOutputCacheEntitlements(
-        context.RequestServices,
-        redisOutputCacheConfigured),
+    context => ObservabilityServiceCollectionExtensions.HasLiveOutputCacheEntitlements(context.RequestServices),
     static entitled => entitled.UseOutputCache());
 
 // LAST middleware before endpoint execution (WebApplication appends its implicit UseEndpoints
