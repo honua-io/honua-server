@@ -45,8 +45,10 @@ public sealed class McpRequestCancellationTests
         Assert.True(store.Polls >= 1);
     }
 
-    [UnitTest]
-    public async Task StopAsync_DuringPoll_CancelsAndJoinsPollingAndStopsLocalWork()
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Shutdown_DuringPoll_CancelsAndJoinsPollingAndStopsLocalWork(bool dispose)
     {
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var exited = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -71,7 +73,16 @@ public sealed class McpRequestCancellationTests
         await using var request = Assert.IsType<McpSessionManager.McpRequestLease>(lease);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(4));
 
-        await manager.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(4));
+        if (dispose)
+        {
+            await manager.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(4));
+            await manager.DisposeAsync();
+        }
+        else
+        {
+            await manager.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(4));
+            await manager.DisposeAsync();
+        }
 
         Assert.True(exited.Task.IsCompletedSuccessfully);
         Assert.True(request.Token.IsCancellationRequested);

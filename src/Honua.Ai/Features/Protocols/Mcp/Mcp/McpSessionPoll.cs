@@ -8,7 +8,7 @@ namespace Honua.Ai.Protocols.Mcp;
 
 // One poll a second, while this node runs requests or holds streams, finds the sessions removed
 // or expired elsewhere and the requests cancelled elsewhere, and ends their local work.
-internal sealed partial class McpSessionManager : IHostedService
+internal sealed partial class McpSessionManager : IHostedService, IAsyncDisposable
 {
     private static readonly TimeSpan PollBudget = TimeSpan.FromSeconds(2);
 
@@ -19,8 +19,26 @@ internal sealed partial class McpSessionManager : IHostedService
     private Task _pollTask = Task.CompletedTask;
     private bool _polling;
     private bool _stopping;
+    private int _disposed;
 
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        try
+        {
+            await StopAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        finally
+        {
+            _pollLifetime.Dispose();
+        }
+    }
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
