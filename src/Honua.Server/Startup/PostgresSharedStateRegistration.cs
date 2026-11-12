@@ -35,7 +35,11 @@ internal static class PostgresSharedStateRegistration
             provider.GetRequiredService<NpgsqlDataSource>(),
             configuration[SystemSchemaKey]));
         services.TryAddSingleton<PostgresExecutionJobStore>();
-        services.TryAddSingleton<ILeaseStore, PostgresLeaseStore>();
+        services.TryAddSingleton<PostgresLeaseStore>();
+        // A host with no system database runs one node and has no lease store (deliberately null),
+        // so callers that ask with GetService fall back to in-process coordination.
+        services.TryAddSingleton<ILeaseStore>(provider =>
+            provider.GetService<NpgsqlDataSource>() is not null ? provider.GetRequiredService<PostgresLeaseStore>() : null!);
 
         services.TryAddSingleton(provider => new ControlPlaneStorage(
             provider.GetRequiredService<JobStoreDatabase>(),
