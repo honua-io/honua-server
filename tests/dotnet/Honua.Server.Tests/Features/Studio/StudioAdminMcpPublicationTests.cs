@@ -167,6 +167,30 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
         unpublished.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [IntegrationTheory]
+    [InlineData("Published")]
+    [InlineData("Both")]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /api/v1/studio/content-items/{itemId}/rollback-requests")]
+    public async Task AgentBearer_RestRollback_RequiresHumanApproval(string target)
+    {
+        using var agent = CreateBearerClient(CreateToken("studio-rollback-agent", "admin", "agent"));
+        var version = await SaveVersionAsync(agent);
+        var itemId = version.GetProperty("itemId").GetGuid();
+        var lifecycle = _fixture.Services.GetRequiredService<IStudioPackageLifecycleService>();
+        var before = await lifecycle.GetPointersAsync(itemId);
+
+        using var response = await agent.PostAsJsonAsync(
+            $"/api/v1/studio/content-items/{itemId}/rollback-requests",
+            new { targetVersionId = version.GetProperty("versionId").GetGuid(), target });
+
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted, body);
+        var after = await lifecycle.GetPointersAsync(itemId);
+        after!.PublishedVersionId.Should().BeNull();
+        after.CurrentVersionId.Should().Be(before!.CurrentVersionId);
+    }
+
     private static async Task<(JsonElement Proposed, Guid ItemId)> ProposeAsync(HttpClient client, string route, string visibility)
     {
         var version = await SaveVersionAsync(client);

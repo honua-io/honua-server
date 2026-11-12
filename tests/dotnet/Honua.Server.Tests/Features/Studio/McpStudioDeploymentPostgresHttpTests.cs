@@ -14,6 +14,7 @@ using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
+using Honua.Core.Features.Studio.Domain;
 using Honua.Db.Postgres.Features.Publishing;
 using Honua.Db.Postgres.Features.Studio;
 using Honua.Server.Tests.Features.Admin;

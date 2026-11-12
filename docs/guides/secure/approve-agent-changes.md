@@ -33,7 +33,9 @@ changes yourself in Console.
 
 Give each agent its own key with the `agent` grant and only the grants its task
 needs. Do not give an agent the bootstrap admin password or a full-admin key. An
-agent key cannot create, rotate or revoke API keys. See
+agent key cannot create, rotate or revoke API keys, or exchange its credentials
+for a portal token. Studio rollback requests also require approval because they
+can change the published version. See
 [AI agents over MCP](../connect/ai-agents-mcp.md#agent-changes-need-one-human-approval).
 
 ## Review and approve in Console

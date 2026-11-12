@@ -20,6 +20,7 @@ public sealed class AgentApprovalRuleTests
     [InlineData("admin.services.access-policy.set")]
     [InlineData("admin.layer.publish")]
     [InlineData("service.publish")]
+    [InlineData("studio.content.rollback")]
     public async Task EvaluateAsync_AgentGatedOperation_PolicyDisabled_RequiresApproval(string operationId)
     {
         var pdp = BuildPdp(new OperationPolicyOptions { Enabled = false }, productionEnvironment: false);
@@ -124,6 +125,28 @@ public sealed class AgentApprovalRuleTests
             });
 
         decision.Kind.Should().Be(expected);
+    }
+
+    [UnitTest]
+    public async Task CanonicalPdp_AgentRollback_DirectEdition_RequiresApproval()
+    {
+        const string operationId = "studio.content.rollback";
+        var pdp = new CanonicalOperationPolicyDecisionPoint(
+            Options.Create(new OperationPolicyOptions { Enabled = false }), new DirectLadder());
+        var request = new OperationRequest
+        {
+            OperationId = operationId,
+            GatewayRequest = new OperationGatewayRequest
+            {
+                Kind = OperationClass.StudioDraftMutation,
+                ActionDiscriminator = BuiltInGuardrailActions.StudioRollback,
+            },
+        };
+
+        var decision = await pdp.EvaluateAsync(BuildDescriptor(operationId), request,
+            new OperationPolicyContext { Roles = ["admin", "agent"] });
+
+        decision.Kind.Should().Be(PolicyDecisionKind.RequireApproval);
     }
 
     private sealed class DirectLadder : IGuardrailLadder

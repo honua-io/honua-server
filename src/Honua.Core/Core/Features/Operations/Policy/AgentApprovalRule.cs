@@ -25,6 +25,7 @@ public static class AgentApprovalRule
         "admin.layer.publish",
         "service.publish",
         StudioDraftMutationContext.PublicationOperationId,
+        "studio.content.rollback",
     };
 
     public static bool IsGated(string operationId) => GatedOperationIds.Contains(operationId);
