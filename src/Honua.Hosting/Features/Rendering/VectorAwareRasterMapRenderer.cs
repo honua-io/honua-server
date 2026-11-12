@@ -187,6 +187,7 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
 
         var featureReader = _services.GetService<IFeatureReader>();
         var styleCatalog = _services.GetService<ILayerStyleCatalog>();
+        var styleConverter = _services.GetService<IGeoServicesStyleConverter>();
         if (featureReader is null || styleCatalog is null)
         {
             return null;
@@ -210,7 +211,9 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
                     : (TemporalFilter?)null;
             // An explicit styleId (OGC styled-map route) wins; otherwise a caller-resolved
             // applied style (the layer's primary catalog binding, e.g. a preset applied
-            // through style.apply-preset) replaces the stored default style.
+            // through style.apply-preset) replaces the stored default style; otherwise the
+            // layer's saved presentation (drawingInfo override) replaces it, as in every other
+            // server-rendered image.
             var layerStyleJson = explicitStyleJson;
             if (layerStyleJson is null &&
                 request.AppliedStyleJsonByLayerId is { } appliedStyles &&
@@ -226,6 +229,12 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
                 }
 
                 layerStyleJson = appliedStyleJson;
+            }
+
+            if (layerStyleJson is null && styleConverter is not null)
+            {
+                layerStyleJson = RasterMapRenderingPipeline.ResolveSavedDrawingInfoMapLibreStyle(
+                    resource, layerId, styleConverter);
             }
 
             layers.Add(new RasterMapRenderingPipeline.BoundStyleVectorLayer(
