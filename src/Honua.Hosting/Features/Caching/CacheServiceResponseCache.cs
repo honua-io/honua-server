@@ -48,7 +48,6 @@ internal sealed class CacheServiceResponseCache : IResponseCache
         return expiration != 0 ? expiration : StringComparer.Ordinal.Compare(left.BudgetKey, right.BudgetKey);
     }));
     private long _reservedBytes;
-    private long _reservationSequence;
 
     public CacheServiceResponseCache(ICacheService cacheService, CacheOptions? options = null)
     {
@@ -206,9 +205,6 @@ internal sealed class CacheServiceResponseCache : IResponseCache
             return false;
         }
 
-        var scope = CurrentScopePrefix();
-        var reservationsBeforeInvalidation = Volatile.Read(ref _reservationSequence);
-
         // Each namespace token bumps an independent version key, so the writes have
         // no ordering dependency on one another; issue them concurrently instead of
         // one round trip at a time.
@@ -226,7 +222,7 @@ internal sealed class CacheServiceResponseCache : IResponseCache
             _localVersionCache.TryRemove(ns, out _);
         }
 
-        ReleaseInvalidatedReservations(scope, namespaces, reservationsBeforeInvalidation);
+        // Version changes leave payloads stored until expiration, so their budget stays reserved.
         return true;
     }
 
@@ -346,10 +342,7 @@ internal sealed class CacheServiceResponseCache : IResponseCache
                 RemoveReservation(current);
             }
 
-            var reservation = new ResponseReservation(scope, storageKey, bytes, now.Add(expiration), ++_reservationSequence)
-            {
-                Namespaces = GetNamespaceKeysForCacheKey(storageKey),
-            };
+            var reservation = new ResponseReservation(budgetKey, bytes, now.Add(expiration));
             _reservations[budgetKey] = reservation;
             _expirationOrder.Add(reservation);
             _reservedBytes += bytes;
@@ -380,23 +373,6 @@ internal sealed class CacheServiceResponseCache : IResponseCache
         }
     }
 
-    // Only reservations made before the bump belong to the invalidated generation; a fill
-    // that starts after the new version is published keeps its budget.
-    private void ReleaseInvalidatedReservations(string scope, string[] namespaces, long reservationsBeforeInvalidation)
-    {
-        lock (_budgetLock)
-        {
-            var invalidated = _reservations.Values.Where(reservation =>
-                reservation.ScopePrefix == scope &&
-                reservation.Sequence <= reservationsBeforeInvalidation &&
-                reservation.Namespaces.Any(namespaces.Contains)).ToArray();
-            foreach (var reservation in invalidated)
-            {
-                RemoveReservation(reservation);
-            }
-        }
-    }
-
     private void PruneExpiredReservations(DateTimeOffset now)
     {
         while (_expirationOrder.Min is { } expired && expired.ExpiresAt <= now)
@@ -414,12 +390,7 @@ internal sealed class CacheServiceResponseCache : IResponseCache
 
     private static string CurrentScopePrefix() => CacheScopeKeys.GetScopePrefix(SchemaContext.AmbientCurrentSchema);
 
-    private sealed record ResponseReservation(string ScopePrefix, string StorageKey, long Bytes, DateTimeOffset ExpiresAt, long Sequence)
-    {
-        public string BudgetKey { get; } = ScopePrefix + StorageKey;
-
-        public required IReadOnlyList<string> Namespaces { get; init; }
-    }
+    private sealed record ResponseReservation(string BudgetKey, long Bytes, DateTimeOffset ExpiresAt);
 
     private static string NormalizeKey(string key)
     {

@@ -56,7 +56,7 @@ public sealed class CacheServiceResponseCacheBudgetTests
     [InlineData(false)]
     [InlineData(true)]
     [Operation(Operations.Cache)]
-    public async Task RemoveByPatternAsync_NamespaceChanges_ReleasesOnlyItsReservations(bool bindKeys)
+    public async Task RemoveByPatternAsync_NamespaceChanges_RetainsBudgetForStoredPayloads(bool bindKeys)
     {
         var backend = new RecordingCache();
         var cache = ResponseCache(backend, maxBytes: 21_000);
@@ -73,8 +73,46 @@ public sealed class CacheServiceResponseCacheBudgetTests
         await cache.RemoveByPatternAsync("query:featureserver:service:alpha:layer:1:*");
         await cache.SetAsync(bindKeys ? await cache.BindKeyAsync(nextAlpha) : nextAlpha, payload, Lifetime);
 
-        Assert.Equal(3, backend.ResponseWrites);
+        Assert.Equal(2, backend.ResponseWrites);
+        Assert.Equal(2, backend.Responses.Count);
+        Assert.Null(await cache.GetAsync<CachedResponse>(nextAlpha));
         Assert.Same(payload, await cache.GetAsync<CachedResponse>(second));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task RemoveByPatternAsync_OldGenerationWriteInFlight_RetainsPayloadBudget()
+    {
+        var backend = new RecordingCache();
+        var cache = ResponseCache(backend, maxBytes: 11_000);
+        const string prefix = "query:featureserver:service:alpha:layer:1:";
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var complete = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        backend.BeforeResponseWrite = async _ =>
+        {
+            started.TrySetResult();
+            await complete.Task;
+        };
+        var payload = new CachedResponse(new byte[10_000], "application/json");
+        var oldKey = await cache.BindKeyAsync(prefix + "first");
+        var oldWrite = cache.SetAsync(oldKey, payload, Lifetime);
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await cache.RemoveByPatternAsync(prefix + "*");
+        }
+        finally
+        {
+            complete.TrySetResult();
+            await oldWrite;
+        }
+
+        await cache.SetAsync(await cache.BindKeyAsync(prefix + "second"), payload, Lifetime);
+
+        Assert.Single(backend.Responses);
+        Assert.Equal(1, backend.ResponseWrites);
+        Assert.Same(payload, await cache.GetAsync<CachedResponse>(oldKey));
+        Assert.Null(await cache.GetAsync<CachedResponse>(prefix + "second"));
     }
 
     [UnitTest]
