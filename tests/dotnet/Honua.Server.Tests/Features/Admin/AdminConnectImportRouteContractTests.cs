@@ -4,6 +4,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Server.Features.Operations;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -12,7 +13,7 @@ public sealed class AdminConnectImportRouteContractTests
     public static IEnumerable<object[]> OperationIds => AdminConnectImportOperationCatalog.Definitions
         .Select(definition => new object[] { definition.OperationId });
 
-    [Theory]
+    [UnitTheory]
     [MemberData(nameof(OperationIds))]
     public void OperationPath_MatchesOpenApiRoute(string operationId)
     {

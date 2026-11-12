@@ -129,6 +129,7 @@ public sealed class PersistedExportProgressTests : IAsyncLifetime
     [IntegrationTheory]
     [InlineData(true)]
     [InlineData(false)]
+    [Endpoint("GET /api/v1/admin/operations/active")]
     public async Task GetActiveOperationsAsync_InvalidExportRecord_ReturnsHealthyExport(bool legacyShape)
     {
         var invalidId = await SeedInvalidExportAsync(legacyShape);
@@ -145,6 +146,7 @@ public sealed class PersistedExportProgressTests : IAsyncLifetime
     [InlineData(true)]
     [InlineData(false)]
     [Operation(Operations.Export)]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export")]
     public async Task ReadQueuedJobIdsAsync_InvalidProgressAndRequest_QuarantinesOnlyInvalidJob(bool legacyShape)
     {
         var invalidId = await SeedInvalidExportAsync(legacyShape);
