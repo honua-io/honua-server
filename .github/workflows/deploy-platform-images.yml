@@ -558,6 +558,19 @@ jobs:
           sarif_file: ${{ matrix.sarif_output }}-${{ matrix.arch }}.sarif
           category: ${{ matrix.sarif_category }}-${{ matrix.arch }}
 
+      # A v* tag publishes its release manifests only when this passes: publish-manifests needs
+      # every build-and-push leg to succeed. Release images use the release allowlist.
+      - name: Gate tag release on fixable HIGH/CRITICAL vulnerabilities
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          SCAN_LOCAL: ${{ steps.scan_prep.outputs.scan_local }}
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
+        run: >-
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/work:ro"
+          -v "$TRIVY_CACHE_DIR:/root/.cache/trivy" "$TRIVY_IMAGE" image --scanners vuln --skip-version-check
+          --severity HIGH,CRITICAL --ignore-unfixed --ignorefile /work/.trivyignore-release
+          --exit-code 1 --format table "$SCAN_LOCAL"
+
       - name: Upload Trivy unfixed-inclusive inventory
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && hashFiles(format('trivy-inventory-{0}-{1}.json', matrix.image_key, matrix.arch)) != ''
