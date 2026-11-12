@@ -12,7 +12,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[3]
 HEAVY_JOBS = {
-    "build", "format", "dotnet-foundation-family-tests", "server-tests", "runtime-proofs",
+    "build", "format", "dotnet-foundation-family-tests", "runtime-proofs",
     "mcp-certification", "mcp-llm-smoke", "postgres-compat",
     "core-package-compatibility", "aot-build", "docker-build", "quickstart-console-smoke",
 }
@@ -25,6 +25,43 @@ PINNED_JOBS = {
     "worker-gdal-tests", "python-integration-tests", "js-integration-tests",
     "esri-leaflet-browser-tests", "maplibre-compat",
 }
+
+
+# Even matrix indices of the server test shards; forks never reach self-hosted compute.
+EVEN_INDEX = " || ".join(f"endsWith(format('{{0}}', strategy.job-index), '{digit}')" for digit in "02468")
+HEAVY_SHARD_RUNNER = (
+    "vars.HONUA_HEAVY_RUNNER && (" + EVEN_INDEX + ")"
+    " && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)"
+    " && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository)"
+    " && fromJSON(vars.HONUA_HEAVY_RUNNER)"
+)
+SHARD_JOBS = {
+    "ci.yml": ("server-tests", "${{ " + HEAVY_SHARD_RUNNER + " || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}"),
+    "pr-gate.yml": ("affected-shard", "${{ " + HEAVY_SHARD_RUNNER + " || 'ubuntu-latest' }}"),
+}
+
+
+class ShardRunnerRoutingTests(unittest.TestCase):
+    def shard_job(self, workflow):
+        name, _ = SHARD_JOBS[workflow]
+        return yaml.safe_load((ROOT / ".github/workflows" / workflow).read_text())["jobs"][name]
+
+    def test_even_shards_use_the_fork_guarded_heavy_pool_with_hosted_fallback(self):
+        for workflow, (_, runs_on) in SHARD_JOBS.items():
+            with self.subTest(workflow=workflow):
+                self.assertEqual(self.shard_job(workflow)["runs-on"], runs_on)
+
+    def test_postgres_uses_an_ephemeral_host_port_that_the_tests_receive(self):
+        for workflow in SHARD_JOBS:
+            with self.subTest(workflow=workflow):
+                job = self.shard_job(workflow)
+                self.assertEqual(job["services"]["postgres"]["ports"], [5432])
+                self.assertNotIn("HONUA_TEST_DB_URL", job["env"])
+                urls = [step["env"]["HONUA_TEST_DB_URL"] for step in job["steps"]
+                        if "HONUA_TEST_DB_URL" in step.get("env", {})]
+                self.assertEqual(len(urls), 1)
+                self.assertIn("Port={2}", urls[0])
+                self.assertIn("job.services.postgres.ports['5432']", urls[0])
 
 
 class HeavyRunnerContractTests(unittest.TestCase):
@@ -49,7 +86,7 @@ class HeavyRunnerContractTests(unittest.TestCase):
                 self.assertEqual(self.jobs[name]["runs-on"], "ubuntu-24.04")
 
     def test_every_ci_job_has_a_runner_class(self):
-        self.assertEqual(set(self.jobs), HEAVY_JOBS | HOSTED_JOBS | PINNED_JOBS)
+        self.assertEqual(set(self.jobs), HEAVY_JOBS | HOSTED_JOBS | PINNED_JOBS | {SHARD_JOBS["ci.yml"][0]})
 
 
 PR_GATE_SELECTED_JOBS = {"format", "fast-tests", "pr-gate", "server-test-producer"}
@@ -99,7 +136,7 @@ class PrGateRunnerRoutingTests(unittest.TestCase):
                 self.assertEqual(self.jobs[name]["runs-on"], LIGHT_RUNNER)
 
     def test_selection_and_every_other_job_stay_hosted(self):
-        for name in set(self.jobs) - PR_GATE_SELECTED_JOBS - PR_GATE_LIGHT_JOBS:
+        for name in set(self.jobs) - PR_GATE_SELECTED_JOBS - PR_GATE_LIGHT_JOBS - {SHARD_JOBS["pr-gate.yml"][0]}:
             with self.subTest(job=name):
                 self.assertEqual(self.jobs[name]["runs-on"], "ubuntu-latest")
 

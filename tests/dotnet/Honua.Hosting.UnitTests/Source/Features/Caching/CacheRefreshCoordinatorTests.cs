@@ -166,8 +166,7 @@ public sealed class CacheRefreshCoordinatorTests : IDisposable
         _ = coordinator.StartAsync(_cts.Token);
 
         // Wait for refresh to complete
-        var completed = await Task.WhenAny(refreshed.Task, Task.Delay(TimeSpan.FromSeconds(5)));
-        completed.Should().Be(refreshed.Task, "the refresh callback should have been invoked");
+        await refreshed.Should().CompleteWithinAsync(TimeSpan.FromSeconds(5), "the refresh callback should have been invoked");
 
         // Poll for the success bookkeeping to settle instead of a fixed wait.
         // The refresh callback signals before the background task records metrics,
@@ -270,8 +269,7 @@ public sealed class CacheRefreshCoordinatorTests : IDisposable
         _ = coordinator.StartAsync(_cts.Token);
 
         // Wait for refresh to complete
-        var completed = await Task.WhenAny(refreshed.Task, Task.Delay(TimeSpan.FromSeconds(5)));
-        completed.Should().Be(refreshed.Task);
+        await refreshed.Should().CompleteWithinAsync(TimeSpan.FromSeconds(5));
 
         // Poll for the failure bookkeeping to settle instead of a fixed wait.
         // The refresh callback signals before the background task reaches its
@@ -351,8 +349,7 @@ public sealed class CacheRefreshCoordinatorTests : IDisposable
 
         _ = _coordinator.StartAsync(_cts.Token);
 
-        var attempted = await Task.WhenAny(refreshAttempted.Task, Task.Delay(TimeSpan.FromSeconds(5)));
-        attempted.Should().Be(refreshAttempted.Task, "the initial refresh should have run");
+        await refreshAttempted.Should().CompleteWithinAsync(TimeSpan.FromSeconds(5), "the initial refresh should have run");
 
         for (int i = 0; i < 100 && (_coordinator.FailureCount < 1 || _coordinator.QueueDepth > 0); i++)
         {
@@ -395,8 +392,7 @@ public sealed class CacheRefreshCoordinatorTests : IDisposable
             return Task.CompletedTask;
         });
 
-        var completed = await Task.WhenAny(firstRefreshDone.Task, Task.Delay(TimeSpan.FromSeconds(5)));
-        completed.Should().Be(firstRefreshDone.Task, "the first refresh should have completed");
+        await firstRefreshDone.Should().CompleteWithinAsync(TimeSpan.FromSeconds(5), "the first refresh should have completed");
 
         for (int i = 0; i < 100 && _coordinator.QueueDepth > 0; i++)
         {
@@ -412,8 +408,7 @@ public sealed class CacheRefreshCoordinatorTests : IDisposable
 
         result.Should().BeTrue();
 
-        var completed2 = await Task.WhenAny(secondRefreshDone.Task, Task.Delay(TimeSpan.FromSeconds(5)));
-        completed2.Should().Be(secondRefreshDone.Task, "the second refresh should have completed");
+        await secondRefreshDone.Should().CompleteWithinAsync(TimeSpan.FromSeconds(5), "the second refresh should have completed");
         callCount.Should().Be(2);
     }
 
