@@ -179,6 +179,7 @@ The scoped `GP Alias Contract` check runs the real GeoServices alias tests and O
 | `pr-review-doctor-triage.lock.yml` | Review doctor triage | `pull_request_review` (submitted) only | Skips drafts, forks, active gates and reviews without unresolved current trusted threads before model activation. Haiku 5.5, 15 credits/run; only `needs-fix` dispatches the worker. No per-comment activation. Shares review doctor's 700-credit daily envelope. |
 | `pr-sync-doctor-triage.lock.yml` | Sync doctor triage | `push` (trunk), hourly `schedule`, `workflow_dispatch` | Skips drafts, forks, active gates and non-conflicting/non-behind PRs before model activation. Haiku 5.5, 15 credits/run; only `needs-fix` dispatches the worker, which retains max two PRs. Shares sync doctor's 500-credit daily envelope. |
 | `clean-code.yml` | Clean code | `pull_request` (`opened`, `synchronize`, `reopened`, `edited`) | Calls the shared honua-io/.github clean-code check, pinned by SHA: the Clean Code rules judged only on what the PR makes worse (comment, size, function, parameter and duplication ratchets), each finding titled with its smell code. `edited` re-runs it when a `quality-exception:` line is added to the PR body. Read-only `contents` permission. |
+| `runner-label-lint.yml` | Runner label lint | `push` (`trunk`), `pull_request_target` (`opened`, `synchronize`, `reopened`) | Calls the shared SHA-pinned honua-io/.github runner-label lint with read-only permissions. Fails when a job reachable from a pull request or `workflow_run` event could resolve `runs-on` to a self-hosted runner without the fork guard; it detects such changes, while runner-group settings and fork-workflow approval are what block fork jobs. Runs from the base branch's caller; checks out only the PR's `.github/workflows` (merge ref, else head) without credentials and parses it as YAML, never executing it. Advisory until made required. |
 | `gp-installed-authoring.yml` | GP Installed Authoring | path-filtered `pull_request`, `workflow_dispatch` | Packs the candidate devkit, then exercises Python and .NET authoring on Linux, Windows and macOS using only the installed package (no source checkout). Requires positive and negative goldens, four direct tests per language, exact-version payload restoration and missing-image-evidence release refusal. Uploads a three-OS host-debug handoff for honua-release#615. Does not publish packages or qualify a worker image. |
 | `gp-alias-contract.yml` | GP Alias Contract | `pull_request` (base `trunk`, relevant contract/test/judgment paths) | Runs the GeoServices alias contract and the OGC API process-list HTTP regression in their actual protocol assemblies. Uses the existing .NET setup and pinned PostGIS service conventions; requires all selected cases to execute and pass. |
 | `routing-utility-contract.yml` | Routing Utility Contract | `pull_request` (base `trunk`, GPServer/NAServer discovery and test paths) | Runs the provider-level routing descriptor, catalog collision/access guards, and existing routing utility, metadata, anonymous, SOAP and FindRoutes contracts in the GeoServices component assembly. Requires every new source method and every selected result to execute and pass; retains TRX proof. |
@@ -614,7 +615,7 @@ router promotion or manual override) builds the whole solution. Consumers reuse 
 artifacts. Server shards retain descending measured `dispatch_rank` order and
 run at most six at once for every `selective_base` dispatch (twelve above 30 selected shards), including router
 promotions and explicit full-coverage overrides. Full coverage still selects
-every shard; scheduled and non-selective full runs retain 24 concurrent shards. Expensive AOT, Docker,
+every shard; scheduled and non-selective full runs run at most 16 concurrent shards. Expensive AOT, Docker,
 Postgres compatibility, browser, Python, MCP and quickstart lanes use
 `scripts/ci/affected-ci-lanes.py` to select their own inputs. Native, container
 and MCP checks conservatively include every runtime source or project change,
@@ -748,7 +749,11 @@ the twice-daily full run. A broad newest merge retains every selected shard.
 Affected shard concurrency is six, or twelve when more than 30 shards remain
 selected (`scripts/ci/trailing_selection.py` owns both numbers and the
 threshold), including full-coverage routing fallbacks; manual and scheduled
-full runs retain 24. A
+full runs run 16 at once. On 12 Nov (03:30-04:00 UTC) a full run at 24 held
+28 of the org's 60 hosted runners while other pull request workflows held
+20-35, and PR Gate jobs waited a median 7.3 minutes (3 seconds before and after).
+Sixteen gives PR Gate eight more runners; the 1,272 shard-minutes of a full
+matrix then take about 79 minutes instead of 53. A
 134-shard affected run took 214 minutes at six while PR Gate job queueing stayed
 at a two-second median; twelve halves that so a broad run finishes before the
 next full run. Required PR gates
