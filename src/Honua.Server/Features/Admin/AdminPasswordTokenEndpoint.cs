@@ -39,8 +39,7 @@ internal sealed class AdminPasswordTokenEndpoint(
     internal async Task<IResult> HandleAsync(HttpContext context, AdminPasswordSignInRequest request)
     {
         context.Response.Headers.CacheControl = "no-store";
-        if (!context.Request.IsHttps
-            || !CorsConfiguration.IsExplicitOriginAllowed(configuration, context.Request.Headers.Origin.ToString())
+        if (!CorsConfiguration.IsExplicitOriginAllowed(configuration, context.Request.Headers.Origin.ToString())
             || context.Request.Cookies.ContainsKey(AdminAuthSessionStore.AuthSessionCookieName)
             || string.IsNullOrEmpty(request.Password) || request.Password.Length > 1024)
         {

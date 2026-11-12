@@ -15,7 +15,7 @@ internal sealed class AdminPasswordSessionEndpoint(
     internal async Task<IResult> HandleAsync(HttpContext context, AdminPasswordSignInRequest request)
     {
         context.Response.Headers.CacheControl = "no-store";
-        if (!context.Request.IsHttps || string.IsNullOrEmpty(request.Password) || request.Password.Length > 1024)
+        if (string.IsNullOrEmpty(request.Password) || request.Password.Length > 1024)
         {
             return TypedResults.BadRequest();
         }

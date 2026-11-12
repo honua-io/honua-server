@@ -65,12 +65,14 @@ internal static class AdminAuthEndpoints
         _ = group.MapPost("/session", (HttpContext context,
                 AdminPasswordSignInRequest request, AdminPasswordSessionEndpoint endpoint) => endpoint.HandleAsync(context, request))
             .WithDisplayName("Sign In Browser Administrator Session")
+            .AddEndpointFilter<RequireHttpsEndpointFilter>()
             .WithMetadata(new RequireBrowserCsrfMetadata())
             .WithMetadata(new RateLimitAttribute(5));
 
         _ = group.MapPost("/password-token", (HttpContext context,
                 AdminPasswordSignInRequest request, AdminPasswordTokenEndpoint endpoint) => endpoint.HandleAsync(context, request))
             .WithDisplayName("Sign In Browser Administrator Bearer")
+            .AddEndpointFilter<RequireHttpsEndpointFilter>()
             .WithMetadata(new RateLimitAttribute(5));
 
         _ = group.MapPost("/providers/{providerKey}/authorize-url", HandleCreateAuthorizeUrl)
