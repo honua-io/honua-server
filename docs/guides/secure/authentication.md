@@ -182,7 +182,7 @@ and survives OIDC claim sanitization, including repeated transformation. An
 issuer-supplied copy of the internal tenant claim is removed; a caller-supplied
 tenant header cannot change the binding. Credentials without an explicit
 tenant binding are rejected. An explicit empty binding preserves an invocation
-accepted with tenant resolution disabled. The
+accepted without a configured default tenant. The
 approver's session, capability and identity headers are never forwarded as execution authority;
 `admin:operation:*` grants are server-reserved and cannot be requested through
 the API-key creation endpoint. Internal replay credentials are excluded from
@@ -193,9 +193,12 @@ Proposal lists, proposal reads and decisions, and operation-handle reads are
 restricted to the tenant recorded when the operation was accepted. A record
 owned by another tenant is omitted from lists and returns `404` on direct
 access. MCP proposal resources use the same ownership boundary.
-Legacy records without a tenant owner are hidden from tenant-scoped callers;
-a platform operator can inspect those records and re-propose pending work in
-its intended tenant. Idempotency keys are scoped to the accepted tenant.
+In single-tenant mode, the configured default tenant retains access to legacy
+records without a tenant owner. Multi-tenant callers and credentials bound to
+a tenant for replay or background execution cannot use this compatibility path.
+Proposal evidence must still match the resolved tenant. A platform operator can
+inspect legacy records and re-propose pending work in its intended tenant.
+Idempotency keys are scoped to the accepted tenant.
 
 ### Browser administrator sessions
 
@@ -281,6 +284,26 @@ Oidc__Generic__ClientId=honua-admin
 Oidc__Generic__ClientSecret=$OIDC_CLIENT_SECRET
 ```
 
+Single-tenant deployments use `MultiTenancy:Enabled=false` by default. Valid
+bearer tokens do not need a tenant claim: requests use `MultiTenancy:DefaultTenantId`
+(default `public`). Identity-provider tenant claims such as Entra's `tid` and
+`X-Honua-Tenant` headers do not select another tenant in this mode. Keep the
+configured default aligned with the deployment's data. Explicitly enabling
+`MultiTenancy:Enabled` opts into claim/header resolution; bearer calls to
+tenant-bound routes then require a valid tenant claim or an authorized override.
+
+To grant admin access through Cognito groups, configure the additional role claim
+and the group names that confer admin access (role claim selection requires Pro):
+
+```bash
+Oidc__ClaimsMapping__AdditionalRoleClaimTypes__0=cognito:groups
+Oidc__AdminRoles__0=deployment-admins
+Oidc__AdminRoles__1=deployment-admins
+```
+
+These mappings apply to bearer tokens and browser sign-in. `AdminRoles` belongs
+directly under `Oidc`, rather than under `ClaimsMapping`.
+
 For a separately hosted Console, or a static Console sharing a public origin with the API,
 pin the backend-assisted admin broker's callback:
 
@@ -309,13 +332,35 @@ path. The pending login cookie uses `SameSite=Lax` for the provider redirect; th
 authenticated session cookie uses `SameSite=Strict`. On landing, Console refreshes
 its session identity and CSRF token before sending authenticated mutations.
 
-Cognito logout requires separate deployment integration: Console's current logout
-clears its local/operator sessions and upstream server cookie jar, but does not
-clear an edge proxy's session or navigate a Cognito logout endpoint. The Server
-broker's discovery-based logout uses `post_logout_redirect_uri` ending in `/admin`;
-Cognito's managed logout requires its documented `client_id` and `logout_uri`
-parameters. Configuring this callback alone does not establish global sign-out or
-revoke an edge/Cognito login session.
+For Amazon Cognito, configure the user-pool issuer as `Authority` and the hosted
+login domain separately for logout:
+
+```bash
+Oidc__Generic__Authority=https://cognito-idp.us-west-2.amazonaws.com/us-west-2_EXAMPLE
+Oidc__Generic__ClientId=your-app-client-id
+Oidc__Generic__AcceptClientIdAsAudience=true
+Oidc__Generic__LogoutEndpoint=https://your-domain.auth.us-west-2.amazoncognito.com/logout
+Oidc__Generic__UseCognitoLogout=true
+Public__BaseUrl=https://api.example.com/honua
+```
+
+`AcceptClientIdAsAudience` is opt-in. It accepts an access token without `aud`
+only when `iss` matches this Generic provider, `token_use` is `access`, and
+`client_id` matches its configured client. A present `aud` must still validate;
+issuer, signature and expiry checks remain required. Broker ID tokens still
+require an audience. See the [Cognito access-token format](https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-using-the-access-token.html).
+
+The broker logout URL uses `client_id` and `logout_uri` in Cognito mode, including
+when discovery omits `end_session_endpoint`. Register the public `/admin` URL
+(in this example, `https://api.example.com/honua/admin`) as an allowed sign-out
+URL on the Cognito app client. `LogoutEndpoint` must be an absolute HTTPS URL
+without user information, query or fragment. Without Cognito mode, logout retains
+standard `post_logout_redirect_uri` and optional `id_token_hint` parameters.
+See [Cognito logout](https://docs.aws.amazon.com/cognito/latest/developerguide/logout-endpoint.html).
+
+The browser must navigate the generated logout URL to clear the Cognito session.
+Clearing Console's local/operator sessions and upstream cookie jar alone does
+not clear an edge proxy session or revoke Cognito tokens.
 
 Explicit `Oidc:AdminRoles` and `Oidc:Generic:Scopes` arrays replace their options
 constructor defaults. Configuration providers still merge indexed keys: when overriding
