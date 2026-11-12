@@ -2215,23 +2215,6 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
 
     // ─── AC: Reconnect with cursor replays missed events ────────────────
 
-    private static async Task PublishCreateEventsAsync(
-        IFeatureChangeEventPublisher publisher, string serviceId, string uniqueId, int count)
-    {
-        for (var i = 0; i < count; i++)
-        {
-            await publisher.PublishAsync(new FeatureChangeEventRequest
-            {
-                ServiceId = serviceId,
-                LayerId = 0,
-                ObjectId = i,
-                Operation = "create",
-                Protocol = "rest",
-                RequestId = $"req-{uniqueId}-{i}"
-            });
-        }
-    }
-
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Reconnect_WithCursor_ReplaysMissedEvents()
@@ -2243,7 +2226,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
         const string serviceId = "test";
 
         // Publish 5 events on the fixture's active metadata route.
-        await PublishCreateEventsAsync(publisher, serviceId, uniqueId, count: 5);
+        await PublishFiveCreateEventsAsync(publisher, serviceId, uniqueId);
 
         // Query all events and filter to this test's by service ID to get exact cursors.
         var allEvents = await eventStore.QueryAsync(null, null, null, 500);
@@ -2316,6 +2299,23 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
             "SSE replay should deliver exactly the events after the provided cursor");
     }
 
+    private static async Task PublishFiveCreateEventsAsync(
+        IFeatureChangeEventPublisher publisher, string serviceId, string uniqueId)
+    {
+        for (var i = 0; i < 5; i++)
+        {
+            await publisher.PublishAsync(new FeatureChangeEventRequest
+            {
+                ServiceId = serviceId,
+                LayerId = 0,
+                ObjectId = i,
+                Operation = "create",
+                Protocol = "rest",
+                RequestId = $"req-{uniqueId}-{i}"
+            });
+        }
+    }
+
     /// <summary>
     /// Validates the full replay-to-live path: connects with a cursor, publishes
     /// additional events while connected, and asserts all events arrive exactly once.
@@ -2333,7 +2333,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
         const string serviceId = "test";
 
         // Publish 5 initial events.
-        await PublishCreateEventsAsync(publisher, serviceId, uniqueId, count: 5);
+        await PublishFiveCreateEventsAsync(publisher, serviceId, uniqueId);
 
         // Get cursor from event 2 — events 3, 4, 5 will be replayed.
         var allEvents = await eventStore.QueryAsync(null, null, null, 500);
