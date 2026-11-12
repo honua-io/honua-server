@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Keep configurable compute routing separate from hosted control jobs and OS pins."""
 from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -89,10 +90,18 @@ class HeavyRunnerContractTests(unittest.TestCase):
         self.assertEqual(set(self.jobs), HEAVY_JOBS | HOSTED_JOBS | PINNED_JOBS | {SHARD_JOBS["ci.yml"][0]})
 
 
-PR_GATE_SELECTED_JOBS = {"format", "fast-tests", "pr-gate", "server-test-producer"}
+PR_GATE_HEAVY_JOBS = {"format", "fast-tests"}
+PR_GATE_SELECTED_JOBS = PR_GATE_HEAVY_JOBS | {"pr-gate", "server-test-producer"}
 SELECTED_RUNNER = (
     "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)"
     " && needs.runner-select.outputs.runner || 'ubuntu-latest' }}"
+)
+VALIDATED_HEAVY_RUNNER = (
+    "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)"
+    " && (vars.HONUA_PR_GATE_RUNNER != ''"
+    " && needs.runner-select.outputs.runner == vars.HONUA_PR_GATE_RUNNER"
+    " && vars.HONUA_HEAVY_RUNNER && fromJSON(vars.HONUA_HEAVY_RUNNER)"
+    " || needs.runner-select.outputs.runner) || 'ubuntu-latest' }}"
 )
 PR_GATE_LIGHT_JOBS = {"affected-shards-select", "affected-shards", "ci-router-validation", "required"}
 LIGHT_RUNNER = (
@@ -126,9 +135,37 @@ class PrGateRunnerRoutingTests(unittest.TestCase):
         for name in PR_GATE_SELECTED_JOBS:
             with self.subTest(job=name):
                 job = self.jobs[name]
-                self.assertEqual(job["runs-on"], SELECTED_RUNNER)
+                self.assertEqual(job["runs-on"],
+                                 VALIDATED_HEAVY_RUNNER if name in PR_GATE_HEAVY_JOBS else SELECTED_RUNNER)
                 self.assertEqual(job["needs"], "runner-select")
                 self.assertEqual(job.get("if"), DRAFT_FORMAT_ADMISSION if name == "format" else None)
+
+    def test_heavy_admission_requires_validated_host_and_preserves_fallbacks(self):
+        probe = """const {expression, selected, gate, heavy, fork, draft} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+const github = {repository: 'owner/repo', event: {pull_request: {draft, head: {repo: {full_name: fork ? 'fork/repo' : 'owner/repo'}}}}};
+const needs = {'runner-select': {outputs: {runner: selected}}};
+const vars = {HONUA_PR_GATE_RUNNER: gate, HONUA_HEAVY_RUNNER: heavy};
+process.stdout.write(JSON.stringify(new Function('github', 'needs', 'vars', 'fromJSON', `return (${expression});`)(github, needs, vars, JSON.parse)));
+"""
+        pool = {"group": "honua-heavy", "labels": ["honua-heavy"]}
+        scenarios = [
+            ("ready", "honua-build", "honua-build", json.dumps(pool), False, False, pool),
+            ("busy/stopped/stale/enforce", "ubuntu-latest", "honua-build", json.dumps(pool), False, False, "ubuntu-latest"),
+            ("draft selector skipped", "", "honua-build", json.dumps(pool), False, True, "ubuntu-latest"),
+            ("unset gate", "", "", json.dumps(pool), False, False, "ubuntu-latest"),
+            ("unset heavy", "honua-build", "honua-build", "", False, False, "honua-build"),
+            ("fork", "honua-build", "honua-build", json.dumps(pool), True, False, "ubuntu-latest"),
+        ]
+        for name in PR_GATE_HEAVY_JOBS:
+            expression = self.jobs[name]["runs-on"].removeprefix("${{").removesuffix("}}").strip()
+            expression = expression.replace("needs.runner-select", "needs['runner-select']")
+            for scenario, selected, gate, heavy, fork, draft, expected in scenarios:
+                with self.subTest(job=name, scenario=scenario):
+                    result = subprocess.run(["node", "-e", probe], input=json.dumps({
+                        "expression": expression, "selected": selected, "gate": gate,
+                        "heavy": heavy, "fork": fork, "draft": draft,
+                    }), text=True, capture_output=True, check=True)
+                    self.assertEqual(json.loads(result.stdout), expected)
 
     def test_light_jobs_use_the_fork_guarded_light_pool_with_hosted_fallback(self):
         for name in PR_GATE_LIGHT_JOBS:

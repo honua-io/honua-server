@@ -102,7 +102,7 @@ jobs:
     if: always() && !cancelled() && (needs.runner-select.result == 'success' || github.event.pull_request.draft == true)
     name: PR Gate / ${{ matrix.check }}
     needs: runner-select
-    runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && needs.runner-select.outputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (vars.HONUA_PR_GATE_RUNNER != '' && needs.runner-select.outputs.runner == vars.HONUA_PR_GATE_RUNNER && vars.HONUA_HEAVY_RUNNER && fromJSON(vars.HONUA_HEAVY_RUNNER) || needs.runner-select.outputs.runner) || 'ubuntu-latest' }}
     timeout-minutes: 45
     # Format and both analyzer partitions run independently after runner selection.
     strategy:
@@ -164,7 +164,7 @@ jobs:
   fast-tests:
     name: PR Gate / Fast and architecture (${{ matrix.test-group }})
     needs: runner-select
-    runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && needs.runner-select.outputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (vars.HONUA_PR_GATE_RUNNER != '' && needs.runner-select.outputs.runner == vars.HONUA_PR_GATE_RUNNER && vars.HONUA_HEAVY_RUNNER && fromJSON(vars.HONUA_HEAVY_RUNNER) || needs.runner-select.outputs.runner) || 'ubuntu-latest' }}
     timeout-minutes: 45
     # Each group compiles only its own test roots; the producer and the analyzer
     # job compile the diff's affected closure.
