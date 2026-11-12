@@ -21,6 +21,22 @@ class StoreProfileWorkflowTests(unittest.TestCase):
             with self.subTest(provider=provider):
                 self.assertEqual(environment.get(f'Experimental__Features__{provider}Provider'), 'false')
 
+    def test_conformance_stacks_disable_excluded_test_providers(self):
+        stacks = sorted((ROOT / 'docker/cite').glob('*/compose.yml'))
+        stacks.append(ROOT / 'docker/cng/compose.yml')
+        self.assertGreater(len(stacks), 1)
+        for path in stacks:
+            compose = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
+            for name, service in compose['services'].items():
+                environment = service.get('environment', {})
+                if isinstance(environment, list):
+                    environment = dict(entry.split('=', 1) for entry in environment if '=' in entry)
+                if environment.get('ASPNETCORE_ENVIRONMENT') != 'Test':
+                    continue
+                for provider in ('Redshift', 'Snowflake', 'Databricks'):
+                    with self.subTest(stack=str(path.relative_to(ROOT)), service=name, provider=provider):
+                        self.assertEqual(environment.get(f'Experimental__Features__{provider}Provider'), 'false')
+
     def test_release_bundle_promotes_verified_jit_postgis_digest(self):
         job = workflow('release-bundle.yml')['jobs']['rc-image']
         steps = job['steps']
