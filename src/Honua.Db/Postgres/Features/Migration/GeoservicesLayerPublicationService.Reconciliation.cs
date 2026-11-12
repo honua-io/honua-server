@@ -89,7 +89,7 @@ internal sealed partial class GeoservicesLayerPublicationService
                 publishedLayer,
                 request.TargetSrid,
                 artifact.Layers.SingleOrDefault(layer =>
-                    layer.TargetHonuaLayerId == publishedLayer.LayerId &&
+                    layer.TargetHonuaLayerId == publishedLayer.StorageLayerId &&
                     layer.SourceLayerId == reconciliationRequest.Layers[0].SourceLayerId)?.Extent.Target,
                 cancellationToken).ConfigureAwait(false);
 
@@ -155,7 +155,7 @@ internal sealed partial class GeoservicesLayerPublicationService
         {
             SourceLayerId = $"{request.ServiceUrl}#{request.LayerId}",
             SourceLayerName = string.IsNullOrWhiteSpace(layerInfo.Name) ? request.TableName : layerInfo.Name,
-            TargetHonuaLayerId = publishedLayer.LayerId,
+            TargetHonuaLayerId = publishedLayer.StorageLayerId,
             SourceFeatureCount = layerInfo.FeatureCount,
             SourceHasGeometry = !string.IsNullOrEmpty(layerInfo.GeometryType),
             SourceExtent = sourceExtent,
@@ -244,7 +244,7 @@ internal sealed partial class GeoservicesLayerPublicationService
         }
 
         // AutoPublish materializes the data resource with the stable id res-layer-{layerId}.
-        var resourceId = $"res-layer-{publishedLayer.LayerId.ToString(CultureInfo.InvariantCulture)}";
+        var resourceId = $"res-layer-{publishedLayer.StorageLayerId.ToString(CultureInfo.InvariantCulture)}";
         var published = snapshot.Graph.Resources
             .FirstOrDefault(resource => string.Equals(resource.Metadata.Id, resourceId, StringComparison.Ordinal));
         if (published is null)

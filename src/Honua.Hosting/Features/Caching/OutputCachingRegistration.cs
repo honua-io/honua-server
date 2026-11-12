@@ -514,7 +514,7 @@ internal static class OutputCachingRegistration
             options.AddPolicy("LayerStyle", policy =>
             {
                 policy.Expire(ttl.LayerStyle);
-                policy.SetVaryByRouteValue("layerId");
+                policy.SetVaryByRouteValue("publicationId");
                 policy.SetVaryByQuery("theme");
                 policy.Tag("layer-styles", "metadata");
             });

@@ -46,16 +46,16 @@ internal static class MapToolLayerResolver
     private static MapToolLayerContext Resolve(
         MetadataV2GraphSnapshot snapshot,
         string? serviceId,
-        int? layerId)
+        int? serviceLayerIndex)
     {
         if (string.IsNullOrWhiteSpace(serviceId))
         {
             throw new GeoprocessingValidationException("'serviceId' is required.");
         }
 
-        if (layerId is not { } resolvedLayerId || resolvedLayerId < 0)
+        if (serviceLayerIndex is not { } resolvedServiceLayerIndex || resolvedServiceLayerIndex < 0)
         {
-            throw new GeoprocessingValidationException("'layerId' is required and must be a non-negative integer.");
+            throw new GeoprocessingValidationException("'serviceLayerIndex' is required and must be a non-negative integer.");
         }
 
         var service = ResolveService(snapshot, serviceId.Trim());
@@ -64,18 +64,18 @@ internal static class MapToolLayerResolver
             throw new GeoprocessingNotFoundException($"Service '{serviceId}' was not found in the published catalog.");
         }
 
-        var publication = snapshot.FindPublicationByLayerIndex(service.Metadata.Id, resolvedLayerId);
+        var publication = snapshot.FindPublicationByLayerIndex(service.Metadata.Id, resolvedServiceLayerIndex);
         if (publication is null)
         {
             throw new GeoprocessingNotFoundException(
-                $"Layer {resolvedLayerId} was not found on service '{service.Metadata.Name}'.");
+                $"Layer {resolvedServiceLayerIndex} was not found on service '{service.Metadata.Name}'.");
         }
 
         var resource = snapshot.ResolveResource(publication);
         if (!snapshot.IsRoutable(publication))
         {
             throw new GeoprocessingNotFoundException(
-                $"Layer {resolvedLayerId} on service '{service.Metadata.Name}' has no backing resource.");
+                $"Layer {resolvedServiceLayerIndex} on service '{service.Metadata.Name}' has no backing resource.");
         }
 
         var storageLayerId = snapshot.ResolveStorageLayerId(publication)
@@ -83,7 +83,7 @@ internal static class MapToolLayerResolver
         if (storageLayerId is not { } resolvedStorageLayerId)
         {
             throw new GeoprocessingNotFoundException(
-                $"Layer {resolvedLayerId} on service '{service.Metadata.Name}' is not backed by queryable storage.");
+                $"Layer {resolvedServiceLayerIndex} on service '{service.Metadata.Name}' is not backed by queryable storage.");
         }
 
         return new MapToolLayerContext(service, publication, resource!, resolvedStorageLayerId);
@@ -93,11 +93,11 @@ internal static class MapToolLayerResolver
         HttpContext httpContext,
         MetadataV2GraphSnapshot snapshot,
         string? serviceId,
-        int? layerId,
+        int? serviceLayerIndex,
         AuthorizationOperation operation,
         CancellationToken cancellationToken)
     {
-        var layer = Resolve(snapshot, serviceId, layerId);
+        var layer = Resolve(snapshot, serviceId, serviceLayerIndex);
         await EnsureAccessAsync(httpContext, layer, operation, cancellationToken).ConfigureAwait(false);
         return layer;
     }
