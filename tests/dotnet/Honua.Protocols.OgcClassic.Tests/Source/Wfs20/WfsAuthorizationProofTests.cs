@@ -53,14 +53,14 @@ public sealed class WfsAuthorizationProofTests : IAsyncLifetime
     private static readonly XNamespace HonuaNs = "http://honua.io/wfs";
 
     /// <summary>Read-protected layer: <c>tests/seed/server.yaml</c> layer 0, objectids 1-5.</summary>
-    private const string ReadProtectedType = "test_layer";
+    private const string ReadProtectedType = "pub-layer-0";
 
     /// <summary>
     /// Write target: <c>tests/seed/server.yaml</c> layer 1, objectids 101-104. The WFS
     /// local name is derived from the resource name "Related Test Layer 1" by
     /// <c>Wfs20Handler.BuildTypeLocalName</c>.
     /// </summary>
-    private const string WriteType = "related_test_layer_1";
+    private const string WriteType = "pub-layer-1";
     private const string TargetFeature = WriteType + ".101";
     private const int WriteLayerId = 1;
     private const int SeededWriteFeatureCount = 4;

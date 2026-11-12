@@ -105,7 +105,7 @@ internal static class ShareAdminEndpoints
             .WithSummary("Get aggregate Share traffic time series")
             .Produces<ShareTrafficSeriesResponse>();
 
-        var serviceShare = endpoints.MapGroup("/api/v{version:apiVersion}/admin/services/{serviceName}/layers/{layerId:int}/share")
+        var serviceShare = endpoints.MapGroup("/api/v{version:apiVersion}/admin/services/{serviceName}/layers/{serviceLayerIndex:int}/share")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Share")
@@ -128,7 +128,7 @@ internal static class ShareAdminEndpoints
         [FromServices] ILogger<ShareAdminEndpointsLog> logger,
         [FromQuery] string? serviceName = null,
         [FromQuery] string? resourceId = null,
-        [FromQuery] int? layerId = null,
+        [FromQuery] int? serviceLayerIndex = null,
         [FromQuery] string? destinationType = null,
         [FromQuery] string? scheduleState = null,
         [FromQuery] string? cursor = null,
@@ -156,7 +156,7 @@ internal static class ShareAdminEndpoints
                     {
                         ServiceName = NullIfWhiteSpace(serviceName),
                         ResourceId = NullIfWhiteSpace(resourceId),
-                        LayerId = layerId,
+                        LayerId = serviceLayerIndex,
                         DestinationType = destination,
                         ScheduleState = state,
                         Cursor = cursor,
@@ -616,7 +616,7 @@ internal static class ShareAdminEndpoints
     private static Task<IResult> HandleItemTrafficSummary(
         HttpContext context,
         string serviceName,
-        int layerId,
+        int serviceLayerIndex,
         [FromServices] IShareTrafficStore store,
         [FromServices] TimeProvider timeProvider,
         [FromServices] ILogger<ShareAdminEndpointsLog> logger,
@@ -628,7 +628,7 @@ internal static class ShareAdminEndpoints
             store,
             timeProvider,
             logger,
-            new ShareItemRef { ResourceId = NullIfWhiteSpace(resourceId), ServiceName = serviceName, LayerId = layerId },
+            new ShareItemRef { ResourceId = NullIfWhiteSpace(resourceId), ServiceName = serviceName, LayerId = serviceLayerIndex },
             periodStart,
             periodEnd);
 
@@ -645,7 +645,7 @@ internal static class ShareAdminEndpoints
     private static Task<IResult> HandleItemTrafficSeries(
         HttpContext context,
         string serviceName,
-        int layerId,
+        int serviceLayerIndex,
         [FromServices] IShareTrafficStore store,
         [FromServices] TimeProvider timeProvider,
         [FromServices] ILogger<ShareAdminEndpointsLog> logger,
@@ -658,7 +658,7 @@ internal static class ShareAdminEndpoints
             store,
             timeProvider,
             logger,
-            new ShareItemRef { ResourceId = NullIfWhiteSpace(resourceId), ServiceName = serviceName, LayerId = layerId },
+            new ShareItemRef { ResourceId = NullIfWhiteSpace(resourceId), ServiceName = serviceName, LayerId = serviceLayerIndex },
             periodStart,
             periodEnd,
             bucketMinutes);
@@ -787,9 +787,9 @@ internal static class ShareAdminEndpoints
             return false;
         }
 
-        if (request.LayerId < 0)
+        if (request.ServiceLayerIndex < 0)
         {
-            problem = BadRequest(context, "layerId must be zero or greater.");
+            problem = BadRequest(context, "serviceLayerIndex must be zero or greater.");
             return false;
         }
 
@@ -828,7 +828,7 @@ internal static class ShareAdminEndpoints
             ExportId = exportId,
             ResourceId = NullIfWhiteSpace(request.ResourceId),
             ServiceName = request.ServiceName.Trim(),
-            LayerId = request.LayerId,
+            LayerId = request.ServiceLayerIndex,
             DisplayName = NullIfWhiteSpace(request.DisplayName),
             DestinationType = destinationType,
             DestinationStatus = destinationResolver.Resolve(destinationType),
@@ -1045,7 +1045,7 @@ internal static class ShareAdminEndpoints
             ExportId = definition.ExportId,
             ResourceId = definition.ResourceId,
             ServiceName = definition.ServiceName,
-            LayerId = definition.LayerId,
+            ServiceLayerIndex = definition.LayerId,
             DisplayName = definition.DisplayName,
             DestinationType = definition.DestinationType.ToString(),
             DestinationStatus = definition.DestinationStatus.ToString(),
@@ -1107,7 +1107,7 @@ internal static class ShareAdminEndpoints
             {
                 ResourceId = itemRef.ResourceId,
                 ServiceName = itemRef.ServiceName,
-                LayerId = itemRef.LayerId
+                ServiceLayerIndex = itemRef.LayerId
             };
 
     private static ShareTrafficCountsResponse MapCounts(ShareTrafficCounts counts)

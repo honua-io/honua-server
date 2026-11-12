@@ -26,7 +26,7 @@ public sealed class StyleSuggestionEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/suggest-style")]
+    [Endpoint("POST /api/v1/admin/metadata/layers/{storageLayerId}/suggest-style")]
     public async Task SuggestStyle_ReturnsStyleSuggestion()
     {
         var client = _fixture.CreateAdminClient();
@@ -57,7 +57,7 @@ public sealed class StyleSuggestionEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/suggest-style")]
+    [Endpoint("POST /api/v1/admin/metadata/layers/{storageLayerId}/suggest-style")]
     public async Task SuggestStyle_WithInvalidLayerId_Returns404()
     {
         var client = _fixture.CreateAdminClient();
@@ -73,7 +73,7 @@ public sealed class StyleSuggestionEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/suggest-style")]
+    [Endpoint("POST /api/v1/admin/metadata/layers/{storageLayerId}/suggest-style")]
     public async Task SuggestStyle_ClassCountBeyondMaximum_ClampsLegendToTwelveClasses()
     {
         // ClassCount is clamped to [2, 12]; an out-of-range request must succeed
@@ -96,7 +96,7 @@ public sealed class StyleSuggestionEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/suggest-style")]
+    [Endpoint("POST /api/v1/admin/metadata/layers/{storageLayerId}/suggest-style")]
     public async Task SuggestStyle_UnknownPreferredMethodAndPalette_DegradesGracefully()
     {
         // Unknown preference values are advisory: they must be ignored, not rejected.
@@ -123,7 +123,7 @@ public sealed class StyleSuggestionEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/suggest-style")]
+    [Endpoint("POST /api/v1/admin/metadata/layers/{storageLayerId}/suggest-style")]
     public async Task SuggestStyle_SuggestedDocuments_HonorDualFormatContract()
     {
         // The suggestion must emit BOTH projections of the same style: a MapLibre
@@ -153,7 +153,7 @@ public sealed class StyleSuggestionEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/suggest-style")]
+    [Endpoint("POST /api/v1/admin/metadata/layers/{storageLayerId}/suggest-style")]
     public async Task SuggestStyle_SuggestedMapLibre_IsAcceptedByTheStyleUpdatePipeline()
     {
         // Round trip: the suggested MapLibre document must be applicable through the
