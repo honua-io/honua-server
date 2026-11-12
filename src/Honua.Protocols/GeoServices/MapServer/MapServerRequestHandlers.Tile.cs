@@ -282,7 +282,8 @@ internal static partial class MapServerEndpoints
             hasGeometry,
             geometryType,
             stableOrderField: primaryIdField?.Name ?? GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer.Resource),
-            stableOrderFieldType: primaryIdField?.Type) with { Resource = layer.Resource };
+            stableOrderFieldType: primaryIdField?.Type) with
+        { Resource = layer.Resource };
     }
 
     private static int ResolveTileServiceSrid(

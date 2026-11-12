@@ -1085,7 +1085,8 @@ internal static class WmtsRequestHandlers
         var hasGeometry = v2GeometryType != MetadataV2GeometryType.None
             || layer.Resource.FindPrimaryGeometryField() is not null;
         return CreateRenderLayerDescriptorFromV2(layer.StorageLayerId, hasGeometry, v2GeometryType, verticalSelection)
-            with { Resource = layer.Resource };
+            with
+        { Resource = layer.Resource };
     }
 
     private static bool TryResolveWmtsLayer(IReadOnlyList<WmtsLayer> layers, string layerIdOrName, out WmtsLayer layer)
