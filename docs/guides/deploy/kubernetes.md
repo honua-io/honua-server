@@ -30,6 +30,8 @@ moving branch.
   `always`) and `maxmemory-policy noeviction`, or use a managed service's own
   durability. See [Redis durability](#redis-durability) below.
 - A default StorageClass for the single-node persistent volume.
+- x64 nodes with an x86-64-v2 CPU for 2027.1 and later; check with
+  [the CPU baseline preflight](troubleshooting.md#cpu-baseline-x86-64-v2).
 - An OpenTelemetry collector reachable at the endpoint used below.
 - An ingress controller and a TLS secret named `honua-tls`.
 - A reviewed Honua container digest. Production examples deliberately do not

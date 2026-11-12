@@ -21,6 +21,7 @@ A single-node deployment with no Redis configured reports `Ready` — feature-ch
 
 | Symptom | Diagnosis | Fix |
 |---|---|---|
+| Exits at once on x64 with no Honua log line, or `honua-cpu-preflight` reports missing CPU features | The CPU or the VM's CPU model lacks x86-64-v2, which .NET 11 releases (2027.1 and later) require | See [CPU baseline (x86-64-v2)](#cpu-baseline-x86-64-v2) |
 | Exits with "Master key must be at least 32 characters long" | `Security__ConnectionEncryption__MasterKey` too short | Set a value of 32+ characters |
 | Exits with "Master key not configured" | Connection encryption used without a master key | Set `Security__ConnectionEncryption__MasterKey` |
 | Refuses to start, log mentions dev auth | `HONUA_DEV_AUTH=true` in a Production environment | Remove `HONUA_DEV_AUTH`; the bypass only works in `ASPNETCORE_ENVIRONMENT=Test` |
@@ -29,6 +30,42 @@ A single-node deployment with no Redis configured reports `Ready` — feature-ch
 | Starts but logs "connection string not configured" | `ConnectionStrings__DefaultConnection` missing | Set it; migrations and data access are skipped without it |
 | Logs "Redis durability attestation: unverified" or "not-durable" | Information only: the Redis policy could not be read (managed Redis blocks `CONFIG`) or is not durable | Nothing is disabled. See [Redis durability](#redis-durability) to decide whether you need a durable policy |
 | Exits with "Jobs:RequireDurableStore is enabled, but the durable job substrate is not attested" | You opted in to requiring an `attested` Redis policy and the outcome was something else | Fix the Redis policy per the message's remediation, or clear `Jobs__RequireDurableStore` (required on ElastiCache and MemoryDB) |
+
+## CPU baseline (x86-64-v2)
+
+Honua Server releases built on .NET 11 (2027.1 and later) need an **x86-64-v2** CPU on x64:
+CMPXCHG16B, LAHF/SAHF, POPCNT, SSE3, SSSE3, SSE4.1 and SSE4.2. The runtime refuses to start
+without them, before Honua writes a log line. 2026.x releases (.NET 10) run on any x64 CPU.
+Arm64 hosts are not affected.
+
+Every server CPU since about 2009 qualifies. Virtual machines are the usual problem: a generic
+CPU model (QEMU/KVM `qemu64` or `kvm64`, older Proxmox defaults) hides these features from the
+guest even on modern hardware.
+
+Check before you install or upgrade, where the server will run. The script ships in the source
+release as `scripts/operations/check-cpu-baseline.sh`; inside a container it needs only `sh`:
+
+```bash
+sh scripts/operations/check-cpu-baseline.sh                       # on the host
+docker run --rm -i --entrypoint sh "$HONUA_IMAGE" -s < scripts/operations/check-cpu-baseline.sh
+kubectl run honua-cpu-check --rm -i --restart=Never --image="$HONUA_IMAGE" \
+  --command -- sh -s < scripts/operations/check-cpu-baseline.sh   # on a cluster node
+```
+
+No output means the baseline is met. Otherwise it names the missing features. By default it
+only warns; `HONUA_CPU_PREFLIGHT=enforce` makes it exit 3 (for scripted installs), and
+`HONUA_CPU_PREFLIGHT=off` skips it.
+
+To fix a VM, present the host CPU or an x86-64-v2 model to the guest, then restart the VM:
+
+| Hypervisor | Setting |
+|---|---|
+| libvirt / KVM | `<cpu mode='host-passthrough'/>`, or a named model such as `Nehalem` or newer |
+| Proxmox VE | CPU type `host` or `x86-64-v2-AES` |
+| QEMU | `-cpu host`, or `-cpu Nehalem` or newer (not `qemu64` / `kvm64`) |
+
+Host passthrough can limit live migration between hosts with different CPUs; a named model
+keeps migration working. On physical hardware without x86-64-v2, stay on 2026.x.
 
 ## License failure mode
 
