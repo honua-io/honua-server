@@ -30,7 +30,7 @@ relations:
 
 Interpret “publish this” using the current object, destination, and audience. Exposing a [Dataset](dataset.md) creates a [Layer](layer.md) in a [Service](service.md); activating a saved Map or App Version releases it. These are separate actions. Preserve existing access unless the user requests a change. Ask only about unresolved choices that change the outcome; see [contextual interpretation](intent-interpretation.md).
 
-Publication is a retired object name. The existing Metadata v2 `MetadataV2Publication` links a Dataset to a Service and is being renamed Layer. The Studio API also uses publication in existing route and response names for activation. Consult current API references for those literals until the [model and API transition](README.md#implementation-transition) lands. This page retains the current activation authority contract while that work is pending.
+Publication is a retired object name. The Metadata v2 type `MetadataV2Layer` links a Dataset to a Service; persisted fields such as `publicationType` keep their legacy spelling until the migration. The Studio API also uses publication in existing route and response names for activation. Consult current API references for those literals until the [model and API transition](README.md#implementation-transition) lands. This page retains the current activation authority contract while that work is pending.
 
 A Connection registration exposes no data or credential material. A Style change affects drawing rules, not source features. Resolve the actual object and supported action rather than applying one generic publish operation to every noun.
 

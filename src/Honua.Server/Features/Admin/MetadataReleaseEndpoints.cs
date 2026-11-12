@@ -293,7 +293,7 @@ internal static class MetadataReleaseEndpoints
 
     private static bool TryParseResourceType(
         string? raw,
-        out MetadataV2ResourceType? value,
+        out MetadataV2ObjectType? value,
         out string? error)
     {
         value = null;
@@ -305,21 +305,21 @@ internal static class MetadataReleaseEndpoints
 
         value = raw.Trim().ToLowerInvariant() switch
         {
-            "feature-dataset" or "featuredataset" => MetadataV2ResourceType.FeatureDataset,
-            "raster-dataset" or "rasterdataset" => MetadataV2ResourceType.RasterDataset,
-            "table" => MetadataV2ResourceType.Table,
-            "tile-dataset" or "tiledataset" => MetadataV2ResourceType.TileDataset,
-            "process" => MetadataV2ResourceType.Process,
-            "style" => MetadataV2ResourceType.Style,
-            "document" => MetadataV2ResourceType.Document,
-            "external-resource" or "externalresource" => MetadataV2ResourceType.ExternalResource,
-            "map" => MetadataV2ResourceType.Map,
-            "dashboard" => MetadataV2ResourceType.Dashboard,
-            "form" => MetadataV2ResourceType.Form,
-            "app" => MetadataV2ResourceType.App,
-            "workflow" => MetadataV2ResourceType.Workflow,
-            "geoprocessing-service" or "geoprocessingservice" => MetadataV2ResourceType.GeoprocessingService,
-            "etl-pipeline" or "etlpipeline" => MetadataV2ResourceType.EtlPipeline,
+            "feature-dataset" or "featuredataset" => MetadataV2ObjectType.FeatureDataset,
+            "raster-dataset" or "rasterdataset" => MetadataV2ObjectType.RasterDataset,
+            "table" => MetadataV2ObjectType.Table,
+            "tile-dataset" or "tiledataset" => MetadataV2ObjectType.TileDataset,
+            "process" => MetadataV2ObjectType.Process,
+            "style" => MetadataV2ObjectType.Style,
+            "document" => MetadataV2ObjectType.Document,
+            "external-resource" or "externalresource" => MetadataV2ObjectType.ExternalResource,
+            "map" => MetadataV2ObjectType.Map,
+            "dashboard" => MetadataV2ObjectType.Dashboard,
+            "form" => MetadataV2ObjectType.Form,
+            "app" => MetadataV2ObjectType.App,
+            "workflow" => MetadataV2ObjectType.Workflow,
+            "geoprocessing-service" or "geoprocessingservice" => MetadataV2ObjectType.GeoprocessingService,
+            "etl-pipeline" or "etlpipeline" => MetadataV2ObjectType.EtlPipeline,
             _ => null,
         };
 

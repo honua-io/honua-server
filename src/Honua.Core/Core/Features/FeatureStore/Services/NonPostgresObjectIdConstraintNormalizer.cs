@@ -26,7 +26,7 @@ internal static partial class NonPostgresObjectIdConstraintNormalizer
         string providerLabel,
         string? primaryKeyColumn,
         IFilterExpressionService? filterExpressions,
-        MetadataV2Resource? resource)
+        MetadataV2Object? resource)
     {
         if (query.SqlFilter is null)
         {

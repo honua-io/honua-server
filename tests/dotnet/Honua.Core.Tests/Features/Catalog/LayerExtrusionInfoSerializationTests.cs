@@ -74,7 +74,7 @@ public sealed class MetadataV2ExtrusionInfoSerializationTests
     [Operation(Operations.Metadata)]
     public void Resource_RoundTrip_PreservesExtrusion()
     {
-        var original = new MetadataV2Resource
+        var original = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-1", Name = "buildings" },
             Extrusion = new MetadataV2ExtrusionInfo
@@ -86,8 +86,8 @@ public sealed class MetadataV2ExtrusionInfoSerializationTests
             }
         };
 
-        var json = JsonSerializer.Serialize(original, MetadataV2JsonContext.Default.MetadataV2Resource);
-        var roundTrip = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Resource);
+        var json = JsonSerializer.Serialize(original, MetadataV2JsonContext.Default.MetadataV2Object);
+        var roundTrip = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Object);
 
         roundTrip.Should().NotBeNull();
         roundTrip!.Extrusion.Should().NotBeNull();
@@ -102,7 +102,7 @@ public sealed class MetadataV2ExtrusionInfoSerializationTests
         // null; the missing property is the Metadata v2 signal of "no 3D extrusion".
         const string payload = """{"metadata":{"id":"resource-1","name":"buildings"}}""";
 
-        var resource = JsonSerializer.Deserialize(payload, MetadataV2JsonContext.Default.MetadataV2Resource);
+        var resource = JsonSerializer.Deserialize(payload, MetadataV2JsonContext.Default.MetadataV2Object);
 
         resource.Should().NotBeNull();
         resource!.Extrusion.Should().BeNull();

@@ -242,7 +242,7 @@ internal static partial class FeatureServerEndpoints
             cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task<((int PublicLayerId, MetadataV2Resource Resource)[]? Layers, IResult? Error)>
+    private static async Task<((int PublicLayerId, MetadataV2Object Resource)[]? Layers, IResult? Error)>
         ResolveAccessibleServiceLayersAsync(string serviceId, HttpContext context)
     {
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();

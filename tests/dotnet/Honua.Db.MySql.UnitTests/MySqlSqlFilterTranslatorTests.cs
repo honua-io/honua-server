@@ -18,7 +18,7 @@ namespace Honua.Db.MySql.Tests;
 public class MySqlSqlFilterTranslatorTests
 {
     private readonly MySqlSqlFilterTranslator _translator = new();
-    private readonly MetadataV2Resource _resource;
+    private readonly MetadataV2Object _resource;
 
     public MySqlSqlFilterTranslatorTests()
     {
@@ -425,7 +425,7 @@ public class MySqlSqlFilterTranslatorTests
         Assert.DoesNotContain("axis-order", result.Sql, StringComparison.Ordinal);
     }
 
-    private static MetadataV2Resource CreateResource(
+    private static MetadataV2Object CreateResource(
         string name,
         MetadataV2GeometryType geometryType,
         int srid = 4326,
@@ -434,8 +434,8 @@ public class MySqlSqlFilterTranslatorTests
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = $"res-{name}", Name = name },
-            Type = MetadataV2ResourceType.FeatureDataset,
-            Spatial = new MetadataV2ResourceSpatial
+            Type = MetadataV2ObjectType.FeatureDataset,
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = new MetadataV2SpatialReference
                 {

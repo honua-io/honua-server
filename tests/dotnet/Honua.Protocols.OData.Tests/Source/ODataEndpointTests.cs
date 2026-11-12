@@ -63,7 +63,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         {
             Revision = graph.Revision + 1,
             Publications = graph.Publications.Select(publication =>
-                publication.PublicationType == MetadataV2PublicationType.ODataEntitySet && publication.LayerIndex == TestLayerId
+                publication.PublicationType == MetadataV2LayerType.ODataEntitySet && publication.LayerIndex == TestLayerId
                     ? publication with { LayerIndex = publicLayerId }
                     : publication).ToArray()
         }, schema: _fixture.CurrentSchema);

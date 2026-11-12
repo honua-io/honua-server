@@ -226,7 +226,7 @@ public sealed class GeoServicesAttachmentObjectIdTests
             .Returns(Task.FromException<Feature?>(new InvalidOperationException("source id used as storage id")));
         reader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(QueryResult<Feature>.Create(1, ImmutableArray.Create(stored))));
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields =
             [
@@ -241,7 +241,7 @@ public sealed class GeoServicesAttachmentObjectIdTests
         ids[1899].Should().Be(1);
     }
 
-    private static MetadataV2Resource CustomObjectIdLayer()
+    private static MetadataV2Object CustomObjectIdLayer()
         => new()
         {
             SchemaFields =
@@ -255,7 +255,7 @@ public sealed class GeoServicesAttachmentObjectIdTests
             ]
         };
 
-    private static MetadataV2Resource SyntheticObjectIdLayer()
+    private static MetadataV2Object SyntheticObjectIdLayer()
         => new()
         {
             SchemaFields = []
@@ -264,7 +264,7 @@ public sealed class GeoServicesAttachmentObjectIdTests
     private static IFilterExpressionService SuccessFilters()
     {
         var filters = Substitute.For<IFilterExpressionService>();
-        filters.Translate(Arg.Any<FilterExpression?>(), Arg.Any<MetadataV2Resource>())
+        filters.Translate(Arg.Any<FilterExpression?>(), Arg.Any<MetadataV2Object>())
             .Returns(FilterTranslationResult.Success(null, new SqlFragment("gid = @p", new object?[] { 7L })));
         return filters;
     }

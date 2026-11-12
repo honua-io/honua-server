@@ -76,9 +76,9 @@ public sealed class ODataQueryHandlerTests
         var all = await ODataV2Lookups.ResolveAllODataPublicationsAsync(context, CancellationToken.None);
 
         visible.Should().ContainSingle()
-            .Which.Publication.PublicationType.Should().Be(MetadataV2PublicationType.ODataEntitySet);
+            .Which.Publication.PublicationType.Should().Be(MetadataV2LayerType.ODataEntitySet);
         all.Should().ContainSingle()
-            .Which.Publication.PublicationType.Should().Be(MetadataV2PublicationType.ODataEntitySet);
+            .Which.Publication.PublicationType.Should().Be(MetadataV2LayerType.ODataEntitySet);
     }
 
     [UnitTheory]
@@ -118,7 +118,7 @@ public sealed class ODataQueryHandlerTests
         var graph = snapshot.Graph with
         {
             Publications = snapshot.Graph.Publications.Select(publication =>
-                publication.PublicationType == MetadataV2PublicationType.ODataEntitySet
+                publication.PublicationType == MetadataV2LayerType.ODataEntitySet
                     ? publication with { Metadata = publication.Metadata with { Tenant = "tenant-b" } }
                     : publication).ToArray()
         };
@@ -128,8 +128,8 @@ public sealed class ODataQueryHandlerTests
         var visible = await ODataV2Lookups.ResolveVisibleODataPublicationsAsync(context, CancellationToken.None);
         var all = await ODataV2Lookups.ResolveAllODataPublicationsAsync(context, CancellationToken.None);
 
-        visible.Should().ContainSingle().Which.Publication.PublicationType.Should().Be(MetadataV2PublicationType.EsriFeatureLayer);
-        all.Should().ContainSingle().Which.Publication.PublicationType.Should().Be(MetadataV2PublicationType.EsriFeatureLayer);
+        visible.Should().ContainSingle().Which.Publication.PublicationType.Should().Be(MetadataV2LayerType.EsriFeatureLayer);
+        all.Should().ContainSingle().Which.Publication.PublicationType.Should().Be(MetadataV2LayerType.EsriFeatureLayer);
     }
 
     [UnitTest]
@@ -241,7 +241,7 @@ public sealed class ODataQueryHandlerTests
                 "res-layer-1",
                 layerIndex: 1,
                 storageBindingId: "binding-layer-1",
-                publicationType: MetadataV2PublicationType.ODataEntitySet)
+                publicationType: MetadataV2LayerType.ODataEntitySet)
             .Build();
         graph = graph with
         {
@@ -263,7 +263,7 @@ public sealed class ODataQueryHandlerTests
                     odataPublication with
                     {
                         Metadata = odataPublication.Metadata with { Id = "pub-alpha-layer-1-feature" },
-                        PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+                        PublicationType = MetadataV2LayerType.EsriFeatureLayer,
                     },
                 ],
             };

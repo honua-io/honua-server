@@ -588,12 +588,12 @@ public sealed partial class PbfQueryFormatterTests
 
     // ── Helpers ─────────────────────────────────────────────────
 
-    private static MetadataV2Resource CreatePointLayer() =>
+    private static MetadataV2Object CreatePointLayer() =>
         CreateLayer(
             [new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false }],
             MetadataV2GeometryType.Point);
 
-    private static MetadataV2Resource CreateLayerWithStringField() =>
+    private static MetadataV2Object CreateLayerWithStringField() =>
         CreateLayer(
             [
                 new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false },
@@ -601,7 +601,7 @@ public sealed partial class PbfQueryFormatterTests
             ],
             MetadataV2GeometryType.Point);
 
-    private static MetadataV2Resource CreateLayer(MetadataV2Field[] fields, MetadataV2GeometryType geometryType)
+    private static MetadataV2Object CreateLayer(MetadataV2Field[] fields, MetadataV2GeometryType geometryType)
     {
         var schemaFields = new List<MetadataV2Field>(fields);
         if (geometryType is not MetadataV2GeometryType.None)
@@ -615,7 +615,7 @@ public sealed partial class PbfQueryFormatterTests
             });
         }
 
-        return new MetadataV2Resource
+        return new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -623,11 +623,11 @@ public sealed partial class PbfQueryFormatterTests
                 Name = "Test Layer",
                 Description = "Test layer for PBF tests"
             },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields = schemaFields,
             Spatial = geometryType is MetadataV2GeometryType.None
                 ? null
-                : new MetadataV2ResourceSpatial
+                : new MetadataV2ObjectSpatial
                 {
                     SpatialReference = MetadataV2SpatialReference.Wgs84,
                     GeometryType = geometryType,

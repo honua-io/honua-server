@@ -7,5 +7,5 @@ namespace Honua.Core.Features.NlQuery.Domain;
 
 public sealed record NlQueryPlanRequest(
     string Query,
-    MetadataV2Resource Resource,
+    MetadataV2Object Resource,
     string? CollectionId = null);

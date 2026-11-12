@@ -1087,7 +1087,7 @@ public sealed class WfsReadVisibilitySeamTests
         };
     }
 
-    private static MetadataV2Resource CreateResource()
+    private static MetadataV2Object CreateResource()
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-alpha", Name = "Alpha Layer" }
@@ -1147,7 +1147,7 @@ public sealed class WfsReadVisibilitySeamTests
 /// Direct coverage of the WFS-T transaction write authorization seam
 /// (BH3-001 / BH3-014). WFS Transaction actions route through
 /// <c>ValidateTransactionLayerWriteAccessAsync</c>, which now calls
-/// <see cref="ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(HttpContext, MetadataV2Resource, MetadataV2Service?, AuthorizationOperation, CancellationToken)"/>
+/// <see cref="ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(HttpContext, MetadataV2Object, MetadataV2Service?, AuthorizationOperation, CancellationToken)"/>
 /// with the action's specific operation (Insert / Update / Delete; Replace maps to
 /// Update). The ServiceRbacTestFixture cannot render a full WFS Transaction HTTP
 /// round-trip (it needs a PostGIS-backed store and non-admin principal injection),
@@ -1262,7 +1262,7 @@ public sealed class WfsTransactionWriteAuthorizationSeamTests
         };
     }
 
-    private static MetadataV2Resource CreateResource()
+    private static MetadataV2Object CreateResource()
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-alpha", Name = "Alpha Layer" }

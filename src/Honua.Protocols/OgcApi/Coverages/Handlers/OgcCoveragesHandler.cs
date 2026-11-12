@@ -634,7 +634,7 @@ internal sealed class OgcCoveragesHandler
     }
 
     private async Task<OgcCoverageCollection> CreateCollectionAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string? servicePath,
         int storageLayerId,
         RasterInfo raster,
@@ -910,7 +910,7 @@ internal sealed class OgcCoveragesHandler
     }
 
     private async Task<CoverageSchema> CreateSchemaAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         RasterInfo raster,
         CancellationToken cancellationToken)
@@ -1901,7 +1901,7 @@ internal sealed class OgcCoveragesHandler
     private static string FormatContentCrsHeader(int srid)
         => FormattableString.Invariant($"<https://www.opengis.net/def/crs/EPSG/0/{srid}>");
 
-    private static int ResolveStorageSrid(MetadataV2Resource resource, RasterInfo raster)
+    private static int ResolveStorageSrid(MetadataV2Object resource, RasterInfo raster)
         => raster.Extent?.Srid ?? raster.Srid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
 
     private static string FormatDouble(double value)
@@ -1960,7 +1960,7 @@ internal sealed class OgcCoveragesHandler
     private readonly record struct CoverageFormat(RasterFormat Format, string ContentType, string QueryValue);
 
     private readonly record struct CoverageResolution(
-        MetadataV2Resource? Resource,
+        MetadataV2Object? Resource,
         string? ServicePath,
         int? StorageLayerId,
         RasterInfo? Raster,

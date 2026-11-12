@@ -55,8 +55,8 @@ internal static class WmtsRequestHandlers
     private static readonly char[] _wmtsAdditionalQuerySeparators = ['&', ';'];
 
     private readonly record struct WmtsLayer(
-        MetadataV2Resource Resource,
-        MetadataV2Publication Publication,
+        MetadataV2Object Resource,
+        MetadataV2Layer Publication,
         int StorageLayerId,
         string Identifier);
 
@@ -1056,12 +1056,12 @@ internal static class WmtsRequestHandlers
             .ToArray();
     }
 
-    private static int ResolveServiceSrid(MetadataV2Service service, MetadataV2Resource resource)
+    private static int ResolveServiceSrid(MetadataV2Service service, MetadataV2Object resource)
         => service.SpatialReference?.ResolveSrid()
             ?? resource.ReadSrid()
             ?? 4326;
 
-    private static bool ResourceHasGeometry(MetadataV2Resource resource)
+    private static bool ResourceHasGeometry(MetadataV2Object resource)
     {
         if (resource.ReadGeometryType() != MetadataV2GeometryType.None)
         {
@@ -1937,14 +1937,14 @@ internal static class WmtsRequestHandlers
     private static bool TryValidateWmtsDimensionParameters(
         HttpContext context,
         IQueryCollection query,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out IResult errorResult)
     {
         errorResult = Results.Empty;
 
         // Treat all WmtsLayer wrappers identically here: dimension validation only consults
         // the resource (name + temporal extension), not the publication or storage handle.
-        var dummyLayer = new WmtsLayer(resource, new MetadataV2Publication(), 0, string.Empty);
+        var dummyLayer = new WmtsLayer(resource, new MetadataV2Layer(), 0, string.Empty);
         var dimensions = GetWmtsDimensionDefinitions(dummyLayer);
 
         // WMTS 1.0 sections 7.2.2.2 and 7.3.2.2 require unknown KVP keys,
@@ -2449,7 +2449,7 @@ internal static class WmtsRequestHandlers
 
     private static async Task AppendWmtsWgs84BoundingBoxAsync(
         StringBuilder sb,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         HttpContext context,
         CancellationToken cancellationToken)
     {
@@ -2470,7 +2470,7 @@ internal static class WmtsRequestHandlers
     }
 
     private static async Task<(string LowerCorner, string UpperCorner)?> TryGetWmtsWgs84BoundingBoxAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         HttpContext context,
         CancellationToken cancellationToken)
     {

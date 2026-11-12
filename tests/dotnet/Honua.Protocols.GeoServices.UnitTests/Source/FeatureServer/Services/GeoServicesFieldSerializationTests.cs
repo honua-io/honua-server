@@ -617,7 +617,7 @@ public sealed class GeoServicesFieldSerializationTests
     private static async Task<string> StreamGeoServicesJsonAsync(
         StreamingQueryFormatter formatter,
         Feature feature,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         using var stream = new MemoryStream();
         var pipe = PipeWriter.Create(stream);
@@ -641,7 +641,7 @@ public sealed class GeoServicesFieldSerializationTests
     private static async Task<string> StreamGeoJsonAsync(
         StreamingQueryFormatter formatter,
         Feature feature,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         using var stream = new MemoryStream();
         var pipe = PipeWriter.Create(stream);
@@ -667,7 +667,7 @@ public sealed class GeoServicesFieldSerializationTests
         await Task.CompletedTask;
     }
 
-    private static MetadataV2Resource CreateResource(params MetadataV2Field[] fields)
+    private static MetadataV2Object CreateResource(params MetadataV2Field[] fields)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "test-layer", Name = "test-layer" },

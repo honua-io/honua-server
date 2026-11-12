@@ -17,7 +17,7 @@ internal static partial class FeatureServerEndpoints
 {
     internal static async Task<(FeatureQuery Query, IResult? Error)> ApplyAnalyticsFiltersAsync(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IReadOnlyDictionary<string, StringValues> values,
         FeatureQuery query,
         CancellationToken cancellationToken)
@@ -104,7 +104,7 @@ internal static partial class FeatureServerEndpoints
 
     private static async Task<(FeatureQuery Query, IResult? Error)> ApplyAnalyticsSpatialFilterAsync(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         QueryParameters parameters,
         FeatureQuery query,
         CancellationToken cancellationToken)
@@ -188,7 +188,7 @@ internal static partial class FeatureServerEndpoints
 
     private static (FeatureQuery Query, IResult? Error) ApplyAnalyticsTemporalFilter(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         QueryParameters parameters,
         FeatureQuery query)
     {
@@ -226,7 +226,7 @@ internal static partial class FeatureServerEndpoints
 
     private static (FeatureQuery Query, IResult? Error) ApplyAnalyticsObjectIds(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         long[] objectIds,
         FeatureQuery query)
     {
@@ -258,7 +258,7 @@ internal static partial class FeatureServerEndpoints
 
     private static (FeatureQuery Query, IResult? Error) AndAnalyticsSqlFilter(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IFilterExpressionService filterService,
         FeatureQuery query,
         SqlFragment addition)

@@ -22,7 +22,7 @@ internal sealed class DuckDbSqlFilterTranslator : SqlFilterExpressionVisitorBase
     }
 
     /// <inheritdoc />
-    public SqlFragment Translate(FilterExpression filter, MetadataV2Resource resource)
+    public SqlFragment Translate(FilterExpression filter, MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(filter);
         ArgumentNullException.ThrowIfNull(resource);

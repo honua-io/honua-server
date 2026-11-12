@@ -65,9 +65,9 @@ public sealed class EdrStorageCollectionTests
 
         var graph = new TestMetadataV2GraphBuilder()
             .AddService("svc", "coverages", protocols: [ServiceProtocols.OgcApiCoverages])
-            .AddResource("west", "west-dem", MetadataV2ResourceType.RasterDataset, accessPolicy: Anonymous())
-            .AddResource("east", "east-dem", MetadataV2ResourceType.RasterDataset, accessPolicy: Anonymous())
-            .AddResource("decoy", "decoy-dem", MetadataV2ResourceType.RasterDataset, accessPolicy: Anonymous())
+            .AddResource("west", "west-dem", MetadataV2ObjectType.RasterDataset, accessPolicy: Anonymous())
+            .AddResource("east", "east-dem", MetadataV2ObjectType.RasterDataset, accessPolicy: Anonymous())
+            .AddResource("decoy", "decoy-dem", MetadataV2ObjectType.RasterDataset, accessPolicy: Anonymous())
             .AddStorageBinding("west-binding", "west", "west", storageLayerId: SharedStorageId)
             .AddStorageBinding("east-binding", "east", "east", storageLayerId: SharedStorageId)
             .AddStorageBinding("decoy-binding", "decoy", "decoy", storageLayerId: DecoyStorageId)
@@ -78,21 +78,21 @@ public sealed class EdrStorageCollectionTests
                 storageBindingId: "west-binding",
                 serviceLocalId: "west-dem",
                 isPrimary: true,
-                publicationType: MetadataV2PublicationType.OgcCollection)
+                publicationType: MetadataV2LayerType.OgcCollection)
             .AddPublication(
                 "pub-east",
                 "svc",
                 "east",
                 storageBindingId: "east-binding",
                 serviceLocalId: "east-dem",
-                publicationType: MetadataV2PublicationType.OgcCollection)
+                publicationType: MetadataV2LayerType.OgcCollection)
             .AddPublication(
                 "pub-decoy",
                 "svc",
                 "decoy",
                 storageBindingId: "decoy-binding",
                 serviceLocalId: SharedStorageId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                publicationType: MetadataV2PublicationType.OgcCollection)
+                publicationType: MetadataV2LayerType.OgcCollection)
             .BuildProvider();
         var services = new ServiceCollection()
             .AddSingleton<IMetadataV2GraphProvider>(graph)

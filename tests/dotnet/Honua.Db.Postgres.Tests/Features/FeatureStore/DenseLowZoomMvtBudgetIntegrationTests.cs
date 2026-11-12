@@ -215,11 +215,11 @@ public sealed class DenseLowZoomMvtBudgetIntegrationTests : IAsyncLifetime
 
     private PostgresStorageMappedFeatureReader CreateReader()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-dense", Name = "Dense" },
-            Type = MetadataV2ResourceType.FeatureDataset,
-            Spatial = new MetadataV2ResourceSpatial
+            Type = MetadataV2ObjectType.FeatureDataset,
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Polygon,

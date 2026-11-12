@@ -55,7 +55,7 @@ public sealed class AdminLayerConfigurationTargetTests
         var store = new RecordingGraphStore(Graph(
             Layer("res-feature", "svc-a", "parcels", layerIndex: 0),
             Layer("res-twin", "svc-b", "twin", layerIndex: 0, retired: true),
-            Layer("res-raster", "svc-image", "image", layerIndex: 0, type: MetadataV2ResourceType.RasterDataset)));
+            Layer("res-raster", "svc-image", "image", layerIndex: 0, type: MetadataV2ObjectType.RasterDataset)));
 
         var target = await AdminLayerConfigurationTargets.WriteAsync(
             store,
@@ -85,7 +85,7 @@ public sealed class AdminLayerConfigurationTargetTests
         target.IsAmbiguous.Should().BeFalse();
         target.Resource!.Metadata.Id.Should().Be("res-legacy");
         snapshot.Graph.Publications.Single().Identifier.Should().BeNull();
-        JsonSerializer.Serialize(snapshot.Graph.Publications.Single(), MetadataV2JsonContext.Default.MetadataV2Publication)
+        JsonSerializer.Serialize(snapshot.Graph.Publications.Single(), MetadataV2JsonContext.Default.MetadataV2Layer)
             .Should().Contain("\"identifier\":null").And.Contain("\"layerIndex\":4");
     }
 
@@ -109,13 +109,13 @@ public sealed class AdminLayerConfigurationTargetTests
         int layerIndex,
         bool retired = false,
         bool legacyIdentifier = false,
-        MetadataV2ResourceType type = MetadataV2ResourceType.FeatureDataset)
+        MetadataV2ObjectType type = MetadataV2ObjectType.FeatureDataset)
     {
         return new MetadataV2Graph
         {
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = resourceId, Name = resourceId },
                     Type = type,
@@ -135,7 +135,7 @@ public sealed class AdminLayerConfigurationTargetTests
             ],
             Publications =
             [
-                new MetadataV2Publication
+                new MetadataV2Layer
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "pub-" + resourceId, Name = resourceId },
                     Status = Active,
@@ -143,7 +143,7 @@ public sealed class AdminLayerConfigurationTargetTests
                     ResourceId = resourceId,
                     Identifier = legacyIdentifier
                         ? null!
-                        : new MetadataV2PublicationIdentifier
+                        : new MetadataV2LayerIdentifier
                         {
                             Value = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
                             IsNumeric = true,

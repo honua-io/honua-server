@@ -70,7 +70,7 @@ public sealed class LayerValidationEndpointsTests : IAsyncLifetime
             Resources = snapshot.Graph.Resources.Select(resource => resource.Metadata.Id == resourceId
                 ? resource with
                 {
-                    Type = MetadataV2ResourceType.Table,
+                    Type = MetadataV2ObjectType.Table,
                     Spatial = null,
                     SchemaFields = resource.SchemaFields.Where(field => field.Name != "geom").ToArray()
                 }
@@ -218,14 +218,14 @@ public sealed class LayerValidationEndpointsTests : IAsyncLifetime
         var bindingId = $"storage.layer-validation.{layerId}";
         var serviceId = $"service.layer-validation.{layerId}";
         var publicationId = $"publication.layer-validation.{layerId}";
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
                 Id = resourceId,
                 Name = $"Layer {_tableName}"
             },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             StorageBindingIds = [bindingId],
             SchemaFields =
@@ -247,7 +247,7 @@ public sealed class LayerValidationEndpointsTests : IAsyncLifetime
                     SemanticRoles = ["geometry.primary"]
                 }
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 StorageCrs = MetadataV2SpatialReference.Wgs84,
@@ -279,7 +279,7 @@ public sealed class LayerValidationEndpointsTests : IAsyncLifetime
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             Route = "/api/v1/admin/metadata/layers"
         };
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -290,12 +290,12 @@ public sealed class LayerValidationEndpointsTests : IAsyncLifetime
             ResourceId = resourceId,
             StorageBindingId = bindingId,
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
-            Identifier = new MetadataV2PublicationIdentifier
+            Identifier = new MetadataV2LayerIdentifier
             {
                 Value = layerIdText,
                 IsNumeric = true
             },
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+            PublicationType = MetadataV2LayerType.EsriFeatureLayer,
             IsPrimary = true
         };
 

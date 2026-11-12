@@ -62,10 +62,10 @@ public sealed class FeatureOrderingTests
         Assert.True(comparison > 0);
     }
 
-    private static MetadataV2Resource Resource(string nameField, string idField) => new()
+    private static MetadataV2Object Resource(string nameField, string idField) => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = $"resource-{nameField}", Name = nameField },
-        Type = MetadataV2ResourceType.FeatureDataset,
+        Type = MetadataV2ObjectType.FeatureDataset,
         SchemaFields =
         [
             new MetadataV2Field { Name = idField, Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"] },

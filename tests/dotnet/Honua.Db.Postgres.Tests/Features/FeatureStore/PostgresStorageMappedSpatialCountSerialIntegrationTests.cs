@@ -426,7 +426,7 @@ public sealed partial class PostgresStorageMappedSpatialCountSerialIntegrationTe
         await using var scope = container.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IFeatureDataProvider>();
         var resource = CreateResource(knownGeometry: true);
-        var binding = new FeatureProviderBinding(new MetadataV2Service(), resource, new MetadataV2Publication(),
+        var binding = new FeatureProviderBinding(new MetadataV2Service(), resource, new MetadataV2Layer(),
             new MetadataV2StorageBinding { ResourceId = resource.Metadata.Id }, CreateMapping(sourceBacked: true), 1, store, Connection: null);
         var reader = ((IBindableFeatureDataProvider)store).CreateReaderForBinding(binding);
         (await reader.CountAsync(1, BboxQuery())).Should().Be(3);
@@ -555,10 +555,10 @@ public sealed partial class PostgresStorageMappedSpatialCountSerialIntegrationTe
         preferSerialBoundedSpatialReads: false,
         disableJitForSourceSpatialCounts: disableJit, preferSerialSourceSpatialCounts: enabled);
 
-    private static MetadataV2Resource CreateResource(bool knownGeometry, MetadataV2GeometryType geometryType = MetadataV2GeometryType.Point) => new()
+    private static MetadataV2Object CreateResource(bool knownGeometry, MetadataV2GeometryType geometryType = MetadataV2GeometryType.Point) => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "serial-count", Name = "serial-count" },
-        Spatial = knownGeometry ? new MetadataV2ResourceSpatial { GeometryType = geometryType } : null,
+        Spatial = knownGeometry ? new MetadataV2ObjectSpatial { GeometryType = geometryType } : null,
         SchemaFields = [new() { Name = "id", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"] }]
     };
 

@@ -52,7 +52,7 @@ public sealed partial class ODataCrudOwnerEditPolicyTests
         var service = CreateService(reader, writer, Principal("alice", admin: false));
         var resource = Resource(null) with
         {
-            Editing = new MetadataV2ResourceEditing { GlobalIdField = "globalid" },
+            Editing = new MetadataV2ObjectEditing { GlobalIdField = "globalid" },
             SchemaFields =
             [
                 new() { Name = "name", Type = MetadataV2FieldType.String, Editable = true },
@@ -176,11 +176,11 @@ public sealed partial class ODataCrudOwnerEditPolicyTests
     private static ParsedFeaturePayload Payload(string name)
         => new() { Attributes = new Dictionary<string, object?> { ["name"] = name } };
 
-    private static MetadataV2Resource Resource(MetadataV2OwnerEditPolicy? policy)
+    private static MetadataV2Object Resource(MetadataV2OwnerEditPolicy? policy)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "cities", Name = "cities" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             OwnerEditPolicy = policy,
             SchemaFields =
             [

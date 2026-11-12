@@ -117,12 +117,12 @@ public sealed class StyleSuggestionServiceTests
         result.Edition.Should().Be(HonuaEdition.Enterprise);
     }
 
-    private static MetadataV2Resource CreateResource(
+    private static MetadataV2Object CreateResource(
         string name,
         MetadataV2GeometryType geometryType,
         IReadOnlyList<MetadataV2Field> fields)
     {
-        return new MetadataV2Resource
+        return new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -130,9 +130,9 @@ public sealed class StyleSuggestionServiceTests
                 Name = name,
                 Title = name
             },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields = fields,
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = geometryType,

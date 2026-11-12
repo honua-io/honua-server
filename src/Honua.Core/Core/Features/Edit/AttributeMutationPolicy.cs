@@ -8,10 +8,10 @@ namespace Honua.Core.Features.Edit;
 
 public static class AttributeMutationPolicy
 {
-    public static bool IsReadOnlyOnUpdate(MetadataV2Resource resource, MetadataV2Field field)
+    public static bool IsReadOnlyOnUpdate(MetadataV2Object resource, MetadataV2Field field)
         => !field.Editable || field.Name.Equals(resource.Editing?.GlobalIdField, StringComparison.OrdinalIgnoreCase);
 
-    internal static ImmutableArray<string> ProtectedFieldNames(MetadataV2Resource resource)
+    internal static ImmutableArray<string> ProtectedFieldNames(MetadataV2Object resource)
     {
         var names = resource.SchemaFields
             .Where(field => IsReadOnlyOnUpdate(resource, field))

@@ -237,7 +237,7 @@ public sealed class MapServerDynamicWorkspaceTests
             .AddResource(
                 "res-workspace-layer",
                 "Parcels",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields: fields,
                 accessPolicy: openAccessPolicy)
             .AddStorageBinding(
@@ -259,7 +259,7 @@ public sealed class MapServerDynamicWorkspaceTests
                 layerIndex: WorkspaceLayerId,
                 storageBindingId: "binding-workspace-layer",
                 serviceLocalId: WorkspaceLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                publicationType: MetadataV2PublicationType.EsriMapLayer)
+                publicationType: MetadataV2LayerType.EsriMapLayer)
             .BuildProvider();
     }
 }

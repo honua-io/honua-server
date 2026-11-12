@@ -48,10 +48,10 @@ public sealed class ReconciliationFilterIntegrationTests(PostgresFixture fixture
     [InlineData("\"DateOfFlight\"", true)]
     public async Task Reconcile_DateAndMappedProperties_UsesCanonicalPredicateAcrossRealProbes(string dateField, bool dedicatedTarget)
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new() { Id = "flights" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             StorageBindingIds = ["flights-binding"],
             Spatial = new()
             {

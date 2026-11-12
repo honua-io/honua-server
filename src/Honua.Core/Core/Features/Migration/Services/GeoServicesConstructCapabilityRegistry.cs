@@ -195,7 +195,7 @@ public sealed class GeoServicesConstructCapabilityRegistry : IGeoServicesConstru
             ConstructKey = Keys.ResourceRelationships,
             AutomationStatus = MigrationFidelityAutomationStatuses.Automated,
             Code = ImportCompatibilityCodes.Compatible,
-            Reason = "Simple relationship class captured for automated migration to honua.relationships and MetadataV2Resource.Relationships.",
+            Reason = "Simple relationship class captured for automated migration to honua.relationships and MetadataV2Object.Relationships.",
             UnsupportedAutomationStatus = MigrationFidelityAutomationStatuses.ManualReview,
             UnsupportedCode = ImportCompatibilityCodes.GeoServicesRelationshipsManualReview,
             UnsupportedReason = "Composite, attributed and many-to-many relationship classes need their junction or cascade "

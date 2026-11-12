@@ -132,7 +132,7 @@ internal sealed partial class FeatureServerQueryExecutor
         IFeatureReader reader,
         int layerId,
         FeatureQuery query,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         bool returnGeometry,
         int? outputSrid,
         CancellationToken cancellationToken)
@@ -163,7 +163,7 @@ internal sealed partial class FeatureServerQueryExecutor
 
     private static ReadOnlyMemory<byte> CreateRawGeoServicesPointPayload(
         PagedQueryResult<RawGeoServicesFeature> result,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         bool returnGeometry,
         int? outputSrid)
     {

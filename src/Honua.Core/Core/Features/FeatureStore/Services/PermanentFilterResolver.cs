@@ -47,7 +47,7 @@ internal static class PermanentFilterResolver
     /// Resolves the permanent filter directly from a binding-scoped metadata resource.
     /// </summary>
     public static SqlFragment? Resolve(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IFilterExpressionService? filterExpressionService)
     {
         ArgumentNullException.ThrowIfNull(resource);

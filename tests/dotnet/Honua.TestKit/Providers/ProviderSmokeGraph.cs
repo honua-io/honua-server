@@ -22,7 +22,7 @@ namespace Honua.TestKit.Providers;
 /// convention <c>WebAppFixtureMetadataV2Mixin.BuildDefaultTestGraph</c> uses for the
 /// Postgres-backed default test graph: a dedicated <see cref="MetadataV2Service"/> per
 /// protocol (GeoServices FeatureServer, OGC API Features, OData) each with a single
-/// publication of the protocol-appropriate <see cref="MetadataV2PublicationType"/>. OGC
+/// publication of the protocol-appropriate <see cref="MetadataV2LayerType"/>. OGC
 /// API Tiles is layered onto the OGC API Features service since it addresses the same
 /// collection resource (<c>/ogc/tiles/collections/{collectionId}/tiles/...</c>).
 /// </remarks>
@@ -111,7 +111,7 @@ public static class ProviderSmokeGraph
             new MetadataV2Field { Name = "type", Type = MetadataV2FieldType.String, Nullable = true, Description = "Parcel type" },
         };
 
-        var spatial = new MetadataV2ResourceSpatial
+        var spatial = new MetadataV2ObjectSpatial
         {
             SpatialReference = MetadataV2SpatialReference.Wgs84,
             GeometryType = MetadataV2GeometryType.Point,
@@ -155,7 +155,7 @@ public static class ProviderSmokeGraph
             .AddResource(
                 ResourceId,
                 "parcels",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields: fields,
                 accessPolicy: anonymous,
                 spatial: spatial)
@@ -182,7 +182,7 @@ public static class ProviderSmokeGraph
                 layerIndex: LayerId,
                 storageBindingId: BindingId,
                 serviceLocalId: layerIdText,
-                publicationType: MetadataV2PublicationType.OgcCollection)
+                publicationType: MetadataV2LayerType.OgcCollection)
             // GeoServices REST FeatureServer.
             .AddPublication(
                 "pub-smoke-feature",
@@ -191,7 +191,7 @@ public static class ProviderSmokeGraph
                 layerIndex: LayerId,
                 storageBindingId: BindingId,
                 serviceLocalId: layerIdText,
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                publicationType: MetadataV2LayerType.EsriFeatureLayer)
             // OData. Query dispatch for /odata/Layers({layerId})/Features and
             // /odata/Features({layerId}) resolves the reader per layer through
             // FeatureProviderQueryRouter (honua-server#2962), so this publication also
@@ -203,7 +203,7 @@ public static class ProviderSmokeGraph
                 layerIndex: LayerId,
                 storageBindingId: BindingId,
                 serviceLocalId: layerIdText,
-                publicationType: MetadataV2PublicationType.ODataEntitySet);
+                publicationType: MetadataV2LayerType.ODataEntitySet);
 
         return builder.Build();
     }

@@ -187,7 +187,7 @@ internal sealed class FeatureServerReplicaConflictResolutionApplier : IReplicaCo
     private readonly record struct LayerIdentity(
         string ObjectIdField,
         HashSet<string> SchemaFields,
-        MetadataV2Resource Resource);
+        MetadataV2Object Resource);
 
     // The object-id field is resolved within this service, because a layer index such as 0 is reused across services and can pin the update under another service's attribute name.
     private async Task<LayerIdentity?> ResolveLayerAsync(

@@ -6,15 +6,15 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Infrastructure.Authentication;
 
-internal sealed class ValidatedMetadataSnapshot(MetadataV2Resource resource, MetadataV2GraphSnapshot snapshot)
+internal sealed class ValidatedMetadataSnapshot(MetadataV2Object resource, MetadataV2GraphSnapshot snapshot)
 {
-    private readonly MetadataV2Resource _resource = resource;
+    private readonly MetadataV2Object _resource = resource;
     private readonly MetadataV2GraphSnapshot _snapshot = snapshot;
 
-    internal static void Remember(HttpContext context, MetadataV2Resource resource, MetadataV2GraphSnapshot snapshot)
+    internal static void Remember(HttpContext context, MetadataV2Object resource, MetadataV2GraphSnapshot snapshot)
         => context.Features.Set(new ValidatedMetadataSnapshot(resource, snapshot));
 
-    internal static MetadataV2GraphSnapshot? Find(HttpContext? context, MetadataV2Resource resource)
+    internal static MetadataV2GraphSnapshot? Find(HttpContext? context, MetadataV2Object resource)
     {
         var validated = context?.Features.Get<ValidatedMetadataSnapshot>();
         return validated is not null && ReferenceEquals(validated._resource, resource)

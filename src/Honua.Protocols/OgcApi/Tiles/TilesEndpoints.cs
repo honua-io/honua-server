@@ -1576,7 +1576,7 @@ internal static partial class TilesEndpoints
         return new TileRequestLayerResolution(layer, null);
     }
 
-    private static MetadataV2Publication? FindCollectionPublication(
+    private static MetadataV2Layer? FindCollectionPublication(
         HttpContext context,
         MetadataV2GraphSnapshot snapshot,
         string collectionId,
@@ -1611,11 +1611,11 @@ internal static partial class TilesEndpoints
         return selected;
     }
 
-    private static MetadataV2Publication? SelectTileCollectionPublication(
+    private static MetadataV2Layer? SelectTileCollectionPublication(
         HttpContext context,
         MetadataV2GraphSnapshot snapshot,
         bool requireProtocol,
-        Func<MetadataV2Publication, bool> matches)
+        Func<MetadataV2Layer, bool> matches)
     {
         return LayerValidationHelpers.SelectMatchingCollectionPublication(
             snapshot.Graph.Publications,
@@ -1641,7 +1641,7 @@ internal static partial class TilesEndpoints
 
     private static bool MatchesCollectionId(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         string collectionId)
     {
         if (string.Equals(publication.ServiceLocalId, collectionId, StringComparison.OrdinalIgnoreCase) ||
@@ -1662,9 +1662,9 @@ internal static partial class TilesEndpoints
 
     private static TileRequestLayer? CreateTileRequestLayer(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Service service,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         var storageLayerId = snapshot.ResolveStorageLayerId(publication) ?? snapshot.ResolveStorageLayerId(resource);
         if (!storageLayerId.HasValue)
@@ -1760,7 +1760,7 @@ internal static partial class TilesEndpoints
             "which does not support vector tile generation."));
     }
 
-    private static string ResolveCollectionId(MetadataV2Publication publication, MetadataV2Resource resource)
+    private static string ResolveCollectionId(MetadataV2Layer publication, MetadataV2Object resource)
     {
         var collectionId = publication.ServiceLocalId ?? publication.Path ?? resource.Metadata.Name;
         return string.IsNullOrWhiteSpace(collectionId) ? resource.Metadata.Id : collectionId;
@@ -2028,8 +2028,8 @@ internal static partial class TilesEndpoints
         int StorageLayerId,
         string DisplayName,
         string? Description,
-        MetadataV2Resource Resource,
-        MetadataV2Publication Publication,
+        MetadataV2Object Resource,
+        MetadataV2Layer Publication,
         MetadataV2Service Service,
         MetadataV2GraphSnapshot Snapshot)
     {

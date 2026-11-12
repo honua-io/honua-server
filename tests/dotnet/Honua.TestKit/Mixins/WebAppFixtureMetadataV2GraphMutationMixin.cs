@@ -92,8 +92,8 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         WebAppFixture fixture,
         int layerIndex,
         AccessPolicy? accessPolicy,
-        MetadataV2ResourceTemporal? temporal,
-        MetadataV2ResourceSpatial? spatial,
+        MetadataV2ObjectTemporal? temporal,
+        MetadataV2ObjectSpatial? spatial,
         MetadataV2PermanentFilter? permanentFilter,
         MetadataV2ExtrusionInfo? extrusion,
         JsonElement? stacExtension,
@@ -304,7 +304,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     internal static void UpdateResourceEditing(
         WebAppFixture fixture,
         int layerIndex,
-        MetadataV2ResourceEditing? editing)
+        MetadataV2ObjectEditing? editing)
     {
         var provider = RequireProvider(fixture);
         var snapshot = ReadCurrent(fixture, provider);
@@ -603,7 +603,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     /// <summary>
     /// Sets the edit capabilities advertised by every publication on the service(s) named
     /// <paramref name="serviceName"/> in the Metadata v2 graph. The FormPackage validator
-    /// (and other capability gates) read <see cref="MetadataV2Publication.Capabilities"/>
+    /// (and other capability gates) read <see cref="MetadataV2Layer.Capabilities"/>
     /// from the graph — not the legacy <c>honua.services</c> table — so this is how a test
     /// makes a service advertise Create/Update/Delete for edit-path coverage.
     /// </summary>

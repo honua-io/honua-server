@@ -128,10 +128,10 @@ public class DatabricksFeatureStoreReadPolicyTests
     {
         public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
         {
-            var resource = new MetadataV2Resource
+            var resource = new MetadataV2Object
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "Parcels" },
-                Type = MetadataV2ResourceType.FeatureDataset,
+                Type = MetadataV2ObjectType.FeatureDataset,
                 PermanentFilter = permanentFilterExpression == null ? null : new MetadataV2PermanentFilter
                 {
                     Expression = permanentFilterExpression,
@@ -165,7 +165,7 @@ public class DatabricksFeatureStoreReadPolicyTests
     {
         public string? LastResourceId { get; private set; }
 
-        public Task<Honua.Core.Queries.Filters.SqlFragment?> ResolveAsync(MetadataV2Resource resource, CancellationToken cancellationToken = default)
+        public Task<Honua.Core.Queries.Filters.SqlFragment?> ResolveAsync(MetadataV2Object resource, CancellationToken cancellationToken = default)
         {
             LastResourceId = resource.Metadata.Id;
             return Task.FromResult(fragment);
@@ -178,7 +178,7 @@ public class DatabricksFeatureStoreReadPolicyTests
         public string? LastResourceId { get; private set; }
 
         public Task<System.Collections.Immutable.ImmutableArray<string>> ResolveAsync(
-            MetadataV2Resource resource, CancellationToken cancellationToken = default)
+            MetadataV2Object resource, CancellationToken cancellationToken = default)
         {
             LastResourceId = resource.Metadata.Id;
             return Task.FromResult(System.Collections.Immutable.ImmutableArray.Create(maskedFields));

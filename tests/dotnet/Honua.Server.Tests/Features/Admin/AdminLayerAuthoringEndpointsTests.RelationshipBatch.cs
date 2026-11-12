@@ -37,7 +37,7 @@ public sealed partial class AdminLayerAuthoringEndpointsTests
         saved.Graph.Revision.Should().Be(before.Graph.Revision + 1);
         var changedIds = before.PublicationsForStorageLayer(0).Concat(before.PublicationsForStorageLayer(1))
             .Where(publication => before.ResolveResource(publication)?.Type
-                is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table)
+                is MetadataV2ObjectType.FeatureDataset or MetadataV2ObjectType.Table)
             .Select(publication => publication.ResourceId).ToHashSet(StringComparer.Ordinal);
         saved.Graph.Resources.Where(resource => !changedIds.Contains(resource.Metadata.Id))
             .Should().BeEquivalentTo(before.Graph.Resources.Where(resource => !changedIds.Contains(resource.Metadata.Id)));
@@ -159,14 +159,14 @@ public sealed partial class AdminLayerAuthoringEndpointsTests
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var resourceIds = snapshot.PublicationsForStorageLayer(0).Concat(snapshot.PublicationsForStorageLayer(1))
             .Where(publication => snapshot.ResolveResource(publication)?.Type
-                is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table)
+                is MetadataV2ObjectType.FeatureDataset or MetadataV2ObjectType.Table)
             .Select(publication => publication.ResourceId).ToHashSet(StringComparer.Ordinal);
         resourceIds.Should().HaveCount(2);
         SetRelationshipBatchGraph(snapshot.Graph with
         {
             Revision = snapshot.Graph.Revision + 1,
             Resources = snapshot.Graph.Resources.Select(resource => resourceIds.Contains(resource.Metadata.Id)
-                ? resource with { Editing = new MetadataV2ResourceEditing { CanModify = canModify }, Relationships = [] }
+                ? resource with { Editing = new MetadataV2ObjectEditing { CanModify = canModify }, Relationships = [] }
                 : resource).ToArray(),
         });
         return _fixture.GetCurrentV2GraphSnapshot();

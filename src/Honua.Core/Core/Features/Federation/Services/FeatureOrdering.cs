@@ -17,7 +17,7 @@ public static class FeatureOrdering
     public static ImmutableArray<Feature> Apply(
         ImmutableArray<Feature> features,
         ImmutableArray<OrderByClause> orderBy,
-        MetadataV2Resource? resource)
+        MetadataV2Object? resource)
     {
         if (features.Length <= 1)
         {
@@ -33,9 +33,9 @@ public static class FeatureOrdering
 
     public static int Compare(
         in Feature left,
-        MetadataV2Resource? leftResource,
+        MetadataV2Object? leftResource,
         in Feature right,
-        MetadataV2Resource? rightResource,
+        MetadataV2Object? rightResource,
         ImmutableArray<OrderByClause> orderBy)
     {
         foreach (var clause in orderBy)
@@ -56,10 +56,10 @@ public static class FeatureOrdering
 
     public static int CompareResolved(
         in Feature left,
-        MetadataV2Resource? leftResource,
+        MetadataV2Object? leftResource,
         ImmutableArray<OrderByClause> leftOrder,
         in Feature right,
-        MetadataV2Resource? rightResource,
+        MetadataV2Object? rightResource,
         ImmutableArray<OrderByClause> rightOrder)
     {
         var count = Math.Min(leftOrder.Length, rightOrder.Length);
@@ -83,7 +83,7 @@ public static class FeatureOrdering
 
     private static object? ResolveValue(
         in Feature feature,
-        MetadataV2Resource? resource,
+        MetadataV2Object? resource,
         string requestedField)
     {
         var schemaField = resource?.SchemaFields.FirstOrDefault(field =>

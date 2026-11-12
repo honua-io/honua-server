@@ -9,7 +9,7 @@ public interface IEditParameterAdapter<in TProtocolEditRequest>
 {
     Task<EditAdapterResult> ConvertAsync(
         TProtocolEditRequest protocolRequest,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken = default);
 
     string ProtocolName { get; }

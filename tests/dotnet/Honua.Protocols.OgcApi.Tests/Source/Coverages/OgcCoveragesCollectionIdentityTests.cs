@@ -46,9 +46,9 @@ public sealed class OgcCoveragesCollectionIdentityTests
     {
         var aliasLayer = distinctStorage ? 2001 : 2000;
         var graph = new TestMetadataV2GraphBuilder()
-            .AddResource("base-resource", "Base coverage", MetadataV2ResourceType.FeatureDataset,
+            .AddResource("base-resource", "Base coverage", MetadataV2ObjectType.FeatureDataset,
                 accessPolicy: new AccessPolicy { AllowAnonymous = true })
-            .AddResource("alias-resource", "Alias coverage", MetadataV2ResourceType.RasterDataset,
+            .AddResource("alias-resource", "Alias coverage", MetadataV2ObjectType.RasterDataset,
                 accessPolicy: new AccessPolicy { AllowAnonymous = !privateAlias })
             .AddStorageBinding("base-storage", "base-resource", "honua.raster_data", storageLayerId: 2000)
             .AddStorageBinding("alias-storage", "alias-resource", "honua.raster_data", storageLayerId: aliasLayer)

@@ -52,7 +52,7 @@ public sealed class AdminLayerLegacyFieldConfigurationTests
         store.LastSaved.Resources.Single().SchemaFields.Single(field => field.Name == "notes").Alias.Should().Be("Notes");
         applied.Configurations.Should().ContainSingle(field => field.Name == "name" && field.Alias == "Display name" && field.Hidden);
         store.LastSaved.Publications.Single().Identifier.Should().BeNull();
-        JsonSerializer.Serialize(store.LastSaved.Publications.Single(), MetadataV2JsonContext.Default.MetadataV2Publication)
+        JsonSerializer.Serialize(store.LastSaved.Publications.Single(), MetadataV2JsonContext.Default.MetadataV2Layer)
             .Should().Contain("\"identifier\":null").And.Contain("\"layerIndex\":4");
     }
 
@@ -142,7 +142,7 @@ public sealed class AdminLayerLegacyFieldConfigurationTests
         store.SaveCount.Should().Be(1);
         store.LastSaved!.Resources.Single().PermanentFilter!.Expression.Should().Be("category = 'test'");
         store.LastSaved.Publications.Single().Identifier.Should().BeNull();
-        JsonSerializer.Serialize(store.LastSaved.Publications.Single(), MetadataV2JsonContext.Default.MetadataV2Publication)
+        JsonSerializer.Serialize(store.LastSaved.Publications.Single(), MetadataV2JsonContext.Default.MetadataV2Layer)
             .Should().Contain("\"identifier\":null").And.Contain("\"layerIndex\":4");
     }
 
@@ -159,10 +159,10 @@ public sealed class AdminLayerLegacyFieldConfigurationTests
             DateTimeOffset.UnixEpoch);
     }
 
-    private static MetadataV2Resource Feature(string id) => new()
+    private static MetadataV2Object Feature(string id) => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id },
-        Type = MetadataV2ResourceType.FeatureDataset,
+        Type = MetadataV2ObjectType.FeatureDataset,
         Status = Active,
         SchemaFields =
         [
@@ -177,7 +177,7 @@ public sealed class AdminLayerLegacyFieldConfigurationTests
         Status = Active,
     };
 
-    private static MetadataV2Publication Publication(string resourceId, string serviceId, int layerIndex, bool legacyIdentifier)
+    private static MetadataV2Layer Publication(string resourceId, string serviceId, int layerIndex, bool legacyIdentifier)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "pub-" + resourceId, Name = resourceId },
@@ -186,7 +186,7 @@ public sealed class AdminLayerLegacyFieldConfigurationTests
             ResourceId = resourceId,
             Identifier = legacyIdentifier
                 ? null!
-                : new MetadataV2PublicationIdentifier
+                : new MetadataV2LayerIdentifier
                 {
                     Value = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     IsNumeric = true,

@@ -140,8 +140,8 @@ public static partial class OgcMapsEndpoints
 
     private static async Task<OgcCommon.CollectionInfo> BuildCollectionInfoAsync(
         HttpContext context,
-        MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Object resource,
+        MetadataV2Layer publication,
         string canonicalId,
         string outputFormat,
         ICoordinateTransformService coordinateTransformService,
@@ -246,7 +246,7 @@ public static partial class OgcMapsEndpoints
     }
 
     private static async Task<OgcCommon.Extent?> BuildCollectionExtentAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         ICoordinateTransformService coordinateTransformService,
         CancellationToken cancellationToken)
     {

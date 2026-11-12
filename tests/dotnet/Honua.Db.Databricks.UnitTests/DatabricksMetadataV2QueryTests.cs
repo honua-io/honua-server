@@ -153,7 +153,7 @@ public class DatabricksMetadataV2QueryTests
             });
     }
 
-    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Publication Publication)
+    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Object Resource, MetadataV2Layer Publication)
         CreateLayer0Snapshot(Guid connectionId)
     {
         var service = new MetadataV2Service
@@ -161,10 +161,10 @@ public class DatabricksMetadataV2QueryTests
             Metadata = new MetadataV2ObjectMetadata { Id = "svc-parcels", Name = "Parcels" },
             SpatialReference = MetadataV2SpatialReference.Wgs84
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "Parcels" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             StorageBindingIds = ["binding-parcels"],
             SchemaFields =
             [
@@ -184,7 +184,7 @@ public class DatabricksMetadataV2QueryTests
                 },
                 new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true }
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,
@@ -214,13 +214,13 @@ public class DatabricksMetadataV2QueryTests
             Metadata = new MetadataV2ObjectMetadata { Id = connectionId.ToString(), Name = "warehouse" },
             Provider = DataProviderNames.Databricks
         };
-        var publication = new MetadataV2Publication
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "pub-parcels", Name = "Parcels" },
             ServiceId = service.Metadata.Id,
             ResourceId = resource.Metadata.Id,
             StorageBindingId = storageBinding.Metadata.Id,
-            Identifier = new MetadataV2PublicationIdentifier { Value = "0", IsNumeric = true }
+            Identifier = new MetadataV2LayerIdentifier { Value = "0", IsNumeric = true }
         };
         var graph = new MetadataV2Graph
         {

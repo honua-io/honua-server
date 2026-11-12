@@ -324,7 +324,7 @@ internal static partial class FeatureServerEndpoints
 
     internal static QueryResponse BuildTopFeaturesJsonResponse(
         QueryResult<Feature> result,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         bool returnGeometry,
         int? outputSrid)
     {
@@ -527,8 +527,8 @@ internal static partial class FeatureServerEndpoints
 
     private static int? ResolveFeatureServerStorageLayerIdV2(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
-        MetadataV2Resource resource)
+        MetadataV2Layer publication,
+        MetadataV2Object resource)
         => snapshot.ResolveStorageLayerId(publication)
            ?? snapshot.ResolveStorageLayerId(resource)
            ?? publication.LayerIndex;

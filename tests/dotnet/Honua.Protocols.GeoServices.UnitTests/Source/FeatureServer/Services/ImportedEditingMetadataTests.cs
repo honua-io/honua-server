@@ -17,7 +17,7 @@ public sealed class ImportedEditingMetadataTests
     [InlineData(null, false, false)]
     public void AttachmentSupport_UsesCanonicalEditingBeforeLegacyAnnotations(bool? canonical, bool legacy, bool expected)
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new() { Annotations = new Dictionary<string, string> { ["honua.io/attachments"] = legacy.ToString() } },
             Editing = canonical.HasValue ? new() { SupportsAttachments = canonical.Value } : null
@@ -40,7 +40,7 @@ public sealed class ImportedEditingMetadataTests
     [InlineData(true, null)]
     public void GlobalIdBinding_OnlyAdvertisesVisibleUuidFields(bool hidden, string? expected)
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Editing = new() { GlobalIdField = "STABLE_ID" },
             SchemaFields = [new() { Name = "stable_id", Type = MetadataV2FieldType.Uuid, Hidden = hidden }]

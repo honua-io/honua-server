@@ -102,7 +102,7 @@ public sealed class MetadataGraphCompensationRobustnessTests
         string path, string introduced, string reverted)
     {
         var previous = ReadResource(new JsonObject { ["metadata"] = new JsonObject { ["id"] = "dataset" } });
-        var failedResource = JsonSerializer.SerializeToNode(previous.Resources.Single(), MetadataV2JsonContext.Default.MetadataV2Resource)!.AsObject();
+        var failedResource = JsonSerializer.SerializeToNode(previous.Resources.Single(), MetadataV2JsonContext.Default.MetadataV2Object)!.AsObject();
         SetObject(failedResource, path, JsonNode.Parse(introduced)!.AsObject());
         var persisted = ReadResource(failedResource);
         var concurrentResource = failedResource.DeepClone().AsObject();
@@ -114,7 +114,7 @@ public sealed class MetadataGraphCompensationRobustnessTests
         var restored = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
             current, previous, persisted, DateTimeOffset.UnixEpoch);
 
-        using var json = JsonDocument.Parse(JsonSerializer.Serialize(restored.Resources.Single(), MetadataV2JsonContext.Default.MetadataV2Resource));
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(restored.Resources.Single(), MetadataV2JsonContext.Default.MetadataV2Object));
         var retained = AtPath(json.RootElement, path);
         retained.GetProperty("futureProperty").GetString().Should().Be("Concurrent");
         using var expected = JsonDocument.Parse(reverted);
@@ -133,7 +133,7 @@ public sealed class MetadataGraphCompensationRobustnessTests
         resource["status"] ??= new JsonObject();
         return new MetadataV2Graph
         {
-            Resources = [JsonSerializer.Deserialize(resource.ToJsonString(), MetadataV2JsonContext.Default.MetadataV2Resource)!]
+            Resources = [JsonSerializer.Deserialize(resource.ToJsonString(), MetadataV2JsonContext.Default.MetadataV2Object)!]
         };
     }
 

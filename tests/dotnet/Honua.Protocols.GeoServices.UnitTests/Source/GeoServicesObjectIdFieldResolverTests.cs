@@ -16,7 +16,7 @@ public sealed class GeoServicesObjectIdFieldResolverTests
     public void ResolveObjectIdField_NoSemanticKey_PrefersObjectIdRegardlessOfFieldOrder(string attribute)
     {
         var surrogate = new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields = [new() { Name = attribute, Type = MetadataV2FieldType.Integer }, surrogate]
         };
@@ -36,7 +36,7 @@ public sealed class GeoServicesObjectIdFieldResolverTests
             Type = MetadataV2FieldType.BigInteger,
             SemanticRoles = ["id.primary"]
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields = [new() { Name = attribute, Type = MetadataV2FieldType.Integer }, primary]
         };
@@ -51,7 +51,7 @@ public sealed class GeoServicesObjectIdFieldResolverTests
     [InlineData("population")]
     public void ResolveObjectIdField_StringPrimaryKey_DoesNotPromoteNumericAttribute(string attribute)
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields =
             [
@@ -66,7 +66,7 @@ public sealed class GeoServicesObjectIdFieldResolverTests
     [Fact]
     public void ResolveObjectIdField_NoKey_DoesNotPromoteArbitraryInteger()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields = [new() { Name = "population", Type = MetadataV2FieldType.Integer }]
         };

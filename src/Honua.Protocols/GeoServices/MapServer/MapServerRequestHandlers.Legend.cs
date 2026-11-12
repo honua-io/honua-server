@@ -35,7 +35,7 @@ internal static partial class MapServerEndpoints
         MetadataV2GeometryType GeometryType,
         double? MinScale,
         double? MaxScale,
-        MetadataV2Resource Resource,
+        MetadataV2Object Resource,
         string? DrawingInfoJson = null);
 
     private static async Task<IResult> HandleLegend(HttpContext context)

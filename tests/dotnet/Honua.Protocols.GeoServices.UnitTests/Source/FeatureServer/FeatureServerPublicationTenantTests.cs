@@ -24,14 +24,14 @@ public sealed class FeatureServerPublicationTenantTests
         using var services = new ServiceCollection().AddSingleton(tenant).BuildServiceProvider();
         var context = new DefaultHttpContext { RequestServices = services };
         var service = new MetadataV2Service { Metadata = new MetadataV2ObjectMetadata { Id = "service", Name = "shared" } };
-        var resource = new MetadataV2Resource { Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "shared" } };
-        var publication = new MetadataV2Publication
+        var resource = new MetadataV2Object { Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "shared" } };
+        var publication = new MetadataV2Layer
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "publication", Tenant = "tenant-a" },
             ServiceId = service.Metadata.Id,
             ResourceId = resource.Metadata.Id,
             LayerIndex = 0,
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer
+            PublicationType = MetadataV2LayerType.EsriFeatureLayer
         };
         var snapshot = new MetadataV2GraphSnapshot(new MetadataV2Graph
         {

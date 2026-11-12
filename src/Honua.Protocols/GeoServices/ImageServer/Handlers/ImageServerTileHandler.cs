@@ -485,7 +485,7 @@ internal sealed class ImageServerTileHandler
 
     private static bool HasExpectedPublicationBinding(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int expectedStorageLayerId,
         int? expectedCacheLayerId,
         string? expectedPublicationId)

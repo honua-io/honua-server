@@ -67,7 +67,7 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         // layer with TimeInfo {start: timestamp, end: event_date}.
         _fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
-            spatial: new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ResourceSpatial
+            spatial: new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ObjectSpatial
             {
                 GeometryType = Honua.Core.Features.Metadata.Domain.V2.MetadataV2GeometryType.Point,
                 SpatialReference = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2SpatialReference
@@ -77,7 +77,7 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
                     IsGeographic = true,
                 },
             },
-            temporal: new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ResourceTemporal
+            temporal: new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ObjectTemporal
             {
                 StartTimeField = "timestamp",
                 EndTimeField = "event_date",

@@ -117,7 +117,7 @@ internal static class MapTileExportLayerResolver
         ImmutableArray<TileExportMapLayerSelection> pinnedLayers,
         out int serviceSrid)
     {
-        var resolved = new List<(int StorageLayerId, MetadataV2Resource Resource)>(pinnedLayers.Length);
+        var resolved = new List<(int StorageLayerId, MetadataV2Object Resource)>(pinnedLayers.Length);
         var publicationsByLayerId = ResolvePublicationsByLayerId(snapshot, service);
         foreach (var selection in pinnedLayers)
         {
@@ -170,8 +170,8 @@ internal static class MapTileExportLayerResolver
         return true;
     }
 
-    private static MetadataV2Publication ResolvePublication(
-        Dictionary<int, MetadataV2Publication> publicationsByLayerId,
+    private static MetadataV2Layer ResolvePublication(
+        Dictionary<int, MetadataV2Layer> publicationsByLayerId,
         MetadataV2Service service,
         TileExportMapLayerSelection selection)
     {
@@ -182,14 +182,14 @@ internal static class MapTileExportLayerResolver
                 $"MapServer layer '{selection.LayerId}' is not published on service '{service.Metadata.Id}' in the pinned metadata revision.");
     }
 
-    private static Dictionary<int, MetadataV2Publication> ResolvePublicationsByLayerId(
+    private static Dictionary<int, MetadataV2Layer> ResolvePublicationsByLayerId(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service)
         => MapServerPublicationResolver.ResolveLayerPublications(
                 snapshot, service, JobSecurityScope.Current?.Submitter?.TenantId)
             .ToDictionary(static publication => publication.LayerIndex!.Value);
 
-    private static bool HasMapServerGeometry(MetadataV2Resource resource)
+    private static bool HasMapServerGeometry(MetadataV2Object resource)
         => resource.ReadGeometryType() != MetadataV2GeometryType.None
             || resource.FindPrimaryGeometryField() is not null;
 

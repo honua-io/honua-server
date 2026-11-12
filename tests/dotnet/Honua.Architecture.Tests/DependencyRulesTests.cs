@@ -19,7 +19,7 @@ public sealed class DependencyRulesTests
     [ArchitectureTest]
     public void Core_ShouldNotDependOn_ServerOrPostgres()
     {
-        var coreAssembly = typeof(Honua.Core.Features.Metadata.Domain.V2.MetadataV2Resource).Assembly;
+        var coreAssembly = typeof(Honua.Core.Features.Metadata.Domain.V2.MetadataV2Object).Assembly;
 
         var result = Types.InAssembly(coreAssembly)
             .ShouldNot()

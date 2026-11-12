@@ -33,7 +33,7 @@ public readonly record struct AttributeRuleApplicationResult(
 public static class AttributeRuleEngine
 {
     public static AttributeRuleApplicationResult Apply(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IReadOnlyDictionary<string, object?> attributes,
         AttributeRuleEditEvent editEvent,
         IUnsupportedExpressionSink? unsupported = null,
@@ -172,5 +172,5 @@ public static class AttributeRuleEngine
 
 public interface IUnsupportedExpressionSink
 {
-    void OnUnsupported(MetadataV2Resource resource, MetadataV2AttributeRule rule);
+    void OnUnsupported(MetadataV2Object resource, MetadataV2AttributeRule rule);
 }

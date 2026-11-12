@@ -112,14 +112,14 @@ public sealed class PublicationTenantVisibilityTests
     private static MetadataV2Graph CreateGraph()
     {
         var active = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
-        var resources = ResourceNames.Select(name => new MetadataV2Resource
+        var resources = ResourceNames.Select(name => new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = name, Name = name, Title = name },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             Status = active,
             AccessPolicy = new AccessPolicy { AllowAnonymous = true },
             SchemaFields = [new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry }],
-            Spatial = new MetadataV2ResourceSpatial { GeometryType = MetadataV2GeometryType.Point },
+            Spatial = new MetadataV2ObjectSpatial { GeometryType = MetadataV2GeometryType.Point },
             StorageBindingIds = [name + "-binding"]
         }).ToArray();
         return new MetadataV2Graph
@@ -140,7 +140,7 @@ public sealed class PublicationTenantVisibilityTests
                 StorageLayerId = i + 1,
                 Locator = r.Metadata.Id
             }).ToArray(),
-            Publications = resources.Select((r, i) => new MetadataV2Publication
+            Publications = resources.Select((r, i) => new MetadataV2Layer
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = r.Metadata.Id + "-pub", Tenant = i == 0 ? "tenant-b" : null },
                 ServiceId = "maps",
@@ -148,7 +148,7 @@ public sealed class PublicationTenantVisibilityTests
                 StorageBindingId = r.Metadata.Id + "-binding",
                 Status = active,
                 LayerIndex = (i + 1) * 11,
-                PublicationType = MetadataV2PublicationType.EsriMapLayer
+                PublicationType = MetadataV2LayerType.EsriMapLayer
             }).ToArray()
         };
     }

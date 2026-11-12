@@ -33,7 +33,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// and value domains) captured on import must persist through publish into the
 /// Metadata v2 graph and survive the compat-compile (activated current snapshot), so
 /// the FeatureServer layer metadata can serve <c>subtypeField</c> / <c>subtypes</c> /
-/// <c>defaultSubtypeCode</c> (see <see cref="MetadataV2Resource.Subtypes"/>).
+/// <c>defaultSubtypeCode</c> (see <see cref="MetadataV2Object.Subtypes"/>).
 /// </summary>
 [Collection("Database")]
 public sealed partial class GeoservicesImportSubtypePersistenceTests(PostgresFixture fixture)
@@ -41,7 +41,7 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests(PostgresFix
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task ImportLayerAsync_WithSubtypeMetadata_PersistsThemOntoPublishedMetadataV2Resource(bool featureTypes)
+    public async Task ImportLayerAsync_WithSubtypeMetadata_PersistsThemOntoPublishedMetadataV2Object(bool featureTypes)
     {
         const string tableName = "geoservices_import_subtypes";
         var serviceName = $"subtypes_{Guid.NewGuid():N}";

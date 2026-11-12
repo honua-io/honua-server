@@ -67,7 +67,7 @@ public class OgcMapsTileSetHandlerTests
         // Two services both publish the same resource; only one declares OGC API Maps.
         // The handler must pick the maps-enabled one.
         var graph = new TestMetadataV2GraphBuilder()
-            .AddResource("resource-1", "test-layer", MetadataV2ResourceType.FeatureDataset, accessPolicy: PublicPolicy())
+            .AddResource("resource-1", "test-layer", MetadataV2ObjectType.FeatureDataset, accessPolicy: PublicPolicy())
             .AddStorageBinding("binding-1", "resource-1", "test", storageLayerId: 1)
             .AddService("alpha-service", "alpha-service", protocols: [OgcApiTilesProtocol])
             .AddService("beta-service", "beta-service", protocols: [OgcApiMapsProtocol, OgcApiTilesProtocol])
@@ -241,7 +241,7 @@ public class OgcMapsTileSetHandlerTests
     {
         // Maps enabled but Tiles disabled on the resolved publication.
         var graph = new TestMetadataV2GraphBuilder()
-            .AddResource("resource-1", "test-layer", MetadataV2ResourceType.FeatureDataset, accessPolicy: PublicPolicy())
+            .AddResource("resource-1", "test-layer", MetadataV2ObjectType.FeatureDataset, accessPolicy: PublicPolicy())
             .AddStorageBinding("binding-1", "resource-1", "test", storageLayerId: 1)
             .AddService("maps-only-service", "maps-only-service", protocols: [OgcApiMapsProtocol])
             .AddPublication("pub-1", "maps-only-service", "resource-1", layerIndex: 1)
@@ -277,7 +277,7 @@ public class OgcMapsTileSetHandlerTests
     {
         // Resource is public, but the OGC API Maps service requires a role.
         var graph = new TestMetadataV2GraphBuilder()
-            .AddResource("resource-1", "test-layer", MetadataV2ResourceType.FeatureDataset, accessPolicy: PublicPolicy())
+            .AddResource("resource-1", "test-layer", MetadataV2ObjectType.FeatureDataset, accessPolicy: PublicPolicy())
             .AddStorageBinding("binding-1", "resource-1", "test", storageLayerId: 1)
             .AddService("restricted-service", "restricted-service",
                 protocols: [OgcApiMapsProtocol],
@@ -300,7 +300,7 @@ public class OgcMapsTileSetHandlerTests
     {
         var restricted = new AccessPolicy { AllowedRoles = ["gis-admin"] };
         var provider = new TestMetadataV2GraphBuilder()
-            .AddResource("resource-1", "test-layer", MetadataV2ResourceType.FeatureDataset, accessPolicy: restricted)
+            .AddResource("resource-1", "test-layer", MetadataV2ObjectType.FeatureDataset, accessPolicy: restricted)
             .AddStorageBinding("binding-1", "resource-1", "test", storageLayerId: 1)
             .AddService("restricted-service", "restricted-service", protocols: [OgcApiMapsProtocol], accessPolicy: restricted)
             .AddPublication("pub-1", "restricted-service", "resource-1", layerIndex: 1)
@@ -341,7 +341,7 @@ public class OgcMapsTileSetHandlerTests
             ? new AccessPolicy { AllowAnonymous = allowAnonymous.Value }
             : null;
         return new TestMetadataV2GraphBuilder()
-            .AddResource($"resource-{layerId}", "test-layer", MetadataV2ResourceType.FeatureDataset, accessPolicy: policy)
+            .AddResource($"resource-{layerId}", "test-layer", MetadataV2ObjectType.FeatureDataset, accessPolicy: policy)
             .AddStorageBinding($"binding-{layerId}", $"resource-{layerId}", "test", storageLayerId: layerId)
             .AddService($"service-{layerId}", $"service-{layerId}", protocols: protocols)
             .AddPublication($"pub-{layerId}", $"service-{layerId}", $"resource-{layerId}", layerIndex: layerId)

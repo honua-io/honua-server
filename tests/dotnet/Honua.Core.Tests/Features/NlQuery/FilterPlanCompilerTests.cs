@@ -15,7 +15,7 @@ namespace Honua.Core.Tests.Features.NlQuery;
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class FilterPlanCompilerTests
 {
-    private readonly MetadataV2Resource _testResource;
+    private readonly MetadataV2Object _testResource;
 
     public FilterPlanCompilerTests()
     {
@@ -669,7 +669,7 @@ public sealed class FilterPlanCompilerTests
             ?? throw new InvalidOperationException("Failed to deserialize filter plan fixture.");
     }
 
-    private static MetadataV2Resource CreateResource(
+    private static MetadataV2Object CreateResource(
         string name,
         MetadataV2GeometryType geometryType,
         MetadataV2SpatialReference spatialReference,
@@ -679,7 +679,7 @@ public sealed class FilterPlanCompilerTests
         var geometryField = fields.FirstOrDefault(field =>
             field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography);
 
-        return new MetadataV2Resource
+        return new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -690,7 +690,7 @@ public sealed class FilterPlanCompilerTests
             SchemaFields = fields,
             Spatial = geometryType == MetadataV2GeometryType.None
                 ? null
-                : new MetadataV2ResourceSpatial
+                : new MetadataV2ObjectSpatial
                 {
                     SpatialReference = spatialReference,
                     GeometryType = geometryType,

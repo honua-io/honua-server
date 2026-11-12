@@ -632,12 +632,12 @@ public sealed class MetadataReleaseReconcilerTests
             });
 
         public static MetadataV2Graph WithDisplayField(MetadataV2Graph graph, string resourceId, string field)
-            => MapResource(graph, resourceId, resource => resource with { Display = new MetadataV2ResourceDisplay { DisplayField = field } });
+            => MapResource(graph, resourceId, resource => resource with { Display = new MetadataV2ObjectDisplay { DisplayField = field } });
 
         public static MetadataV2Graph WithResourcePolicy(MetadataV2Graph graph, string resourceId, AccessPolicy policy)
             => MapResource(graph, resourceId, resource => resource with { AccessPolicy = policy });
 
-        private static MetadataV2Graph MapResource(MetadataV2Graph graph, string resourceId, Func<MetadataV2Resource, MetadataV2Resource> map)
+        private static MetadataV2Graph MapResource(MetadataV2Graph graph, string resourceId, Func<MetadataV2Object, MetadataV2Object> map)
             => graph with
             {
                 Resources = graph.Resources.Select(resource => resource.Metadata.Id == resourceId ? map(resource) : resource).ToArray()

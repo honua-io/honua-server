@@ -34,7 +34,7 @@ public sealed class OgcFeaturesSpatialReferenceTestsFixture : IAsyncLifetime
         // not seed Spatial on layers 101..103. Mirror the v1 SpatialReferenceTestLayerCatalog
         // (EPSG:3857 / Web Mercator) so the V2 OGC API Features paths exercised here
         // can route bbox-crs requests against these layers.
-        var sridSpatial = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ResourceSpatial
+        var sridSpatial = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ObjectSpatial
         {
             SpatialReference = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2SpatialReference
             {

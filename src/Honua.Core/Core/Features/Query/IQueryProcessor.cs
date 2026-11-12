@@ -8,17 +8,17 @@ namespace Honua.Core.Features.Query;
 
 public interface IQueryProcessor
 {
-    QueryValidationResult ValidateQuery(UnifiedQuery query, MetadataV2Resource resource);
+    QueryValidationResult ValidateQuery(UnifiedQuery query, MetadataV2Object resource);
 
-    UnifiedQuery OptimizeQuery(UnifiedQuery query, MetadataV2Resource resource);
+    UnifiedQuery OptimizeQuery(UnifiedQuery query, MetadataV2Object resource);
 
-    FeatureQuery ToFeatureQuery(UnifiedQuery query, MetadataV2Resource resource);
+    FeatureQuery ToFeatureQuery(UnifiedQuery query, MetadataV2Object resource);
 
-    string BuildCacheKey(UnifiedQuery query, MetadataV2Resource resource, string protocol);
+    string BuildCacheKey(UnifiedQuery query, MetadataV2Object resource, string protocol);
 
-    bool ShouldUseStreaming(UnifiedQuery query, MetadataV2Resource resource, string outputFormat);
+    bool ShouldUseStreaming(UnifiedQuery query, MetadataV2Object resource, string outputFormat);
 
-    Task<long> EstimateResultCountAsync(UnifiedQuery query, MetadataV2Resource resource, CancellationToken cancellationToken);
+    Task<long> EstimateResultCountAsync(UnifiedQuery query, MetadataV2Object resource, CancellationToken cancellationToken);
 }
 
 public sealed record QueryValidationResult

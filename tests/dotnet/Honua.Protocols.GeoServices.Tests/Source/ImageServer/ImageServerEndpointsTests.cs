@@ -367,7 +367,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     public async Task CatalogSecondaryRead_MaskedFields_AreAbsent(string operation, string query)
     {
         var masks = Substitute.For<IFieldMaskSource>();
-        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray.Create("nAmE", "ACQUISITIONdate", "centerX", "MAXps"));
         var rasters = CreateRasterStoreSubstitute();
         rasters.IdentifyAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<double>(), Arg.Any<double>(),
@@ -709,7 +709,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
                 .AddResource(
                     "aliased-image-resource",
                     "Aliased image",
-                    MetadataV2ResourceType.RasterDataset,
+                    MetadataV2ObjectType.RasterDataset,
                     accessPolicy: anonymous)
                 .AddStorageBinding(
                     "aliased-image-binding",
@@ -728,7 +728,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
                     "aliased-image-resource",
                     layerIndex: publicationLayerIndex,
                     storageBindingId: "aliased-image-binding",
-                    publicationType: MetadataV2PublicationType.EsriImageLayer)
+                    publicationType: MetadataV2LayerType.EsriImageLayer)
                 .Build());
         var rasterStore = CreateTileExportRasterStoreSubstitute();
         var fixture = new WebAppFixture().ConfigureServices(services =>
@@ -796,22 +796,22 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
         var anonymous = new AccessPolicy { AllowAnonymous = true };
         var provider = new TestMetadataV2GraphProvider(
             new TestMetadataV2GraphBuilder()
-                .AddResource("aliased-image-resource", "Aliased image", MetadataV2ResourceType.RasterDataset, accessPolicy: anonymous)
+                .AddResource("aliased-image-resource", "Aliased image", MetadataV2ObjectType.RasterDataset, accessPolicy: anonymous)
                 .AddStorageBinding("aliased-image-binding", "aliased-image-resource", "raster_data",
                     storageType: MetadataV2StorageType.RelationalTable, storageLayerId: TestLayerId)
                 .AddService("aliased-image-service", serviceId,
                     protocols: [MetadataV2ServiceProtocols.ImageServer], accessPolicy: anonymous)
                 .AddPublication("aliased-image-publication", "aliased-image-service", "aliased-image-resource",
                     layerIndex: aliasedLayerIndex, storageBindingId: "aliased-image-binding",
-                    publicationType: MetadataV2PublicationType.EsriImageLayer)
-                .AddResource("colliding-image-resource", "Colliding image", MetadataV2ResourceType.RasterDataset, accessPolicy: anonymous)
+                    publicationType: MetadataV2LayerType.EsriImageLayer)
+                .AddResource("colliding-image-resource", "Colliding image", MetadataV2ObjectType.RasterDataset, accessPolicy: anonymous)
                 .AddStorageBinding("colliding-image-binding", "colliding-image-resource", "raster_data_other",
                     storageType: MetadataV2StorageType.RelationalTable, storageLayerId: collidingStorageLayerId)
                 .AddService("colliding-image-service", collidingServiceId,
                     protocols: [MetadataV2ServiceProtocols.ImageServer], accessPolicy: anonymous)
                 .AddPublication("colliding-image-publication", "colliding-image-service", "colliding-image-resource",
                     layerIndex: TestLayerId, storageBindingId: "colliding-image-binding",
-                    publicationType: MetadataV2PublicationType.EsriImageLayer)
+                    publicationType: MetadataV2LayerType.EsriImageLayer)
                 .Build());
         var rasterStore = CreateSamplingRasterStoreSubstitute();
         var fixture = new WebAppFixture().ConfigureServices(services =>

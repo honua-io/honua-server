@@ -391,16 +391,16 @@ internal sealed class MetadataReleaseSmokeChecker(
     private static MetadataReleaseSmokeResult Failed(bool newFieldPresent, string message)
         => new() { Passed = false, NewFieldPresent = newFieldPresent, Message = message };
 
-    private static bool HasField(MetadataV2Resource resource, string? fieldName)
+    private static bool HasField(MetadataV2Object resource, string? fieldName)
         => !string.IsNullOrWhiteSpace(fieldName) &&
            resource.SchemaFields.Any(field => string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase));
 
     // References are compared with the baseline because some point at system columns that are never declared as schema fields.
     private static string? FindRegressedReference(
         MetadataV2GraphSnapshot baselineSnapshot,
-        MetadataV2Resource baseline,
+        MetadataV2Object baseline,
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         (string Label, string? Field)[] references =
         [

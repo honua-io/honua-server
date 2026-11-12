@@ -288,7 +288,7 @@ public sealed class MetadataDocumentGeneratorTests
         isoDoc.ToString().Should().Contain("EPSG:4269");
     }
 
-    private static MetadataV2Resource CreateResource(
+    private static MetadataV2Object CreateResource(
         string name,
         string? description,
         MetadataV2GeometryType geometryType,
@@ -296,7 +296,7 @@ public sealed class MetadataDocumentGeneratorTests
         IReadOnlyList<MetadataV2Field> fields,
         MetadataV2Bbox? bbox = null)
     {
-        return new MetadataV2Resource
+        return new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -305,7 +305,7 @@ public sealed class MetadataDocumentGeneratorTests
                 Description = description,
             },
             SchemaFields = fields,
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = spatialReference,
                 GeometryType = geometryType,

@@ -13,7 +13,7 @@ sources:
 
 Use [Dataset](dataset.md) for the collection of records, features, or imagery with logical identity and data semantics. The model and product use the same word. A [storage binding](storage-binding.md) records physical access; a [Layer](layer.md) exposes the Dataset in a [Service](service.md).
 
-The current Metadata v2 implementation uses `MetadataV2Resource` and fields such as `resourceId` for this identity.[^contract] These are legacy names awaiting migration, not internal-only vocabulary. The legacy type also carries non-data kinds: Style, document, process and external values, and Studio kinds such as Map, App, Dashboard, Form, Workflow, GP and ETL. Migration preserves each kind's explicit discriminator, actual name and existing references. See the [implementation transition](README.md#implementation-transition) before choosing literal API names.
+The Metadata v2 implementation carries this identity in `MetadataV2Object`, with fields such as `resourceId`.[^contract] Those field names are legacy spellings awaiting migration, not internal-only vocabulary. The same envelope also carries non-data kinds: Style, document, process and external values, and Studio kinds such as Map, App, Dashboard, Form, Workflow, GP and ETL. Migration preserves each kind's explicit discriminator, actual name and existing references. See the [implementation transition](README.md#implementation-transition) before choosing literal API names.
 
 A Dataset identifier, a storage handle, and a Service-local Layer identifier have different scopes. Publishing a Dataset through another Service does not inherently duplicate its data.
 

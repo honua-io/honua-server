@@ -44,7 +44,7 @@ public sealed class ODataBoundProviderEndpointTests : IAsyncLifetime
             Publications = snapshot.Graph.Publications.Select(publication => publication with
             {
                 Status = publication.Status with { Lifecycle = MetadataV2LifecycleStatus.Active },
-                PublicationType = MetadataV2PublicationType.ODataEntitySet
+                PublicationType = MetadataV2LayerType.ODataEntitySet
             }).ToArray(),
             StorageBindings = snapshot.Graph.StorageBindings.Select(binding => binding with
             {

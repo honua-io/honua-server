@@ -50,7 +50,7 @@ internal sealed class ODataQueryParameterAdapter(
 
     public Task<QueryAdapterResult> ConvertAsync(
         ODataQueryParameters parameters,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -154,7 +154,7 @@ internal sealed class ODataQueryParameterAdapter(
         string? select,
         string? expand,
         string? compute,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out string? error)
     {
         error = null;
@@ -198,7 +198,7 @@ internal sealed class ODataQueryParameterAdapter(
         return builder.Count == 0 ? ImmutableArray<string>.Empty : builder.ToImmutable();
     }
 
-    private static ImmutableArray<OrderByClause>? ParseOrderByV2(string? orderBy, MetadataV2Resource resource)
+    private static ImmutableArray<OrderByClause>? ParseOrderByV2(string? orderBy, MetadataV2Object resource)
     {
         if (string.IsNullOrWhiteSpace(orderBy))
         {

@@ -78,7 +78,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
                 {
                     Display = resource.Display is { } display
                         ? display with { DefaultVisibility = false }
-                        : new MetadataV2ResourceDisplay { DefaultVisibility = false },
+                        : new MetadataV2ObjectDisplay { DefaultVisibility = false },
                 }
                 : resource).ToArray(),
         }, schema: Fixture.CurrentSchema);

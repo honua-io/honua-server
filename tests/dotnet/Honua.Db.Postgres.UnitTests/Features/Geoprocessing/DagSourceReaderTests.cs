@@ -321,7 +321,7 @@ public sealed class DagSourceReaderTests
         };
         LayerSelectionFilter? seen = null;
         var translator = Substitute.For<ILayerSelectionFilterTranslator>();
-        translator.TranslateAsync(Arg.Do<LayerSelectionFilter>(s => seen = s), Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        translator.TranslateAsync(Arg.Do<LayerSelectionFilter>(s => seen = s), Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(LayerSelectionTranslation.Success(translated));
 
         FeatureQuery? captured = null;
@@ -369,7 +369,7 @@ public sealed class DagSourceReaderTests
     public async Task HonuaLayer_TranslatorRejectsSelector_SurfacesCallerFacingErrorWithoutReading()
     {
         var translator = Substitute.For<ILayerSelectionFilterTranslator>();
-        translator.TranslateAsync(Arg.Any<LayerSelectionFilter>(), Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        translator.TranslateAsync(Arg.Any<LayerSelectionFilter>(), Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(LayerSelectionTranslation.Failure(
                 "Invalid parameter",
                 "The time parameter is not supported: this layer is not time-aware (no timeInfo / temporal fields)."));
@@ -384,11 +384,11 @@ public sealed class DagSourceReaderTests
 
     private static FixedMetadataV2GraphProvider SingleLayerMetadata(int layerId)
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = $"res-{layerId}", Name = $"layer-{layerId}" },
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
-            Spatial = new MetadataV2ResourceSpatial { StorageCrs = new MetadataV2SpatialReference { Srid = 4326 } },
+            Spatial = new MetadataV2ObjectSpatial { StorageCrs = new MetadataV2SpatialReference { Srid = 4326 } },
         };
         var binding = new MetadataV2StorageBinding
         {

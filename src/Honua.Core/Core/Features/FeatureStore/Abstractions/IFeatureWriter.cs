@@ -66,7 +66,7 @@ public interface IFeatureWriter
 
     /// <summary>
     /// V2 convenience overload of <see cref="ApplyEditsAsync(int, FeatureEditBatch, CancellationToken)"/>
-    /// that accepts a <see cref="MetadataV2Resource"/> instead of the integer
+    /// that accepts a <see cref="MetadataV2Object"/> instead of the integer
     /// storage-layer handle. Resolves the storage-layer id via
     /// <see cref="IMetadataV2GraphProvider"/> and dispatches to the int-keyed
     /// implementation. Default-interface method so existing implementations
@@ -82,7 +82,7 @@ public interface IFeatureWriter
     /// no resolvable storage-layer id (e.g. document-only resources).</exception>
     async Task<FeatureEditResult> ApplyEditsAsync(
         IMetadataV2GraphProvider graphProvider,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         FeatureEditBatch editBatch,
         CancellationToken cancellationToken = default)
     {

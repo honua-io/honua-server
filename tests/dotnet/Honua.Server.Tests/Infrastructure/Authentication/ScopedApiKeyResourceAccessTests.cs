@@ -105,7 +105,7 @@ public sealed class ScopedApiKeyResourceAccessTests
         Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
     };
 
-    private static MetadataV2Resource Resource(string name) => new()
+    private static MetadataV2Object Resource(string name) => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = name, Name = name },
         Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },

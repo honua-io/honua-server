@@ -339,7 +339,7 @@ public sealed class GeoParquetSdkInteropConformanceTests
         return File.ReadAllText(matches[0]);
     }
 
-    private static MetadataV2Resource CreateLayer(params MetadataV2Field[] fields)
+    private static MetadataV2Object CreateLayer(params MetadataV2Field[] fields)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata
@@ -359,7 +359,7 @@ public sealed class GeoParquetSdkInteropConformanceTests
                     SemanticRoles = ["geometry.primary"]
                 }
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,

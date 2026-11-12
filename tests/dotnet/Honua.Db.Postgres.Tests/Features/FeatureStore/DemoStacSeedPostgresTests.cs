@@ -237,14 +237,14 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
                 GeneratedAt = DateTimeOffset.UtcNow,
                 Resources =
                 [
-                    new MetadataV2Resource
+                    new MetadataV2Object
                     {
                         Metadata = new MetadataV2ObjectMetadata
                         {
                             Id = "res-canonical",
                             Name = "canonical-writer-resource",
                         },
-                        Type = MetadataV2ResourceType.FeatureDataset,
+                        Type = MetadataV2ObjectType.FeatureDataset,
                     },
                 ],
             };

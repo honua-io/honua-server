@@ -108,7 +108,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         HttpContext context,
         IReadOnlyDictionary<string, StringValues> values,
         int targetLayerId,
-        MetadataV2Resource targetResource,
+        MetadataV2Object targetResource,
         string? serviceId,
         string protocol,
         string catalogProtocol,

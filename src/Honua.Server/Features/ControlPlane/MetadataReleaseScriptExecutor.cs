@@ -129,10 +129,10 @@ internal sealed partial class MetadataReleaseScriptExecutor(
         };
     }
 
-    private static int FindResource(List<MetadataV2Resource> resources, string resourceSemanticId)
+    private static int FindResource(List<MetadataV2Object> resources, string resourceSemanticId)
         => resources.FindIndex(resource => string.Equals(resource.Metadata.Id, resourceSemanticId, StringComparison.Ordinal));
 
-    private static MetadataV2Field? FindField(MetadataV2Resource resource, string fieldName)
+    private static MetadataV2Field? FindField(MetadataV2Object resource, string fieldName)
         => resource.SchemaFields.FirstOrDefault(field => string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase));
 
     private static MetadataV2FieldType ParseFieldType(string? raw)
