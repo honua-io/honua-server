@@ -295,6 +295,29 @@ jobs:
               core.setFailed('PR branch is behind trunk. Refresh the branch before running CI.');
             }
 
+  supersede-trailing-runs:
+    name: Supersede Covered Trunk Runs
+    # A full trunk run covers every merge up to its head: it cancels selective
+    # runs at that head or earlier, and a selective run cancels itself while a
+    # covering full run is underway, so one head never holds two matrices of
+    # hosted runners that PR Gate needs.
+    if: ${{ github.ref == 'refs/heads/trunk' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/ci
+
+      - name: Cancel runs a full run covers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_SCOPE: ${{ (inputs.selective_base && !inputs.full_ci) && 'selective' || 'full' }}
+        run: python3 scripts/ci/supersede_trailing_runs.py "${RUN_SCOPE}"
+
   changes:
     name: Detect Non-Test Changes
     permissions:
@@ -565,6 +588,7 @@ jobs:
       descriptor: ${{ steps.compute.outputs.descriptor }}
       matrix_include: ${{ steps.compute.outputs.matrix_include }}
       matrix_artifact: ${{ steps.compute.outputs.matrix_artifact }}
+      affected_max_parallel: ${{ steps.compute.outputs.affected_max_parallel }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -651,6 +675,7 @@ jobs:
           printf '%s\n' "${matrix_include}" > "${RUNNER_TEMP}/managed-matrix.json"
           echo "descriptor=${descriptor}" >> "$GITHUB_OUTPUT"
           echo "matrix_include=${matrix_include}" >> "$GITHUB_OUTPUT"
+          echo "affected_max_parallel=$(printf '%s' "${matrix_include}" | python3 scripts/ci/trailing_selection.py)" >> "$GITHUB_OUTPUT"
           echo "matrix_artifact=selected-server-test-matrix-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
 
       - name: Upload selected shard matrix
@@ -836,7 +861,7 @@ jobs:
         if: vars.HONUA_SOURCE_INVENTORY_PILOT != 'false'
         timeout-minutes: 3
         run: |
-          dotnet eng/ci/Honua.Ci.SourceInventory/bin/Release/net10.0/Honua.Ci.SourceInventory.dll self-test
+          dotnet "eng/ci/Honua.Ci.SourceInventory/bin/Release/$(scripts/ci/honua-target-framework.sh)/Honua.Ci.SourceInventory.dll" self-test
           python3 scripts/ci/source-inventory-pilot/test_run.py
 
       - name: Observe source inventory metadata parity
@@ -845,7 +870,7 @@ jobs:
         continue-on-error: true
         run: >-
           python3 scripts/ci/source-inventory-pilot/run.py
-          --tool eng/ci/Honua.Ci.SourceInventory/bin/Release/net10.0/Honua.Ci.SourceInventory.dll
+          --tool "eng/ci/Honua.Ci.SourceInventory/bin/Release/$(scripts/ci/honua-target-framework.sh)/Honua.Ci.SourceInventory.dll"
 
       - name: Upload producer source inventory observations
         if: always() && vars.HONUA_SOURCE_INVENTORY_PILOT != 'false'
@@ -1205,21 +1230,24 @@ jobs:
     # exclusion is safe for every shard's csproj, not only the legacy
     # Honua.Server.Tests.csproj default.
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
-    runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
+    # Even matrix indices run on the build host's honua-heavy runners when
+    # vars.HONUA_HEAVY_RUNNER holds their runner JSON; fork code never does.
+    runs-on: ${{ vars.HONUA_HEAVY_RUNNER && (endsWith(format('{0}', strategy.job-index), '0') || endsWith(format('{0}', strategy.job-index), '2') || endsWith(format('{0}', strategy.job-index), '4') || endsWith(format('{0}', strategy.job-index), '6') || endsWith(format('{0}', strategy.job-index), '8')) && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     # Explicit producer dependency; only unmaterialized projects compile here.
     needs: [changes, targeted-shards, build]
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
-      # Keep the trailing budget even when routing expands to full coverage.
-      max-parallel: ${{ inputs.selective_base && 6 || 24 }}
+      # Keep the affected budget even when routing expands to full coverage.
+      # Full runs take 16 of the org's 60 hosted runners: other per-PR
+      # workflows already hold 20-35, and PR Gate starved at 24 (11 Nov).
+      max-parallel: ${{ inputs.selective_base && fromJson(needs.targeted-shards.outputs.affected_max_parallel) || 16 }}
       matrix:
         include: ${{ fromJson(needs.targeted-shards.outputs.matrix_include) }}
     env:
       TESTCONTAINERS_RYUK_DISABLED: false
       TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
       HONUA_TEST_CONFIGURATION: Release
-      HONUA_TEST_DB_URL: ${{ toJSON(matrix.needs_postgres) != 'false' && format('Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=ci-{0}-{1}', github.run_id, github.run_attempt) || '' }}
     services:
       postgres:
         image: ${{ toJSON(matrix.needs_postgres) != 'false' && 'mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5' || '' }}
@@ -1228,8 +1256,9 @@ jobs:
           POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
+        # An ephemeral host port: several self-hosted runners share one host.
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -1542,6 +1571,7 @@ jobs:
         shell: bash
         env:
           HONUA_SERVER_TEST_SHARD_NAME: ${{ matrix.shard_name }}
+          HONUA_TEST_DB_URL: ${{ toJSON(matrix.needs_postgres) != 'false' && format('Host=localhost;Port={2};Database=honua_test;Username=honua;Password=ci-{0}-{1}', github.run_id, github.run_attempt, job.services.postgres.ports['5432']) || '' }}
           HONUA_SERVER_TEST_FILTER: ${{ matrix.filter }}
           HONUA_SERVER_TEST_LOG_NAME: ${{ matrix.log_name }}
           HONUA_SERVER_TEST_TIMEOUT_MINUTES: ${{ matrix.test_timeout_minutes }}
@@ -3043,6 +3073,11 @@ jobs:
           upload-artifact: true
           upload-release-assets: false
 
+      # Apply the committed not-affected decisions (eng/security/vex-statements.json); the
+      # gate output lists every finding they suppress.
+      - name: Generate OpenVEX for the vulnerability gate
+        run: python3 scripts/security/release_images.py vex-generate --name ci-image-gate --output ci-image-gate.openvex.json
+
       # Run Trivy against the image we just built locally (no double-build:
       # we reuse honua-server:test that the build-push step `load: true`'d
       # into the docker daemon). Fail full CI on any HIGH/CRITICAL CVE that
@@ -3051,6 +3086,9 @@ jobs:
         id: trivy_image
         timeout-minutes: 5
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_VEX: ci-image-gate.openvex.json
+          TRIVY_SHOW_SUPPRESSED: 'true'
         with:
           scan-type: image
           image-ref: honua-server:test
@@ -3081,7 +3119,7 @@ jobs:
         if: failure() && (steps.trivy_image.outcome == 'failure' || steps.trivy_fs.outcome == 'failure')
         run: |
           echo "::error title=Trivy full CI gate failed::One or more HIGH/CRITICAL CVEs with available fixes were detected."
-          echo "::notice::To resolve: review the Trivy output above, then bump the affected dependency / base image to a fixed version. If a CVE is a false positive, add an entry to .trivyignore with a justification and CVE link."
+          echo "::notice::To resolve: review the Trivy output above, then bump the affected dependency / base image to a fixed version. If an image CVE does not affect Honua, record a not_affected decision with evidence in eng/security/vex-statements.json (see docs/internal/security/security-patch-releases.md); do not add new image findings to .trivyignore."
           exit 1
 
       - name: Run Docker container

@@ -57,6 +57,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-trunk-signal-watchdog.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-trunk-signal-watchdog.py
   run_fixture scripts/ci/fixtures/validate-optional-pr-inputs.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-optional-pr-inputs.py
   run_fixture scripts/ci/fixtures/validate-pr-workflow-load.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-workflow-load.py
+  run_fixture scripts/ci/fixtures/validate-ogc-rc-workflows.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-ogc-rc-workflows.py
   run_fixture scripts/ci/fixtures/validate-testcontainer-images.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-testcontainer-images.py
   run_fixture scripts/ci/fixtures/validate-heavy-runners.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-heavy-runners.py
   run_fixture scripts/ci/fixtures/validate-trunk-affected.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-trunk-affected.py
@@ -214,6 +215,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
 
   echo "Validating native-image impact observation contract..."
   run_fixture scripts/ci/trusted-pr-workflow-run.test.js node --test scripts/ci/trusted-pr-workflow-run.test.js
+  run_fixture scripts/ci/trusted-pr-workflow-run-draft-admission.test.js node --test scripts/ci/trusted-pr-workflow-run-draft-admission.test.js
   run_fixture scripts/ci/native-image-impact.py "${PYTHON_BIN}" scripts/ci/native-image-impact.py validate
   run_fixture native-image-impact-tests "${PYTHON_BIN}" -m unittest discover \
     -s tests/python/unit \

@@ -176,6 +176,20 @@ in deployment manifests. Defaults are unchanged when a key is absent. Existing
 `Alerts:Enabled` / `Alerts__Enabled` behavior is unchanged; this correction applies to
 the nested evaluation, dispatch, delivery-channel, and operations settings.
 
+### Single-tenant deployments are the default
+
+`MultiTenancy:Enabled` now defaults to `false` for request resolution and Studio
+ownership checks. Single-tenant requests use `MultiTenancy:DefaultTenantId`
+(`public` by default); provider tenant claims and tenant headers do not select a
+separate tenant. Previously stamped Studio content remains accessible within the
+deployment rather than being selected by an identity provider's tenant claim.
+
+Deployments intentionally using tenant isolation must explicitly set
+`MultiTenancy__Enabled=true` before upgrading to retain claim-based resolution and
+Studio isolation. Schema routing now refuses startup unless multi-tenancy is
+explicitly enabled. Review existing tenant IDs and workspace mappings before
+changing this setting. See [authentication configuration](../secure/authentication.md).
+
 ### Credential and identity management requires full-administrator authority
 
 API keys that hold only `admin:write` or `admin:manage` now receive `403` on the routes
@@ -426,7 +440,7 @@ The self-hosted rolling backend launches each replica itself, so anything the im
 
 A mount whose host path is missing or empty blocks the plan, so you read the reason instead of watching the standby exit at startup and the rollout fail at the exposure deadline as a health failure.
 
-Reach for `mount.` when the image needs a *file*. A server that connects to Redis outside Development and Test composes the durable operation secret channel and refuses to start until `Operations:SecretChannel:KeyRingCertificatePath` names a PKCS#12 certificate with a private key, which is exactly such a file. Mount the directory holding it, then point the setting at the in-container path: `mount./etc/honua/keyring` = `/srv/honua/keyring` on the host, with `env.Operations__SecretChannel__KeyRingCertificatePath` = `/etc/honua/keyring/operation-keyring.pfx` and `env.Operations__SecretChannel__KeyRingCertificatePassword` set alongside it.
+Reach for `mount.` when the image needs a *file*. A server with a configured database outside Development and Test stores the operation key ring there and refuses to start until `Operations:SecretChannel:KeyRingCertificatePath` names a PKCS#12 certificate with a private key, which is exactly such a file. Mount the directory holding it, then point the setting at the in-container path: `mount./etc/honua/keyring` = `/srv/honua/keyring` on the host, with `env.Operations__SecretChannel__KeyRingCertificatePath` = `/etc/honua/keyring/operation-keyring.pfx` and `env.Operations__SecretChannel__KeyRingCertificatePassword` set alongside it.
 
 ## Promotion requirements
 

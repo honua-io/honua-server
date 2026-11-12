@@ -25,9 +25,7 @@ public class CacheOptionsValidatorTests
             LayerTtlSeconds = 1800,
             NegativeTtlSeconds = 60,
             JitterPercentage = 0.2,
-            EnableFallback = true,
-            FallbackMaxEntries = 1000,
-            RetryIntervalSeconds = 30,
+            MaxEntries = 10000,
             KeyPrefix = "honua:"
         };
 
@@ -122,15 +120,13 @@ public class CacheOptionsValidatorTests
     }
 
     [UnitTest]
-    public void Validate_FallbackEnabledWithInvalidSettings_ReturnsFail()
+    public void Validate_NegativeMaxEntries_ReturnsFail()
     {
         // Arrange
         var options = new CacheOptions
         {
             Enabled = true,
-            EnableFallback = true,
-            FallbackMaxEntries = -100, // Invalid: negative
-            RetryIntervalSeconds = 2,  // Invalid: too short
+            MaxEntries = -100,
             DefaultTtlSeconds = 1800,
             KeyPrefix = "honua:"
         };
@@ -140,19 +136,17 @@ public class CacheOptionsValidatorTests
 
         // Assert
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("FallbackMaxEntries") && f.Contains("must be between"));
-        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("RetryIntervalSeconds") && f.Contains("must be between 5 and 300"));
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("MaxEntries") && f.Contains("must be between"));
     }
 
     [UnitTest]
-    public void Validate_FallbackTooManyEntries_ReturnsFail()
+    public void Validate_TooManyEntries_ReturnsFail()
     {
         // Arrange
         var options = new CacheOptions
         {
             Enabled = true,
-            EnableFallback = true,
-            FallbackMaxEntries = 200000, // Invalid: too many entries
+            MaxEntries = 600000,
             DefaultTtlSeconds = 1800,
             KeyPrefix = "honua:"
         };
@@ -162,29 +156,7 @@ public class CacheOptionsValidatorTests
 
         // Assert
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("FallbackMaxEntries") && f.Contains("must be between"));
-    }
-
-    [UnitTest]
-    public void Validate_RetryIntervalTooLong_ReturnsFail()
-    {
-        // Arrange
-        var options = new CacheOptions
-        {
-            Enabled = true,
-            EnableFallback = true,
-            RetryIntervalSeconds = 600, // Invalid: too long (10 minutes)
-            FallbackMaxEntries = 1000,
-            DefaultTtlSeconds = 1800,
-            KeyPrefix = "honua:"
-        };
-
-        // Act
-        var result = _validator.Validate(null, options);
-
-        // Assert
-        Assert.False(result.Succeeded);
-        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("RetryIntervalSeconds") && f.Contains("must be between 5 and 300"));
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("MaxEntries") && f.Contains("must be between"));
     }
 
     [UnitTest]

@@ -25,7 +25,7 @@ public sealed class FileBackedLicenseServiceStopTests
 
         var stopping = running.Service.StopAsync(CancellationToken.None);
 
-        (await Task.WhenAny(stopping, Task.Delay(StopBound))).Should().Be(stopping);
+        await FluentActions.Awaiting(() => stopping).Should().CompleteWithinAsync(StopBound);
         await stopping;
         revalidation.IsCompletedSuccessfully.Should().BeTrue();
     }
@@ -41,9 +41,9 @@ public sealed class FileBackedLicenseServiceStopTests
 
         var stopping = running.Service.StopAsync(hostShutdown.Token);
 
-        (await Task.WhenAny(stopping, Task.Delay(StopBound))).Should().Be(stopping);
+        await FluentActions.Awaiting(() => stopping).Should().CompleteWithinAsync(StopBound);
         await stopping;
-        (await Task.WhenAny(revalidation, Task.Delay(StopBound))).Should().Be(revalidation);
+        await FluentActions.Awaiting(() => revalidation).Should().CompleteWithinAsync(StopBound);
         revalidation.IsCompletedSuccessfully.Should().BeTrue();
     }
 
@@ -58,7 +58,7 @@ public sealed class FileBackedLicenseServiceStopTests
 
         var stopping = running.Service.StopAsync(hostShutdown.Token);
 
-        (await Task.WhenAny(stopping, Task.Delay(StopBound))).Should().Be(stopping);
+        await FluentActions.Awaiting(() => stopping).Should().CompleteWithinAsync(StopBound);
         await stopping;
         waiting.Task.IsCompleted.Should().BeFalse();
     }
@@ -71,7 +71,7 @@ public sealed class FileBackedLicenseServiceStopTests
 
         var stopping = running.Service.StopAsync(CancellationToken.None);
 
-        (await Task.WhenAny(stopping, Task.Delay(StopBound))).Should().Be(stopping);
+        await FluentActions.Awaiting(() => stopping).Should().CompleteWithinAsync(StopBound);
         await stopping;
     }
 
@@ -104,11 +104,12 @@ public sealed class FileBackedLicenseServiceStopTests
         using var hostShutdown = new CancellationTokenSource();
 
         var stopping = running.Service.StopAsync(hostShutdown.Token);
-        (await Task.WhenAny(stopping, Task.Delay(TimeSpan.FromMilliseconds(200)))).Should().NotBe(stopping);
+        await Task.Delay(TimeSpan.FromMilliseconds(200));
+        stopping.IsCompleted.Should().BeFalse();
 
         hostShutdown.Cancel();
 
-        (await Task.WhenAny(stopping, Task.Delay(StopBound))).Should().Be(stopping);
+        await FluentActions.Awaiting(() => stopping).Should().CompleteWithinAsync(StopBound);
         await stopping;
         hung.Task.IsCompleted.Should().BeFalse();
     }
