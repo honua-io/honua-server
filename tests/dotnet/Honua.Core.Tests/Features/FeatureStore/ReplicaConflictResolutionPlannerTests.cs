@@ -43,7 +43,7 @@ public sealed class ReplicaConflictResolutionPlannerTests
         => new(
             fields.ToDictionary(
                 field => field.Field,
-                field => JsonDocument.Parse(field.RawJson).RootElement.Clone(),
+                field => JsonElement.Parse(field.RawJson),
                 StringComparer.Ordinal),
             GeometrySource: null);
 

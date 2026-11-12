@@ -1,11 +1,6 @@
 name: OGC GeoPackage 1.2 CITE Conformance Tests
 
 on:
-  # Tier: nightly — conformance suites are external and heavyweight.
-  # PR/push triggers removed in #485. See docs/internal/ci/gate-model.md.
-  schedule:
-    # Run weekly to track GeoPackage conformance drift (Saturday 03:00 UTC)
-    - cron: '0 3 * * 6'
   workflow_dispatch:
     inputs:
       profile:
@@ -17,18 +12,31 @@ on:
           - applicable
           - default
 
+  workflow_call:
+    inputs:
+      profile:
+        required: false
+        type: string
+        default: applicable
+      server_image:
+        required: false
+        type: string
+        default: ''
+      source_sha:
+        required: false
+        type: string
+        default: ''
+
 permissions:
   contents: read
   packages: write
-
-concurrency:
-  group: cite-gpkg12-conformance-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   cite:
     uses: ./.github/workflows/cite-conformance-common.yml
     with:
+      honua-image: ${{ inputs.server_image || '' }}
+      tested-honua-git-sha: ${{ inputs.server_image != '' && inputs.source_sha || github.sha }}
       suite: gpkg12
       display-name: GeoPackage 1.2
       runner-script: ./scripts/conformance/cite/run-cite-gpkg12-tests.sh

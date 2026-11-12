@@ -19,8 +19,8 @@
     },
     {
       "path": "Directory.Build.props",
-      "sha256": "cb7bf09b3a52fb27c97582878c0d16db8b674941c26b0bfb908104756ddaa3c6",
-      "sizeBytes": 1164
+      "sha256": "767199e46cf8f9095d43969ccade3e59dc880f158a3377f4ffdb57a8a8d40b87",
+      "sizeBytes": 1262
     },
     {
       "path": "docker/compose.debug.yaml",

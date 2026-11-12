@@ -842,27 +842,39 @@ internal static class AdminAuthEndpoints
     {
         try
         {
-            var discovery = await GetDiscoveryDocumentAsync(
-                httpClientFactory,
-                provider.Authority!,
-                context.RequestAborted).ConfigureAwait(false);
+            var logoutEndpoint = provider.LogoutEndpoint;
+            if (string.IsNullOrWhiteSpace(logoutEndpoint))
+            {
+                var discovery = await GetDiscoveryDocumentAsync(
+                    httpClientFactory,
+                    provider.Authority!,
+                    context.RequestAborted).ConfigureAwait(false);
+                logoutEndpoint = discovery.EndSessionEndpoint;
+            }
 
-            if (string.IsNullOrWhiteSpace(discovery.EndSessionEndpoint))
+            if (string.IsNullOrWhiteSpace(logoutEndpoint))
             {
                 return null;
             }
 
-            var parameters = new Dictionary<string, string?>
-            {
-                ["post_logout_redirect_uri"] = BuildAbsoluteUri(context, AdminPostLogoutRedirectPath)
-            };
+            var redirectUri = BuildAbsoluteUri(context, AdminPostLogoutRedirectPath);
+            var parameters = provider.UseCognitoLogout
+                ? new Dictionary<string, string?>
+                {
+                    ["client_id"] = provider.ClientId,
+                    ["logout_uri"] = redirectUri
+                }
+                : new Dictionary<string, string?>
+                {
+                    ["post_logout_redirect_uri"] = redirectUri
+                };
 
-            if (!string.IsNullOrWhiteSpace(idTokenHint))
+            if (!provider.UseCognitoLogout && !string.IsNullOrWhiteSpace(idTokenHint))
             {
                 parameters["id_token_hint"] = idTokenHint;
             }
 
-            return QueryHelpers.AddQueryString(discovery.EndSessionEndpoint, parameters);
+            return QueryHelpers.AddQueryString(logoutEndpoint, parameters);
         }
         catch (OperationCanceledException)
         {

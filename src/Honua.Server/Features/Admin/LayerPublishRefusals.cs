@@ -14,7 +14,7 @@ internal static class LayerPublishRefusals
         "This host freezes after the response, so a publish above the row threshold is refused instead of being rolled back when the gateway times out.";
 
     internal const string Remediation =
-        "Configure a managed remote execution workload and Redis for this host, or publish this layer from a long-lived host. With Redis the durable job runner drains the publish; without Redis the host runs it in-process. Tables at or under LayerPublishing:AsyncPublishRowThreshold still publish in the request.";
+        "Configure a managed remote execution workload and the system database for this host, or publish this layer from a long-lived host. With the system database the durable job runner drains the publish; without it the host runs it in-process. Tables at or under LayerPublishing:AsyncPublishRowThreshold still publish in the request.";
 
     internal static IResult ToResult(HttpContext context)
         => ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
@@ -22,7 +22,7 @@ internal static class LayerPublishRefusals
             Detail,
             LayerPublishRunnerDecision.RunnerDependency,
             Remediation,
-            CapabilityUnavailableCodes.RedisRemediationRef,
+            CapabilityUnavailableCodes.SystemDatabaseRemediationRef,
             CapabilityUnavailableCodes.DurableJobsCapability,
             BackgroundImportRunnerDecision.DurableRunnerRequiredReason);
 
@@ -31,6 +31,6 @@ internal static class LayerPublishRefusals
             Detail,
             LayerPublishRunnerDecision.RunnerDependency,
             Remediation,
-            CapabilityUnavailableCodes.RedisRemediationRef,
+            CapabilityUnavailableCodes.SystemDatabaseRemediationRef,
             CapabilityUnavailableCodes.DurableJobsCapability);
 }
