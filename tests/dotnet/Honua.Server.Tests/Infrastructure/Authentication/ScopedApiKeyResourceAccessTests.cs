@@ -88,8 +88,7 @@ public sealed class ScopedApiKeyResourceAccessTests
             }),
             adminApiKeyStore: store);
         var validation = await ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
-            created.Key,
-            "ApiKey",
+            new ApiKeyPresentation(created.Key, "ApiKey", null),
             dependencies,
             NullLogger.Instance,
             CancellationToken.None);

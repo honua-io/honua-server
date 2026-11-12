@@ -39,6 +39,9 @@ public static class AdminMcpOperationExclusions
         Session("createAdminAuthAuthorizeUrl", "admin.auth-session.authorize-url", "honua_admin_auth_session_authorize_url", "Creates a browser-session-bound authorization flow."),
         Session("requestAdminAuthToken", "admin.auth-session.request-token", "honua_admin_auth_session_request_token", "Exchanges browser authentication state for secret token material."),
         Session("getAdminAuthLogoutUrl", "admin.auth-session.logout-url", "honua_admin_auth_session_logout_url", "Creates a browser-session-bound logout flow."),
+        Session("getAdminBrowserCsrfToken", "admin.auth-session.csrf-token", "honua_admin_auth_session_csrf_token", "Issues a browser-bound antiforgery token."),
+        Session("createAdminPasswordSession", "admin.auth-session.password-sign-in", "honua_admin_auth_session_password_sign_in", "Accepts the administrator password and creates a browser session."),
+        Session("createAdminPasswordBearer", "admin.auth-session.password-bearer", "honua_admin_auth_session_password_bearer", "Accepts the administrator password and issues bearer token material."),
     ];
 
     public const string AgentSelfGovernanceReasonCode = "agent-self-governance";

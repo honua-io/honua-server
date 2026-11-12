@@ -30,7 +30,7 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public sealed class AdminAuthEndpointsTests : IAsyncLifetime
+public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
 {
     private const string TestTenantId = "11111111-1111-1111-1111-111111111111";
     private const string TestClientId = "22222222-2222-2222-2222-222222222222";
@@ -263,7 +263,7 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
 
             loginCookies.Should().ContainSingle();
             loginCookies.Should().OnlyContain(v => v.Contains("HttpOnly", StringComparison.OrdinalIgnoreCase));
-            loginCookies.Should().OnlyContain(v => v.Contains("SameSite=Strict", StringComparison.OrdinalIgnoreCase));
+            loginCookies.Should().OnlyContain(v => v.Contains("SameSite=Lax", StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
@@ -393,6 +393,8 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
             var oidcClient = oidcFixture.CreateClient(client =>
                 client.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}"));
 
+            oidcClient.BaseAddress = new Uri("https://localhost");
+            await SetCsrfHeaderAsync(oidcClient);
             var response = await oidcClient.PostAsJsonAsync("/api/v1/admin/auth/logout", new { });
 
             response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
@@ -1038,6 +1040,10 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
             var oidcClient = oidcFixture.CreateClient(client =>
                 client.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}"));
 
+            oidcClient.BaseAddress = new Uri("https://localhost");
+            var rejected = await oidcClient.PostAsync("/api/v1/admin/auth/bearer", content: null);
+            rejected.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            await SetCsrfHeaderAsync(oidcClient);
             var response = await oidcClient.PostAsync("/api/v1/admin/auth/bearer", content: null);
 
             response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
@@ -1069,6 +1075,8 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
             var sessionClient = oidcFixture.CreateClient(client =>
                 client.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}"));
 
+            sessionClient.BaseAddress = new Uri("https://localhost");
+            await SetCsrfHeaderAsync(sessionClient);
             var response = await sessionClient.PostAsync("/api/v1/admin/auth/bearer", content: null);
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 
