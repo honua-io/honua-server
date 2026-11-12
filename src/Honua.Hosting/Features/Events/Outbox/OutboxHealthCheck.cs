@@ -28,11 +28,11 @@ internal sealed class OutboxHealthCheck : IHealthCheck
     {
         if (!_capability.SupportsTransactionalOutbox)
         {
-            // Non-capable providers fall back to the post-commit publish + retry queue path.
+            // Non-capable providers publish best effort after commit.
             // Health is reported as Healthy with the limitation surfaced in the description so
             // operators understand the durability tradeoff in the active deployment.
             var description = _capability.CapabilityLimitationDescription
-                ?? "Provider does not support transactional outbox; using post-commit publish + retry queue.";
+                ?? "Provider does not support transactional outbox; feature-change events are published best effort after commit.";
             return Task.FromResult(HealthCheckResult.Healthy(description));
         }
 

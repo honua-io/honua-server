@@ -124,5 +124,5 @@ operation policy allows the caller. The handle carries the evidence reference
 `operation-instance:non-durable` and cannot be read back from
 `/api/v1/operations/handles/{handleId}`; the audit log still records it. Every
 other operation, and any decision that requires approval, refuses with HTTP 503
-and `missingDependency: "redis"`. See
+and `missingDependency: "system-database"`. See
 [Redis is optional; PostGIS is not](../../guides/deploy/docker-compose.md#redis-is-optional-postgis-is-not).
