@@ -20,8 +20,7 @@ public sealed partial class ProposalEndpointsTests
     private static readonly string[] HumanKeyPermissions = ["admin:read", "admin:write"];
     private const string ConsoleGuidance = "ask one to make this change in Console";
 
-    [IntegrationTest]
-    [Theory]
+    [IntegrationTheory]
     [InlineData("new-owner")]
     [InlineData(null)]
     [Endpoint("PUT /api/v1/console/content/{id}")]

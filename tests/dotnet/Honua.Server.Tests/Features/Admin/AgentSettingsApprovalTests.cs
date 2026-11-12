@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Text;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
@@ -107,14 +108,17 @@ public sealed class AgentSettingsApprovalTests : IAsyncLifetime
     {
         var before = await _human.GetAsync(readPath);
         before.StatusCode.Should().Be(HttpStatusCode.OK);
-        var original = await before.Content.ReadAsStringAsync();
+        var original = JsonNode.Parse(await before.Content.ReadAsStringAsync())!.AsObject();
+        original.Remove("timestamp");
         var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
         using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _agent.PutAsync(path, content);
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var after = await _human.GetAsync(readPath);
         after.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await after.Content.ReadAsStringAsync()).Should().Be(original);
+        var current = JsonNode.Parse(await after.Content.ReadAsStringAsync())!.AsObject();
+        current.Remove("timestamp");
+        JsonNode.DeepEquals(current, original).Should().BeTrue("the response payload must remain unchanged");
         _fixture.GetCurrentV2GraphSnapshot().Graph.Should().BeEquivalentTo(graph);
     }
 }
