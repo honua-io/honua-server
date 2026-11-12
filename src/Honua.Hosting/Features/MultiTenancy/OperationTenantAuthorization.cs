@@ -20,18 +20,11 @@ internal static class OperationTenantAuthorization
         }
 
         var tenant = context.RequestServices.GetService<ITenantContext>();
-        if (!string.IsNullOrWhiteSpace(ownerTenantId))
-        {
-            return string.Equals(ownerTenantId, tenant?.TenantId, StringComparison.Ordinal);
-        }
-
-        if (tenant is null || string.IsNullOrWhiteSpace(tenant.TenantId))
-        {
-            return true;
-        }
-
-        return !options.Enabled
-            && tenant.Source == TenantContextSource.Default
-            && string.Equals(tenant.TenantId, options.DefaultTenantId, StringComparison.Ordinal);
+        // Unowned legacy records cannot be attributed to any tenant safely.
+        // Preserve installations with tenant resolution disabled, but fail closed
+        // when a tenant is resolved. Platform operators can inspect legacy records.
+        return string.IsNullOrWhiteSpace(ownerTenantId)
+            ? string.IsNullOrWhiteSpace(tenant?.TenantId)
+            : string.Equals(ownerTenantId, tenant?.TenantId, StringComparison.Ordinal);
     }
 }
