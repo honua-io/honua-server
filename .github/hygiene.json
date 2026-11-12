@@ -28,6 +28,7 @@
     "docker/",
     "docs/",
     "eng/",
+    "global.json",
     "scripts/",
     "skills/",
     "src/",
