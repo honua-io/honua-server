@@ -376,28 +376,31 @@ internal sealed partial class PostgreSqlLayerPublishingService
             FROM inserted;
             """;
 
-    /// <summary>
-    /// One keyset page. <c>page</c> is materialized once so the insert and the cursor read
-    /// the same rows. Cursor ordering stays qualified so the text result alias cannot shadow
-    /// the native <c>tid</c> column. <c>@ctid</c> is null on the first page; a null tid cast does not fail.
-    /// </summary>
+    // Bound the physical keys before projecting wide JSON and geometry so source sorting stays narrow.
     internal static string BuildSnapshotPageSql(
         string featuresTable,
         string sourceTable,
         string canonicalGeometry,
         string attributesExpression)
         => $"""
-            WITH page AS MATERIALIZED (
-                SELECT
-                    src.tableoid AS source_oid,
-                    src.ctid AS source_tid,
-                    {canonicalGeometry} AS geometry,
-                    {attributesExpression} AS attributes
+            WITH page_keys AS MATERIALIZED (
+                SELECT src.tableoid AS source_oid, src.ctid AS source_tid
                 FROM {sourceTable} AS src
                 WHERE @hasCursor = FALSE
                     OR (src.tableoid, src.ctid) > (@tableOid, @ctid::tid)
                 ORDER BY src.tableoid, src.ctid
                 LIMIT @batchSize
+            ),
+            page AS MATERIALIZED (
+                SELECT
+                    page_keys.source_oid,
+                    page_keys.source_tid,
+                    {canonicalGeometry} AS geometry,
+                    {attributesExpression} AS attributes
+                FROM page_keys
+                JOIN {sourceTable} AS src
+                    ON src.tableoid = page_keys.source_oid AND src.ctid = page_keys.source_tid
+                ORDER BY page_keys.source_oid, page_keys.source_tid
             ),
             inserted AS (
                 INSERT INTO {featuresTable} (layer_id, geometry, attributes)

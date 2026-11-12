@@ -30,6 +30,17 @@ endpoint for this publication operation in the restored contract; defer workflow
 that depend on it until a validated implementation is available. Existing raster
 import and serving operations retain their previous contracts.
 
+## Cache health without Redis fallback
+
+The cache now runs in process memory on every node, so the Redis fallback it used to
+report no longer exists. `GET /api/v1/admin/operations/cache/health` drops the
+`fallbackEnabled` and `retryIntervalSeconds` properties from `OpsCacheHealthResponse`.
+The other properties keep their names and meaning.
+
+Clients that read either property should stop reading it and regenerate from the
+current admin contract. There is no replacement, because no fallback or reconnect
+interval remains to report.
+
 ## Import scan result types
 
 The import scan response schema uses `oneOf` to describe the default inventory
