@@ -40,7 +40,6 @@ internal sealed partial class OperationGateway : IOperationGateway
     private readonly OperationProposerApiKeyAuthority? _proposerKeyAuthority;
     private readonly IOperationHumanApprovalVerifier? _humanApprovalVerifier;
     private readonly OperationInitiationResolver? _initiationResolver;
-    private readonly TimeProvider _timeProvider;
 
     public OperationGateway(
         IGuardrailLadder ladder,
@@ -51,8 +50,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         IOperationProposalEvidenceValidator? evidenceValidator = null,
         OperationProposerApiKeyAuthority? proposerKeyAuthority = null,
         IOperationHumanApprovalVerifier? humanApprovalVerifier = null,
-        OperationInitiationResolver? initiationResolver = null,
-        TimeProvider? timeProvider = null)
+        OperationInitiationResolver? initiationResolver = null)
     {
         _ladder = ladder;
         _proposalStore = proposalStore;
@@ -63,7 +61,6 @@ internal sealed partial class OperationGateway : IOperationGateway
         _proposerKeyAuthority = proposerKeyAuthority;
         _humanApprovalVerifier = humanApprovalVerifier;
         _initiationResolver = initiationResolver;
-        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async Task<OperationGatewayResult> RouteAsync(
@@ -596,10 +593,10 @@ internal sealed partial class OperationGateway : IOperationGateway
         };
     }
 
-    private OperationGatewayResult FolderProposalResult(OperationProposal existing, OperationGatewayRequest request,
-        OperationProposalPlan plan, GuardrailDecision decision)
+    private static OperationGatewayResult FolderProposalResult(OperationProposal existing, OperationGatewayRequest request,
+        OperationProposalPlan plan, GuardrailDecision decision, TimeProvider clock)
         => FolderOperationCredential.IsFolderMutation(request.OperationId ?? string.Empty) &&
-            !FolderApprovalAuthorization.MatchesExisting(existing, request.RequestedBy, plan, _timeProvider.GetUtcNow())
+            !FolderApprovalAuthorization.MatchesExisting(existing, request.RequestedBy, plan, clock.GetUtcNow())
             ? new OperationGatewayResult
             {
                 Outcome = OperationGatewayOutcome.Blocked,
@@ -617,9 +614,11 @@ internal sealed partial class OperationGateway : IOperationGateway
         var plan = request.Plan ?? new OperationProposalPlan { Summary = $"{request.Kind} operation" };
         if (request.ExecutionPayload != null && plan.ExecutionPayload == null)
             plan = plan with { ExecutionPayload = request.ExecutionPayload };
+        var clock = TimeProvider.System;
         if (FolderOperationCredential.IsFolderMutation(request.OperationId ?? string.Empty))
         {
             await using var authorizationScope = _scopeFactory.CreateAsyncScope();
+            clock = authorizationScope.ServiceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
             var context = authorizationScope.ServiceProvider.GetService<IHttpContextAccessor>()?.HttpContext;
             try
             {
@@ -647,7 +646,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 .ConfigureAwait(false);
             if (existing != null)
             {
-                return FolderProposalResult(existing, request, plan, decision);
+                return FolderProposalResult(existing, request, plan, decision, clock);
             }
         }
 
@@ -752,7 +751,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 var winner = await _proposalStore.GetAsync(proposal.ProposalId, cancellationToken).ConfigureAwait(false);
                 if (winner != null)
                 {
-                    return FolderProposalResult(winner, request, plan, decision);
+                    return FolderProposalResult(winner, request, plan, decision, clock);
                 }
             }
 
