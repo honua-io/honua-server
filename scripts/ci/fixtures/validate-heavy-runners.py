@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Keep configurable compute routing separate from hosted control jobs and OS pins."""
 from dataclasses import dataclass
+from itertools import product
 import json
 import os
 from pathlib import Path
@@ -139,24 +140,33 @@ const vars = {HONUA_PR_GATE_RUNNER: 'honua-build', HONUA_HEAVY_RUNNER: '{"group"
 process.stdout.write(JSON.stringify(new Function('context', `const {github, needs, vars, fromJSON} = context; return (${expression});`)({github, needs, vars, fromJSON: JSON.parse})));
 """
         pool = {"group": "honua-light", "labels": ["honua-light"]}
-        for name in ["format", "fast-tests"]:
+        scenarios = [
+            ("", False, False, "ubuntu-latest"),
+            ("", False, True, "ubuntu-latest"),
+            (json.dumps(pool), False, False, pool),
+            (json.dumps(pool), True, False, "ubuntu-latest"),
+        ]
+        for name, selected, scenario in product(
+            ["format", "fast-tests"], ["honua-build", "ubuntu-latest", ""], scenarios,
+        ):
+            light, fork, draft, expected = scenario
             expression = self.jobs[name]["runs-on"].removeprefix("${{").removesuffix("}}").strip()
-            expression = expression.replace("needs.runner-select", "needs['runner-select']")
-            for selected in ["honua-build", "ubuntu-latest", ""]:
-                for light, fork, draft, expected in [
-                    ("", False, False, "ubuntu-latest"),
-                    ("", False, True, "ubuntu-latest"),
-                    (json.dumps(pool), False, False, pool),
-                    (json.dumps(pool), True, False, "ubuntu-latest"),
-                ]:
-                    with self.subTest(job=name, selected=selected, fork=fork, draft=draft):
-                        result = subprocess.run(["node", "-e", probe], input=json.dumps({
-                            "expression": expression, "selected": selected, "light": light,
-                            "fork": fork, "draft": draft,
-                        }), text=True, capture_output=True, check=True)
-                        self.assertEqual(json.loads(result.stdout), expected)
+            context = {
+                "expression": expression.replace("needs.runner-select", "needs['runner-select']"),
+                "selected": selected, "light": light, "fork": fork, "draft": draft,
+            }
+            with self.subTest(job=name, selected=selected, fork=fork, draft=draft):
+                self.assertEqual(self.evaluate_routing(probe, context), expected)
         self.assertEqual(self.jobs["format"]["if"], DRAFT_FORMAT_ADMISSION)
         self.assertNotIn("if", self.jobs["fast-tests"])
+
+    @staticmethod
+    def evaluate_routing(probe, context):
+        result = subprocess.run(
+            ["node", "-e", probe], input=json.dumps(context),
+            text=True, capture_output=True, check=True,
+        )
+        return json.loads(result.stdout)
 
     def test_light_jobs_use_the_fork_guarded_light_pool_with_hosted_fallback(self):
         for name in PR_GATE_LIGHT_JOBS:
