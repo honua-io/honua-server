@@ -19106,6 +19106,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.SceneGenerationEndpointsTests.Generate_AgentAdministrator_RequiresHumanAndLeavesSceneAbsent",
         "Honua.Server.Tests.Features.Admin.SceneGenerationEndpointsTests.Generate_LayerIdMissingOrZero_Returns400",
         "Honua.Server.Tests.Features.Admin.SceneGenerationEndpointsTests.Generate_NegativeCacheMaxAgeSeconds_Returns400",
         "Honua.Server.Tests.Features.Admin.SceneGenerationEndpointsTests.Generate_NonPositiveMaxFeatureCount_Returns400",
@@ -19124,6 +19125,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.SceneBimIngestEndpointsTests.Ingest_AgentAdministrator_RequiresHumanAndLeavesSceneAbsent",
         "Honua.Server.Tests.Features.Admin.SceneBimIngestEndpointsTests.Ingest_EmptyFile_Returns400",
         "Honua.Server.Tests.Features.Admin.SceneBimIngestEndpointsTests.Ingest_LiteralRoute_AcceptsValidUpload",
         "Honua.Server.Tests.Features.Admin.SceneBimIngestEndpointsTests.Ingest_MalformedDocument_Returns400",
@@ -19143,6 +19145,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ScenePointCloudIngestEndpointsTests.Ingest_AgentAdministrator_RequiresHumanAndLeavesSceneAbsent",
         "Honua.Server.Tests.Features.Admin.ScenePointCloudIngestEndpointsTests.Ingest_EmptyFile_Returns400",
         "Honua.Server.Tests.Features.Admin.ScenePointCloudIngestEndpointsTests.Ingest_InvalidSourceEpsg_Returns400",
         "Honua.Server.Tests.Features.Admin.ScenePointCloudIngestEndpointsTests.Ingest_LazCompressed_WithDecompressor_Returns201AndServesTileset",
@@ -25630,7 +25633,6 @@
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishNamespace_ScopesEntireGraphIgnoresWireTenantAndServesOwner",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.QualifiedLayerMutations_ThroughConnectionRoute_PreserveEffectiveStorageOwnership",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.SetLayerEnabled_NonexistentLayer_Returns404",
-        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.EnableLayerAndRoleGrants_AgentKey_RequireHumanApproval",
         "Honua.Server.Tests.Features.Infrastructure.LayerEnablementIntegrationTests.DisabledLayer_ReturnsNotFoundAcrossProtocols"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -26279,7 +26281,6 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.LayerMetadata_Get_ReturnsPreviouslyWrittenGovernance",
-        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.UpdateLayerMetadata_AgentKeyChangingAccess_RequiresHumanApproval",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsAttachmentAuthoringTests.AttachmentIntent_InvalidBoolean_IsRejectedWithoutMutation",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsAttachmentAuthoringTests.AttachmentIntent_OmittedOrNullPreservesLegacyMetadata_ExplicitValueUsesCanonicalDefaults",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsAttachmentAuthoringTests.AttachmentIntent_RoundTripsWithoutChangingOtherMetadata_AndInvalidatesAliases",
