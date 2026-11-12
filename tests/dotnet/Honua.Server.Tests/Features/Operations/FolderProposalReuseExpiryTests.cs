@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Server.Features.Admin;
@@ -24,7 +25,7 @@ public sealed class FolderProposalReuseExpiryTests
         var existing = Proposal(Authorization());
 
         var matches = FolderApprovalAuthorization.MatchesExisting(
-            existing, Requester, Plan(Authorization()), ExpiresAt.AddSeconds(secondsFromExpiry));
+            existing, Candidate(Requester, Plan(Authorization()), ExpiresAt.AddSeconds(secondsFromExpiry)));
 
         matches.Should().Be(expected);
     }
@@ -34,7 +35,7 @@ public sealed class FolderProposalReuseExpiryTests
     {
         var existing = Proposal(Authorization());
 
-        FolderApprovalAuthorization.MatchesExisting(existing, "other-requester", Plan(Authorization()), ExpiresAt.AddSeconds(-1))
+        FolderApprovalAuthorization.MatchesExisting(existing, Candidate("other-requester", Plan(Authorization()), ExpiresAt.AddSeconds(-1)))
             .Should().BeFalse();
     }
 
@@ -44,7 +45,7 @@ public sealed class FolderProposalReuseExpiryTests
         var existing = Proposal(Authorization());
         var changedPolicy = Plan(Authorization() with { PolicyRevision = "policy-2" });
 
-        FolderApprovalAuthorization.MatchesExisting(existing, Requester, changedPolicy, ExpiresAt.AddSeconds(-1))
+        FolderApprovalAuthorization.MatchesExisting(existing, Candidate(Requester, changedPolicy, ExpiresAt.AddSeconds(-1)))
             .Should().BeFalse();
     }
 
@@ -54,8 +55,17 @@ public sealed class FolderProposalReuseExpiryTests
         var existing = Proposal(Authorization());
         var changedPayload = Plan(Authorization()) with { ExecutionPayload = "{\"operationId\":\"folder.delete\"}" };
 
-        FolderApprovalAuthorization.MatchesExisting(existing, Requester, changedPayload, ExpiresAt.AddSeconds(-1))
+        FolderApprovalAuthorization.MatchesExisting(existing, Candidate(Requester, changedPayload, ExpiresAt.AddSeconds(-1)))
             .Should().BeFalse();
+    }
+
+    private static FolderProposalReuseContext Candidate(string requester, OperationProposalPlan plan, DateTimeOffset now)
+        => new(new OperationGatewayRequest { Kind = OperationClass.AdminConfigChange, RequestedBy = requester },
+            plan, new FixedTimeProvider(now));
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
     }
 
     private static FolderRequesterAuthorization Authorization() => new()
