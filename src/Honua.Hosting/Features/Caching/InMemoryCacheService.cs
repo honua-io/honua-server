@@ -86,7 +86,7 @@ internal sealed partial class InMemoryCacheService : ICacheService, ICacheHealth
         }
 
         using var operationScope = StartOperation("cache_get", key);
-        return Task.FromResult(TryGetLive(GetPrefixedKey(key), operationScope, out T? value, out _) ? value : null);
+        return Task.FromResult(GetLive<T>(GetPrefixedKey(key), operationScope).Value);
     }
 
     public Task<CacheEntryMetadata<T>> GetWithMetadataAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
@@ -97,9 +97,7 @@ internal sealed partial class InMemoryCacheService : ICacheService, ICacheHealth
         }
 
         using var operationScope = StartOperation("cache_get_metadata", key);
-        return Task.FromResult(TryGetLive(GetPrefixedKey(key), operationScope, out T? value, out var remainingTtl)
-            ? new CacheEntryMetadata<T>(value, remainingTtl)
-            : CacheEntryMetadata<T>.Miss());
+        return Task.FromResult(GetLive<T>(GetPrefixedKey(key), operationScope));
     }
 
     public Task SetAsync<T>(string key, T value, CancellationToken cancellationToken = default) where T : class
@@ -113,7 +111,8 @@ internal sealed partial class InMemoryCacheService : ICacheService, ICacheHealth
         }
 
         var prefixedKey = GetPrefixedKey(key);
-        if (!TrySerialize(value, prefixedKey, out var data) || ExceedsQueryResponseEntryCap(prefixedKey, data))
+        var data = Serialize(value, prefixedKey);
+        if (data is null || ExceedsQueryResponseEntryCap(prefixedKey, data))
         {
             return Task.CompletedTask;
         }
@@ -192,20 +191,18 @@ internal sealed partial class InMemoryCacheService : ICacheService, ICacheHealth
             .WithTag("cache_type", CacheType)
             .WithTag("key_family", CacheKeyUtilities.GetCacheKeyFamily(key));
 
-    private bool TryGetLive<T>(string prefixedKey, IOperationScope operationScope, out T? value, out TimeSpan remainingTtl)
+    private CacheEntryMetadata<T> GetLive<T>(string prefixedKey, IOperationScope operationScope)
         where T : class
     {
-        value = null;
-        remainingTtl = TimeSpan.Zero;
         if (_entries.TryGetValue(prefixedKey, out var entry))
         {
             var remaining = entry.ExpiresAt - UtcNow;
-            if (remaining > TimeSpan.Zero && TryDeserialize(entry.Data, prefixedKey, out value))
+            var value = remaining > TimeSpan.Zero ? Deserialize<T>(entry.Data, prefixedKey) : null;
+            if (value != null)
             {
-                remainingTtl = remaining;
                 RecordCacheMetric("hit");
                 operationScope.WithTag("result", "hit").WithTag("source", StorageBackend);
-                return true;
+                return new CacheEntryMetadata<T>(value, remaining);
             }
 
             _entries.TryRemove(new KeyValuePair<string, CacheEntry>(prefixedKey, entry));
@@ -213,7 +210,7 @@ internal sealed partial class InMemoryCacheService : ICacheService, ICacheHealth
 
         RecordCacheMetric("miss");
         operationScope.WithTag("result", "miss").WithTag("source", StorageBackend);
-        return false;
+        return CacheEntryMetadata<T>.Miss();
     }
 
     private void EvictEntriesIfNeeded()
@@ -254,35 +251,31 @@ internal sealed partial class InMemoryCacheService : ICacheService, ICacheHealth
         }
     }
 
-    private bool TryDeserialize<T>(byte[] data, string cacheKey, out T? value) where T : class
+    private T? Deserialize<T>(byte[] data, string cacheKey) where T : class
     {
         try
         {
-            value = JsonSerializer.Deserialize(data, ResolveTypeInfo<T>()) as T;
-            return value != null;
+            return JsonSerializer.Deserialize(data, ResolveTypeInfo<T>()) as T;
         }
         catch (Exception ex) when (ex is JsonException or NotSupportedException)
         {
-            value = null;
             InMemoryCacheServiceLog.CacheEntryDeserializationFailed(
                 _logger, CacheKeyUtilities.GetCacheKeyFamily(cacheKey), LogValueRedactor.Hash(cacheKey), ex);
-            return false;
+            return null;
         }
     }
 
-    private bool TrySerialize<T>(T value, string cacheKey, out byte[] data) where T : class
+    private byte[]? Serialize<T>(T value, string cacheKey) where T : class
     {
         try
         {
-            data = JsonSerializer.SerializeToUtf8Bytes((object?)value, ResolveTypeInfo<T>());
-            return true;
+            return JsonSerializer.SerializeToUtf8Bytes((object?)value, ResolveTypeInfo<T>());
         }
         catch (NotSupportedException ex)
         {
-            data = [];
             InMemoryCacheServiceLog.CacheEntrySerializationFailed(
                 _logger, CacheKeyUtilities.GetCacheKeyFamily(cacheKey), LogValueRedactor.Hash(cacheKey), ex);
-            return false;
+            return null;
         }
     }
 
