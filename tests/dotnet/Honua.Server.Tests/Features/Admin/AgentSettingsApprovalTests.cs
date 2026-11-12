@@ -4,10 +4,12 @@
 using System.Net;
 using System.Text;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -49,8 +51,21 @@ public sealed class AgentSettingsApprovalTests : IAsyncLifetime
     public async Task AgentAdministrator_CannotChangeEditingCapabilities(string operation)
     {
         const string path = "/api/v1/admin/services/test/layers/0/metadata";
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var publication = snapshot.Graph.Publications.First(candidate =>
+            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer && candidate.LayerIndex == 0);
+        var binding = snapshot.ResolveStorageBinding(publication)!;
+        _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>().SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            StorageBindings = snapshot.Graph.StorageBindings.Select(candidate => candidate.Metadata.Id == binding.Metadata.Id
+                ? candidate with { Capabilities = candidate.Capabilities.Append(MetadataV2StorageBindingCapability.Edit).Distinct().ToArray() }
+                : candidate).ToArray()
+        }, schema: _fixture.MetadataGraphSchema);
+        var enable = "{\"editing\":{\"" + operation + "\":true}}";
+        await HumanPutAsync(path, enable);
         await HumanPutAsync(path, """{"editing":{"create":false,"update":false,"delete":false}}""");
-        await AssertRejectedWithoutChangesAsync(path, path, "{\"editing\":{\"" + operation + "\":true}}");
+        await AssertRejectedWithoutChangesAsync(path, path, enable);
     }
 
     [IntegrationTest]
