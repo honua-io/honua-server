@@ -1237,7 +1237,9 @@ jobs:
     strategy:
       fail-fast: false
       # Keep the affected budget even when routing expands to full coverage.
-      max-parallel: ${{ inputs.selective_base && fromJson(needs.targeted-shards.outputs.affected_max_parallel) || 24 }}
+      # Full runs take 16 of the org's 60 hosted runners: other per-PR
+      # workflows already hold 20-35, and PR Gate starved at 24 (11 Nov).
+      max-parallel: ${{ inputs.selective_base && fromJson(needs.targeted-shards.outputs.affected_max_parallel) || 16 }}
       matrix:
         include: ${{ fromJson(needs.targeted-shards.outputs.matrix_include) }}
     env:
