@@ -239,6 +239,15 @@ valid until it expires. The tenant is resolved on each request, so changing
 `Authentication:OperatorBearer:MaxLifetimeMinutes` short and rotate the signing
 key to revoke every outstanding bearer.
 
+`GET /api/v1/studio/session` returns the caller's Studio principal id, the
+configured `Studio:Session:EnvironmentId` (default `default`) and the API path
+base (`Studio:Session:SourcePathBase`, else the request path base). Studio
+records that principal id as the owner of new drafts. The session cookie and the
+operator bearer are different credentials and resolve to different principal
+ids, because the bearer is qualified by the operator bearer issuer. A re-issued
+bearer keeps the same id. Use one hosting mode per deployment so an
+administrator's drafts keep one owner.
+
 Separate-origin OIDC requires a public SPA client registered with the provider.
 Use authorization code with PKCE and an API-audience access token accepted by the
 server's configured JWT validation. Configure the provider's SPA redirect and

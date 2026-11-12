@@ -249,6 +249,52 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
         await AssertTenantDenialRpcErrorAsync(response);
     }
 
+    // Multi-tenant mode runs the tenant middleware's resolution path (single-tenant mode returns
+    // early), so these pin the operator bearer's default-tenant branch and its denial without one.
+    [IntegrationTest]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task Post_TenantlessOperatorBearerToolCall_MultiTenant_UsesDefaultTenantAndSucceeds()
+    {
+        await using var fixture = CreateOperatorOnlyFixture(oidcEnabled: false)
+            .ConfigureWebHost(builder => builder.UseSetting("MultiTenancy:Enabled", "true"));
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateClient();
+        using var request = BuildRpc(
+            """{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"honua_list_capabilities","arguments":{}}}""",
+            sessionId: null,
+            bearer: CreateOperatorToken(tenantId: null));
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        document.RootElement.GetProperty("result").GetProperty("isError").GetBoolean().Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task Post_TenantlessOperatorBearerToolCall_MultiTenantWithoutDefaultTenant_IsDenied()
+    {
+        await using var fixture = CreateOperatorOnlyFixture(oidcEnabled: false)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("MultiTenancy:Enabled", "true");
+                builder.UseSetting("MultiTenancy:DefaultTenantId", "");
+            });
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateClient();
+        using var request = BuildRpc(
+            """{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"honua_list_capabilities","arguments":{}}}""",
+            sessionId: null,
+            bearer: CreateOperatorToken(tenantId: null));
+
+        var response = await client.SendAsync(request);
+
+        await AssertTenantDenialRpcErrorAsync(response);
+    }
+
     [IntegrationTest]
     [Endpoint("POST /mcp")]
     public async Task Post_BearerUnauthorizedTenantOverride_FailsBeforeEndpointExecution()
