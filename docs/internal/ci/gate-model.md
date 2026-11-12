@@ -371,15 +371,6 @@ These workflows run on schedule and can be dispatched manually:
 
 | Workflow | Schedule | What it validates |
 |---|---|---|
-| `cite-conformance.yml` | Mon 6am UTC | OGC CITE Features conformance |
-| `cite-tiles-conformance.yml` | Tue 6am UTC | OGC API Tiles CITE conformance |
-| `cite-wfs20-conformance.yml` | Mon 3am UTC | WFS 2.0 CITE conformance |
-| `cite-wms-conformance.yml` | Wed 6am UTC | OGC WMS CITE conformance |
-| `cite-wmts-conformance.yml` | Thu 6am UTC | OGC WMTS CITE conformance |
-| `ogc-maps-conformance.yml` | Fri 6am UTC | OGC API Maps conformance |
-| `cite-kml22-conformance.yml` | Fri 3am UTC | OGC KML 2.2 CITE conformance |
-| `cite-gml32-conformance.yml` | Sat 6am UTC | OGC GML 3.2 CITE conformance |
-| `cite-gpkg12-conformance.yml` | Sat 3am UTC | OGC GeoPackage 1.2 CITE conformance |
 | `geoservices-import-fidelity-external.yml` | On-demand (`workflow_dispatch`) | External GeoServices parity + Geoportal import vs live Esri services: runs the correctness regression gate **and** the perf-parity latency gate (issue #1249) over the freshly measured scorecard (deterministic parity stays in Import Fidelity Scorecard Governance); also runs `GeoservicesGeoportalImportIntegrationTests` |
 | `routing-nightly.yml` | Weekly Sun 5:00am UTC | pgRouting provider + NAServer routing integration (`Category=Routing`); `PgRoutingFixture` manages its own Testcontainers `pgrouting/pgrouting` image |
 | `warehouse-nightly.yml` | Weekly Sun 6:00am UTC | Snowflake/Redshift/Databricks/SqlServer creds-gated provider tests; self-skips cleanly without configured secrets, surfacing pass/fail/skip counts in the run summary |
@@ -868,6 +859,14 @@ All cases and assertions remain in the Security and Authorization 5 shard on
 selected PR runs and twice-daily full trunk runs. This changes no runner count,
 required check name, required aggregate dependency, workflow, or shard
 definition.
+
+## OGC release-candidate qualification
+
+External OGC conformance runs through individual manual dispatchers and, after the
+RC image build of a promotable candidate, through `ogc-rc-conformance.yml`. The RC
+manifest waits for success; non-candidate rc dispatches skip it because they produce no manifest.
+Optional integration flags do not bypass it. See the [workflow inventory](workflow-inventory.md#ogc-cite--conformance)
+for the complete dispatchers, source/image binding and separate certification policy.
 
 ## Trailing affected CI selection
 

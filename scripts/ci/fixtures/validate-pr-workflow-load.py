@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = ROOT / ".github/workflows"
 HEAVY = (
     "codeql.yml", "compose-release-lifecycle.yml", "geoarrow-interop-fixture.yml",
-    "geoparquet-interop.yml", "ogc-api-building-block-conformance.yml",
+    "geoparquet-interop.yml",
     "serving-image-boundary.yml", "worker-gdal-image.yml",
 )
 DRAFT_GUARD = "github.event_name != 'pull_request' || !github.event.pull_request.draft"
