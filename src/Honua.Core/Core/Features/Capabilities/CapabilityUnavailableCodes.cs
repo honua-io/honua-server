@@ -21,7 +21,7 @@ public static class CapabilityUnavailableCodes
 
     public const string SystemDatabaseRemediation =
         "Set ConnectionStrings__DefaultConnection to the PostgreSQL system database and restart the " +
-        "server. Durable jobs, the job queue, workflow definitions and governed proposals are tables in it.";
+        "server. Durable jobs, the job queue and governed proposals are tables in it.";
 
     public const string SystemDatabaseRemediationRef =
         "https://honua.io/docs/guides/deploy/troubleshooting/#database-connections";
@@ -60,12 +60,23 @@ public static class CapabilityUnavailableCodes
         "This server was started without a system database, so the request is refused up front " +
         "instead of being queued and never run.";
 
+    // The workflow definition store has not moved to the system database yet, so this refusal
+    // names the store and the connection that composes it today.
+    public const string WorkflowDefinitionStoreDependency = "workflow-definition-store";
+
+    public const string WorkflowDefinitionStoreRemediation =
+        "Publish to a target other than Schedule, or set ConnectionStrings__Redis to a reachable " +
+        "Redis instance that the licence entitles ('caching.redis') and restart the server; the " +
+        "durable workflow definition store is composed only with that connection.";
+
+    public const string WorkflowDefinitionStoreRemediationRef =
+        "https://honua.io/docs/guides/deploy/docker-compose/#redis-is-optional-postgis-is-not";
+
     public const string DurableWorkflowPublicationDetail =
         "Publishing a workflow package to a Schedule target requires the durable workflow " +
-        "definition store in the system database. This server was started without one, so the " +
-        "compiled workflow definition could not be persisted and no scheduler would ever run it. " +
-        "The publication is refused up front rather than reported as successful without a " +
-        "durable record.";
+        "definition store, which this server has not composed, so the compiled workflow " +
+        "definition could not be persisted and no scheduler would ever run it. The publication " +
+        "is refused up front rather than reported as successful without a durable record.";
 
     public const string DurableControlPlaneDetail =
         "The operation proposal and approval control plane requires the durable proposal store " +

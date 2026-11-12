@@ -87,10 +87,13 @@ public sealed class WorkflowPackagePublishDegradedTests : IAsyncLifetime
         root.GetProperty("title").GetString().Should().Be(CapabilityUnavailableCodes.Title);
         root.GetProperty("status").GetInt32().Should().Be(503);
         root.GetProperty("code").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
-        root.GetProperty("missingDependency").GetString().Should().Be(CapabilityUnavailableCodes.SystemDatabaseDependency);
+        // The workflow definition store is not in the system database yet, so the refusal names the
+        // store itself and must not send an operator to a connection string the host already has.
+        root.GetProperty("missingDependency").GetString().Should().Be("workflow-definition-store");
         root.GetProperty("capability").GetString().Should().Be(CapabilityUnavailableCodes.DurableJobsCapability);
-        root.GetProperty("remediation").GetString().Should().Be(CapabilityUnavailableCodes.SystemDatabaseRemediation);
-        root.GetProperty("remediationRef").GetString().Should().Be(CapabilityUnavailableCodes.SystemDatabaseRemediationRef);
+        var remediation = root.GetProperty("remediation").GetString();
+        remediation.Should().Contain("ConnectionStrings__Redis").And.NotContain("DefaultConnection");
+        root.GetProperty("remediationRef").GetString().Should().NotBe(CapabilityUnavailableCodes.SystemDatabaseRemediationRef);
         root.GetProperty("detail").GetString()
             .Should().Be(CapabilityUnavailableCodes.DurableWorkflowPublicationDetail);
         root.TryGetProperty("missingEntitlement", out _).Should().BeFalse(

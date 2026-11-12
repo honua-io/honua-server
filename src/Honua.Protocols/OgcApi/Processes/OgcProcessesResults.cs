@@ -71,7 +71,6 @@ internal static class OgcProcessesResults
                 MissingDependency = exception?.HasDependencyReceipt == true
                     ? exception.MissingDependency
                     : CapabilityUnavailableCodes.SystemDatabaseDependency,
-                MissingEntitlement = exception?.MissingEntitlement,
                 Remediation = exception?.Remediation ?? CapabilityUnavailableCodes.SystemDatabaseRemediation,
                 RemediationRef = exception?.RemediationRef ?? CapabilityUnavailableCodes.SystemDatabaseRemediationRef,
             },

@@ -39,9 +39,9 @@ public sealed class DurableJobSubstrateStartupGateTests
         var refusal = ensure.Should().Throw<DurableJobSubstrateUnavailableException>().Subject.Single();
         refusal.Cause.Should().Be(DurableJobSubstrateCause.SystemDatabaseNotConfigured);
         refusal.Message.Should().Contain("Jobs:RequireDurableStore")
-            .And.Contain("ConnectionStrings:DefaultConnection")
+            .And.Contain("ConnectionStrings__DefaultConnection")
             .And.NotContainEquivalentOf("redis");
-        refusal.Remediation.Should().Contain("ConnectionStrings:DefaultConnection")
+        refusal.Remediation.Should().Be(CapabilityUnavailableCodes.SystemDatabaseRemediation)
             .And.NotContainEquivalentOf("redis");
     }
 

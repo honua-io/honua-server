@@ -694,7 +694,7 @@ if (hostHasSystemDatabase)
 }
 else
 {
-    // Redis-off (or unentitled) topology: compose the fail-closed proposal placeholder so the
+    // No system database: compose the fail-closed proposal placeholder so the
     // governed admin catalogs (AddOperationsToolset gates them on a proposal store) still
     // register and advertise their honua_admin_* tools. Without it the full MCP catalog silently
     // lost exactly the 20 AdminApiOperationCatalog tools on Redis-off cells (2026.1 rc.3, J1/S1).
@@ -708,8 +708,8 @@ else
 
 // The control-plane Lambda event route (POST /events) is mapped whenever
 // HONUA_CONTROL_PLANE_LAMBDA_HANDLER is set, Redis or not, so what it resolves is registered on
-// every host. On a Redis-off cell the Redis-independent ticks run and the rest refuse with a typed
-// 503 (missingDependency=redis) instead of a 500 (honua-release run 38242272260).
+// every host. Ticks whose store is absent refuse with a typed 503 that names the missing
+// dependency instead of a 500.
 builder.Services.AddHonuaControlPlaneLambdaEventTargets(builder.Configuration);
 
 // Pending-approval notification channel (#1695): emitted from the gateway/store

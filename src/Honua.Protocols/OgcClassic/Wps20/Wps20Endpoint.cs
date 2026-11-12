@@ -837,11 +837,6 @@ internal static partial class Wps20Endpoint
             texts.Add($"missingDependency: {exception.MissingDependency}");
         }
 
-        if (exception.MissingEntitlement is not null)
-        {
-            texts.Add($"missingEntitlement: {exception.MissingEntitlement}");
-        }
-
         texts.Add($"capability: {exception.CapabilityId}");
         texts.Add($"remediation: {exception.Remediation}");
         texts.Add($"remediationRef: {exception.RemediationRef}");

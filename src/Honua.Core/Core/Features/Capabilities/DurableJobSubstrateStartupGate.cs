@@ -51,8 +51,6 @@ public sealed class DurableJobSubstrateUnavailableException : Exception
 
 public static class DurableJobSubstrateRemediation
 {
-    private const string SystemDatabaseConnectionKey = "ConnectionStrings:DefaultConnection";
-
     public static string For(DurableJobSubstrateCause cause)
         => cause switch
         {
@@ -62,8 +60,10 @@ public static class DurableJobSubstrateRemediation
             DurableJobSubstrateCause.RuntimeIncomplete =>
                 CapabilityUnavailableCodes.RuntimeIncompleteRemediation,
 
-            _ => $"Set {SystemDatabaseConnectionKey} to the PostgreSQL system database; the job store, "
-                + "job queue and proposal store are tables in it.",
+            DurableJobSubstrateCause.SystemDatabaseNotConfigured =>
+                CapabilityUnavailableCodes.SystemDatabaseRemediation,
+
+            _ => throw new ArgumentOutOfRangeException(nameof(cause), cause, null),
         };
 }
 

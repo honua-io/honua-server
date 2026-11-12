@@ -4,13 +4,13 @@
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Capabilities;
 using Honua.Server.Features.Operations;
-using Xunit;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.OperationsUnavailable;
 
 public sealed class UnavailableOperationInstanceStoreTests
 {
-    [Fact]
+    [UnitTest]
     public async Task GetAsync_WithoutSystemDatabase_ThrowsTypedCapabilityFailure()
     {
         var store = new UnavailableOperationInstanceStore();

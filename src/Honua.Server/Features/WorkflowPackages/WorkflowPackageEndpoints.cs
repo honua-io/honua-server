@@ -457,9 +457,9 @@ internal static class WorkflowPackageEndpoints
         => ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
             context,
             CapabilityUnavailableCodes.DurableWorkflowPublicationDetail,
-            CapabilityUnavailableCodes.SystemDatabaseDependency,
-            CapabilityUnavailableCodes.SystemDatabaseRemediation,
-            CapabilityUnavailableCodes.SystemDatabaseRemediationRef,
+            CapabilityUnavailableCodes.WorkflowDefinitionStoreDependency,
+            CapabilityUnavailableCodes.WorkflowDefinitionStoreRemediation,
+            CapabilityUnavailableCodes.WorkflowDefinitionStoreRemediationRef,
             CapabilityUnavailableCodes.DurableJobsCapability);
 
     private static IResult BadRequest(HttpContext context, string detail)
