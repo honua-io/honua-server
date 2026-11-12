@@ -7,7 +7,7 @@ deploy/job-event notifications). The customer surface remains OFF by default and
 `Capabilities:Experimental:alerts.geofence:Enabled` opt-in plus `Alerts:Enabled`.
 
 **Worker isolation restriction (#3859):** Enabled alert workers refuse startup when
-tenant resolution (`MultiTenancy:Enabled`, default `false`) or tenant schema routing
+tenant resolution (`MultiTenancy:Enabled`, default `true`) or tenant schema routing
 (`MultiTenancy:SchemaRouting:Enabled`) is enabled. Their evaluation, state and delivery
 keys are instance-wide, and HTTP tenant authorization does not apply to those workers.
 Keep `Alerts:Enabled=false` on multi-tenant instances. Preview alert processing requires
