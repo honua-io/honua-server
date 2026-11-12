@@ -83,7 +83,7 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
     {
         var created = await _client.PostAsJsonAsync("/api/v1/admin/investigations", new { title = "incident-2" });
         var createdJson = await created.Content.ReadAsStringAsync();
-        var id = JsonDocument.Parse(createdJson).RootElement.GetProperty("investigationId").GetString()!;
+        var id = JsonElement.Parse(createdJson).GetProperty("investigationId").GetString()!;
 
         var response = await _client.PostAsJsonAsync($"/api/v1/admin/investigations/{id}/pins",
             new
@@ -107,7 +107,7 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
     public async Task AddLink_RecordsAudit()
     {
         var created = await _client.PostAsJsonAsync("/api/v1/admin/investigations", new { title = "incident-3" });
-        var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("investigationId").GetString()!;
+        var id = JsonElement.Parse(await created.Content.ReadAsStringAsync()).GetProperty("investigationId").GetString()!;
         _audit.Recorded.Clear();
 
         var response = await _client.PostAsJsonAsync($"/api/v1/admin/investigations/{id}/links",
@@ -137,7 +137,7 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
     public async Task GetInvestigation_ReturnsRecord()
     {
         var created = await _client.PostAsJsonAsync("/api/v1/admin/investigations", new { title = "incident-get" });
-        var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("investigationId").GetString()!;
+        var id = JsonElement.Parse(await created.Content.ReadAsStringAsync()).GetProperty("investigationId").GetString()!;
 
         var response = await _client.GetAsync($"/api/v1/admin/investigations/{id}");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -150,7 +150,7 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
     public async Task UpdateInvestigation_PersistsStatusChange()
     {
         var created = await _client.PostAsJsonAsync("/api/v1/admin/investigations", new { title = "incident-update" });
-        var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("investigationId").GetString()!;
+        var id = JsonElement.Parse(await created.Content.ReadAsStringAsync()).GetProperty("investigationId").GetString()!;
 
         using var patch = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/admin/investigations/{id}")
         {
@@ -168,7 +168,7 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
     public async Task RemovePin_DeletesPinned()
     {
         var created = await _client.PostAsJsonAsync("/api/v1/admin/investigations", new { title = "incident-rm-pin" });
-        var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("investigationId").GetString()!;
+        var id = JsonElement.Parse(await created.Content.ReadAsStringAsync()).GetProperty("investigationId").GetString()!;
 
         var pinned = await _client.PostAsJsonAsync($"/api/v1/admin/investigations/{id}/pins",
             new
@@ -177,8 +177,8 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
                 eventKind = "alert",
                 occurredAt = DateTimeOffset.UtcNow
             });
-        var pinId = JsonDocument.Parse(await pinned.Content.ReadAsStringAsync())
-            .RootElement.GetProperty("pins")[0].GetProperty("pinId").GetInt64();
+        var pinId = JsonElement.Parse(await pinned.Content.ReadAsStringAsync())
+            .GetProperty("pins")[0].GetProperty("pinId").GetInt64();
 
         var response = await _client.DeleteAsync($"/api/v1/admin/investigations/{id}/pins/{pinId}");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -191,7 +191,7 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
     public async Task AddPin_RejectsDefinedNumericEventKind()
     {
         var created = await _client.PostAsJsonAsync("/api/v1/admin/investigations", new { title = "incident-num" });
-        var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("investigationId").GetString()!;
+        var id = JsonElement.Parse(await created.Content.ReadAsStringAsync()).GetProperty("investigationId").GetString()!;
 
         var response = await _client.PostAsJsonAsync($"/api/v1/admin/investigations/{id}/pins",
             new
@@ -209,7 +209,7 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
     public async Task UpdateInvestigation_RejectsDefinedNumericStatus()
     {
         var created = await _client.PostAsJsonAsync("/api/v1/admin/investigations", new { title = "incident-status-num" });
-        var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("investigationId").GetString()!;
+        var id = JsonElement.Parse(await created.Content.ReadAsStringAsync()).GetProperty("investigationId").GetString()!;
 
         using var patch = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/admin/investigations/{id}")
         {
@@ -224,7 +224,7 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
     public async Task UpdateInvestigation_RejectsWhitespaceTitle()
     {
         var created = await _client.PostAsJsonAsync("/api/v1/admin/investigations", new { title = "incident-ws" });
-        var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("investigationId").GetString()!;
+        var id = JsonElement.Parse(await created.Content.ReadAsStringAsync()).GetProperty("investigationId").GetString()!;
 
         using var patch = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/admin/investigations/{id}")
         {
@@ -239,7 +239,7 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
     public async Task AddLink_PreservesCamelCaseAndEscapesJsonDetails()
     {
         var created = await _client.PostAsJsonAsync("/api/v1/admin/investigations", new { title = "incident-link-camel" });
-        var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("investigationId").GetString()!;
+        var id = JsonElement.Parse(await created.Content.ReadAsStringAsync()).GetProperty("investigationId").GetString()!;
         _audit.Recorded.Clear();
 
         var hostileResourceId = "rel\"\\bad";
@@ -266,7 +266,7 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
     public async Task AddLink_RejectsDefinedNumericResourceKind()
     {
         var created = await _client.PostAsJsonAsync("/api/v1/admin/investigations", new { title = "incident-link-num" });
-        var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("investigationId").GetString()!;
+        var id = JsonElement.Parse(await created.Content.ReadAsStringAsync()).GetProperty("investigationId").GetString()!;
 
         var response = await _client.PostAsJsonAsync($"/api/v1/admin/investigations/{id}/links",
             new { resourceKind = "1", resourceId = "42" });
@@ -279,7 +279,7 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
     public async Task AddPin_EscapesHostileEventRefInAuditJson()
     {
         var created = await _client.PostAsJsonAsync("/api/v1/admin/investigations", new { title = "incident-pin-escape" });
-        var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("investigationId").GetString()!;
+        var id = JsonElement.Parse(await created.Content.ReadAsStringAsync()).GetProperty("investigationId").GetString()!;
         _audit.Recorded.Clear();
 
         var hostileEventRef = "alert:7\"\\evil";
@@ -309,12 +309,12 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
     public async Task RemoveLink_DeletesLinked()
     {
         var created = await _client.PostAsJsonAsync("/api/v1/admin/investigations", new { title = "incident-rm-link" });
-        var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("investigationId").GetString()!;
+        var id = JsonElement.Parse(await created.Content.ReadAsStringAsync()).GetProperty("investigationId").GetString()!;
 
         var linked = await _client.PostAsJsonAsync($"/api/v1/admin/investigations/{id}/links",
             new { resourceKind = "release", resourceId = "2026.05.21" });
-        var linkId = JsonDocument.Parse(await linked.Content.ReadAsStringAsync())
-            .RootElement.GetProperty("links")[0].GetProperty("linkId").GetInt64();
+        var linkId = JsonElement.Parse(await linked.Content.ReadAsStringAsync())
+            .GetProperty("links")[0].GetProperty("linkId").GetInt64();
 
         var response = await _client.DeleteAsync($"/api/v1/admin/investigations/{id}/links/{linkId}");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
