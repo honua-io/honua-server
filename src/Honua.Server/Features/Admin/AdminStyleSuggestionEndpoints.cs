@@ -8,6 +8,7 @@ using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Styling;
 using Microsoft.AspNetCore.Mvc;
@@ -26,14 +27,14 @@ internal static class AdminStyleSuggestionEndpoints
             .WithTags("Admin", "Metadata", "Styles")
             .RequireAdminAuthorization();
 
-        _ = group.MapPost("/{layerId:int}/suggest-style", HandleSuggestStyle)
+        _ = group.MapPost("/{storageLayerId:int}/suggest-style", HandleSuggestStyle)
             .WithName("SuggestLayerStyle")
             .WithSummary("Generate an advisory style suggestion for a layer based on data analysis")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
     }
 
     private static async Task<IResult> HandleSuggestStyle(
-        int layerId,
+        int storageLayerId,
         StyleSuggestionRequest? request,
         HttpContext context,
         [FromServices] Core.Features.Validation.Abstractions.IResourceValidator resourceValidator,
@@ -42,22 +43,18 @@ internal static class AdminStyleSuggestionEndpoints
         [FromServices] ILogger<AdminStyleSuggestionEndpointsLog> logger,
         CancellationToken cancellationToken)
     {
-        AdminStyleSuggestionLog.StyleSuggestionRequested(logger, layerId);
+        AdminStyleSuggestionLog.StyleSuggestionRequested(logger, storageLayerId);
 
         // Validate layer exists in the canonical Metadata v2 graph.
-        var resourceResult = await resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
+        var resourceResult = await resourceValidator.ValidateStorageLayerV2Async(storageLayerId, cancellationToken).ConfigureAwait(false);
         if (!resourceResult.IsValid || resourceResult.Resource == null)
         {
-            var statusCode = resourceResult.ErrorCode == Core.Features.Validation.Abstractions.ResourceValidationError.InvalidIdentifier
-                ? StatusCodes.Status400BadRequest
-                : StatusCodes.Status404NotFound;
-            var message = resourceResult.ErrorMessage ?? $"Layer {layerId} not found.";
-            return ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, message);
+            return ServiceResourceValidationHelpers.CreateAdminValidationProblem(context, resourceResult, $"Layer {storageLayerId} not found.");
         }
 
         var resource = resourceResult.Resource;
         var layerName = string.IsNullOrWhiteSpace(resource.Metadata.Name)
-            ? $"layer-{layerId}"
+            ? $"layer-{storageLayerId}"
             : resource.Metadata.Name;
         var licenseSnapshot = entitlementService.GetSnapshot();
         var isPro = licenseSnapshot.HasEntitlement("styling.auto-suggest");
@@ -67,13 +64,13 @@ internal static class AdminStyleSuggestionEndpoints
             if (!isPro)
             {
                 // Community: enhanced geometry-only defaults
-                var enhancedStyle = StyleSuggestionGenerator.GenerateEnhancedDefaults(resource, layerId);
+                var enhancedStyle = StyleSuggestionGenerator.GenerateEnhancedDefaults(resource, storageLayerId);
                 var enhancedDrawingInfo = StyleSuggestionGenerator.GenerateEnhancedDrawingInfo(resource);
 
                 var enhancedMapLibreJson = StyleJsonUtilities.Serialize(enhancedStyle);
                 var enhancedDrawingInfoJson = StyleJsonUtilities.Serialize(enhancedDrawingInfo);
 
-                AdminStyleSuggestionLog.StyleSuggestionGeometryOnly(logger, layerId, "Community");
+                AdminStyleSuggestionLog.StyleSuggestionGeometryOnly(logger, storageLayerId, "Community");
 
                 var communityLegend = new LegendInfo
                 {
@@ -100,13 +97,13 @@ internal static class AdminStyleSuggestionEndpoints
             var options = MapRequestToOptions(request, licenseSnapshot.Edition);
             var suggestion = await styleSuggestionService.SuggestAsync(
                     resource,
-                    layerId,
+                    storageLayerId,
                     options,
                     cancellationToken)
                 .ConfigureAwait(false);
 
             // Generate MapLibre and GeoServices JSON
-            var mapLibreStyle = StyleSuggestionGenerator.GenerateMapLibreStyle(resource, layerId, suggestion);
+            var mapLibreStyle = StyleSuggestionGenerator.GenerateMapLibreStyle(resource, storageLayerId, suggestion);
             var drawingInfo = StyleSuggestionGenerator.GenerateDrawingInfo(resource, suggestion);
 
             var mapLibreJson = StyleJsonUtilities.Serialize(mapLibreStyle);
@@ -116,7 +113,7 @@ internal static class AdminStyleSuggestionEndpoints
             var method = suggestion.Classification?.Method.ToString();
 
             AdminStyleSuggestionLog.StyleSuggestionCompleted(
-                logger, layerId, fieldName, method, suggestion.PaletteName);
+                logger, storageLayerId, fieldName, method, suggestion.PaletteName);
 
             var response = BuildResponse(
                 mapLibreJson,
@@ -135,7 +132,7 @@ internal static class AdminStyleSuggestionEndpoints
         // endpoint; the failure is logged and mapped to a generic admin problem response below.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            AdminStyleSuggestionLog.StyleSuggestionFailed(logger, layerId, ex.Message, ex);
+            AdminStyleSuggestionLog.StyleSuggestionFailed(logger, storageLayerId, ex.Message, ex);
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status500InternalServerError,

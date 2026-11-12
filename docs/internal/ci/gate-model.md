@@ -136,7 +136,8 @@ shared lean gate was 18m09s, split roughly:
 
 The build is now separated from test execution. Pristine outputs are packaged
 once before tests or coverage can modify them. Downstream consumers verify the
-same-run source, SDK, platform and build-property identity, then compile only
+same-run source, SDK, platform and build-property identity, relocate staged MVC
+and static-asset content roots to their own checkout, then compile only
 missing projects as one scoped fallback graph. Both architecture suites run
 after projection regeneration; the full collector remains intact. Full CI also
 uses a managed producer and an independent, required full-solution format job.
@@ -158,7 +159,7 @@ MSBuild resolves each listed project's `<ProjectReference>` graph itself, so
 forward dependencies are built without being enumerated. A filter is used rather
 than a project list because `dotnet build a.csproj b.csproj` is rejected outright
 (MSB1008); the filter also keeps the build to a single MSBuild invocation with
-full cross-project parallelism.
+cross-project parallelism bounded to four MSBuild workers.
 
 The current build floor is the forward dependency closure of that explicit
 producer plan, rather than a fixed count of test projects. Isolated unit projects
@@ -332,9 +333,12 @@ main handles their completion or cancellation.
 
 ## PR Gate compute runner selection
 
-`PR Gate / Runner select` decides where `pr-gate` (Build and tests),
-`fast-tests` and `format` run. With the repository variable
-`HONUA_PR_GATE_RUNNER` unset, its steps skip and those jobs stay on
+`PR Gate / Runner select` decides where `pr-gate` (Build and tests) and
+`server-test-producer` run. Format/analyzers and all four Fast/architecture
+groups use the fork-guarded `HONUA_LIGHT_RUNNER` JSON selector with
+`ubuntu-latest` fallback, independently of gate admission or heavy settings.
+These eight jobs never inherit the producer label. With the repository variable
+`HONUA_PR_GATE_RUNNER` unset, its steps skip and the two producers stay on
 `ubuntu-latest`. Set it to `honua-build` to use the ephemeral runners on the lane
 build host (honua-iac `bootstrap/aws-build-host`, "PR Gate runners"). It also
 needs the variable `HONUA_PR_GATE_RUNNER_REGION` and the secret
@@ -343,15 +347,25 @@ needs the variable `HONUA_PR_GATE_RUNNER_REGION` and the secret
 host and read its heartbeat, nothing else) and runs
 `scripts/ci/select-gate-runner.sh`:
 
-- When the host's heartbeat is fresh and shows two idle runners, the three jobs
-  use the label.
-- When the host is busy, or no heartbeat arrives within three minutes, they use
-  `ubuntu-latest`. A stopped host is still woken for later runs.
+- When the current instance's heartbeat is fresh and shows two idle gate runners,
+  Build and tests and Server test producer use the selected gate label.
+- When the host is busy, or no heartbeat arrives within three minutes, the two
+  producers use `ubuntu-latest`. A stopped host is still woken for later runs.
 - Any failure selects `ubuntu-latest`. Every selection step is
   `continue-on-error`, so the job cannot fail and skip the required producer,
   which carries no job condition.
 
-Shards, admission, routing and aggregate jobs always stay hosted. Under
+Draft Format and admission/control jobs also use the fork-guarded light selector;
+with `HONUA_LIGHT_RUNNER` unset they stay hosted. The existing
+even-index affected-shard split additionally requires independent version-1 heavy
+availability from the same current-instance heartbeat. An integer idle-heavy count
+from 1 through 8 permits the configured heavy JSON selector; absent, invalid,
+stale, future-dated or replaced-instance proof keeps shards hosted. Producer
+admission still requires two idle gate runners. The selector forwards heavy proof
+through the existing Build and tests dependency, without adding aggregate needs.
+The heartbeat records availability at selection time; it does not reserve runners.
+Until MAIN activates the reviewed additive honua-iac heartbeat, heavy shards fall
+back to hosted. Under
 `REVIEW_FIRST_MODE: enforce` the selection steps skip and the gate stays hosted:
 the review release reruns only failed jobs, so attempt 2 would reuse a choice
 made at admission and could queue on a host that has since stopped.
@@ -830,3 +844,28 @@ Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
 revocation: a human or drain lane owns any manually armed dependency PR.
 If mergeability becomes clean between the live query and enable mutation, only
 GitHub's specific clean-status response ends neutrally; other API errors fail.
+
+## Admin authentication capacity split (12 November 2026)
+
+The former authentication/credentials shard now has four jobs: authentication
+and operator bearer; OAuth and OIDC; API keys; client certificates. Each retains
+the original routing paths, project and 22/32-minute budgets. Required checks
+are unchanged. Children inherit the parent's conservative 21.7-minute dispatch
+rank, including existing PR budget deferral, until scheduled trunk CI measures
+them. The coverage guard proves exact ownership of the former selection.
+See [the capacity evidence and qualification requirement](shard-timeout-budgets.md#admin-authentication-capacity-split-12-november-2026).
+
+### Managed producer memory budget
+
+The shared lean gate bounds restore and build to four MSBuild workers and sets
+`DOTNET_PROCESSOR_COUNT=4` for each child runtime. These steps disable the
+persistent MSBuild server and node reuse so restore workers cannot accumulate
+alongside the graph build. Both full and filtered builds retain their complete
+project graphs, warnings-as-errors and existing timeouts.
+
+This corrects the 12 November PR #7457 producer cancellation: its runner shared
+a 10 GiB user-slice budget with runner services; the OOM task dump contained
+25 MSBuild processes and 16 compiler processes before systemd restarted the
+runner. CPU quota alone did not bound those processes. No host resource limit
+changes are required. The changed action takes effect on the next PR Gate;
+that run supplies the after-change timing and memory evidence.

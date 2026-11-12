@@ -107,9 +107,9 @@ public sealed class AdminSampleSeedPublishThroughAdminApiTests : IAsyncLifetime
             published.ServiceName.Should().Be(_serviceName);
             published.GeometryType.Should().Be(sample.GeometryType);
 
-            await AssertCountAsync(published.LayerId, sample.ExpectedCount);
+            await AssertCountAsync(published.StorageLayerId, sample.ExpectedCount);
             await AssertExtentAsync(
-                published.LayerId,
+                published.StorageLayerId,
                 sample.ExpectedXmin,
                 sample.ExpectedYmin,
                 sample.ExpectedXmax,
