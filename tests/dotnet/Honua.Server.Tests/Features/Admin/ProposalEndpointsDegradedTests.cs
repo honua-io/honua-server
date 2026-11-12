@@ -106,114 +106,6 @@ public sealed class ProposalEndpointsDegradedTests : IAsyncLifetime
         await AssertCapabilityUnavailableAsync(response);
     }
 
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/proposals")]
-    public async Task ListProposals_WithRedisConfiguredButUnentitled_ReportsLicenseNotMissingRedis()
-    {
-        // Redis IS deployed; only the Pro `caching.redis` entitlement is missing, so the control
-        // plane was composed out by licensing. "Configure Redis and restart" would be remediation
-        // that cannot work, so the receipt names the entitlement instead (honua-release#202).
-        var fixture = new WebAppFixture()
-            .ConfigureServices(static services =>
-                services.Configure<DurableJobSubstrateOptions>(options =>
-                {
-                    options.RedisConfigured = true;
-                    options.RedisEntitled = false;
-                }));
-        await fixture.InitializeAsync();
-
-        try
-        {
-            using var client = fixture.CreateAdminClient();
-            using var response = await client.GetAsync("/api/v1/admin/proposals");
-
-            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
-
-            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var root = document.RootElement;
-            root.GetProperty("code").GetString().Should().Be(CapabilityUnavailableCodes.EntitlementErrorCode);
-            root.GetProperty("missingEntitlement").GetString()
-                .Should().Be(CapabilityUnavailableCodes.RedisCacheEntitlement);
-            root.TryGetProperty("missingDependency", out _).Should().BeFalse(
-                "Redis is present; nothing is missing but a licence");
-            root.GetProperty("remediation").GetString().Should().NotContain("Set ConnectionStrings__Redis");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
-    }
-
-    /// <summary>
-    /// honua-server#3599: the entitlement split is a property of the control plane, not of the read
-    /// routes. Approve and reject are the two the terminal journey actually blocks on
-    /// (honua-release#123 stages 7/8), and they reach <c>ControlPlaneUnavailable</c> through a
-    /// different guard than list does — approve requires BOTH the gateway and the store, reject only
-    /// the gateway — so cause classification is asserted on them directly rather than assumed from
-    /// the list route.
-    /// </summary>
-    [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
-    [Endpoint("POST /api/v1/admin/proposals/{id}/reject")]
-    public async Task ApproveAndRejectProposal_WithRedisConfiguredButUnentitled_ReportsLicenseNotMissingRedis()
-    {
-        var fixture = new WebAppFixture()
-            .ConfigureServices(static services =>
-                services.Configure<DurableJobSubstrateOptions>(options =>
-                {
-                    options.RedisConfigured = true;
-                    options.RedisEntitled = false;
-                }));
-        await fixture.InitializeAsync();
-
-        try
-        {
-            using var client = fixture.CreateAdminClient();
-
-            using var approveBody = new StringContent("{}", Encoding.UTF8, "application/json");
-            using var approve = await client.PostAsync(
-                "/api/v1/admin/proposals/does-not-exist/approve",
-                approveBody);
-            await AssertLicenseRequiredAsync(approve);
-
-            using var rejectBody = new StringContent(
-                """{"reason":"no"}""",
-                Encoding.UTF8,
-                "application/json");
-            using var reject = await client.PostAsync(
-                "/api/v1/admin/proposals/does-not-exist/reject",
-                rejectBody);
-            await AssertLicenseRequiredAsync(reject);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
-    }
-
-    private static async Task AssertLicenseRequiredAsync(HttpResponseMessage response)
-    {
-        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
-
-        var body = await response.Content.ReadAsStringAsync();
-        body.Should().NotContain("IOperationProposalStore",
-            "the refusal must not leak unresolved DI service names to a client");
-
-        using var document = JsonDocument.Parse(body);
-        var root = document.RootElement;
-        root.GetProperty("type").GetString().Should().Be(CapabilityUnavailableCodes.ProblemType);
-        root.GetProperty("code").GetString().Should().Be(CapabilityUnavailableCodes.EntitlementErrorCode);
-        root.GetProperty("missingEntitlement").GetString()
-            .Should().Be(CapabilityUnavailableCodes.RedisCacheEntitlement);
-        root.TryGetProperty("missingDependency", out _).Should().BeFalse(
-            "Redis is present; nothing is missing but a licence");
-        root.GetProperty("remediation").GetString().Should().NotContain("Set ConnectionStrings__Redis");
-        root.GetProperty("remediationRef").GetString()
-            .Should().Be(CapabilityUnavailableCodes.EntitlementRemediationRef);
-        root.GetProperty("capability").GetString()
-            .Should().Be(CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
-    }
-
     private static async Task AssertCapabilityUnavailableAsync(HttpResponseMessage response)
     {
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
@@ -227,11 +119,11 @@ public sealed class ProposalEndpointsDegradedTests : IAsyncLifetime
         root.GetProperty("type").GetString().Should().Be(CapabilityUnavailableCodes.ProblemType);
         root.GetProperty("status").GetInt32().Should().Be(503);
         root.GetProperty("code").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
-        root.GetProperty("missingDependency").GetString().Should().Be(CapabilityUnavailableCodes.RedisDependency);
+        root.GetProperty("missingDependency").GetString().Should().Be(CapabilityUnavailableCodes.SystemDatabaseDependency);
         root.GetProperty("capability").GetString().Should().Be(
             CapabilityUnavailableCodes.ControlPlaneProposalsCapability,
             "the refusal joins the operations.proposals manifest entry that reports the same surface unavailable");
         root.GetProperty("remediation").GetString().Should().NotBeNullOrWhiteSpace();
-        root.GetProperty("remediationRef").GetString().Should().Be(CapabilityUnavailableCodes.RedisRemediationRef);
+        root.GetProperty("remediationRef").GetString().Should().Be(CapabilityUnavailableCodes.SystemDatabaseRemediationRef);
     }
 }

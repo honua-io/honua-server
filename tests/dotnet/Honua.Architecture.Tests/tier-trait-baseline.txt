@@ -1365,7 +1365,6 @@ Honua.Server.Tests:Honua.Server.Tests.Features.OperateStatus.OperateStatusVerdic
 Honua.Server.Tests:Honua.Server.Tests.Features.OperationsToolset.StudioDraftOperationRuntimeTests.LiveDraftOperations_AreRuntimeDynamic`0(System.String)
 Honua.Server.Tests:Honua.Server.Tests.Features.OperationsToolset.StudioDraftOperationRuntimeTests.PublicationRequest_UsesStudioApprovalLane`0()
 Honua.Server.Tests:Honua.Server.Tests.Features.OperationsToolset.StudioDraftOperationRuntimeTests.RollbackProposalPlans_AreHighRisk`0()
-Honua.Server.Tests:Honua.Server.Tests.Features.OperationsUnavailable.UnavailableOperationInstanceStoreTests.GetAsync_WithoutRedis_ThrowsTypedCapabilityFailure`0()
 Honua.Server.Tests:Honua.Server.Tests.Features.Orchestration.FileSystemObjectStoreTriggerProbeTests.ProbeNewestAsync_EmptyStore_ReturnsNull`0()
 Honua.Server.Tests:Honua.Server.Tests.Features.Orchestration.FileSystemObjectStoreTriggerProbeTests.ProbeNewestAsync_NewObject_AdvancesMarker`0()
 Honua.Server.Tests:Honua.Server.Tests.Features.Orchestration.FileSystemObjectStoreTriggerProbeTests.ProbeNewestAsync_PrefixEscapeAttempt_ReturnsNull`0()

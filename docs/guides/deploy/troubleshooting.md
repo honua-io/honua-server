@@ -27,8 +27,7 @@ A single-node deployment with no Redis configured reports `Ready` — feature-ch
 | Exits with an options-validation error naming a `Limits` or `ControlPlane` setting | Out-of-range or malformed env value (validated at startup) | Correct the named variable; compare against [.env.example](../../../.env.example) |
 | Container restart loop, log shows migration failure | Database migration failed at startup | Fix DB connectivity/permissions; check `GET /api/v1/admin/observability/migrations` once up. `HONUA_SKIP_MIGRATIONS=true` defers (does not fix) the migration |
 | Starts but logs "connection string not configured" | `ConnectionStrings__DefaultConnection` missing | Set it; migrations and data access are skipped without it |
-| Logs "Redis durability attestation: unverified" or "not-durable" | Information only: the Redis policy could not be read (managed Redis blocks `CONFIG`) or is not durable | Nothing is disabled. See [Redis durability](#redis-durability) to decide whether you need a durable policy |
-| Exits with "Jobs:RequireDurableStore is enabled, but the durable job substrate is not attested" | You opted in to requiring an `attested` Redis policy and the outcome was something else | Fix the Redis policy per the message's remediation, or clear `Jobs__RequireDurableStore` (required on ElastiCache and MemoryDB) |
+| Exits with "Jobs:RequireDurableStore is enabled, but the durable job store is unavailable" | You required durable jobs and `ConnectionStrings__DefaultConnection` is not set | Set it to the PostgreSQL system database, or clear `Jobs__RequireDurableStore` |
 
 ## License failure mode
 
@@ -131,11 +130,9 @@ Do not disable rate limiting during an attack or raise every caller's limit to a
 
 ## Redis durability
 
-The durable job substrate and the governed control plane store acknowledged
-state (jobs, queue, execution logs, proposals) in Redis. **Any configured,
-entitled and connected Redis enables them** (owner ruling, 2026-10-10). At
-startup the server reads the Redis persistence policy once and publishes the
-outcome as information. The outcome is `attested` only when all three hold:
+Jobs, the job queue, execution logs, proposals and workflow operations are
+stored in the system database. A self-managed Redis keeps acknowledged writes
+across a restart with this policy:
 
 | Redis setting | Required value | Why |
 |---|---|---|
@@ -143,32 +140,10 @@ outcome as information. The outcome is `attested` only when all three hold:
 | `appendfsync` | `everysec` or `always` | An acknowledged write is not left only in the OS page cache |
 | `maxmemory-policy` | `noeviction` | Durable control-plane keys are never evicted under memory pressure |
 
-| Outcome (`limits.job.redisDurability.status`) | `cause` | Meaning |
-|---|---|---|
-| `attested` | (none) | The policy was read and meets all three settings |
-| `unverified` | `RedisAttestationUnavailable` | The policy could not be read. AWS ElastiCache and MemoryDB block `CONFIG`, so this is expected there |
-| `not-durable` | `RedisPersistenceDisabled`, `RedisWritePolicyUnsafe` or `RedisEvictionPolicyUnsafe` | The policy was read and does not protect acknowledged writes |
-
-**The outcome never disables anything.** `operations.proposals` and
-`jobs.runner` report `available: true` and
-`limits.job.durableJobRuntimeAvailable` is `true`. The `redis` health entry
-stays `Healthy` and carries `durability`, `cause`, `consequence` and
-`remediation` in its data. An MCP client reads that from the
-`honua://ops/health` resource. `/healthz/ready` is unaffected. The server logs
-one startup line: Information for `attested` and `unverified`, Warning for
-`not-durable`. The manifest publishes the status, cause and remediation, but not
-the raw Redis error text or the endpoint.
-
-Those capabilities read `dependency-unavailable` only when Redis is genuinely
-absent (`RedisNotConfigured`) or did not connect at startup
-(`RedisUnreachable`). They read `license-required` when Redis is configured but
-unentitled (`RedisNotEntitled`).
-
 Durability is a property of the Redis deployment you run. On managed Redis,
 rely on the service: MemoryDB's transaction log, or ElastiCache replication,
-Multi-AZ and snapshots. A stock `redis:7-alpine` defaults to `appendonly no` and
-reports `not-durable`. To make a self-managed Redis durable, start it with the
-policy:
+Multi-AZ and snapshots. A stock `redis:7-alpine` defaults to `appendonly no`.
+To make a self-managed Redis durable, start it with the policy:
 
 ```yaml
 redis:
@@ -179,18 +154,16 @@ redis:
 ### `Jobs:RequireDurableStore`
 
 `Jobs:RequireDurableStore` (environment variable `Jobs__RequireDurableStore`)
-defaults to `false`. In that state the outcome above is information only. Set it
-to `true` if the server must refuse to start unless the outcome is `attested`:
+defaults to `false`. Set it to `true` if the server must refuse to start without
+the durable job store:
 
 ```bash
 Jobs__RequireDurableStore=true
 ```
 
-With that set, any other outcome, and a missing or unreachable Redis, exits with
-a single typed startup error naming the cause and its remediation. The GDAL
-worker applies the same setting. The setting **cannot be satisfied on managed
-Redis that blocks `CONFIG`** (AWS ElastiCache, Amazon MemoryDB), because the
-policy is unreadable there. Leave it unset on those services.
+The job store is in the system database, so a server with
+`ConnectionStrings__DefaultConnection` set satisfies it. Without one the server
+exits with a single typed startup error that names the setting to add.
 
 Recent jobs: `GET /api/v1/admin/import/jobs`; durable job detail and logs: `GET /api/v1/admin/jobs/{jobId}/logs`. For stuck workflow runs, see [Automate workflows](../query-analyze/automate-workflows.md).
 
