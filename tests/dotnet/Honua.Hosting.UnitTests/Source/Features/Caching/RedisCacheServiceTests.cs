@@ -650,7 +650,8 @@ public sealed class RedisCacheServiceTests : IDisposable
         await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
         try
         {
-            Assert.NotSame(disposal, await Task.WhenAny(disposal, Task.Delay(TimeSpan.FromSeconds(1))));
+            await Task.Delay(TimeSpan.FromSeconds(1));
+            Assert.False(disposal.IsCompleted);
             Assert.False(cleaned);
         }
         finally

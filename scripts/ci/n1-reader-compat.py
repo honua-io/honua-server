@@ -124,6 +124,18 @@ KNOWN_BLOCKED = {"prior-lacks-reader-declarations", "prior-unguarded"}
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+def honua_target_framework() -> str:
+    """Target framework of the server build (#7380), read like scripts/ci/honua-target-framework.sh."""
+    override = os.environ.get("HONUA_TARGET_FRAMEWORK")
+    if override:
+        return override
+    props = (REPO_ROOT / "Directory.Build.props").read_text(encoding="utf-8")
+    match = re.search(r"<HonuaTargetFramework Condition=\"[^\"]*\">([^<]+)</HonuaTargetFramework>", props)
+    if not match:
+        raise RuntimeError("no HonuaTargetFramework default in Directory.Build.props")
+    return match.group(1)
+
+
 class GateError(RuntimeError):
     """A failure with a named outcome."""
 
@@ -479,7 +491,7 @@ def wait_postgis(pg: str) -> None:
 
 
 def build_candidate() -> Path:
-    dll = REPO_ROOT / "src/Honua.Server/bin/Release/net10.0/Honua.Server.dll"
+    dll = REPO_ROOT / "src/Honua.Server/bin/Release" / honua_target_framework() / "Honua.Server.dll"
     if not dll.exists():
         print("Building src/Honua.Server (Release) for the candidate migration run.", file=sys.stderr)
         run(["dotnet", "build", "src/Honua.Server/Honua.Server.csproj", "-c", "Release", "-nologo"],

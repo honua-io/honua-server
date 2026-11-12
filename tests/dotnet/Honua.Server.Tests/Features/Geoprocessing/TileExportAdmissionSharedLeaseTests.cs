@@ -507,7 +507,7 @@ public sealed class TileExportAdmissionSharedLeaseTests
                 _allArrived.TrySetResult();
             }
 
-            await Task.WhenAny(_allArrived.Task, Task.Delay(timeout));
+            await _allArrived.Task.WaitAsync(timeout).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         }
     }
 

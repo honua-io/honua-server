@@ -23,6 +23,18 @@
     <VersionPrefix>2026.1.1</VersionPrefix>
   </PropertyGroup>
 
+  <!--
+    One target framework for every project in this build (#7380). Projects say
+    <TargetFramework>$(HonuaTargetFramework)</TargetFramework>; a trial build on another
+    runtime passes -p:HonuaTargetFramework=net11.0 instead of editing project files.
+    scripts/ci/honua-target-framework.sh reads the same value for output paths.
+    Not inherited by separately built trees with their own Directory.Build.props
+    (docker/worker-customcode-dotnet/harness, the gp-dotnet template).
+  -->
+  <PropertyGroup>
+    <HonuaTargetFramework Condition="'$(HonuaTargetFramework)' == ''">net10.0</HonuaTargetFramework>
+  </PropertyGroup>
+
   <PropertyGroup>
     <LangVersion>preview</LangVersion>
     <Nullable>enable</Nullable>

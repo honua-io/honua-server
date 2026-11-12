@@ -160,7 +160,7 @@ public sealed class FieldReviewEndpointsTests : IAsyncLifetime
             ClientId = "field-client-1",
             Values = new Dictionary<string, JsonElement>
             {
-                ["name"] = JsonDocument.Parse(JsonSerializer.Serialize(name)).RootElement.Clone()
+                ["name"] = JsonElement.Parse(JsonSerializer.Serialize(name))
             }
         };
 
