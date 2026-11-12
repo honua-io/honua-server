@@ -48,13 +48,30 @@ public static class RasterIntegrationTestData
         });
     }
 
-    public static Task SeedOverlappingRasterStackAsync(
+    // Replaces the layer's rasters and runs the action while still holding the shared seed
+    // advisory lock, so no parallel fixture seed (whose honua.layers cleanup cascades to
+    // honua.raster_data) can delete the rows between the seed and the reads.
+    public static Task RunWithLayerRastersAsync(
         WebAppFixture fixture,
-        int count,
-        int layerId = WebAppFixture.TestLayerId)
+        int layerId,
+        IReadOnlyList<RasterSeed> rasters,
+        Func<Task> action)
+    {
+        ArgumentNullException.ThrowIfNull(fixture);
+        ArgumentNullException.ThrowIfNull(rasters);
+        ArgumentNullException.ThrowIfNull(action);
+
+        return fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
+        {
+            await ReplaceLayerRastersUnderLockAsync(fixture, layerId, rasters).ConfigureAwait(false);
+            await action().ConfigureAwait(false);
+        });
+    }
+
+    public static RasterSeed[] CreateOverlappingRasterStack(int count)
     {
         var baseTime = new DateTimeOffset(2024, 3, 1, 0, 0, 0, TimeSpan.Zero);
-        var rasters = Enumerable.Range(0, count)
+        return Enumerable.Range(0, count)
             .Select(index => new RasterSeed(
                 Name: $"overlap-{index + 1}",
                 Width: 2,
@@ -67,8 +84,6 @@ public static class RasterIntegrationTestData
                 AcquisitionDate: baseTime.AddMinutes(index),
                 CreatedAt: baseTime.AddMinutes(index)))
             .ToArray();
-
-        return ReplaceLayerRastersAsync(fixture, layerId, rasters);
     }
 
     public static byte[] CreatePointSelectionGeometry(double x, double y)
