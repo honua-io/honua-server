@@ -25,6 +25,8 @@ internal sealed class ApiKeyAuthenticationDependencies
 
     public AuthenticationAttemptGate? AttemptGate { get; init; }
 
+    internal TimeSpan? RefusalFor(IPAddress? client) => AttemptGate?.RefusalFor(client);
+
     internal AuthenticationAttempt BeginAttempt(IPAddress? client, string credential)
         => AttemptGate?.Begin(client, credential) ?? AuthenticationAttempt.Untracked();
 }

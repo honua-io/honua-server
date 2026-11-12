@@ -25,6 +25,8 @@ internal enum AuthenticationAttemptOutcome
 
 internal interface IAuthenticationFailureLimiter
 {
+    TimeSpan? RefusalFor(string source);
+
     AuthenticationAttemptAdmission TryBeginAttempt(AuthenticationAttemptKey key);
 
     void EndAttempt(AuthenticationAttemptKey key, AuthenticationAttemptOutcome outcome);
@@ -41,6 +43,17 @@ internal sealed class AuthenticationFailureLimiter(
     private readonly AuthenticationFailureLimiterOptions _options = options.Value;
     private readonly Dictionary<string, FailureWindow> _sources = new(StringComparer.Ordinal);
     private readonly Lock _gate = new();
+
+    public TimeSpan? RefusalFor(string source)
+    {
+        var now = timeProvider.GetUtcNow();
+        lock (_gate)
+        {
+            return _sources.TryGetValue(source, out var window) && window.RefusedUntil is { } until && until > now
+                ? until - now
+                : null;
+        }
+    }
 
     // An in-flight credential holds a slot, so a parallel burst of distinct guesses cannot pass the threshold; the same credential in flight shares one slot.
     public AuthenticationAttemptAdmission TryBeginAttempt(AuthenticationAttemptKey key)

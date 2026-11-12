@@ -19,30 +19,39 @@ internal sealed class AuthenticationAttemptGate(
     private readonly IPNetwork[] _exemptNetworks = [.. options.Value.ExemptNetworks.Select(network => IPNetwork.Parse(network))];
     private int _missingAddressReported;
 
+    // Checks a refusal without reserving an in-flight slot.
+    public TimeSpan? RefusalFor(IPAddress? client)
+        => TrackedSource(client) is { } source ? limiter.RefusalFor(source) : null;
+
     public AuthenticationAttempt Begin(IPAddress? client, string credential)
+    {
+        if (TrackedSource(client) is not { } source)
+        {
+            return AuthenticationAttempt.Untracked();
+        }
+
+        var key = new AuthenticationAttemptKey(source, StringComparer.Ordinal.GetHashCode(credential));
+        var admission = limiter.TryBeginAttempt(key);
+        return admission.Admitted
+            ? AuthenticationAttempt.Tracked(limiter, key)
+            : AuthenticationAttempt.Refused(admission.RetryAfter);
+    }
+
+    private string? TrackedSource(IPAddress? client)
     {
         if (!_options.Enabled)
         {
-            return AuthenticationAttempt.Untracked();
+            return null;
         }
 
         if (client is null)
         {
             ReportMissingAddressOnce();
-            return AuthenticationAttempt.Untracked();
+            return null;
         }
 
         var address = client.IsIPv4MappedToIPv6 ? client.MapToIPv4() : client;
-        if (_exemptNetworks.Any(network => network.Contains(address)))
-        {
-            return AuthenticationAttempt.Untracked();
-        }
-
-        var key = new AuthenticationAttemptKey(ClientAddressPartition.From(address)!, StringComparer.Ordinal.GetHashCode(credential));
-        var admission = limiter.TryBeginAttempt(key);
-        return admission.Admitted
-            ? AuthenticationAttempt.Tracked(limiter, key)
-            : AuthenticationAttempt.Refused(admission.RetryAfter);
+        return _exemptNetworks.Any(network => network.Contains(address)) ? null : ClientAddressPartition.From(address);
     }
 
     private void ReportMissingAddressOnce()

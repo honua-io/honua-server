@@ -116,10 +116,8 @@ internal sealed class PortalTokenAuthenticationHandler(
         // The request context carries Origin/Referer and the resolved client IP, so a key's
         // referrer and IP restrictions apply on every token transport, the URL included.
         var apiKey = await ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
-            token,
-            AuthenticationExtensions.ApiKeyScheme,
+            new ApiKeyPresentation(token, AuthenticationExtensions.ApiKeyScheme, ApiKeyRequestContext.From(Context)),
             dependencies,
-            ApiKeyRequestContext.From(Context),
             Logger,
             Context.RequestAborted).ConfigureAwait(false);
         return apiKey;

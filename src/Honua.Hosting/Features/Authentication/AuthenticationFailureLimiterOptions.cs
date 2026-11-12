@@ -31,32 +31,31 @@ internal sealed class AuthenticationFailureLimiterOptionsValidator : IValidateOp
 {
     public ValidateOptionsResult Validate(string? name, AuthenticationFailureLimiterOptions options)
     {
-        var failures = new List<string>();
-        AddIfOutOfRange(failures, nameof(options.Threshold), options.Threshold, int.MaxValue);
-        AddIfOutOfRange(failures, nameof(options.MaxTrackedSources), options.MaxTrackedSources, AuthenticationFailureLimiterOptions.MaxSources);
-        AddIfOutOfRange(failures, nameof(options.Window), options.Window);
-        AddIfOutOfRange(failures, nameof(options.BlockDuration), options.BlockDuration);
-        foreach (var network in options.ExemptNetworks.Where(network => !IPNetwork.TryParse(network, out _)))
-        {
-            failures.Add($"{AuthenticationFailureLimiterOptions.SectionName}:ExemptNetworks entry '{network}' is not a CIDR range.");
-        }
-
+        var failures = new[]
+            {
+                OutOfRange(nameof(options.Threshold), options.Threshold, int.MaxValue),
+                OutOfRange(nameof(options.MaxTrackedSources), options.MaxTrackedSources, AuthenticationFailureLimiterOptions.MaxSources),
+                OutOfRange(nameof(options.Window), options.Window),
+                OutOfRange(nameof(options.BlockDuration), options.BlockDuration),
+            }
+            .Concat(options.ExemptNetworks.Select(NotANetwork))
+            .OfType<string>()
+            .ToList();
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
     }
 
-    private static void AddIfOutOfRange(List<string> failures, string setting, TimeSpan value)
-    {
-        if (value <= TimeSpan.Zero || value > AuthenticationFailureLimiterOptions.MaxDuration)
-        {
-            failures.Add($"{AuthenticationFailureLimiterOptions.SectionName}:{setting} must be positive and at most {AuthenticationFailureLimiterOptions.MaxDuration}.");
-        }
-    }
+    private static string? OutOfRange(string setting, int value, int maximum)
+        => value <= 0 || value > maximum
+            ? $"{AuthenticationFailureLimiterOptions.SectionName}:{setting} must be positive and at most {maximum}."
+            : null;
 
-    private static void AddIfOutOfRange(List<string> failures, string setting, int value, int maximum)
-    {
-        if (value <= 0 || value > maximum)
-        {
-            failures.Add($"{AuthenticationFailureLimiterOptions.SectionName}:{setting} must be positive and at most {maximum}.");
-        }
-    }
+    private static string? OutOfRange(string setting, TimeSpan value)
+        => value <= TimeSpan.Zero || value > AuthenticationFailureLimiterOptions.MaxDuration
+            ? $"{AuthenticationFailureLimiterOptions.SectionName}:{setting} must be positive and at most {AuthenticationFailureLimiterOptions.MaxDuration}."
+            : null;
+
+    private static string? NotANetwork(string network)
+        => IPNetwork.TryParse(network, out _)
+            ? null
+            : $"{AuthenticationFailureLimiterOptions.SectionName}:ExemptNetworks entry '{network}' is not a network address with a prefix length, such as 10.0.0.0/8 or 192.0.2.10/32.";
 }

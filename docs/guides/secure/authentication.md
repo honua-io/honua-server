@@ -234,13 +234,16 @@ OIDC endpoints continue to use same-origin session cookies.
 #### Failed sign-in and API-key attempts
 
 The server counts failed sign-in and API-key attempts per client address and
-briefly refuses a source after repeated failures. A wrong administrator password
-or unrecognized key counts wherever it is checked: browser session and
-password-token sign-in, `X-API-Key`, Basic compatibility, bearer and `token`
-credentials, and `generateToken`. A password mismatch counts even while the key
-store is unavailable; an unconfigured or unresolvable administrator password does
-not. A success does not clear earlier failures; they expire with the window.
-Unrecognized or expired portal tokens and OIDC access tokens are not counted.
+briefly refuses a source after repeated failures. An attempt counts when the
+presented value matches no managed key and is then compared with the configured
+administrator password and does not match it. This applies to browser session
+and password-token sign-in, `X-API-Key`, Basic compatibility, and bearer and
+`token` credentials. It still applies while the key store is unavailable. Nothing
+counts when no administrator password is configured or it cannot be resolved.
+Unknown or expired portal tokens and OIDC access tokens are not compared and do
+not count. For `generateToken`, every exchange the administrator verifier rejects
+counts. A success does not clear earlier failures; they expire with the window.
+OAuth client-credential secrets are not counted.
 
 While a source is refused, no credential from it is checked. Password sign-in
 returns `429` with `Retry-After`, and an `X-API-Key` request that the API-key
@@ -261,9 +264,12 @@ server instance, and a request without a client address is not counted.
 | `Window` | `00:15:00` | Counting window, started by the first failure. |
 | `BlockDuration` | `00:15:00` | How long a source stays refused. |
 | `MaxTrackedSources` | `10000` | Addresses tracked per instance; expired entries are evicted first. |
-| `ExemptNetworks` | none | CIDR ranges that are never counted or refused. |
+| `ExemptNetworks` | none | Ranges that are never counted or refused, written as a network address and prefix length: `10.0.0.0/8`, or `/32` and `/128` for one address. |
 
-`Window` and `BlockDuration` are at most one day.
+`Window` and `BlockDuration` are at most one day. In Development and Test, an
+administrator password of exactly 64 lowercase hex characters is treated as a
+portal token on bearer and `token` transports and is not accepted there; use
+`X-API-Key` or a password of another shape.
 
 ### 3. Enable OIDC for browser and admin sign-in
 

@@ -70,6 +70,21 @@ public sealed class ApiKeyAuthenticationFailureLimitTests
     }
 
     [UnitTest]
+    public async Task AuthenticateAsync_MoreDistinctValidKeysInFlightThanTheThreshold_AreAllAdmitted()
+    {
+        var release = new TaskCompletionSource<AdminApiKeyValidationResult?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _store.ValidateAsync(Arg.Is<string>(key => key.StartsWith("hnua_valid-", StringComparison.Ordinal)), Arg.Any<CancellationToken>())
+            .Returns(_ => release.Task);
+        await FailAsync(Threshold - 1);
+
+        var inFlight = Enumerable.Range(0, Threshold + 8).Select(index => AuthenticateAsync("hnua_valid-" + index)).ToArray();
+        release.SetResult(ScopedKeyRecord());
+        var results = await Task.WhenAll(inFlight);
+
+        results.Should().AllSatisfy(result => result.Result.Succeeded.Should().BeTrue());
+    }
+
+    [UnitTest]
     public async Task AuthenticateAsync_AfterRefusalElapses_AcceptsTheValidKey()
     {
         await FailAsync(Threshold);
