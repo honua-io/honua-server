@@ -22,6 +22,44 @@ public sealed class ConfigurableOperationPolicyDecisionPointTests
     private const string PublishOperationId = "service.publish";
 
     [UnitTest]
+    public async Task EvaluateAsync_AgentPublishWithConfiguredDeny_PreservesDeny()
+    {
+        var pdp = BuildPdp(new OperationPolicyOptions
+        {
+            Enabled = true,
+            Rules = [new OperationPolicyRule
+            {
+                OperationId = PublishOperationId,
+                Decision = PolicyDecisionKind.Deny,
+                Reason = "publishing is locked"
+            }]
+        });
+
+        var decision = await Evaluate(pdp, new OperationPolicyContext { Roles = ["agent", "admin"] });
+
+        decision.Kind.Should().Be(PolicyDecisionKind.Deny);
+        decision.Reason.Should().Be("publishing is locked");
+        decision.ApprovalLane.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task EvaluateAsync_AgentPublishWithDefaultDeny_PreservesDeny()
+    {
+        var pdp = BuildPdp(new OperationPolicyOptions
+        {
+            Enabled = true,
+            DefaultDecision = PolicyDecisionKind.Deny,
+            DefaultReason = "publishing is locked"
+        });
+
+        var decision = await Evaluate(pdp, new OperationPolicyContext { Roles = ["agent"] });
+
+        decision.Kind.Should().Be(PolicyDecisionKind.Deny);
+        decision.Reason.Should().Be("publishing is locked");
+        decision.ApprovalLane.Should().BeNull();
+    }
+
+    [UnitTest]
     public async Task EvaluateAsync_When_Disabled_Returns_Allow()
     {
         var pdp = BuildPdp(new OperationPolicyOptions

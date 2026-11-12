@@ -58,6 +58,8 @@ internal static class AgentApprovalFilter
             if (id is not null && await store.GetAsync(id, context.RequestAborted).ConfigureAwait(false) is { } existing)
             {
                 changesAudience = !string.Equals(update.OwnerId, existing.OwnerId, StringComparison.Ordinal);
+                // Persist against the same version whose ownership was authorized.
+                update.AuthorizedGeneration = existing.Generation;
             }
         }
 
