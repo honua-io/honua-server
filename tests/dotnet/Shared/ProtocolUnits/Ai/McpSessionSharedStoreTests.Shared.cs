@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Data.Common;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
 using Honua.TestKit.Attributes;
@@ -11,25 +12,21 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using NSubstitute;
-using StackExchange.Redis;
 using Xunit;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
 public sealed partial class McpSessionSharedStoreTests
 {
-    /// <summary>
-    /// Shared in-process stand-in for Redis: one instance is handed to several
-    /// managers, each playing a server replica. Honours TTLs against the test clock.
-    /// </summary>
+    // Shared in-process stand-in for the system database: one instance is handed to several
+    // managers, each playing a server replica. Honours TTLs against the test clock.
     internal sealed class FakeSharedSessionStore(TimeProvider time) : IMcpSessionStore
     {
         private readonly ConcurrentDictionary<string, (McpSessionRecord Record, DateTimeOffset ExpiresAt)> _records =
             new(StringComparer.Ordinal);
 
-        private readonly ConcurrentBag<Action<string>> _subscribers = [];
-
         private int _reads;
+        private int _polls;
         private McpMemoryRequestStore? _requests;
 
         public Exception? RequestReadException { get; set; }
@@ -69,21 +66,6 @@ public sealed partial class McpSessionSharedStoreTests
             return Task.CompletedTask;
         }
 
-        public Task<McpSessionRecord?> GetAndTouchAsync(string sessionId, TimeSpan idleTimeout, CancellationToken cancellationToken)
-        {
-            ThrowIfFailing();
-            Interlocked.Increment(ref _reads);
-            if (!TryGetLive(sessionId, out var record))
-            {
-                return Task.FromResult<McpSessionRecord?>(null);
-            }
-
-            var snapshot = record;
-            _records[sessionId] = (record, time.GetUtcNow() + idleTimeout);
-            OnRead?.Invoke(sessionId);
-            return Task.FromResult<McpSessionRecord?>(snapshot);
-        }
-
         public Task<McpSessionRecord?> GetAsync(string sessionId, CancellationToken cancellationToken)
         {
             ThrowIfFailing();
@@ -96,7 +78,7 @@ public sealed partial class McpSessionSharedStoreTests
             ThrowIfFailing();
             if (FailTouch)
             {
-                throw new RedisConnectionException(ConnectionFailureType.UnableToConnect, "simulated touch outage");
+                throw new SimulatedStoreOutageException("simulated touch outage");
             }
 
             if (!TryGetLive(sessionId, out var record))
@@ -105,9 +87,8 @@ public sealed partial class McpSessionSharedStoreTests
             }
 
             _records[sessionId] = (record, time.GetUtcNow() + idleTimeout);
-            // The read path touches only after the principal matches. A delete that
-            // races that touch has already extended the TTL, then publishes, and
-            // Adopt must still refuse the snapshot.
+            // The read path touches only after the principal matches. A delete can race
+            // that touch after it has extended the TTL.
             OnRead?.Invoke(sessionId);
             return Task.FromResult(true);
         }
@@ -122,19 +103,24 @@ public sealed partial class McpSessionSharedStoreTests
         {
             ThrowIfFailing();
             _records.TryRemove(sessionId, out _);
-            foreach (var subscriber in _subscribers.ToArray())
-            {
-                subscriber(sessionId);
-            }
-
             return Task.CompletedTask;
         }
 
-        public IDisposable? SubscribeToRemovals(Action<string> onRemoved)
+        public async Task<McpPollResult> PollAsync(McpPollRequest request, CancellationToken cancellationToken)
         {
-            _subscribers.Add(onRemoved);
-            return null;
+            ThrowIfFailing();
+            if (RequestReadException is { } failure)
+            {
+                throw failure;
+            }
+
+            Interlocked.Increment(ref _polls);
+            var endedSessions = request.SessionIds.Where(id => !TryGetLive(id, out _)).ToArray();
+            var endedRequests = await McpRequestPoll.ReadEachAsync(this, request.Requests, cancellationToken);
+            return new McpPollResult(endedSessions, endedRequests);
         }
+
+        public int Polls => _polls;
 
         public void RemoveSilently(string sessionId) => _records.TryRemove(sessionId, out _);
 
@@ -155,9 +141,11 @@ public sealed partial class McpSessionSharedStoreTests
         {
             if (Fail)
             {
-                throw new RedisConnectionException(ConnectionFailureType.UnableToConnect, "simulated outage");
+                throw new SimulatedStoreOutageException("simulated outage");
             }
         }
     }
+
+    internal sealed class SimulatedStoreOutageException(string message) : DbException(message);
 
 }

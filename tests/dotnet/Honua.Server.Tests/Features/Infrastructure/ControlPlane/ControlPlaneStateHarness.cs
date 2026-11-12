@@ -8,6 +8,7 @@ using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Server.Features.Operations;
 using Honua.Server.Features.Infrastructure.SecurityState;
+using Honua.Server.Features.Infrastructure.McpSessions;
 using Honua.Server.Features.Studio.Drafts;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
@@ -93,6 +94,8 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
     public PostgresUniversalProgressStore CreateProgressStore() => new(_jobs.Database);
 
     public PostgresPackageDraftBacking CreatePackageDraftBacking() => new(_jobs.Database);
+
+    public PostgresMcpSessionStore CreateMcpSessionStore() => new(_jobs.Database);
 
     // Every stored column of the approval tables as text, so a leak through any field is seen.
     public async Task<StoredTextScan> ScanApprovalTablesForAsync(string text)

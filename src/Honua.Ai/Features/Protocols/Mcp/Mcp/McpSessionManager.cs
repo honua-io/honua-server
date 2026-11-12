@@ -2,10 +2,10 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Data.Common;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Channels;
-using StackExchange.Redis;
 
 namespace Honua.Ai.Protocols.Mcp;
 
@@ -47,10 +47,9 @@ internal sealed partial class McpSessionManager
     // Serializes capacity enforcement (prune + evict + admit) so the cap is never
     // transiently exceeded under a burst of concurrent initializes. Reads
     // (validation, enqueue, reader lookup) stay lock-free on the concurrent map.
-    // Also serializes removal tombstones with Adopt: a broadcast can arrive before
+    // Also serializes removal tombstones with Adopt: a poll can see a removal before
     // the cache-miss read installs the record, and Terminate then finds nothing.
     private readonly object _capacityGate = new();
-    private readonly Dictionary<string, DateTimeOffset> _removedSessions = new(StringComparer.Ordinal);
 
     private readonly int _maxSessions;
     private readonly int _maxAnonymousSessions;
@@ -61,9 +60,6 @@ internal sealed partial class McpSessionManager
     private readonly IMcpSessionStore? _store;
     private readonly McpStatelessSessionTokens? _statelessTokens;
     private readonly ILogger? _logger;
-
-    // Held for the manager's (process) lifetime; the multiplexer owns teardown.
-    private readonly IDisposable? _removalSubscription;
 
     public McpSessionManager(
         int maxSessions = 10_000,
@@ -94,28 +90,6 @@ internal sealed partial class McpSessionManager
         // only for hosts without one.
         _statelessTokens = store is null ? statelessTokens : null;
         _logger = logger;
-
-        // A DELETE served by another replica must end this replica's node-local
-        // session work (SSE channel, progress bridges) immediately, not on the next
-        // request that happens to land here.
-        if (_store is not null)
-        {
-            try
-            {
-                _removalSubscription = _store.SubscribeToRemovals(id =>
-                {
-                    // Record the removal even when this replica has not adopted the
-                    // session yet. A read already in flight can otherwise install it
-                    // after Terminate finds no local entry.
-                    RememberRemoval(id);
-                    Terminate(id);
-                });
-            }
-            catch (Exception ex) when (IsStoreFailure(ex))
-            {
-                LogStoreFailure(ex, "subscribe");
-            }
-        }
     }
 
     public bool HasSharedStore => _store is not null;
@@ -124,8 +98,6 @@ internal sealed partial class McpSessionManager
         _store is not null ? McpSessionMode.Shared
         : _statelessTokens is not null ? McpSessionMode.Stateless
         : McpSessionMode.InMemory;
-
-    public bool ReceivesSharedRemovals => _removalSubscription is not null;
 
     public string CreateSession()
     {
@@ -319,8 +291,7 @@ internal sealed partial class McpSessionManager
     // Termination fails when the shared record cannot be removed, so the caller does not acknowledge an end other replicas would miss.
     public async Task<McpSessionTermination> TerminateAsync(string sessionId, CancellationToken cancellationToken)
     {
-        // Local first: the store's removal broadcast also reaches this instance and
-        // must not race the result reported here.
+        // Local first, so the result reported here does not depend on the store.
         var found = Terminate(sessionId);
         if (_statelessTokens is not null)
         {
@@ -334,6 +305,7 @@ internal sealed partial class McpSessionManager
             try
             {
                 await _store.RemoveAsync(sessionId, cancellationToken).ConfigureAwait(false);
+                RememberRemoval(sessionId);
             }
             catch (Exception ex) when (IsStoreFailure(ex))
             {
@@ -375,7 +347,7 @@ internal sealed partial class McpSessionManager
     }
 
     private static bool IsStoreFailure(Exception ex) =>
-        ex is RedisException or TimeoutException or JsonException or ObjectDisposedException;
+        ex is DbException or TimeoutException or JsonException or ObjectDisposedException;
 
     private void LogStoreFailure(Exception ex, string operation)
     {
@@ -506,59 +478,6 @@ internal sealed partial class McpSessionManager
         return true;
     }
 
-    private void RememberRemoval(string sessionId)
-    {
-        if (string.IsNullOrEmpty(sessionId))
-        {
-            return;
-        }
-
-        var now = _timeProvider.GetUtcNow();
-        lock (_capacityGate)
-        {
-            _removedSessions[sessionId] = now;
-            if (_removedSessions.Count <= _maxSessions)
-            {
-                return;
-            }
-
-            var cutoff = now - _idleTimeout;
-            List<string>? stale = null;
-            foreach (var pair in _removedSessions)
-            {
-                if (pair.Value < cutoff)
-                {
-                    (stale ??= []).Add(pair.Key);
-                }
-            }
-
-            if (stale is not null)
-            {
-                foreach (var id in stale)
-                {
-                    _removedSessions.Remove(id);
-                }
-            }
-        }
-    }
-
-    // Caller holds _capacityGate.
-    private bool WasRemoved(string sessionId, DateTimeOffset now)
-    {
-        if (!_removedSessions.TryGetValue(sessionId, out var removedAt))
-        {
-            return false;
-        }
-
-        if (removedAt < now - _idleTimeout)
-        {
-            _removedSessions.Remove(sessionId);
-            return false;
-        }
-
-        return true;
-    }
-
     public bool TryGetReader(string sessionId, out ChannelReader<string> reader)
     {
         if (!string.IsNullOrEmpty(sessionId) && _sessions.TryGetValue(sessionId, out var session))
@@ -572,6 +491,7 @@ internal sealed partial class McpSessionManager
             }
 
             session.Touch(now);
+            WatchSession(session);
             reader = session.Channel.Reader;
             return true;
         }
@@ -580,10 +500,20 @@ internal sealed partial class McpSessionManager
         return false;
     }
 
-    public CancellationToken GetLifetimeToken(string sessionId) =>
-        !string.IsNullOrEmpty(sessionId) && _sessions.TryGetValue(sessionId, out var session)
-            ? session.Lifetime.Token
-            : CancellationToken.None;
+    // Work bound to the token ends when the session ends anywhere, so this node starts polling for it.
+    public CancellationToken GetLifetimeToken(string sessionId)
+    {
+        if (string.IsNullOrEmpty(sessionId) || !_sessions.TryGetValue(sessionId, out var session))
+        {
+            return CancellationToken.None;
+        }
+
+        WatchSession(session);
+        return session.Lifetime.Token;
+    }
+
+    private CancellationToken SessionLifetimeOf(string sessionId) =>
+        _sessions.TryGetValue(sessionId, out var session) ? session.Lifetime.Token : CancellationToken.None;
 
     // Server-initiated notification enqueues do not refresh the idle window, which tracks client activity only.
     public bool TryEnqueue(string sessionId, string payload)
@@ -776,6 +706,9 @@ internal sealed partial class McpSessionManager
         public DateTimeOffset LastAccessUtc { get; private set; }
 
         public void Touch(DateTimeOffset now) => LastAccessUtc = now;
+
+        // This node holds a stream or work bound to the session's lifetime.
+        public bool Watched { get; set; }
 
         public Channel<string> Channel { get; } = System.Threading.Channels.Channel.CreateBounded<string>(
             new BoundedChannelOptions(NotificationBufferCapacity)

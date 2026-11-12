@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Diagnostics.CodeAnalysis;
+using Honua.Ai.Protocols.Mcp;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -12,6 +13,7 @@ using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Infrastructure.Security;
 using Honua.Server.Features.Operations;
 using Honua.Server.Features.Infrastructure.SecurityState;
+using Honua.Server.Features.Infrastructure.McpSessions;
 using Honua.Server.Features.Studio.Drafts;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
@@ -66,6 +68,11 @@ internal static class PostgresSharedStateRegistration
             static () => new InMemoryIdempotencyReservationStore());
         services.AddSharedOrLocal<ITokenReplayStore, PostgresTokenReplayStore>(static () => new InMemoryTokenReplayStore());
         services.AddPackageDrafts();
+        services.TryAddSingleton<PostgresMcpSessionStore>();
+        // Without a system database there is no shared session store (deliberately null), and the
+        // MCP session manager keeps sessions in process.
+        services.TryAddSingleton<IMcpSessionStore>(provider =>
+            provider.GetService<NpgsqlDataSource>() is not null ? provider.GetRequiredService<PostgresMcpSessionStore>() : null!);
 
         services.AddRetentionSweep<PostgresOperationProposalStore>();
         services.AddRetentionSweep<PostgresWorkflowOperationStore>();
@@ -76,6 +83,7 @@ internal static class PostgresSharedStateRegistration
         services.AddRetentionSweep<PostgresTokenReplayStore>();
         services.AddRetentionSweep<PostgresIdempotencyReservationStore>();
         services.AddRetentionSweep<PostgresPackageDraftBacking>();
+        services.AddRetentionSweep<PostgresMcpSessionStore>();
         return services;
     }
 

@@ -30,6 +30,21 @@ public sealed class McpRequestCancellationTests
         Assert.False(await request.CompleteAsync());
     }
 
+    [UnitTest]
+    public async Task Poll_WithoutWatchedSessionsOrRunningRequests_DoesNotQueryTheStore()
+    {
+        var store = new McpSessionSharedStoreTests.FakeSharedSessionStore(TimeProvider.System);
+        var manager = new McpSessionManager(store: store);
+        var session = (await manager.TryCreateSessionAsync(Alice, false, null, CancellationToken.None))!;
+
+        await manager.PollOnceAsync(CancellationToken.None);
+        Assert.Equal(0, store.Polls);
+
+        manager.GetLifetimeToken(session);
+        await manager.PollOnceAsync(CancellationToken.None);
+        Assert.True(store.Polls >= 1);
+    }
+
     [UnitTheory]
     [InlineData(Bob, "7")]
     [InlineData("actor:alice|tenant:b", "7")]
@@ -157,7 +172,7 @@ public sealed class McpRequestCancellationTests
         store.Fail = true;
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => stopped.WaitAsync(TimeSpan.FromSeconds(4)));
         Assert.False(await request.CompleteAsync());
-        await Assert.ThrowsAsync<StackExchange.Redis.RedisConnectionException>(async () =>
+        await Assert.ThrowsAsync<McpSessionSharedStoreTests.SimulatedStoreOutageException>(async () =>
             await manager.StartRequestAsync(session, Alice, Id("2"), CancellationToken.None));
     }
 
@@ -195,7 +210,7 @@ public sealed class McpRequestCancellationTests
     }
 
     [UnitTest]
-    public async Task MissedRemovalBroadcast_EndsWorkWhenAuthoritativeSessionDisappears()
+    public async Task SessionRemovedElsewhere_EndsWorkOnTheNextPoll()
     {
         var store = new McpSessionSharedStoreTests.FakeSharedSessionStore(TimeProvider.System);
         var manager = new McpSessionManager(store: store);

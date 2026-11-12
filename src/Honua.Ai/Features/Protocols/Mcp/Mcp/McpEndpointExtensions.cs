@@ -778,7 +778,7 @@ internal static class McpEndpointExtensions
             }
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested
-            && ex is (StackExchange.Redis.RedisException or TimeoutException or OperationCanceledException or JsonException or ObjectDisposedException))
+            && ex is (System.Data.Common.DbException or TimeoutException or OperationCanceledException or JsonException or ObjectDisposedException))
         {
             return ErrorResponse(request.Id.Value, McpErrorMapper.RequestRegistryUnavailable());
         }

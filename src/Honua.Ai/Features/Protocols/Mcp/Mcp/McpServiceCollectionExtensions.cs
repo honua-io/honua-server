@@ -34,21 +34,15 @@ internal static class McpServiceCollectionExtensions
         // Streamable-HTTP session registry (honua-server#1954). A process-wide
         // singleton constructed via a factory so it picks up the configured
         // lifecycle bounds and the host TimeProvider (defaults to
-        // TimeProvider.System when none is registered). When Redis is connected
-        // (the governed control plane requires it) session records are shared
-        // through RedisMcpSessionStore, so a session negotiated on any instance is
-        // honoured by every instance (honua-release#531 journey stage 1.5); without
-        // a multiplexer the registry is in-memory on a single instance and
-        // stateless on a multi-instance host. An explicitly registered
-        // IMcpSessionStore wins (tests compose a shared fake).
+        // TimeProvider.System when none is registered). A host with a system
+        // database registers the shared IMcpSessionStore, so a session negotiated
+        // on any instance is honoured by every instance; without one the registry
+        // is in-memory on a single instance and stateless on a multi-instance host.
         services.TryAddSingleton(static sp =>
         {
             var options = sp.GetRequiredService<IOptions<McpOptions>>().Value;
             var timeProvider = sp.GetService<TimeProvider>() ?? TimeProvider.System;
-            var store = sp.GetService<IMcpSessionStore>()
-                ?? (sp.GetService<StackExchange.Redis.IConnectionMultiplexer>() is { } redis
-                    ? new RedisMcpSessionStore(redis)
-                    : null);
+            var store = sp.GetService<IMcpSessionStore>();
 
             // Without a store, a host that runs as several instances (Lambda, a
             // MultiNode deployment) mints signed self-describing session ids so any
