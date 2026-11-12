@@ -15,7 +15,7 @@ env:
   AWS_ECR_REPOSITORY: ${{ vars.AWS_ECR_REPOSITORY }}
   ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
   ACR_REPOSITORY: ${{ vars.ACR_REPOSITORY }}
-  TRIVY_IMAGE: aquasec/trivy:0.68.1
+  TRIVY_IMAGE: aquasec/trivy:0.68.1@sha256:a93fd67162843c0f749002af9245fe9a2e5edc41445bd71d3949c803e95ef05b
 
 concurrency:
   group: deploy-${{ github.ref }}
@@ -269,6 +269,15 @@ jobs:
           docker pull "$CANDIDATE"
           python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE"
 
+      # On v* tags no public tag is assigned until the exact candidate digest passes the blocking
+      # Trivy gate (fixable HIGH/CRITICAL only, by design; see scripts/ci/trivy-release-gate.sh).
+      - name: Gate native-AOT tag release on fixable HIGH/CRITICAL vulnerabilities
+        if: matrix.image_key == 'aot' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          CANDIDATE: ${{ steps.targets.outputs.staging_image }}@${{ steps.aot_candidate.outputs.digest }}
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
+        run: scripts/ci/trivy-release-gate.sh "$CANDIDATE"
+
       - name: Publish verified native-AOT architecture tags
         if: matrix.image_key == 'aot'
         shell: bash
@@ -284,7 +293,7 @@ jobs:
             --staging-tag "boundary-candidate-${{ matrix.image_key }}-${{ matrix.arch }}-${{ github.sha }}" \
             --authfile "$HOME/.docker/config.json"
 
-      - name: Build and push JIT image
+      - name: Build JIT candidate by digest
         id: build
         if: matrix.image_key == 'jit'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
@@ -292,8 +301,7 @@ jobs:
           context: .
           file: ${{ matrix.dockerfile }}
           platforms: ${{ matrix.platform }}
-          push: true
-          tags: ${{ steps.arch_tags.outputs.tags }}
+          outputs: type=image,name=${{ steps.targets.outputs.staging_image }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           # Immutable deployment identity (#3038): the running process reads HONUA_GIT_SHA to
           # advertise deploymentRevision on the capability manifest and streaming capabilities.
@@ -306,6 +314,30 @@ jobs:
           cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:${{ matrix.cache_scope }}-${{ matrix.arch }},mode=max
           provenance: true
           sbom: true
+
+      # On v* tags no public tag is assigned until the exact candidate digest passes the blocking
+      # Trivy gate (fixable HIGH/CRITICAL only, by design; see scripts/ci/trivy-release-gate.sh).
+      - name: Gate JIT tag release on fixable HIGH/CRITICAL vulnerabilities
+        if: matrix.image_key == 'jit' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          CANDIDATE: ${{ steps.targets.outputs.staging_image }}@${{ steps.build.outputs.digest }}
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
+        run: scripts/ci/trivy-release-gate.sh "$CANDIDATE"
+
+      - name: Publish JIT architecture tags
+        if: matrix.image_key == 'jit'
+        shell: bash
+        env:
+          CANDIDATE: ${{ steps.targets.outputs.staging_image }}@${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.arch_tags.outputs.tags }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends skopeo
+          printf '%s\n' "$TAGS" | python3 scripts/ci/promote-verified-image.py \
+            --candidate "$CANDIDATE" \
+            --staging-tag "candidate-${{ matrix.image_key }}-${{ matrix.arch }}-${{ github.sha }}" \
+            --authfile "$HOME/.docker/config.json"
 
       - name: Pull image for Trivy scan
         id: scan_prep

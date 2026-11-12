@@ -657,7 +657,7 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
                     distributedCache,
                     sp.GetRequiredService<ILogger<RedisImportJobManager>>(),
                     new StaticHostEnvironment("Production"),
-                    redis));
+                    new ImportCoordinationStores(redis, new InMemoryLeaseStore())));
             });
 
         try
@@ -754,7 +754,6 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
         finally
         {
             await isolatedFixture.DisposeAsync();
-            ((IDisposable)coordination.JobManager).Dispose();
         }
     }
 
