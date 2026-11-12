@@ -12,7 +12,8 @@ namespace Honua.TestKit.Infrastructure;
 // public.schema_versions makes that run replay every script in one transaction, whose ALTERs on
 // the global honua tables deadlock with other live hosts' background services. Journaling the
 // shared database once, before a host starts on it, leaves those runs the no-op they are against
-// a migrated production system database.
+// a migrated production system database. Each fixture schema owns its attachment family, so the
+// replayed honua copy is dropped: two attachment authorities make every feature delete fail.
 internal static class SharedDatabaseProductionJournal
 {
     private static readonly SemaphoreSlim _lock = new(1, 1);
@@ -52,5 +53,11 @@ internal static class SharedDatabaseProductionJournal
                     $"Journaling the shared fixture database failed: {result.ErrorMessage}",
                     result.Error);
         }
+
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync().ConfigureAwait(false);
+        await using var drop = new NpgsqlCommand(
+            "DROP TABLE IF EXISTS honua.import_attachment_cleanup, honua.attachments", connection);
+        await drop.ExecuteNonQueryAsync().ConfigureAwait(false);
     };
 }
