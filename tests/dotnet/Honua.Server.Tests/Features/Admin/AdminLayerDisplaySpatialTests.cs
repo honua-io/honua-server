@@ -251,7 +251,11 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
         {
             Revision = snapshot.Graph.Revision + 1,
             Services = snapshot.Graph.Services.Append(duplicate).ToArray(),
-            Publications = snapshot.Graph.Publications.Append(competing).ToArray()
+            Publications = snapshot.Graph.Publications.Append(competing).ToArray(),
+            // Storage-layer routes are ambiguous only when two resources share one storage layer id.
+            StorageBindings = snapshot.Graph.StorageBindings.Select(binding => binding.StorageLayerId == 1
+                ? binding with { StorageLayerId = 0 }
+                : binding).ToArray()
         }, schema: _fixture.CurrentSchema);
     }
 

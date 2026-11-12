@@ -192,26 +192,12 @@ internal sealed partial class Wfs20Handler
         }
         catch (WfsTransactionException ex)
         {
-            // Typed protocol exception with an author-controlled message/locator; reported verbatim by design.
-            Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
-            HonuaTelemetry.RecordException(activity, ex);
-            return Wfs20ErrorResults.CreateBadRequest(
-                context,
-                ex.ExceptionCode,
-                ex.Message,
-                ex.Locator);
+            return TypedProtocolBadRequest(context, activity, ex, ex.ExceptionCode, ex.Locator);
         }
         catch (WfsQueryException ex)
         {
-            // Target-resolution query errors (e.g. a ResourceId naming another feature type) are
-            // typed with an author-controlled message/locator, as on the GetFeature path.
-            Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
-            HonuaTelemetry.RecordException(activity, ex);
-            return Wfs20ErrorResults.CreateBadRequest(
-                context,
-                ex.ExceptionCode,
-                ex.Message,
-                ex.Locator);
+            // Target-resolution query errors (e.g. a ResourceId naming another feature type), as on GetFeature.
+            return TypedProtocolBadRequest(context, activity, ex, ex.ExceptionCode, ex.Locator);
         }
         catch (ArgumentException ex)
         {
@@ -1189,6 +1175,19 @@ internal sealed partial class Wfs20Handler
         return objectIds;
     }
 
+
+    // Typed protocol exception with an author-controlled message/locator; reported verbatim by design.
+    private IResult TypedProtocolBadRequest(
+        HttpContext context,
+        Activity? activity,
+        Exception ex,
+        string exceptionCode,
+        string? locator)
+    {
+        Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
+        HonuaTelemetry.RecordException(activity, ex);
+        return Wfs20ErrorResults.CreateBadRequest(context, exceptionCode, ex.Message, locator);
+    }
 
     private static async Task<IResult?> ValidateTransactionLayerWriteAccessAsync(
         HttpContext context,

@@ -7,11 +7,11 @@
     "capabilities": "docs/gis/data/feature-catalog.json"
   },
   "summary": {
-    "operationCount": 517,
+    "operationCount": 522,
     "unresolvedCount": 0,
     "capabilityCount": 23,
     "perSpec": {
-      "admin-api": 424,
+      "admin-api": 429,
       "ogc-api-coverages": 8,
       "ogc-api-features": 19,
       "ogc-api-maps": 10,
@@ -21,7 +21,7 @@
       "studio-api": 23
     },
     "perCapability": {
-      "admin.control-plane": 304,
+      "admin.control-plane": 309,
       "admin.multi-tenancy": 7,
       "alerts.evaluation": 18,
       "analytics.h3": 1,
@@ -2080,6 +2080,26 @@
     {
       "spec": "admin-api",
       "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{storageLayerId}/display",
+      "operationId": "getAdminLayerDisplay",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-metadata-layers-storagelayerid-display"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/metadata/layers/{storageLayerId}/display",
+      "operationId": "setAdminLayerDisplay",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-metadata-layers-storagelayerid-display"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
       "path": "/api/v1/admin/metadata/layers/{storageLayerId}/drawing-info",
       "operationId": "getAdminLayerDrawingInfo",
       "capability": "admin.control-plane",
@@ -2176,6 +2196,26 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "put-api-v1-admin-metadata-layers-storagelayerid-relationships"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{storageLayerId}/spatial",
+      "operationId": "getAdminLayerSpatial",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-metadata-layers-storagelayerid-spatial"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/metadata/layers/{storageLayerId}/spatial",
+      "operationId": "setAdminLayerSpatial",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-metadata-layers-storagelayerid-spatial"
     },
     {
       "spec": "admin-api",
@@ -3819,6 +3859,16 @@
     },
     {
       "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata",
+      "operationId": "getLayerMetadata",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-services-servicename-layers-servicelayerindex-metadata"
+    },
+    {
+      "spec": "admin-api",
       "method": "PUT",
       "path": "/api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata",
       "operationId": "updateLayerMetadata",
@@ -4024,7 +4074,7 @@
       "operationId": "listFeatureStreamSessions",
       "capability": "admin.control-plane",
       "family": "Admin API",
-      "maturity": "preview",
+      "maturity": "experimental",
       "catalogEntryId": "get-api-v1-admin-streaming-features-sessions"
     },
     {
@@ -4034,7 +4084,7 @@
       "operationId": "disconnectFeatureStreamSession",
       "capability": "admin.control-plane",
       "family": "Admin API",
-      "maturity": "preview",
+      "maturity": "experimental",
       "catalogEntryId": "delete-api-v1-admin-streaming-features-sessions-sessionid"
     },
     {

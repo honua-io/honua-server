@@ -22320,7 +22320,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/display": {
+    "/metadata/layers/{storageLayerId}/display": {
       "get": {
         "tags": [
           "Metadata",
@@ -22328,13 +22328,7 @@
         ],
         "parameters": [
           {
-            "name": "layerId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
+            "$ref": "#/components/parameters/AdminAuthoringLayerId"
           }
         ],
         "responses": {
@@ -22374,13 +22368,7 @@
         ],
         "parameters": [
           {
-            "name": "layerId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
+            "$ref": "#/components/parameters/AdminAuthoringLayerId"
           }
         ],
         "responses": {
@@ -22424,7 +22412,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/spatial": {
+    "/metadata/layers/{storageLayerId}/spatial": {
       "get": {
         "tags": [
           "Metadata",
@@ -22432,13 +22420,7 @@
         ],
         "parameters": [
           {
-            "name": "layerId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
+            "$ref": "#/components/parameters/AdminAuthoringLayerId"
           }
         ],
         "responses": {
@@ -22478,13 +22460,7 @@
         ],
         "parameters": [
           {
-            "name": "layerId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
+            "$ref": "#/components/parameters/AdminAuthoringLayerId"
           }
         ],
         "responses": {
