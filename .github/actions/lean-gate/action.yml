@@ -229,7 +229,7 @@ runs:
 
     # The self-hosted producer has a 10 GiB user-slice budget, shared with
     # runner services. Bound both project workers and each compiler runtime;
-    # ancestor CPU quotas alone did not prevent 26 MSBuild / 16 csc processes.
+    # ancestor CPU quotas alone did not prevent 25 MSBuild / 16 csc processes.
     - name: Restore selected build scope
       if: inputs.phase != 'test'
       shell: bash

@@ -865,7 +865,7 @@ project graphs, warnings-as-errors and existing timeouts.
 
 This corrects the 12 November PR #7457 producer cancellation: its runner shared
 a 10 GiB user-slice budget with runner services; the OOM task dump contained
-26 MSBuild processes and 16 compiler processes before systemd restarted the
+25 MSBuild processes and 16 compiler processes before systemd restarted the
 runner. CPU quota alone did not bound those processes. No host resource limit
 changes are required. The changed action takes effect on the next PR Gate;
 that run supplies the after-change timing and memory evidence.
