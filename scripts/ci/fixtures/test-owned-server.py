@@ -64,6 +64,8 @@ class OwnedServerTests(unittest.TestCase):
             self.assertEqual(allocation(path, {"CI": "true"}), {"HTTP_PORT": "9000"})
 
     def test_inaccessible_process_descriptors_fail_explicitly(self):
+        if not os.path.exists("/proc/1"):
+            self.skipTest("procfs hides other users' processes on this host")
         if os.access("/proc/1/fd", os.R_OK):
             self.skipTest("PID 1 descriptors are readable for this user")
         with self.assertRaisesRegex(RuntimeError, "cannot be inspected"):
