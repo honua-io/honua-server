@@ -70,10 +70,10 @@ internal static class OgcProcessesResults
                 Capability = exception?.CapabilityId ?? CapabilityUnavailableCodes.DurableJobsCapability,
                 MissingDependency = exception?.HasDependencyReceipt == true
                     ? exception.MissingDependency
-                    : CapabilityUnavailableCodes.RedisDependency,
+                    : CapabilityUnavailableCodes.SystemDatabaseDependency,
                 MissingEntitlement = exception?.MissingEntitlement,
-                Remediation = exception?.Remediation ?? CapabilityUnavailableCodes.RedisRemediation,
-                RemediationRef = exception?.RemediationRef ?? CapabilityUnavailableCodes.RedisRemediationRef,
+                Remediation = exception?.Remediation ?? CapabilityUnavailableCodes.SystemDatabaseRemediation,
+                RemediationRef = exception?.RemediationRef ?? CapabilityUnavailableCodes.SystemDatabaseRemediationRef,
             },
             OgcProcessesJsonContext.Default.OgcProcessError,
             MediaTypes.Json,

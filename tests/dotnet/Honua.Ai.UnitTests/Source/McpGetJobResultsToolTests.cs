@@ -109,7 +109,7 @@ public sealed class McpGetJobResultsToolTests
 
         structured.GetRawText().Should().Be(expected.GetRawText());
         structured.GetProperty("code").GetString().Should().Be(McpErrorMapper.Codes.Unavailable);
-        structured.GetProperty("missingDependency").GetString().Should().Be(CapabilityUnavailableCodes.RedisDependency);
+        structured.GetProperty("missingDependency").GetString().Should().Be(CapabilityUnavailableCodes.SystemDatabaseDependency);
         structured.GetProperty("retryable").GetBoolean().Should().BeFalse();
         structured.GetProperty("capability").GetString().Should().Be(CapabilityUnavailableCodes.DurableJobsCapability);
     }

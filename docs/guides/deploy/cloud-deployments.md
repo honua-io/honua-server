@@ -350,14 +350,6 @@ az functionapp config container set --name honua-prod --resource-group honua \
 | ElastiCache (Redis OSS / Valkey) | Replication with Multi-AZ failover plus optional snapshots; Redis 7 offers no AOF, so the last writes before a failure can be lost |
 | Self-managed Redis | `appendonly yes`, `appendfsync everysec` (or `always`), `maxmemory-policy noeviction` |
 
-At startup the server tries to read the policy (`INFO persistence` plus `CONFIG GET` for `appendonly`, `appendfsync` and `maxmemory-policy`). It publishes the result as information, never as a gate. The capability manifest (`GET /api/v1/capabilities/manifest`) shows it under `limits.job.redisDurability`:
-
-- `status: "attested"`: the policy was read and is durable.
-- `status: "unverified"`, `cause: "RedisAttestationUnavailable"`: the policy could not be read. ElastiCache and MemoryDB block `CONFIG`, so this is what a managed cell reports. No action is needed.
-- `status: "not-durable"`, with `RedisPersistenceDisabled`, `RedisWritePolicyUnsafe` or `RedisEvictionPolicyUnsafe`: the policy was read and is not durable.
-
-In all three cases `operations.proposals` and `jobs.runner` report `available: true`, `limits.job.durableJobRuntimeAvailable` is `true`, and the `redis` health entry stays `Healthy` with the outcome in its data. Those capabilities read `dependency-unavailable` only when Redis is absent or did not connect at startup, and `license-required` when it is unentitled. `Jobs__RequireDurableStore=true` makes the server refuse to start unless the status is `attested`. ElastiCache and MemoryDB can never satisfy it, so leave it unset there.
-
 On **serverless** substrates a frozen or torn-down process keeps no state of its own, so Redis is the only home for acknowledged job and proposal state. Choose MemoryDB, or accept ElastiCache's replication-and-snapshot durability knowingly.
 
 **The local batch-compute backends are single-host only.** The in-process `local` backend and the child-process `honua-local-process` pool track launched jobs in an in-process registry that cannot survive a host restart or be observed from another node. They are the zero-dependency executors for single-host / air-gapped deployments; they **cannot** work on:
@@ -381,7 +373,6 @@ against a deployed environment.
 
 - **Serverless cold starts time out** — use the `-aot` image variants and confirm `HONUA_SKIP_MIGRATIONS=true`; migrations during cold start are the usual culprit.
 - **Job/import endpoints return `503`** — durable jobs, queued imports, and workflows require Redis (ElastiCache / Azure Cache for Redis); serverless patterns without Redis don't host them.
-- **Logs show "Redis durability attestation: unverified" or "not-durable"**: this is information. The governed control plane and jobs stay enabled. `unverified` is expected on ElastiCache and MemoryDB, which block `CONFIG`. `not-durable` means the policy was read and does not protect acknowledged writes. Change it only if you need that durability (see the durability paragraphs above).
 - **Admin calls return 401** — confirm the secret store value actually reaches the container env as `HONUA_ADMIN_PASSWORD` and requests send it in the `X-API-Key` header.
 
 ## Next steps

@@ -214,7 +214,7 @@ Redis is optional for **serving**, but it is required for the **governed control
 plane**. Without Redis, a host still serves every protocol, and the admin REST API
 and Console still connect sources, import, publish layers, configure services,
 style and render. It cannot persist the following, and refuses them with a typed
-`dependency-unavailable` receipt naming `redis`:
+`dependency-unavailable` receipt naming `system-database`:
 
 - governed operation proposals and approvals (`/api/v1/admin/proposals`,
   `honua_propose_*`), including any operation whose policy decision is
@@ -240,38 +240,28 @@ handle carries `durable: false` (and the evidence reference
 `honua_render_map` and the OGC styles endpoints are reads and do not use the
 operation runtime. A caller the policy denies gets a `Denied` handle. A publish
 or style preset whose policy decision is "require approval" still refuses with
-the typed `redis` receipt, because it needs a governed proposal. Geoprocessing
+the typed `system-database` receipt, because it needs a governed proposal. Geoprocessing
 plans that need approval, Studio compositions and publication requests, proposals and approvals, and the
 `honua_admin_*` tools keep the typed refusal.
 
 On a Development or Test host without Redis, Studio drafts still compose against a
 volatile operation store (create, validate, preview-plan and save a content version
 succeed), but a publish-request that needs separate-principal approval is refused with
-the same typed receipt: HTTP 503 `capability-unavailable` with `missingDependency: "redis"`
+the same typed receipt: HTTP 503 `capability-unavailable` with `missingDependency: "system-database"`
 and `capability: "operations.proposals"`, and the draft is left unchanged.
 
 The governed tools are still advertised on a Redis-off host, so an agent sees the
 same catalog everywhere. The capability manifest (`GET /api/v1/capabilities/manifest`)
 tells it in advance which ones will refuse: `operations.proposals` and
-`jobs.runner` report `available: false` with `reasonCode: "dependency-unavailable"`
-(or `"license-required"` when Redis is configured but not entitled).
+`jobs.runner` report `available: false` with `reasonCode: "dependency-unavailable"`.
 
 **What "required" means: present and working, not a proven durability policy.**
 The governed control plane needs Redis to be configured, entitled and
 connected. Background jobs (geoprocessing, imports, tile and export jobs) are
-stored in PostgreSQL and do not need Redis. The control plane does not need a particular persistence policy (owner
-ruling, 2026-10-10). At startup the server still reads the Redis policy
-(`appendonly`, `appendfsync`, `maxmemory-policy`) and publishes the result in the
-capability manifest as `limits.job.redisDurability.status`. The value is
-`attested`, `unverified` (the policy could not be read, as on managed Redis
-that blocks `CONFIG`) or `not-durable` (the policy was read and is not
-durable). The result never disables `operations.proposals` or `jobs.runner`.
+stored in PostgreSQL and do not need Redis. The control plane does not need a particular persistence policy.
 
 A Redis started with `--appendonly yes --appendfsync everysec --maxmemory-policy
-noeviction` keeps proposals and workflow state across restarts and reports `attested`.
-A stock `redis:7` image also works. The manifest then reports `not-durable`, and
-a Redis restart can lose recent proposals and workflow state. If you would rather the server refuse to
-start unless the policy is `attested`, set `Jobs__RequireDurableStore=true`
+noeviction` keeps its state across restarts. A stock `redis:7` image also works
 (see [Redis durability](troubleshooting.md#redis-durability)).
 
 ### Redis is configured but not entitled

@@ -201,17 +201,14 @@ internal sealed class GeoprocessingStoreUnavailableException : Exception
         RemediationRef = remediationRef;
     }
 
-    /// <summary>
-    /// The default refusal: no Redis connection string, so nothing Redis-backed was composed.
-    /// </summary>
     public GeoprocessingStoreUnavailableException()
         : this(
             CapabilityUnavailableCodes.DurableJobStoreDetail,
             CapabilityUnavailableCodes.ErrorCode,
-            CapabilityUnavailableCodes.RedisDependency,
+            CapabilityUnavailableCodes.SystemDatabaseDependency,
             missingEntitlement: null,
-            CapabilityUnavailableCodes.RedisRemediation,
-            CapabilityUnavailableCodes.RedisRemediationRef)
+            CapabilityUnavailableCodes.SystemDatabaseRemediation,
+            CapabilityUnavailableCodes.SystemDatabaseRemediationRef)
     {
     }
 
@@ -224,31 +221,16 @@ internal sealed class GeoprocessingStoreUnavailableException : Exception
     /// </summary>
     public GeoprocessingStoreUnavailableException(string message) : base(message) { }
 
-    /// <summary>
-    /// Builds the refusal whose receipt matches why the substrate is actually missing
-    /// (honua-release#202). Reporting "configure Redis" to a host that already runs Redis and
-    /// only lacks the entitlement is remediation that cannot work, so the cause is preserved.
-    /// </summary>
-    /// <param name="cause">The classified composition cause.</param>
-    /// <returns>An exception carrying the cause-specific receipt.</returns>
     public static GeoprocessingStoreUnavailableException ForCause(DurableJobSubstrateCause cause)
         => cause switch
         {
-            DurableJobSubstrateCause.RedisNotEntitled => new GeoprocessingStoreUnavailableException(
-                CapabilityUnavailableCodes.UnentitledRedisDetail,
-                CapabilityUnavailableCodes.EntitlementErrorCode,
-                missingDependency: null,
-                CapabilityUnavailableCodes.RedisCacheEntitlement,
-                CapabilityUnavailableCodes.EntitlementRemediation,
-                CapabilityUnavailableCodes.EntitlementRemediationRef),
-
             DurableJobSubstrateCause.RuntimeIncomplete => new GeoprocessingStoreUnavailableException(
                 CapabilityUnavailableCodes.RuntimeIncompleteDetail,
                 CapabilityUnavailableCodes.ErrorCode,
                 CapabilityUnavailableCodes.JobQueueDependency,
                 missingEntitlement: null,
                 CapabilityUnavailableCodes.RuntimeIncompleteRemediation,
-                CapabilityUnavailableCodes.RedisRemediationRef),
+                CapabilityUnavailableCodes.SystemDatabaseRemediationRef),
 
             _ => new GeoprocessingStoreUnavailableException(),
         };
