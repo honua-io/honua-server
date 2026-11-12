@@ -27423,7 +27423,7 @@
             "$ref": "#/components/schemas/RasterMosaicResponse"
           },
           "editing": {
-            "$ref": "#/components/schemas/MetadataV2ObjectEditing"
+            "$ref": "#/components/schemas/MetadataV2ResourceEditing"
           }
         }
       },
@@ -50308,7 +50308,7 @@
           }
         }
       },
-      "MetadataV2ObjectEditing": {
+      "MetadataV2ResourceEditing": {
         "type": "object",
         "nullable": true,
         "properties": {
