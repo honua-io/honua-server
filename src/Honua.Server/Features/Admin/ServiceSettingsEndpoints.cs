@@ -51,6 +51,7 @@ internal static partial class ServiceSettingsEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapPut("/{serviceName}/protocols", HandleUpdateProtocols)
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
             .WithDisplayName("Update Service Protocols")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
 

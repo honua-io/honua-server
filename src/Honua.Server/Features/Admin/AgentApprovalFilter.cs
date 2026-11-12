@@ -57,7 +57,7 @@ internal static class AgentApprovalFilter
         => Refuse(invocation, next, AccessGrantsRef, ConsoleGuidance);
 
     public static ValueTask<object?> LayerMetadataAccessPolicy(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
-        => invocation.Arguments.OfType<UpdateLayerMetadataRequest>().Any(static request => request.AccessPolicy is not null)
+        => invocation.Arguments.OfType<UpdateLayerMetadataRequest>().Any(static request => request.AccessPolicy is not null || request.Editing is not null)
             ? Refuse(invocation, next, AccessPolicyRef, ConsoleGuidance)
             : next(invocation);
 
