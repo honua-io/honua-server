@@ -7,10 +7,8 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.FieldWorkflows.Export;
 using Honua.Core.Features.FieldWorkflows.Review;
-using Honua.Core.Features.Forms.Packages;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.FieldWorkflows;
 
@@ -121,7 +119,7 @@ public sealed class FieldExportEndpointsTests : IAsyncLifetime
     }
 
     private Task<Guid> SeedSubmissionAsync(string suffix, string name)
-        => FieldWorkflowSubmissionSeed.SeedSubmissionAsync(_fixture.Services, "Field export " + suffix, suffix, name);
+        => new FieldWorkflowSubmissionSeed(_fixture.Services, "Field export").SeedSubmissionAsync(suffix, name);
 
     private async Task<long> CountAuditAsync(string action)
     {

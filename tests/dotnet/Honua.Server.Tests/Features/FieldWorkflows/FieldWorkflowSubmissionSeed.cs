@@ -13,14 +13,14 @@ namespace Honua.Server.Tests.Features.FieldWorkflows;
 // directly through the shared IFormPackageStore. This exercises
 // the same durable schema the runtime submission path writes to, without
 // depending on the target service advertising edit capabilities.
-internal static class FieldWorkflowSubmissionSeed
+internal sealed class FieldWorkflowSubmissionSeed(IServiceProvider services, string titlePrefix)
 {
-    public static async Task<Guid> SeedSubmissionAsync(IServiceProvider services, string title, string suffix, string name)
+    public async Task<Guid> SeedSubmissionAsync(string suffix, string name)
     {
         using var scope = services.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<IFormPackageStore>();
 
-        var draft = await store.SaveDraftAsync(CreatePackage(title), "test-admin");
+        var draft = await store.SaveDraftAsync(CreatePackage(titlePrefix + " " + suffix), "test-admin");
         var published = await store.PublishAsync(
             draft.FormId,
             draft.Version,
