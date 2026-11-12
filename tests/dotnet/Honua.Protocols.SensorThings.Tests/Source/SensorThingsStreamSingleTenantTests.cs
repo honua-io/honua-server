@@ -10,11 +10,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
-/// <summary>
-/// The default single-tenant configuration (MultiTenancy:Enabled=false) resolves every
-/// authenticated request to the deployment tenant, so a non-admin reader can open an
-/// observation stream without a provider tenant claim (#7290).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.SensorThings)]
 public sealed class SensorThingsStreamSingleTenantTests : IAsyncLifetime
