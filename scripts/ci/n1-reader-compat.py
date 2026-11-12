@@ -125,8 +125,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def honua_target_framework() -> str:
-    """Target framework of the server build (#7380), read like scripts/ci/honua-target-framework.sh."""
-    override = os.environ.get("HONUA_TARGET_FRAMEWORK")
+    """Target framework of the server build (#7380), read like scripts/ci/honua-target-framework.sh
+    (the HonuaTargetFramework environment variable, which MSBuild also reads, wins)."""
+    override = os.environ.get("HonuaTargetFramework")
     if override:
         return override
     props = (REPO_ROOT / "Directory.Build.props").read_text(encoding="utf-8")

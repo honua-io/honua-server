@@ -1072,7 +1072,7 @@ jobs:
           set +e -uo pipefail
           python3 scripts/ci/n1-reader-compat.py \
             --output "artifacts/pr-gate/n1-reader-compat" \
-            --candidate-dll src/Honua.Server/bin/Release/net10.0/Honua.Server.dll \
+            --candidate-dll "src/Honua.Server/bin/Release/$(scripts/ci/honua-target-framework.sh)/Honua.Server.dll" \
             --candidate-sha "${GITHUB_SHA}" \
             --candidate-head-sha "${HEAD_SHA}" \
             --base-ref HEAD^1

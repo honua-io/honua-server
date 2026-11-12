@@ -9,7 +9,14 @@ if (-not $NoBuild) {
     dotnet build (Join-Path $repo 'src/Honua.Server/Honua.Server.csproj') --configuration Release -maxcpucount:4
     if ($LASTEXITCODE -ne 0) { throw 'Native server build failed.' }
 }
-$assembly = Join-Path $repo 'src/Honua.Server/bin/Release/net10.0/Honua.Server.dll'
+# Same rule as scripts/ci/honua-target-framework.sh (#7380): the HonuaTargetFramework variable, else the props default.
+$tfm = $env:HonuaTargetFramework
+if (-not $tfm) {
+    $props = Get-Content -Raw -LiteralPath (Join-Path $repo 'Directory.Build.props')
+    $tfm = [regex]::Match($props, '<HonuaTargetFramework Condition="[^"]*">([^<]+)</HonuaTargetFramework>').Groups[1].Value
+    if (-not $tfm) { throw 'No HonuaTargetFramework default in Directory.Build.props.' }
+}
+$assembly = Join-Path $repo "src/Honua.Server/bin/Release/$tfm/Honua.Server.dll"
 if (-not (Test-Path -LiteralPath $assembly)) { throw 'Build the native server first.' }
 
 # These names and loopback ports belong exclusively to this disposable harness.

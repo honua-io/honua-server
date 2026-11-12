@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Print the target framework every Honua project builds for (#7380): HONUA_TARGET_FRAMEWORK when set,
-# otherwise the HonuaTargetFramework default in Directory.Build.props. Use it to derive output paths
-# (src/Honua.Server/bin/Release/<tfm>/...) instead of hard-coding a framework.
+# Print the target framework every Honua project builds for (#7380): the HonuaTargetFramework
+# environment variable when set, otherwise its default in Directory.Build.props. MSBuild reads the same
+# environment variable as the property, so one setting moves both the build and these output paths
+# (src/Honua.Server/bin/Release/<tfm>/...).
 set -euo pipefail
 
-if [[ -n "${HONUA_TARGET_FRAMEWORK:-}" ]]; then
-  printf '%s\n' "${HONUA_TARGET_FRAMEWORK}"
+if [[ -n "${HonuaTargetFramework:-}" ]]; then
+  printf '%s\n' "${HonuaTargetFramework}"
   exit 0
 fi
 
