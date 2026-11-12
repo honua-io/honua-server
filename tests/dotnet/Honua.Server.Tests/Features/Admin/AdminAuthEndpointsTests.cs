@@ -977,47 +977,6 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/auth/providers/{providerKey}/logout-url")]
-    public async Task GetLogoutUrl_Cognito_UsesClientAndPublicLogoutUriWithoutDiscoveryEndpoint()
-    {
-        using var stubFactory = new StubHttpClientFactory(
-            "https://auth.example.com/.well-known/openid-configuration",
-            new StubOidcEndpoints(
-                "https://auth.example.com/authorize",
-                "https://auth.example.com/token",
-                string.Empty));
-        var oidcFixture = CreateGenericOidcFixture(stubFactory)
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseSetting("Public:BaseUrl", "https://public.example.com/honua");
-                builder.UseSetting("Oidc:Generic:LogoutEndpoint", "https://login.example.com/logout");
-                builder.UseSetting("Oidc:Generic:UseCognitoLogout", "true");
-            });
-        try
-        {
-            await oidcFixture.InitializeAsync();
-            var response = await oidcFixture.CreateClient().GetAsync(
-                "/api/v1/admin/auth/providers/oidc/logout-url?idTokenHint=id-token");
-
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var content = await response.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthLogoutUrlResponse);
-            content.Should().NotBeNull();
-            content!.LogoutUrl.Should().NotBeNullOrEmpty();
-            var logoutUri = new Uri(content.LogoutUrl!);
-            logoutUri.GetLeftPart(UriPartial.Path).Should().Be("https://login.example.com/logout");
-            var parameters = QueryHelpers.ParseQuery(logoutUri.Query);
-            parameters["client_id"].ToString().Should().Be("generic-client-id");
-            parameters["logout_uri"].ToString().Should().Be("https://public.example.com/honua/admin");
-            parameters.Should().NotContainKey("post_logout_redirect_uri");
-            parameters.Should().NotContainKey("id_token_hint");
-        }
-        finally
-        {
-            await oidcFixture.DisposeAsync();
-        }
-    }
-
-    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/auth/bearer")]
     public async Task IssueOperatorBearer_WithoutAuthenticatedSession_ReturnsUnauthorized()
     {

@@ -61,7 +61,7 @@ public sealed class ControlPlane5625Tests
             "idem-1",
             "corr-1",
             requester: principal,
-            tenantOptions: new TenantContextOptions { Enabled = true });
+            tenantOptions: new TenantContextOptions());
 
         saved.Should().NotBeNull();
         saved!.Audit.TenantId.Should().Be("tenant-a");
@@ -125,7 +125,7 @@ public sealed class ControlPlane5625Tests
             [backend],
             evaluator,
             NullLogger<DeployWorkflowService>.Instance,
-            tenantOptions: Options.Create(new TenantContextOptions { Enabled = true }));
+            tenantOptions: Options.Create(new TenantContextOptions()));
         var step = new CoordinatedContainerStepExecutor(
             deploy,
             Substitute.For<IWorkflowOperationReconciler>(),
@@ -141,7 +141,7 @@ public sealed class ControlPlane5625Tests
                 "Bearer",
                 ClaimTypes.Name,
                 ClaimTypes.Role)),
-            new TenantContextOptions { Enabled = true });
+            new TenantContextOptions());
 
         await step.StartAsync(context, Operation(context));
 
