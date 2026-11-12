@@ -181,7 +181,7 @@ class CompletedBaseExecutionTests(unittest.TestCase):
                        check=True, capture_output=True, text=True)
         return (self.clone / "summary").read_text()
 
-    def test_ci_doctor_summary_keeps_failed_merge_in_green_range(self):
+    def test_investigation_summary_keeps_failed_merge_in_green_range(self):
         summary = self.run_investigation_summary(self.heads[0])
         self.assertIn(f"`{self.heads[0]}`..`{self.heads[2]}` (2 merges", summary)
         self.assertIn("change 1", summary)

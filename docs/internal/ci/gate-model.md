@@ -54,8 +54,8 @@ earlier one could not.
 |---|---|---|---|---|
 | **0 Pre-PR** | Author, before opening or pushing | `scripts/ci/pre-pr-check.sh` (local) | Affected build, Fast tests and affected shards on the author's machine | No; the PR template asks for the result |
 | **1 PR gate** | `pull_request` | `pr-gate.yml`, `review-gate.yml`, `repo-hygiene.yml` | Affected-scope build, selected shards, Fast/architecture, format, router validation, exact-head review | Yes: `PR Gate`, `Review Gate`, Repository hygiene |
-| **2 Pre-merge** | Trunk moves under an open PR | `pr-sync-doctor.md` and the fleet lander | A behind PR is refreshed only when trunk touched its affected projects; the refreshed head reruns stage 1. The lander merges only an exact-head green, thread-free PR | Yes, through stage 1 on the refreshed head |
-| **3 Post-merge affected** | `push` to `trunk` | `trunk-affected.yml` dispatching `ci.yml` | Selective CI over new merges since the latest completed CI run (`selective_base`): the shards and lanes those merges touch | No; a red run starts the CI doctor |
+| **2 Pre-merge** | Trunk moves under an open PR | PR owner lanes and the fleet lander | A behind PR is refreshed only when trunk touched its affected projects; the refreshed head reruns stage 1. The lander merges only an exact-head green, thread-free PR | Yes, through stage 1 on the refreshed head |
+| **3 Post-merge affected** | `push` to `trunk` | `trunk-affected.yml` dispatching `ci.yml` | Selective CI over new merges since the latest completed CI run (`selective_base`): the shards and lanes those merges touch | No; failures are handled by the owning lanes |
 | **4 Full** | `schedule` 09:23 and 21:23 UTC | `ci.yml` | The full matrix, compatibility and certification lanes | No; full proof clears the lander's trunk-red brake |
 
 Full runs use off-hour minutes to reduce schedule-delivery contention. The
@@ -74,9 +74,9 @@ Stage 3 details:
 - The dispatch summary separately lists the culprit range from the latest
   full green ancestor (searched among the newest 100 successful runs,
   excluding affected titles that cannot clear earlier failures). It passes
-  that ancestor as `investigation_base` to `ci.yml` for the CI doctor; missing
+  that ancestor as `investigation_base` to `ci.yml` for failure investigation; missing
   green history is reported as unknown. Failures
-  remain owned by the CI doctor; twice-daily full runs retain complete coverage.
+  are handled by the owning lanes; twice-daily full runs retain complete coverage.
 - Runs queue without cancellation. GitHub replaces older pending runs; the
   newer run covers merges since the latest completed head. Superseded pushes
   exit when checkout finds a newer trunk tip.
@@ -90,9 +90,8 @@ Stage 3 details:
 - The dispatched run is titled `CI affected <base>..<head>`. Its `changes`
   job prints the suspect range (`scripts/ci/trunk-suspect-range.sh`: every
   trunk commit in the range and the pull requests it names) to the job log and
-  summary. A red run triggers the CI doctor through its `workflow_run`
-  listener on `CI`, which reads the title and the log to find the breaking
-  merge.
+  summary. Owners use this evidence to identify the breaking merge when a
+  run fails.
 - Affected runs never certify a sha: `scripts/ci/select-certified-nightly-sha.py`
   ignores runs titled `CI affected ...`, so a selective run that finishes after
   a full run on the same sha cannot supersede that full run's certification.
@@ -613,7 +612,7 @@ execution matrix and enforced test filters remain unchanged.
 
 ### Pre-PR and trailing affected execution
 
-Before refreshing a behind branch, lanes and the sync doctor share
+Before refreshing a behind branch, lanes use
 `bash scripts/ci/compute-affected-projects.sh --trunk-overlap HEAD origin/trunk`.
 Its JSON `refresh_required` compares committed changes on both sides of their
 merge base using the canonical reverse-dependency selector. Disjoint project
