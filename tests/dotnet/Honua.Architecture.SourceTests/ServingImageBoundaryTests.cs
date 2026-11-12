@@ -243,6 +243,91 @@ public sealed class ServingImageBoundaryTests
         crossRegistryPromotion.Should().Contain("actual_digest != expected_digest");
     }
 
+    private const string DeployWorkflow = ".github/workflows/deploy.yml";
+    private const string PlatformWorkflow = ".github/workflows/deploy-platform-images.yml";
+
+    private sealed record TagReleaseLeg(string Path, string Candidate, string Gate, string Publication, string Digest);
+
+    private static readonly TagReleaseLeg[] TagReleaseLegs =
+    [
+        new(DeployWorkflow, "- name: Build native-AOT candidate by digest",
+            "- name: Gate native-AOT tag release on fixable HIGH/CRITICAL vulnerabilities",
+            "- name: Publish verified native-AOT architecture tags", "steps.aot_candidate.outputs.digest"),
+        new(DeployWorkflow, "- name: Build JIT candidate by digest",
+            "- name: Gate JIT tag release on fixable HIGH/CRITICAL vulnerabilities",
+            "- name: Publish JIT architecture tags", "steps.build.outputs.digest"),
+        new(PlatformWorkflow, "- name: Build native-AOT platform candidate by digest",
+            "- name: Gate native-AOT tag release on fixable HIGH/CRITICAL vulnerabilities",
+            "- name: Publish verified native-AOT platform architecture tags", "steps.aot_candidate.outputs.digest"),
+        new(PlatformWorkflow, "- name: Build JIT platform candidate by digest",
+            "- name: Gate JIT platform tag release on fixable HIGH/CRITICAL vulnerabilities",
+            "- name: Publish JIT platform architecture tags", "steps.build.outputs.digest"),
+    ];
+
+    [ArchitectureTest]
+    public void TagReleases_ShouldScanEachCandidateDigestBeforeAnyArchitectureTag()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        foreach (var leg in TagReleaseLegs)
+        {
+            var workflow = File.ReadAllText(Path.Join(repositoryRoot, leg.Path)).ReplaceLineEndings("\n");
+            var (candidate, gate, publication) = SliceTagReleaseLeg(workflow, leg);
+            candidate.Should().Contain("push-by-digest=true", leg.Path);
+            candidate.Should().NotContain("tags:", $"{leg.Path} must not tag before the gate");
+            AssertBlockingGate(gate, leg);
+            AssertPromotesScannedDigest(publication, leg);
+        }
+
+        foreach (var path in new[] { DeployWorkflow, PlatformWorkflow })
+        {
+            var workflow = File.ReadAllText(Path.Join(repositoryRoot, path));
+            workflow.Should().NotContain("push: true", $"{path} must publish tags only by promoting a scanned digest");
+            workflow.Should().Contain("TRIVY_IMAGE: aquasec/trivy:0.68.1@sha256:", $"{path} must pin Trivy by digest");
+        }
+
+        var gateScript = File.ReadAllText(Path.Join(repositoryRoot, "scripts/ci/trivy-release-gate.sh"));
+        gateScript.Should().Contain("--exit-code 1");
+        gateScript.Should().Contain("--ignorefile /work/.trivyignore-release");
+        gateScript.Should().Contain("--severity HIGH,CRITICAL");
+        gateScript.Should().Contain("--ignore-unfixed", "the gate blocks only findings with an upstream fix, by design");
+    }
+
+    private static (string Candidate, string Gate, string Publication) SliceTagReleaseLeg(string workflow, TagReleaseLeg leg)
+    {
+        var candidateIndex = workflow.IndexOf(leg.Candidate, StringComparison.Ordinal);
+        candidateIndex.Should().BeGreaterThan(-1, leg.Path);
+        var gateIndex = workflow.IndexOf(leg.Gate, candidateIndex, StringComparison.Ordinal);
+        gateIndex.Should().BeGreaterThan(candidateIndex, $"{leg.Path} must gate {leg.Candidate}");
+        var publicationIndex = workflow.IndexOf(leg.Publication, gateIndex, StringComparison.Ordinal);
+        publicationIndex.Should().BeGreaterThan(gateIndex, $"{leg.Path} must scan the candidate before {leg.Publication}");
+        var nextStepIndex = workflow.IndexOf("\n      - name:", publicationIndex + leg.Publication.Length, StringComparison.Ordinal);
+        var publicationEnd = nextStepIndex >= 0 ? nextStepIndex : workflow.Length;
+        return (workflow[candidateIndex..gateIndex], workflow[gateIndex..publicationIndex], workflow[publicationIndex..publicationEnd]);
+    }
+
+    private static void AssertBlockingGate(string gate, TagReleaseLeg leg)
+    {
+        gate.Should().Contain("startsWith(github.ref, 'refs/tags/v')", leg.Path);
+        gate.Should().Contain(leg.Digest, $"{leg.Path} must scan the digest it promotes");
+        gate.Should().Contain("scripts/ci/trivy-release-gate.sh \"$CANDIDATE\"", leg.Path);
+        gate.Should().NotContain("continue-on-error", leg.Path);
+        if (leg.Path == PlatformWorkflow)
+        {
+            gate.Should().Contain("github.event_name == 'push'", "scan_only dispatches stay advisory");
+        }
+    }
+
+    private static void AssertPromotesScannedDigest(string publication, TagReleaseLeg leg)
+    {
+        var image = leg.Path == PlatformWorkflow ? "scan_image" : "staging_image";
+        publication.Should().Contain(
+            $"CANDIDATE: ${{{{ steps.targets.outputs.{image} }}}}@${{{{ {leg.Digest} }}}}",
+            $"{leg.Path} must promote the digest the gate scanned");
+        publication.Should().Contain("scripts/ci/promote-verified-image.py", leg.Path);
+        publication.Should().Contain("--candidate \"$CANDIDATE\"", leg.Path);
+        publication.Should().Contain("--staging-tag", leg.Path);
+    }
+
     [ArchitectureTest]
     public void ReleaseBundle_ShouldReserveLatestTagsForGaPromotion()
     {

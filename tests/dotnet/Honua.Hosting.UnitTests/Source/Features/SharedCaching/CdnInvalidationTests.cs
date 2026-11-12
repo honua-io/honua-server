@@ -8,6 +8,7 @@ using Honua.Infrastructure.SharedCaching;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Hosting.UnitTests.Features.SharedCaching;
@@ -171,6 +172,42 @@ public sealed class CdnInvalidationTests
             NullLogger<OutputCacheInvalidationService>.Instance,
             Service());
 
+    [UnitTest]
+    public async Task InvalidateNowAsync_AdminRequest_RecordsThePurgeWithTheRequestCorrelationId()
+    {
+        var context = new DefaultHttpContext();
+        context.Response.Headers["X-Correlation-ID"] = "change-42";
+        var logger = new RecordingLogger();
+        var service = new CdnInvalidationService(_cloudFront, _time, logger, new HttpContextAccessor { HttpContext = context });
+
+        await service.InvalidateNowAsync(CdnPaths.Everything, CancellationToken.None);
+
+        logger.Messages.Should().ContainSingle(message => message.StartsWith("CDN purge reason=admin change=change-42 ", StringComparison.Ordinal))
+            .Which.Should().Contain("outcome=Submitted").And.Contain("paths=/*");
+    }
+
+    [UnitTest]
+    public async Task InvalidateNowAsync_ReleaseCause_RecordsTheRelease()
+    {
+        var logger = new RecordingLogger();
+        var service = new CdnInvalidationService(_cloudFront, _time, logger);
+
+        await service.InvalidateNowAsync(CdnPaths.Everything, CancellationToken.None, CdnPurgeCause.Release("sha256:abc"));
+
+        logger.Messages.Should().ContainSingle(message => message.StartsWith("CDN purge reason=release change=sha256:abc ", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public async Task InvalidateNowAsync_NoCdnConfigured_RecordsNothing()
+    {
+        var logger = new RecordingLogger();
+        var service = new CdnInvalidationService(new NoCdnInvalidator(), _time, logger);
+
+        await service.InvalidateNowAsync(CdnPaths.Everything, CancellationToken.None);
+
+        logger.Messages.Should().BeEmpty();
+    }
+
     private CdnInvalidationService Service(IHttpContextAccessor? accessor = null)
         => new(_cloudFront, _time, NullLogger<CdnInvalidationService>.Instance, accessor);
 
@@ -316,6 +353,37 @@ public sealed class CdnInvalidationTests
             }
 
             public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingLogger : ILogger<CdnInvalidationService>
+    {
+        private readonly Lock _gate = new();
+        private readonly List<string> _messages = [];
+
+        public IReadOnlyList<string> Messages
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return [.. _messages];
+                }
+            }
+        }
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+            => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            lock (_gate)
+            {
+                _messages.Add(formatter(state, exception));
+            }
         }
     }
 }

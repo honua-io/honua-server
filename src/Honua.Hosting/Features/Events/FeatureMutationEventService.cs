@@ -215,7 +215,7 @@ internal sealed class FeatureMutationEventService(
         // When the active provider supports a transactional outbox, the outbox row was
         // committed inside the mutation transaction and the dispatcher will publish it.
         // Skipping this fire-and-forget publish prevents a duplicate event from racing the
-        // dispatcher and avoids charging the request hot path for an extra Redis/append round trip.
+        // dispatcher and avoids charging the request hot path for an extra append round trip.
         if (OutboxEnabled)
         {
             return;

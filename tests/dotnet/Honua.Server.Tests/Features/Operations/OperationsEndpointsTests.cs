@@ -258,7 +258,7 @@ public sealed class OperationsEndpointsTests
                 HttpStatusCode.OK,
                 "the write-authorized semantic response was {0}",
                 writeResponseBody);
-            var writeResult = JsonDocument.Parse(writeResponseBody).RootElement;
+            var writeResult = JsonElement.Parse(writeResponseBody);
             writeResult.GetProperty("data").GetProperty("status").GetString().Should().Be("Completed");
             await invoker.Received(1).SubmitAsync(
                 Arg.Is<OperationRequest>(request => request.OperationId == "admin.metadata.prevalidate"),

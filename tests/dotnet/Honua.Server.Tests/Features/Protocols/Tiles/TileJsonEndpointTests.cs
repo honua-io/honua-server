@@ -96,7 +96,7 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
 
         var content = await response.Content.ReadAsStringAsync();
-        var problem = JsonDocument.Parse(content).RootElement;
+        var problem = JsonElement.Parse(content);
 
         problem.GetProperty("title").GetString().Should().Be("Not Found");
         problem.GetProperty("status").GetInt32().Should().Be(404);

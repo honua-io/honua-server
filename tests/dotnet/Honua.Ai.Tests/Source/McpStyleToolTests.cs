@@ -518,7 +518,7 @@ public sealed class McpStyleToolTests
         result.GetProperty("isError").GetBoolean().Should().BeTrue();
         var output = result.GetProperty("structuredContent");
         output.GetProperty("code").GetString().Should().Be("unavailable");
-        output.GetProperty("missingDependency").GetString().Should().Be("redis");
+        output.GetProperty("missingDependency").GetString().Should().Be("system-database");
         output.GetProperty("retryable").GetBoolean().Should().BeFalse();
         await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
         await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);

@@ -4,7 +4,6 @@
 using Honua.Alerts;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Caching.Abstractions;
-using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.FileStorage;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -33,7 +32,6 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
     private readonly MigrationState _migrationState;
     private readonly DegradedStartupContext? _degradedStartup;
     private readonly ILogger<ReadinessCheckService> _logger;
-    private readonly DurableJobSubstrateOptions _durableJobSubstrate;
 
     public ReadinessCheckService(
         IDatabaseHealthChecker databaseHealthChecker,
@@ -45,7 +43,6 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         IAlertEvaluationHealth? alertEvaluationHealth = null,
         IOptions<AlertOptions>? alertOptions = null,
         GeoprocessingOutputStoreHealthCheck? outputStoreHealth = null,
-        IOptions<DurableJobSubstrateOptions>? durableJobSubstrateOptions = null,
         DegradedStartupContext? degradedStartup = null)
     {
         _degradedStartup = degradedStartup;
@@ -58,7 +55,6 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         _outputStoreHealth = outputStoreHealth;
         _migrationState = migrationState ?? throw new ArgumentNullException(nameof(migrationState));
         _logger = logger;
-        _durableJobSubstrate = durableJobSubstrateOptions?.Value ?? new DurableJobSubstrateOptions();
     }
 
     public async Task<ReadinessResult> CheckReadinessAsync(CancellationToken cancellationToken = default)
@@ -67,19 +63,6 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         var currentReasonCode = ReadinessReasonCodes.DatabaseUnavailable;
         try
         {
-            // Redis durability (honua-server#4502, owner ruling 2026-10-10): the attestation
-            // outcome is information and never affects readiness. Depooling every node whose
-            // Redis does not expose CONFIG (managed Redis) or has AOF off would take the whole
-            // deployment down for a property the operator owns. The outcome is published on the
-            // capability manifest (limits.job.redisDurability) and the Redis health-check data;
-            // Jobs:RequireDurableStore=true is the opt-in to refuse startup instead.
-            if (_durableJobSubstrate.RedisEntitled
-                && _durableJobSubstrate.RedisDurabilityAttestation is null
-                && _durableJobSubstrate.RedisDurabilityFailure is { } durabilityCause)
-            {
-                Log.DurableJobSubstrateDegraded(_logger, durabilityCause);
-            }
-
             // Degraded start (#1632): the host is serving without database access because the
             // database was transiently unavailable at boot. Report the sanitized phase and failure
             // class until the background recovery loop restores access.
