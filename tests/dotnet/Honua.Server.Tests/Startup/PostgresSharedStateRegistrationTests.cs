@@ -12,33 +12,35 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Startup;
 
-// Services that take an optional lease store resolve at host start, so a host without a system
-// database must see no lease store rather than one that fails for want of a data source.
 public sealed class PostgresSharedStateRegistrationTests
 {
     [UnitTest]
-    public void LeaseStore_WithoutSystemDatabase_IsAbsent()
+    public void AddPostgresSharedState_WithoutSystemDataSource_RegistersNoLeaseStore()
     {
-        using var provider = BuildProvider(services => { });
+        using var provider = BuildProvider(dataSource: null);
 
         provider.GetService<ILeaseStore>().Should().BeNull();
     }
 
     [UnitTest]
-    public void LeaseStore_WithSystemDatabase_IsThePostgresLeaseRow()
+    public void AddPostgresSharedState_WithSystemDataSource_RegistersPostgresLeaseStore()
     {
-        using var dataSource = NpgsqlDataSource.Create("Host=localhost;Database=honua");
-        using var provider = BuildProvider(services => services.AddSingleton(dataSource));
+        using var dataSource = NpgsqlDataSource.Create("Host=localhost;Database=honua;Username=honua");
+
+        using var provider = BuildProvider(dataSource);
 
         provider.GetService<ILeaseStore>().Should().BeOfType<PostgresLeaseStore>();
     }
 
-    private static ServiceProvider BuildProvider(Action<IServiceCollection> composeDatabase)
+    private static ServiceProvider BuildProvider(NpgsqlDataSource? dataSource)
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddDataProtection();
-        composeDatabase(services);
+        if (dataSource is not null)
+        {
+            services.AddSingleton(dataSource);
+        }
+
         services.AddPostgresSharedState(new ConfigurationBuilder().Build());
         return services.BuildServiceProvider();
     }

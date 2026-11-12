@@ -612,6 +612,15 @@ fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
 
+### Spec endpoint application lifetime
+
+`SpecEndpointsTests` retains one application for validation, planning, and
+rejected requests, with a fresh client per case. Successful applies, cache tests,
+and license variants own their hosts and state. The class fixture disposes the
+shared application after its last case. All cases and assertions run in their
+existing PR and trunk shard selections; runner counts, required check names,
+and aggregate dependencies are unchanged.
+
 ### Authorization shard coverage
 
 The authorization matrix selects the live `AdminAuthorizationTests` class.
@@ -619,6 +628,32 @@ The remaining authorization shard owns every other method in the original parent
 filter. Retired Redis endpoint selectors are removed; the coverage guard still
 rejects dead positive clauses, and the partition fixture verifies complete,
 disjoint method ownership with unchanged source triggers and budgets.
+
+### Layer publishing shared application fixture
+
+The `Server Features Admin Layer Publishing` shard selects 48 named
+`LayerPublishingIntegrationTests` methods through an exact-name filter, with a
+27-minute test timeout. The class's remaining 19 methods run in
+`Server Features Admin Runtime Operations` through its complementary filter.
+Each shard process builds its own instance of the shared class fixture.
+
+### WPS endpoint fixture lifetime
+
+The WFS 1–9 shard family includes `Wps20EndpointsTests`. See
+[WPS endpoint fixture lifetime](gate-model.md#wps-endpoint-fixture-lifetime)
+for its class-scoped applications and isolated custom-host cases.
+
+### ImageServer endpoint fixtures
+
+See [ImageServer endpoint database lifetime](gate-model.md#imageserver-endpoint-database-lifetime)
+for endpoint isolation and database reuse. The pure WMTS capability unit test runs
+without a database fixture in the ImageServer Rendering and Support shard.
+
+### Geocoding endpoint fixtures
+
+The geocoding shard includes the endpoint response and provider request-contract
+cases. See [Geocoding response fixture lifetime](gate-model.md#geocoding-response-fixture-lifetime)
+for their application isolation rules.
 
 ### Governance capacity split
 
@@ -705,6 +740,20 @@ full runs retain 24. A
 at a two-second median; twelve halves that so a broad run finishes before the
 next full run. Required PR gates
 and shard definitions are unchanged.
+
+### Covered trunk runs
+
+A full trunk run covers every merge up to its head. Its first job,
+`supersede-trailing-runs` (`scripts/ci/supersede_trailing_runs.py`), cancels
+queued or running `CI affected ...` runs at that head or an earlier one; a
+selective run cancels itself when a started scheduled run has a head that
+contains its own. Dispatched runs never cancel a selective run, because the
+runs API does not expose the inputs that decide their scope.
+Ancestry comes from the compare API. A full run held by the concurrency group
+never cancels anything, and unreadable run history cancels nothing. On
+11 Nov a 164-job affected run and a manual full run tested the same head
+together, leaving 130 affected and 37 full jobs queued while every open PR
+Gate had six to nine jobs waiting for hosted runners.
 
 ## Automatic merge admission
 

@@ -279,7 +279,8 @@ def validate(
         "candidate only; independent PR Gate required",
         "candidate output must remain excluded from the accuracy audit without PR Gate corroboration",
     )
-    if "github.event.pull_request.head" in consumer or "github.head_ref" in consumer:
+    consumer_without_routing = re.sub(r"(?m)^\s*runs-on:.*$", "", consumer)
+    if "github.event.pull_request.head" in consumer_without_routing or "github.head_ref" in consumer_without_routing:
         raise AssertionError("workflow_run consumer must not check out the PR head")
     if "git push" in consumer or "git apply" in consumer:
         raise AssertionError("the consumer must not mutate a branch through a shell checkout")

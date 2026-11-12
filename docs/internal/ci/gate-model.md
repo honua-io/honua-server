@@ -83,6 +83,8 @@ Stage 3 details:
   affected run of its merge.
 - `ci.yml` puts selective runs in their own concurrency group, so a burst of
   merges never replaces a pending scheduled full run.
+- A started full run cancels the selective runs it covers, and a selective
+  run under a covering full run cancels itself ([covered trunk runs](#covered-trunk-runs)).
 - The dispatched run is titled `CI affected <base>..<head>`. Its `changes`
   job prints the suspect range (`scripts/ci/trunk-suspect-range.sh`: every
   trunk commit in the range and the pull requests it names) to the job log and
@@ -657,6 +659,15 @@ Review revalidation shares `.github/scripts/revalidate-exact-head-review.cjs` ac
 
 Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. Missing envelopes from ordinary producers remain errors.
 
+### Spec endpoint application lifetime
+
+`SpecEndpointsTests` retains one application for validation, planning, and
+rejected requests, with a fresh client per case. Successful applies, cache tests,
+and license variants own their hosts and state. The class fixture disposes the
+shared application after its last case. All cases and assertions run in their
+existing PR and trunk shard selections; runner counts, required check names,
+and aggregate dependencies are unchanged.
+
 ### Authorization shard coverage
 
 The authorization matrix selects the live `AdminAuthorizationTests` class.
@@ -664,6 +675,42 @@ The remaining authorization shard owns every other method in the original parent
 filter. Retired Redis endpoint selectors are removed; the coverage guard still
 rejects dead positive clauses, and the partition fixture verifies complete,
 disjoint method ownership with unchanged source triggers and budgets.
+
+### Layer publishing shared application fixture
+
+`LayerPublishingIntegrationTests` shares one customized host and feature schema across
+its cases. Each case uses distinct layer, table, service, and secure-connection identities
+and cleans up its publications and source tables. Before each case the fixture reapplies
+the server seed, which deletes and recreates the seeded features and catalog metadata, and
+restores the metadata graph with a new revision.
+The missing-SRID simulation creates and removes its expression index under the schema lock.
+
+### WPS endpoint fixture lifetime
+
+`Wps20EndpointsTests` shares its default application and identically configured
+conformance-echo application for the lifetime of the sequential test class.
+Each application seeds its database once. Tests with service substitutes or
+custom host configuration retain isolated applications; echo results are
+accessed through their request-generated job IDs and reference tokens.
+All cases and assertions remain in the WFS 1–9 shard family on selected PR runs
+and twice-daily full trunk runs. This changes no runner count, required check
+name, required aggregate dependency, workflow, or shard definition.
+
+### ImageServer endpoint database lifetime
+
+`ImageServerEndpointsTests` retains a `PostgresFixture` reference for the class
+to avoid repeating shared database initialization between cases. Each case owns
+its configured application, isolated schema, and raster substitutes; the class
+fixture releases the infrastructure after the last case. Pure capability XML
+coverage lives in `ImageServerWmtsCapabilitiesTests` without a database fixture.
+Full trunk runs include every case; PR routing selects affected ImageServer shards.
+
+### Geocoding response fixture lifetime
+
+`GeocodingEndpointTests` uses one class-lifetime Community application for
+request-derived default-provider responses. Each case owns its HTTP client.
+Request-capture, custom-provider and Enterprise configurations own separate
+applications. Full trunk runs include every case; PR routing selects affected geocoding shards.
 
 ### Governance capacity split
 
@@ -749,6 +796,20 @@ full runs retain 24. A
 at a two-second median; twelve halves that so a broad run finishes before the
 next full run. Required PR gates
 and shard definitions are unchanged.
+
+### Covered trunk runs
+
+A full trunk run covers every merge up to its head. Its first job,
+`supersede-trailing-runs` (`scripts/ci/supersede_trailing_runs.py`), cancels
+queued or running `CI affected ...` runs at that head or an earlier one; a
+selective run cancels itself when a started scheduled run has a head that
+contains its own. Dispatched runs never cancel a selective run, because the
+runs API does not expose the inputs that decide their scope.
+Ancestry comes from the compare API. A full run held by the concurrency group
+never cancels anything, and unreadable run history cancels nothing. On
+11 Nov a 164-job affected run and a manual full run tested the same head
+together, leaving 130 affected and 37 full jobs queued while every open PR
+Gate had six to nine jobs waiting for hosted runners.
 
 ## Automatic merge admission
 
