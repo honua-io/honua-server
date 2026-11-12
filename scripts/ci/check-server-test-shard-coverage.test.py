@@ -798,7 +798,7 @@ def test_admin_auth_capacity_split_preserves_methods_paths_and_budgets() -> None
             selected_classes.add(info["fqn"].rsplit(".", 1)[-1])
     assert selected_classes == set(classes)
     baseline = json.loads((REPOSITORY_ROOT /
-        "docs/internal/ci/admin-auth-capacity-20261112.json").read_text())["originalShard"]
+        "scripts/ci/fixtures/admin-auth-capacity-baseline.json").read_text())["originalShard"]
     for name in children:
         child = shards[name]
         assert child["test_timeout_minutes"] == 22

@@ -3231,7 +3231,7 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "Trunk 8558 capacity split: preserve the 22-minute inner / 32-minute outer caps and all routing paths. dispatch_rank conservatively inherits the parent measurement until a completed scheduled run measures this child.",
+      "_comment": "Preserve the 22-minute inner / 32-minute outer caps and all routing paths. dispatch_rank conservatively inherits the parent measurement until a completed scheduled run measures this child.",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests|FullyQualifiedName~Honua.Server.Tests.Features.Admin.OperatorBearerTokenServiceTests",
       "paths": [
         "src/Honua.Core/Core/Features/Validation/",
@@ -3278,7 +3278,7 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "Trunk 8558 capacity split: preserve the 22-minute inner / 32-minute outer caps and all routing paths. dispatch_rank conservatively inherits the parent measurement until a completed scheduled run measures this child.",
+      "_comment": "Preserve the 22-minute inner / 32-minute outer caps and all routing paths. dispatch_rank conservatively inherits the parent measurement until a completed scheduled run measures this child.",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests|FullyQualifiedName~Honua.Server.Tests.Features.Admin.OidcJwtBearerValidationTests|FullyQualifiedName~Honua.Server.Tests.Features.Admin.OidcProviderEndpointsTests",
       "paths": [
         "src/Honua.Core/Core/Features/Validation/",
@@ -3325,7 +3325,7 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "Trunk 8558 capacity split: preserve the 22-minute inner / 32-minute outer caps and all routing paths. dispatch_rank conservatively inherits the parent measurement until a completed scheduled run measures this child.",
+      "_comment": "Preserve the 22-minute inner / 32-minute outer caps and all routing paths. dispatch_rank conservatively inherits the parent measurement until a completed scheduled run measures this child.",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests",
       "paths": [
         "src/Honua.Core/Core/Features/Validation/",
@@ -3372,7 +3372,7 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "Trunk 8558 capacity split: preserve the 22-minute inner / 32-minute outer caps and all routing paths. dispatch_rank conservatively inherits the parent measurement until a completed scheduled run measures this child.",
+      "_comment": "Preserve the 22-minute inner / 32-minute outer caps and all routing paths. dispatch_rank conservatively inherits the parent measurement until a completed scheduled run measures this child.",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests",
       "paths": [
         "src/Honua.Core/Core/Features/Validation/",

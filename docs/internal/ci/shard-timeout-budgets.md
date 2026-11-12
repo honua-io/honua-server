@@ -1563,7 +1563,7 @@ Trunk `8558bbce1e` [run 43209990084](https://github.com/honua-io/honua-server/ac
 exhausted the authentication/credentials shard's 22-minute inner budget with
 output still arriving two seconds before termination (100.2% utilization).
 This is a censored sample, not a completed duration. The recorded baseline is
-[admin-auth-capacity-20261112.json](admin-auth-capacity-20261112.json).
+[admin-auth-capacity-baseline.json](../../../scripts/ci/fixtures/admin-auth-capacity-baseline.json).
 
 The seven classes now run in four jobs: authentication and operator bearer;
 OAuth and OIDC; API keys; client certificates. Whole classes stay together.
