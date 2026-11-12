@@ -10,6 +10,7 @@ using Honua.Server.Features.Console.Models;
 using Honua.Server.Features.Console.Services;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using Honua.Server.Features.Admin;
 
 namespace Honua.Server.Features.Console;
 
@@ -38,7 +39,8 @@ internal static class ConsoleContentEndpoints
         group.MapPost("/", HandleCreate)
             .WithDisplayName("Create Console Content Item")
             .WithSummary("Creates a new Console content item. Returns the stored item with computed actions for the requesting principal.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .AddEndpointFilter(AgentApprovalFilter.ContentVisibility);
 
         group.MapGet("/search", HandleSearch)
             .WithDisplayName("Search Console Content Items")
@@ -53,12 +55,14 @@ internal static class ConsoleContentEndpoints
         group.MapPut("/{id}", HandleUpdate)
             .WithDisplayName("Replace Console Content Item")
             .WithSummary("Full replacement update; honours optimistic concurrency via the generation field.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
+            .AddEndpointFilter(AgentApprovalFilter.ContentVisibility);
 
         group.MapPatch("/{id}", HandlePatch)
             .WithDisplayName("Patch Console Content Item")
             .WithSummary("Partial update for displayable fields (title, description, tags, labels, visibility). Does not touch generation.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Patch }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Patch }))
+            .AddEndpointFilter(AgentApprovalFilter.ContentVisibility);
 
         group.MapDelete("/{id}", HandleDelete)
             .WithDisplayName("Delete Console Content Item")

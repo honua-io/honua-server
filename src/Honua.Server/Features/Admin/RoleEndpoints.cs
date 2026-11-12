@@ -65,7 +65,8 @@ internal static partial class RoleEndpoints
 
         group.MapDelete("/{id:guid}", HandleDeleteRole)
             .WithDisplayName("Delete Role")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }))
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
 
         group.MapGet("/{id:guid}/permissions", HandleGetPermissions)
             .WithDisplayName("Get Role Permissions")

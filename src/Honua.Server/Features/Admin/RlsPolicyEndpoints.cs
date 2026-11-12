@@ -56,7 +56,8 @@ internal static partial class RlsPolicyEndpoints
 
         group.MapDelete("/{id:guid}", HandleDeletePolicy)
             .WithDisplayName("Delete RLS Policy")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }))
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
     }
 
     private static RlsPolicyResponse ToResponse(RlsPolicy p) => new()

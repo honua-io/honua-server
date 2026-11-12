@@ -62,7 +62,8 @@ internal static partial class OAuthClientEndpoints
 
         scopes.MapDelete("/{scope}", HandleDeleteScope)
             .WithDisplayName("Delete OAuth Scope")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }))
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
     }
 
     private static async Task<Ok<ApiResponse<IReadOnlyList<OAuthClientResponse>>>> HandleListClients(

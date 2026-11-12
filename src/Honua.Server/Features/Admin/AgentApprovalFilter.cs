@@ -2,7 +2,9 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Infrastructure.Authentication;
+using Honua.Core.Features.Console.Domain;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Console.Models;
 
 namespace Honua.Server.Features.Admin;
 
@@ -16,6 +18,8 @@ internal static class AgentApprovalFilter
     internal const string PublishRef = "operator.agent.publish";
     internal const string AccessGrantsRef = "operator.agent.access-grants";
     internal const string OperationRef = "operator.agent.operation";
+    internal const string LayerStateRef = "operator.agent.layer-state";
+    internal const string ContentVisibilityRef = "operator.agent.content-visibility";
 
     private const string ProposalGuidance = OperatorApprovalGate.AgentApprovalGuidance;
 
@@ -30,7 +34,24 @@ internal static class AgentApprovalFilter
         => Refuse(invocation, next, PublishRef, ProposalGuidance);
 
     public static ValueTask<object?> LayerState(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
-        => Refuse(invocation, next, PublishRef, ConsoleGuidance);
+        => Refuse(invocation, next, LayerStateRef, ConsoleGuidance);
+
+    // Organization or public visibility widens who can see content; narrowing stays open to agents.
+    public static ValueTask<object?> ContentVisibility(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
+        => invocation.Arguments.Any(static argument => WidensVisibility(argument))
+            ? Refuse(invocation, next, ContentVisibilityRef, ConsoleGuidance)
+            : next(invocation);
+
+    private static bool WidensVisibility(object? argument) => argument switch
+    {
+        CreateConsoleContentItemRequest create => IsWide(create.Visibility),
+        UpdateConsoleContentItemRequest update => IsWide(update.Visibility),
+        PatchConsoleContentItemRequest patch => IsWide(patch.Visibility),
+        _ => false,
+    };
+
+    private static bool IsWide(ConsoleVisibility? visibility)
+        => visibility is ConsoleVisibility.Organization or ConsoleVisibility.Public;
 
     public static ValueTask<object?> AccessGrants(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
         => Refuse(invocation, next, AccessGrantsRef, ConsoleGuidance);

@@ -11,6 +11,7 @@ using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using Honua.Server.Features.Admin;
 
 namespace Honua.Server.Features.Console.Publications;
 
@@ -32,7 +33,7 @@ internal static class ContentPublicationEndpoints
             .WithDisplayName("Publish Content Artifact")
             .WithSummary("Publishes a new immutable artifact version and claims a server-owned route.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .AddEndpointFilter(Honua.Server.Features.Admin.AgentApprovalFilter.AccessGrants);
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
 
         group.MapGet("/", HandleList)
             .WithDisplayName("List Content Publications")
@@ -53,19 +54,19 @@ internal static class ContentPublicationEndpoints
             .WithDisplayName("Republish Content Artifact")
             .WithSummary("Creates a new immutable version and moves the active route pointer to it.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .AddEndpointFilter(Honua.Server.Features.Admin.AgentApprovalFilter.AccessGrants);
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
 
         group.MapPost("/{publicationId}/rollback", HandleRollback)
             .WithDisplayName("Roll Back Content Route")
             .WithSummary("Moves the active route pointer to an earlier immutable version and records the rollback pointer.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .AddEndpointFilter(Honua.Server.Features.Admin.AgentApprovalFilter.AccessGrants);
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
 
         group.MapPatch("/{publicationId}/policy", HandleUpdatePolicy)
             .WithDisplayName("Update Content Publication Policy")
             .WithSummary("Updates server-owned visibility/share/embed/public-link policy and records an audited event.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Patch }))
-            .AddEndpointFilter(Honua.Server.Features.Admin.AgentApprovalFilter.AccessGrants);
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
     }
 
     private static async Task<IResult> HandlePublish(

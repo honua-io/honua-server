@@ -7,6 +7,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Server.Features.Admin;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,6 +18,27 @@ public sealed partial class ProposalEndpointsTests
 {
     private static readonly string[] AgentKeyPermissions = ["admin:read", "admin:write", "agent"];
     private static readonly string[] HumanKeyPermissions = ["admin:read", "admin:write"];
+    private const string ConsoleGuidance = "ask one to make this change in Console";
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/console/content/{id}/share/access")]
+    [Endpoint("PATCH /api/v1/console/content/{id}")]
+    [Endpoint("DELETE /api/v1/admin/rls-policies/{id}")]
+    public async Task ShareVisibilityAndRowPolicies_AgentKey_CannotWidenAccess()
+    {
+        using var agent = await CreateKeyClientAsync("agent-sharing", AgentKeyPermissions);
+        var id = Guid.NewGuid();
+
+        var share = await agent.PutAsJsonAsync($"/api/v1/console/content/{id}/share/access", new { accessTier = "public-indexed" });
+        var widen = await agent.PatchAsJsonAsync($"/api/v1/console/content/{id}", new { visibility = "public" });
+        var narrow = await agent.PatchAsJsonAsync($"/api/v1/console/content/{id}", new { visibility = "personal" });
+        var unmask = await agent.DeleteAsync($"/api/v1/admin/rls-policies/{id}");
+
+        await AssertAgentApprovalRefusalAsync(share, ConsoleGuidance, AgentApprovalFilter.AccessGrantsRef);
+        await AssertAgentApprovalRefusalAsync(widen, ConsoleGuidance, AgentApprovalFilter.ContentVisibilityRef);
+        (await narrow.Content.ReadAsStringAsync()).Should().NotContain("urn:honua:approval-required");
+        await AssertAgentApprovalRefusalAsync(unmask, ConsoleGuidance, AgentApprovalFilter.AccessGrantsRef);
+    }
 
     [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/access-policy")]
@@ -52,7 +74,7 @@ public sealed partial class ProposalEndpointsTests
         var leavesAccess = await agent.PutAsJsonAsync(
             "/api/v1/admin/services/roads/layers/0/metadata", new { description = "Road centrelines" });
 
-        await AssertAgentApprovalRefusalAsync(changesAccess, "in Console");
+        await AssertAgentApprovalRefusalAsync(changesAccess, ConsoleGuidance, AgentApprovalFilter.AccessPolicyRef);
         leavesAccess.StatusCode.Should().NotBe(HttpStatusCode.Forbidden, await leavesAccess.Content.ReadAsStringAsync());
     }
 
@@ -67,8 +89,8 @@ public sealed partial class ProposalEndpointsTests
         var grants = await agent.PutAsJsonAsync(
             $"/api/v1/admin/roles/{Guid.NewGuid()}/permissions", new { permissions = new[] { new { service = "roads", layer = "*", operation = "read" } } });
 
-        await AssertAgentApprovalRefusalAsync(enable, "in Console");
-        await AssertAgentApprovalRefusalAsync(grants, "in Console");
+        await AssertAgentApprovalRefusalAsync(enable, ConsoleGuidance, AgentApprovalFilter.LayerStateRef);
+        await AssertAgentApprovalRefusalAsync(grants, ConsoleGuidance, AgentApprovalFilter.AccessGrantsRef);
     }
 
     [IntegrationTest]
@@ -81,8 +103,8 @@ public sealed partial class ProposalEndpointsTests
         var publication = await agent.PostAsJsonAsync("/api/v1/console/publications", new { routeSlug = "roads", title = "Roads" });
         var scope = await agent.PutAsJsonAsync("/api/v1/admin/oauth-scopes", new { scope = "roads.read" });
 
-        await AssertAgentApprovalRefusalAsync(publication, "in Console");
-        await AssertAgentApprovalRefusalAsync(scope, "in Console");
+        await AssertAgentApprovalRefusalAsync(publication, ConsoleGuidance, AgentApprovalFilter.AccessGrantsRef);
+        await AssertAgentApprovalRefusalAsync(scope, ConsoleGuidance, AgentApprovalFilter.AccessGrantsRef);
     }
 
     [IntegrationTest]
@@ -97,7 +119,7 @@ public sealed partial class ProposalEndpointsTests
 
         var response = await agent.PostAsJsonAsync("/api/v1/operations/admin.layer.fields.set/submit", request, JsonOptions);
 
-        await AssertAgentApprovalRefusalAsync(response, "in Console");
+        await AssertAgentApprovalRefusalAsync(response, ConsoleGuidance, AgentApprovalFilter.OperationRef);
         _executor.ExecutionCount.Should().Be(0);
     }
 
@@ -162,12 +184,17 @@ public sealed partial class ProposalEndpointsTests
     private async Task<HttpClient> CreateKeyClientAsync(string name, IReadOnlyList<string> permissions)
         => CreateApiKeyClient((await CreateApiKeyAsync(name, permissions)).Key);
 
-    private static async Task AssertAgentApprovalRefusalAsync(HttpResponseMessage response, string guidance = "Console Approvals")
+    private static async Task AssertAgentApprovalRefusalAsync(
+        HttpResponseMessage response, string guidance = "Console Approvals", string? policyRef = null)
     {
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden, body);
         using var problem = JsonDocument.Parse(body);
         problem.RootElement.GetProperty("type").GetString().Should().Be("urn:honua:approval-required");
         problem.RootElement.GetProperty("detail").GetString().Should().Contain(guidance);
+        if (policyRef is not null)
+        {
+            problem.RootElement.GetProperty("policyRef").GetString().Should().Be(policyRef);
+        }
     }
 }

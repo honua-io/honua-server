@@ -63,7 +63,9 @@ internal static class AgentPrincipal
     }
 
     private static bool HasAgentRole(ClaimsPrincipal principal)
-        => AgentApprovalRule.IsAgent([.. principal.FindAll(ClaimTypes.Role).Select(static claim => claim.Value)]);
+        => AgentApprovalRule.IsAgent([.. principal.Identities
+            .SelectMany(static identity => identity.FindAll(identity.RoleClaimType).Concat(identity.FindAll(ClaimTypes.Role)))
+            .Select(static claim => claim.Value)]);
 
     private static bool HasAgentGrant(ClaimsPrincipal principal)
         => principal.FindAll(AdminApiKeyPermission.PermissionClaimType)
