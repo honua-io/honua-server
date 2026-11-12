@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Server.Features.Admin;
@@ -21,6 +22,18 @@ namespace Honua.Server.Tests.Startup;
 
 public sealed class ImportExportTileOperationsRegistrationTests
 {
+    [UnitTest]
+    public void AddTileOperations_WithoutSystemDatabase_ComposesNoSharedLeaseStore()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        services.AddHonuaImportExportAndTileOperations(new ConfigurationBuilder().Build());
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetService<ILeaseStore>().Should().BeNull();
+    }
+
     [UnitTest]
     public void AddTileOperations_RedisEntitledWithScopedMetadataGraphProvider_ContainerValidates()
     {

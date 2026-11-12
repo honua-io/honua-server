@@ -1,7 +1,8 @@
 # CI Gate Model
 
+
 > Defines the five-tier quality gate model governing all CI workflows across the Honua project.
-> Last updated: 2026-11-09
+> Last updated: 2026-11-10
 
 ## Tier Definitions
 
@@ -14,6 +15,8 @@
 | **maintenance** | Repo automation and housekeeping | Version automation, metadata updates, scheduled hygiene | No |
 
 ## Governing Rules
+
+Draft pull requests run Format, Clean code, and Repository hygiene only; optional PR verification and PR Gate heavy jobs wait for `ready_for_review`. Converting a ready PR back to draft cancels its previous run. The stable `PR Gate` aggregate still runs with `always()` and fails on skipped heavy dependencies, so a draft run cannot supply mergeable verification. PR Gate and native-image impact observers exclude this intentional draft failure only when the source run’s latest `PR Gate / Runner select` and `PR Gate / Build and tests` outcomes at or before the source attempt were both skipped (a partial rerun keeps earlier outcomes; a failed runner selection is a ready-run failure), preserving ready-run failures in promotion evidence even across same-SHA draft transitions. Manual and trunk verification retain their existing coverage.
 
 1. **PR gates must be deterministic and directly actionable by the author.** If a check fails, the author must be able to reproduce and fix it locally without external system access.
 
@@ -80,6 +83,8 @@ Stage 3 details:
   affected run of its merge.
 - `ci.yml` puts selective runs in their own concurrency group, so a burst of
   merges never replaces a pending scheduled full run.
+- A started full run cancels the selective runs it covers, and a selective
+  run under a covering full run cancels itself ([covered trunk runs](#covered-trunk-runs)).
 - The dispatched run is titled `CI affected <base>..<head>`. Its `changes`
   job prints the suspect range (`scripts/ci/trunk-suspect-range.sh`: every
   trunk commit in the range and the pull requests it names) to the job log and
@@ -91,7 +96,8 @@ Stage 3 details:
   a full run on the same sha cannot supersede that full run's certification.
   The full-matrix fallback is titled `CI full matrix ...` and still certifies.
 - Every `selective_base` dispatch limits server shards to six concurrent jobs,
-  including router promotions and explicit full-coverage overrides. These
+  or twelve when more than 30 shards remain selected after newest-merge
+  narrowing, including router promotions and explicit full-coverage overrides. These
   fallbacks still run every selected shard. Scheduled and non-selective full
   runs retain their 24-job budget.
 - Stage 3 is not a required check and changes no ruleset.
@@ -627,7 +633,7 @@ Trailing `selective_base` dispatches use their verified base for the managed
 producer's affected project graph. An effective full-CI decision (including a
 router promotion or manual override) builds the whole solution. Consumers reuse the single producer's
 artifacts. Server shards retain descending measured `dispatch_rank` order and
-run at most six at once (full runs retain 24). Expensive AOT, Docker,
+run at most six at once, twelve above 30 selected shards (full runs retain 24). Expensive AOT, Docker,
 Postgres compatibility, browser, Python, MCP and quickstart lanes use
 `scripts/ci/affected-ci-lanes.py` to select their own inputs. Native, container
 and MCP checks conservatively include every runtime source or project change,
@@ -637,6 +643,8 @@ unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
 as a prerequisite. PR routing, required check names, shard definitions, and the
 twice-daily full matrix are preserved.
+
+Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. If both producer jobs were skipped by job-level admission (draft or non-base edit), the consumer also returns without validation or mutation. Missing envelopes from ordinary producers remain errors.
 
 ### Router validator execution
 
@@ -651,6 +659,15 @@ Review revalidation shares `.github/scripts/revalidate-exact-head-review.cjs` ac
 
 Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. Missing envelopes from ordinary producers remain errors.
 
+### Spec endpoint application lifetime
+
+`SpecEndpointsTests` retains one application for validation, planning, and
+rejected requests, with a fresh client per case. Successful applies, cache tests,
+and license variants own their hosts and state. The class fixture disposes the
+shared application after its last case. All cases and assertions run in their
+existing PR and trunk shard selections; runner counts, required check names,
+and aggregate dependencies are unchanged.
+
 ### Authorization shard coverage
 
 The authorization matrix selects the live `AdminAuthorizationTests` class.
@@ -658,6 +675,42 @@ The remaining authorization shard owns every other method in the original parent
 filter. Retired Redis endpoint selectors are removed; the coverage guard still
 rejects dead positive clauses, and the partition fixture verifies complete,
 disjoint method ownership with unchanged source triggers and budgets.
+
+### Layer publishing shared application fixture
+
+`LayerPublishingIntegrationTests` shares one customized host and feature schema across
+its cases. Each case uses distinct layer, table, service, and secure-connection identities
+and cleans up its publications and source tables. Before each case the fixture reapplies
+the server seed, which deletes and recreates the seeded features and catalog metadata, and
+restores the metadata graph with a new revision.
+The missing-SRID simulation creates and removes its expression index under the schema lock.
+
+### WPS endpoint fixture lifetime
+
+`Wps20EndpointsTests` shares its default application and identically configured
+conformance-echo application for the lifetime of the sequential test class.
+Each application seeds its database once. Tests with service substitutes or
+custom host configuration retain isolated applications; echo results are
+accessed through their request-generated job IDs and reference tokens.
+All cases and assertions remain in the WFS 1–9 shard family on selected PR runs
+and twice-daily full trunk runs. This changes no runner count, required check
+name, required aggregate dependency, workflow, or shard definition.
+
+### ImageServer endpoint database lifetime
+
+`ImageServerEndpointsTests` retains a `PostgresFixture` reference for the class
+to avoid repeating shared database initialization between cases. Each case owns
+its configured application, isolated schema, and raster substitutes; the class
+fixture releases the infrastructure after the last case. Pure capability XML
+coverage lives in `ImageServerWmtsCapabilitiesTests` without a database fixture.
+Full trunk runs include every case; PR routing selects affected ImageServer shards.
+
+### Geocoding response fixture lifetime
+
+`GeocodingEndpointTests` uses one class-lifetime Community application for
+request-derived default-provider responses. Each case owns its HTTP client.
+Request-capture, custom-provider and Enterprise configurations own separate
+applications. Full trunk runs include every case; PR routing selects affected geocoding shards.
 
 ### Governance capacity split
 
@@ -670,8 +723,13 @@ checks method-level union, disjointness, nonempty children, and inherited limits
 
 Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
-minutes, including setup allowance. These initialize dispatch ranks; actual
-child minutes and measured ranks require the next completed full trunk run.
+minutes, including setup allowance. These initialized the dispatch ranks.
+
+Measured ranks (11 Nov 2026): every `dispatch_rank` is the median passing job
+duration of trunk runs 42929935484, 42935981545, 42968585882 and 42986321489, the
+first full runs after the tiny-shard consolidation. The governance children measured
+5.2, 10.0 and 7.0 minutes. A shard with no passing job keeps the larger of its old rank
+and its failed duration.
 
 ### Standalone tooling in affected producer builds
 
@@ -698,7 +756,7 @@ Each affected shard selects the SDK and workflow-attempt identity exported by it
 
 ### Test analyzer compilation roots
 
-The ready-PR format matrix retains `PR Gate / Analyzers (tests)` and adds `PR Gate / Analyzers (server tests)`. The latter compiles Honua.Server.Tests; the former compiles every other selected solution root. The server root is also retained when an affected root imports or transitively references it. Forward dependencies still compile. The `server-tests` and `other-tests` diagnostic partitions assign Server.Tests exclusively to the server job and all other test diagnostics to the other job, including when the collector imports Server.Tests. Warnings remain errors. A partition with no roots skips restore and build explicitly. The required format matrix waits for both jobs; drafts retain Format only. This separates the measured 14.9-minute test-analyzer path; the new timing must be measured on a hosted gate run.
+The ready-PR format matrix retains `PR Gate / Analyzers (tests)` and adds `PR Gate / Analyzers (server tests)`. The latter compiles Honua.Server.Tests and Honua.Architecture.Tests, whose generated coverage references also require Server.Tests. The former compiles every other selected solution root, avoiding a second Server.Tests compilation through the collector. The server root is also retained when an affected root imports or transitively references it. Forward dependencies still compile. The `server-tests` and `other-tests` diagnostic partitions assign Server.Tests and the collector exclusively to the server job and all other test diagnostics to the other job. Warnings remain errors. A partition with no roots skips restore and build explicitly. The required format matrix waits for both jobs; drafts retain Format only. The first split measured 11.13 minutes for other tests, but a subsequent run took 13.32 minutes; moving the collector addresses that duplicate compilation. The revised timing must be measured on a hosted gate run.
 
 ### Optional PR workflow input boundaries
 
@@ -730,9 +788,28 @@ Trailing affected CI refreshes its completed-ancestor base when the selection jo
 so queued dispatches do not retain an obsolete range. Dispatch and execution use the same completed-run selector; execution never regresses behind the dispatched base. Selections above 30 shards
 fall back to the newest merge; the summary records the older range deferred to
 the twice-daily full run. A broad newest merge retains every selected shard.
-Affected shard concurrency remains six, including full-coverage routing fallbacks;
-manual and scheduled full runs retain their existing budget. Required PR gates
+Affected shard concurrency is six, or twelve when more than 30 shards remain
+selected (`scripts/ci/trailing_selection.py` owns both numbers and the
+threshold), including full-coverage routing fallbacks; manual and scheduled
+full runs retain 24. A
+134-shard affected run took 214 minutes at six while PR Gate job queueing stayed
+at a two-second median; twelve halves that so a broad run finishes before the
+next full run. Required PR gates
 and shard definitions are unchanged.
+
+### Covered trunk runs
+
+A full trunk run covers every merge up to its head. Its first job,
+`supersede-trailing-runs` (`scripts/ci/supersede_trailing_runs.py`), cancels
+queued or running `CI affected ...` runs at that head or an earlier one; a
+selective run cancels itself when a started scheduled run has a head that
+contains its own. Dispatched runs never cancel a selective run, because the
+runs API does not expose the inputs that decide their scope.
+Ancestry comes from the compare API. A full run held by the concurrency group
+never cancels anything, and unreadable run history cancels nothing. On
+11 Nov a 164-job affected run and a manual full run tested the same head
+together, leaving 130 affected and 37 full jobs queued while every open PR
+Gate had six to nine jobs waiting for hosted runners.
 
 ## Automatic merge admission
 

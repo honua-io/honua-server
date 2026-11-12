@@ -2,6 +2,7 @@ name: Control Plane SDK Governance
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches:
       - trunk
       - main
@@ -27,6 +28,7 @@ concurrency:
 
 jobs:
   generate-control-plane-sdks:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 25
 

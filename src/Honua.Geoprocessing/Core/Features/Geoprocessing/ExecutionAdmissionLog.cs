@@ -58,7 +58,7 @@ internal static partial class ExecutionAdmissionLog
 
     [LoggerMessage(8026, LogLevel.Warning,
         "Distributed execution-admission rate limiting unavailable; rejecting with backpressure instead of a per-node fallback.")]
-    public static partial void RedisUnavailable(ILogger logger, Exception exception);
+    public static partial void SharedRateUnavailable(ILogger logger, Exception exception);
 
     // Event IDs 8027-8030 live on ExecutionAdmissionLeaseLog in Honua.Hosting, beside the
     // shared lease. A LoggerMessage partial class cannot span assemblies.

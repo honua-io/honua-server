@@ -22,7 +22,7 @@ jobs:
     if: >-
       github.event.workflow_run.head_repository.full_name == github.repository &&
       contains(fromJson('["success","failure"]'), github.event.workflow_run.conclusion)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 15
     steps:
       # workflow_run uses trusted default-branch code. Never check out the
@@ -37,13 +37,17 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p quarantine-evidence
+          # A re-run attempt uploads a second artifact under the same name, and
+          # `gh run download --name` extracts both into one directory, which
+          # collides. Keep only the newest artifact per name and fetch it by id.
           gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/artifacts?per_page=100" \
-            --jq '.artifacts[] | select(.expired == false) | .name | select(test("^(server-test-results-|pr-gate-affected-shard-)[a-zA-Z0-9_-]+$"))' \
-            > quarantine-evidence/artifact-names.txt
-          while IFS= read -r artifact; do
-            gh run download "${SOURCE_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
-              --name "${artifact}" --dir "quarantine-evidence/${artifact}"
-          done < quarantine-evidence/artifact-names.txt
+            --jq '.artifacts[] | select(.expired == false) | select(.name | test("^(server-test-results-|pr-gate-affected-shard-)[a-zA-Z0-9_-]+$")) | "\(.created_at) \(.id) \(.name)"' \
+            | sort -r | awk '!seen[$3]++' > quarantine-evidence/artifacts.txt
+          while read -r _ artifact_id artifact; do
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "quarantine-evidence/${artifact}.zip"
+            python3 -I -m zipfile -e "quarantine-evidence/${artifact}.zip" "quarantine-evidence/${artifact}"
+            rm "quarantine-evidence/${artifact}.zip"
+          done < quarantine-evidence/artifacts.txt
       - name: Publish verified pass-after-fail evidence
         env:
           GH_TOKEN: ${{ github.token }}

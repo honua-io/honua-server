@@ -95,9 +95,9 @@ internal static class GeoprocessingServiceCollectionExtensions
             .ValidateOnStart();
 
         services.TryAddSingleton<IExecutionAdmissionEvaluator, ExecutionAdmissionEvaluator>();
-        // One coordinator per process (#3853, #4691): the Hosting type's local gate serializes
-        // this node, and with a composed multiplexer its shared Redis lease serializes the
-        // admission window cluster-wide. TryAdd so a tiles registration of the same singleton
+        // One coordinator per process: the Hosting type's local gate serializes this node, and
+        // with a composed lease store its shared lease serializes the admission window
+        // cluster-wide. TryAdd so a tiles registration of the same singleton
         // is reused instead of constructing a second local gate.
         services.TryAddSingleton<ExecutionAdmissionCoordinator>();
 
