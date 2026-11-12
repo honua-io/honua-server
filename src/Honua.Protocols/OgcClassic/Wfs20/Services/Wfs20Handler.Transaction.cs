@@ -192,12 +192,12 @@ internal sealed partial class Wfs20Handler
         }
         catch (WfsTransactionException ex)
         {
-            return TypedProtocolBadRequest(context, activity, ex, ex.ExceptionCode, ex.Locator);
+            return TypedProtocolBadRequest(context, activity, ex);
         }
         catch (WfsQueryException ex)
         {
             // Target-resolution query errors (e.g. a ResourceId naming another feature type), as on GetFeature.
-            return TypedProtocolBadRequest(context, activity, ex, ex.ExceptionCode, ex.Locator);
+            return TypedProtocolBadRequest(context, activity, ex);
         }
         catch (ArgumentException ex)
         {
@@ -1177,13 +1177,14 @@ internal sealed partial class Wfs20Handler
 
 
     // Typed protocol exception with an author-controlled message/locator; reported verbatim by design.
-    private IResult TypedProtocolBadRequest(
-        HttpContext context,
-        Activity? activity,
-        Exception ex,
-        string exceptionCode,
-        string? locator)
+    private IResult TypedProtocolBadRequest(HttpContext context, Activity? activity, Exception ex)
     {
+        var (exceptionCode, locator) = ex switch
+        {
+            WfsTransactionException transaction => (transaction.ExceptionCode, transaction.Locator),
+            WfsQueryException query => (query.ExceptionCode, query.Locator),
+            _ => throw new ArgumentException("Only typed WFS protocol exceptions are reported verbatim.", nameof(ex)),
+        };
         Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
         HonuaTelemetry.RecordException(activity, ex);
         return Wfs20ErrorResults.CreateBadRequest(context, exceptionCode, ex.Message, locator);
