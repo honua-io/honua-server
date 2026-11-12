@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests;
 

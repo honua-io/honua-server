@@ -5,6 +5,7 @@ using System.Net;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
