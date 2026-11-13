@@ -842,6 +842,80 @@ boundary and deterministic replay are unchanged.
 Class-scoped test applications and database infrastructure that shorten server
 test shards without changing what they run.
 
+### WFS 2.0 endpoint fixture lifetime
+
+Wfs20EndpointsTests shares one seeded Community-licensed WFS 2.0 application for
+the lifetime of the sequential test class, used by every read-only case:
+capabilities, DescribeFeatureType, GetFeature, GetPropertyValue, stored-query
+listing and description, and error-report checks. Cases that send a WFS
+Transaction, create or drop stored queries, or write features or resource
+metadata through the fixture start their own application within the case.
+Managed stored queries are held process-wide rather than per application, so a
+stored query created by one case stays visible to later cases; no case asserts
+an exact stored-query count. Cases with custom metadata providers, licenses, or
+service replacements also keep their own per-case applications.
+All cases and assertions remain in the WFS Endpoints shard on selected PR runs
+and twice-daily full trunk runs. This changes no runner count, required check
+name, required aggregate dependency, workflow, or shard definition.
+
+### Cross-protocol permission matrix fixture lifetime
+
+CrossProtocolPermissionMatrixTests starts one application for the whole class,
+configured with the wildcard query grant, and shares it across the ten
+read-denial cases for FeatureServer, OData, OData batch, OGC API Features and
+OGC API Tiles. Each of those cases creates its own HttpClient with its own user
+and role headers, so no login state or cookies are shared between cases. Every
+write case, every ApplyEdits parity case (FeatureServer and gRPC-write), and the
+layer-scoped grant cases still start their own application, because their grants
+or edits differ per test. The shared application is disposed when the class
+finishes, or when a shard finishes its share of the class.
+All cases and assertions remain in the Security and Authorization 1 and Security
+and Authorization 7 shards on selected PR runs and twice-daily full trunk runs.
+This changes no runner count, required check name, required aggregate
+dependency, workflow, or shard definition.
+
+### FeatureServer endpoint fixture lifetime
+
+FeatureServerEndpointTests starts one seeded, Pro-licensed application per test
+class, through an xUnit class fixture, and every read-only metadata and query
+case reuses it with the same schema and editing capabilities. Any case that
+edits features, adds data or changes metadata calls
+`UseIsolatedApplicationAsync()` first and gets its own application and schema,
+which is disposed when the case ends. The shared application is never written
+to, so the read-only cases do not depend on order. The class still runs one case
+at a time in the `Database.CoreEndpoints` collection, and method names are
+unchanged, so the Core Endpoints shard filter is unaffected.
+All cases and assertions remain in the Core Endpoints, Core Endpoint Queries,
+and Core Endpoint Mutations shards on selected PR runs and twice-daily full
+trunk runs. This changes no runner count, required check name, required
+aggregate dependency, workflow, or shard definition.
+
+### Feature stream default application lifetime
+
+FeatureStreamEndpointsTests creates the shared default application per case but
+starts it lazily: only cases that call `StartDefaultApplicationAsync()` start
+it, and only those cases dispose it. Cases that need a custom configuration
+build, start and dispose their own application inside the case, so they no
+longer pay for a default application they never use. Each case still gets its
+own isolated event store, sessions and credentials.
+All cases and assertions remain in the Server Features Streaming Transports and
+Server Features Streaming Endpoints 1, 2, and 4 shards on selected PR runs and
+twice-daily full trunk runs. This changes no runner count, required check name,
+required aggregate dependency, workflow, or shard definition.
+
+### FeatureServer RBAC denial fixture lifetime
+
+FeatureServerServiceRbacTests uses one application per class, built once through
+xUnit's class fixture, for cases where authorization must reject a request
+before any write. Each case still creates its own HTTP client with its own role
+headers, so no authentication state is shared between cases. Cases that write
+successfully, or that create a replica as setup, still build their own
+application and discard it when the case ends.
+All cases and assertions remain in the Security and Authorization 5 shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
 ### Routing async web tool database lifetime
 
 `RoutingAsyncWebToolTests` holds a class-level `PostgresFixture`, which keeps
