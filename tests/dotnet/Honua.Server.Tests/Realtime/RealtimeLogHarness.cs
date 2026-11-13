@@ -59,7 +59,7 @@ internal sealed class RealtimeLogHarness : IAsyncDisposable
 
     // A task's dispatcher over this schema.
     public RealtimeDispatcher CreateDispatcher(RealtimeOptions? options = null)
-        => new(Log, Options.Create(options ?? new RealtimeOptions()), NullLogger<RealtimeDispatcher>.Instance);
+        => new(Log, [], Options.Create(options ?? new RealtimeOptions()), NullLogger<RealtimeDispatcher>.Instance);
 
     // A task's listener on this database.
     public RealtimeListener CreateListener(RealtimeOptions options, string? connectionString = null)

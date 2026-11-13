@@ -45,7 +45,8 @@ internal static class FeatureChangeLogSeeder
                     await change.ExecuteNonQueryAsync(token);
                 }
 
-                await transaction.CommitAsync(token);
+                token.ThrowIfCancellationRequested();
+                await transaction.CommitAsync(CancellationToken.None);
                 return true;
             },
             StatementRepeat.NotAfterSend,
