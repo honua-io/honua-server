@@ -73,13 +73,13 @@ public sealed class OgcFeaturesFieldClientConcurrencyTests : IClassFixture<OgcFe
         if (method == "PATCH")
         {
             request.Content = new StringContent(
-                $$"""{"properties":{"name":"{{name}}"}}""",
+                $$$"""{"properties":{"name":"{{{name}}}"}}""",
                 Encoding.UTF8, "application/merge-patch+json");
         }
         else if (method == "PUT")
         {
             request.Content = new StringContent(
-                $$"""{"type":"Feature","geometry":null,"properties":{"name":"{{name}}"}}""",
+                $$$"""{"type":"Feature","geometry":null,"properties":{"name":"{{{name}}}"}}""",
                 Encoding.UTF8, "application/geo+json");
         }
 
