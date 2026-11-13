@@ -3,7 +3,7 @@
 
 using FluentAssertions;
 using Honua.Alerts;
-using Honua.Core.Features.Alerts.Abstractions;
+using Honua.Infrastructure.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Realtime;
 using Honua.Server.Features.Realtime;
