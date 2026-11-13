@@ -12,7 +12,7 @@ SPEC = importlib.util.spec_from_file_location("coverage", ROOT / "scripts/ci/che
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 CONFIG = json.loads((ROOT / ".github/ci-shards.json").read_text())
-EVIDENCE = json.loads((ROOT / "docs/internal/ci/featureserver-shard-capacity-20261018.json").read_text())
+EVIDENCE = json.loads((ROOT / "eng/ci/fixtures/shard-capacity/featureserver.json").read_text())
 ORIGINAL = EVIDENCE["originalShard"]
 NAMES = ("FeatureServer Editing and Relationships",
          *capacity_split_names(CONFIG, "FeatureServer Query Services and Replication"))

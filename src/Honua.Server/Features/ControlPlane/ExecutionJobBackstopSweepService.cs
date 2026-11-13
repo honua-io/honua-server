@@ -66,7 +66,7 @@ internal sealed partial class ExecutionJobBackstopSweepService(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (IsTerminal(job.Status) || job.UpdatedAt > cutoff)
+            if (job.Status.IsTerminal() || job.UpdatedAt > cutoff)
             {
                 continue;
             }
@@ -85,11 +85,6 @@ internal sealed partial class ExecutionJobBackstopSweepService(
             }
         }
     }
-
-    private static bool IsTerminal(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded
-            or ExecutionJobStatus.Failed
-            or ExecutionJobStatus.Cancelled;
 
     private static partial class Log
     {

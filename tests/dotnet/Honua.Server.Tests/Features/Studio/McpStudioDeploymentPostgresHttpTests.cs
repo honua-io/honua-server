@@ -91,7 +91,7 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
             .Should().BeOfType<PostgresStudioPackageStore>();
         _fixture.Services.GetRequiredService<IDeploymentStore>()
             .Should().BeOfType<PostgresDeploymentStore>();
-        await ApplyStudioMigrationsAsync();
+        await StudioPostgresTestSchema.ApplyAsync(_fixture);
     }
 
     public async Task DisposeAsync()
@@ -174,37 +174,6 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
         {
             denied.StatusCode.Should().Be(HttpStatusCode.Unauthorized, denial);
         }
-    }
-
-    private async Task ApplyStudioMigrationsAsync()
-    {
-        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Missing fixture schema.");
-        await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
-        {
-            foreach (var file in new[]
-                     {
-                         "035_CreateStudioPackageLifecycle.sql",
-                         "036_CreateContentPublications.sql",
-                         "082_CreatePromotionStores.sql",
-                         "089_AddStudioContentEnumerationIndexes.sql",
-                         "090_AddStudioContentItemOwner.sql",
-                         "092_CreateSavedMapOperationLog.sql",
-                         "093_EnsureConfiguredStudioPackageLifecycle.sql",
-                         "094_CreateSavedMapCheckpointVersionRecovery.sql",
-                         "095_DeleteSavedMapOperationLogWithStudioDraft.sql",
-                         "120_AddStudioTenantOwnership.sql",
-                         "126_AddStudioContentHashInput.sql",
-                         "134_VersionCanonicalDeployments.sql",
-                     })
-            {
-                await using var stream = typeof(Program).Assembly.GetManifestResourceStream($"Honua.Server.Migrations.{file}")
-                    ?? throw new InvalidOperationException($"Missing embedded migration {file}.");
-                using var reader = new StreamReader(stream);
-                var sql = (await reader.ReadToEndAsync())
-                    .Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal);
-                await _fixture.Postgres.ExecuteAsync(sql, schema);
-            }
-        });
     }
 
     private async Task AssertPersistedRowAsync(string deploymentId)

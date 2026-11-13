@@ -42,7 +42,7 @@ internal sealed partial class ExecutionWorkerExitState(
             return 1;
         }
 
-        if (ExecutionJobReconciler.IsTerminal(job.Status))
+        if (job.Status.IsTerminal())
         {
             return 0;
         }

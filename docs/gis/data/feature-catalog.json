@@ -6467,6 +6467,7 @@
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GetVersion_ContentHashInput_RecomputesToContentHashOnVersionAndPublishedReads",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.PublishedRoute_FollowActiveUrlAfterPublication_ServesActiveVersionThroughRepublishAndRollback",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.PublishedRoute_PersonalVisibility_RequiresAuthorizedReader_AndRepublishedRouteRetiresOldUrl",
+        "Honua.Server.Tests.Features.Studio.StudioPublicationSelfApprovalTests.RestPublication_WithoutRedis_SurvivesRestartAndRequiresHumanApproval",
         "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.ConflictingResource_IsRejectedBeforeTheReaderAccessFilter",
         "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.DefaultRead_StaysUnchanged_AndProjectionDoesNotChangeTheSealedVersion",
         "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.LegacyAlias_CannotRetargetToTheOnlyLayerVisibleToTheReader",
@@ -19001,7 +19002,8 @@
         "Honua.Server.Tests.Features.Studio.StudioPublicationSelfApprovalTests.ApproveProposal_DenialAuditUnavailable_ReturnsSafe503WithoutResolving",
         "Honua.Server.Tests.Features.Studio.StudioPublicationSelfApprovalTests.ApproveProposal_IssuerBearingRequesterBearer_RequiresHumanSession",
         "Honua.Server.Tests.Features.Studio.StudioPublicationSelfApprovalTests.ApproveProposal_MissingOrPermissionDenied_DoesNotCreateProposalAuditJoin",
-        "Honua.Server.Tests.Features.Studio.StudioPublicationSelfApprovalTests.ApproveProposal_VerifiedHumanRequesterOrAnotherPerson_Succeeds"
+        "Honua.Server.Tests.Features.Studio.StudioPublicationSelfApprovalTests.ApproveProposal_VerifiedHumanRequesterOrAnotherPerson_Succeeds",
+        "Honua.Server.Tests.Features.Studio.StudioPublicationSelfApprovalTests.RestPublication_WithoutRedis_SurvivesRestartAndRequiresHumanApproval"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -20352,6 +20354,7 @@
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.PublishedRoute_FollowActiveUrlAfterPublication_ServesActiveVersionThroughRepublishAndRollback",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.PublishedRoute_PersonalVisibility_RequiresAuthorizedReader_AndRepublishedRouteRetiresOldUrl",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback",
+        "Honua.Server.Tests.Features.Studio.StudioPublicationSelfApprovalTests.RestPublication_WithoutRedis_SurvivesRestartAndRequiresHumanApproval",
         "Honua.Server.Tests.Features.Studio.StudioTenantIsolationTests.StudioLifecycle_WithinOneTenant_IsUnchanged",
         "Honua.Server.Tests.Features.Studio.StudioTenantIsolationTests.StudioPublishRequest_AnotherTenantsVersion_IsRefusedAndDoesNotPublish"
       ],
