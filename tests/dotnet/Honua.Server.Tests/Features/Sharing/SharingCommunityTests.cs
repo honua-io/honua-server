@@ -155,6 +155,61 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         discoveryBody.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
     }
 
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/community/createGroup")]
+    [Endpoint("POST /sharing/rest/community/groups/{groupId}/delete")]
+    [Endpoint("POST /sharing/rest/community/groups/{groupId}/addUsers")]
+    [Endpoint("POST /sharing/rest/community/groups/{groupId}/removeUsers")]
+    [Endpoint("POST /sharing/rest/content/items/{itemId}/share")]
+    [Endpoint("POST /sharing/rest/content/items/{itemId}/unshare")]
+    public async Task SharingMutations_AgentBearer_CannotChangeAccessEvenAsOwnerOrAdmin(bool admin)
+    {
+        var humanToken = await IssueUserTokenAsync("alice");
+        using var human = CreateUserClient();
+        var groupId = await CreateGroupAsync(human, humanToken, "Human-managed group");
+        var groups = _fixture.Services.GetRequiredService<IPortalGroupStore>();
+        var sharing = _fixture.Services.GetRequiredService<IPortalItemSharingStore>();
+        await groups.AddMembersAsync(groupId, ["bob"], CancellationToken.None);
+        await sharing.ShareAsync("svc-rivers", "alice",
+            new PortalItemShareRequest(false, false, [groupId]), CancellationToken.None);
+        var originalGroup = (await groups.GetAsync(groupId, CancellationToken.None))!;
+
+        var issuer = _fixture.Services.GetRequiredService<IPortalTokenIssuer>();
+        var credential = await issuer.IssueAsync(new PortalTokenIssueRequest(
+            PrincipalId: admin ? "administrator" : "alice",
+            DisplayName: "Agent",
+            TenantId: null,
+            Roles: admin ? ["admin", "agent"] : ["org_user", "agent"],
+            ClientType: PortalTokenClientType.Referer,
+            BindingValue: Referer,
+            ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30)), CancellationToken.None);
+        using var agent = CreateUserClient();
+        agent.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
+            "Bearer", credential.Token);
+
+        foreach (var (path, field, value) in new[]
+        {
+            ("/sharing/rest/community/createGroup", "title", "Agent-created group"),
+            ($"/sharing/rest/community/groups/{groupId}/addUsers", "users", "mallory"),
+            ($"/sharing/rest/community/groups/{groupId}/removeUsers", "users", "bob"),
+            ("/sharing/rest/content/items/svc-owned/share", "groups", groupId),
+            ("/sharing/rest/content/items/svc-rivers/unshare", "groups", groupId),
+            ($"/sharing/rest/community/groups/{groupId}/delete", "f", "json"),
+        })
+        {
+            using var response = await PostFormAsync(agent, path, (field, value));
+            await response.AssertGeoServicesErrorAsync(403);
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().Contain("ask a person").And.Contain("Console");
+            (await groups.GetAsync(groupId, CancellationToken.None)).Should().BeEquivalentTo(originalGroup);
+            (await sharing.GetAsync("svc-owned", CancellationToken.None)).GroupIds.Should().BeEmpty();
+            (await sharing.GetAsync("svc-rivers", CancellationToken.None)).GroupIds.Should().Equal(groupId);
+        }
+    }
+
     [IntegrationTest]
     [Operation(Operations.Security)]
     [Endpoint("POST /sharing/rest/community/createGroup")]
