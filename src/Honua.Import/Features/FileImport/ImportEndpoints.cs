@@ -73,11 +73,7 @@ internal static partial class ImportEndpoints
             .RequireAdminAuthorization();
 
         MapImportRoutes(v1Group, isV1: true);
-        var adminGroup = app.MapGroup("/api/v{version:apiVersion}/admin")
-            .WithApiVersionSet().HasApiVersion(1, 0);
-        adminGroup.MapGet("/coordinate-systems", HandleCoordinateSystemsAsync)
-            .WithTags("Import").WithName("SearchCoordinateSystemsV1")
-            .RequireAdminAuthorization();
+        MapCoordinateSystemRoutes(app);
 
         MapCompatibilityImportRoutes(app);
     }

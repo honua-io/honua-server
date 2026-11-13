@@ -7,11 +7,21 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Authentication;
 
 namespace Honua.Import.FileImport;
 
 internal static partial class ImportEndpoints
 {
+    private static void MapCoordinateSystemRoutes(WebApplication app)
+    {
+        var adminGroup = app.MapGroup("/api/v{version:apiVersion}/admin")
+            .WithApiVersionSet().HasApiVersion(1, 0);
+        adminGroup.MapGet("/coordinate-systems", HandleCoordinateSystemsAsync)
+            .WithTags("Import").WithName("SearchCoordinateSystemsV1")
+            .RequireAdminAuthorization();
+    }
+
     private static async Task HandleCoordinateSystemsAsync(HttpContext context)
     {
         var query = context.Request.Query["q"].ToString().Trim();
