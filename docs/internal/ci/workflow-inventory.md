@@ -783,6 +783,13 @@ changed merge method. Required checks and repository rulesets decide when a PR
 merges; review admission applies only where configured as a required check. The
 helper checks out no contributor code and queues without cancellation.
 
+Admission requires both the triggering event and the live PR to be non-draft and
+free of `hold`, `train:hold` and `train:escalated`. A queued held/draft event cannot
+re-arm admission after its live state changes. Ineligible events may only revoke
+an existing request; draft-conversion and label events retain that cleanup path.
+Manually disabling auto-merge alone is not a durable hold: apply a hold label or
+keep the PR as a draft to prevent a later eligible event from enabling it again.
+
 The event-driven auto-merge workflow skips Dependabot PRs before minting App credentials. Already mergeable PRs remain with the existing merge authority because GitHub cannot arm deferred auto-merge for them.
 
 Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
