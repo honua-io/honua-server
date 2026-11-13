@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Deployment.Domain;
+using Honua.Infrastructure.Progress;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Domain;
@@ -1195,6 +1196,38 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_QueuedExportRetryWithCompletedProgress_CancelsDurableJob()
+    {
+        var operationId = Guid.NewGuid().ToString("N");
+        var jobStore = _fixture.GetService<IExecutionJobStore>();
+        var now = DateTimeOffset.UtcNow;
+        await jobStore.TryCreateAsync(new ExecutionJobRecord
+        {
+            OperationId = operationId,
+            Status = ExecutionJobStatus.Queued,
+            CreatedAt = now,
+            UpdatedAt = now,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Export,
+                Backend = "local",
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                WorkloadName = "export-retry"
+            }
+        });
+        await _progressStore.SetProgressAsync(operationId,
+            ExportProgress.CreateInitial(operationId, "csv", "svc", 1, 10) with
+            { Status = OperationStatus.Completed, DownloadUrl = "https://example.test/deleted.csv" });
+        _operationIds.Add(operationId);
+
+        var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await jobStore.GetAsync(operationId))!.Status.Should().Be(ExecutionJobStatus.Cancelled);
     }
 
     [IntegrationTest]

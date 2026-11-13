@@ -55,16 +55,17 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
     {
         ArgumentNullException.ThrowIfNull(submission);
         var jobStore = _jobStore ?? throw new InvalidOperationException(JobStoreUnavailableMessage);
-        var jobQueue = _jobQueue ?? throw new InvalidOperationException(JobStoreUnavailableMessage);
+        _ = _jobQueue ?? throw new InvalidOperationException(JobStoreUnavailableMessage);
         var request = TileCacheExecutionSpecBuilder.NormalizeRequest(submission.Request);
         var jobRecord = await CreateRecordAsync(submission with { Request = request }, cancellationToken).ConfigureAwait(false);
+        await SeedProgressAsync(jobRecord.OperationId, request, cancellationToken).ConfigureAwait(false);
         if (!await jobStore.TryCreateAsync(jobRecord, cancellationToken: cancellationToken).ConfigureAwait(false))
         {
+            await _progressStore.DeleteProgressAsync(jobRecord.OperationId, CancellationToken.None).ConfigureAwait(false);
             throw new InvalidOperationException($"Failed to create tile-cache execution job '{jobRecord.OperationId}'.");
         }
 
-        await SeedProgressAsync(jobRecord.OperationId, request, cancellationToken).ConfigureAwait(false);
-        await DispatchAsync(jobStore, jobQueue, jobRecord, cancellationToken).ConfigureAwait(false);
+        await DispatchAsync(jobStore, jobRecord, cancellationToken).ConfigureAwait(false);
 
         TileOperationMetrics.QueueDepth.Add(1, new TagList { { "operation", request.Operation } });
         Log.JobSubmitted(_logger, jobRecord.OperationId, request.Operation, jobRecord.Spec.Backend);
@@ -117,8 +118,8 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         }
 
         var cancelled = string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
-            ? await CancelLocalAsync(_jobStore!, backend, job, cancellationToken).ConfigureAwait(false)
-            : await CancelRemoteAsync(_jobStore!, backend, job, cancellationToken).ConfigureAwait(false);
+            ? await CancelLocalAsync(backend, job, cancellationToken).ConfigureAwait(false)
+            : await CancelRemoteAsync(backend, job, cancellationToken).ConfigureAwait(false);
         if (!cancelled)
         {
             return false;
@@ -192,13 +193,12 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
 
     private async Task DispatchAsync(
         IExecutionJobStore jobStore,
-        IJobQueue jobQueue,
         ExecutionJobRecord job,
         CancellationToken cancellationToken)
     {
         if (string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
         {
-            await EnqueueAsync(jobQueue, job.OperationId, cancellationToken).ConfigureAwait(false);
+            await EnqueueAsync(_jobQueue!, job.OperationId, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -220,14 +220,13 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
     }
 
     // A queued job ends here; a claimed job keeps running until its worker sees the request.
-    private static async Task<bool> CancelLocalAsync(
-        IExecutionJobStore jobStore,
+    private async Task<bool> CancelLocalAsync(
         IBatchComputeBackend backend,
         ExecutionJobRecord job,
         CancellationToken cancellationToken)
     {
         var outcome = await ExecutionJobCancellationHelper.TryApplyAsync(
-            jobStore, job.OperationId, job, "Cancelled", cancellationToken: cancellationToken).ConfigureAwait(false);
+            _jobStore!, job.OperationId, job, "Cancelled", cancellationToken: cancellationToken).ConfigureAwait(false);
         // Ending a queued job here fires no terminal callback, so it leaves the outstanding count here.
         if (outcome.State == ExecutionJobCancellationState.Cancelled && job.ClaimedBy == null)
         {
@@ -243,14 +242,13 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         return true;
     }
 
-    private static async Task<bool> CancelRemoteAsync(
-        IExecutionJobStore jobStore,
+    private async Task<bool> CancelRemoteAsync(
         IBatchComputeBackend backend,
         ExecutionJobRecord job,
         CancellationToken cancellationToken)
     {
         var stamp = await ExecutionJobCancellationHelper.TryStampRemoteCancelRequestedAtAsync(
-            jobStore, job, cancellationToken: cancellationToken).ConfigureAwait(false);
+            _jobStore!, job, cancellationToken: cancellationToken).ConfigureAwait(false);
         if (stamp.Outcome is not (RemoteCancelStampOutcome.Stamped or RemoteCancelStampOutcome.AlreadyStamped))
         {
             return false;
@@ -258,7 +256,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
 
         var observation = await backend.CancelAsync(stamp.Job!, cancellationToken).ConfigureAwait(false);
         var applied = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
-            jobStore, stamp.Job!, observation, cancellationToken).ConfigureAwait(false);
+            _jobStore!, stamp.Job!, observation, cancellationToken).ConfigureAwait(false);
         return applied.Outcome == BackendCancelApplyOutcome.Applied;
     }
 

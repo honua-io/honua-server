@@ -26,8 +26,7 @@ internal sealed class ExportJobService(
     internal const string DurableQueueUnavailableMessage = "Large exports require durable background job storage to be configured.";
     internal const string QueueFullMessage = "Export queue is full. Please retry later.";
 
-    // One running and four waiting: the capacity of the in-process queue exports used before, now
-    // counted across every node.
+    // At most five exports may be queued or running across all nodes.
     internal const int MaxOutstandingExports = 5;
     internal const string RequestParameter = "honua.export.request";
     internal static readonly TimeSpan Retention = TimeSpan.FromHours(24);

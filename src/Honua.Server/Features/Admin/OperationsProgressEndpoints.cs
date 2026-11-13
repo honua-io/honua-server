@@ -431,7 +431,9 @@ internal static partial class OperationsProgressEndpoints
                 "Operation ID is required");
         }
 
-        var progress = await progressStore.GetProgressAsync(operationId, cancellationToken);
+        var jobStore = httpContext.RequestServices.GetService<IExecutionJobStore>();
+        var progressReader = new ExecutionJobProgressReader(progressStore, jobStore);
+        var progress = await progressReader.ReadAsync(operationId, cancellationToken);
 
         if (progress == null)
         {
@@ -511,7 +513,7 @@ internal static partial class OperationsProgressEndpoints
         // No worker claimed the job (not yet dequeued, already finished, or
         // an operation type without a background worker).  Write Cancelled
         // directly after a re-read to narrow the TOCTOU window.
-        var latestProgress = await progressStore.GetProgressAsync(operationId, cancellationToken);
+        var latestProgress = await progressReader.ReadAsync(operationId, cancellationToken);
         if (latestProgress is null)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -556,7 +558,6 @@ internal static partial class OperationsProgressEndpoints
         // If this operation is backed by a durable execution job, synchronize the
         // cancellation to the authoritative job store and remove from the queue so
         // the job does not remain claimable after the admin cancel.
-        var jobStore = httpContext.RequestServices.GetService<IExecutionJobStore>();
         if (jobStore != null)
         {
             var executionJob = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);

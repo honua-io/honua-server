@@ -23,7 +23,7 @@ namespace Honua.Server.Tests.Features.Admin;
 
 // Every tile operation is a TileCache execution job: submission on the local and a remote backend,
 // cancellation, retry, and the terminal projection onto the tile progress.
-public sealed class TileOperationJobTests
+public sealed partial class TileOperationJobTests
 {
     private const string Admin = "admin-a";
 
@@ -524,8 +524,18 @@ public sealed class TileOperationJobTests
     {
         private readonly ConcurrentDictionary<string, ExecutionJobRecord> _records = new(StringComparer.Ordinal);
 
-        public Task<bool> TryCreateAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
-            => Task.FromResult(_records.TryAdd(job.OperationId, job));
+        public Func<ExecutionJobRecord, Task>? OnCreated { get; set; }
+
+        public async Task<bool> TryCreateAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            var created = _records.TryAdd(job.OperationId, job);
+            if (created && OnCreated is not null)
+            {
+                await OnCreated(job);
+            }
+
+            return created;
+        }
 
         public Task<ExecutionJobRecord?> GetAsync(string operationId, CancellationToken cancellationToken = default)
             => Task.FromResult(_records.TryGetValue(operationId, out var record) ? record : null);

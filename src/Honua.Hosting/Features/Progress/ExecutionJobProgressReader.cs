@@ -75,7 +75,8 @@ internal sealed class ExecutionJobProgressReader(IUniversalProgressStore progres
             ProcessedTiles = projection.ResetCounts ? 0 : tiles.ProcessedTiles,
             SuccessfulTiles = projection.ResetCounts ? 0 : tiles.SuccessfulTiles,
             FailedTiles = projection.ResetCounts ? 0 : tiles.FailedTiles,
-            DownloadUrl = projection.Status == OperationStatus.Completed ? tiles.DownloadUrl : null
+            DownloadUrl = projection.Status == OperationStatus.Completed ? tiles.DownloadUrl : null,
+            PublishedArtifact = projection.Status == OperationStatus.Completed ? tiles.PublishedArtifact : null
         };
 
     private sealed record StatusProjection(OperationStatus Status, IOperationProgress Progress, ExecutionJobRecord Job)
