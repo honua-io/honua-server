@@ -98,6 +98,8 @@ public sealed class FileGdbImportTests : IAsyncLifetime
         responseContent.Should().Contain("filegdb_sparse_import_test");
         responseContent.Should().Contain("FileGdb");
         responseContent.Should().Contain("warnings");
+        responseContent.Should().Contain("No features found");
+        responseContent.Should().NotContain("import.source_srid_required");
     }
 
     [IntegrationTest]
