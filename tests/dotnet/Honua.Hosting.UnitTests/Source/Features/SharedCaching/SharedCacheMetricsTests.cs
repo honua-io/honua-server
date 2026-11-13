@@ -35,7 +35,7 @@ public sealed class SharedCacheMetricsTests : IDisposable
         _listener.Start();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("hit")]
     [InlineData("miss")]
     [InlineData("bypass")]
@@ -73,7 +73,7 @@ public sealed class SharedCacheMetricsTests : IDisposable
         _samples.Should().BeEmpty();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(CdnInvalidationOutcome.Submitted)]
     [InlineData(CdnInvalidationOutcome.Failed)]
     [InlineData(CdnInvalidationOutcome.NotConfigured)]
