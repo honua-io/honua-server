@@ -280,13 +280,13 @@ internal sealed partial class CdnInvalidationService(
         foreach (var batch in tags.Chunk(MaxTagsPerInvalidation))
         {
             var result = await SendBatchAsync(batch).ConfigureAwait(false);
-            combined = combined.Failed ? combined : result;
+            combined = CombineBatchResults(combined, result);
         }
 
         if (wildcardPaths.Length > 0)
         {
             var result = await SendBatchAsync(wildcardPaths).ConfigureAwait(false);
-            combined = combined.Failed ? combined : result;
+            combined = CombineBatchResults(combined, result);
         }
 
         return combined;
@@ -302,6 +302,11 @@ internal sealed partial class CdnInvalidationService(
             return result;
         }
     }
+
+    private static CdnInvalidationResult CombineBatchResults(CdnInvalidationResult combined, CdnInvalidationResult next)
+        => combined.Outcome is CdnInvalidationOutcome.Failed ? combined
+            : next.Outcome is CdnInvalidationOutcome.Failed ? next
+            : combined.Failed ? combined : next;
 
     private async Task<CdnInvalidationResult> SendAndRecordAsync(
         IReadOnlyCollection<string> paths,

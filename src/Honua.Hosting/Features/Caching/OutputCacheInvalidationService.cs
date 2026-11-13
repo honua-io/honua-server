@@ -81,7 +81,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
             && snapshot.ResolveStorageLayerId(publication, snapshot.ResolveResource(publication)) == storageLayerId);
 
     private static string[] LayerTags(int layerId)
-        => [$"layer:{layerId}", "service-metadata", "tiles", "layer-metadata", "layer-styles", "terrain", "ogc-maps", "ogc-styles"];
+        => [$"layer:{layerId}", "service-metadata", "stac-metadata", "tiles", "layer-metadata", "layer-styles", "terrain", "ogc-maps", "ogc-styles"];
 
     public async Task InvalidateLayerAsync(string? serviceId, int? serviceLayerIndex, CancellationToken cancellationToken)
     {

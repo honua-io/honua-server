@@ -21,23 +21,17 @@ internal sealed partial class OutputCacheInvalidationService
                 await InvalidateCdnAfterEditAsync(paths, cancellationToken).ConfigureAwait(false);
             }
         }
-        catch (OperationCanceledException) when (_cdnInvalidation is not null)
+        catch (OperationCanceledException)
         {
-            // The edit is committed even though its request gave up: what can be named without a lookup goes out with the next
-            // window at once, and the names of its service follow when the lookup completes without the request.
-            string[] knownServices = string.IsNullOrWhiteSpace(serviceId) ? [] : [serviceId.Trim()];
-            _cdnInvalidation.InvalidateWithNextWindow(_cdnInvalidation.TagsEnabled
-                ? CdnCacheTags.InvalidationsForEditedLayer(layerId, knownServices)
-                : CdnPaths.ForEditedLayer(layerId, knownServices));
-            _ = InvalidateResolvedWithNextWindowAsync(_cdnInvalidation, serviceId, layerId);
+            // The edit is committed. Finish origin eviction before the CDN can refill from it, independently of the request.
+            await EvictLayerAsync(serviceId, layerId, CancellationToken.None).ConfigureAwait(false);
+            if (_cdnInvalidation is not null)
+            {
+                var paths = await CdnPathsForEditedLayerAsync(serviceId, layerId, CancellationToken.None).ConfigureAwait(false);
+                _cdnInvalidation.InvalidateWithNextWindow(paths);
+            }
             throw;
         }
-    }
-
-    private async Task InvalidateResolvedWithNextWindowAsync(CdnInvalidationService cdnInvalidation, string? serviceId, int layerId)
-    {
-        var paths = await CdnPathsForEditedLayerAsync(serviceId, layerId, CancellationToken.None).ConfigureAwait(false);
-        cdnInvalidation.InvalidateWithNextWindow(paths);
     }
 
     public async Task InvalidateEditedStorageLayerAsync(int storageLayerId, CancellationToken cancellationToken)
@@ -48,21 +42,16 @@ internal sealed partial class OutputCacheInvalidationService
             var paths = await CdnPathsForEditedStorageLayerAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
             await InvalidateCdnAfterEditAsync(paths, cancellationToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (_cdnInvalidation is not null)
+        catch (OperationCanceledException)
         {
-            // Storage edits have already committed. Resolve published names without the expired request.
-            _cdnInvalidation.InvalidateWithNextWindow(_cdnInvalidation.TagsEnabled
-                ? CdnCacheTags.InvalidationsForEditedStorageLayer(storageLayerId)
-                : CdnPaths.Everything);
-            _ = InvalidateResolvedStorageWithNextWindowAsync(_cdnInvalidation, storageLayerId);
+            await EvictStorageLayerAsync(storageLayerId, CancellationToken.None).ConfigureAwait(false);
+            if (_cdnInvalidation is not null)
+            {
+                var paths = await CdnPathsForEditedStorageLayerAsync(storageLayerId, CancellationToken.None).ConfigureAwait(false);
+                _cdnInvalidation.InvalidateWithNextWindow(paths);
+            }
             throw;
         }
-    }
-
-    private async Task InvalidateResolvedStorageWithNextWindowAsync(CdnInvalidationService cdnInvalidation, int storageLayerId)
-    {
-        var paths = await CdnPathsForEditedStorageLayerAsync(storageLayerId, CancellationToken.None).ConfigureAwait(false);
-        cdnInvalidation.InvalidateWithNextWindow(paths);
     }
 
     public async Task InvalidateEditedCollectionAsync(string collectionId, CancellationToken cancellationToken)
