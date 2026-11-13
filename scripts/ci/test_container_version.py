@@ -105,12 +105,10 @@ class ContainerVersionTests(unittest.TestCase):
                                             capture_output=True,
                                             env={'VERSION': version, 'HONUA_GIT_SHA': 'a' * 40})
                     arguments = result.stdout.splitlines()
-                    if version:
-                        self.assertEqual(arguments, ['-p:Version=' + version,
-                            '-p:InformationalVersion=' + version + '+aaaaaaa',
-                            '-p:IncludeSourceRevisionInInformationalVersion=false'])
-                    else:
-                        self.assertEqual(arguments, [''])
+                    version_arguments = (['-p:Version=' + version,
+                        '-p:InformationalVersion=' + version + '+aaaaaaa',
+                        '-p:IncludeSourceRevisionInInformationalVersion=false'] if version else [])
+                    self.assertEqual(arguments, version_arguments or [''])
 
 
 if __name__ == '__main__':

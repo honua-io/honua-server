@@ -15,11 +15,6 @@
     <!-- DbUp: TestKit serializes the embedded migration set under the shared seed advisory lock
          (RunEmbeddedMigrationsUnderLockAsync) so global-honua DDL stays off the 40P01 path (#1568). -->
     <PackageReference Include="dbup-postgresql" />
-    <!-- #2947: raw ADO.NET drivers used only to seed the standalone DuckDB/MySql/SqlServer
-         provider-smoke web-app fixtures below (Providers/). No Honua.Db.DuckDB/Honua.Db.MySql/
-         Honua.Db.SqlServer ProjectReference is needed — the fixtures configure the provider
-         purely through DataSource:Provider + the provider's own config section, which
-         Honua.Server's own composition root (already referenced) reads at host-build time. -->
     <PackageReference Include="DuckDB.NET.Data.Full" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="FluentAssertions.Json" />
@@ -73,6 +68,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../Honua.TestKit.Core/Honua.TestKit.Core.csproj" />
+    <ProjectReference Include="../../../src/Honua.Db/SqlServer/Honua.SqlServer.csproj" />
     <ProjectReference Include="../Honua.TestKit.Redis/Honua.TestKit.Redis.csproj" />
     <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Server\Honua.Server.csproj" />
