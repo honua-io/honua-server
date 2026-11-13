@@ -24,6 +24,10 @@ public sealed class MigrationReaderCompatibilityTests
     [InlineData("'", "DROP/* outer /* nested */ comment */TABLE honua.evidence")]
     [InlineData("$sql$", "DROP-- comment\nTABLE honua.evidence")]
     [InlineData("$sql$", "SELECT 1 AS \"; DROP/**/TABLE honua.evidence; SELECT 1 AS \"")]
+    [InlineData("'", "SELECT 1 AS \"--\"; DROP/**/TABLE honua.evidence")]
+    [InlineData("'", "SELECT 1 AS \"/*\"; DROP/**/TABLE honua.evidence")]
+    [InlineData("$sql$", "SELECT 1 AS \"--\"; DROP/**/TABLE honua.evidence")]
+    [InlineData("$sql$", "SELECT 1 AS \"/*\"; DROP/**/TABLE honua.evidence")]
     public void Verify_ComputedDynamicComments_RefusesDrop(string delimiter, string fragment)
     {
         var sql = $$"""

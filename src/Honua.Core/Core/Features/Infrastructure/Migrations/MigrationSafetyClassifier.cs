@@ -414,12 +414,15 @@ public static class MigrationSafetyClassifier
         {
             fragmentSql.Append(UntrustedDynamicScope);
             fragmentSql.Append(contents);
-            // A computed expression can change the surrounding quote context. Keep the raw
-            // view and independently treat comments as whitespace, without assuming quotes
-            // protect their contents. Neither view receives trigger-header exemptions.
+            // Computed expressions have uncertain quoting. Retain raw, quote-independent,
+            // and parsed views so comment markers inside identifiers cannot hide later SQL.
+            // No view receives trigger-header exemptions.
             fragmentSql.Append(ExecutionScopeBoundary);
             fragmentSql.Append(UntrustedDynamicScope);
             fragmentSql.Append(MigrationSqlComments.NormalizeFragment(contents));
+            fragmentSql.Append(ExecutionScopeBoundary);
+            fragmentSql.Append(UntrustedDynamicScope);
+            AppendExecutableSql(contents, fragmentSql, insideRoutineBody: false);
         }
 
         return fragmentSql;

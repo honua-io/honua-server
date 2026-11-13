@@ -122,40 +122,16 @@ internal static class MigrationStringLiterals
                 newline |= sql[index] is '\n' or '\r';
                 index++;
             }
-            else if (index + 1 < sql.Length && sql[index] == '-' && sql[index + 1] == '-')
-            {
-                index += 2;
-                while (index < sql.Length && sql[index] is not ('\n' or '\r'))
-                {
-                    index++;
-                }
-            }
-            else if (index + 1 < sql.Length && sql[index] == '/' && sql[index + 1] == '*')
-            {
-                index += 2;
-                var depth = 1;
-                while (index < sql.Length && depth > 0)
-                {
-                    newline |= sql[index] is '\n' or '\r';
-                    if (index + 1 < sql.Length && sql[index] == '/' && sql[index + 1] == '*')
-                    {
-                        depth++;
-                        index += 2;
-                    }
-                    else if (index + 1 < sql.Length && sql[index] == '*' && sql[index + 1] == '/')
-                    {
-                        depth--;
-                        index += 2;
-                    }
-                    else
-                    {
-                        index++;
-                    }
-                }
-            }
             else
             {
-                return newline && sql[index] == '\'' ? index : -1;
+                var commentEnd = MigrationSqlComments.FindEnd(sql, index);
+                if (commentEnd == index)
+                {
+                    return newline && sql[index] == '\'' ? index : -1;
+                }
+
+                newline |= sql.AsSpan(index, commentEnd - index).IndexOfAny('\r', '\n') >= 0;
+                index = commentEnd;
             }
         }
 
