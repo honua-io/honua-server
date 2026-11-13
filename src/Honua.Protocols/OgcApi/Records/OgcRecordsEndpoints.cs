@@ -591,8 +591,8 @@ internal static class OgcRecordsEndpoints
                 $"layer:{publicationId}",
                 publicationId,
                 resource.Metadata.Name,
-                resource.Metadata.Title,
-                resource.Metadata.Description));
+                properties.Title,
+                properties.Description));
     }
 
     private static OgcRecordGeometry? CreateExtentGeometry(ImmutableArray<double>? bbox)

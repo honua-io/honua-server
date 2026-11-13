@@ -84,17 +84,17 @@ internal static class MetadataV2DescriptiveValidation
 
     public static void Validate(List<string> errors, string ownerLabel, MetadataV2ObjectMetadata metadata)
     {
-        RequireCodes(errors, $"{ownerLabel} metadata.topicCategories", metadata.TopicCategories, MetadataV2DescriptiveCodes.TopicCategories);
+        errors.AddRange(CodeErrors($"{ownerLabel} metadata.topicCategories", metadata.TopicCategories, MetadataV2DescriptiveCodes.TopicCategories));
         if (metadata.UpdateFrequency is { } frequency)
         {
-            RequireCodes(errors, $"{ownerLabel} metadata.updateFrequency", [frequency], MetadataV2DescriptiveCodes.MaintenanceFrequencies);
+            errors.AddRange(CodeErrors($"{ownerLabel} metadata.updateFrequency", [frequency], MetadataV2DescriptiveCodes.MaintenanceFrequencies));
         }
         if (metadata.Contacts.Any(contact => contact is null))
         {
             errors.Add($"{ownerLabel} metadata.contacts must not contain null entries.");
         }
         var contacts = metadata.Contacts.OfType<MetadataV2ResponsibleParty>().ToArray();
-        RequireCodes(errors, $"{ownerLabel} metadata.contacts[].role", contacts.Select(contact => contact.Role).ToArray(), MetadataV2DescriptiveCodes.Roles);
+        errors.AddRange(CodeErrors($"{ownerLabel} metadata.contacts[].role", contacts.Select(contact => contact.Role).ToArray(), MetadataV2DescriptiveCodes.Roles));
         foreach (var contact in contacts)
         {
             RequireStatement(errors, $"{ownerLabel} metadata.contacts[].name", contact.Name);
@@ -117,12 +117,12 @@ internal static class MetadataV2DescriptiveValidation
         }
     }
 
-    private static void RequireCodes(List<string> errors, string field, IReadOnlyList<string> values, FrozenSet<string> allowed)
+    private static IEnumerable<string> CodeErrors(string field, IReadOnlyList<string> values, FrozenSet<string> allowed)
     {
         var unknown = values.Where(value => !allowed.Contains(value)).ToArray();
         if (unknown.Length > 0)
         {
-            errors.Add($"{field} has unknown code value(s) {string.Join(", ", unknown.Select(value => $"'{value}'"))}.");
+            yield return $"{field} has unknown code value(s) {string.Join(", ", unknown.Select(value => $"'{value}'"))}.";
         }
     }
 

@@ -87,7 +87,7 @@ public static class Iso19115Part3Writer
             ? null
             : new XElement(Mdb + "distributionInfo", new XElement(Mrd + "MD_Distribution",
                 new XElement(Mrd + "transferOptions", new XElement(Mrd + "MD_DigitalTransferOptions",
-                    metadata.Distributions.Select(distribution => new XElement(Mrd + "onLine", OnlineResource(iso, distribution.Url, distribution.Protocol, distribution.Title)))))));
+                    metadata.Distributions.Select(distribution => new XElement(Mrd + "onLine", OnlineResource(iso, new(distribution.Url, distribution.Protocol, distribution.Title))))))));
 
     private static XElement Responsibility(IsoXml iso, XName property, MetadataV2ResponsibleParty party)
     {
@@ -96,7 +96,7 @@ public static class Iso19115Part3Writer
             : new XElement(Cit + "contactInfo", new XElement(Cit + "CI_Contact",
                 party.Email is null ? null : new XElement(Cit + "address", new XElement(Cit + "CI_Address",
                     new XElement(Cit + "electronicMailAddress", iso.Text(party.Email)))),
-                party.Url is null ? null : new XElement(Cit + "onlineResource", OnlineResource(iso, party.Url, protocol: null, name: null))));
+                party.Url is null ? null : new XElement(Cit + "onlineResource", OnlineResource(iso, new(party.Url)))));
         var individual = party.Name is null ? null : new XElement(Cit + "CI_Individual", new XElement(Cit + "name", iso.Text(party.Name)));
         var partyElement = party.Organization is null && individual is not null
             ? new XElement(Cit + "CI_Individual", individual.Elements(), contact)
@@ -109,11 +109,13 @@ public static class Iso19115Part3Writer
             new XElement(Cit + "party", partyElement)));
     }
 
-    private static XElement OnlineResource(IsoXml iso, string url, string? protocol, string? name)
+    private sealed record OnlineResourceDetails(string Url, string? Protocol = null, string? Name = null);
+
+    private static XElement OnlineResource(IsoXml iso, OnlineResourceDetails resource)
         => new(Cit + "CI_OnlineResource",
-            new XElement(Cit + "linkage", iso.Text(url)),
-            protocol is null ? null : new XElement(Cit + "protocol", iso.Text(protocol)),
-            name is null ? null : new XElement(Cit + "name", iso.Text(name)));
+            new XElement(Cit + "linkage", iso.Text(resource.Url)),
+            resource.Protocol is null ? null : new XElement(Cit + "protocol", iso.Text(resource.Protocol)),
+            resource.Name is null ? null : new XElement(Cit + "name", iso.Text(resource.Name)));
 
     private static XElement Date(IsoXml iso, DateTimeOffset date)
         => new(Cit + "CI_Date",

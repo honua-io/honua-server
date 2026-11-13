@@ -113,7 +113,9 @@ public static class DescriptiveMetadataResolver
             TopicCategories = FirstList(own, metadata => metadata.TopicCategories),
             Language = Text(governance.Language),
             License = license,
-            LicenseUrl = license is null ? null : SpdxLicensePolicy.GetLicenseUrl(license),
+            LicenseUrl = Text(governance.Links.FirstOrDefault(link =>
+                string.Equals(link.Rel, "license", StringComparison.OrdinalIgnoreCase))?.Href)
+                ?? (license is null ? null : SpdxLicensePolicy.GetLicenseUrl(license)),
             AccessConstraints = Text(governance.AccessConstraints) ?? AccessStatementFor(license),
             Fees = Text(governance.Fees) ?? string.Empty,
             Attribution = Text(governance.Attribution),

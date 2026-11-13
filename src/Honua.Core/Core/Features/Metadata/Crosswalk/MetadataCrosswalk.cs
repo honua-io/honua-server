@@ -50,59 +50,89 @@ public static class MetadataCrosswalk
         Row("metadataLink", null, null, "foaf:page", "links[rel=describedby]", "links[rel=describedby]", "MetadataURL"),
     ];
 
-    private static readonly FrozenDictionary<string, (string Bibliographic, string Terminology)> Languages =
-        new Dictionary<string, (string, string)>(StringComparer.OrdinalIgnoreCase)
+    private static readonly FrozenDictionary<string, (string Bibliographic, string Terminology)> Languages = CreateLanguages();
+
+    private static FrozenDictionary<string, (string Bibliographic, string Terminology)> CreateLanguages()
+    {
+        // ISO 639-2 terminology:alpha-2:bibliographic; omit the reserved local-use range.
+        // Source: https://www.loc.gov/standards/iso639-2/php/code_list.php
+        const string registeredCodes = """
+            aar:aa:aar abk:ab:abk ace::ace ach::ach ada::ada ady::ady afa::afa afh::afh
+            afr:af:afr ain::ain aka:ak:aka akk::akk ale::ale alg::alg alt::alt amh:am:amh
+            ang::ang anp::anp apa::apa ara:ar:ara arc::arc arg:an:arg arn::arn arp::arp
+            art::art arw::arw asm:as:asm ast::ast ath::ath aus::aus ava:av:ava ave:ae:ave
+            awa::awa aym:ay:aym aze:az:aze bad::bad bai::bai bak:ba:bak bal::bal bam:bm:bam
+            ban::ban bas::bas bat::bat bej::bej bel:be:bel bem::bem ben:bn:ben ber::ber
+            bho::bho bih:bh:bih bik::bik bin::bin bis:bi:bis bla::bla bnt::bnt bod:bo:tib
+            bos:bs:bos bra::bra bre:br:bre btk::btk bua::bua bug::bug bul:bg:bul byn::byn
+            cad::cad cai::cai car::car cat:ca:cat cau::cau ceb::ceb cel::cel ces:cs:cze
+            cha:ch:cha chb::chb che:ce:che chg::chg chk::chk chm::chm chn::chn cho::cho
+            chp::chp chr::chr chu:cu:chu chv:cv:chv chy::chy cmc::cmc cnr::cnr cop::cop
+            cor:kw:cor cos:co:cos cpe::cpe cpf::cpf cpp::cpp cre:cr:cre crh::crh crp::crp
+            csb::csb cus::cus cym:cy:wel dak::dak dan:da:dan dar::dar day::day del::del
+            den::den deu:de:ger dgr::dgr din::din div:dv:div doi::doi dra::dra dsb::dsb
+            dua::dua dum::dum dyu::dyu dzo:dz:dzo efi::efi egy::egy eka::eka ell:el:gre
+            elx::elx eng:en:eng enm::enm epo:eo:epo est:et:est eus:eu:baq ewe:ee:ewe ewo::ewo
+            fan::fan fao:fo:fao fas:fa:per fat::fat fij:fj:fij fil::fil fin:fi:fin fiu::fiu
+            fon::fon fra:fr:fre frm::frm fro::fro frr::frr frs::frs fry:fy:fry ful:ff:ful
+            fur::fur gaa::gaa gay::gay gba::gba gem::gem gez::gez gil::gil gla:gd:gla
+            gle:ga:gle glg:gl:glg glv:gv:glv gmh::gmh goh::goh gon::gon gor::gor got::got
+            grb::grb grc::grc grn:gn:grn gsw::gsw guj:gu:guj gwi::gwi hai::hai hat:ht:hat
+            hau:ha:hau haw::haw heb:he:heb her:hz:her hil::hil him::him hin:hi:hin hit::hit
+            hmn::hmn hmo:ho:hmo hrv:hr:hrv hsb::hsb hun:hu:hun hup::hup hye:hy:arm iba::iba
+            ibo:ig:ibo ido:io:ido iii:ii:iii ijo::ijo iku:iu:iku ile:ie:ile ilo::ilo ina:ia:ina
+            inc::inc ind:id:ind ine::ine inh::inh ipk:ik:ipk ira::ira iro::iro isl:is:ice
+            ita:it:ita jav:jv:jav jbo::jbo jpn:ja:jpn jpr::jpr jrb::jrb kaa::kaa kab::kab
+            kac::kac kal:kl:kal kam::kam kan:kn:kan kar::kar kas:ks:kas kat:ka:geo kau:kr:kau
+            kaw::kaw kaz:kk:kaz kbd::kbd kha::kha khi::khi khm:km:khm kho::kho kik:ki:kik
+            kin:rw:kin kir:ky:kir kmb::kmb kok::kok kom:kv:kom kon:kg:kon kor:ko:kor kos::kos
+            kpe::kpe krc::krc krl::krl kro::kro kru::kru kua:kj:kua kum::kum kur:ku:kur
+            kut::kut lad::lad lah::lah lam::lam lao:lo:lao lat:la:lat lav:lv:lav lez::lez
+            lim:li:lim lin:ln:lin lit:lt:lit lol::lol loz::loz ltz:lb:ltz lua::lua lub:lu:lub
+            lug:lg:lug lui::lui lun::lun luo::luo lus::lus mad::mad mag::mag mah:mh:mah
+            mai::mai mak::mak mal:ml:mal man::man map::map mar:mr:mar mas::mas mdf::mdf
+            mdr::mdr men::men mga::mga mic::mic min::min mis::mis mkd:mk:mac mkh::mkh
+            mlg:mg:mlg mlt:mt:mlt mnc::mnc mni::mni mno::mno moh::moh mon:mn:mon mos::mos
+            mri:mi:mao msa:ms:may mul::mul mun::mun mus::mus mwl::mwl mwr::mwr mya:my:bur
+            myn::myn myv::myv nah::nah nai::nai nap::nap nau:na:nau nav:nv:nav nbl:nr:nbl
+            nde:nd:nde ndo:ng:ndo nds::nds nep:ne:nep new::new nia::nia nic::nic niu::niu
+            nld:nl:dut nno:nn:nno nob:nb:nob nog::nog non::non nor:no:nor nqo::nqo nso::nso
+            nub::nub nwc::nwc nya:ny:nya nym::nym nyn::nyn nyo::nyo nzi::nzi oci:oc:oci
+            oji:oj:oji ori:or:ori orm:om:orm osa::osa oss:os:oss ota::ota oto::oto paa::paa
+            pag::pag pal::pal pam::pam pan:pa:pan pap::pap pau::pau peo::peo phi::phi
+            phn::phn pli:pi:pli pol:pl:pol pon::pon por:pt:por pra::pra pro::pro pus:ps:pus
+            que:qu:que raj::raj rap::rap rar::rar roa::roa roh:rm:roh rom::rom ron:ro:rum
+            run:rn:run rup::rup rus:ru:rus sad::sad sag:sg:sag sah::sah sai::sai sal::sal
+            sam::sam san:sa:san sas::sas sat::sat scn::scn sco::sco sel::sel sem::sem
+            sga::sga sgn::sgn shn::shn sid::sid sin:si:sin sio::sio sit::sit sla::sla
+            slk:sk:slo slv:sl:slv sma::sma sme:se:sme smi::smi smj::smj smn::smn smo:sm:smo
+            sms::sms sna:sn:sna snd:sd:snd snk::snk sog::sog som:so:som son::son sot:st:sot
+            spa:es:spa sqi:sq:alb srd:sc:srd srn::srn srp:sr:srp srr::srr ssa::ssa ssw:ss:ssw
+            suk::suk sun:su:sun sus::sus sux::sux swa:sw:swa swe:sv:swe syc::syc syr::syr
+            tah:ty:tah tai::tai tam:ta:tam tat:tt:tat tel:te:tel tem::tem ter::ter tet::tet
+            tgk:tg:tgk tgl:tl:tgl tha:th:tha tig::tig tir:ti:tir tiv::tiv tkl::tkl tlh::tlh
+            tli::tli tmh::tmh tog::tog ton:to:ton tpi::tpi tsi::tsi tsn:tn:tsn tso:ts:tso
+            tuk:tk:tuk tum::tum tup::tup tur:tr:tur tut::tut tvl::tvl twi:tw:twi tyv::tyv
+            udm::udm uga::uga uig:ug:uig ukr:uk:ukr umb::umb und::und urd:ur:urd uzb:uz:uzb
+            vai::vai ven:ve:ven vie:vi:vie vol:vo:vol vot::vot wak::wak wal::wal war::war
+            was::was wen::wen wln:wa:wln wol:wo:wol xal::xal xho:xh:xho yao::yao yap::yap
+            yid:yi:yid yor:yo:yor ypk::ypk zap::zap zbl::zbl zen::zen zgh::zgh zha:za:zha
+            zho:zh:chi znd::znd zul:zu:zul zun::zun zxx::zxx zza::zza
+            """;
+        var languages = new Dictionary<string, (string, string)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in registeredCodes.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
         {
-            ["ar"] = ("ara", "ara"),
-            ["bg"] = ("bul", "bul"),
-            ["ca"] = ("cat", "cat"),
-            ["cs"] = ("cze", "ces"),
-            ["cy"] = ("wel", "cym"),
-            ["da"] = ("dan", "dan"),
-            ["de"] = ("ger", "deu"),
-            ["el"] = ("gre", "ell"),
-            ["en"] = ("eng", "eng"),
-            ["es"] = ("spa", "spa"),
-            ["et"] = ("est", "est"),
-            ["eu"] = ("baq", "eus"),
-            ["fa"] = ("per", "fas"),
-            ["fi"] = ("fin", "fin"),
-            ["fr"] = ("fre", "fra"),
-            ["ga"] = ("gle", "gle"),
-            ["gl"] = ("glg", "glg"),
-            ["he"] = ("heb", "heb"),
-            ["hi"] = ("hin", "hin"),
-            ["hr"] = ("hrv", "hrv"),
-            ["hu"] = ("hun", "hun"),
-            ["id"] = ("ind", "ind"),
-            ["is"] = ("ice", "isl"),
-            ["it"] = ("ita", "ita"),
-            ["ja"] = ("jpn", "jpn"),
-            ["ko"] = ("kor", "kor"),
-            ["lt"] = ("lit", "lit"),
-            ["lv"] = ("lav", "lav"),
-            ["mi"] = ("mao", "mri"),
-            ["ms"] = ("may", "msa"),
-            ["mt"] = ("mlt", "mlt"),
-            ["nb"] = ("nob", "nob"),
-            ["nl"] = ("dut", "nld"),
-            ["nn"] = ("nno", "nno"),
-            ["no"] = ("nor", "nor"),
-            ["pl"] = ("pol", "pol"),
-            ["pt"] = ("por", "por"),
-            ["ro"] = ("rum", "ron"),
-            ["ru"] = ("rus", "rus"),
-            ["sk"] = ("slo", "slk"),
-            ["sl"] = ("slv", "slv"),
-            ["sr"] = ("srp", "srp"),
-            ["sv"] = ("swe", "swe"),
-            ["sw"] = ("swa", "swa"),
-            ["th"] = ("tha", "tha"),
-            ["tr"] = ("tur", "tur"),
-            ["uk"] = ("ukr", "ukr"),
-            ["vi"] = ("vie", "vie"),
-            ["zh"] = ("chi", "zho"),
-        }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+            var codes = entry.Split(':');
+            var value = (codes[2], codes[0]);
+            languages[codes[0]] = value;
+            languages[codes[2]] = value;
+            if (codes[1].Length > 0)
+            {
+                languages[codes[1]] = value;
+            }
+        }
+        return languages.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+    }
 
     // ISO maintenance frequency -> EU frequency authority table code; values without an equivalent are dropped.
     private static readonly FrozenDictionary<string, string> EuFrequencies = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -165,14 +195,7 @@ public static class MetadataCrosswalk
             return null;
         }
         var primary = language.Split('-', 2)[0];
-        if (Languages.TryGetValue(primary, out var codes))
-        {
-            return codes;
-        }
-        var match = Languages.Values.FirstOrDefault(codes =>
-            string.Equals(codes.Bibliographic, primary, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(codes.Terminology, primary, StringComparison.OrdinalIgnoreCase));
-        return match == default ? null : match;
+        return Languages.TryGetValue(primary, out var codes) ? codes : null;
     }
 
     // Targets are listed in MetadataStandard declaration order.
