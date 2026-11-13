@@ -38,6 +38,26 @@ public sealed class TileExportJobServiceTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task Submit_LegacyTenantlessKey_SingleTenantUpgradeReplaysOriginal()
+    {
+        var tenant = new RequestTenantContext();
+        var store = new InMemoryExecutionJobStore();
+        var service = new TileExportJobService(TimeProvider.System, StorageOptions(),
+            NullLogger<TileExportJobService>.Instance, store, new InMemoryJobQueue(), tenantContext: tenant);
+        var principal = Principal(Owner);
+        principal.Identities.First().AddClaim(new Claim("iss", "https://original.example"));
+        var original = await service.SubmitAsync(CreatePlan(), "upgrade-key", null, principal, default);
+        tenant.SetSingleTenantDefault("public");
+
+        var replay = await service.SubmitAsync(CreatePlan(), "upgrade-key", null, principal, default);
+        replay.OperationId.Should().Be(original.OperationId);
+        tenant.Set("public", TenantContextSource.Claim);
+        var exact = await service.SubmitAsync(CreatePlan(), "upgrade-key", null, principal, default);
+        exact.OperationId.Should().NotBe(original.OperationId);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task Submit_CreatesQueuedJobAndEnqueues()
     {
         var store = new InMemoryExecutionJobStore();

@@ -23,6 +23,7 @@ using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Security;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Geoprocessing.CustomCode;
 using Honua.ControlPlane;
 using Honua.TestKit.Attributes;
@@ -70,6 +71,32 @@ public sealed partial class GeoprocessingJobServiceTests
             DefaultExecutorOptions,
             _jobStore, _jobQueue,
             resultPackageStore: _resultPackageStore);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task SubmitJob_LegacyTenantlessKey_SingleTenantUpgradeReplaysOriginal()
+    {
+        var tenant = new RequestTenantContext();
+        using var services = new ServiceCollection().AddSingleton<ITenantContext>(tenant).BuildServiceProvider();
+        var principal = CreateStablePrincipal();
+        var accessor = new HttpContextAccessor
+        {
+            HttpContext = new DefaultHttpContext { RequestServices = services, User = principal }
+        };
+        var store = new InMemoryExecutionJobStore();
+        var service = new GeoprocessingJobService(_progressStore, [_cancellationNotifier],
+            _authEvaluator, _approvalEvaluator, new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance, DefaultExecutorOptions,
+            store, _jobQueue, httpContextAccessor: accessor);
+        var original = await service.SubmitJobAsync(CreateValidPlan(), "upgrade-key", principal);
+        tenant.SetSingleTenantDefault("public");
+
+        var replay = await service.SubmitJobAsync(CreateValidPlan(), "upgrade-key", principal);
+        replay.OperationId.Should().Be(original.OperationId);
+        tenant.Set("public", TenantContextSource.Claim);
+        var exact = await service.SubmitJobAsync(CreateValidPlan(), "upgrade-key", principal);
+        exact.OperationId.Should().NotBe(original.OperationId);
     }
 
     [UnitTest]
