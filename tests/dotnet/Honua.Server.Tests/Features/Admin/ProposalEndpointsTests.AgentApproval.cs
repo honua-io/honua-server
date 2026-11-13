@@ -105,6 +105,51 @@ public sealed partial class ProposalEndpointsTests
         persisted.Generation.Should().Be(original.Generation + 1);
     }
 
+    [IntegrationTheory]
+    [InlineData("new-owner")]
+    [InlineData(null)]
+    [Endpoint("PUT /api/v1/console/content/{id}")]
+    public async Task ContentOwnership_FutureGeneration_RejectsBeforeHandler(string? newOwner)
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<ProjectedConsoleContentStore>();
+        var original = await store.CreateAsync(new ConsoleContentItem
+        {
+            Id = Guid.NewGuid().ToString(), Name = "ownership-future-generation",
+            ItemType = ConsoleContentItemType.Dashboard,
+            Visibility = ConsoleVisibility.Personal, OwnerId = "original-owner",
+        });
+        var context = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Role, "agent")], "test"));
+        context.Request.RouteValues["id"] = original.Id;
+        var request = new UpdateConsoleContentItemRequest
+        {
+            Name = original.Name, ItemType = original.ItemType,
+            Visibility = ConsoleVisibility.Personal, OwnerId = original.OwnerId,
+            Generation = original.Generation + 1,
+        };
+        var delegated = false;
+
+        var result = await AgentApprovalFilter.ContentVisibility(
+            EndpointFilterInvocationContext.Create(context, request), async invocation =>
+            {
+                delegated = true;
+                await store.UpdateAsync(original with { OwnerId = newOwner });
+                var current = (await store.GetAsync(original.Id))!;
+                var boundRequest = invocation.GetArgument<UpdateConsoleContentItemRequest>(0);
+                var projected = ConsoleContentMapper.FromUpdateRequest(original.Id, boundRequest, current, context.User);
+                await store.UpdateAsync(projected);
+                return Results.Ok();
+            });
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>().Which.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        delegated.Should().BeFalse();
+        var persisted = (await store.GetAsync(original.Id))!;
+        persisted.OwnerId.Should().Be(original.OwnerId);
+        persisted.Generation.Should().Be(original.Generation);
+    }
+
     [IntegrationTest]
     [Endpoint("POST /api/v1/console/content")]
     public async Task ContentOwnership_AgentKey_CannotCreateForAnotherOwner()

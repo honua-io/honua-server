@@ -59,6 +59,32 @@ public sealed class ConfigurableOperationPolicyDecisionPointTests
         decision.ApprovalLane.Should().BeNull();
     }
 
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EvaluateAsync_AgentPublishWithDryRunFirst_PreservesPreviewRequirement(bool useDefault)
+    {
+        var pdp = BuildPdp(new OperationPolicyOptions
+        {
+            Enabled = true,
+            DefaultDecision = useDefault ? PolicyDecisionKind.DryRunFirst : PolicyDecisionKind.Allow,
+            DefaultReason = "preview required",
+            Rules = useDefault ? [] : [new OperationPolicyRule
+            {
+                OperationId = PublishOperationId,
+                Decision = PolicyDecisionKind.DryRunFirst,
+                Reason = "preview required"
+            }]
+        });
+
+        var decision = await Evaluate(pdp, new OperationPolicyContext { Roles = ["agent", "admin"] },
+            request: BuildRequest(dryRun: false));
+
+        decision.Kind.Should().Be(PolicyDecisionKind.DryRunFirst);
+        decision.Reason.Should().Be("preview required");
+        decision.ApprovalLane.Should().BeNull();
+    }
+
     [UnitTest]
     public async Task EvaluateAsync_When_Disabled_Returns_Allow()
     {
