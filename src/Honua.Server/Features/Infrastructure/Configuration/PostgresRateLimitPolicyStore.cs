@@ -20,8 +20,8 @@ internal sealed class PostgresRateLimitPolicyStore(PostgresConfigurationDocument
     public Task<RateLimitPolicy> CreatePolicyAsync(RateLimitPolicy policy, CancellationToken cancellationToken = default)
         => _store.CreateAsync(policy.PolicyId.ToString("D"), policy, cancellationToken);
 
-    public Task<RateLimitPolicy?> UpdatePolicyAsync(RateLimitPolicy policy, CancellationToken cancellationToken = default)
-        => _store.MutateAsync(policy.PolicyId.ToString("D"), current => current is null ? null : policy, cancellationToken);
+    public Task<RateLimitPolicy?> UpdatePolicyAsync(Guid policyId, Func<RateLimitPolicy, RateLimitPolicy> update, CancellationToken cancellationToken = default)
+        => _store.MutateAsync(policyId.ToString("D"), current => current is null ? null : update(current), cancellationToken);
 
     public Task<bool> DeletePolicyAsync(Guid policyId, CancellationToken cancellationToken = default)
         => _store.DeleteAsync(policyId.ToString("D"), cancellationToken);

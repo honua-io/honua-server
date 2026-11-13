@@ -6,7 +6,7 @@ using Honua.Infrastructure.Authentication;
 namespace Honua.Server.Features.Infrastructure.Configuration;
 
 // A database probe precedes authentication on every request. A failed probe must never use stale identity configuration.
-internal sealed class ConfigurationRuntimeRefresh(PostgresConfigurationDocuments documents, OidcRuntimeProviderRegistry registry)
+internal sealed class ConfigurationRuntimeRefresh(PostgresConfigurationDocuments documents, OidcRuntimeProviderRegistry registry) : IDisposable
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private long _generation = -1;
@@ -28,4 +28,5 @@ internal sealed class ConfigurationRuntimeRefresh(PostgresConfigurationDocuments
         }
         finally { _gate.Release(); }
     }
+    public void Dispose() => _gate.Dispose();
 }

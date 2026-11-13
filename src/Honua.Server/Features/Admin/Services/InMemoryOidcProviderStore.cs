@@ -46,16 +46,19 @@ internal sealed class InMemoryOidcProviderStore : IOidcProviderStore
         return Task.FromResult(provider);
     }
 
-    public Task<OidcProviderConfiguration?> UpdateProviderAsync(OidcProviderConfiguration provider, CancellationToken cancellationToken = default)
+    public Task<OidcProviderConfiguration?> UpdateProviderAsync(Guid providerId, Func<OidcProviderConfiguration, OidcProviderConfiguration> update, CancellationToken cancellationToken = default)
     {
-        if (!_providers.ContainsKey(provider.ProviderId))
+        while (_providers.TryGetValue(providerId, out var current))
         {
-            return Task.FromResult<OidcProviderConfiguration?>(null);
+            cancellationToken.ThrowIfCancellationRequested();
+            var updated = update(current);
+            if (_providers.TryUpdate(providerId, updated, current))
+            {
+                Publish();
+                return Task.FromResult<OidcProviderConfiguration?>(updated);
+            }
         }
-
-        _providers[provider.ProviderId] = provider;
-        Publish();
-        return Task.FromResult<OidcProviderConfiguration?>(provider);
+        return Task.FromResult<OidcProviderConfiguration?>(null);
     }
 
     public Task<bool> DeleteProviderAsync(Guid providerId, CancellationToken cancellationToken = default)

@@ -32,7 +32,7 @@ public sealed class PostgresConfigurationStoreTests(DatabaseFixtureAdapter datab
         await taskA.CreateProviderAsync(provider);
         (await taskB.GetProviderAsync(provider.ProviderId))!.Enabled.Should().BeTrue();
 
-        await taskA.UpdateProviderAsync(Provider(enabled: false, provider.ProviderId));
+        await taskA.UpdateProviderAsync(provider.ProviderId, _ => Provider(enabled: false, provider.ProviderId));
 
         (await taskB.GetProviderAsync(provider.ProviderId))!.Enabled.Should().BeFalse();
         (await CreateOidcStore(harness).GetProviderAsync(provider.ProviderId))!.ClientSecret.Should().Be("private-client-secret");
@@ -68,7 +68,7 @@ public sealed class PostgresConfigurationStoreTests(DatabaseFixtureAdapter datab
         await using var harness = await CreateHarnessAsync();
         using var certificate = ClientCertificateValidationTests.CreateCertificate("CN=Shared client", "spiffe://honua/production/admin");
         var taskA = CreateTrustStore(harness);
-        await taskA.UpsertProfileAsync(new ClientCertificateTrustProfile
+        await taskA.UpsertProfileAsync(ClientCertificateTrustProfile.FromOptions(new ClientCertificateTrustProfileOptions
         {
             ProfileId = "production", EnvironmentId = "production", DisplayName = "Production",
             AcceptedIssuerSubjects = [certificate.Issuer], AllowedSanTypes = [ClientCertificateIdentityType.SanUri],
@@ -78,7 +78,7 @@ public sealed class PostgresConfigurationStoreTests(DatabaseFixtureAdapter datab
                 MatchValue = "spiffe://honua/production/admin", PrincipalId = "admin", DisplayName = "Administrator",
                 EnvironmentScopes = ["production"], Roles = ["admin"]
             }]
-        });
+        }));
         var monitor = new ClientCertificateValidationTests.TestOptionsMonitor<ClientCertificateAuthenticationOptions>(new()
         {
             Mode = ClientCertificateAuthenticationMode.Optional, EnvironmentId = "production"
@@ -108,7 +108,7 @@ public sealed class PostgresConfigurationStoreTests(DatabaseFixtureAdapter datab
         var request = new RateLimitRequestDescriptor { TenantId = "tenant-a" };
         RateLimitPolicyResolver.Resolve(await taskB.ListPoliciesAsync(), request)!.RequestsPerWindow.Should().Be(100);
 
-        await taskA.UpdatePolicyAsync(Policy(1, policy.PolicyId));
+        await taskA.UpdatePolicyAsync(policy.PolicyId, _ => Policy(1, policy.PolicyId));
 
         RateLimitPolicyResolver.Resolve(await taskB.ListPoliciesAsync(), request)!.RequestsPerWindow.Should().Be(1);
         (await CreateRateStore(harness).GetPolicyAsync(policy.PolicyId))!.RequestsPerWindow.Should().Be(1);
@@ -125,7 +125,7 @@ public sealed class PostgresConfigurationStoreTests(DatabaseFixtureAdapter datab
         await refresh.RefreshAsync(CancellationToken.None);
         registry.Current.Should().ContainSingle().Which.Enabled.Should().BeTrue();
 
-        await harness.CreateOidcStore().UpdateProviderAsync(Provider(false, provider.ProviderId));
+        await harness.CreateOidcStore().UpdateProviderAsync(provider.ProviderId, _ => Provider(false, provider.ProviderId));
         await refresh.RefreshAsync(CancellationToken.None);
 
         registry.Current.Should().ContainSingle().Which.Enabled.Should().BeFalse();
@@ -144,6 +144,68 @@ public sealed class PostgresConfigurationStoreTests(DatabaseFixtureAdapter datab
             RevocationId = $"key-{index}", Reason = "Rotated", Actor = "operator", FingerprintSha256 = $"fingerprint-{index}"
         })));
         (await harness.CreateTrustStore().GetProfileAsync("concurrent"))!.Revocations.Should().HaveCount(8);
+    }
+
+    [IntegrationTest]
+    public async Task UpdateProviderAsync_ConcurrentPartialUpdates_PreserveBothChanges()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var taskA = CreateOidcStore(harness);
+        var taskB = CreateOidcStore(harness);
+        var provider = await taskA.CreateProviderAsync(Provider(true));
+
+        await RunCompetingUpdatesAsync<OidcProviderConfiguration>(
+            update => taskA.UpdateProviderAsync(provider.ProviderId, update),
+            update => taskB.UpdateProviderAsync(provider.ProviderId, update),
+            (current => Provider(current.Enabled, current.ProviderId, "Renamed"),
+                current => Provider(false, current.ProviderId, current.Name)));
+
+        var result = await taskB.GetProviderAsync(provider.ProviderId);
+        result!.Name.Should().Be("Renamed");
+        result.Enabled.Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    public async Task UpdatePolicyAsync_ConcurrentPartialUpdates_PreserveBothChanges()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var taskA = CreateRateStore(harness);
+        var taskB = CreateRateStore(harness);
+        var policy = await taskA.CreatePolicyAsync(Policy(100));
+
+        await RunCompetingUpdatesAsync<RateLimitPolicy>(
+            update => taskA.UpdatePolicyAsync(policy.PolicyId, update),
+            update => taskB.UpdatePolicyAsync(policy.PolicyId, update),
+            (current => Policy(current.RequestsPerWindow, current.PolicyId, "Renamed"),
+                current => Policy(1, current.PolicyId, current.Name)));
+
+        var result = await taskB.GetPolicyAsync(policy.PolicyId);
+        result!.Name.Should().Be("Renamed");
+        result.RequestsPerWindow.Should().Be(1);
+    }
+
+    private static async Task RunCompetingUpdatesAsync<T>(Func<Func<T, T>, Task<T?>> updateA,
+        Func<Func<T, T>, Task<T?>> updateB, (Func<T, T> First, Func<T, T> Second) mutations) where T : class
+    {
+        using var firstReads = new Barrier(2);
+        var readsA = 0;
+        var readsB = 0;
+        await Task.WhenAll(Task.Run(() => updateA(current =>
+        {
+            if (Interlocked.Increment(ref readsA) == 1)
+            {
+                firstReads.SignalAndWait(TimeSpan.FromSeconds(30)).Should().BeTrue();
+            }
+            return mutations.First(current);
+        })), Task.Run(() => updateB(current =>
+        {
+            if (Interlocked.Increment(ref readsB) == 1)
+            {
+                firstReads.SignalAndWait(TimeSpan.FromSeconds(30)).Should().BeTrue();
+            }
+            return mutations.Second(current);
+        })));
+        Math.Max(readsA, readsB).Should().BeGreaterThan(1, "one task must reapply its update after the forced conflict");
     }
 
     [IntegrationTest]
@@ -200,15 +262,15 @@ public sealed class PostgresConfigurationStoreTests(DatabaseFixtureAdapter datab
     private static PostgresClientCertificateTrustStore CreateTrustStore(ControlPlaneStateHarness harness)
         => harness.CreateTrustStore();
 
-    private static OidcProviderConfiguration Provider(bool enabled, Guid? id = null) => new()
+    private static OidcProviderConfiguration Provider(bool enabled, Guid? id = null, string name = "Example") => new()
     {
-        ProviderId = id ?? Guid.NewGuid(), Name = "Example", ProviderType = "Generic",
+        ProviderId = id ?? Guid.NewGuid(), Name = name, ProviderType = "Generic",
         Authority = "https://identity.example.com", ClientId = "example", ClientSecret = "private-client-secret", Enabled = enabled
     };
 
-    private static RateLimitPolicy Policy(int limit, Guid? id = null) => new()
+    private static RateLimitPolicy Policy(int limit, Guid? id = null, string name = "Tenant") => new()
     {
-        PolicyId = id ?? Guid.NewGuid(), Name = "Tenant", Scope = RateLimitScopes.Tenant,
+        PolicyId = id ?? Guid.NewGuid(), Name = name, Scope = RateLimitScopes.Tenant,
         Key = "tenant-a", RequestsPerWindow = limit, WindowDuration = TimeSpan.FromMinutes(1)
     };
 }

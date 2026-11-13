@@ -20,8 +20,8 @@ internal sealed class PostgresOidcProviderStore(PostgresConfigurationDocuments d
     public Task<OidcProviderConfiguration> CreateProviderAsync(OidcProviderConfiguration provider, CancellationToken cancellationToken = default)
         => _store.CreateAsync(provider.ProviderId.ToString("D"), provider, cancellationToken);
 
-    public Task<OidcProviderConfiguration?> UpdateProviderAsync(OidcProviderConfiguration provider, CancellationToken cancellationToken = default)
-        => _store.MutateAsync(provider.ProviderId.ToString("D"), current => current is null ? null : provider, cancellationToken);
+    public Task<OidcProviderConfiguration?> UpdateProviderAsync(Guid providerId, Func<OidcProviderConfiguration, OidcProviderConfiguration> update, CancellationToken cancellationToken = default)
+        => _store.MutateAsync(providerId.ToString("D"), current => current is null ? null : update(current), cancellationToken);
 
     public Task<bool> DeleteProviderAsync(Guid providerId, CancellationToken cancellationToken = default)
         => _store.DeleteAsync(providerId.ToString("D"), cancellationToken);

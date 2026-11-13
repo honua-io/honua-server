@@ -276,13 +276,7 @@ internal static partial class OidcProviderEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {errors}"));
             }
 
-            var existing = await store.GetProviderAsync(id, context.RequestAborted);
-            if (existing == null)
-            {
-                return TypedResults.NotFound(ApiResponse<object>.Failure("OIDC provider not found"));
-            }
-
-            var updated = new OidcProviderConfiguration
+            var result = await store.UpdateProviderAsync(id, existing => new OidcProviderConfiguration
             {
                 ProviderId = existing.ProviderId,
                 Name = request.Name ?? existing.Name,
@@ -295,9 +289,12 @@ internal static partial class OidcProviderEndpoints
                 CreatedAt = existing.CreatedAt,
                 UpdatedAt = DateTimeOffset.UtcNow,
                 LastHealthCheck = existing.LastHealthCheck,
-            };
+            }, context.RequestAborted);
+            if (result is null)
+            {
+                return TypedResults.NotFound(ApiResponse<object>.Failure("OIDC provider not found"));
+            }
 
-            var result = await store.UpdateProviderAsync(updated, context.RequestAborted);
             return TypedResults.Ok(ApiResponse<OidcProviderResponse>.CreateSuccess(ToResponse(result!)));
         }
         // Intentional catch-all request-handling boundary: this is the OIDC

@@ -5,7 +5,7 @@ using Npgsql;
 
 namespace Honua.Server.Features.Infrastructure.Configuration;
 
-internal static class ConfigurationRuntimeMiddleware
+internal static partial class ConfigurationRuntimeMiddleware
 {
     public static IApplicationBuilder UseSharedConfiguration(this IApplicationBuilder app)
     {
@@ -26,11 +26,13 @@ internal static class ConfigurationRuntimeMiddleware
             }
             catch (Exception exception) when (exception is not OperationCanceledException and not OutOfMemoryException)
             {
-                logger.LogError(exception, "Shared authentication configuration could not be refreshed.");
+                RefreshFailed(logger, exception);
                 context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
                 return;
             }
             await next(context).ConfigureAwait(false);
         });
     }
+    [LoggerMessage(Level = LogLevel.Error, Message = "Shared authentication configuration could not be refreshed.")]
+    private static partial void RefreshFailed(ILogger logger, Exception exception);
 }

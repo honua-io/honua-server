@@ -882,8 +882,8 @@ public sealed class RateLimitingMiddlewareTests
         public Task<RateLimitPolicy> CreatePolicyAsync(RateLimitPolicy policy, CancellationToken cancellationToken = default)
             => Task.FromResult(policy);
 
-        public Task<RateLimitPolicy?> UpdatePolicyAsync(RateLimitPolicy policy, CancellationToken cancellationToken = default)
-            => Task.FromResult<RateLimitPolicy?>(policy);
+        public Task<RateLimitPolicy?> UpdatePolicyAsync(Guid policyId, Func<RateLimitPolicy, RateLimitPolicy> update, CancellationToken cancellationToken = default)
+            => Task.FromResult(_policies.FirstOrDefault(policy => policy.PolicyId == policyId) is { } current ? update(current) : null);
 
         public Task<bool> DeletePolicyAsync(Guid policyId, CancellationToken cancellationToken = default)
             => Task.FromResult(true);

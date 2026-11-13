@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.Configuration;
 
-internal sealed class PostgresClientCertificateTrustStore(PostgresConfigurationDocuments documents, IOptions<ClientCertificateAuthenticationOptions>? options = null) : IClientCertificateTrustStore
+internal sealed class PostgresClientCertificateTrustStore(PostgresConfigurationDocuments documents, IOptions<ClientCertificateAuthenticationOptions>? options = null) : IClientCertificateTrustStore, IDisposable
 {
     private readonly ConfigurationCollectionStore<ClientCertificateTrustProfile> _store = new(documents,
         new("client-certificate-trust", SharedConfigurationJsonContext.Default.ClientCertificateTrustProfile));
@@ -101,4 +101,5 @@ internal sealed class PostgresClientCertificateTrustStore(PostgresConfigurationD
 
     private static string Key(string profileId) => profileId.ToUpperInvariant();
     private static bool Equal(string first, string second) => string.Equals(first, second, StringComparison.OrdinalIgnoreCase);
+    public void Dispose() => _seedGate.Dispose();
 }
