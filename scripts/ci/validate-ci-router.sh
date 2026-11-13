@@ -1515,6 +1515,11 @@ assert_descriptor \
   "targeted" \
   "false" \
   "Server Features Admin Governance and Sharing"
+for child in "OData Core Endpoints" "OData Core"; do
+  for source in "src/Honua.Server/Program.cs" "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataEndpointTests.cs"; do
+    assert_descriptor "odata-core-capacity-${child}-${source}" "${source}" "targeted" "false" "${child}"
+  done
+done
 for child in "Server Features Console Sessions and Access" "Server Features Console and Alerts"; do
   assert_descriptor \
     "console-session-targeted-${child}" \
@@ -1690,6 +1695,7 @@ run_fixture scripts/ci/test-wms-capacity-partition.py "${PYTHON_BIN}" scripts/ci
 run_fixture scripts/ci/test-featureserver-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-featureserver-capacity-partition.py
 run_fixture scripts/ci/test-mcp-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-mcp-capacity-partition.py
 run_fixture scripts/ci/test-console-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-console-capacity-partition.py
+run_fixture scripts/ci/test-odata-core-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-odata-core-capacity-partition.py
 run_fixture scripts/ci/test-streaming-capacity-partition.py "${PYTHON_BIN}" scripts/ci/test-streaming-capacity-partition.py
 run_fixture scripts/ci/check-server-test-shard-coverage.test.py "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
