@@ -80,7 +80,7 @@ public class ConsoleBrowserRouteAccessTests : IAsyncLifetime
     [InlineData("/api/v1/studio/session")]
     [Endpoint("GET /rest/services")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    [Endpoint("GET /api/styles/{layerId:int}.json")]
+    [Endpoint("GET /api/styles/{publicationId}.json")]
     [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]
     [Endpoint("GET /scenes/{sceneId}/tileset.json")]
     [Endpoint("GET /api/v1/studio/package-families")]
