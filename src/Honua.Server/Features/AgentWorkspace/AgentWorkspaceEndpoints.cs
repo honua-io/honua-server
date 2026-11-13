@@ -19,8 +19,9 @@ internal static class AgentWorkspaceEndpoints
 
     public static void MapLocalProcessWorkspaces(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/v{version:apiVersion}/agent");
-        group.WithApiVersionSet().HasApiVersion(1, 0).WithTags("Studio")
+        var versions = endpoints.NewApiVersionSet().HasApiVersion(new Asp.Versioning.ApiVersion(1, 0)).Build();
+        var group = endpoints.MapGroup("/api/v{version:apiVersion}/agent")
+            .WithApiVersionSet(versions).HasApiVersion(1, 0).WithTags("Studio")
             .RequireStudioLifecycleAuthorization();
         group.AddEndpointFilter(async (invocation, next) =>
         {
