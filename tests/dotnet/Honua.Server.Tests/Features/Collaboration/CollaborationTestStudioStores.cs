@@ -68,6 +68,9 @@ internal sealed class ConcurrentUpdateAfterDraftWriteStore : IStudioPackageStore
     public Task<bool> DeleteDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
         => _inner.DeleteDraftAsync(draftId, cancellationToken);
 
+    public Task<bool> DeleteDraftAsync(Guid draftId, long expectedGeneration, CancellationToken cancellationToken = default)
+        => _inner.DeleteDraftAsync(draftId, expectedGeneration, cancellationToken);
+
     public Task<StudioContentVersion> CreateVersionAsync(
         StudioPackageDraft draft,
         string? changeNote,
@@ -195,6 +198,9 @@ internal sealed class DeleteDuringVersionSaveStore : IStudioPackageStore
 
     public Task<bool> DeleteDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
         => _inner.DeleteDraftAsync(draftId, cancellationToken);
+
+    public Task<bool> DeleteDraftAsync(Guid draftId, long expectedGeneration, CancellationToken cancellationToken = default)
+        => _inner.DeleteDraftAsync(draftId, expectedGeneration, cancellationToken);
 
     public Task<StudioContentVersion> CreateVersionAsync(
         StudioPackageDraft draft,

@@ -262,18 +262,29 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         }
     }
 
-    public async Task<bool> DeleteDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
+    public Task<bool> DeleteDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
+        => DeleteDraftCoreAsync(draftId, null, cancellationToken);
+
+    public Task<bool> DeleteDraftAsync(Guid draftId, long expectedGeneration, CancellationToken cancellationToken = default)
+        => DeleteDraftCoreAsync(draftId, expectedGeneration, cancellationToken);
+
+    private async Task<bool> DeleteDraftCoreAsync(Guid draftId, long? expectedGeneration, CancellationToken cancellationToken)
     {
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         var connection = lease.Connection;
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
         try
         {
-            var deleteDraftSql = $"DELETE FROM {_draftsTable} WHERE draft_id = @draft_id RETURNING item_id";
+            var generationPredicate = expectedGeneration.HasValue ? " AND generation = @generation" : string.Empty;
+            var deleteDraftSql = $"DELETE FROM {_draftsTable} WHERE draft_id = @draft_id{generationPredicate} RETURNING item_id";
             Guid? itemId = null;
             await using (var command = new NpgsqlCommand(deleteDraftSql, connection, transaction))
             {
                 command.Parameters.AddWithValue("@draft_id", draftId);
+                if (expectedGeneration.HasValue)
+                {
+                    command.Parameters.AddWithValue("@generation", expectedGeneration.Value);
+                }
                 var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
                 if (result is Guid deletedItemId)
                 {
@@ -283,6 +294,13 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
 
             if (itemId is null)
             {
+                var state = expectedGeneration.HasValue
+                    ? await GetDraftStateAsync(connection, transaction, draftId, lockRow: false, cancellationToken).ConfigureAwait(false)
+                    : null;
+                if (state is not null)
+                {
+                    throw new InvalidOperationException("Stale draft generation; refresh and retry.");
+                }
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 return false;
             }

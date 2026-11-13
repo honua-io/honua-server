@@ -84,6 +84,32 @@ public sealed class StudioDraftOperationRuntimeTests
         }
     }
 
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(1)]
+    public async Task UpdateDraft_GenerationDiffersFromOwnerSnapshot_RejectsBeforeSubmission(long generationOffset)
+    {
+        var store = new InMemoryStudioPackageStore();
+        var draft = await BuildLifecycle(store).CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "owner-generation",
+            OwnerId = "studio-author",
+            Envelope = PublicationEnvelope("1=1"),
+        });
+        var invoker = Substitute.For<IOperationInvoker>();
+        var runtime = new StudioDraftMutationRuntime(invoker, new VolatileOperationInstanceStore(), store);
+
+        var act = () => runtime.UpdateAsync(draft.DraftId, new UpdateStudioPackageDraftCommand
+        {
+            PackageKey = draft.PackageKey,
+            Envelope = draft.Envelope,
+            Generation = draft.Generation + generationOffset,
+        }, new StudioDraftMutationContext { PrincipalId = "studio-author" });
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        await invoker.DidNotReceiveWithAnyArgs().SubmitAsync(default!, default!, default);
+    }
+
     [Fact]
     public void PublicationRequest_UsesStudioApprovalLane()
     {
@@ -1072,7 +1098,7 @@ public sealed class StudioDraftOperationRuntimeTests
         bridge.Request!.OperationId.Should().Be(StudioDraftOperations.Delete);
         bridge.Context!.ScopeGoverned.Should().BeTrue();
         bridge.Context.RecognizedScopes.Should().Equal("honua.mcp.delete");
-        await lifecycle.DidNotReceiveWithAnyArgs().DeleteDraftAsync(default, default);
+        await lifecycle.DidNotReceiveWithAnyArgs().DeleteDraftAsync(default, CancellationToken.None);
     }
 
     [UnitTest]
