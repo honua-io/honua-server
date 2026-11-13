@@ -5,6 +5,7 @@ using System.Text.Json;
 using Honua.ControlPlane;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Infrastructure.Coordination;
 using Npgsql;
 using NpgsqlTypes;
@@ -49,7 +50,7 @@ internal sealed partial class PostgresVersionJobStore(JobStoreDatabase database,
                     await AdvanceAsync(command, job, token).ConfigureAwait(false);
                 }
 
-                await transaction.CommitAsync(token).ConfigureAwait(false);
+                await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
             },
             StatementRepeat.SafeToRepeat,
             cancellationToken);
