@@ -45,7 +45,7 @@ for mutation in ("duplicate", "missing", "foreign", "budget"):
     elif mutation == "missing":
         broken[0]["filter"] = f"({broken[0]['filter']})&FullyQualifiedName!~ODataEndpointTests"
     elif mutation == "foreign":
-        broken[0]["filter"] += "|FullyQualifiedName~Honua.Server.Tests.Features.Admin."
+        broken[0]["filter"] += "|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.OData.ODataAdvancedFeaturesTests"
     else:
         broken[0]["test_timeout_minutes"] += 1
     try:
