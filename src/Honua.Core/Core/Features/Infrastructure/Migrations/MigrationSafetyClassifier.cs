@@ -328,9 +328,11 @@ public static class MigrationSafetyClassifier
                     i++;
                 }
 
-                var contents = escapeString
-                    ? MigrationStringLiterals.ReadEscaped(sql, ref i)
-                    : MigrationStringLiterals.ReadStandard(sql, ref i);
+                var literal = escapeString
+                    ? MigrationStringLiterals.ReadEscaped(sql, i)
+                    : MigrationStringLiterals.ReadStandard(sql, i);
+                var contents = literal.Contents;
+                i = literal.NextIndex;
                 if (IsRoutineBodyPrefix(result, statementStart))
                 {
                     var routineSql = new StringBuilder(contents.Length);

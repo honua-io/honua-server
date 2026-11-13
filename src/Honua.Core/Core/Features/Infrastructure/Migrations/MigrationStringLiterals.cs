@@ -9,11 +9,11 @@ internal static class MigrationStringLiterals
 {
     private enum LiteralKind { Standard, Escaped }
 
-    internal static string ReadStandard(string sql, ref int index) => Read(sql, ref index, LiteralKind.Standard);
+    internal static (string Contents, int NextIndex) ReadStandard(string sql, int index) => Read(sql, index, LiteralKind.Standard);
 
-    internal static string ReadEscaped(string sql, ref int index) => Read(sql, ref index, LiteralKind.Escaped);
+    internal static (string Contents, int NextIndex) ReadEscaped(string sql, int index) => Read(sql, index, LiteralKind.Escaped);
 
-    private static string Read(string sql, ref int index, LiteralKind kind)
+    private static (string Contents, int NextIndex) Read(string sql, int index, LiteralKind kind)
     {
         var contents = new StringBuilder();
         index++;
@@ -22,7 +22,9 @@ internal static class MigrationStringLiterals
             if (kind == LiteralKind.Escaped && sql[index] == '\\' && index + 1 < sql.Length)
             {
                 index++;
-                AppendEscape(sql, ref index, contents);
+                var escape = ReadEscape(sql, index);
+                contents.Append(escape.Contents);
+                index = escape.NextIndex;
                 continue;
             }
 
@@ -51,31 +53,35 @@ internal static class MigrationStringLiterals
             index = continuation + 1;
         }
 
-        return contents.ToString();
+        return (contents.ToString(), index);
     }
 
-    private static void AppendEscape(string sql, ref int index, StringBuilder contents)
+    private static (string Contents, int NextIndex) ReadEscape(string sql, int index)
     {
         var escaped = sql[index++];
         var radix = escaped is >= '0' and <= '7' ? 8 : 16;
         var maximum = escaped switch { >= '0' and <= '7' => 3, 'x' => 2, 'u' => 4, 'U' => 8, _ => 0 };
         if (maximum == 0)
         {
-            contents.Append(escaped switch
+            var character = escaped switch
             {
                 'b' => '\b', 'f' => '\f', 'n' => '\n', 'r' => '\r', 't' => '\t', _ => escaped
-            });
-            return;
+            };
+            return (character.ToString(), index);
         }
 
-        if (radix == 8)
-        {
-            index--;
-        }
+        var start = radix == 8 ? index - 1 : index;
+        var number = ReadNumber(sql, start, (radix, maximum));
+        return number.NextIndex == start
+            ? (escaped.ToString(), index)
+            : (DecodeNumber(number.Value, escaped), number.NextIndex);
+    }
 
+    private static (long Value, int NextIndex) ReadNumber(string sql, int index, (int Radix, int Maximum) format)
+    {
         long value = 0;
-        var digits = 0;
-        while (index < sql.Length && digits < maximum)
+        var end = Math.Min(sql.Length, index + format.Maximum);
+        while (index < end)
         {
             var digit = sql[index] switch
             {
@@ -84,32 +90,31 @@ internal static class MigrationStringLiterals
                 >= 'A' and <= 'F' => sql[index] - 'A' + 10,
                 _ => -1
             };
-            if (digit < 0 || digit >= radix)
+            if (digit < 0 || digit >= format.Radix)
             {
                 break;
             }
 
-            value = value * radix + digit;
-            digits++;
+            value = value * format.Radix + digit;
             index++;
         }
 
-        if (digits == 0)
+        return (value, index);
+    }
+
+    private static string DecodeNumber(long value, char escaped)
+    {
+        if (escaped is >= '0' and <= '7' or 'x')
         {
-            contents.Append(escaped);
+            return ((char)(value & 255)).ToString();
         }
-        else if (escaped is >= '0' and <= '7' or 'x')
+
+        if (value <= char.MaxValue)
         {
-            contents.Append((char)(value & 255));
+            return ((char)value).ToString();
         }
-        else if (value <= char.MaxValue)
-        {
-            contents.Append((char)value);
-        }
-        else if (value <= 0x10ffff)
-        {
-            contents.Append(char.ConvertFromUtf32((int)value));
-        }
+
+        return value <= 0x10ffff ? char.ConvertFromUtf32((int)value) : string.Empty;
     }
 
     private static int FindContinuation(string sql, int index)
