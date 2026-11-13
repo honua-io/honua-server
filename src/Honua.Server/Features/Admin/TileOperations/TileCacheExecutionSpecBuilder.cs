@@ -69,6 +69,11 @@ internal static class TileCacheExecutionSpecBuilder
             parameters[TileCacheJobParameterKeys.Style] = request.Style;
         }
 
+        if (!string.IsNullOrWhiteSpace(request.TileCompression))
+        {
+            parameters[TileCacheJobParameterKeys.Compression] = request.TileCompression;
+        }
+
         if (!string.IsNullOrWhiteSpace(request.GenerationId))
         {
             parameters[TileCacheJobParameterKeys.GenerationId] = request.GenerationId;
@@ -201,6 +206,13 @@ internal static class TileCacheExecutionSpecBuilder
         parameters.TryGetValue(TileCacheJobParameterKeys.TileMatrixSetId, out var tileMatrixSetId);
         parameters.TryGetValue(TileCacheJobParameterKeys.Style, out var style);
         parameters.TryGetValue(TileCacheJobParameterKeys.GenerationId, out var generationId);
+        parameters.TryGetValue(TileCacheJobParameterKeys.Compression, out var tileCompression);
+        if (!string.IsNullOrWhiteSpace(tileCompression) && !TileArchiveCompression.IsSupported(tileCompression))
+        {
+            error = $"invalid tile-cache parameter 'compression'; expected one of: {TileArchiveCompression.SupportedValues}";
+            return false;
+        }
+
         if (parameters.TryGetValue(TileCacheJobParameterKeys.SchemaName, out var schema)
             && !string.IsNullOrWhiteSpace(schema))
         {
@@ -219,6 +231,7 @@ internal static class TileCacheExecutionSpecBuilder
             MaxTiles = maxTiles,
             Style = string.IsNullOrWhiteSpace(style) ? null : style,
             GenerationId = string.IsNullOrWhiteSpace(generationId) ? null : generationId,
+            TileCompression = TileArchiveCompression.Normalize(tileCompression),
         };
 
         try
@@ -249,6 +262,7 @@ internal static class TileCacheExecutionSpecBuilder
             Style = string.IsNullOrWhiteSpace(request.Style)
                 ? "default"
                 : request.Style.Trim(),
+            TileCompression = TileArchiveCompression.Normalize(request.TileCompression),
         };
     }
 

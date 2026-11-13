@@ -189,6 +189,18 @@
       "path": "/auth/providers/{providerKey}/authorize-url"
     },
     {
+      "operationId": "createAdminPasswordBearer",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/auth/password-token"
+    },
+    {
+      "operationId": "createAdminPasswordSession",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/auth/session"
+    },
+    {
       "operationId": "createAlertRule",
       "catalogOperationId": null,
       "method": "POST",
@@ -492,7 +504,7 @@
       "operationId": "exportLayerSldStyle",
       "catalogOperationId": "admin.layer.style.export-sld",
       "method": "GET",
-      "path": "/metadata/layers/{layerId}/style/export-sld"
+      "path": "/metadata/layers/{storageLayerId}/style/export-sld"
     },
     {
       "operationId": "exportObservabilityAudit",
@@ -510,7 +522,7 @@
       "operationId": "exportServiceLayer",
       "catalogOperationId": null,
       "method": "GET",
-      "path": "/services/{serviceName}/layers/{layerId}/export"
+      "path": "/services/{serviceName}/layers/{serviceLayerIndex}/export"
     },
     {
       "operationId": "exportTenantUsage",
@@ -555,6 +567,12 @@
       "path": "/auth/session"
     },
     {
+      "operationId": "getAdminBrowserCsrfToken",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/auth/csrf"
+    },
+    {
       "operationId": "getAdminCacheStatus",
       "catalogOperationId": null,
       "method": "GET",
@@ -570,49 +588,61 @@
       "operationId": "getAdminLayerDiscovery",
       "catalogOperationId": null,
       "method": "GET",
-      "path": "/metadata/layers/{layerId}/discovery"
+      "path": "/metadata/layers/{storageLayerId}/discovery"
+    },
+    {
+      "operationId": "getAdminLayerDisplay",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/metadata/layers/{storageLayerId}/display"
     },
     {
       "operationId": "getAdminLayerDrawingInfo",
       "catalogOperationId": "admin.layer.drawing-info.get",
       "method": "GET",
-      "path": "/metadata/layers/{layerId}/drawing-info"
+      "path": "/metadata/layers/{storageLayerId}/drawing-info"
     },
     {
       "operationId": "getAdminLayerFields",
       "catalogOperationId": "admin.layer.fields.get",
       "method": "GET",
-      "path": "/metadata/layers/{layerId}/fields"
+      "path": "/metadata/layers/{storageLayerId}/fields"
     },
     {
       "operationId": "getAdminLayerFilter",
       "catalogOperationId": "admin.layer.filter.get",
       "method": "GET",
-      "path": "/metadata/layers/{layerId}/filter"
+      "path": "/metadata/layers/{storageLayerId}/filter"
     },
     {
       "operationId": "getAdminLayerPopupInfo",
       "catalogOperationId": "admin.layer.popup-info.get",
       "method": "GET",
-      "path": "/metadata/layers/{layerId}/popup-info"
+      "path": "/metadata/layers/{storageLayerId}/popup-info"
     },
     {
       "operationId": "getAdminLayerRelationships",
       "catalogOperationId": null,
       "method": "GET",
-      "path": "/metadata/layers/{layerId}/relationships"
+      "path": "/metadata/layers/{storageLayerId}/relationships"
+    },
+    {
+      "operationId": "getAdminLayerSpatial",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/metadata/layers/{storageLayerId}/spatial"
     },
     {
       "operationId": "getAdminLayerStyle",
       "catalogOperationId": "admin.layer.style.get",
       "method": "GET",
-      "path": "/metadata/layers/{layerId}/style"
+      "path": "/metadata/layers/{storageLayerId}/style"
     },
     {
       "operationId": "getAdminLayerValidation",
       "catalogOperationId": null,
       "method": "GET",
-      "path": "/metadata/layers/{layerId}/validation"
+      "path": "/metadata/layers/{storageLayerId}/validation"
     },
     {
       "operationId": "getAdminOpenApi",
@@ -975,6 +1005,12 @@
       "path": "/migration/performance-evidence/latest"
     },
     {
+      "operationId": "getLayerMetadata",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/services/{serviceName}/layers/{serviceLayerIndex}/metadata"
+    },
+    {
       "operationId": "getLayerPublishJobStatus",
       "catalogOperationId": null,
       "method": "GET",
@@ -984,13 +1020,13 @@
       "operationId": "getLayerShareTrafficSeries",
       "catalogOperationId": null,
       "method": "GET",
-      "path": "/services/{serviceName}/layers/{layerId}/share/traffic/series"
+      "path": "/services/{serviceName}/layers/{serviceLayerIndex}/share/traffic/series"
     },
     {
       "operationId": "getLayerShareTrafficSummary",
       "catalogOperationId": null,
       "method": "GET",
-      "path": "/services/{serviceName}/layers/{layerId}/share/traffic"
+      "path": "/services/{serviceName}/layers/{serviceLayerIndex}/share/traffic"
     },
     {
       "operationId": "getLicenseEntitlements",
@@ -1332,7 +1368,7 @@
       "operationId": "importLayerSldStyle",
       "catalogOperationId": "admin.layer.style.import-sld",
       "method": "POST",
-      "path": "/metadata/layers/{layerId}/style/import-sld"
+      "path": "/metadata/layers/{storageLayerId}/style/import-sld"
     },
     {
       "operationId": "importOgcApiFeaturesCollection",
@@ -1914,7 +1950,7 @@
       "operationId": "refreshConnectionLayerFeatures",
       "catalogOperationId": null,
       "method": "POST",
-      "path": "/connections/{id}/layers/{layerId}/features/refresh"
+      "path": "/connections/{id}/layers/{storageLayerId}/features/refresh"
     },
     {
       "operationId": "refreshMultidimCoverage",
@@ -2127,28 +2163,40 @@
       "path": "/import/scan"
     },
     {
+      "operationId": "setAdminLayerDisplay",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/metadata/layers/{storageLayerId}/display"
+    },
+    {
       "operationId": "setAdminLayerDrawingInfo",
       "catalogOperationId": "admin.layer.drawing-info.set",
       "method": "PUT",
-      "path": "/metadata/layers/{layerId}/drawing-info"
+      "path": "/metadata/layers/{storageLayerId}/drawing-info"
     },
     {
       "operationId": "setAdminLayerPopupInfo",
       "catalogOperationId": "admin.layer.popup-info.set",
       "method": "PUT",
-      "path": "/metadata/layers/{layerId}/popup-info"
+      "path": "/metadata/layers/{storageLayerId}/popup-info"
     },
     {
       "operationId": "setAdminLayerRelationships",
       "catalogOperationId": null,
       "method": "PUT",
-      "path": "/metadata/layers/{layerId}/relationships"
+      "path": "/metadata/layers/{storageLayerId}/relationships"
     },
     {
       "operationId": "setAdminLayerRelationshipsBatch",
       "catalogOperationId": null,
       "method": "PUT",
       "path": "/metadata/layers/relationships/batch"
+    },
+    {
+      "operationId": "setAdminLayerSpatial",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/metadata/layers/{storageLayerId}/spatial"
     },
     {
       "operationId": "setAlertRuleEnabled",
@@ -2160,7 +2208,7 @@
       "operationId": "setLayerEnabled",
       "catalogOperationId": "admin.layer.set-enabled",
       "method": "PUT",
-      "path": "/connections/{id}/layers/{layerId}/enabled"
+      "path": "/connections/{id}/layers/{storageLayerId}/enabled"
     },
     {
       "operationId": "setOpsAutonomyPolicy",
@@ -2244,7 +2292,7 @@
       "operationId": "suggestLayerStyle",
       "catalogOperationId": null,
       "method": "POST",
-      "path": "/metadata/layers/{layerId}/suggest-style"
+      "path": "/metadata/layers/{storageLayerId}/suggest-style"
     },
     {
       "operationId": "suppressObservabilityAlert",
@@ -2322,25 +2370,25 @@
       "operationId": "updateAdminLayerDiscovery",
       "catalogOperationId": null,
       "method": "PUT",
-      "path": "/metadata/layers/{layerId}/discovery"
+      "path": "/metadata/layers/{storageLayerId}/discovery"
     },
     {
       "operationId": "updateAdminLayerFields",
       "catalogOperationId": "admin.layer.fields.set",
       "method": "PUT",
-      "path": "/metadata/layers/{layerId}/fields"
+      "path": "/metadata/layers/{storageLayerId}/fields"
     },
     {
       "operationId": "updateAdminLayerFilter",
       "catalogOperationId": "admin.layer.filter.set",
       "method": "PUT",
-      "path": "/metadata/layers/{layerId}/filter"
+      "path": "/metadata/layers/{storageLayerId}/filter"
     },
     {
       "operationId": "updateAdminLayerStyle",
       "catalogOperationId": "admin.layer.style.set",
       "method": "PUT",
-      "path": "/metadata/layers/{layerId}/style"
+      "path": "/metadata/layers/{storageLayerId}/style"
     },
     {
       "operationId": "updateAdminServiceDiscovery",
@@ -2406,7 +2454,7 @@
       "operationId": "updateLayerMetadata",
       "catalogOperationId": "admin.services.layer-metadata.set",
       "method": "PUT",
-      "path": "/services/{serviceName}/layers/{layerId}/metadata"
+      "path": "/services/{serviceName}/layers/{serviceLayerIndex}/metadata"
     },
     {
       "operationId": "updateManagedUserRoles",

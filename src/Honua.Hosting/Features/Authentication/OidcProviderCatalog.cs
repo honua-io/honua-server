@@ -13,9 +13,7 @@ internal sealed record OidcProviderRegistration(
     string[] Scopes,
     string? CallbackPath,
     bool Enabled,
-    bool IsValid,
-    string? LogoutEndpoint = null,
-    bool UseCognitoLogout = false);
+    bool IsValid);
 
 internal static class OidcProviderCatalog
 {
@@ -108,9 +106,7 @@ internal static class OidcProviderCatalog
                 Scopes: generic.Scopes,
                 CallbackPath: generic.CallbackPath,
                 Enabled: generic.Enabled,
-                IsValid: generic.IsValid,
-                LogoutEndpoint: generic.LogoutEndpoint,
-                UseCognitoLogout: generic.UseCognitoLogout));
+                IsValid: generic.IsValid));
         }
 
         if (runtime is not null)

@@ -49,7 +49,10 @@ jobs:
                   }
                 }
               }`, { ...context.repo, number: context.issue.number });
-            const eligible = pr && pr.state === 'OPEN' && !pr.isDraft && pr.baseRefName === 'trunk'
+            const eventPr = context.payload.pull_request;
+            const eventEligible = !eventPr.draft && !eventPr.labels.some(label =>
+              ['hold', 'train:hold', 'train:escalated'].includes(label.name));
+            const eligible = eventEligible && pr && pr.state === 'OPEN' && !pr.isDraft && pr.baseRefName === 'trunk'
               && pr.headRepository?.nameWithOwner === `${context.repo.owner}/${context.repo.repo}`
               && !pr.labels.pageInfo.hasNextPage
               && !pr.labels.nodes.some(label => ['hold', 'train:hold', 'train:escalated'].includes(label.name));

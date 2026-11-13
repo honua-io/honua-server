@@ -728,6 +728,9 @@ internal sealed record TileOperationStartRequest
 
     public string? Style { get; init; }
 
+    // Archive/publish tile payload compression: "none" (default) or "gzip".
+    public string? TileCompression { get; init; }
+
     // A retry forwards the generation id so the run resumes rather than starting over.
     public string? GenerationId { get; init; }
 }
