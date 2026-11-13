@@ -51,7 +51,8 @@ internal sealed class PublishedOperationTool : IMcpTool
         _inputSchema = BuildInputSchema(
             descriptor.InputSchema.Select(parameter => parameter with
             {
-                Name = McpConnectionDiscoveryProjection.InputName(descriptor.OperationId, parameter.Name)
+                Name = McpConnectionDiscoveryProjection.InputName(descriptor.OperationId, parameter.Name),
+                Title = McpInputDescriptions.Describe(descriptor.OperationId, parameter.Name, parameter.Title)
             }).ToArray(), descriptor.Policy.SupportsDryRun);
     }
 
@@ -101,6 +102,9 @@ internal sealed class PublishedOperationTool : IMcpTool
         if (FolderToolName(operationId) is { } folderToolName) return folderToolName;
         if (operationId == McpConnectionDiscoveryProjection.TablesOperationId)
             return "honua_admin_connection_tables_list";
+
+        if (operationId == McpConnectionDiscoveryProjection.LayersOperationId)
+            return "honua_admin_connection_layers_list";
 
         var isAdminOperation = operationId.StartsWith("admin.", StringComparison.Ordinal);
         var operationName = isAdminOperation ? operationId["admin.".Length..] : operationId;
@@ -551,11 +555,7 @@ internal sealed class PublishedOperationTool : IMcpTool
                 }
 
                 writer.WriteStartObject(parameter.Name);
-                WriteSchema(writer, parameter.Schema);
-                if (!string.IsNullOrWhiteSpace(parameter.Title))
-                {
-                    writer.WriteString("description", parameter.Title);
-                }
+                WriteSchema(writer, parameter.Schema, parameter.Title);
 
                 writer.WriteEndObject();
             }
@@ -588,8 +588,10 @@ internal sealed class PublishedOperationTool : IMcpTool
         && !name.EndsWith("Reference", StringComparison.Ordinal)
         && !name.EndsWith("Type", StringComparison.Ordinal);
 
-    private static void WriteSchema(Utf8JsonWriter writer, Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaDefinition schema)
+    private static void WriteSchema(Utf8JsonWriter writer, Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaDefinition schema, string? description = null)
     {
+        var schemaDescription = string.IsNullOrWhiteSpace(description) ? schema.Description : description;
+        if (!string.IsNullOrWhiteSpace(schemaDescription)) writer.WriteString("description", schemaDescription);
         var type = schema.Type switch
         {
             Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.WholeNumber => "integer",
