@@ -48,9 +48,8 @@ public sealed partial class McpWorkflowViewTests
         private void InspectRequired(JsonElement schema, InputOriginPath context)
         {
             if (!schema.TryGetProperty("required", out var required)) return;
-            foreach (var field in required.EnumerateArray())
+            foreach (var name in required.EnumerateArray().Select(field => field.GetString()!))
             {
-                var name = field.GetString()!;
                 var hasSource = schema.TryGetProperty("properties", out var properties)
                     && properties.TryGetProperty(name, out var property) && HasNamedOrigin(property);
                 if (!hasSource && context.SourceDescription is null) Missing.Add($"{context.Path}.{name}");
