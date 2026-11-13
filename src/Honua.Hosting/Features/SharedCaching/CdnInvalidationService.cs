@@ -100,7 +100,16 @@ internal sealed partial class CdnInvalidationService(
             return Task.CompletedTask;
         }
 
-        return SendAfterEditAsync([.. paths], CdnPurgeCause.Edit(CauseOfCurrentRequest().ChangeId), reportOnResponse: true, cancellationToken);
+        return SendAndReportAfterEditAsync([.. paths], CdnPurgeCause.Edit(CauseOfCurrentRequest().ChangeId), cancellationToken);
+    }
+
+    private async Task SendAndReportAfterEditAsync(string[] paths, CdnPurgeCause cause, CancellationToken cancellationToken)
+    {
+        var result = await SendAfterEditAsync(paths, cause, cancellationToken).ConfigureAwait(false);
+        if (result is not null)
+        {
+            ReportOnCurrentResponse(result);
+        }
     }
 
     private async Task InvalidatePendingWhenWindowClosesAsync(TimeSpan untilWindowCloses)
@@ -115,12 +124,16 @@ internal sealed partial class CdnInvalidationService(
             _lastEditInvalidation = timeProvider.GetUtcNow();
         }
 
-        await SendAfterEditAsync(paths, CdnPurgeCause.Edit(CdnPurgeCause.CoalescedEdits), reportOnResponse: false, CancellationToken.None)
+        var result = await SendAfterEditAsync(paths, CdnPurgeCause.Edit(CdnPurgeCause.CoalescedEdits), CancellationToken.None)
             .ConfigureAwait(false);
+        if (result is { Failed: true })
+        {
+            Log.EditInvalidationFailed(logger, result.Detail ?? "unknown");
+        }
     }
 
     // An address another task invalidated within the window is retried shortly: that purge may have preceded this edit.
-    private async Task SendAfterEditAsync(string[] paths, CdnPurgeCause cause, bool reportOnResponse, CancellationToken cancellationToken)
+    private async Task<CdnInvalidationResult?> SendAfterEditAsync(string[] paths, CdnPurgeCause cause, CancellationToken cancellationToken)
     {
         string[] claimed;
         CdnInvalidationResult result;
@@ -134,7 +147,7 @@ internal sealed partial class CdnInvalidationService(
 
             if (claimed.Length == 0)
             {
-                return;
+                return null;
             }
 
             result = await SendWithinLimitsAsync(claimed, cause, cancellationToken).ConfigureAwait(false);
@@ -146,14 +159,7 @@ internal sealed partial class CdnInvalidationService(
             throw;
         }
 
-        if (reportOnResponse)
-        {
-            ReportOnCurrentResponse(result);
-        }
-        else if (result.Failed)
-        {
-            Log.EditInvalidationFailed(logger, result.Detail ?? "unknown");
-        }
+        return result;
     }
 
     internal void InvalidateWithNextWindow(IEnumerable<string> paths)
