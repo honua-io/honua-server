@@ -830,13 +830,9 @@ The ready-PR format matrix retains `PR Gate / Analyzers (tests)` and adds `PR Ga
 
 ### Optional PR workflow input boundaries
 
-Capability Impact Comparison keeps its PR observation report, scoped to runtime
-source, .NET proving tests, compatibility baselines, capability data, the shard
-map and the selector/report tools. Unrelated prose and workflow edits no longer
-start it. It is currently disabled in repository settings; this filter makes
-re-enabling it safe. Capability Matrix Aggregation and OpenAPI Contract
-Governance already enumerate their generator/contract inputs and retain those
-filters.
+Capability Impact Comparison was retired after being disabled in repository
+settings; its workflow has been removed. Capability Matrix Aggregation and
+OpenAPI Contract Governance retain their generator/contract input filters.
 
 GeoArrow and GeoParquet interop run on pull requests only for files whose names
 contain GeoArrow or Parquet (sources, tests, CRS resources, test data), the few

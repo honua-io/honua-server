@@ -105,11 +105,9 @@ remains failing for blocking reviews. Skipping a draft publishes no success;
 `ready_for_review` re-enters trusted attestation on the current head. API and
 attestation errors still fail; helpers cannot override required admission policy.
 
-CI Doctor, PR Review Doctor and PR Sync Doctor retain their concurrency groups
-and use the same serial queue, including their generated `activation`, `agent`,
-`pre_activation` and `safe_outputs` jobs. A newer event waits instead of
-cancelling an earlier run; automation writes remain serialized. The generated
-lock workflows are compiled from their authored Markdown sources.
+CI Doctor, PR Review Doctor and PR Sync Doctor were retired after being
+disabled in repository settings. Their generated lock workflows, authored
+Markdown sources and doctor-only tooling have been removed.
 
 ## Required PR lane
 
@@ -716,14 +714,6 @@ duration of trunk runs 42929935484, 42935981545, 42968585882 and 42986321489, th
 first full runs after the tiny-shard consolidation. The governance children measured
 5.2, 10.0 and 7.0 minutes. A shard with no passing job keeps the larger of its old rank
 and its failed duration.
-
-Doctor budget admission counts both separately dispatched phases using the pinned gh-aw
-usage-artifact accountant over the preceding 24 hours. In-flight runs reserve their
-per-run cap; missing usage fails closed. Both native daily guardrails remain enabled.
-The budget job records each run's phase and credits, total triage/fix credits,
-paid-run counts and the share of triage events reaching a paid Opus run. Deterministic
-skips use zero model credits. The combined envelopes are 2500 credits ($25) per day;
-triage and fix do not each receive a separate allowance.
 
 Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. If both producer jobs were skipped by job-level admission (draft or non-base edit), the consumer also returns without validation or mutation. Missing envelopes from ordinary producers remain errors.
 
