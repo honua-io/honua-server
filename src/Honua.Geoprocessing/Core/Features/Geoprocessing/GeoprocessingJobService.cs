@@ -27,6 +27,7 @@ using Honua.Geoprocessing.Execution;
 using Honua.Geoprocessing.ProcessRelease;
 using Honua.Infrastructure;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Security;
 using Honua.ControlPlane;
 using Microsoft.Extensions.Options;
@@ -1173,7 +1174,21 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     }
 
     public ClaimsPrincipal CaptureOrphanCleanupPrincipal(string jobId, ClaimsPrincipal principal)
-        => new(principal.Identities.Select(identity => new ClaimsIdentity(identity)));
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
+        ArgumentNullException.ThrowIfNull(principal);
+
+        return new OrphanCleanupPrincipal(jobId, principal, _authorizer.CaptureReadScope(principal, _rbacOptions));
+    }
+
+    private sealed class OrphanCleanupPrincipal(
+        string jobId,
+        ClaimsPrincipal principal,
+        TenantReadScope readScope) : ClaimsPrincipal(principal.Identities.Select(identity => new ClaimsIdentity(identity)))
+    {
+        internal string JobId { get; } = jobId;
+        internal TenantReadScope ReadScope { get; } = readScope;
+    }
 
     public async Task<ExecutionJobRecord> GetJobForTerminalAsync(
         string jobId,
@@ -1283,7 +1298,10 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     }
 
     private bool IsJobReadable(ExecutionJobRecord job, ClaimsPrincipal principal)
-        => _authorizer.CanReadJob(job.Audit, principal, _rbacOptions);
+        => principal is OrphanCleanupPrincipal cleanup
+            ? string.Equals(job.OperationId, cleanup.JobId, StringComparison.Ordinal)
+                && JobOwnershipSecurity.CanAccess(job.Audit, cleanup.ReadScope, cleanup)
+            : _authorizer.CanReadJob(job.Audit, principal, _rbacOptions);
 
     public async Task<AnalysisResultPackage> GetJobResultsAsync(
         string jobId,

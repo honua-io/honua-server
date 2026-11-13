@@ -76,12 +76,21 @@ public sealed partial class GeoprocessingJobServiceTests
         (await sut.GetJobForTerminalAsync(job.OperationId, principal)).Should().BeSameAs(job);
 
         var cleanup = sut.CaptureOrphanCleanupPrincipal(job.OperationId, principal);
+        var stranger = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "stranger")], "Test"));
+        var strangerCleanup = sut.CaptureOrphanCleanupPrincipal(job.OperationId, stranger);
+        tenant.Set("public", TenantContextSource.Claim);
+        var explicitTenantCleanup = sut.CaptureOrphanCleanupPrincipal(job.OperationId, principal);
         new HttpContextAccessor().HttpContext = null;
 
         (await sut.GetJobForTerminalAsync(job.OperationId, cleanup)).Should().BeSameAs(job);
         var denied = () => sut.GetJobForTerminalAsync(other.OperationId, cleanup);
         await denied.Should().ThrowAsync<GeoprocessingNotFoundException>();
         denied = () => sut.GetJobForTerminalAsync(job.OperationId, principal);
+        await denied.Should().ThrowAsync<GeoprocessingNotFoundException>();
+        denied = () => sut.GetJobForTerminalAsync(job.OperationId, strangerCleanup);
+        await denied.Should().ThrowAsync<GeoprocessingNotFoundException>();
+        denied = () => sut.GetJobForTerminalAsync(job.OperationId, explicitTenantCleanup);
         await denied.Should().ThrowAsync<GeoprocessingNotFoundException>();
         job.Audit.SubmitterSecurityContext!.TenantId.Should().BeNull();
     }
