@@ -23,7 +23,7 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 
 public sealed partial class StudioDraftOperationRuntimeTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData(false, false)]
     [InlineData(false, true)]
     [InlineData(true, false)]
@@ -84,7 +84,7 @@ public sealed partial class StudioDraftOperationRuntimeTests
         }
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(-1)]
     [InlineData(1)]
     public async Task UpdateDraft_GenerationDiffersFromOwnerSnapshot_Conflicts(long generationOffset)
@@ -117,7 +117,7 @@ public sealed partial class StudioDraftOperationRuntimeTests
         (await store.GetDraftAsync(draft.DraftId)).Should().BeEquivalentTo(draft);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task UpdateAsync_IdenticalCompletedRetry_ReturnsOriginalWithoutAdvancingGeneration(bool explicitGeneration)

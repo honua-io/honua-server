@@ -70,8 +70,10 @@ public class OidcProviderEndpointsTests : IAsyncLifetime
     {
         var created = await _client.PostAsJsonAsync("/api/v1/admin/oidc/providers", new CreateOidcProviderRequest
         {
-            Name = "Original provider", ProviderType = "Generic",
-            Authority = "https://auth.example.com", ClientId = "original-client",
+            Name = "Original provider",
+            ProviderType = "Generic",
+            Authority = "https://auth.example.com",
+            ClientId = "original-client",
         }, _jsonOptions);
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
         var provider = JsonSerializer.Deserialize<ApiResponse<OidcProviderResponse>>(
@@ -85,7 +87,10 @@ public class OidcProviderEndpointsTests : IAsyncLifetime
             ? "/api/v1/admin/oidc/providers" : $"/api/v1/admin/oidc/providers/{provider.ProviderId}");
         request.Content = JsonContent.Create(new
         {
-            name = "Changed provider", providerType = "Generic", authority = "https://other.example.com", clientId = "changed-client",
+            name = "Changed provider",
+            providerType = "Generic",
+            authority = "https://other.example.com",
+            clientId = "changed-client",
         });
 
         using var response = await agent.SendAsync(request);

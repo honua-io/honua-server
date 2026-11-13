@@ -29,7 +29,10 @@ public sealed partial class WorkflowPackageEndpointsTests
             $"/api/v1/console/workflow-packages/{packageId}/versions/{version.Version}/publish",
             new
             {
-                publicationId, target, enabled = true, processId = "workflow.tests.agent",
+                publicationId,
+                target,
+                enabled = true,
+                processId = "workflow.tests.agent",
                 schedule = new { cronExpression = "0 0 * * *", timeZone = "UTC", enabled = true }
             }, JsonOptions);
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
@@ -49,7 +52,9 @@ public sealed partial class WorkflowPackageEndpointsTests
         var publicationId = "agent-schedule-" + Guid.NewGuid().ToString("N");
         await PublishAsync(packageId, version.Version, new
         {
-            publicationId, target = "Schedule", enabled = false,
+            publicationId,
+            target = "Schedule",
+            enabled = false,
             schedule = new { cronExpression = "0 0 * * *", timeZone = "UTC", enabled = false }
         });
         using var agent = await CreateWorkflowAgentAsync();

@@ -83,7 +83,10 @@ public sealed class FieldMaskPolicyEndpointsTests : IAsyncLifetime
         {
             using var content = JsonContent.Create(new CreateFieldMaskPolicyRequest
             {
-                Role = "agent-mask", Service = "*", Layer = "*", Attribute = "name",
+                Role = "agent-mask",
+                Service = "*",
+                Layer = "*",
+                Attribute = "name",
             }, FieldMaskPolicyJsonContext.Default.CreateFieldMaskPolicyRequest);
             using var created = await agent.PostAsync("/api/v1/admin/field-mask-policies", content);
             created.StatusCode.Should().Be(HttpStatusCode.Forbidden);

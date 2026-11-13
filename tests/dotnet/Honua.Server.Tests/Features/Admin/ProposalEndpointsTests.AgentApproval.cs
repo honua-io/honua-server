@@ -43,7 +43,10 @@ public sealed partial class ProposalEndpointsTests
         var path = $"/api/v1/console/content/{data.GetProperty("id").GetString()}";
         var update = new
         {
-            name, itemType = "dashboard", visibility = "personal", ownerId = newOwner,
+            name,
+            itemType = "dashboard",
+            visibility = "personal",
+            ownerId = newOwner,
             generation = data.GetProperty("generation").GetInt64(),
         };
 
@@ -72,9 +75,11 @@ public sealed partial class ProposalEndpointsTests
         var store = scope.ServiceProvider.GetRequiredService<ProjectedConsoleContentStore>();
         var original = await store.CreateAsync(new ConsoleContentItem
         {
-            Id = Guid.NewGuid().ToString(), Name = "ownership-race",
+            Id = Guid.NewGuid().ToString(),
+            Name = "ownership-race",
             ItemType = ConsoleContentItemType.Dashboard,
-            Visibility = ConsoleVisibility.Personal, OwnerId = "original-owner",
+            Visibility = ConsoleVisibility.Personal,
+            OwnerId = "original-owner",
         });
         var context = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
         context.User = new ClaimsPrincipal(new ClaimsIdentity(
@@ -82,8 +87,10 @@ public sealed partial class ProposalEndpointsTests
         context.Request.RouteValues["id"] = original.Id;
         var request = new UpdateConsoleContentItemRequest
         {
-            Name = original.Name, ItemType = original.ItemType,
-            Visibility = ConsoleVisibility.Personal, OwnerId = original.OwnerId,
+            Name = original.Name,
+            ItemType = original.ItemType,
+            Visibility = ConsoleVisibility.Personal,
+            OwnerId = original.OwnerId,
         };
         var delegated = false;
 
@@ -115,9 +122,11 @@ public sealed partial class ProposalEndpointsTests
         var store = scope.ServiceProvider.GetRequiredService<ProjectedConsoleContentStore>();
         var original = await store.CreateAsync(new ConsoleContentItem
         {
-            Id = Guid.NewGuid().ToString(), Name = "ownership-future-generation",
+            Id = Guid.NewGuid().ToString(),
+            Name = "ownership-future-generation",
             ItemType = ConsoleContentItemType.Dashboard,
-            Visibility = ConsoleVisibility.Personal, OwnerId = "original-owner",
+            Visibility = ConsoleVisibility.Personal,
+            OwnerId = "original-owner",
         });
         var context = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
         context.User = new ClaimsPrincipal(new ClaimsIdentity(
@@ -125,8 +134,10 @@ public sealed partial class ProposalEndpointsTests
         context.Request.RouteValues["id"] = original.Id;
         var request = new UpdateConsoleContentItemRequest
         {
-            Name = original.Name, ItemType = original.ItemType,
-            Visibility = ConsoleVisibility.Personal, OwnerId = original.OwnerId,
+            Name = original.Name,
+            ItemType = original.ItemType,
+            Visibility = ConsoleVisibility.Personal,
+            OwnerId = original.OwnerId,
             Generation = original.Generation + 1,
         };
         var delegated = false;
@@ -157,8 +168,10 @@ public sealed partial class ProposalEndpointsTests
         using var agent = await CreateKeyClientAsync("agent-content-create", AgentKeyPermissions);
         using var denied = await agent.PostAsJsonAsync("/api/v1/console/content", new
         {
-            name = $"delegated-{Guid.NewGuid():N}", itemType = "dashboard",
-            visibility = "personal", ownerId = "another-owner",
+            name = $"delegated-{Guid.NewGuid():N}",
+            itemType = "dashboard",
+            visibility = "personal",
+            ownerId = "another-owner",
         });
         await AssertAgentApprovalRefusalAsync(denied, ConsoleGuidance, AgentApprovalFilter.ContentVisibilityRef);
 
@@ -169,7 +182,9 @@ public sealed partial class ProposalEndpointsTests
         var ownData = ownContent.RootElement.GetProperty("data");
         using var edited = await agent.PutAsJsonAsync($"/api/v1/console/content/{ownData.GetProperty("id").GetString()}", new
         {
-            name = $"edited-{Guid.NewGuid():N}", itemType = "dashboard", visibility = "personal",
+            name = $"edited-{Guid.NewGuid():N}",
+            itemType = "dashboard",
+            visibility = "personal",
             ownerId = ownData.GetProperty("ownerId").GetString(),
             generation = ownData.GetProperty("generation").GetInt64(),
         });

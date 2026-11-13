@@ -1098,10 +1098,10 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
             id = 3,
             method = "resources/read",
             @params = new { uri = $"honua://published-services/{service}" }
-    });
-    serviceResourceResponse.EnsureSuccessStatusCode();
-    using var serviceResource = JsonDocument.Parse(await serviceResourceResponse.Content.ReadAsStringAsync());
-    var serviceUri = serviceResource.RootElement.GetProperty("result").GetProperty("contents")[0].GetProperty("uri").GetString();
-    serviceUri.Should().Be($"honua://published-services/{service}");
+        });
+        serviceResourceResponse.EnsureSuccessStatusCode();
+        using var serviceResource = JsonDocument.Parse(await serviceResourceResponse.Content.ReadAsStringAsync());
+        var serviceUri = serviceResource.RootElement.GetProperty("result").GetProperty("contents")[0].GetProperty("uri").GetString();
+        serviceUri.Should().Be($"honua://published-services/{service}");
     }
 }
