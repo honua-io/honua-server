@@ -109,7 +109,8 @@ class OwnedServerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, child(HTTP) as process, child(HTTP) as foreign:
             own, other = probe(process), probe(foreign)
             root = Path(directory)
-            descriptors = root / "1/fd"
+            (root / "1/fd").mkdir(parents=True)
+            descriptors = root / "2/fd"
             descriptors.mkdir(parents=True)
             for descriptor in Path(f"/proc/{process.pid}/fd").iterdir():
                 handle = os.readlink(descriptor)
@@ -130,7 +131,7 @@ class OwnedServerTests(unittest.TestCase):
             with patch.object(OWNED.subprocess, "run", side_effect=container_command):
                 self.assertTrue(OWNED.container_owns_listener("owned", own.port))
                 self.assertFalse(OWNED.container_owns_listener("owned", other.port))
-                descriptors.rename(root / "unavailable")
+                (root / "1/fd").rmdir()
                 with self.assertRaisesRegex(RuntimeError, "cannot be inspected"):
                     OWNED.container_owns_listener("owned", own.port)
 

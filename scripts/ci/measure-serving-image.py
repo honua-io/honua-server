@@ -211,21 +211,29 @@ def main():
         parser.error('Published JIT boundary verification requires --published')
     inspection = inspect_image(args.image)
     if args.published:
-        report = {'image': args.image, 'image_id': inspection['Id'], 'bytes': inspection['Size'],
-                  'profile': args.profile, 'tags': os.environ.get('IMAGE_TAGS', '').splitlines(),
-                  'oci': measure_registry_image(args.image, inspection['Id'])}
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(json.dumps(report, indent=2) + '\n')
-        if args.default_image:
-            verify_size(inspection['Size'], args.profile)
-        if args.verify_jit_boundary:
-            files, deps = exported_files(args.image)
-            verify_files(files, args.profile)
-            verify_build_inputs({'assets': {'targets': {}}, 'responses': [],
-                                 'deps': deps, 'compilation': 'jit'}, args.profile)
-        print(f"{args.profile}: {inspection['Size']} uncompressed bytes; "
-              f"{report['oci']['compressed_layer_bytes']} compressed layer bytes")
-        return
+        measure_published(args, inspection)
+    else:
+        measure_export(args, inspection)
+
+
+def measure_published(args, inspection):
+    report = {'image': args.image, 'image_id': inspection['Id'], 'bytes': inspection['Size'],
+              'profile': args.profile, 'tags': os.environ.get('IMAGE_TAGS', '').splitlines(),
+              'oci': measure_registry_image(args.image, inspection['Id'])}
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(report, indent=2) + '\n')
+    if args.default_image:
+        verify_size(inspection['Size'], args.profile)
+    if args.verify_jit_boundary:
+        files, deps = exported_files(args.image)
+        verify_files(files, args.profile)
+        verify_build_inputs({'assets': {'targets': {}}, 'responses': [],
+                             'deps': deps, 'compilation': 'jit'}, args.profile)
+    print(f"{args.profile}: {inspection['Size']} uncompressed bytes; "
+          f"{report['oci']['compressed_layer_bytes']} compressed layer bytes")
+
+
+def measure_export(args, inspection):
     baseline = inspect_image(args.baseline)
     files, deps = exported_files(args.image)
     evidence = {

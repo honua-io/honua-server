@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <errno.h>
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,6 +9,48 @@
 #include <sys/un.h>
 #include <sys/statvfs.h>
 #include <unistd.h>
+
+/* Inspect procfs as the image user, without requiring a shell or coreutils. */
+static int print_process_sockets(const char *path)
+{
+    DIR *descriptors = opendir(path);
+    if (descriptors == NULL)
+        return 1;
+    struct dirent *entry;
+    while ((entry = readdir(descriptors)) != NULL) {
+        char handle[128];
+        ssize_t length = readlinkat(dirfd(descriptors), entry->d_name, handle, sizeof(handle) - 1);
+        if (length <= 0 || (size_t)length >= sizeof(handle) - 1)
+            continue;
+        handle[length] = '\0';
+        if (strncmp(handle, "socket:[", 8) == 0 && handle[length - 1] == ']')
+            puts(handle);
+    }
+    closedir(descriptors);
+    return 0;
+}
+
+static int print_socket_handles(const char *root)
+{
+    char path[4096];
+    int length = snprintf(path, sizeof(path), "%s/1/fd", root);
+    if (length < 0 || (size_t)length >= sizeof(path) || print_process_sockets(path) != 0)
+        return 1;
+    DIR *processes = opendir(root);
+    if (processes == NULL)
+        return 1;
+    struct dirent *entry;
+    while ((entry = readdir(processes)) != NULL) {
+        if (entry->d_name[0] == '\0' || strspn(entry->d_name, "0123456789") != strlen(entry->d_name) ||
+            strcmp(entry->d_name, "1") == 0)
+            continue;
+        length = snprintf(path, sizeof(path), "%s/%s/fd", root, entry->d_name);
+        if (length >= 0 && (size_t)length < sizeof(path))
+            print_process_sockets(path); /* Other users and exiting processes may be inaccessible. */
+    }
+    closedir(processes);
+    return ferror(stdout) ? 1 : 0;
+}
 
 static int probe_unix_socket(const char *path)
 {
@@ -144,6 +187,8 @@ static int probe_http(const char *path)
 
 int main(int argc, char **argv)
 {
+    if (argc == 2 && strcmp(argv[1], "--socket-handles") == 0)
+        return print_socket_handles("/proc");
     if (argc == 2 && strcmp(argv[1], "--security") == 0)
         return probe_security();
     if (argc == 3 && strcmp(argv[1], "--unix") == 0)
