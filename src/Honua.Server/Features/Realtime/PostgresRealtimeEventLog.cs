@@ -41,12 +41,12 @@ internal sealed class PostgresRealtimeEventLog(JobStoreDatabase database) : IExp
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(family);
         ArgumentNullException.ThrowIfNull(rows);
-        var batch = SerializeRows(rows);
+        var request = new AppendRequest(family, SerializeRows(rows), transaction);
 
         return transaction is not null
-            ? AppendOnAsync(transaction.Connection!, transaction, family, batch, cancellationToken)
+            ? AppendOnAsync(transaction.Connection!, request, cancellationToken)
             : database.ExecuteAsync(
-                (connection, _, token) => AppendOnAsync(connection, null, family, batch, token),
+                (connection, _, token) => AppendOnAsync(connection, request, token),
                 StatementRepeat.NotAfterSend,
                 cancellationToken);
     }
@@ -208,14 +208,12 @@ internal sealed class PostgresRealtimeEventLog(JobStoreDatabase database) : IExp
 
     private async Task<long> AppendOnAsync(
         NpgsqlConnection connection,
-        NpgsqlTransaction? transaction,
-        string family,
-        string batch,
+        AppendRequest request,
         CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand($"SELECT {_append}(@family, @rows)", connection, transaction);
-        command.Parameters.Add(new NpgsqlParameter("family", NpgsqlDbType.Text) { Value = family });
-        command.Parameters.Add(new NpgsqlParameter("rows", NpgsqlDbType.Jsonb) { Value = batch });
+        await using var command = new NpgsqlCommand($"SELECT {_append}(@family, @rows)", connection, request.Transaction);
+        command.Parameters.Add(new NpgsqlParameter("family", NpgsqlDbType.Text) { Value = request.Family });
+        command.Parameters.Add(new NpgsqlParameter("rows", NpgsqlDbType.Jsonb) { Value = request.Batch });
         try
         {
             var head = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
@@ -225,11 +223,13 @@ internal sealed class PostgresRealtimeEventLog(JobStoreDatabase database) : IExp
                                                   && exception.MessageText.StartsWith("realtime_append:", StringComparison.Ordinal))
         {
             throw new ArgumentException(
-                $"A {family} event has a payload over {MaxPayloadBytes} bytes; realtime events carry references, not documents.",
-                nameof(family),
+                $"A {request.Family} event has a payload over {MaxPayloadBytes} bytes; realtime events carry references, not documents.",
+                "family",
                 exception);
         }
     }
+
+    private readonly record struct AppendRequest(string Family, string Batch, NpgsqlTransaction? Transaction);
 
     private static string SerializeRows(IReadOnlyList<RealtimeLogRow> rows)
     {
