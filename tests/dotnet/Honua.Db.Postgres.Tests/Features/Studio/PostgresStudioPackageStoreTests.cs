@@ -1150,7 +1150,9 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
             var staleDelete = () => store.DeleteDraftAsync(draft.DraftId, draft.Generation);
             await staleDelete.Should().ThrowAsync<InvalidOperationException>();
             var preserved = await store.GetDraftAsync(draft.DraftId);
-            preserved.Should().BeEquivalentTo(transferred);
+            preserved.Should().BeEquivalentTo(transferred, options => options
+                .Using<JsonElement>(context => JsonElement.DeepEquals(context.Subject, context.Expectation).Should().BeTrue())
+                .WhenTypeIs<JsonElement>());
             var items = await store.ListContentItemsAsync(new StudioContentItemQuery());
             items.Items.Should().ContainSingle(item => item.ItemId == draft.ItemId);
 
