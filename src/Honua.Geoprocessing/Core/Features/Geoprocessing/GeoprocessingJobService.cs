@@ -834,7 +834,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             : ResolveEffectiveProtocolControls(protocolMetadata, workload);
 
         Task<bool> ConfirmKeyedReplayAsync(CancellationToken replayToken)
-            => ConfirmKeyedReplayAsyncCore(jobStore, jobId, legacyTenantJobId, resolvedKey!, replayToken);
+            => ConfirmKeyedReplayAsyncCore(jobStore, (jobId, legacyTenantJobId, resolvedKey!), replayToken);
 
         // Resolve authorized existing submissions before charging admission/quota or
         // minting new side effects (server#4627): a caller-supplied idempotency key whose
@@ -1242,23 +1242,21 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
     private static async Task<bool> ConfirmKeyedReplayAsyncCore(
         IExecutionJobStore jobStore,
-        string jobId,
-        string? legacyTenantJobId,
-        string resolvedKey,
+        (string JobId, string? LegacyTenantJobId, string ResolvedKey) identity,
         CancellationToken cancellationToken)
     {
-        if (await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false) is not null)
+        if (await jobStore.GetAsync(identity.JobId, cancellationToken).ConfigureAwait(false) is not null)
         {
             return true;
         }
 
-        if (legacyTenantJobId is not null
-            && await jobStore.GetAsync(legacyTenantJobId, cancellationToken).ConfigureAwait(false) is not null)
+        if (identity.LegacyTenantJobId is not null
+            && await jobStore.GetAsync(identity.LegacyTenantJobId, cancellationToken).ConfigureAwait(false) is not null)
         {
             return true;
         }
 
-        var priorFormatId = JobOwnershipSecurity.CreatePriorFormatJobId("gp", resolvedKey);
+        var priorFormatId = JobOwnershipSecurity.CreatePriorFormatJobId("gp", identity.ResolvedKey);
         return await jobStore.GetAsync(priorFormatId, cancellationToken).ConfigureAwait(false) is not null;
     }
 
