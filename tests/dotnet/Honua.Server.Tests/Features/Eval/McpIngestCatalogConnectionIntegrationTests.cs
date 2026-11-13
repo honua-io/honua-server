@@ -78,7 +78,7 @@ public sealed class McpIngestCatalogConnectionIntegrationTests
             using var identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
             await using var factory = CreateHost(catalogConnection, identityProvider);
             using var admin = factory.CreateClient();
-            admin.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword);
+            await McpPublicationFixtureSetup.UseManagedPublicationKeyAsync(factory.Services, admin);
             using var scope = factory.Services.CreateScope();
             var registry = scope.ServiceProvider.GetRequiredService<ISecureConnectionRegistry>();
             (await registry.GetActiveConnectionsAsync()).Should().BeEmpty("this catalog is an owned isolated database");

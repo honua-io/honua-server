@@ -277,6 +277,7 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
                     .GetProperty("text").GetString().Should().Contain(artifact.ArtifactId);
             }
 
+            await McpPublicationFixtureSetup.UseManagedPublicationKeyAsync(fixture.Services, client);
             using var publishResponse = await client.PostAsJsonAsync("/mcp", new
             {
                 jsonrpc = "2.0",

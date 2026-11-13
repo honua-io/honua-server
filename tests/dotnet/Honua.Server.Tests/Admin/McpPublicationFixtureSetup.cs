@@ -6,7 +6,9 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Operations;
+using Microsoft.Extensions.DependencyInjection;
 using Honua.Server.Startup;
 using Honua.Server.Tests.Features.Admin;
 using Honua.TestKit;
@@ -15,6 +17,17 @@ namespace Honua.Server.Tests.Admin;
 
 internal static class McpPublicationFixtureSetup
 {
+    internal static async Task UseManagedPublicationKeyAsync(IServiceProvider services, HttpClient client)
+    {
+        // Approval revalidates the proposer against the managed credential store.
+        // Bootstrap credentials cannot supply that durable authority.
+        var issued = await services.GetRequiredService<IAdminApiKeyStore>().CreateAsync(
+            "publication-fixture", ["admin:read", "admin:write", "agent"],
+            DateTimeOffset.UtcNow.AddMinutes(10), "publication-fixture", CancellationToken.None);
+        client.DefaultRequestHeaders.Remove("X-API-Key");
+        client.DefaultRequestHeaders.Add("X-API-Key", issued.Key);
+    }
+
     internal static async Task<OperationStatus> ApprovePublicationAsync(
         HumanApprovalHttpClient human, HttpClient admin, JsonElement pending)
     {
