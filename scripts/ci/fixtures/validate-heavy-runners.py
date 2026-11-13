@@ -387,6 +387,14 @@ class CiProducerSelectionTests(unittest.TestCase):
                 self.assertEqual(len(calls), 1)
                 self.assertTrue(calls[0].startswith("autoscaling describe-auto-scaling-groups "))
 
+    def test_multiple_heartbeat_documents_fail_closed_in_either_order(self):
+        fresh = heartbeat(idle=2)
+        for payload in ("{}\n" + fresh, fresh + "\n{}", fresh + "\n" + fresh, ""):
+            with self.subTest(payload=payload):
+                output, calls = self.selection(payload)
+                self.assertEqual(output, "runner=ubuntu-latest")
+                self.assertEqual(len(calls), 2)
+
     def test_workflow_isolates_producer_and_contains_setup_failure(self):
         jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
         selector, build = jobs["producer-runner"], jobs["build"]
