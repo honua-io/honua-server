@@ -454,6 +454,42 @@ public sealed class StacCollectionsTests : IAsyncLifetime
             .Should().Equal("processor");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task GetCollection_WithMultipleContactRoles_PreservesIdentityWithoutInventingHostRoles()
+    {
+        _fixture.MutateV2ResourceObjectMetadata(0, metadata => metadata with
+        {
+            Contacts =
+            [
+                new MetadataV2ResponsibleParty { Role = "pointOfContact", Name = "Catalog contact", Url = "https://example.test/contact" },
+                new MetadataV2ResponsibleParty { Role = "rightsHolder", Name = "Rights owner" },
+                new MetadataV2ResponsibleParty { Role = "processor", Name = "Imagery processor" },
+                new MetadataV2ResponsibleParty { Role = "pointOfContact", Name = "Imagery processor" },
+            ],
+        });
+
+        using var response = await _fixture.Client.GetAsync($"/stac/collections/{WebAppFixture.TestLayerId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var providers = json.RootElement.GetProperty("providers").EnumerateArray().ToArray();
+        foreach (var name in new[] { "Catalog contact", "Rights owner" })
+        {
+            var provider = providers.Should().ContainSingle(provider =>
+                provider.GetProperty("name").GetString() == name).Which;
+            var hasRoles = provider.TryGetProperty("roles", out var roles) && roles.ValueKind != JsonValueKind.Null;
+            hasRoles.Should().BeFalse("these contact roles do not identify a STAC storage host");
+        }
+        providers.Single(provider => provider.GetProperty("name").GetString() == "Catalog contact")
+            .GetProperty("url").GetString().Should().Be("https://example.test/contact");
+        var processor = providers.Should().ContainSingle(provider =>
+            provider.GetProperty("name").GetString() == "Imagery processor").Which;
+        processor.GetProperty("roles").EnumerateArray().Select(role => role.GetString())
+            .Should().Equal("processor");
+    }
+
     [IntegrationTheory]
     [InlineData(null)]
     [InlineData("")]
