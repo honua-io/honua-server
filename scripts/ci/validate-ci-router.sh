@@ -1782,7 +1782,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Studio Packaging" \
+    "Server Features Studio Packaging 1" \
   --assert-owner \
     "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1986,11 +1986,11 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Studio Packaging" \
+    "Server Features Studio Packaging 2" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Mcp.StudioDashboardMcpIntegrationTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Studio Packaging" \
+    "Server Features Studio Packaging 2" \
   `# Synthetic probe, not a real class (#2709): proves an unknown future` \
   `# Features.Protocols.* namespace still falls through to the Server Features` \
   `# Misc catch-all. --assert-route skips the class-exists check that` \
@@ -1998,7 +1998,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-route \
     "Honua.Server.Tests.Features.Protocols.Future.FutureEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Miscellaneous" \
+    "Server Features Miscellaneous 2" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
@@ -2171,6 +2171,7 @@ fi
 
 if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/test-flake-quarantine.py "${PYTHON_BIN}" scripts/ci/test-flake-quarantine.py
+  run_fixture scripts/ci/test-runner-cancellation.py "${PYTHON_BIN}" scripts/ci/test-runner-cancellation.py
 fi
 
 router_fixtures_finish

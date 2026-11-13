@@ -36,6 +36,8 @@ public sealed record FilePreview
 
     public int? DetectedSrid { get; init; }
 
+    public ImportCoordinateSystem? CoordinateSystem { get; init; }
+
     public Dictionary<string, object?> SampleProperties { get; init; } = new();
 
     public string[] AvailableLayers { get; init; } = Array.Empty<string>();
