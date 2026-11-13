@@ -1321,10 +1321,16 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Several self-hosted runners share one host and its /tmp; each job keeps temp files in its own
-      # runner temp directory. Set in a step because the runner context is unavailable in job env.
+      # Several self-hosted runners share one host and its /tmp; each job keeps temp files and the
+      # app's local storage directories under its own runner temp. Set in a step because the runner
+      # context is unavailable in job env.
       - name: Use the job's own temp directory
-        run: echo "TMPDIR=${RUNNER_TEMP}" >> "${GITHUB_ENV}"
+        run: |
+          {
+            echo "TMPDIR=${RUNNER_TEMP}"
+            echo "TemporaryFiles__StorageDirectory=${RUNNER_TEMP}/honua-temp"
+            echo "FileStorage__LocalStorage__BasePath=${RUNNER_TEMP}/honua-storage"
+          } >> "${GITHUB_ENV}"
 
       - name: Load validated flaky-test quarantine
         env:
@@ -3354,6 +3360,22 @@ jobs:
     permissions:
       contents: read
       packages: read
+  # Pull requests run these two interop proofs only for Parquet/Arrow-named
+  # inputs; the full run covers every shared build, model and host change.
+  geoparquet-interop:
+    name: GeoParquet interop evidence
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full_ci == true) || github.event_name == 'schedule' }}
+    uses: ./.github/workflows/geoparquet-interop.yml
+    permissions:
+      contents: read
+      packages: read
+  geoarrow-interop:
+    name: GeoArrow interop fixture
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full_ci == true) || github.event_name == 'schedule' }}
+    uses: ./.github/workflows/geoarrow-interop-fixture.yml
+    permissions:
+      contents: read
+      packages: read
   # Scheduled runtime coverage shares the full-CI managed build producer.
   runtime-proofs:
     name: Full CI / Runtime proofs
@@ -3623,7 +3645,7 @@ jobs:
     # NOT this one. Keeping CI Gate off merge_group avoids a misleading all-
     # skipped "pass" status appearing in the queue context.
     if: ${{ github.event_name != 'merge_group' && always() && !cancelled() }}
-    needs: [pr-template-check, pr-readiness, changes, targeted-shards, ci-router-validation, build, runtime-proofs, format, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build, quickstart-console-smoke, store-image-proofs]
+    needs: [pr-template-check, pr-readiness, changes, targeted-shards, ci-router-validation, build, runtime-proofs, format, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build, quickstart-console-smoke, store-image-proofs, geoparquet-interop, geoarrow-interop]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -3636,6 +3658,8 @@ jobs:
           BUILD_RESULT: ${{ needs.build.result }}
           FORMAT_RESULT: ${{ needs.format.result }}
           STORE_IMAGE_RESULT: ${{ needs.store-image-proofs.result }}
+          GEOPARQUET_RESULT: ${{ needs.geoparquet-interop.result }}
+          GEOARROW_RESULT: ${{ needs.geoarrow-interop.result }}
         run: |
           if [[ "${REQUIRE_MANAGED_BUILD}" == true && "${BUILD_RESULT}" != success ]]; then
             echo "::error::Selected managed producer must succeed, got ${BUILD_RESULT}."
@@ -3651,6 +3675,10 @@ jobs:
           fi
           if [[ "${REQUIRE_STORE_IMAGES}" == true && "${STORE_IMAGE_RESULT}" != success ]]; then
             echo "::error::Selected store image proofs must succeed, got ${STORE_IMAGE_RESULT}."
+            exit 1
+          fi
+          if [[ "${REQUIRE_STORE_IMAGES}" == true && ( "${GEOPARQUET_RESULT}" != success || "${GEOARROW_RESULT}" != success ) ]]; then
+            echo "::error::Full-run interop proofs must succeed, got geoparquet=${GEOPARQUET_RESULT}, geoarrow=${GEOARROW_RESULT}."
             exit 1
           fi
           if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then

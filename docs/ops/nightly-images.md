@@ -46,6 +46,10 @@ gate on the default image refuses startup and names the full variant. Explicitly
 store sections can remain in shared configuration. This does not change the default
 PostGIS connection settings or enable experimental stores in the full variant.
 
+The default image also omits the Kafka and NATS event-bus clients. Enabling
+`FeatureChangeEvents:Sinks:Kafka` or `FeatureChangeEvents:Sinks:Nats` on it refuses startup; use the
+full variant for those sinks.
+
 Custom image builds use `HONUA_STORE_PROFILE=postgis` (default) or `full`. This axis
 is independent of `HONUA_BUILD_PROFILE` and `HONUA_PROTOCOL_PROFILE`. Local `dotnet`
 builds and existing provider tests retain the full store profile; an MSBuild publish can
