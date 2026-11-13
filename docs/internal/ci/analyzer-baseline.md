@@ -24,7 +24,7 @@ Any baseline increase requires explicit review of the existing debt being
 recorded. Initial capture is a maintenance operation on the build host:
 
 ```sh
-# Begin with a header-only AnalyzerBaseline.tsv and a clean SARIF directory.
+# Begin with a clean SARIF directory; preserve the checked-in baseline.
 remote-run dotnet build Honua.sln -c Release --no-incremental -p:HonuaCaptureAnalyzerBaseline=true
 remote-run dotnet run --project scripts/ci/analyzer-baseline -- \
   . artifacts/analyzer-baseline scripts/ci/analyzer-baseline/AnalyzerBaseline.tsv
@@ -35,7 +35,9 @@ remote-run dotnet build Honua.sln -c Release
 Run the converter on the build host if SARIF contains absolute remote paths.
 Check every expected project produced a report before accepting the capture.
 The capture switch keeps unrelated warnings as errors, writes one SARIF file
-per project and downgrades only the requested rules. It is never a CI default.
+per project and downgrades only the requested rules. It omits the baseline from
+analyzer inputs so previously recorded debt is captured again, rather than silently
+dropped during recapture. It is never a CI default.
 
 The CodeQL security workflow uses `.github/codeql/codeql-config.yml`, which
 excludes `cs/linq/missed-where` and `cs/linq/missed-select`. These exclusions

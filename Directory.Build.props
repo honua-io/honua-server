@@ -133,7 +133,9 @@
     <PackageReference Include="SonarAnalyzer.CSharp" PrivateAssets="all" />
     <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" />
     <AdditionalFiles Include="$(MSBuildThisFileDirectory)scripts/ci/analyzer-baseline/BannedSymbols.txt" />
-    <AdditionalFiles Include="$(MSBuildThisFileDirectory)scripts/ci/analyzer-baseline/AnalyzerBaseline.tsv" />
+    <!-- Capture must include existing debt as well as newly exposed findings. -->
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)scripts/ci/analyzer-baseline/AnalyzerBaseline.tsv"
+                     Condition="'$(HonuaCaptureAnalyzerBaseline)' != 'true'" />
     <GlobalAnalyzerConfigFiles Include="$(MSBuildThisFileDirectory)scripts/ci/analyzer-baseline/sonar.globalconfig" />
   </ItemGroup>
 
