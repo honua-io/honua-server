@@ -47,10 +47,11 @@ public sealed partial class PublishedOperationToolTests
             .Should().Be(OperationApprovalModel.None);
     }
 
-    [UnitTest]
-    public async Task Invoke_AgentAccessPolicyChange_FilesProposalWithoutExecuting()
+    [UnitTheory]
+    [InlineData("admin.services.access-policy.set")]
+    [InlineData("admin.layer.publish")]
+    public async Task Invoke_AgentGatedMutation_FilesProposalWithoutExecuting(string operationId)
     {
-        const string operationId = "admin.services.access-policy.set";
         var descriptor = AdminApiOperationCatalog.Descriptors.Single(d => d.OperationId == operationId);
         var executor = new RecordingExecutor(operationId);
         var bridge = new CapturingProposalBridge();
@@ -67,5 +68,30 @@ public sealed partial class PublishedOperationToolTests
         content.GetProperty("proposalId").GetString().Should().Be("proposal-6662");
         bridge.Calls.Should().Be(1);
         executor.SubmitCount.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task Invoke_LayerPublishPreview_UsesNormalPolicySubmission()
+    {
+        const string operationId = "admin.layer.publish";
+        var descriptor = AdminApiOperationCatalog.Descriptors.Single(d => d.OperationId == operationId);
+        descriptor.Policy.SupportsDryRun.Should().BeTrue();
+        var calls = 0;
+        var invoker = new CapturingInvoker((request, context) =>
+        {
+            calls++;
+            request.OperationId.Should().Be(operationId);
+            request.DryRun.Should().BeTrue();
+            context.Roles.Should().Contain("agent");
+            return CompletedHandle(operationId);
+        });
+        var tool = new PublishedOperationTool(descriptor, "cat-agent", NullLogger.Instance);
+        var http = Context(invoker, authorization: ProposalAuthorization(), roles: ["admin", "agent"]);
+
+        var result = await tool.InvokeAsync(http, Args("""{"dryRun":true}"""), default);
+
+        result.IsError.Should().NotBeTrue();
+        result.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("Completed");
+        calls.Should().Be(1);
     }
 }
