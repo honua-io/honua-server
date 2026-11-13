@@ -939,7 +939,7 @@
       "edition": "Enterprise",
       "status": null,
       "entryCount": 3,
-      "provingTestCount": 20,
+      "provingTestCount": 21,
       "maturity": {
         "implemented": 3
       },
