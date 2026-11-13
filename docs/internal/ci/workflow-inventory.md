@@ -1,11 +1,11 @@
 # CI Workflow Inventory
 
 > Canonical inventory of **every** workflow in `.github/workflows/` in this
-> repository (123 files). Other Honua repositories keep their own inventories;
+> repository (132 files). Other Honua repositories keep their own inventories;
 > this page no longer mirrors the SDK repos, because a copy here could not be
 > verified against their trees and had already drifted.
 >
-> Last updated: 2026-11-10.
+> Last updated: 2026-11-13.
 >
 > To re-derive the file/name/trigger columns after adding or removing a
 > workflow:
@@ -170,6 +170,7 @@ The scoped `GP Alias Contract` check runs the real GeoServices alias tests and O
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
+| `telemetry-selector.yml` | Telemetry selector | path-scoped `pull_request` (ready heads only), `push` to `trunk` | Runs the six canonical platform-fault selector cases with checksum-pinned Prometheus promtool 3.5.0 on a GitHub-hosted runner. Missing tools and selector regressions fail the job; draft conversion cancels admission. |
 | `compose-release-lifecycle.yml` | Compose Release Lifecycle | `pull_request` (base `trunk`, relevant executor, control-plane, and test paths) | Builds the Native AOT candidate (reads registry cache `buildcache:honua-aot-amd64` on same-repo PRs) and exercises the published rc.1 to approved MCP convergence and verified PostGIS restore journey, including negative controls. |
 | `close-external-prs.yml` | Close external pull requests | `pull_request_target` (`opened`, `reopened`) | Closes pull requests whose author association is not `OWNER`, `MEMBER` or `COLLABORATOR` (bots exempt) with a comment pointing to issues and `SECURITY.md`; this repository does not accept external contributions. Never checks out PR code; `pull-requests: write` only. Durable complement to the six-month repository interaction limits set 2026-10-23. |
 | `pr-review-doctor.lock.yml` | Review doctor | `workflow_dispatch` from review triage, `needs-fix` only | Compiled from `pr-review-doctor.md` by `gh aw compile`. An agentic workflow (Claude engine) checks out the pull request head with full history, reads unresolved threads from trusted reviewers (owners, members, collaborators, the listed review bots) collected by a pre-agent step, fixes valid findings on the pull request branch and comments per thread (fixed or reason); labels `review-stuck` for design or sensitive findings. Preserves `fix(review):` commit messages through the pinned runtime’s excluded-file filtering. Never resolves threads or edits `.github/`. Defers pushes while PR Gate is unfinished on the current head, rechecking in safe outputs immediately before publication; API failures and head movement fail closed. The guard is installed from the trusted default branch into the pinned gh-aw runtime. Writes with the `honua-io-bot` GitHub App token (`BOT_APP_ID`, `BOT_APP_PRIVATE_KEY`), so its pushes start CI. Skips draft/fork PRs before activation. Opus fix cap 120 credits/run; shared rolling 24-hour triage + fix envelope 700 credits. |
