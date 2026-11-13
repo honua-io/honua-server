@@ -55,7 +55,7 @@ public sealed class ExportJobServiceTests
     [InlineData("{invalid-json")]
     [InlineData("{\"jobId\":\"legacy-request\",\"layerId\":3}")]
     [Operation(Operations.Export)]
-    public async Task TryReadRequest_InvalidOrLegacyPayload_IsRejected(string payload)
+    public async Task Execute_InvalidOrLegacyPayload_FailsBeforeReadingFeatures(string payload)
     {
         var store = new InMemoryExecutionJobStore();
         await CreateService(new ComparingInMemoryProgressStore(), store, Substitute.For<IJobQueue>())
@@ -71,6 +71,16 @@ public sealed class ExportJobServiceTests
 
         ExportJobService.TryReadRequest(record, out var request).Should().BeFalse();
         request.Should().BeNull();
+        var features = Substitute.For<IStreamingFeatureStore>();
+        var storage = Substitute.For<ICloudFileStorage>();
+
+        var result = await RunAsync(new ComparingInMemoryProgressStore(), features, storage, record);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.IsRetryable.Should().BeFalse();
+        result.ErrorMessage.Should().Be("Export request is missing or unreadable.");
+        features.ReceivedCalls().Should().BeEmpty();
+        storage.ReceivedCalls().Should().BeEmpty();
     }
 
     [UnitTest]
