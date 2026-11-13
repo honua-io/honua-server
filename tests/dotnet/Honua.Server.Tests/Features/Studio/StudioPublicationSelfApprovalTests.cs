@@ -13,6 +13,8 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Guardrails;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -27,6 +29,7 @@ using Honua.Server.Tests.Features.Admin;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Tests.Features.Studio;
@@ -217,6 +220,10 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
     {
         using var proposer = CreateBearerClient(CreateToken("postgres-publication-author"));
         var (version, packageKey) = await SaveVersionAsync(proposer);
+        // REST publication follows the configured guardrail; exercise its approval-required
+        // path rather than Pro's default direct-execution policy.
+        _fixture.Services.GetRequiredService<IOptions<GuardrailLadderOptions>>().Value
+            .Overrides[nameof(OperationClass.StudioDraftMutation)] = nameof(GuardrailTier.RequiresApproval);
         var itemId = version.GetProperty("itemId").GetGuid();
         var versionId = version.GetProperty("versionId").GetGuid();
         var route = $"/studio/{packageKey}";
