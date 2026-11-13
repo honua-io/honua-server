@@ -13,6 +13,8 @@ namespace Honua.Server.Features.Realtime;
 // One event to append: the scope readers filter on, the event kind and its JSON payload.
 internal readonly record struct RealtimeLogRow(string ScopeKey, string Kind, JsonElement Payload);
 
+internal sealed record RealtimeLogRead(string Family, long After, int Limit, IReadOnlyCollection<string>? ScopeKeys = null);
+
 // The realtime event log in the system database (ADR-0085). Appends go through realtime_append, the
 // function triggers call too, so sequence allocation and the notification live in one place.
 internal sealed class PostgresRealtimeEventLog(JobStoreDatabase database) : IExpiredRowSweep
@@ -101,16 +103,14 @@ internal sealed class PostgresRealtimeEventLog(JobStoreDatabase database) : IExp
     // Up to limit events of family after the given sequence, in order; scopeKeys, when not empty,
     // keeps only those scopes.
     public Task<IReadOnlyList<RealtimeEvent>> ReadAfterAsync(
-        string family,
-        long after,
-        IReadOnlyCollection<string>? scopeKeys,
-        int limit,
+        RealtimeLogRead request,
         CancellationToken cancellationToken)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(family);
-        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
-        var scoped = scopeKeys is { Count: > 0 };
-        var realtimeFamily = new RealtimeFamily(family);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Family);
+        ArgumentOutOfRangeException.ThrowIfLessThan(request.Limit, 1);
+        var scoped = request.ScopeKeys is { Count: > 0 };
+        var realtimeFamily = new RealtimeFamily(request.Family);
         return database.ExecuteAsync<IReadOnlyList<RealtimeEvent>>(
             async (connection, _, token) =>
             {
@@ -121,12 +121,12 @@ internal sealed class PostgresRealtimeEventLog(JobStoreDatabase database) : IExp
                     ORDER BY seq LIMIT @limit
                     """,
                     connection);
-                command.Parameters.Add(new NpgsqlParameter("family", NpgsqlDbType.Text) { Value = family });
-                command.Parameters.Add(new NpgsqlParameter("after", NpgsqlDbType.Bigint) { Value = after });
-                command.Parameters.Add(new NpgsqlParameter("limit", NpgsqlDbType.Integer) { Value = limit });
+                command.Parameters.Add(new NpgsqlParameter("family", NpgsqlDbType.Text) { Value = request.Family });
+                command.Parameters.Add(new NpgsqlParameter("after", NpgsqlDbType.Bigint) { Value = request.After });
+                command.Parameters.Add(new NpgsqlParameter("limit", NpgsqlDbType.Integer) { Value = request.Limit });
                 if (scoped)
                 {
-                    command.Parameters.Add(new NpgsqlParameter("scopes", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = scopeKeys!.ToArray() });
+                    command.Parameters.Add(new NpgsqlParameter("scopes", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = request.ScopeKeys!.ToArray() });
                 }
 
                 await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);

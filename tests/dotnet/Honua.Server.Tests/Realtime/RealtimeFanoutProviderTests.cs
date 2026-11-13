@@ -5,7 +5,10 @@ using System.Diagnostics;
 using System.Threading.Channels;
 using FluentAssertions;
 using Honua.ControlPlane;
+using Honua.Core.Configuration;
+using Honua.Core.Features.Infrastructure.Health;
 using Honua.Core.Features.Realtime;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Server.Features.Realtime;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
@@ -117,6 +120,51 @@ public sealed class RealtimeFanoutProviderTests(DatabaseFixtureAdapter database)
         await AppendAsync(harness, RealtimeLogFamilies.CollabPresence, "map-1", 1);
         await dispatcher.DispatchOnceAsync(CancellationToken.None);
         (await ReadEventsAsync(channel.Reader, 1)).Single().Sequence.Should().Be(6);
+    }
+
+    [IntegrationTest]
+    public async Task Dispatch_AppendAndSweepAfterHeadProbe_ResetsToTheCurrentHead()
+    {
+        await using var harness = await RealtimeLogHarness.CreateAsync(database);
+        var dispatcher = harness.CreateDispatcher();
+        await dispatcher.InitializeAsync(CancellationToken.None);
+        var channel = Channel.CreateBounded<RealtimeDelivery>(64);
+        await using var subscription = (RealtimeSubscription)dispatcher.Subscribe(
+            new RealtimeSubscriptionRequest(RealtimeFamily.Admin, [], null, channel.Writer));
+        await WaitUntilLiveAsync(subscription);
+        await AppendAsync(harness, RealtimeLogFamilies.Admin, "proposals", 1);
+
+        await using var connection = await harness.DataSource.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        await using var command = new NpgsqlCommand(
+            $"LOCK TABLE {harness.Table("realtime_events")} IN ACCESS EXCLUSIVE MODE", connection, transaction);
+        await command.ExecuteNonQueryAsync();
+        using var timeout = new CancellationTokenSource(_deliveryTimeout);
+        var dispatch = dispatcher.DispatchOnceAsync(timeout.Token);
+        await WaitForBlockedReaderAsync(harness, connection.ProcessID);
+        await harness.Log.AppendAsync(RealtimeLogFamilies.Admin,
+            Enumerable.Range(0, 4).Select(n => new RealtimeLogRow("proposals", "test", RealtimeLogHarness.Payload(new { n }))).ToArray(),
+            transaction, timeout.Token);
+        command.CommandText = $"DELETE FROM {harness.Table("realtime_events")} WHERE seq <= 3";
+        await command.ExecuteNonQueryAsync(timeout.Token);
+        await transaction.CommitSafelyAsync(timeout.Token);
+        await dispatch;
+
+        (await ReadOneAsync(channel.Reader)).Should().Be(new RealtimeDelivery.Reset(RealtimeResetReasons.Retention, 5));
+        channel.Reader.TryRead(out _).Should().BeFalse();
+        await AppendAsync(harness, RealtimeLogFamilies.Admin, "proposals", 1);
+        await dispatcher.DispatchOnceAsync(timeout.Token);
+        (await ReadEventsAsync(channel.Reader, 1)).Single().Sequence.Should().Be(6);
+    }
+
+    private static async Task WaitForBlockedReaderAsync(RealtimeLogHarness harness, int blocker)
+    {
+        using var timeout = new CancellationTokenSource(_deliveryTimeout);
+        while (await harness.ScalarAsync<bool>(
+            $"SELECT EXISTS (SELECT FROM pg_stat_activity WHERE {blocker} = ANY(pg_blocking_pids(pid)))") is not true)
+        {
+            await Task.Delay(20, timeout.Token);
+        }
     }
 
     [IntegrationTest]
@@ -404,6 +452,27 @@ public sealed class RealtimeFanoutProviderTests(DatabaseFixtureAdapter database)
         provider.GetServices<IHostedService>().OfType<RealtimeTailBackgroundService>().Should().ContainSingle();
     }
 
+    [Theory]
+    [InlineData("SingleNode")]
+    [InlineData("MultiNode")]
+    [Trait("Tier", "Fast")]
+    public async Task Registration_WithoutDataSource_HostedServicesStartWithoutDatabaseDependencies(string mode)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Deployment:Mode"] = mode }).Build();
+        var services = new ServiceCollection().AddLogging();
+        services.AddRealtimeFanout(configuration, hostsDatabasePollingLoops: true);
+        await using var provider = services.BuildServiceProvider();
+
+        var hosted = provider.GetServices<IHostedService>().ToArray();
+        hosted.OfType<RealtimeTailBackgroundService>().Should().ContainSingle();
+        foreach (var service in hosted)
+        {
+            await service.StartAsync(CancellationToken.None);
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
     [UnitTest]
     public async Task Registration_WithoutDatabasePollingLoops_RegistersNoTail()
     {
@@ -450,10 +519,37 @@ public sealed class RealtimeFanoutProviderTests(DatabaseFixtureAdapter database)
         provider.GetRequiredService<RealtimeListener>().PollOnlyReason.Should().BeNull();
     }
 
+    [IntegrationTest]
+    public async Task Registration_ResolvedPasswordFromProductionDataSource_ListenerAuthenticates()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Deployment:Mode"] = "MultiNode",
+            ["ConnectionStrings:DefaultConnection"] = "secret-reference:honua/db"
+        }).Build();
+        await using var dataSource = PostgresDataSourceFactory.Create(
+            database.ConnectionString, schemaHeadersEnabled: false, new ConnectionLimits());
+        new NpgsqlConnectionStringBuilder(dataSource.ConnectionString).Password.Should().NotBeNullOrEmpty();
+        var services = new ServiceCollection().AddLogging().AddSingleton(dataSource);
+        services.AddRealtimeFanout(configuration, hostsDatabasePollingLoops: true);
+        await using var provider = services.BuildServiceProvider();
+        var listener = provider.GetRequiredService<RealtimeListener>();
+        using var stopping = new CancellationTokenSource();
+        var running = listener.RunAsync(() => { }, stopping.Token);
+        try
+        {
+            await WaitForAsync(() => listener.IsConnected, "the production data source preserves resolved authentication for LISTEN");
+        }
+        finally
+        {
+            await stopping.CancelAsync();
+            await running;
+        }
+    }
+
     private static RealtimeListener CreateListener(string? listenerConnectionString, string? systemConnectionString)
         => RealtimeListener.Create(
-            listenerConnectionString,
-            systemConnectionString,
+            string.IsNullOrWhiteSpace(listenerConnectionString) ? systemConnectionString : listenerConnectionString,
             Microsoft.Extensions.Options.Options.Create(new RealtimeOptions()),
             NullLogger<RealtimeListener>.Instance);
 

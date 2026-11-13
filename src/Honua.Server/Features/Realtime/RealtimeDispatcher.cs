@@ -41,7 +41,7 @@ internal sealed partial class RealtimeDispatcher(
         CancellationToken cancellationToken)
         => _sources.TryGetValue(family, out var source)
             ? source.ReadAfterAsync(after, scopeKeys, limit, cancellationToken)
-            : log.ReadAfterAsync(family, after, scopeKeys, limit, cancellationToken);
+            : log.ReadAfterAsync(new(family, after, limit, scopeKeys), cancellationToken);
 
     public Task<RealtimeLogWindow> ReadWindowAsync(string family, CancellationToken cancellationToken)
         => _sources.TryGetValue(family, out var source)
@@ -159,7 +159,8 @@ internal sealed partial class RealtimeDispatcher(
                 }
             }
 
-            while (dispatched < head)
+            var currentHead = head;
+            while (dispatched < currentHead)
             {
                 var batch = await ReadAfterAsync(family, dispatched, null, options.Value.ReadBatchSize, cancellationToken)
                     .ConfigureAwait(false);
@@ -180,14 +181,18 @@ internal sealed partial class RealtimeDispatcher(
                 // resynchronize; dispatch then carries on in order. It never skips silently.
                 if (IsContiguous(family) && (batch.Count == 0 || batch[0].Sequence != dispatched + 1))
                 {
-                    var firstAfterGap = batch.Count == 0 ? head + 1 : batch[0].Sequence;
+                    var window = await log.ReadWindowAsync(family, cancellationToken).ConfigureAwait(false);
+                    currentHead = window.Head;
+                    var firstAfterGap = batch.Count == 0 ? window.Oldest : batch[0].Sequence;
                     foreach (var subscriber in subscribers)
                     {
-                        subscriber.DeliverGap(firstAfterGap, head);
+                        subscriber.DeliverGap(firstAfterGap, currentHead);
                     }
 
                     if (batch.Count == 0)
                     {
+                        // Rows may have been appended after the empty read. Leave them for the
+                        // next probe, including for subscribers already past the retention gap.
                         dispatched = head;
                         break;
                     }
@@ -197,7 +202,7 @@ internal sealed partial class RealtimeDispatcher(
                 {
                     foreach (var subscriber in subscribers)
                     {
-                        subscriber.Deliver(realtimeEvent, head);
+                        subscriber.Deliver(realtimeEvent, currentHead);
                     }
                 }
 
@@ -420,7 +425,7 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
             var family = _request.Family.Name;
             var contiguous = _dispatcher.IsContiguous(family);
             var window = await _dispatcher.ReadWindowAsync(family, cancellationToken).ConfigureAwait(false);
-            var position = StartPosition(window, options, contiguous, out var reset);
+            var (position, reset) = StartPosition(window, options, contiguous);
             if (reset is not null)
             {
                 await _request.Writer.WriteAsync(reset, cancellationToken).ConfigureAwait(false);
@@ -487,27 +492,24 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
     // Where replay starts, and the reset to send first when the requested position is unusable.
     // A family with gaps bounds the resume distance in its window instead, because sequence
     // distance is not an event count there.
-    private long StartPosition(RealtimeLogWindow window, RealtimeOptions options, bool contiguous, out RealtimeDelivery.Reset? reset)
+    private (long Position, RealtimeDelivery.Reset? Reset) StartPosition(RealtimeLogWindow window, RealtimeOptions options, bool contiguous)
     {
-        reset = null;
         if (_request.After is not { } after)
         {
-            return window.Head;
+            return (window.Head, null);
         }
 
         if (after < window.Oldest - 1 || after > window.Head)
         {
-            reset = new RealtimeDelivery.Reset(RealtimeResetReasons.Retention, window.Head);
-            return window.Head;
+            return (window.Head, new RealtimeDelivery.Reset(RealtimeResetReasons.Retention, window.Head));
         }
 
         if (contiguous && window.Head - after > options.ResumeMaxEvents)
         {
-            reset = new RealtimeDelivery.Reset(RealtimeResetReasons.TooFarBehind, window.Head);
-            return window.Head;
+            return (window.Head, new RealtimeDelivery.Reset(RealtimeResetReasons.TooFarBehind, window.Head));
         }
 
-        return after;
+        return (after, null);
     }
 
     // Hands off to live delivery. Returns true instead when held events overflowed, so the replay

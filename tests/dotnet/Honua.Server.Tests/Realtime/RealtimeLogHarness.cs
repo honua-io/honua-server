@@ -64,7 +64,6 @@ internal sealed class RealtimeLogHarness : IAsyncDisposable
     // A task's listener on this database.
     public RealtimeListener CreateListener(RealtimeOptions options, string? connectionString = null)
         => RealtimeListener.Create(
-            null,
             connectionString ?? ConnectionString,
             Options.Create(options),
             NullLogger<RealtimeListener>.Instance);

@@ -7,27 +7,23 @@ using System.Threading.Channels;
 
 namespace Honua.Core.Features.Realtime;
 
-/// <summary>The only seam realtime features use to publish and subscribe (ADR-0085).</summary>
 public interface IRealtimeFanoutProvider
 {
     RealtimeProviderCapabilities Capabilities { get; }
 
-    /// <summary>Appends one event; joins <paramref name="transaction"/> when given.</summary>
+    // Joins the supplied transaction; otherwise the append commits before returning.
     ValueTask<RealtimePosition> AppendAsync(RealtimeEventDraft draft, DbTransaction? transaction, CancellationToken cancellationToken);
 
-    /// <summary>Queues a best-effort event that is appended in the next batch (presence only).</summary>
+    // Best effort, for presence only.
     void Enqueue(RealtimeEventDraft draft);
 
-    /// <summary>Starts a subscription that replays after <c>request.After</c> and then follows the log.</summary>
     IRealtimeSubscription Subscribe(RealtimeSubscriptionRequest request);
 
     ValueTask<RealtimeLogWindow> GetWindowAsync(RealtimeFamily family, CancellationToken cancellationToken);
 }
 
-/// <summary>What a provider guarantees. Features gate behaviour on these, never on the provider type.</summary>
 public sealed record RealtimeProviderCapabilities(bool CrossNode, bool OrderedPerFamily, bool Resumable);
 
-/// <summary>An event family: one ordered sequence of events (specification section 3).</summary>
 public readonly record struct RealtimeFamily
 {
     public RealtimeFamily(string name)
@@ -52,17 +48,12 @@ public readonly record struct RealtimeFamily
     public override string ToString() => Name;
 }
 
-/// <summary>A position in one family: deliver events after <see cref="Sequence"/>.</summary>
 public readonly record struct RealtimePosition(RealtimeFamily Family, long Sequence)
 {
-    /// <summary>The SSE event id, <c>family:sequence</c>.</summary>
     public override string ToString() => $"{Family.Name}:{Sequence.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
 }
 
-/// <summary>
-/// One event to publish. <paramref name="CoalesceKey"/> is used only by <see cref="IRealtimeFanoutProvider.Enqueue"/>:
-/// of several queued drafts with the same family, scope and key, only the latest is appended.
-/// </summary>
+// CoalesceKey keeps only the latest queued draft for each family, scope and key.
 public sealed record RealtimeEventDraft(
     RealtimeFamily Family,
     string ScopeKey,
@@ -70,7 +61,6 @@ public sealed record RealtimeEventDraft(
     JsonElement Payload,
     string? CoalesceKey = null);
 
-/// <summary>A committed event as dispatch sees it.</summary>
 public sealed record RealtimeEvent(
     RealtimeFamily Family,
     long Sequence,
@@ -82,15 +72,9 @@ public sealed record RealtimeEvent(
     public RealtimePosition Position => new(Family, Sequence);
 }
 
-/// <summary>The retained range of a family: events after <see cref="Oldest"/> - 1 up to <see cref="Head"/>.</summary>
 public sealed record RealtimeLogWindow(RealtimeFamily Family, long Oldest, long Head);
 
-/// <summary>
-/// A subscription: the family, the scope keys (empty means every scope), the position to replay
-/// after (null for live only), the bounded channel the transport reads and a filter the feature
-/// supplies for authorization and matching. The provider never waits for the channel while
-/// following the log.
-/// </summary>
+// Empty scopes mean all scopes; a null position starts live. Delivery never waits on the writer.
 public sealed record RealtimeSubscriptionRequest(
     RealtimeFamily Family,
     IReadOnlyCollection<string> ScopeKeys,
@@ -98,16 +82,13 @@ public sealed record RealtimeSubscriptionRequest(
     ChannelWriter<RealtimeDelivery> Writer,
     Func<RealtimeEvent, bool>? Filter = null);
 
-/// <summary>An open subscription. Disposing it stops delivery; the provider completes the writer.</summary>
 public interface IRealtimeSubscription : IAsyncDisposable
 {
     RealtimeFamily Family { get; }
 
-    /// <summary>The last sequence delivered or skipped by this subscription.</summary>
     long Position { get; }
 }
 
-/// <summary>What a transport writes: an event, a reset that tells the client to resynchronize, or a heartbeat.</summary>
 public abstract record RealtimeDelivery
 {
     private RealtimeDelivery()
@@ -124,7 +105,6 @@ public abstract record RealtimeDelivery
     }
 }
 
-/// <summary>Completes a subscription's channel when the provider closes it, for example a slow consumer.</summary>
 public sealed class RealtimeSubscriptionClosedException : Exception
 {
     public RealtimeSubscriptionClosedException()
@@ -143,7 +123,6 @@ public sealed class RealtimeSubscriptionClosedException : Exception
     public string Reason { get; }
 }
 
-/// <summary>The reasons a subscription is reset.</summary>
 public static class RealtimeResetReasons
 {
     public const string Retention = "retention";

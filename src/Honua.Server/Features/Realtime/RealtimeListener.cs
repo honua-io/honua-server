@@ -21,10 +21,12 @@ internal sealed partial class RealtimeListener : IAsyncDisposable
     private long _reconnects;
     private int _processId;
 
-    private RealtimeListener(NpgsqlDataSource? dataSource, string? pollOnlyReason, IOptions<RealtimeOptions> options, ILogger<RealtimeListener> logger)
+    private sealed record ListenerConnection(NpgsqlDataSource? DataSource, string? PollOnlyReason);
+
+    private RealtimeListener(ListenerConnection connection, IOptions<RealtimeOptions> options, ILogger<RealtimeListener> logger)
     {
-        _dataSource = dataSource;
-        PollOnlyReason = pollOnlyReason;
+        _dataSource = connection.DataSource;
+        PollOnlyReason = connection.PollOnlyReason;
         _options = options;
         _logger = logger;
     }
@@ -39,20 +41,17 @@ internal sealed partial class RealtimeListener : IAsyncDisposable
     // The backend process id of the open listener connection, or 0.
     public int ProcessId => Volatile.Read(ref _processId);
 
-    // Builds the listener from ConnectionStrings:RealtimeListener when it is set, otherwise from the
-    // system database's resolved connection string (secret references already resolved). A
+    // The connection string is already resolved, including any secret reference. A
     // connection-proxy host cannot hold LISTEN across transactions, so it gets no listener; neither
     // does a connection string that cannot be parsed. Either way the task runs on the degraded poll.
     public static RealtimeListener Create(
-        string? listenerConnectionString,
-        string? systemConnectionString,
+        string? connectionString,
         IOptions<RealtimeOptions> options,
         ILogger<RealtimeListener> logger)
     {
-        var connectionString = string.IsNullOrWhiteSpace(listenerConnectionString) ? systemConnectionString : listenerConnectionString;
         if (string.IsNullOrWhiteSpace(connectionString))
         {
-            return new RealtimeListener(null, "no connection string is configured", options, logger);
+            return new RealtimeListener(new(null, "no connection string is configured"), options, logger);
         }
 
         NpgsqlConnectionStringBuilder builder;
@@ -70,16 +69,16 @@ internal sealed partial class RealtimeListener : IAsyncDisposable
         catch (ArgumentException exception)
         {
             LogUnusableConnectionString(logger, exception);
-            return new RealtimeListener(null, "the connection string could not be parsed", options, logger);
+            return new RealtimeListener(new(null, "the connection string could not be parsed"), options, logger);
         }
 
         if (builder.Host?.Contains(".proxy-", StringComparison.OrdinalIgnoreCase) == true)
         {
             LogProxyHost(logger);
-            return new RealtimeListener(null, "the database host is a connection proxy", options, logger);
+            return new RealtimeListener(new(null, "the database host is a connection proxy"), options, logger);
         }
 
-        return new RealtimeListener(NpgsqlDataSource.Create(builder.ConnectionString), null, options, logger);
+        return new RealtimeListener(new(NpgsqlDataSource.Create(builder.ConnectionString), null), options, logger);
     }
 
     // Holds the listener open until cancelled, reconnecting with backoff from
