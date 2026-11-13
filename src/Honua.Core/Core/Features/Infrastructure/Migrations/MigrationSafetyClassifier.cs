@@ -311,43 +311,10 @@ public static class MigrationSafetyClassifier
                 continue;
             }
 
-            // Line comment: -- to end of line.
-            if (current == '-' && i + 1 < length && sql[i + 1] == '-')
+            var commentEnd = MigrationSqlComments.FindEnd(sql, i);
+            if (commentEnd > i)
             {
-                i += 2;
-                while (i < length && sql[i] != '\n')
-                {
-                    i++;
-                }
-
-                result.Append(' ');
-                continue;
-            }
-
-            // PostgreSQL block comments nest. Track the depth so an inner terminator cannot expose
-            // supposedly-commented DDL and create a false finding.
-            if (current == '/' && i + 1 < length && sql[i + 1] == '*')
-            {
-                i += 2;
-                var depth = 1;
-                while (i < length && depth > 0)
-                {
-                    if (i + 1 < length && sql[i] == '/' && sql[i + 1] == '*')
-                    {
-                        depth++;
-                        i += 2;
-                    }
-                    else if (i + 1 < length && sql[i] == '*' && sql[i + 1] == '/')
-                    {
-                        depth--;
-                        i += 2;
-                    }
-                    else
-                    {
-                        i++;
-                    }
-                }
-
+                i = commentEnd;
                 result.Append(' ');
                 continue;
             }
@@ -361,7 +328,9 @@ public static class MigrationSafetyClassifier
                     i++;
                 }
 
-                var contents = MigrationStringLiterals.Read(sql, ref i, escapeString);
+                var contents = escapeString
+                    ? MigrationStringLiterals.ReadEscaped(sql, ref i)
+                    : MigrationStringLiterals.ReadStandard(sql, ref i);
                 if (IsRoutineBodyPrefix(result, statementStart))
                 {
                     var routineSql = new StringBuilder(contents.Length);
@@ -445,6 +414,12 @@ public static class MigrationSafetyClassifier
         {
             fragmentSql.Append(UntrustedDynamicScope);
             fragmentSql.Append(contents);
+            // A computed expression can change the surrounding quote context. Keep the raw
+            // view and independently treat comments as whitespace, without assuming quotes
+            // protect their contents. Neither view receives trigger-header exemptions.
+            fragmentSql.Append(ExecutionScopeBoundary);
+            fragmentSql.Append(UntrustedDynamicScope);
+            fragmentSql.Append(MigrationSqlComments.NormalizeFragment(contents));
         }
 
         return fragmentSql;

@@ -7,13 +7,19 @@ namespace Honua.Core.Features.Infrastructure.Migrations;
 
 internal static class MigrationStringLiterals
 {
-    internal static string Read(string sql, ref int index, bool escapeString)
+    private enum LiteralKind { Standard, Escaped }
+
+    internal static string ReadStandard(string sql, ref int index) => Read(sql, ref index, LiteralKind.Standard);
+
+    internal static string ReadEscaped(string sql, ref int index) => Read(sql, ref index, LiteralKind.Escaped);
+
+    private static string Read(string sql, ref int index, LiteralKind kind)
     {
         var contents = new StringBuilder();
         index++;
         while (index < sql.Length)
         {
-            if (escapeString && sql[index] == '\\' && index + 1 < sql.Length)
+            if (kind == LiteralKind.Escaped && sql[index] == '\\' && index + 1 < sql.Length)
             {
                 index++;
                 AppendEscape(sql, ref index, contents);

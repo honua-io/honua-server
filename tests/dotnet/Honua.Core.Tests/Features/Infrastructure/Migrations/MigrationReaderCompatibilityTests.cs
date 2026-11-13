@@ -19,6 +19,27 @@ public sealed class MigrationReaderCompatibilityTests
     private const int Reader = 135;
 
     [UnitTheory]
+    [InlineData("'", "DROP/**/TABLE honua.evidence")]
+    [InlineData("$sql$", "DROP/**/TABLE honua.evidence")]
+    [InlineData("'", "DROP/* outer /* nested */ comment */TABLE honua.evidence")]
+    [InlineData("$sql$", "DROP-- comment\nTABLE honua.evidence")]
+    [InlineData("$sql$", "SELECT 1 AS \"; DROP/**/TABLE honua.evidence; SELECT 1 AS \"")]
+    public void Verify_ComputedDynamicComments_RefusesDrop(string delimiter, string fragment)
+    {
+        var sql = $$"""
+            DO $body$
+            BEGIN
+                EXECUTE {{delimiter}}{{fragment}}{{delimiter}} || '';
+            END;
+            $body$;
+            """;
+
+        var declaration = MigrationReaderCompatibility.Declare(Name, sql);
+        declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Contract);
+        MigrationReaderCompatibility.Verify(declaration, Name, Reader).Accepted.Should().BeFalse();
+    }
+
+    [UnitTheory]
     [InlineData("'")]
     [InlineData("$sql$")]
     public void Verify_ComputedDynamicQuotes_RefusesTruncate(string delimiter)
