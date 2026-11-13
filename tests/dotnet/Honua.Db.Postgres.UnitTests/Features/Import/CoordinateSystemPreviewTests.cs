@@ -29,6 +29,19 @@ public sealed class CoordinateSystemPreviewTests
         preview.CoordinateSystem.RequiresSourceOverride.Should().Be(!srid.HasValue);
     }
 
+    [UnitTest]
+    public async Task PreviewFileAsync_LargeGeoServicesJsonNonSeekable_ReportsDeclaredSource()
+    {
+        var text = "{\"spatialReference\":{\"wkid\":2193},\"geometryType\":\"esriGeometryPoint\",\"features\":[{\"geometry\":{\"x\":1740000,\"y\":5420000},\"attributes\":{\"padding\":\""
+            + new string('x', 20000) + "\"}}]}";
+        await using var stream = new NonSeekableStream(new MemoryStream(Encoding.UTF8.GetBytes(text)));
+        var preview = await PreviewImportServiceFactory.Create().PreviewFileAsync(stream, "large.esrijson");
+        preview.TotalFeatureCount.Should().Be(1);
+        preview.CoordinateSystem!.DetectedSrid.Should().Be(2193);
+        preview.CoordinateSystem.SourceCrsDeclared.Should().BeTrue();
+        preview.CoordinateSystem.DetectionMethod.Should().Be("file-metadata");
+    }
+
     [UnitTheory]
     [InlineData("EPSG:2193", 2193)]
     [InlineData("unknown:projection", null)]

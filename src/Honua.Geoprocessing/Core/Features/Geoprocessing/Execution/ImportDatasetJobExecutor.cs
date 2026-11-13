@@ -435,7 +435,7 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
             sourceSrid = parsedSourceSrid;
         }
 
-        var targetSrid = 4326;
+        int? targetSrid = null;
         if (inputs.TryGet("targetSrid", out var targetSridRaw)
             && int.TryParse(targetSridRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedTargetSrid)
             && parsedTargetSrid > 0)
@@ -562,7 +562,7 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
 
         public int? SourceSrid { get; init; }
 
-        public int TargetSrid { get; init; }
+        public int? TargetSrid { get; init; }
 
         public int? RasterLayerId { get; init; }
     }

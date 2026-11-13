@@ -113,6 +113,17 @@ public sealed class GeoJsonPreviewNonSeekableTests
         preview.CoordinateSystem.DetectionMethod.Should().Be("format-defined");
     }
 
+    [Honua.TestKit.Attributes.UnitTest]
+    public async Task PreviewFileAsync_GeoJsonNullCrs_UsesFormatDefinedCrs()
+    {
+        const string json = "{\"type\":\"FeatureCollection\",\"crs\":null,\"features\":[{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[1,2]},\"properties\":{}}]}";
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+        var preview = await CreateService().PreviewFileAsync(stream, "null-crs.geojson");
+        preview.CoordinateSystem!.DetectedSrid.Should().Be(4326);
+        preview.CoordinateSystem.SourceCrsDeclared.Should().BeFalse();
+        preview.CoordinateSystem.DetectionMethod.Should().Be("format-defined");
+    }
+
     private static IFileImportService CreateService() =>
         PreviewImportServiceFactory.Create();
 

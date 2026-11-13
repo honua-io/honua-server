@@ -1050,6 +1050,13 @@ internal sealed class StreamingGeoJsonReader
             {
                 scan.AwaitingValue = false;
                 scan.ValueDepth = reader.CurrentDepth;
+                if (reader.TokenType == JsonTokenType.Null)
+                {
+                    // "crs": null declares nothing; the file keeps the RFC 7946 coordinate system.
+                    scan.Declared = false;
+                    scan.Complete = true;
+                    break;
+                }
                 if (reader.TokenType is not JsonTokenType.StartObject and not JsonTokenType.StartArray and not JsonTokenType.String)
                 {
                     scan.Complete = true;

@@ -45,7 +45,7 @@ internal sealed partial class StreamingFileImportService
         Stream? kmzStream = null;
         try
         {
-            if (!fileStream.CanSeek && format.Value == SupportedFileFormat.GeoJson)
+            if (!fileStream.CanSeek && format.Value is SupportedFileFormat.GeoJson or SupportedFileFormat.GeoServicesJson)
             {
                 seekablePreviewStream = await SpillToSeekableTempAsync(fileStream, cancellationToken);
                 fileStream = seekablePreviewStream;

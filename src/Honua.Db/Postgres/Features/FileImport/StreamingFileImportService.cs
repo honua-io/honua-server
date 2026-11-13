@@ -448,9 +448,10 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
                 fileStream = prep.Stream!;
             }
-            else if (format.Value is SupportedFileFormat.FlatGeobuf or SupportedFileFormat.GeoJson && !fileStream.CanSeek)
+            else if (format.Value is SupportedFileFormat.FlatGeobuf or SupportedFileFormat.GeoJson or SupportedFileFormat.GeoServicesJson && !fileStream.CanSeek)
             {
-                // GeoJSON needs a complete CRS inspection before validation; FlatGeobuf requires seeking to deserialize.
+                // GeoJSON and GeoServices JSON need a complete CRS inspection before validation (a declaration
+                // can sit past the CRS-detection header); FlatGeobuf requires seeking to deserialize.
                 fgbTempStream = await SpillToSeekableTempAsync(fileStream, cancellationToken);
                 if (shouldDisposeStream)
                 {
