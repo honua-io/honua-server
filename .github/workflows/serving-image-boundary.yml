@@ -40,6 +40,7 @@ on:
     paths:
       - '.dockerignore'
       - 'docker/runtime/**'
+      - 'Dockerfile'
       - 'docker/Dockerfile.aot'
       - 'docker/Dockerfile.lambda.aot'
       - 'docker/Dockerfile.functions.aot'
@@ -124,7 +125,7 @@ jobs:
                 lambda=true
                 functions=true
                 ;;
-              docker/Dockerfile.aot)
+              Dockerfile|docker/Dockerfile.aot)
                 generic=true
                 ;;
               docker/Dockerfile.lambda.aot)
@@ -181,11 +182,11 @@ jobs:
         include:
           - variant: generic
             digest_key: serving_generic
-            description: canonical native-AOT serving image
-            dockerfile: docker/Dockerfile.aot
-            tag: honua-server:aot-boundary
+            description: canonical PostGIS JIT serving image
+            dockerfile: Dockerfile
+            tag: honua-server:jit-boundary
             # Share the nightly/release cache for this Dockerfile and architecture.
-            cache_scope: honua-aot-amd64
+            cache_scope: honua-jit-amd64
           - variant: lambda
             digest_key: serving_lambda
             description: Lambda native-AOT serving image
@@ -279,7 +280,7 @@ jobs:
 
       - name: Verify ${{ matrix.description }} contents
         if: env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true'
-        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image ${{ matrix.tag }}
+        run: python3 scripts/ci/verify-serving-image-boundary.py --serving-image ${{ matrix.tag }} --compilation ${{ matrix.variant == 'generic' && 'jit' || 'native-aot' }}
 
       - name: Smoke-test canonical serving image
         # Only the canonical image serves HTTP; the Lambda and Azure Functions
@@ -291,32 +292,73 @@ jobs:
           set -euo pipefail
           OWNED_SERVER=scripts/ci/owned-server.py
           SERVER_PORT="$(python3 "$OWNED_SERVER" port --variable HONUA_BOUNDARY_SMOKE_PORT --ci-default 8080)"
-          GRPC_PORT="$(python3 "$OWNED_SERVER" port --variable HONUA_BOUNDARY_GRPC_PORT --ci-default 8081)"
           SERVER_URL="http://127.0.0.1:$SERVER_PORT"
+          NETWORK="honua-boundary-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          POSTGRES="$NETWORK-postgres"
+          CONTAINER=""
+          cleanup() {
+            docker rm --force "$CONTAINER" "$POSTGRES" >/dev/null 2>&1 || true
+            docker network rm "$NETWORK" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker network create "$NETWORK"
+          docker run -d --name "$POSTGRES" --network "$NETWORK" \
+            -e POSTGRES_PASSWORD=boundary-test -e POSTGRES_DB=honua_boundary postgis/postgis:16-3.4
+          ready=false
+          for attempt in {1..60}; do
+            if docker exec "$POSTGRES" pg_isready -h 127.0.0.1 -U postgres -d honua_boundary; then
+              ready=true
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$ready" != true ]]; then
+            docker logs "$POSTGRES"
+            exit 1
+          fi
           CONTAINER="$(docker run -d \
-            --network host \
+            --network "$NETWORK" \
+            -p "127.0.0.1:$SERVER_PORT:8080" \
             -e ASPNETCORE_ENVIRONMENT=Development \
-            -e HONUA_SKIP_MIGRATIONS=true \
-            -e HONUA_ADMIN_PASSWORD=ci-aot-boundary-password \
+            -e HONUA_ADMIN_PASSWORD=ci-jit-boundary-password \
             -e Security__ConnectionEncryption__MasterKey=0123456789abcdef0123456789abcdef \
-            -e ConnectionStrings__DefaultConnection='Host=127.0.0.1;Database=honua_boundary;Username=honua;Password=honua' \
-            -e "ASPNETCORE_URLS=$SERVER_URL" \
-            -e "Kestrel__Endpoints__Http__Url=$SERVER_URL" \
-            -e "Kestrel__Endpoints__Grpc__Url=http://127.0.0.1:$GRPC_PORT" \
-            honua-server:aot-boundary)"
-          trap 'docker rm --force "$CONTAINER" >/dev/null 2>&1 || true' EXIT
-          if ! python3 "$OWNED_SERVER" wait --container "$CONTAINER" --url "$SERVER_URL/healthz/live" --timeout 60; then
+            -e "ConnectionStrings__DefaultConnection=Host=$POSTGRES;Database=honua_boundary;Username=postgres;Password=boundary-test" \
+            -e ASPNETCORE_URLS=http://+:8080 \
+            -e Kestrel__Endpoints__Http__Url=http://+:8080 \
+            -e Kestrel__Endpoints__Grpc__Url=http://+:8081 \
+            '${{ matrix.tag }}')"
+          if ! python3 "$OWNED_SERVER" wait --container "$CONTAINER" --url "$SERVER_URL/healthz/ready" --timeout 180; then
             docker logs "$CONTAINER" || true
             exit 1
           fi
-          echo "Native-AOT serving container passed its owned liveness probe."
+          echo "Canonical PostGIS JIT container passed its owned readiness probe."
+
+      # Native refusal remains an independent production-image regression even
+      # while the default serving artifact uses JIT.
+      - name: Build native migration refusal image
+        if: env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true' && matrix.variant == 'generic'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          file: docker/Dockerfile.aot
+          platforms: linux/amd64
+          load: true
+          tags: honua-server:aot-refusal
+          build-args: HONUA_GIT_SHA=${{ github.sha }}
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-aot-amd64
+          cache-to: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-aot-amd64,mode=max' || '' }}
+          provenance: false
+          sbom: false
 
       - name: Verify native migration refusal shutdown
         if: env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true' && matrix.variant == 'generic'
         run: |
           python3 scripts/ci/fixtures/validate-native-migration-refusal.py
           python3 scripts/ci/verify-native-migration-refusal.py \
-            --image '${{ matrix.tag }}' --source-sha '${{ github.sha }}' \
+            --image honua-server:aot-refusal --source-sha '${{ github.sha }}' \
             --output native-migration-refusal-evidence
 
       - name: Upload native migration refusal evidence

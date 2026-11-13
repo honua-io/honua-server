@@ -86,6 +86,13 @@ assert_rejected(base | {"/usr/lib/libgeos_c.so.1": b"fixture"}, "native GDAL/PRO
 assert_rejected(base | {"/app/Honua.Server.dll": b"fixture"}, "managed server entrypoint")
 assert_rejected(base | {"/opt/Honua.Server.dll": b"fixture"}, "managed server entrypoint")
 
+# JIT must carry the managed server while retaining the same native-library ban.
+jit_base = base | {"/app/Honua.Server.dll": b"managed server"}
+assert not MODULE.scan_rootfs(rootfs(jit_base), "/app/Honua.Server", "jit")
+assert "JIT managed server assembly is missing" in MODULE.scan_rootfs(rootfs(base), "/app/Honua.Server", "jit")
+assert any("native GDAL/PROJ/GEOS library" in violation for violation in MODULE.scan_rootfs(
+    rootfs(jit_base | {"/usr/lib/libgdal.so.36": b"fixture"}), "/app/Honua.Server", "jit"))
+
 # The positive worker smoke must exercise the image's configured ENTRYPOINT. A
 # command-only probe with --entrypoint can pass even when the managed worker host
 # is absent or crashes before joining the durable Redis-backed execution loop.

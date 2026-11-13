@@ -39,6 +39,7 @@
   ],
   "serving_variant_patterns": {
     "generic": [
+      "Dockerfile",
       "docker/Dockerfile.aot"
     ],
     "lambda": [
@@ -78,6 +79,7 @@
     ],
     "serving_variant_patterns": {
       "generic": [
+        "Dockerfile",
         "docker/Dockerfile.aot"
       ],
       "lambda": [
@@ -89,6 +91,7 @@
       ]
     },
     "serving_patterns": [
+      "Dockerfile",
       ".dockerignore",
       "docker/runtime/**",
       "docker/Dockerfile.aot",

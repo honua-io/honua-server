@@ -20,7 +20,8 @@ on:
       - 'scripts/docker/test_lifecycle_prior.py'
       - '.github/workflows/compose-release-lifecycle.yml'
       - '.github/workflows/nightly-container-build.yml'
-      - 'docker/Dockerfile.aot'
+      - 'Dockerfile'
+      - 'docker/runtime/**'
       - 'docker/Dockerfile.compose-executor'
       - 'scripts/docker/*quickstart*.py'
       - 'scripts/docker/test_compose_release_lifecycle_polling.py'
@@ -71,19 +72,19 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      # Reuses the restore and base layers of the nightly and serving-image AOT builds.
+      # Reuses the restore and base layers of the nightly and serving-image JIT builds.
       - name: Build production candidate image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           builder: ${{ steps.buildx.outputs.name }}
           context: .
-          file: docker/Dockerfile.aot
+          file: Dockerfile
           load: true
           tags: honua-lifecycle:candidate
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
-          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-aot-amd64
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-jit-amd64
           provenance: false
           sbom: false
       - name: Build private schema-140 prior fixture (never published)
