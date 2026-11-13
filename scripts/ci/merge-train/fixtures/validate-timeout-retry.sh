@@ -4,6 +4,7 @@ set -euo pipefail
 
 TRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export TRAIN_APPLY=0
+export GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-fixture/repository}"
 . "${TRAIN_DIR}/lib.sh"
 . "${TRAIN_DIR}/smart-ci.sh"
 . "${TRAIN_DIR}/classify-timeout.sh"
