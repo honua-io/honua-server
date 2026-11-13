@@ -78,7 +78,7 @@ internal static class McpPlatformOpsSchemas
             "targetId": {
               "type": "string",
               "minLength": 1,
-              "description": "Deploy target to roll back."
+              "description": "Deployment target id from honua_platform_release_status or honua_deploy_operations."
             },
             "toRevision": {
               "type": "string",
@@ -108,17 +108,17 @@ internal static class McpPlatformOpsSchemas
 
     public static readonly JsonElement ProposeFindingInputSchema = Parse(
         """
-        {"type":"object","required":["findingId","candidateId"],"properties":{"findingId":{"type":"string","minLength":1,"maxLength":256,"description":"Finding id from honua_ops_findings."},"candidateId":{"type":"string","minLength":1,"maxLength":256,"description":"The finding's subject.targetId (e.g. compose-local). Findings without a target (alert redrive, channel pause, DB admission) don't bind it to an action target."}},"additionalProperties":false}
+        {"type":"object","required":["findingId","candidateId"],"properties":{"findingId":{"type":"string","minLength":1,"maxLength":256,"description":"Finding id from honua_ops_findings."},"candidateId":{"type":"string","minLength":1,"maxLength":256,"description":"subject.targetId from honua_ops_findings; caller-selected when the finding has no subject target."}},"additionalProperties":false}
         """);
 
     public static readonly JsonElement DeployMutationInputSchema = Parse(
         """
-        {"type":"object","required":["targetId","desiredRevision"],"properties":{"targetId":{"type":"string","minLength":1,"maxLength":256},"desiredRevision":{"type":"string","minLength":1,"maxLength":2048},"currentRevision":{"type":"string","maxLength":2048},"reason":{"type":"string","maxLength":2048},"idempotencyKey":{"type":"string","maxLength":256}},"additionalProperties":false}
+        {"type":"object","required":["targetId","desiredRevision"],"properties":{"targetId":{"type":"string","description":"Deployment target id from honua_platform_release_status or honua_deploy_operations.","minLength":1,"maxLength":256},"desiredRevision":{"type":"string","description":"Caller-selected immutable image or revision to deploy, from the approved release manifest; not inferred from a target id.","minLength":1,"maxLength":2048},"currentRevision":{"type":"string","maxLength":2048},"reason":{"type":"string","maxLength":2048},"idempotencyKey":{"type":"string","maxLength":256}},"additionalProperties":false}
         """);
 
     public static readonly JsonElement MetadataReleaseMutationInputSchema = Parse(
         """
-        {"type":"object","required":["packageId","targetEnvironment","resourceSemanticId","newFieldName"],"properties":{"packageId":{"type":"string","minLength":1,"maxLength":256},"targetEnvironment":{"type":"string","minLength":1,"maxLength":256},"resourceSemanticId":{"type":"string","minLength":1,"maxLength":256},"newFieldName":{"type":"string","minLength":1,"maxLength":256},"newFieldType":{"type":"string","maxLength":128},"dataPopulateWorkloadId":{"type":"string","maxLength":256},"scriptId":{"type":"string","maxLength":256},"reason":{"type":"string","maxLength":2048},"idempotencyKey":{"type":"string","maxLength":256}},"additionalProperties":false}
+        {"type":"object","required":["packageId","targetEnvironment","resourceSemanticId","newFieldName"],"properties":{"packageId":{"type":"string","description":"Caller-selected metadata release package id from the approved metadata release request.","minLength":1,"maxLength":256},"targetEnvironment":{"type":"string","description":"Caller-supplied. Target environment named by the approved metadata release request.","minLength":1,"maxLength":256},"resourceSemanticId":{"type":"string","description":"Caller-supplied. Semantic resource identifier from the approved metadata release request.","minLength":1,"maxLength":256},"newFieldName":{"type":"string","description":"Caller-authored new field name from the approved metadata release request.","minLength":1,"maxLength":256},"newFieldType":{"type":"string","maxLength":128},"dataPopulateWorkloadId":{"type":"string","maxLength":256},"scriptId":{"type":"string","maxLength":256},"reason":{"type":"string","maxLength":2048},"idempotencyKey":{"type":"string","maxLength":256}},"additionalProperties":false}
         """);
 
     public static readonly JsonElement PlatformReleaseConvergenceInputSchema = Parse(
