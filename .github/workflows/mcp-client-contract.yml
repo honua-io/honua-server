@@ -34,7 +34,7 @@ concurrency:
 jobs:
   contract:
     name: Every-view MCP channel and input contracts
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -89,7 +89,7 @@ jobs:
     name: Published SDK and Inspector nightly
     if: github.event_name == 'schedule'
     needs: contract
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || 'ubuntu-24.04' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
