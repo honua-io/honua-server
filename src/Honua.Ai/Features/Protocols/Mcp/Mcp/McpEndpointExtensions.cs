@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Core.Features.Realtime;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
@@ -408,6 +409,15 @@ internal static class McpEndpointExtensions
             return;
         }
 
+        if (!McpRealtimeStream.TryParsePosition(context.Request.Headers["Last-Event-ID"].ToString(), out var after))
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        var provider = context.RequestServices.GetRequiredService<IRealtimeFanoutProvider>();
+        var window = await provider.GetWindowAsync(RealtimeFamily.Mcp, cancellationToken).ConfigureAwait(false);
+        await using var subscription = new RealtimeStreamSubscription(provider, sessionId, after ?? window.Head);
         using var watch = sessions.AcquireSessionWatch(sessionId);
         await BindTokenReplayContinuationAsync(context, sessionId).ConfigureAwait(false);
         StartEventStream(context);
@@ -421,7 +431,7 @@ internal static class McpEndpointExtensions
             cancellationToken, sessions.GetLifetimeToken(sessionId));
         try
         {
-            await PumpSessionStreamAsync(context.Response.Body, reader, linked.Token).ConfigureAwait(false);
+            await McpRealtimeStream.PumpAsync(context.Response.Body, reader, subscription, linked.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -907,7 +917,8 @@ internal static class McpEndpointExtensions
     {
         context.Response.ContentType = EventStreamMimeType;
         // SSE responses must not be cached or buffered along the path.
-        context.Response.Headers[HeaderNames.CacheControl] = "no-cache";
+        context.Response.Headers[HeaderNames.CacheControl] = "no-store, no-transform";
+        context.Response.Headers["X-Accel-Buffering"] = "no";
         context.Response.Headers[HeaderNames.Connection] = "keep-alive";
     }
 

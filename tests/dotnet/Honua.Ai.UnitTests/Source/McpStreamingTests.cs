@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading.Channels;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Realtime;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
@@ -76,19 +77,17 @@ public sealed class McpStreamingTests
     }
 
     [UnitTest]
-    public void Publisher_PublishProgress_EnqueuesWellFormedJsonRpcNotification()
+    public async Task Publisher_PublishProgress_AppendsWellFormedJsonRpcNotification()
     {
         var sessions = new McpSessionManager();
         var id = sessions.CreateSession();
-        var publisher = new McpNotificationPublisher(sessions, NullLogger<McpNotificationPublisher>.Instance);
+        var publisher = CreatePublisher(sessions, out var drafts);
 
-        publisher.PublishProgress(id, "job-9", progress: 42, total: 100, message: "Running").Should().BeTrue();
+        (await publisher.PublishProgress(id, "job-9", progress: 42, total: 100, message: "Running")).Should().BeTrue();
 
-        sessions.TryGetReader(id, out var reader).Should().BeTrue();
-        reader.TryRead(out var frame).Should().BeTrue();
-
-        using var document = JsonDocument.Parse(frame!);
-        var root = document.RootElement;
+        var draft = drafts.Should().ContainSingle().Subject;
+        draft.ScopeKey.Should().Be(id);
+        var root = draft.Payload;
         root.GetProperty("jsonrpc").GetString().Should().Be("2.0");
         root.GetProperty("method").GetString().Should().Be("notifications/progress");
         var parameters = root.GetProperty("params");
@@ -99,23 +98,17 @@ public sealed class McpStreamingTests
     }
 
     [UnitTest]
-    public void Publisher_Broadcast_ReachesEveryActiveSession()
+    public async Task Publisher_Broadcast_AppendsOneSharedNotification()
     {
         var sessions = new McpSessionManager();
         var first = sessions.CreateSession();
         var second = sessions.CreateSession();
-        var publisher = new McpNotificationPublisher(sessions, NullLogger<McpNotificationPublisher>.Instance);
+        var publisher = CreatePublisher(sessions, out var drafts);
 
-        publisher.BroadcastResourcesListChanged().Should().Be(2);
-
-        foreach (var id in new[] { first, second })
-        {
-            sessions.TryGetReader(id, out var reader).Should().BeTrue();
-            reader.TryRead(out var frame).Should().BeTrue();
-            using var document = JsonDocument.Parse(frame!);
-            document.RootElement.GetProperty("method").GetString()
-                .Should().Be("notifications/resources/list_changed");
-        }
+        (await publisher.BroadcastResourcesListChanged()).Should().Be(2);
+        var draft = drafts.Should().ContainSingle().Subject;
+        draft.ScopeKey.Should().Be("*");
+        draft.Payload.GetProperty("method").GetString().Should().Be("notifications/resources/list_changed");
     }
 
     [UnitTest]
@@ -132,7 +125,7 @@ public sealed class McpStreamingTests
                 JobRecord(ExecutionJobStatus.Running, 60, "Executing"),
                 JobRecord(ExecutionJobStatus.Succeeded, 100, "Complete"));
 
-        var publisher = new McpNotificationPublisher(sessions, NullLogger<McpNotificationPublisher>.Instance);
+        var publisher = CreatePublisher(sessions, out var drafts);
         var bridge = new McpJobProgressBridge(
             publisher,
             sessions,
@@ -141,12 +134,11 @@ public sealed class McpStreamingTests
 
         await bridge.PumpAsync(id, "job-1", Principal, jobService, TimeSpan.Zero, CancellationToken.None);
 
-        sessions.TryGetReader(id, out var reader).Should().BeTrue();
         var progresses = new List<double>();
-        while (reader.TryRead(out var frame))
+        foreach (var draft in drafts)
         {
-            using var document = JsonDocument.Parse(frame!);
-            var root = document.RootElement;
+            draft.ScopeKey.Should().Be(id);
+            var root = draft.Payload;
             root.GetProperty("method").GetString().Should().Be("notifications/progress");
             root.GetProperty("params").GetProperty("progressToken").GetString().Should().Be("job-1");
             progresses.Add(root.GetProperty("params").GetProperty("progress").GetDouble());
@@ -199,4 +191,17 @@ public sealed class McpStreamingTests
             WorkloadName = "workload"
         }
     };
+    private static McpNotificationPublisher CreatePublisher(McpSessionManager sessions, out List<RealtimeEventDraft> drafts)
+    {
+        var recorded = new List<RealtimeEventDraft>();
+        drafts = recorded;
+        var provider = Substitute.For<IRealtimeFanoutProvider>();
+        provider.AppendAsync(Arg.Any<RealtimeEventDraft>(), null, Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                recorded.Add(call.Arg<RealtimeEventDraft>());
+                return new ValueTask<RealtimePosition>(new RealtimePosition(RealtimeFamily.Mcp, recorded.Count));
+            });
+        return new McpNotificationPublisher(sessions, NullLogger<McpNotificationPublisher>.Instance, provider);
+    }
 }

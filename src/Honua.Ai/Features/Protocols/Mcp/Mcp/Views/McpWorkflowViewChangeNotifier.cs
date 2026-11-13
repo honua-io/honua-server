@@ -1,52 +1,60 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Threading.Channels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.Protocols.Mcp.Views;
 
-internal sealed class McpWorkflowViewChangeNotifier : IHostedService, IDisposable
+internal sealed class McpWorkflowViewChangeNotifier(
+    IOptionsMonitor<McpWorkflowViewOptions> options,
+    IMcpNotificationPublisher publisher,
+    ILogger<McpWorkflowViewChangeNotifier> logger) : BackgroundService
 {
-    private readonly IOptionsMonitor<McpWorkflowViewOptions> _options;
-    private readonly IMcpNotificationPublisher _publisher;
+    private readonly Channel<McpWorkflowViewOptions> _changes = Channel.CreateBounded<McpWorkflowViewOptions>(
+        new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
     private IDisposable? _subscription;
     private string? _lastDefaultView;
 
-    public McpWorkflowViewChangeNotifier(
-        IOptionsMonitor<McpWorkflowViewOptions> options,
-        IMcpNotificationPublisher publisher)
+    public override Task StartAsync(CancellationToken cancellationToken)
     {
-        _options = options ?? throw new ArgumentNullException(nameof(options));
-        _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
+        _lastDefaultView = options.CurrentValue.DefaultView;
+        _subscription = options.OnChange(changed => _changes.Writer.TryWrite(changed));
+        return base.StartAsync(cancellationToken);
     }
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _lastDefaultView = _options.CurrentValue.DefaultView;
-        _subscription = _options.OnChange(changed => OnOptionsChanged(changed));
-        return Task.CompletedTask;
+        await foreach (var changed in _changes.Reader.ReadAllAsync(stoppingToken).ConfigureAwait(false))
+        {
+            try
+            {
+                await OnOptionsChangedAsync(changed).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            {
+                McpLog.WorkflowNotificationFailed(logger, exception);
+            }
+        }
     }
 
-    public Task StopAsync(CancellationToken cancellationToken)
+    public override void Dispose()
     {
         _subscription?.Dispose();
-        _subscription = null;
-        return Task.CompletedTask;
+        base.Dispose();
     }
 
-    public void Dispose() => _subscription?.Dispose();
-
-    internal int OnOptionsChanged(McpWorkflowViewOptions changed)
+    internal async ValueTask<int> OnOptionsChangedAsync(McpWorkflowViewOptions changed)
     {
         ArgumentNullException.ThrowIfNull(changed);
-
         if (string.Equals(changed.DefaultView, _lastDefaultView, StringComparison.Ordinal))
         {
             return 0;
         }
 
+        var count = await publisher.BroadcastToolsListChanged().ConfigureAwait(false);
         _lastDefaultView = changed.DefaultView;
-        return _publisher.BroadcastToolsListChanged();
+        return count;
     }
 }
