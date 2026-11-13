@@ -30,7 +30,7 @@ namespace Honua.Server.Tests.Features.Export;
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.TestInfrastructure)]
 [Operation(Operations.Export)]
-public sealed class ExportJobTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
+public sealed partial class ExportJobTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
     [IntegrationTest]
     public async Task Export_ClaimedByTwoWorkers_RunsOnce()
@@ -313,8 +313,8 @@ public sealed class ExportJobTests(DatabaseFixtureAdapter database) : IClassFixt
             => new ExportJobService(Progress, NullLogger<ExportJobService>.Instance, harness.JobStore, harness.Queue)
                 .StartAsync(job);
 
-        public ExportJobExecutor CreateExecutor()
-            => new(Progress, _services.GetRequiredService<IServiceScopeFactory>(), NullLogger<ExportJobExecutor>.Instance);
+        public ExportJobExecutor CreateExecutor(IUniversalProgressStore? progress = null)
+            => new(progress ?? Progress, _services.GetRequiredService<IServiceScopeFactory>(), NullLogger<ExportJobExecutor>.Instance);
 
         public void Dispose() => _services.Dispose();
 
