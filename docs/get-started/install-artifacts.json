@@ -3,7 +3,7 @@
   "serverImageProof": "ghcr.io/honua-io/honua-server:nightly-0e03bdd",
   "packages": {
     "honua-admin": "0.3.1",
-    "honua-sdk": "0.1.19",
+    "honua-sdk": "0.3.1",
     "mcp": "2.1.1",
     "@honua/sdk-js": "0.2.10",
     "create-honua-app": "0.1.9",
