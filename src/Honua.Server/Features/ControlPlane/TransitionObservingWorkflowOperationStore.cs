@@ -106,7 +106,7 @@ internal sealed partial class TransitionObservingWorkflowOperationStore : IWorkf
         {
             Operation = operation,
             Kind = kind,
-            OccurredAt = DateTimeOffset.UtcNow
+            OccurredAt = operation.UpdatedAt
         };
 
         foreach (var listener in _listeners)
