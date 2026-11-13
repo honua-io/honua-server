@@ -547,3 +547,44 @@ test('draft conversion and later comments cancel active attestation before shedd
     assert.equal(attested.failure, null);
   }
 });
+
+
+test('unresolved fork completions cannot cancel a resolver for another run', async () => {
+  const gate = fs.readFileSync(path.join(WORKFLOWS, 'review-gate.yml'), 'utf8');
+  const expression = /group: review-resolve-pr-\$\{\{ (.*?) \}\}/.exec(gate)[1];
+  const payload = {
+    workflow_run: {
+      head_sha: 'b'.repeat(40), pull_requests: [],
+      head_repository: { full_name: 'contributor/fork' }, head_branch: 'feature',
+    },
+  };
+  // GitHub expressions treat missing properties as empty, falsy values.
+  const optionalExpression = expression.replaceAll('.', '?.').replaceAll('[0]', '?.[0]');
+  const group = (event, run) => vm.runInNewContext(optionalExpression, {
+    github: { event, event_name: 'workflow_run', run_id: run },
+  });
+  const current = {
+    workflow_run: { ...payload.workflow_run, head_sha: OPEN_PR.head.sha },
+  };
+  assert.notEqual(group(payload, 101), group(current, 100));
+  // Even the same commit can have a missing/ambiguous association on a later event.
+  assert.notEqual(group(current, 102), group(current, 100));
+  assert.notEqual(group(payload, 101), group({
+    workflow_run: { ...current.workflow_run, pull_requests: [{ number: 42 }] },
+  }, 100));
+  assert.equal(group({ pull_request: { number: 42 } }, 100),
+    group({ workflow_run: { ...current.workflow_run, pull_requests: [{ number: 42 }] } }, 101));
+  for (const associated of [[], [OPEN_PR, { ...OPEN_PR, number: 43 }]]) {
+    const shed = await runShed(GATE_SHED, { payload, associated });
+    assert.equal(shed.superseded, false);
+    const target = extractStepScript('review-gate.yml', 'Resolve every event to one pull request');
+    const result = await vm.runInNewContext(`(async () => {${target}})()`, {
+      context: { payload, repo: { owner: 'honua-io', repo: 'honua-server' } },
+      github: { rest: { repos: {
+        listPullRequestsAssociatedWithCommit: async () => ({ data: associated }),
+      } } },
+      core: { notice() {} },
+    });
+    assert.equal(result, '');
+  }
+});

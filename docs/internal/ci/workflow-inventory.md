@@ -79,8 +79,9 @@ completes.
 
 Verification workflows cancel superseded admission per PR. Review Event Bridge
 and both Review Gate Attestation jobs also cancel older events by PR identity
-across head updates; fork completion payloads without a PR number use the head
-repository/ref until the trusted resolver identifies the PR. They skip ordinary draft
+across head updates. Completion payloads without a PR number stay isolated by
+run ID until the trusted resolver identifies the PR, so an unresolvable old
+completion cannot cancel a resolver for the current head. They skip ordinary draft
 PR payloads and re-read live draft state before attestation, including comment
 and workflow-completion events. CodeQL already cancels by PR number and skips
 draft PR analysis; its scheduled/manual analysis remains enabled.
