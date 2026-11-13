@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Infrastructure.Middleware;
@@ -283,7 +284,7 @@ internal sealed partial class CdnInvalidationService(
         CdnPurgeCause cause,
         CancellationToken cancellationToken)
     {
-        var result = await SendWithRetriesAsync(paths, cancellationToken).ConfigureAwait(false);
+        var result = await SendAndMeasureAsync(paths, cause, cancellationToken).ConfigureAwait(false);
         if (result.Outcome is CdnInvalidationOutcome.NotConfigured)
         {
             return result;
@@ -299,6 +300,31 @@ internal sealed partial class CdnInvalidationService(
         }
 
         return result;
+    }
+
+    private async Task<CdnInvalidationResult> SendAndMeasureAsync(
+        IReadOnlyCollection<string> paths, CdnPurgeCause cause, CancellationToken cancellationToken)
+    {
+        var started = Stopwatch.GetTimestamp();
+        var outcome = "failed";
+        try
+        {
+            var result = await SendWithRetriesAsync(paths, cancellationToken).ConfigureAwait(false);
+            outcome = result.Outcome.ToString().ToLowerInvariant();
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            outcome = "canceled";
+            throw;
+        }
+        finally
+        {
+            if (outcome != "notconfigured")
+            {
+                SharedCacheMetrics.RecordPurge(cause, new CdnPurgeSample(paths, outcome, Stopwatch.GetElapsedTime(started)));
+            }
+        }
     }
 
     private async Task<CdnInvalidationResult> SendWithRetriesAsync(IReadOnlyCollection<string> withinBudget, CancellationToken cancellationToken)
