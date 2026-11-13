@@ -22,6 +22,44 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class PostgresConfigurationStoreTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
     [IntegrationTest]
+    public async Task CreateProviderIfBelowLimitAsync_ConcurrentTasks_AdmitsOnlyOneProvider()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ =>
+            CreateOidcStore(harness).CreateProviderIfBelowLimitAsync(Provider(true), 1)));
+
+        results.Count(result => result is not null).Should().Be(1);
+        (await CreateOidcStore(harness).ListProvidersAsync()).Should().ContainSingle();
+    }
+
+    [IntegrationTest]
+    public async Task CreateProviderIfBelowLimitAsync_UnreadableProvider_StillConsumesCapacity()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var foreign = new PostgresOidcProviderStore(harness.CreateConfigurationDocuments(
+            new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider()));
+        await foreign.CreateProviderAsync(Provider(true));
+        var store = CreateOidcStore(harness);
+        (await store.ListProvidersAsync()).Should().BeEmpty();
+
+        (await store.CreateProviderIfBelowLimitAsync(Provider(true), 1)).Should().BeNull();
+        (await harness.ScalarAsync<long>($"SELECT count(*) FROM {harness.Table("configuration_documents")} WHERE kind = 'oidc-provider'"))
+            .Should().Be(1);
+    }
+
+    [IntegrationTest]
+    public async Task CreateProviderIfBelowLimitAsync_HigherLimit_AdmitsAdditionalProvider()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = CreateOidcStore(harness);
+        await store.CreateProviderAsync(Provider(true));
+
+        (await store.CreateProviderIfBelowLimitAsync(Provider(true), 2)).Should().NotBeNull();
+        (await store.CreateProviderIfBelowLimitAsync(Provider(true), 2)).Should().BeNull();
+        (await store.ListProvidersAsync()).Should().HaveCount(2);
+    }
+
+    [IntegrationTest]
     public async Task UpdateProviderAsync_OnTaskA_DisablesProviderOnTaskB()
     {
         await using var harness = await CreateHarnessAsync();

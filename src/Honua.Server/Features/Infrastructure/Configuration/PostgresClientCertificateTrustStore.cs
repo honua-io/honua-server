@@ -110,10 +110,11 @@ internal sealed partial class PostgresClientCertificateTrustStore(
     internal static ClientCertificateTrustProfile ApplyConfigured(
         ClientCertificateTrustProfile stored, ClientCertificateTrustProfile configured, IReadOnlyCollection<string>? formerlyConfigured = null)
     {
-        var merged = MergeIssuerTrust(stored, configured) with
+        var issuerTrust = MergeIssuerTrust(stored, configured);
+        var merged = issuerTrust with
         {
             Revision = stored.Revision,
-            Enabled = stored.Enabled && configured.Enabled,
+            Enabled = stored.Enabled && issuerTrust.Enabled,
             AllowedSanTypes = configured.AllowedSanTypes.Intersect(stored.AllowedSanTypes).ToArray(),
             AllowSubjectFallback = stored.AllowSubjectFallback && configured.AllowSubjectFallback,
             RequireClientAuthenticationEku = stored.RequireClientAuthenticationEku || configured.RequireClientAuthenticationEku,
@@ -160,15 +161,19 @@ internal sealed partial class PostgresClientCertificateTrustStore(
         {
             anchors = [];
         }
+        var incompatibleRestrictions =
+            (anchors.Length == 0 && (stored.CustomTrustAnchorCertificates.Count > 0 || configured.CustomTrustAnchorCertificates.Count > 0)) ||
+            (thumbprints.Length == 0 && (stored.AcceptedIssuerThumbprints.Count > 0 || configured.AcceptedIssuerThumbprints.Count > 0));
         return configured with
         {
+            Enabled = configured.Enabled && !incompatibleRestrictions,
             AcceptedIssuerThumbprints = thumbprints,
             AcceptedIssuerSubjects = configured.AcceptedIssuerSubjects.Intersect(stored.AcceptedIssuerSubjects, StringComparer.OrdinalIgnoreCase).ToArray(),
             CustomTrustAnchorCertificates = anchors
         };
     }
 
-    private static IReadOnlyList<ClientCertificateRevocationEntry> MergeRevocations(
+    private static List<ClientCertificateRevocationEntry> MergeRevocations(
         IReadOnlyList<ClientCertificateRevocationEntry> stored, IReadOnlyList<ClientCertificateRevocationEntry> configured)
     {
         var merged = stored.ToList();
