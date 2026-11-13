@@ -570,6 +570,1494 @@
       "rule": "dataset-reference",
       "line": "        handle.ResourceIds.Should().NotContainKey(\"serviceName\").And.NotContainKey(\"serviceLayerIndex\");",
       "reason": "ResourceIds is the existing canonical operation-handle property. This regression verifies that completed publication withholds ambiguous public selectors; the admin/jobs vocabulary migration owns the property rename."
+    },
+    {
+      "path": "src/Honua.Ai/Features/Protocols/Mcp/Mcp/Resources/PublishedMetadataCatalogProjection.cs",
+      "rule": "layer-type",
+      "line": "                publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataCompatibilityModels.cs",
+      "rule": "layer-type",
+      "line": "    public MetadataV2LayerType? PublicationType { get; init; }",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataReleaseModels.cs",
+      "rule": "layer-type",
+      "line": "    public MetadataV2LayerType? PublicationType { get; init; }",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataReleaseModels.cs",
+      "rule": "layer-type",
+      "line": "    public required MetadataV2LayerType PublicationType { get; init; }",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2Graph.cs",
+      "rule": "layer-type",
+      "line": "    public MetadataV2LayerType PublicationType",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2Graph.cs",
+      "rule": "layer-type",
+      "line": "    public PreservedEnumValue<MetadataV2LayerType> PublicationTypeValue { get; init; } = MetadataV2LayerType.OgcCollection;",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2GraphIndex.cs",
+      "rule": "dataset-reference",
+      "line": "        ILookup<string, MetadataV2Object> resourcesByStyleResourceId)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2GraphIndex.cs",
+      "rule": "dataset-reference",
+      "line": "    public ILookup<string, MetadataV2Object> ResourcesByStyleResourceId { get; }",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2GraphSnapshotExtensions.cs",
+      "rule": "layer-type",
+      "line": "        return IsKnownEnumValue(publication.PublicationType, MetadataV2LayerType.Unknown) &&",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/ServiceProtocols.cs",
+      "rule": "layer-type",
+      "line": "    public static bool IsPreferredPublicationType(string? protocol, MetadataV2LayerType publicationType)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/ServiceProtocols.cs",
+      "rule": "layer-type",
+      "line": "            return publicationType == MetadataV2LayerType.OgcCollection;",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/ServiceProtocols.cs",
+      "rule": "layer-type",
+      "line": "            return publicationType == MetadataV2LayerType.StacCollection;",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/ServiceProtocols.cs",
+      "rule": "layer-type",
+      "line": "            return publicationType == MetadataV2LayerType.WfsFeatureType;",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/ServiceProtocols.cs",
+      "rule": "layer-type",
+      "line": "            return publicationType == MetadataV2LayerType.EsriFeatureLayer;",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/ServiceProtocols.cs",
+      "rule": "layer-type",
+      "line": "            return publicationType == MetadataV2LayerType.EsriMapLayer;",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/ServiceProtocols.cs",
+      "rule": "layer-type",
+      "line": "            return publicationType == MetadataV2LayerType.EsriImageLayer;",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/ServiceProtocols.cs",
+      "rule": "layer-type",
+      "line": "            return publicationType == MetadataV2LayerType.EsriVectorTileLayer;",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/ServiceProtocols.cs",
+      "rule": "layer-type",
+      "line": "            return publicationType == MetadataV2LayerType.ODataEntitySet;",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/ServiceProtocols.cs",
+      "rule": "layer-type",
+      "line": "            return publicationType == MetadataV2LayerType.SensorThingsDatastream;",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/ServiceProtocols.cs",
+      "rule": "layer-type",
+      "line": "            return publicationType == MetadataV2LayerType.WmsLayer;",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/ServiceProtocols.cs",
+      "rule": "layer-type",
+      "line": "            return publicationType == MetadataV2LayerType.WmtsLayer;",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Core/Core/Features/Raster/CogParser/CogPublicationBinding.cs",
+      "rule": "layer-type",
+      "line": "            if (publication.PublicationType == MetadataV2LayerType.EsriImageLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Core/Core/Features/Validation/ResourceValidator.cs",
+      "rule": "layer-type",
+      "line": "        MetadataV2LayerType publicationType)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Core/Core/Features/Validation/ResourceValidator.cs",
+      "rule": "layer-type",
+      "line": "            publicationType == MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Db/Postgres/Features/Admin/PostgreSqlLayerPublishingService.MetadataV2Graph.cs",
+      "rule": "layer-type",
+      "line": "            publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Db/Postgres/Features/Admin/PostgreSqlLayerPublishingService.MetadataV2Graph.cs",
+      "rule": "layer-type",
+      "line": "                publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Db/Postgres/Features/Admin/PostgreSqlLayerPublishingService.MetadataV2Graph.cs",
+      "rule": "layer-type",
+      "line": "               publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Db/Postgres/Features/Admin/PostgreSqlLayerPublishingService.MetadataV2Graph.cs",
+      "rule": "layer-type",
+      "line": "        MetadataV2LayerType publicationType,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Db/Postgres/Features/Admin/PostgreSqlLayerPublishingService.MetadataV2Graph.cs",
+      "rule": "dataset-reference",
+      "line": "    private async Task<(IReadOnlyList<MetadataV2Object> Styles, IReadOnlyList<string> StyleResourceIds)>",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Db/Postgres/Features/Admin/PostgreSqlLayerPublishingService.SourceGovernance.cs",
+      "rule": "layer-type",
+      "line": "                     publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Protocols/GeoServices/FeatureServer/FeatureServerRequestHandlers.Replication.cs",
+      "rule": "layer-type",
+      "line": "                .OrderBy(layer => layer.Publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer ? 0 : 1)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Protocols/GeoServices/VectorTileServer/VectorTileServerEndpoints.Resources.cs",
+      "rule": "layer-type",
+      "line": "        var candidateIsVector = candidate.PublicationType == MetadataV2LayerType.EsriVectorTileLayer;",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Protocols/GeoServices/VectorTileServer/VectorTileServerEndpoints.Resources.cs",
+      "rule": "layer-type",
+      "line": "        var currentIsVector = current.PublicationType == MetadataV2LayerType.EsriVectorTileLayer;",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Protocols/Stac/Services/StacV2Lookups.cs",
+      "rule": "layer-type",
+      "line": "        => publication.PublicationType == MetadataV2LayerType.StacCollection;",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/ServiceSettingsEndpoints.cs",
+      "rule": "layer-type",
+      "line": "               publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Server/Features/Admin/ServiceSettingsEndpoints.cs",
+      "rule": "layer-type",
+      "line": "                        publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "src/Honua.Server/Features/Operations/ServicePublishExecutor.cs",
+      "rule": "layer-type",
+      "line": "                publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Ai.Tests/Source/McpStyleToolTests.cs",
+      "rule": "dataset-reference",
+      "line": "            .AddResource(ResourceId, \"Parcels Dataset\", spatial: new MetadataV2ObjectSpatial",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Ai.UnitTests/Source/McpMapToolTests.cs",
+      "rule": "layer-type",
+      "line": "        var feature = graph.Publications[0] with { PublicationType = MetadataV2LayerType.EsriFeatureLayer };",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Ai.UnitTests/Source/McpMapToolTests.cs",
+      "rule": "layer-type",
+      "line": "                PublicationType = MetadataV2LayerType.StacCollection",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Ai.UnitTests/Source/McpPublishedCatalogReadbackTests.cs",
+      "rule": "layer-type",
+      "line": "                    publicationType: MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Ai.UnitTests/Source/McpPublishedCatalogReadbackTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriFeatureLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/FeatureStore/LayerReadSecurityResolverTests.Unbound.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.ODataEntitySet,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/FeatureStore/ReadPolicyEnforceabilityCheckerTests.cs",
+      "rule": "dataset-reference",
+      "line": "    private static MetadataV2Layer CreatePublication(string id, string resourceId, string bindingId, string identifier) => new()",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Domain/V2/MetadataCompatibilityAnalyzerTests.cs",
+      "rule": "layer-type",
+      "line": "                        PublicationType = includeRequiredDetails ? MetadataV2LayerType.OgcCollection : null,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Domain/V2/MetadataCompatibilityAnalyzerTests.cs",
+      "rule": "layer-type",
+      "line": "                        PublicationType = MetadataV2LayerType.OgcCollection,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Domain/V2/MetadataV2GraphSnapshotTests.cs",
+      "rule": "layer-type",
+      "line": "                    PublicationType = MetadataV2LayerType.OgcCollection,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Domain/V2/MetadataV2GraphSnapshotTests.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.OgcCollection,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Domain/V2/MetadataV2ModelTests.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.OgcCollection,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Domain/V2/MetadataV2ModelTests.cs",
+      "rule": "layer-type",
+      "line": "        graph.Publications.Single().PublicationType.Should().Be(MetadataV2LayerType.OgcCollection);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Domain/V2/MetadataV2ModelTests.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.EsriFeatureLayer,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Domain/V2/MetadataV2ModelTests.cs",
+      "rule": "layer-type",
+      "line": "            publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Domain/V2/MetadataV2RoutingRobustnessTests.cs",
+      "rule": "layer-type",
+      "line": "                Publications = [original.Publications.Single() with { PublicationType = (MetadataV2LayerType)undefinedKind }]",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Services/FileMetadataV2GraphProviderTests.cs",
+      "rule": "layer-type",
+      "line": "                    PublicationType = MetadataV2LayerType.OgcCollection,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Portal/PortalItemProjectorTests.cs",
+      "rule": "layer-type",
+      "line": "                    PublicationType = MetadataV2LayerType.EsriFeatureLayer,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Validation/ResourceValidatorTests.cs",
+      "rule": "layer-type",
+      "line": "        result.Resource.Publication.PublicationType.Should().Be(MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Validation/ResourceValidatorTests.cs",
+      "rule": "layer-type",
+      "line": "                    PublicationType = MetadataV2LayerType.OgcCollection,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Validation/ResourceValidatorTests.cs",
+      "rule": "layer-type",
+      "line": "                    PublicationType = MetadataV2LayerType.EsriFeatureLayer,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Validation/ResourceValidatorTests.cs",
+      "rule": "layer-type",
+      "line": "                    PublicationType = MetadataV2LayerType.EsriImageLayer,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Validation/ResourceValidatorTests.cs",
+      "rule": "layer-type",
+      "line": "                    PublicationType = MetadataV2LayerType.EsriMapLayer,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/GeoservicesImportEditingPersistenceTests.cs",
+      "rule": "layer-type",
+      "line": "                p.ResourceId == resource.Metadata.Id && p.PublicationType == MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/GeoservicesImportEditingPersistenceTests.cs",
+      "rule": "dataset-reference",
+      "line": "                p.ResourceId == resource.Metadata.Id && p.PublicationType == MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/GeoservicesImportNonSpatialPersistenceTests.cs",
+      "rule": "layer-type",
+      "line": "                p.ResourceId == resource.Metadata.Id && p.PublicationType == MetadataV2LayerType.StacCollection);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/GeoservicesImportNonSpatialPersistenceTests.cs",
+      "rule": "dataset-reference",
+      "line": "                p.ResourceId == resource.Metadata.Id && p.PublicationType == MetadataV2LayerType.StacCollection);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Metadata/PostgresMetadataV2GraphStoreCompatFallbackTests.cs",
+      "rule": "layer-type",
+      "line": "                p => p.ResourceId == \"res-layer-0\" && p.PublicationType == MetadataV2LayerType.OgcCollection,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Metadata/PostgresMetadataV2GraphStoreCompatFallbackTests.cs",
+      "rule": "dataset-reference",
+      "line": "                p => p.ResourceId == \"res-layer-0\" && p.PublicationType == MetadataV2LayerType.OgcCollection,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Metadata/PostgresMetadataV2GraphStoreFreshDbTests.cs",
+      "rule": "layer-type",
+      "line": "                    PublicationType = MetadataV2LayerType.EsriFeatureLayer,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Metadata/PostgresMetadataV2GraphStoreFreshDbTests.cs",
+      "rule": "layer-type",
+      "line": "                    PublicationType = MetadataV2LayerType.StacCollection,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.UnitTests/Features/Admin/PostgreSqlLayerPublishingServiceSqlTests.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.OgcCollection,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.UnitTests/Features/Admin/PostgreSqlLayerPublishingServiceSqlTests.cs",
+      "rule": "layer-type",
+      "line": "                    PublicationType = MetadataV2LayerType.EsriFeatureLayer",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.UnitTests/Features/Admin/PostgreSqlLayerPublishingServiceSqlTests.cs",
+      "rule": "layer-type",
+      "line": "                    PublicationType = MetadataV2LayerType.EsriFeatureLayer,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.UnitTests/Features/Admin/PostgreSqlLayerPublishingServiceSqlTests.cs",
+      "rule": "layer-type",
+      "line": "                publication.PublicationType == MetadataV2LayerType.StacCollection)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.UnitTests/Features/Admin/PostgreSqlLayerPublishingServiceSqlTests.cs",
+      "rule": "layer-type",
+      "line": "            publication.PublicationType == MetadataV2LayerType.OgcCollection);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.UnitTests/Features/Admin/PostgreSqlLayerPublishingServiceSqlTests.cs",
+      "rule": "layer-type",
+      "line": "            publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.UnitTests/Features/Admin/PostgreSqlLayerPublishingServiceSqlTests.cs",
+      "rule": "layer-type",
+      "line": "                publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.UnitTests/Features/Admin/PostgreSqlLayerPublishingServiceSqlTests.cs",
+      "rule": "layer-type",
+      "line": "        MetadataV2LayerType publicationType)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.UnitTests/Features/Geoprocessing/FeatureLayerCopyPublicationTenantTests.cs",
+      "rule": "layer-type",
+      "line": "        PublicationType = MetadataV2LayerType.EsriFeatureLayer",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Hosting.UnitTests/Source/Features/Caching/OutputCacheInvalidationServiceTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.OgcCollection);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Hosting.UnitTests/Source/Features/Caching/OutputCacheInvalidationServiceTests.cs",
+      "rule": "layer-type",
+      "line": "                    publicationType: MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesCatalogEndpointTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriImageLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesCatalogServiceTypingTests.cs",
+      "rule": "layer-type",
+      "line": "                    publicationType: MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesCatalogServiceTypingTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesCatalogServiceTypingTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriImageLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerAccessFilteringTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriFeatureLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerAttachmentCapabilityAdvertisementTests.cs",
+      "rule": "layer-type",
+      "line": "                    publicationType: MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerEditCapabilityAdvertisementTests.cs",
+      "rule": "dataset-reference",
+      "line": "            .AddResource(resourceId, $\"{key} Layer\", MetadataV2ObjectType.FeatureDataset,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerEditCapabilityAdvertisementTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerRelationshipResourceTests.cs",
+      "rule": "layer-type",
+      "line": "                storageBindingId: \"origin-binding\", publicationType: MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerRelationshipResourceTests.cs",
+      "rule": "layer-type",
+      "line": "                storageBindingId: \"destination-binding\", publicationType: MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerRelationshipResourceTests.cs",
+      "rule": "layer-type",
+      "line": "                    storageBindingId: \"destination-binding\", publicationType: MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerRelationshipResourceTests.cs",
+      "rule": "layer-type",
+      "line": "                storageBindingId: \"origin-binding\", publicationType: MetadataV2LayerType.EsriFeatureLayer, isPrimary: true);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerRelationshipResourceTests.cs",
+      "rule": "layer-type",
+      "line": "                        storageBindingId: \"extra-origin-binding\", publicationType: MetadataV2LayerType.EsriFeatureLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerRelationshipResourceTests.cs",
+      "rule": "layer-type",
+      "line": "                        storageBindingId: \"extra-destination-binding\", publicationType: MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerTopFeaturesTemporalTests.cs",
+      "rule": "layer-type",
+      "line": "                serviceLocalId: \"0\", publicationType: MetadataV2LayerType.EsriFeatureLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MobileOfflineDemoFixtureReplicationTests.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.EsriFeatureLayer",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/ProviderRoutedTileAndH3EndpointTests.cs",
+      "rule": "layer-type",
+      "line": "                    publicationType: MetadataV2LayerType.OgcCollection)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/ProviderRoutedTileAndH3EndpointTests.cs",
+      "rule": "layer-type",
+      "line": "                    publicationType: MetadataV2LayerType.EsriVectorTileLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/ProviderRoutedTileAndH3EndpointTests.cs",
+      "rule": "layer-type",
+      "line": "                    publicationType: MetadataV2LayerType.EsriVectorTileLayer, isPrimary: true)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/ProviderRoutedTileAndH3EndpointTests.cs",
+      "rule": "layer-type",
+      "line": "                    publicationType: MetadataV2LayerType.EsriFeatureLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/ProviderRoutedTileAndH3EndpointTests.cs",
+      "rule": "layer-type",
+      "line": "                    publicationType: MetadataV2LayerType.EsriFeatureLayer, isPrimary: true)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerBasicTests.cs",
+      "rule": "layer-type",
+      "line": "                        publicationType: MetadataV2LayerType.EsriImageLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerEndpointsTests.cs",
+      "rule": "layer-type",
+      "line": "                    publicationType: MetadataV2LayerType.EsriImageLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerExportTilesJobEndpointTests.cs",
+      "rule": "layer-type",
+      "line": "                    publicationType: MetadataV2LayerType.EsriImageLayer,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerExportTilesJobEndpointTests.cs",
+      "rule": "layer-type",
+      "line": "                    publicationType: MetadataV2LayerType.EsriImageLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerMultidimensionalSoapTests.cs",
+      "rule": "layer-type",
+      "line": "            candidate.PublicationType == MetadataV2LayerType.EsriImageLayer &&",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerDrawingModeTests.cs",
+      "rule": "layer-type",
+      "line": "            publication.PublicationType == MetadataV2LayerType.EsriMapLayer &&",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerDynamicJoinTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriMapLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerDynamicWorkspaceTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriMapLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerEndpointTestBase.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.EsriMapLayer,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerEndpointTests.cs",
+      "rule": "layer-type",
+      "line": "                publication.PublicationType == MetadataV2LayerType.EsriMapLayer ? 0 : 1)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerEndpointTests.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.StacCollection,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerEndpointTests.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.EsriMapLayer,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerObjectIdFieldTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriMapLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerTileEndpointTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriMapLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MetadataPostTests.cs",
+      "rule": "layer-type",
+      "line": "                    storageBindingId: \"evidence-binding\", serviceLocalId: \"Evidence raster\", publicationType: MetadataV2LayerType.EsriImageLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileServerPrimaryPublicationTests.cs",
+      "rule": "layer-type",
+      "line": "                    layerIndex: 0, publicationType: MetadataV2LayerType.EsriFeatureLayer, isPrimary: true)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileServerPrimaryPublicationTests.cs",
+      "rule": "layer-type",
+      "line": "                    layerIndex: 1, publicationType: MetadataV2LayerType.EsriVectorTileLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VersionManagementServer/BranchVersioningMetadataTests.cs",
+      "rule": "layer-type",
+      "line": "                PublicationType = MetadataV2LayerType.EsriMapLayer,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VersionManagementServer/BranchVersioningPublicationMetadataTests.cs",
+      "rule": "dataset-reference",
+      "line": "    private MetadataV2Object ManagedResource => Baseline.Resources.Single(resource => resource.Metadata.Id == ManagedPublication.ResourceId);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VersionManagementServer/BranchVersioningPublicationMetadataTests.cs",
+      "rule": "layer-type",
+      "line": "            ? publication with { PublicationType = MetadataV2LayerType.EsriFeatureLayer } : publication).ToArray();",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/FeatureServer/FeatureServerLayerListParsingTests.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.EsriFeatureLayer,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/FeatureServer/FeatureServerLayerListParsingTests.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.ODataEntitySet,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/FeatureServer/FeatureServerLayerListParsingTests.cs",
+      "rule": "layer-type",
+      "line": "            .Which.Publication.PublicationType.Should().Be(MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/FeatureServer/FeatureServerPublicationTenantTests.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.EsriFeatureLayer",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/FeatureServer/FeatureServerServiceEstimateLayerIdsTests.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.EsriFeatureLayer,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/FeatureServer/Services/CompositeRelationshipMetadataTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriFeatureLayer,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/FeatureServer/Services/CompositeRelationshipMetadataTests.cs",
+      "rule": "layer-type",
+      "line": "                    layerIndex: index, publicationType: MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/FeatureServer/Services/FeatureServerQueryExecutorTests.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.EsriFeatureLayer",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/GeoServicesPublicationTenantTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriMapLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/GeoServicesPublicationTenantTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriMapLayer, isPrimary: true)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/ImageServer/ImageServerExportTilesHandlerAuthorizationTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriImageLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/ImageServer/ImageServerMetadataHandlerTests.cs",
+      "rule": "layer-type",
+      "line": "                    publicationType: MetadataV2LayerType.EsriImageLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/ImageServer/ImageServerNumericLayerAuthorizationTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriFeatureLayer,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/ImageServer/ImageServerNumericLayerAuthorizationTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriImageLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/ImageServer/ImageServerTileHandlerTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriImageLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/ImageServer/ImageServerTileHandlerTests.cs",
+      "rule": "layer-type",
+      "line": "                storageBindingId: \"binding-other\", publicationType: MetadataV2LayerType.EsriImageLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/MapServer/MapServerCachedLayerExtentTests.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.EsriFeatureLayer,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataBoundProviderEndpointTests.cs",
+      "rule": "layer-type",
+      "line": "                PublicationType = MetadataV2LayerType.ODataEntitySet",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataEndpointTests.cs",
+      "rule": "layer-type",
+      "line": "                publication.PublicationType == MetadataV2LayerType.ODataEntitySet && publication.LayerIndex == TestLayerId",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OData.Tests/Source/Services/ODataBatchHandlerTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.ODataEntitySet);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OData.UnitTests/Source/ODataQueryHandlerTests.cs",
+      "rule": "layer-type",
+      "line": "            .Which.Publication.PublicationType.Should().Be(MetadataV2LayerType.ODataEntitySet);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OData.UnitTests/Source/ODataQueryHandlerTests.cs",
+      "rule": "layer-type",
+      "line": "                publication.PublicationType == MetadataV2LayerType.ODataEntitySet",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OData.UnitTests/Source/ODataQueryHandlerTests.cs",
+      "rule": "layer-type",
+      "line": "        visible.Should().ContainSingle().Which.Publication.PublicationType.Should().Be(MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OData.UnitTests/Source/ODataQueryHandlerTests.cs",
+      "rule": "layer-type",
+      "line": "        all.Should().ContainSingle().Which.Publication.PublicationType.Should().Be(MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OData.UnitTests/Source/ODataQueryHandlerTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.ODataEntitySet)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OData.UnitTests/Source/ODataQueryHandlerTests.cs",
+      "rule": "layer-type",
+      "line": "                        PublicationType = MetadataV2LayerType.EsriFeatureLayer,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Maps/OgcMapsDuplicateStorageBindingEndpointTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriImageLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Maps/OgcMapsDuplicateStorageBindingEndpointTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriMapLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Records/OgcRecordsEndpointTests.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.EsriFeatureLayer",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Records/OgcRecordsEndpointTests.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.EsriMapLayer",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcApi.UnitTests/Source/Edr/EdrStorageCollectionTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.OgcCollection)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcApi.UnitTests/Source/Features/OgcFeaturesProtectedPatchTests.cs",
+      "rule": "layer-type",
+      "line": "                storageBindingId: \"binding\", publicationType: MetadataV2LayerType.OgcCollection)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/CapabilitiesExtentFixture.cs",
+      "rule": "layer-type",
+      "line": "        string protocol, MetadataV2LayerType publicationType, int healthyLayerSrid = 4326)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20EndpointsTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.WfsFeatureType)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20EndpointsTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.OgcCollection)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/WfsFallbackGeometryTransactionTests.cs",
+      "rule": "layer-type",
+      "line": "                storageBindingId: \"native-edit-storage\", publicationType: MetadataV2LayerType.WfsFeatureType);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/WfsLegacyGeometryMetadataTests.cs",
+      "rule": "layer-type",
+      "line": "                    publicationType: MetadataV2LayerType.WfsFeatureType);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/WfsWmsStorageBoundReadTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.WfsFeatureType)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wmts/OgcClassicWmtsTests.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.EsriMapLayer,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.UnitTests/Source/PublicationTenantVisibilityTests.cs",
+      "rule": "layer-type",
+      "line": "                PublicationType = MetadataV2LayerType.EsriMapLayer",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.UnitTests/Source/Wfs20/Wfs20DeclaredEditCapabilityTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.OgcCollection);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.OgcClassic.UnitTests/Source/Wfs20/Wfs20EnablementTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.OgcCollection)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.Stac.Tests/Source/StacProviderNeutralRoutingTests.cs",
+      "rule": "layer-type",
+      "line": "            candidate.PublicationType == MetadataV2LayerType.StacCollection);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.Stac.UnitTests/Source/StacFilterHelpersTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.StacCollection)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.Stac.UnitTests/Source/StacStorageLayerResolutionTests.cs",
+      "rule": "dataset-reference",
+      "line": "    private static MetadataV2Layer Publication(string id, string resourceId)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.Stac.UnitTests/Source/StacStorageLayerResolutionTests.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.StacCollection,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Admin/LayerPublicationEditingMetadataTests.cs",
+      "rule": "layer-type",
+      "line": "            candidate.LayerIndex == _layerId && candidate.PublicationType == MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Admin/LayerPublishJobTests.cs",
+      "rule": "layer-type",
+      "line": "                        storageBindingId: \"other-binding\", publicationType: MetadataV2LayerType.EsriFeatureLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Admin/LayerPublishJobTests.cs",
+      "rule": "layer-type",
+      "line": "                storageBindingId: \"road-binding\", publicationType: MetadataV2LayerType.EsriFeatureLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Admin/LayerPublishingIntegrationTests.cs",
+      "rule": "layer-type",
+      "line": "            publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer).ResourceId;",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Admin/LayerPublishingIntegrationTests.cs",
+      "rule": "dataset-reference",
+      "line": "            publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer).ResourceId;",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Admin/LayerPublishingIntegrationTests.cs",
+      "rule": "layer-type",
+      "line": "            publication.PublicationType == MetadataV2LayerType.StacCollection);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Admin/McpPublishedServicePostgresDurabilityTests.cs",
+      "rule": "layer-type",
+      "line": "            publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer).ToArray();",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/AttachmentEndpointTests.cs",
+      "rule": "layer-type",
+      "line": "            candidate.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/AdminLayerLegacyFieldConfigurationTests.cs",
+      "rule": "dataset-reference",
+      "line": "    private static MetadataV2Layer Publication(string resourceId, string serviceId, int layerIndex, bool legacyIdentifier)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/CogArtifactEndpointTests.cs",
+      "rule": "layer-type",
+      "line": "            publication.PublicationType == MetadataV2LayerType.EsriImageLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/LayerValidationEndpointsTests.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.EsriFeatureLayer,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/RowLevelSecurityEndpointsTests.ODataGeometry.cs",
+      "rule": "layer-type",
+      "line": "            candidate.PublicationType == MetadataV2LayerType.EsriFeatureLayer && candidate.LayerIndex == 0);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/RowLevelSecurityEndpointsTests.ODataGeometry.cs",
+      "rule": "layer-type",
+      "line": "                    PublicationType = MetadataV2LayerType.ODataEntitySet,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/RowLevelSecurityEndpointsTests.cs",
+      "rule": "layer-type",
+      "line": "            candidate.PublicationType == MetadataV2LayerType.EsriFeatureLayer && candidate.LayerIndex == WebAppFixture.TestLayerId);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/RowLevelSecurityEndpointsTests.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.ODataEntitySet",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/ServiceSettingsAttachmentAuthoringTests.cs",
+      "rule": "dataset-reference",
+      "line": "            .AddResource(ResourceId, \"Attachment authoring\", MetadataV2ObjectType.Table,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/ServiceSettingsAttachmentAuthoringTests.cs",
+      "rule": "layer-type",
+      "line": "                layerIndex: 900, storageBindingId: \"attachment-primary-binding\", publicationType: MetadataV2LayerType.EsriFeatureLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/ServiceSettingsAttachmentAuthoringTests.cs",
+      "rule": "layer-type",
+      "line": "                layerIndex: 910, storageBindingId: \"attachment-primary-binding\", publicationType: MetadataV2LayerType.EsriFeatureLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/ServiceSettingsEndpointsTests.cs",
+      "rule": "layer-type",
+      "line": "            candidate.PublicationType == MetadataV2LayerType.EsriFeatureLayer && candidate.LayerIndex == 0);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/ServiceSettingsEndpointsTests.cs",
+      "rule": "layer-type",
+      "line": "            candidate.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/ServiceSettingsEndpointsTests.cs",
+      "rule": "layer-type",
+      "line": "            publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Admin/ServiceSettingsEndpointsTests.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.OgcCollection,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Console/ProjectedCatalogDiscoveryRegistryStoreTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriFeatureLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Console/PublishedContentProjectionTests.cs",
+      "rule": "layer-type",
+      "line": "                PublicationType = MetadataV2LayerType.StacCollection,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Forms/FormSubmissionServiceTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/ControlPlane/MetadataReleaseReconcilerTests.cs",
+      "rule": "dataset-reference",
+      "line": "            => MapResource(graph, resourceId, resource => resource with { Display = new MetadataV2ObjectDisplay { DisplayField = field } });",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/ControlPlane/MetadataReleaseReconcilerTests.cs",
+      "rule": "dataset-reference",
+      "line": "        private static MetadataV2Graph MapResource(MetadataV2Graph graph, string resourceId, Func<MetadataV2Object, MetadataV2Object> map)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Validation/LayerValidationHelpersV2Tests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.OgcCollection)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Operations/RedisOffDirectPublishHostTests.cs",
+      "rule": "layer-type",
+      "line": "            publicationType: MetadataV2LayerType.EsriFeatureLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Operations/SynchronousPublishIdentityTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriFeatureLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/Cog/CogEndpointTests.cs",
+      "rule": "dataset-reference",
+      "line": "                .AddResource(resourceId, resourceId, MetadataV2ObjectType.RasterDataset)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/Cog/CogEndpointTests.cs",
+      "rule": "layer-type",
+      "line": "                    publicationType: MetadataV2LayerType.EsriImageLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/Cog/CogHttpTileServingTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriImageLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/Cog/CogRegistrationTileTests.cs",
+      "rule": "layer-type",
+      "line": "                storageBindingId: \"binding-a\", publicationType: MetadataV2LayerType.EsriImageLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/Cog/CogRegistrationTileTests.cs",
+      "rule": "layer-type",
+      "line": "                storageBindingId: \"binding-b\", publicationType: MetadataV2LayerType.EsriImageLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/Cog/CogRegistrationTileTests.cs",
+      "rule": "layer-type",
+      "line": "                    storageBindingId: \"binding-c\", publicationType: MetadataV2LayerType.EsriImageLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.Styles.cs",
+      "rule": "dataset-reference",
+      "line": "        _styles.GetStyleAsync(Arg.Is<MetadataV2Object>(candidate => candidate.Metadata.Id == secondResourceId),",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.Styles.cs",
+      "rule": "dataset-reference",
+      "line": "        await _styles.Received(1).GetStyleAsync(Arg.Is<MetadataV2Object>(candidate => candidate.Metadata.Id == resourceId),",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.Styles.cs",
+      "rule": "dataset-reference",
+      "line": "        await _styles.Received(1).GetStyleAsync(Arg.Is<MetadataV2Object>(candidate => candidate.Metadata.Id == secondResourceId),",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.cs",
+      "rule": "layer-type",
+      "line": "                PublicationType = MetadataV2LayerType.EsriMapLayer,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/Zarr/DatacubeTileEndpointTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.OgcCollection)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Sharing/SharingCommunityTests.cs",
+      "rule": "layer-type",
+      "line": "                storageBindingId: \"private-binding\", publicationType: MetadataV2LayerType.EsriFeatureLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Infrastructure/Authentication/ApiKeyAuthenticationTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriFeatureLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Infrastructure/Authentication/OidcAuthenticationTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriFeatureLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.TestKit/Helpers/ServiceRbacTestFixture.cs",
+      "rule": "layer-type",
+      "line": "                    publicationType: MetadataV2LayerType.ODataEntitySet,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.TestKit/Helpers/ServiceRbacTestFixture.cs",
+      "rule": "layer-type",
+      "line": "                    publicationType: MetadataV2LayerType.EsriFeatureLayer,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.TestKit/Infrastructure/MobileOfflineDemoGraphPublisher.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.EsriFeatureLayer",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.TestKit/Infrastructure/MobileOfflineDemoGraphPublisher.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.OgcCollection",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.TestKit/Infrastructure/TestMetadataV2GraphProvider.cs",
+      "rule": "layer-type",
+      "line": "        MetadataV2LayerType publicationType = MetadataV2LayerType.OgcCollection,",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.TestKit/Mixins/WebAppFixtureMetadataV2Mixin.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriImageLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.TestKit/Mixins/WebAppFixtureMetadataV2Mixin.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriVectorTileLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.TestKit/Mixins/WebAppFixtureMetadataV2Mixin.cs",
+      "rule": "layer-type",
+      "line": "                    publicationType: MetadataV2LayerType.EsriFeatureLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.TestKit/Mixins/WebAppFixtureMetadataV2Mixin.cs",
+      "rule": "layer-type",
+      "line": "                    publicationType: MetadataV2LayerType.EsriMapLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.TestKit/Mixins/WebAppFixtureMetadataV2Mixin.cs",
+      "rule": "layer-type",
+      "line": "                    publicationType: MetadataV2LayerType.StacCollection);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.TestKit/Mixins/WebAppFixtureMetadataV2Mixin.cs",
+      "rule": "layer-type",
+      "line": "                PublicationType = MetadataV2LayerType.EsriFeatureLayer",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.TestKit/Mixins/WebAppFixtureMetadataV2Mixin.cs",
+      "rule": "layer-type",
+      "line": "                PublicationType = MetadataV2LayerType.ODataEntitySet",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.TestKit/Mixins/WebAppFixtureMetadataV2Mixin.cs",
+      "rule": "layer-type",
+      "line": "                PublicationType = MetadataV2LayerType.StacCollection",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.TestKit/Mixins/WebAppFixtureMetadataV2Mixin.cs",
+      "rule": "layer-type",
+      "line": "                PublicationType = MetadataV2LayerType.OgcCollection",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.TestKit/Mixins/WebAppFixtureMetadataV2Mixin.cs",
+      "rule": "layer-type",
+      "line": "                    publicationType: MetadataV2LayerType.EsriFeatureLayer);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.TestKit/Mixins/WebAppFixtureMetadataV2Mixin.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.ODataEntitySet);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.TestKit/Providers/ProviderSmokeGraph.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.OgcCollection)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.TestKit/Providers/ProviderSmokeGraph.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriFeatureLayer)",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.TestKit/Providers/ProviderSmokeGraph.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.ODataEntitySet);",
+      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Domain/V2/MetadataReleaseEntryJsonTests.cs",
+      "rule": "dataset-reference",
+      "line": "        ParentResourceId = \"res-parcels\",",
+      "reason": "Regression fixture exercises the current metadata graph property contract; stage 2.1a changes type identifiers only, with property and schema changes reserved for stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/FeatureStore/PostgresStorageMappedSpatialCountJitIntegrationTests.cs",
+      "rule": "dataset-reference",
+      "line": "                new MetadataV2StorageBinding { ResourceId = resource.Metadata.Id }, CreateMapping(sourceBacked: true), LayerId, (IFeatureDataProvider)store, Connection: null))",
+      "reason": "Regression fixture exercises the current metadata graph property contract; stage 2.1a changes type identifiers only, with property and schema changes reserved for stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/FeatureStore/PostgresStorageMappedSpatialCountSerialIntegrationTests.cs",
+      "rule": "dataset-reference",
+      "line": "                new MetadataV2StorageBinding { ResourceId = resource.Metadata.Id }, CreateMapping(sourceBacked: true), LayerId, (IFeatureDataProvider)store, Connection: null))",
+      "reason": "Regression fixture exercises the current metadata graph property contract; stage 2.1a changes type identifiers only, with property and schema changes reserved for stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.UnitTests/Features/Admin/PostgreSqlLayerPublishingServiceSqlTests.GraphFixtures.cs",
+      "rule": "dataset-reference",
+      "line": "        ResourceId = \"resource-added\",",
+      "reason": "Regression fixture exercises the current metadata graph property contract; stage 2.1a changes type identifiers only, with property and schema changes reserved for stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.UnitTests/Features/Admin/PostgreSqlLayerPublishingServiceSqlTests.GraphFixtures.cs",
+      "rule": "layer-membership",
+      "line": "            Services = [service with { PublicationIds = [failedPublication.Metadata.Id] }],",
+      "reason": "Regression fixture exercises the current metadata graph property contract; stage 2.1a changes type identifiers only, with property and schema changes reserved for stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.UnitTests/Features/Admin/PostgreSqlLayerPublishingServiceSqlTests.GraphFixtures.cs",
+      "rule": "layer-membership",
+      "line": "            PublicationIds = [\"publication-existing\"],",
+      "reason": "Regression fixture exercises the current metadata graph property contract; stage 2.1a changes type identifiers only, with property and schema changes reserved for stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.UnitTests/Features/Admin/PostgreSqlLayerPublishingServiceSqlTests.GraphFixtures.cs",
+      "rule": "dataset-reference",
+      "line": "            ResourceId = existingResource.Metadata.Id,",
+      "reason": "Regression fixture exercises the current metadata graph property contract; stage 2.1a changes type identifiers only, with property and schema changes reserved for stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.UnitTests/Features/Admin/PostgreSqlLayerPublishingServiceSqlTests.GraphFixtures.cs",
+      "rule": "dataset-reference",
+      "line": "                    ResourceId = \"resource-ogc\",",
+      "reason": "Regression fixture exercises the current metadata graph property contract; stage 2.1a changes type identifiers only, with property and schema changes reserved for stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.UnitTests/Features/Admin/PostgreSqlLayerPublishingServiceSqlTests.GraphFixtures.cs",
+      "rule": "dataset-reference",
+      "line": "                    ResourceId = \"resource-feature\",",
+      "reason": "Regression fixture exercises the current metadata graph property contract; stage 2.1a changes type identifiers only, with property and schema changes reserved for stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.UnitTests/Features/Admin/PostgreSqlLayerPublishingServiceSqlTests.GraphFixtures.cs",
+      "rule": "dataset-reference",
+      "line": "                ResourceId = \"resource-shared\",",
+      "reason": "Regression fixture exercises the current metadata graph property contract; stage 2.1a changes type identifiers only, with property and schema changes reserved for stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.UnitTests/Features/Admin/PostgreSqlLayerPublishingServiceSqlTests.GraphFixtures.cs",
+      "rule": "dataset-reference",
+      "line": "                ResourceId = \"resource-alpha\",",
+      "reason": "Regression fixture exercises the current metadata graph property contract; stage 2.1a changes type identifiers only, with property and schema changes reserved for stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/ImageServer/ImageServerTestFixtures.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2LayerType.EsriImageLayer)",
+      "reason": "Regression fixture exercises the current metadata graph property contract; stage 2.1a changes type identifiers only, with property and schema changes reserved for stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Shared/MetadataReleaseSupport/MetadataReleaseParcelsGraph.cs",
+      "rule": "dataset-reference",
+      "line": "            ResourceId = \"res.parcels\",",
+      "reason": "Regression fixture exercises the current metadata graph property contract; stage 2.1a changes type identifiers only, with property and schema changes reserved for stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Shared/MetadataReleaseSupport/MetadataReleaseParcelsGraph.cs",
+      "rule": "layer-membership",
+      "line": "            PublicationIds = [\"pub.parcels\"],",
+      "reason": "Regression fixture exercises the current metadata graph property contract; stage 2.1a changes type identifiers only, with property and schema changes reserved for stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Shared/MetadataReleaseSupport/MetadataReleaseParcelsGraph.cs",
+      "rule": "layer-type",
+      "line": "            PublicationType = MetadataV2LayerType.OgcCollection,",
+      "reason": "Regression fixture exercises the current metadata graph property contract; stage 2.1a changes type identifiers only, with property and schema changes reserved for stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Shared/ProviderUnitSupport/ParcelsLayerFixture.cs",
+      "rule": "dataset-reference",
+      "line": "            ResourceId = resource.Metadata.Id,",
+      "reason": "Regression fixture exercises the current metadata graph property contract; stage 2.1a changes type identifiers only, with property and schema changes reserved for stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Shared/ProviderUnitSupport/ReadPolicySourceStubs.cs",
+      "rule": "dataset-reference",
+      "line": "    public string? LastResourceId { get; private set; }",
+      "reason": "Regression fixture exercises the current metadata graph property contract; stage 2.1a changes type identifiers only, with property and schema changes reserved for stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Shared/ProviderUnitSupport/ReadPolicySourceStubs.cs",
+      "rule": "dataset-reference",
+      "line": "        LastResourceId = resource.Metadata.Id;",
+      "reason": "Regression fixture exercises the current metadata graph property contract; stage 2.1a changes type identifiers only, with property and schema changes reserved for stage 2.1b."
+    },
+    {
+      "path": "tests/dotnet/Shared/ProviderUnitSupport/StubV2Provider.cs",
+      "rule": "dataset-reference",
+      "line": "            ResourceId = resource.Metadata.Id,",
+      "reason": "Regression fixture exercises the current metadata graph property contract; stage 2.1a changes type identifiers only, with property and schema changes reserved for stage 2.1b."
     }
   ]
 }
