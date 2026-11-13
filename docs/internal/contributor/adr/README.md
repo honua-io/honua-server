@@ -92,6 +92,8 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0085](0085-postgres-realtime-event-log.md) | Cross-node realtime runs on a PostgreSQL event log behind one fan-out provider | Proposed | 2026-11 |
 | [0086](0086-one-generation-for-configuration-and-caches.md) | One source of truth and one generation number for configuration and caches | Accepted | 2026-11 |
 
+| [0087](0087-one-first-party-field-sync-contract.md) | One first-party field sync contract | Proposed | 2026-11 |
+
 ## Template
 
 ```markdown
