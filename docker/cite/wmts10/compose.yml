@@ -8,6 +8,9 @@ services:
       - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_CITE_WMTS_SERVER_PORT:-8098}:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Test
+      - Experimental__Features__RedshiftProvider=false
+      - Experimental__Features__SnowflakeProvider=false
+      - Experimental__Features__DatabricksProvider=false
       - ASPNETCORE_URLS=http://+:8080
       - PUBLIC_BASE_URL=http://honua-server:8080
       - HONUA_DEV_AUTH=true
@@ -39,7 +42,7 @@ services:
     networks:
       - cite-wmts-network
     healthcheck:
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /healthz/ready HTTP/1.0\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n' >&3 && IFS= read -r status <&3 && case \"$$status\" in *' 200 '*) exit 0 ;; *) exit 1 ;; esac"]
+      test: ["CMD", "/app/honua-healthcheck", "--ready"]
       interval: 10s
       timeout: 5s
       retries: 5
