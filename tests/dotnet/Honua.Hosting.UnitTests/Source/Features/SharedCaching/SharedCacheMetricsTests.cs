@@ -61,7 +61,8 @@ public sealed class SharedCacheMetricsTests : IDisposable
         sample.Value.Should().Be(1);
         sample.Tags.Should().BeEquivalentTo(new Dictionary<string, object?>
         {
-            ["cache_class"] = "Tile", ["outcome"] = outcome
+            ["cache_class"] = "Tile",
+            ["outcome"] = outcome,
         });
     }
 
@@ -91,7 +92,9 @@ public sealed class SharedCacheMetricsTests : IDisposable
         {
             sample.Tags.Should().BeEquivalentTo(new Dictionary<string, object?>
             {
-                ["reason"] = "admin", ["scope"] = "paths", ["outcome"] = outcome.ToString().ToLowerInvariant()
+                ["reason"] = "admin",
+                ["scope"] = "paths",
+                ["outcome"] = outcome.ToString().ToLowerInvariant(),
             });
             sample.Value.Should().BeGreaterThanOrEqualTo(0);
         }
