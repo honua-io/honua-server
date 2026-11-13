@@ -66,6 +66,11 @@ public sealed class RuntimeImageCveTests
         runtimeStage.Should().NotContain("apt-get");
         runtimeStage.Should().Contain("COPY --from=runtime-assets /runtime-additions/ /");
         runtimeStage.Should().Contain("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false");
+        runtimeStage.Should().Contain("USER 1001:1001");
+        runtimeStage.Should().Contain("HOME=/tmp/honua");
+        runtimeStage.Should().Contain("TMPDIR=/tmp/honua");
+        runtimeStage.Should().Contain("TemporaryFiles__StorageDirectory=/tmp/honua/temp");
+        runtimeStage.Should().Contain("FileStorage__LocalStorage__BasePath=/tmp/honua/storage");
         runtimeStage.Should().Contain("ENTRYPOINT [\"/var/task/Honua.Server\"]");
         runtimeStage.Should().NotContain("HEALTHCHECK",
             "Lambda Web Adapter owns the readiness probe");

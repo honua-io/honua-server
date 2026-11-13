@@ -187,10 +187,16 @@ ENV HONUA_GIT_SHA=${HONUA_GIT_SHA}
 COPY --from=runtime-assets /runtime-additions/ /
 COPY --from=lambda-adapter /lambda-adapter /opt/extensions/lambda-adapter
 
+USER 1001:1001
 WORKDIR /var/task
 COPY --from=build /app /var/task
 
-ENV PORT=8080 \
+ENV HOME=/tmp/honua \
+    TMPDIR=/tmp/honua \
+    XDG_CACHE_HOME=/tmp/honua/cache \
+    TemporaryFiles__StorageDirectory=/tmp/honua/temp \
+    FileStorage__LocalStorage__BasePath=/tmp/honua/storage \
+    PORT=8080 \
     AWS_LWA_PORT=8080 \
     HONUA_DEFAULT_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
     ASPNETCORE_ENVIRONMENT=Production \
