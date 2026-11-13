@@ -159,10 +159,14 @@ internal sealed class LocalProcessWorkspaceGateway : ILocalProcessWorkspaceGatew
 
     private async Task<byte[]> SendBytes(HttpRequestMessage request, int budget, CancellationToken cancellationToken)
     {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(_client.Timeout == Timeout.InfiniteTimeSpan
+            ? TimeSpan.FromSeconds(30) : TimeSpan.FromTicks(Math.Min(_client.Timeout.Ticks, TimeSpan.FromSeconds(30).Ticks)));
+        var operationToken = deadline.Token;
         try
         {
             // Do not retry mutations here: resolve the durable command after an uncertain response.
-            using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, operationToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 var status = (int)response.StatusCode;
@@ -171,12 +175,12 @@ internal sealed class LocalProcessWorkspaceGateway : ILocalProcessWorkspaceGatew
             }
             if (response.Content.Headers.ContentLength > budget)
                 throw new LocalProcessWorkspaceException(502, "Local process response exceeded its byte limit.");
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            await using var stream = await response.Content.ReadAsStreamAsync(operationToken).ConfigureAwait(false);
             using var buffer = new MemoryStream();
             var block = new byte[16384];
             while (true)
             {
-                var count = await stream.ReadAsync(block, cancellationToken).ConfigureAwait(false);
+                var count = await stream.ReadAsync(block, operationToken).ConfigureAwait(false);
                 if (count == 0) break;
                 if (buffer.Length + count > budget) throw new LocalProcessWorkspaceException(502, "Local process response exceeded its byte limit.");
                 buffer.Write(block, 0, count);

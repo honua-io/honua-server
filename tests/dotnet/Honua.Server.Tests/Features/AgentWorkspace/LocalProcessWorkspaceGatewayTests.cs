@@ -72,6 +72,20 @@ public sealed class LocalProcessWorkspaceGatewayTests
         Assert.Equal(503, failure.StatusCode);
     }
 
+    [UnitTest]
+    public async Task Run_StalledBodyTimesOutWithoutReexecuting()
+    {
+        using var stream = new StalledStream();
+        using var handler = new Handler(_ => new(HttpStatusCode.OK) { Content = new StreamContent(stream) });
+        using var client = new HttpClient(handler) { Timeout = TimeSpan.FromMilliseconds(100) };
+        var failure = await Assert.ThrowsAsync<LocalProcessWorkspaceException>(() => Create(client).RunAsync(Access,
+            new("p", new string('a', 32), new string('b', 64), "command"), CancellationToken.None));
+        Assert.True(stream.ReadStarted);
+        Assert.Equal(504, failure.StatusCode);
+        Assert.Contains("Reconcile the existing command", failure.Message, StringComparison.Ordinal);
+        Assert.Equal(1, handler.Calls);
+    }
+
     [UnitTheory]
     [InlineData("")]
     [InlineData("command_with_underscores")]
@@ -160,6 +174,17 @@ public sealed class LocalProcessWorkspaceGatewayTests
     {
         Content = new StringContent(text, Encoding.UTF8, "application/json"),
     };
+
+    private sealed class StalledStream : MemoryStream
+    {
+        public bool ReadStarted { get; private set; }
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            ReadStarted = true;
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            return 0;
+        }
+    }
 
     private sealed class Handler(Func<HttpRequestMessage, HttpResponseMessage> handle) : HttpMessageHandler
     {

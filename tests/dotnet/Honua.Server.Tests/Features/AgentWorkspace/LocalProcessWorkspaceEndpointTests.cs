@@ -203,7 +203,7 @@ public sealed class LocalProcessWorkspaceEndpointTests : IAsyncLifetime
             new("sub", subject), new("tid", tenant), new("roles", "admin"), new("scope", OperatorScopeCatalog.Full),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
-        claims.Add(new Claim(human ? "amr" : "grant_type", human ? "pwd" : "client_credentials"));
+        claims.Add(new Claim(human ? "amr" : "grant_type", human ? "mfa" : "client_credentials"));
         var token = new JwtSecurityToken(Issuer, Audience, claims, expires: DateTime.UtcNow.AddMinutes(30),
             signingCredentials: new SigningCredentials(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(SigningKey)), SecurityAlgorithms.HmacSha256));
         var client = _fixture.CreateClient();
