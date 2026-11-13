@@ -10,4 +10,7 @@ internal static partial class AdminAuthLog
         Level = LogLevel.Debug,
         Message = "Admin auth config served with {ProviderCount} provider(s)")]
     public static partial void AuthConfigServed(ILogger logger, int providerCount);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Administrator browser session could not be created")]
+    public static partial void PasswordSessionCreationFailed(ILogger logger, Exception exception);
 }

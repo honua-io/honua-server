@@ -53,7 +53,7 @@ public sealed class OgcRecordsTemporalAndTitleTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    private static string TimedRecordId => $"layer:{WebAppFixture.TestLayerId}";
+    private static string TimedRecordId => $"layer:pub-layer-{WebAppFixture.TestLayerId}";
 
     [IntegrationTest]
     [Operation(Operations.Query)]

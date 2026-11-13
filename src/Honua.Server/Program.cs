@@ -1179,6 +1179,7 @@ builder.Services.AddHonuaTenantSchemaRouting(builder.Configuration);
 builder.Services.AddHonuaTenantLifecycle();
 // Configure CORS policies
 builder.Services.AddCorsPolicies(builder.Configuration, builder.Environment);
+builder.Services.AddBrowserSessionSecurity();
 builder.Services.AddInputValidation(builder.Configuration);
 // App-level rate limiting services (issue #355). Off by default — operators opt in via
 // RateLimiting:Enabled. Registers options validation, the policy store backing the admin
@@ -1631,6 +1632,7 @@ app.UseHonuaClientCertificateAuthentication();
 
 // Authenticate the default scheme before hydrating additional credential types.
 app.UseAuthentication();
+app.UseBrowserSessionSecurity();
 
 // Bridge ArcGIS-style portal tokens (?token=, form POST token, X-Esri-Authorization,
 // Authorization: Bearer)
@@ -1946,6 +1948,7 @@ app.MapConsoleOpenDataEndpoints();
 app.MapConsoleOpenDataPublicEndpoints();
 app.MapStudioPackageEndpoints();
 app.MapStudioPublishedRouteEndpoints();
+app.MapStudioSessionEndpoints();
 app.MapStudioMapCollaborationEndpoints();
 app.MapWorkflowPackageEndpoints();
 Honua.Server.Features.Studio.Ai.StudioAiProxyEndpoints.MapStudioAiProxyEndpoints(app);

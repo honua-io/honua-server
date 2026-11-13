@@ -16,6 +16,7 @@ using Honua.Infrastructure.Rendering;
 using Honua.Protocols.GeoServices.MapServer.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Primitives;
+using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;
 
 namespace Honua.Protocols.GeoServices.MapServer;
 
@@ -167,8 +168,9 @@ internal static partial class MapServerEndpoints
                 .ToArray();
         }
 
-        var styleCatalog = context.RequestServices.GetRequiredService<ILayerStyleCatalog>();
         var geoServicesStyleConverter = context.RequestServices.GetRequiredService<IGeoServicesStyleConverter>();
+        var styleSources = new RasterStyleSources(
+            context.RequestServices.GetRequiredService<ILayerStyleCatalog>(), geoServicesStyleConverter);
         var legendLayers = new List<LegendLayerInfo>();
 
         foreach (var layer in visibleLayers)
@@ -194,8 +196,10 @@ internal static partial class MapServerEndpoints
             }
             else
             {
-                var style = await styleCatalog.GetLayerStyleAsync(layer.StyleLayerId, cancellationToken);
-                styleLayers = StyleTranslator.ParseStyleLayers(style?.MapLibreStyleJson);
+                // Same style source as export, so the legend matches the drawn map.
+                var stylePlan = await GetRasterStylePlanAsync(styleSources, layer.Resource, layer.StyleLayerId, cancellationToken)
+                    .ConfigureAwait(false);
+                styleLayers = stylePlan.StyleLayers;
             }
 
             List<LegendEntry> entries;
@@ -218,7 +222,8 @@ internal static partial class MapServerEndpoints
             }
             else
             {
-                entries = BuildLegendEntries(styleLayers, layer.GeometryType, swatchWidth, swatchHeight);
+                entries = TryBuildSavedClassifiedRendererEntries(layer, geoServicesStyleConverter, swatchWidth, swatchHeight)
+                    ?? BuildLegendEntries(styleLayers, layer.GeometryType, swatchWidth, swatchHeight);
             }
 
             legendLayers.Add(new LegendLayerInfo
@@ -388,6 +393,33 @@ internal static partial class MapServerEndpoints
         }
 
         return entries;
+    }
+
+    // Class labels of a saved renderer, only when that renderer is what the map draws; stored data
+    // that cannot be drawn falls back to the drawn style's entries rather than failing the request.
+    private static List<LegendEntry>? TryBuildSavedClassifiedRendererEntries(
+        LegendLayerDescriptor layer,
+        IGeoServicesStyleConverter geoServicesStyleConverter,
+        int swatchWidth,
+        int swatchHeight)
+    {
+        if (!TryGetSavedDrawingInfo(layer.Resource, out var savedDrawingInfo)
+            || ResolveSavedDrawingInfoMapLibreStyle(layer.Resource, layer.StyleLayerId, geoServicesStyleConverter) is null)
+        {
+            return null;
+        }
+
+        return TryBuildClassifiedRendererEntries(
+                savedDrawingInfo.GetRawText(),
+                layer,
+                geoServicesStyleConverter,
+                swatchWidth,
+                swatchHeight,
+                out var entries,
+                out var error)
+            && error is null
+                ? entries
+                : null;
     }
 
     private static bool TryBuildClassifiedRendererEntries(

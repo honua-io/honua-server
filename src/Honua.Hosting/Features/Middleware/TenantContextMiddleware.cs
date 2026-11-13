@@ -11,7 +11,7 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Infrastructure.Middleware;
 
-// Multi-tenant mode accepts header overrides only from configured admin roles.
+// A tenant header is accepted only from a configured multi-tenant admin role; everyone else uses a claim, then the anonymous default.
 internal sealed class TenantContextMiddleware(
     RequestDelegate next,
     IOptions<TenantContextOptions> options,
@@ -47,6 +47,20 @@ internal sealed class TenantContextMiddleware(
             return;
         }
 
+        if (!_options.Enabled)
+        {
+            // Single-tenant mode deliberately has no effective tenant, but bearer
+            // audit and durable-job attribution must still use the validator-owned,
+            // issuer-qualified actor rather than falling back to a bare subject.
+            if (isAuthenticated && CanonicalSecurityActor.IsBearerPrincipal(principal!))
+            {
+                CanonicalSecurityActor.StampRequestBinding(principal!, effectiveTenant: null);
+            }
+
+            await _next(context).ConfigureAwait(false);
+            return;
+        }
+
         // Resolve the per-request context object via DI so handlers see the same instance.
         var tenantContext = context.RequestServices.GetService<ITenantContext>() as RequestTenantContext;
         if (tenantContext is null)
@@ -74,22 +88,6 @@ internal sealed class TenantContextMiddleware(
 
             tenantContext.Set(frozenTenant, TenantContextSource.Claim);
             CanonicalSecurityActor.StampRequestBinding(principal, frozenTenant);
-            await _next(context).ConfigureAwait(false);
-            return;
-        }
-
-        // Single-tenant deployments use the configured deployment tenant for every
-        // request. Provider directory claims and tenant headers do not select a tenant.
-        // Frozen replay/job bindings above remain authoritative in either mode.
-        if (!_options.Enabled)
-        {
-            var tenant = string.IsNullOrWhiteSpace(_options.DefaultTenantId) ? null : _options.DefaultTenantId;
-            tenantContext.Set(tenant, tenant is null ? TenantContextSource.Anonymous : TenantContextSource.Default);
-            if (isAuthenticated && CanonicalSecurityActor.IsBearerPrincipal(principal!))
-            {
-                CanonicalSecurityActor.StampRequestBinding(principal!, tenant);
-            }
-
             await _next(context).ConfigureAwait(false);
             return;
         }
@@ -144,48 +142,30 @@ internal sealed class TenantContextMiddleware(
             return;
         }
 
-        // An authenticated bearer without a validated tenant claim must never inherit
-        // the anonymous public default. Tenant-required operations will reject the
-        // null context downstream rather than running under the wrong tenant.
-        if (isAuthenticated && CanonicalSecurityActor.IsBearerPrincipal(principal!))
+        // External bearers without a validated tenant claim never inherit the default
+        // tenant (see RejectTenantlessBearerAsync). Operator bearers are the exception: the
+        // server mints them from an administrator session with its claims copied verbatim,
+        // so they take the default tenant as that session's cookie does. They differ from
+        // the cookie in one place: an unauthorized tenant header is denied (step 1) rather
+        // than ignored.
+        var hasDefaultTenant = !string.IsNullOrWhiteSpace(_options.DefaultTenantId);
+        var isBearer = isAuthenticated && CanonicalSecurityActor.IsBearerPrincipal(principal!);
+        if (isBearer && !(hasDefaultTenant && CanonicalSecurityActor.IsOperatorBearerOnlyPrincipal(principal!)))
         {
-            tenantContext.Set(null, TenantContextSource.Anonymous);
-            CanonicalSecurityActor.StampRequestBinding(principal!, null);
-
-            // Bearers cannot enter tenant-bound routes with a null
-            // tenant: schema/data middleware would otherwise use the deployment's
-            // configured default. Only explicitly tenant-independent control-plane
-            // routes may continue without a tenant; other admin routes can read or
-            // mutate tenant-bound metadata. Separately validated OperatorBearer
-            // principals use the same boundary and remain available only on routes
-            // carrying the explicit tenant-independent marker. MCP data-bearing
-            // operations apply their own tenant requirement to both bearer schemes.
-            var tenantBoundMcpCall = await TenantDenialResponseWriter
-                .IsTenantBoundMcpRequestAsync(context.Request)
-                .ConfigureAwait(false);
-            if ((!context.Request.Path.StartsWithSegments(
-                     "/mcp",
-                     StringComparison.OrdinalIgnoreCase)
-                    || tenantBoundMcpCall)
-                && !IsTenantIndependentControlPlaneEndpoint(context))
-            {
-                await TenantDenialResponseWriter
-                    .WriteAsync(context, TenantDenialKind.AuthenticationRequired)
-                    .ConfigureAwait(false);
-                return;
-            }
-
-            // MCP intentionally keeps tenantless discovery separate from data-bearing
-            // operations. Its shared tool/resource authorization helpers enforce the
-            // tenant requirement before lookup or execution.
-            await _next(context).ConfigureAwait(false);
+            await RejectTenantlessBearerAsync(context, principal!, tenantContext).ConfigureAwait(false);
             return;
         }
 
-        // 3. Default tenant fallback for anonymous public reads (CITE / unauthenticated OGC).
-        if (!string.IsNullOrWhiteSpace(_options.DefaultTenantId))
+        // 3. Default tenant: anonymous public reads (CITE / unauthenticated OGC), any
+        //    non-bearer caller and operator bearers without a tenant claim.
+        if (hasDefaultTenant)
         {
             tenantContext.Set(_options.DefaultTenantId, TenantContextSource.Default);
+            if (isBearer)
+            {
+                CanonicalSecurityActor.StampRequestBinding(principal!, _options.DefaultTenantId);
+            }
+
             TenantContextLog.Resolved(_logger, nameof(TenantContextSource.Default), _options.DefaultTenantId!, path);
             await _next(context).ConfigureAwait(false);
             return;
@@ -194,6 +174,33 @@ internal sealed class TenantContextMiddleware(
         // 4. Anonymous / no default — leave context with null tenant id.
         tenantContext.Set(null, TenantContextSource.Anonymous);
         TenantContextLog.AnonymousNoDefault(_logger, path);
+        await _next(context).ConfigureAwait(false);
+    }
+
+    private async Task RejectTenantlessBearerAsync(
+        HttpContext context,
+        ClaimsPrincipal principal,
+        RequestTenantContext tenantContext)
+    {
+        tenantContext.Set(null, TenantContextSource.Anonymous);
+        CanonicalSecurityActor.StampRequestBinding(principal, null);
+
+        // A null tenant on a tenant-bound route would let schema/data middleware fall back
+        // to the deployment default. Only explicitly tenant-independent control-plane routes
+        // and MCP discovery continue; MCP data-bearing operations enforce their own tenant
+        // requirement before lookup or execution.
+        var tenantBoundMcpCall = await TenantDenialResponseWriter
+            .IsTenantBoundMcpRequestAsync(context.Request)
+            .ConfigureAwait(false);
+        if ((!context.Request.Path.StartsWithSegments("/mcp", StringComparison.OrdinalIgnoreCase) || tenantBoundMcpCall)
+            && !IsTenantIndependentControlPlaneEndpoint(context))
+        {
+            await TenantDenialResponseWriter
+                .WriteAsync(context, TenantDenialKind.AuthenticationRequired)
+                .ConfigureAwait(false);
+            return;
+        }
+
         await _next(context).ConfigureAwait(false);
     }
 

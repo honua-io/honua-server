@@ -23,25 +23,25 @@ internal sealed partial class AdminAuthSessionStore(
     private const string PendingSessionFamily = "pending";
     private const string AuthSessionFamily = "session";
 
-    public async Task<string> CreatePendingSessionAsync(
+    public Task<string> CreatePendingSessionAsync(
         string providerKey,
         string state,
         string codeVerifier,
         DateTimeOffset expiresAt,
-        CancellationToken cancellationToken)
-    {
-        var sessionId = CreateSessionId();
-        var session = new AdminAuthPendingSession
+        CancellationToken cancellationToken) => CreatePendingSessionAsync(new AdminAuthPendingSession
         {
             ProviderKey = providerKey,
             State = state,
             CodeVerifier = codeVerifier,
             ExpiresAt = expiresAt
-        };
+        }, cancellationToken);
 
+    public async Task<string> CreatePendingSessionAsync(AdminAuthPendingSession session, CancellationToken cancellationToken)
+    {
+        var sessionId = CreateSessionId();
         await SetAsync(
             new SecurityTokenKey(SecurityTokenKind.AdminPendingSignIn, sessionId),
-            StoredSession.Of(session, AdminAuthSessionStoreJsonContext.Default.AdminAuthPendingSession, expiresAt),
+            StoredSession.Of(session, AdminAuthSessionStoreJsonContext.Default.AdminAuthPendingSession, session.ExpiresAt),
             cancellationToken).ConfigureAwait(false);
 
         return sessionId;
@@ -192,7 +192,8 @@ internal sealed partial class AdminAuthSessionStore(
 internal enum AdminAuthSessionOrigin
 {
     Unknown,
-    InteractiveOidc
+    InteractiveOidc,
+    Builtin
 }
 
 internal abstract class AdminAuthSessionState
@@ -207,6 +208,8 @@ internal sealed class AdminAuthPendingSession : AdminAuthSessionState
     public required string State { get; init; }
 
     public required string CodeVerifier { get; init; }
+
+    public string ReturnTo { get; init; } = "/console/";
 }
 
 internal sealed class AdminAuthAuthenticatedSession : AdminAuthSessionState
