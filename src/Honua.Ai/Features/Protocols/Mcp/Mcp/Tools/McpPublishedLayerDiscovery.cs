@@ -52,7 +52,7 @@ internal static class McpPublishedLayerDiscovery
     private static void WriteLayer(Utf8JsonWriter writer, JsonElement row)
     {
         writer.WriteStartObject();
-        writer.WriteNumber("layerId", row.GetProperty("layerId").GetInt32());
+        writer.WriteNumber("layerId", row.GetProperty("storageLayerId").GetInt32());
         foreach (var field in StringFields)
         {
             var value = row.GetProperty(field).GetString() ?? throw new InvalidOperationException();
