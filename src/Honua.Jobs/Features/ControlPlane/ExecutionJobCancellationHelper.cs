@@ -48,7 +48,10 @@ internal enum BackendCancelApplyOutcome
 internal readonly record struct BackendCancelApplyResult(
     BackendCancelApplyOutcome Outcome,
     ExecutionJobRecord? Job,
-    ExecutionJobStatus? TerminalStatus = null);
+    ExecutionJobStatus? TerminalStatus = null)
+{
+    public ExecutionJobRecord? TerminalTransition { get; init; }
+}
 
 internal enum RemoteCancelStampOutcome
 {
@@ -320,7 +323,10 @@ internal static class ExecutionJobCancellationHelper
         if (await jobStore.TrySetAsync(merged, cancellationToken: cancellationToken).ConfigureAwait(false))
         {
             ControlPlaneTelemetry.RecordExecutionTransition(job, merged);
-            return new(BackendCancelApplyOutcome.Applied, merged);
+            return new(BackendCancelApplyOutcome.Applied, merged)
+            {
+                TerminalTransition = !job.Status.IsTerminal() && merged.Status.IsTerminal() ? merged : null
+            };
         }
 
         var fresh = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
@@ -353,6 +359,9 @@ internal static class ExecutionJobCancellationHelper
         }
 
         ControlPlaneTelemetry.RecordExecutionTransition(fresh, retryMerged);
-        return new(BackendCancelApplyOutcome.Applied, retryMerged);
+        return new(BackendCancelApplyOutcome.Applied, retryMerged)
+        {
+            TerminalTransition = !fresh.Status.IsTerminal() && retryMerged.Status.IsTerminal() ? retryMerged : null
+        };
     }
 }

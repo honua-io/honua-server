@@ -278,6 +278,10 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         var observation = await backend.CancelAsync(stamp.Job!, cancellationToken).ConfigureAwait(false);
         var applied = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
             _jobStore!, stamp.Job!, observation, cancellationToken).ConfigureAwait(false);
+        if (applied.TerminalTransition != null)
+        {
+            TileOperationMetrics.RecordJobEnded(applied.TerminalTransition);
+        }
         return applied.Outcome == BackendCancelApplyOutcome.Applied;
     }
 

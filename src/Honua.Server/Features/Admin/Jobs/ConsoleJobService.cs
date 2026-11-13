@@ -333,7 +333,10 @@ internal sealed partial class ConsoleJobService(
                 if (applied.Job.Status.IsTerminal())
                 {
                     await RemoveFromQueueIfPresentAsync(applied.Job.OperationId, cancellationToken).ConfigureAwait(false);
-                    await NotifyTerminalCallbacksAsync(applied.Job).ConfigureAwait(false);
+                    if (applied.TerminalTransition != null)
+                    {
+                        await NotifyTerminalCallbacksAsync(applied.TerminalTransition).ConfigureAwait(false);
+                    }
                 }
 
                 JobControlAction(logger, "cancel", job.OperationId, applied.Job.Status.ToString());
