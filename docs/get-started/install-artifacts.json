@@ -2,7 +2,7 @@
   "serverImage": "ghcr.io/honua-io/honua-server:2026.1-rc",
   "serverImageProof": "ghcr.io/honua-io/honua-server:nightly-0e03bdd",
   "packages": {
-    "honua-admin": "0.1.12",
+    "honua-admin": "0.3.1",
     "honua-sdk": "0.1.19",
     "mcp": "2.1.1",
     "@honua/sdk-js": "0.2.10",

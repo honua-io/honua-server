@@ -148,7 +148,7 @@ Step 2 sets `HONUA_IMAGE` to the channel tag. The public image and the pinned
 clients below can be used without registry credentials.
 
 The clients are pinned:
-[honua-admin 0.1.12](https://pypi.org/project/honua-admin/0.1.12/) and
+[honua-admin 0.3.1](https://pypi.org/project/honua-admin/0.3.1/) and
 [honua-sdk 0.1.19](https://pypi.org/project/honua-sdk/0.1.19/).
 
 For a certified rc.2 production deployment, continue to
@@ -401,7 +401,7 @@ Install the two public clients, ideally in a virtual environment:
 <!-- docs-validation:install.clients mode=run -->
 ```bash
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
-pip install 'honua-admin==0.1.12' 'honua-sdk==0.1.19'
+pip install 'honua-admin==0.3.1' 'honua-sdk==0.1.19'
 ```
 
 Save this as `quickstart.py`. It registers that database as a connection,
