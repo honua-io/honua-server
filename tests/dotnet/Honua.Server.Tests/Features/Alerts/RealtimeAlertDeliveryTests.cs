@@ -36,7 +36,7 @@ public sealed class RealtimeAlertDeliveryTests(DatabaseFixtureAdapter database) 
             new PostgresRealtimeFanoutProvider(harness.Log, harness.CreateDispatcher(), new RealtimePresenceBatcher(harness.Log)),
             NullLogger<RealtimeAlertNotificationBroadcaster>.Instance);
         var received = new TaskCompletionSource<AlertEventEnvelope>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var subscription = receiver.Subscribe((alert, _) =>
+        using var subscription = await receiver.SubscribeAsync((alert, _) =>
         {
             received.TrySetResult(alert);
             return Task.CompletedTask;
@@ -63,7 +63,7 @@ public sealed class RealtimeAlertDeliveryTests(DatabaseFixtureAdapter database) 
             harness.Log, harness.CreateDispatcher(), new RealtimePresenceBatcher(harness.Log)));
         await using var receiver = new RealtimeAlertNotificationBroadcaster(
             consumer, NullLogger<RealtimeAlertNotificationBroadcaster>.Instance);
-        using var subscription = receiver.Subscribe((_, _) => Task.CompletedTask);
+        using var subscription = await receiver.SubscribeAsync((_, _) => Task.CompletedTask);
         await consumer.WaitUntilLiveAsync();
         var disconnected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var registration = subscription.DisconnectToken.Register(() => disconnected.TrySetResult());
@@ -84,7 +84,7 @@ public sealed class RealtimeAlertDeliveryTests(DatabaseFixtureAdapter database) 
             consumer, NullLogger<RealtimeAlertNotificationBroadcaster>.Instance);
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var subscription = receiver.Subscribe(async (_, cancellationToken) =>
+        using var subscription = await receiver.SubscribeAsync(async (_, cancellationToken) =>
         {
             started.TrySetResult();
             await release.Task.WaitAsync(cancellationToken);
@@ -99,6 +99,8 @@ public sealed class RealtimeAlertDeliveryTests(DatabaseFixtureAdapter database) 
         try
         {
             await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            consumer.Request.Writer.TryWrite(new RealtimeDelivery.Event(
+                new RealtimeEvent(RealtimeFamily.Alerts, 2, "service", "alert", payload, DateTimeOffset.UtcNow))).Should().BeTrue();
             consumer.Request.Writer.TryComplete(new InvalidOperationException("overflow")).Should().BeTrue();
             await disconnected.Task.WaitAsync(TimeSpan.FromSeconds(2));
         }

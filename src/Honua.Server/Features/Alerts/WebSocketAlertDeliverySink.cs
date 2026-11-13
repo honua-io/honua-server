@@ -43,6 +43,14 @@ internal sealed class InMemoryAlertNotificationBroadcaster : IAlertNotificationB
         }
     }
 
+    public ValueTask<IAlertNotificationSubscription> SubscribeAsync(
+        Func<AlertEventEnvelope, CancellationToken, Task> handler,
+        SubscriptionOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return ValueTask.FromResult(Subscribe(handler, options));
+    }
+
     public IAlertNotificationSubscription Subscribe(Func<AlertEventEnvelope, CancellationToken, Task> handler)
         => Subscribe(handler, null);
 

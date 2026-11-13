@@ -87,7 +87,7 @@ internal static class StreamingOperationsEndpoints
 
         using var webSocket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
         using var sendLock = new SemaphoreSlim(1, 1);
-        using var subscription = broadcaster.Subscribe(
+        using var subscription = await broadcaster.SubscribeAsync(
             async (alertEvent, cancellationToken) =>
             {
                 if (webSocket.State != WebSocketState.Open)
@@ -131,7 +131,7 @@ internal static class StreamingOperationsEndpoints
                     }
                 }
             },
-            new SubscriptionOptions(context.Request.Query["clientLabel"].ToString()));
+            new SubscriptionOptions(context.Request.Query["clientLabel"].ToString()), context.RequestAborted).ConfigureAwait(false);
 
         var buffer = new byte[1];
         try

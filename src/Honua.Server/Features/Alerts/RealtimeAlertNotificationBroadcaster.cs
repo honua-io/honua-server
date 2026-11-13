@@ -30,19 +30,30 @@ internal sealed partial class RealtimeAlertNotificationBroadcaster(
             null, cancellationToken).ConfigureAwait(false);
     }
 
-    public IAlertNotificationSubscription Subscribe(Func<AlertEventEnvelope, CancellationToken, Task> handler)
-        => Subscribe(handler, null);
-
-    public IAlertNotificationSubscription Subscribe(
-        Func<AlertEventEnvelope, CancellationToken, Task> handler, SubscriptionOptions? options)
+    public async ValueTask<IAlertNotificationSubscription> SubscribeAsync(
+        Func<AlertEventEnvelope, CancellationToken, Task> handler,
+        SubscriptionOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(handler);
+        // Capture the live boundary before returning so events published immediately
+        // after registration are replayed even if the provider starts its pump later.
+        var window = await _provider.GetWindowAsync(RealtimeFamily.Alerts, cancellationToken).ConfigureAwait(false);
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            cancellationToken.ThrowIfCancellationRequested();
             var subscription = new Subscription(this, handler, options);
             _subscriptions.TryAdd(subscription.SubscriberId, subscription);
-            subscription.Start();
+            try
+            {
+                subscription.Start(window.Head);
+            }
+            catch
+            {
+                _subscriptions.TryRemove(subscription.SubscriberId, out _);
+                subscription.Dispose();
+                throw;
+            }
             return subscription;
         }
     }
@@ -96,7 +107,7 @@ internal sealed partial class RealtimeAlertNotificationBroadcaster(
         private readonly Func<AlertEventEnvelope, CancellationToken, Task> _handler;
         private readonly CancellationTokenSource _cancellation = new();
         private readonly Channel<RealtimeDelivery> _deliveries = Channel.CreateBounded<RealtimeDelivery>(DeliveryCapacity);
-        private readonly IRealtimeSubscription _source;
+        private readonly TaskCompletionSource _sourceClosed = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int _disposed;
 
         public Subscription(RealtimeAlertNotificationBroadcaster owner,
@@ -106,8 +117,6 @@ internal sealed partial class RealtimeAlertNotificationBroadcaster(
             _handler = handler;
             Info = new StreamingSubscriptionInfo(Guid.NewGuid(), DateTimeOffset.UtcNow, options?.ClientLabel);
             DisconnectToken = _cancellation.Token;
-            _source = owner._provider.Subscribe(new RealtimeSubscriptionRequest(
-                RealtimeFamily.Alerts, [], null, _deliveries.Writer));
         }
 
         public StreamingSubscriptionInfo Info { get; }
@@ -115,7 +124,12 @@ internal sealed partial class RealtimeAlertNotificationBroadcaster(
         public CancellationToken DisconnectToken { get; }
         public Task Completion { get; private set; } = Task.CompletedTask;
 
-        public void Start() => Completion = RunAsync();
+        public void Start(long after)
+        {
+            var source = _owner._provider.Subscribe(new RealtimeSubscriptionRequest(
+                RealtimeFamily.Alerts, [], after, new SourceWriter(_deliveries.Writer, _sourceClosed)));
+            Completion = RunAsync(source);
+        }
 
         public void Dispose()
         {
@@ -125,11 +139,24 @@ internal sealed partial class RealtimeAlertNotificationBroadcaster(
             }
         }
 
-        private async Task RunAsync()
+        private async Task ObserveSourceClosureAsync()
         {
             try
             {
-                await using var source = _source;
+                await _sourceClosed.Task.WaitAsync(DisconnectToken).ConfigureAwait(false);
+                Dispose();
+            }
+            catch (OperationCanceledException) when (DisconnectToken.IsCancellationRequested)
+            {
+            }
+        }
+
+        private async Task RunAsync(IRealtimeSubscription source)
+        {
+            var observeClosure = ObserveSourceClosureAsync();
+            try
+            {
+                await using var sourceLifetime = source;
                 await foreach (var delivery in _deliveries.Reader.ReadAllAsync(DisconnectToken).ConfigureAwait(false))
                 {
                     if (delivery is RealtimeDelivery.Reset)
@@ -157,7 +184,25 @@ internal sealed partial class RealtimeAlertNotificationBroadcaster(
             {
                 Dispose();
                 _owner._subscriptions.TryRemove(SubscriberId, out _);
+                await observeClosure.ConfigureAwait(false);
                 _cancellation.Dispose();
+            }
+        }
+        // Reader.Completion waits for buffered deliveries to drain. Observe the
+        // producer's close directly so overflow cancels even a blocked handler.
+        private sealed class SourceWriter(ChannelWriter<RealtimeDelivery> writer, TaskCompletionSource closed)
+            : ChannelWriter<RealtimeDelivery>
+        {
+            public override bool TryWrite(RealtimeDelivery item) => writer.TryWrite(item);
+
+            public override ValueTask<bool> WaitToWriteAsync(CancellationToken cancellationToken = default)
+                => writer.WaitToWriteAsync(cancellationToken);
+
+            public override bool TryComplete(Exception? error = null)
+            {
+                var completed = writer.TryComplete(error);
+                closed.TrySetResult();
+                return completed;
             }
         }
     }

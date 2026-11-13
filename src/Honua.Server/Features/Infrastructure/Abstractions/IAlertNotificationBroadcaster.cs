@@ -18,7 +18,7 @@ internal interface IAlertNotificationBroadcaster
 {
     Task BroadcastAsync(AlertEventEnvelope alertEvent, CancellationToken cancellationToken = default);
 
-    IAlertNotificationSubscription Subscribe(Func<AlertEventEnvelope, CancellationToken, Task> handler);
-
-    IAlertNotificationSubscription Subscribe(Func<AlertEventEnvelope, CancellationToken, Task> handler, SubscriptionOptions? options);
+    ValueTask<IAlertNotificationSubscription> SubscribeAsync(
+        Func<AlertEventEnvelope, CancellationToken, Task> handler,
+        SubscriptionOptions? options = null, CancellationToken cancellationToken = default);
 }

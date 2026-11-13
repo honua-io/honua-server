@@ -4,12 +4,14 @@
 using FluentAssertions;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.Realtime;
 using Honua.Alerts;
 using Honua.Infrastructure.Abstractions;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
@@ -84,6 +86,7 @@ public sealed class AlertsServiceCollectionExtensionsTests
         var services = new ServiceCollection();
 
         services.AddLogging();
+        services.AddSingleton(Substitute.For<IRealtimeFanoutProvider>());
         services.AddAlerts(configuration);
 
         using var provider = services.BuildServiceProvider();
@@ -92,6 +95,6 @@ public sealed class AlertsServiceCollectionExtensionsTests
         sinks[AlertChannelType.WebSocket].Should().BeOfType<WebSocketAlertDeliverySink>();
         sinks[AlertChannelType.Digest].Should().BeOfType<UnsupportedAlertDeliverySink>();
         provider.GetService<IAlertNotificationBroadcaster>().Should().NotBeNull()
-            .And.BeOfType<InMemoryAlertNotificationBroadcaster>();
+            .And.BeOfType<RealtimeAlertNotificationBroadcaster>();
     }
 }

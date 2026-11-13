@@ -59,7 +59,7 @@ public sealed class StreamingOperationsEndpointsTests : IAsyncLifetime
     public async Task ListSubscribers_AfterSubscribe_ReturnsSubscriberInfo()
     {
         var broadcaster = _fixture.GetService<IAlertNotificationBroadcaster>();
-        using var sub = broadcaster.Subscribe(
+        using var sub = await broadcaster.SubscribeAsync(
             (_, _) => Task.CompletedTask,
             new SubscriptionOptions("test-client"));
 
@@ -86,7 +86,7 @@ public sealed class StreamingOperationsEndpointsTests : IAsyncLifetime
     public async Task DisconnectSubscriber_ExistingId_ReturnsSuccess()
     {
         var broadcaster = _fixture.GetService<IAlertNotificationBroadcaster>();
-        using var sub = broadcaster.Subscribe(
+        using var sub = await broadcaster.SubscribeAsync(
             (_, _) => Task.CompletedTask,
             new SubscriptionOptions("disconnect-test"));
 
