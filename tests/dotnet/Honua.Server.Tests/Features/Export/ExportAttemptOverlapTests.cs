@@ -18,27 +18,37 @@ namespace Honua.Server.Tests.Features.Export;
 
 public sealed partial class ExportJobTests
 {
-    [IntegrationTest]
-    public async Task Export_AdmissionOvertakenAfterReadingProgress_PreservesReplacementSnapshot()
+    [IntegrationTheory]
+    [InlineData(OperationStatus.Processing)]
+    [InlineData(null)]
+    public async Task Export_AdmissionOvertakenAfterReadingProgress_PreservesReplacementSnapshot(OperationStatus? initialStatus)
     {
         await using var harness = await PostgresJobSubstrateHarness.CreateAsync(database, nameof(ExportJobTests));
         var progress = new ComparingInMemoryProgressStore();
         using var nodes = new ExportNodes(progress);
         var job = ExportJobTestData.CreateJob(Guid.NewGuid().ToString("N"));
         await nodes.SubmitAsync(harness, job);
-        await progress.SetProgressAsync(job.JobId,
-            ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, 1, 1) with
-            { Status = OperationStatus.Processing, StartedAt = DateTimeOffset.UtcNow.AddMinutes(-1) });
+        await progress.DeleteProgressAsync(job.JobId);
+        if (initialStatus.HasValue)
+        {
+            await progress.SetProgressAsync(job.JobId,
+                ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, 1, 1) with
+                { Status = initialStatus.Value, StartedAt = DateTimeOffset.UtcNow.AddMinutes(-1) });
+        }
         var record = (await harness.JobStore.GetAsync(job.JobId))!;
         var read = NewSignal();
         var resumeAdmission = NewSignal();
         var upload = NewSignal();
         var resumeUpload = NewSignal();
         var pausedStore = PauseProgressRead(progress, job.JobId, (read, resumeAdmission));
+        var uploads = 0;
         nodes.Storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>()).Returns(async _ =>
         {
-            upload.TrySetResult();
-            await resumeUpload.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            if (Interlocked.Increment(ref uploads) == 1)
+            {
+                upload.TrySetResult();
+                await resumeUpload.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            }
             return ExportJobTestData.Uploaded("export-file", "text/csv");
         });
         var context = PublishingContext();
@@ -140,6 +150,8 @@ public sealed partial class ExportJobTests
             await signals.Resume.Task.WaitAsync(TimeSpan.FromSeconds(30));
             return snapshot;
         });
+        store.SetProgressAsync(jobId, Arg.Any<IOperationProgress>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => progress.SetProgressAsync(jobId, call.ArgAt<IOperationProgress>(1), call.ArgAt<TimeSpan?>(2)));
         store.TrySetProgressAsync(Arg.Any<OperationProgressWrite>(), Arg.Any<OperationStatus>(), Arg.Any<CancellationToken>())
             .Returns(call => progress.TrySetProgressAsync(call.ArgAt<OperationProgressWrite>(0), call.ArgAt<OperationStatus>(1)));
         store.TryReplaceProgressAsync(Arg.Any<OperationProgressWrite>(), Arg.Any<IOperationProgress>(), Arg.Any<CancellationToken>())
