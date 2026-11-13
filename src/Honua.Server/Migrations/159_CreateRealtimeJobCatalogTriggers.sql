@@ -63,7 +63,7 @@ BEGIN
 END;
 $$;
 
-DO $triggers$
+DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_trigger
         WHERE tgrelid = '$HonuaSchema$.execution_jobs'::pg_catalog.regclass
@@ -94,4 +94,4 @@ BEGIN
             FOR EACH STATEMENT EXECUTE FUNCTION $HonuaSchema$.realtime_catalog_changed();
     END IF;
 END;
-$triggers$;
+$$;
