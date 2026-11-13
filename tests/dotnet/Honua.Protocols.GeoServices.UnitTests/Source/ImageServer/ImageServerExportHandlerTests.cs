@@ -119,8 +119,7 @@ public class ImageServerExportHandlerTests
         var request = CreateRequest(bbox: "-123,37,-122.9,37.1", size: 256, responseFormat: "image");
         var result = await _handler.ExportImageAsync(context, 1, request);
 
-        result.Should().BeOfType<FileContentHttpResult>();
-        ((FileContentHttpResult)result).FileContents.ToArray().Should().Equal(CreateTestRasterResult().Data);
+        ReadFileBytes(result).Should().Equal(CreateTestRasterResult().Data);
         capturedQuery.Should().NotBeNull();
         capturedQuery!.Value.CoverClipExtent.Should().BeTrue();
         capturedQuery.Value.ClipRegion.Should().NotBeNull();
@@ -225,8 +224,8 @@ public class ImageServerExportHandlerTests
             responseFormat: "image");
         var result = await _handler.ExportImageAsync(context, 1, request);
 
-        var file = result.Should().BeOfType<FileContentHttpResult>().Subject;
-        System.Text.Encoding.ASCII.GetString(file.FileContents.Span[..6]).Should().Be("Lerc2 ");
+        result.Should().BeOfType<FileStreamHttpResult>("encoded exports are copied to the response in chunks");
+        System.Text.Encoding.ASCII.GetString(ReadFileBytes(result)[..6]).Should().Be("Lerc2 ");
     }
 
     [UnitTest]
@@ -1778,5 +1777,18 @@ public class ImageServerExportHandlerTests
     private sealed class TestDbException(string message, bool transient = true) : DbException(message)
     {
         public override bool IsTransient => transient;
+    }
+
+    private static byte[] ReadFileBytes(IResult result)
+    {
+        if (result is FileContentHttpResult content)
+        {
+            return content.FileContents.ToArray();
+        }
+
+        var file = result.Should().BeOfType<FileStreamHttpResult>().Subject;
+        using var copy = new MemoryStream();
+        file.FileStream.CopyTo(copy);
+        return copy.ToArray();
     }
 }

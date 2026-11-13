@@ -1439,7 +1439,7 @@ internal static partial class WmsRequestHandlers
                         Color = SKColors.Red,
                         IsAntialias = true
                     };
-                    using var font = new SKFont(SKTypeface.Default, textSize);
+                    using var font = new SKFont(RenderingTypeface.Default, textSize);
                     surface.Canvas.DrawText($"{code}: {message}", 4, Math.Min(height - 4, font.Size + 4), SKTextAlign.Left, font, paint);
                 }
 

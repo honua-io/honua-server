@@ -398,7 +398,7 @@ public sealed class WfsLegacyGeometryMetadataTests
                         ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry"),
                         ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes")
                     })
-                .AddPublication($"publication-{name}", "legacy-geometry-service", name,
+                .AddPublication(name, "legacy-geometry-service", name,
                     layerIndex: layerId,
                     storageBindingId: $"binding-{name}", serviceLocalId: name,
                     publicationType: MetadataV2LayerType.WfsFeatureType);

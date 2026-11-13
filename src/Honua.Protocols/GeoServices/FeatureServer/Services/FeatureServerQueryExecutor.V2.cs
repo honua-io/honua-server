@@ -320,8 +320,17 @@ internal sealed partial class FeatureServerQueryExecutor
             return;
         }
 
+        var reader = routedReader ?? _featureReader;
+        if (reader is IObjectIdStreamingReader streamingReader)
+        {
+            await StreamObjectIdsWithValidationAsync(
+                streamingReader,
+                new ObjectIdStreamRequest(storageLayerId, query, new ObjectIdResponse(objectIdFieldName, context, cancellationToken))).ConfigureAwait(false);
+            return;
+        }
+
         var objectIds = await QueryObjectIdsWithValidationAsync(
-            routedReader ?? _featureReader,
+            reader,
             storageLayerId,
             query,
             cancellationToken).ConfigureAwait(false);
@@ -387,41 +396,69 @@ internal sealed partial class FeatureServerQueryExecutor
         context.Response.ContentType = contentType;
         context.Response.StatusCode = StatusCodes.Status200OK;
 
-        if (string.Equals(format, "geojson", StringComparison.OrdinalIgnoreCase))
+        var response = new FeatureStreamResponse(resource, queryParams, outputSrid, outFields, context,
+            string.Equals(format, "geojson", StringComparison.OrdinalIgnoreCase));
+        try
+        {
+            await WriteFeatureStreamAsync(preparedStream, response, cancellationToken);
+        }
+        catch when (context.Response.HasStarted)
+        {
+            // A 200 is already on the wire; drop the connection so the client cannot mistake a
+            // truncated page for a complete one.
+            context.Abort();
+            throw;
+        }
+
+        await context.Response.CompleteAsync();
+    }
+
+    private async Task WriteFeatureStreamAsync(
+        PreparedFeatureStream preparedStream,
+        FeatureStreamResponse response,
+        CancellationToken cancellationToken)
+    {
+        if (response.IsGeoJson)
         {
             await _streamingFormatter.StreamAsGeoJsonAsync(
                 preparedStream.Features,
-                resource,
-                queryParams.ReturnGeometry,
-                queryParams.ReturnZ,
-                queryParams.ReturnM,
-                queryParams.GeometryPrecision,
-                queryParams.MaxAllowableOffset,
-                outFields,
+                response.Resource,
+                response.QueryParams.ReturnGeometry,
+                response.QueryParams.ReturnZ,
+                response.QueryParams.ReturnM,
+                response.QueryParams.GeometryPrecision,
+                response.QueryParams.MaxAllowableOffset,
+                response.OutFields,
                 preparedStream.HasMoreResults,
-                context.Response.BodyWriter,
+                response.Context.Response.BodyWriter,
                 cancellationToken);
         }
         else
         {
             await _streamingFormatter.StreamAsGeoServicesJsonAsync(
                 preparedStream.Features,
-                resource,
-                queryParams.ReturnGeometry,
-                outputSrid,
-                queryParams.ReturnZ,
-                queryParams.ReturnM,
-                queryParams.GeometryPrecision,
-                queryParams.MaxAllowableOffset,
-                outFields,
+                response.Resource,
+                response.QueryParams.ReturnGeometry,
+                response.OutputSrid,
+                response.QueryParams.ReturnZ,
+                response.QueryParams.ReturnM,
+                response.QueryParams.GeometryPrecision,
+                response.QueryParams.MaxAllowableOffset,
+                response.OutFields,
                 preparedStream.HasMoreResults,
-                context.Response.BodyWriter,
-                returnCentroid: queryParams.ReturnCentroid,
+                response.Context.Response.BodyWriter,
+                returnCentroid: response.QueryParams.ReturnCentroid,
                 cancellationToken: cancellationToken);
         }
-
-        await context.Response.CompleteAsync();
     }
+
+    private readonly record struct FeatureStreamResponse(
+        MetadataV2Object Resource,
+        QueryParameters QueryParams,
+        int? OutputSrid,
+        string[]? OutFields,
+        HttpContext Context,
+        bool IsGeoJson);
 
     private async Task<IStreamingFeatureStore> ResolveStreamingFeatureStoreV2Async(
         MetadataV2Service service,

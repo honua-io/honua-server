@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Data;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -28,7 +29,7 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 /// <summary>
 /// Reads a provider-bound PostGIS table directly from the storage mapping persisted in Metadata v2.
 /// </summary>
-internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReader, IDistinctFeatureReader, IPagedFeatureReader, IStreamingFeatureStore
+internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReader, IDistinctFeatureReader, IPagedFeatureReader, IStreamingFeatureStore, IObjectIdStreamingReader
 {
     private const string UnsupportedWhereClauseMessage =
         "WHERE clause format not supported for source-backed PostGIS layers.";
@@ -226,6 +227,15 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
+        var objectIds = await StreamObjectIdsAsync(layerId, query, cancellationToken).ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        return [.. objectIds];
+    }
+
+    public async IAsyncEnumerable<long> StreamObjectIdsAsync(
+        int layerId,
+        FeatureQuery query,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
         query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
         var sql = new SqlBuilder();
         var objectIdExpression = query.ReturnPublicObjectIds && !string.IsNullOrWhiteSpace(query.PublicIdAttributeName)
@@ -236,17 +246,14 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         AppendOrderBy(sql, query);
         AppendPagination(sql, query);
 
-        var objectIds = ImmutableArray.CreateBuilder<long>();
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = CreateReadCommand(connection, sql);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleResult, cancellationToken).ConfigureAwait(false);
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            objectIds.Add(reader.GetInt64(0));
+            yield return reader.GetInt64(0);
         }
-
-        return objectIds.ToImmutable();
     }
 
     public async Task<long> CountAsync(
