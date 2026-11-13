@@ -9,14 +9,16 @@ namespace Honua.Server.Features.AgentWorkspace;
 internal sealed record AgentWorkspaceIdentity(string WorkspaceId, string OwnerActorId, string TargetId, string? TenantId);
 internal sealed record LocalProcessError(string Error);
 
-internal sealed class AgentWorkspaceIdentityStore(JobStoreDatabase database)
+internal sealed class AgentWorkspaceIdentityStore(JobStoreDatabase? database = null)
 {
-    public Task CreateAsync(AgentWorkspaceIdentity identity, CancellationToken cancellationToken) => database.ExecuteAsync(
+    private JobStoreDatabase Database => database ?? throw new LocalProcessWorkspaceException(503, "The workspace identity database is unavailable.");
+
+    public Task CreateAsync(AgentWorkspaceIdentity identity, CancellationToken cancellationToken) => Database.ExecuteAsync(
         async (connection, token) =>
         {
             await using var command = connection.CreateCommand();
             command.CommandText = $"""
-                INSERT INTO {database.Table("agent_workspace_identities")} (workspace_id, owner_actor_id, target_id, tenant_id)
+                INSERT INTO {Database.Table("agent_workspace_identities")} (workspace_id, owner_actor_id, target_id, tenant_id)
                 VALUES ($1, $2, $3, $4)
                 ON CONFLICT (workspace_id) DO NOTHING
                 """;
@@ -27,11 +29,11 @@ internal sealed class AgentWorkspaceIdentityStore(JobStoreDatabase database)
             await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
         }, StatementRepeat.SafeToRepeat, cancellationToken);
 
-    public Task<AgentWorkspaceIdentity?> GetAsync(string workspaceId, CancellationToken cancellationToken) => database.ExecuteAsync<AgentWorkspaceIdentity?>(
+    public Task<AgentWorkspaceIdentity?> GetAsync(string workspaceId, CancellationToken cancellationToken) => Database.ExecuteAsync<AgentWorkspaceIdentity?>(
         async (connection, _, token) =>
         {
             await using var command = connection.CreateCommand();
-            command.CommandText = $"SELECT owner_actor_id, target_id, tenant_id FROM {database.Table("agent_workspace_identities")} WHERE workspace_id = $1";
+            command.CommandText = $"SELECT owner_actor_id, target_id, tenant_id FROM {Database.Table("agent_workspace_identities")} WHERE workspace_id = $1";
             command.Parameters.Add(new NpgsqlParameter<string> { TypedValue = workspaceId });
             await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
             return await reader.ReadAsync(token).ConfigureAwait(false)
