@@ -88,6 +88,12 @@ logs, format smoke evidence and scan results. It verifies that default publish o
 has no excluded store assemblies or native libraries, retains file I/O libraries, and
 contains no satellite resource assemblies.
 
+The Lambda AOT image also uses the chiseled runtime with ICU, DejaVu fonts and
+build-time native-library verification. It retains its existing provider set,
+including DuckDB, and uses Lambda Web Adapter for readiness. Its entrypoint
+remains `/var/task/Honua.Server`; the default PostGIS image profile does not
+change the Lambda image.
+
 ## One sha per image
 
 Image contents, `HONUA_GIT_SHA`, the `org.opencontainers.image.revision`

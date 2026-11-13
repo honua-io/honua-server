@@ -11,8 +11,6 @@ namespace Honua.Architecture.Tests;
 /// </summary>
 public sealed class RuntimeImageCveTests
 {
-    private const string PackageRevision = "ARG RUNTIME_PACKAGE_REVISION=20261105";
-
     [ArchitectureTest]
     public void RuntimeStages_UseChiseledAndACompiledProbe()
     {
@@ -56,19 +54,21 @@ public sealed class RuntimeImageCveTests
     }
 
     [ArchitectureTest]
-    public void LambdaAotRuntime_RefreshesTheSameAptRevisionAsTheServingImages()
+    public void LambdaAotRuntime_UsesChiseledWithBuildTimeNativeVerification()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var dockerfile = File.ReadAllText(Path.Join(repositoryRoot, "docker", "Dockerfile.lambda.aot"));
         var runtimeStage = dockerfile[dockerfile.LastIndexOf("AS runtime", StringComparison.Ordinal)..];
 
-        runtimeStage.Should().Contain(PackageRevision);
-        runtimeStage.Should().Contain("apt-get upgrade -y");
-        runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' zlib1g");
-        runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' apt");
-        runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' libapt-pkg6.0t64");
-        runtimeStage.Should().NotContain("dpkg-query -W -f '$${Version}'");
-        runtimeStage.Should().NotContain("wget");
+        dockerfile.Should().Contain("10.0-noble-chiseled-extra@sha256:");
+        dockerfile.Should().Contain("sh docker/runtime/verify-native.sh /runtime-root /var/task");
+        runtimeStage.Should().NotContain("RUN ");
+        runtimeStage.Should().NotContain("apt-get");
+        runtimeStage.Should().Contain("COPY --from=runtime-assets /runtime-additions/ /");
+        runtimeStage.Should().Contain("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false");
+        runtimeStage.Should().Contain("ENTRYPOINT [\"/var/task/Honua.Server\"]");
+        runtimeStage.Should().NotContain("HEALTHCHECK",
+            "Lambda Web Adapter owns the readiness probe");
     }
 
     [ArchitectureTest]
