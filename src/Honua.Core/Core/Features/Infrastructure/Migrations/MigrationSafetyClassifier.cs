@@ -307,7 +307,7 @@ public static class MigrationSafetyClassifier
             // characters inside them are identifier text, not executable SQL syntax.
             if (current == '"')
             {
-                AppendQuotedIdentifier(sql, result, ref i);
+                i = AppendQuotedIdentifier(sql, result, i);
                 continue;
             }
 
@@ -445,7 +445,7 @@ public static class MigrationSafetyClassifier
         result.Append(ExecutionScopeBoundary);
     }
 
-    private static void AppendQuotedIdentifier(string sql, StringBuilder result, ref int index)
+    private static int AppendQuotedIdentifier(string sql, StringBuilder result, int index)
     {
         result.Append(sql[index++]);
         while (index < sql.Length)
@@ -465,6 +465,8 @@ public static class MigrationSafetyClassifier
 
             break;
         }
+
+        return index;
     }
 
     private static bool IsRoutineBodyPrefix(StringBuilder result, int statementStart)
