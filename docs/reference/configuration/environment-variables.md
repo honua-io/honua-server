@@ -76,6 +76,8 @@ Provider capabilities and versions: [data sources](data-sources/README.md).
 | `Compliance__Encryption__FipsModeAttested` | `false` | Operator attestation of FIPS 140-2 host mode. |
 | `Compliance__DependencyOverrides__*` | unset | Attestations for sidecar-provided capabilities (audit log, SSO, RBAC, transport encryption, data residency). |
 
+Configured trust reconciliation preserves restrictions already stored by an administrator. Issuer subjects, issuer thumbprints and custom anchors retain only common values; incompatible chain restrictions fail closed rather than falling back to broader chain trust. Mapping validity uses the later start and earlier end. A disable on either side wins for profiles and mappings; an enabled revocation on either side remains active. If a configured revocation changes its target, both active targets are retained with stable distinct IDs. Expanding trust or removing an active revocation requires an explicit administrator change to the stored profile after reconciliation.
+
 `Oidc__AdminAuthCallbackUri` optionally pins the backend-assisted admin OIDC broker
 callback to an exact HTTPS `/admin/auth/callback` URI on a separate Console origin.
 It has no default override: when unset, the broker uses `Public:BaseUrl` as before.

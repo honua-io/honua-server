@@ -55,7 +55,10 @@ public sealed class PostgresConfiguredTrustRestrictionTests(DatabaseFixtureAdapt
         await taskA.ListProfilesAsync();
         var changed = TrustOptions();
         changed.Value.TrustProfilesRevision = 2;
-        if (disjointAnchors) { changed.Value.TrustProfiles[0].CustomTrustAnchorCertificates = ["anchor-b"]; }
+        if (disjointAnchors)
+        {
+            changed.Value.TrustProfiles[0].CustomTrustAnchorCertificates = ["anchor-b"];
+        }
         else
         {
             changed.Value.TrustProfiles[0].AcceptedIssuerThumbprints = ["BB"];

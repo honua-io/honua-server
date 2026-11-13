@@ -1,7 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using System.Text.Json;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 using Microsoft.Extensions.Options;
@@ -108,7 +110,7 @@ internal sealed partial class PostgresClientCertificateTrustStore(
     internal static ClientCertificateTrustProfile ApplyConfigured(
         ClientCertificateTrustProfile stored, ClientCertificateTrustProfile configured, IReadOnlyCollection<string>? formerlyConfigured = null)
     {
-        var merged = configured with
+        var merged = MergeIssuerTrust(stored, configured) with
         {
             Revision = stored.Revision,
             Enabled = stored.Enabled && configured.Enabled,
@@ -125,9 +127,7 @@ internal sealed partial class PostgresClientCertificateTrustStore(
                     .Select(existing => existing.Enabled && formerlyConfigured?.Contains(Key(existing.MappingId), StringComparer.Ordinal) == true
                         ? existing with { Enabled = false, Revision = existing.Revision + 1 } : existing))
                 .ToArray(),
-            Revocations = stored.Revocations
-                .Concat(configured.Revocations.Where(revocation => !stored.Revocations.Any(existing => Equal(existing.RevocationId, revocation.RevocationId))))
-                .ToArray()
+            Revocations = MergeRevocations(stored.Revocations, configured.Revocations)
         };
         var type = SharedConfigurationJsonContext.Default.ClientCertificateTrustProfile;
         return JsonSerializer.Serialize(merged, type) == JsonSerializer.Serialize(stored, type)
@@ -135,13 +135,88 @@ internal sealed partial class PostgresClientCertificateTrustStore(
             : merged with { Revision = stored.Revision + 1 };
     }
 
-    // A mapping defined in configuration takes its identity, roles and scope from configuration; a disable on either side wins.
+    // Configuration owns mapping identity, roles and scope; validity restrictions on either side win.
     private static ClientCertificatePrincipalMapping MergeMapping(ClientCertificatePrincipalMapping? stored, ClientCertificatePrincipalMapping configured)
         => stored is null ? configured : configured with
         {
             Enabled = stored.Enabled && configured.Enabled,
+            NotBefore = stored.NotBefore is { } start && (configured.NotBefore is null || start > configured.NotBefore)
+                ? start : configured.NotBefore,
+            NotAfter = stored.NotAfter is { } end && (configured.NotAfter is null || end < configured.NotAfter)
+                ? end : configured.NotAfter,
             Revision = stored.Revision
         };
+
+    private static ClientCertificateTrustProfile MergeIssuerTrust(ClientCertificateTrustProfile stored, ClientCertificateTrustProfile configured)
+    {
+        var thumbprints = configured.AcceptedIssuerThumbprints.Intersect(stored.AcceptedIssuerThumbprints, StringComparer.OrdinalIgnoreCase).ToArray();
+        var anchors = configured.CustomTrustAnchorCertificates.Intersect(stored.CustomTrustAnchorCertificates, StringComparer.Ordinal).ToArray();
+        // Chain hints constrain each other; losing one must not turn the other into a broader fallback.
+        if (anchors.Length == 0 && (stored.CustomTrustAnchorCertificates.Count > 0 || configured.CustomTrustAnchorCertificates.Count > 0))
+        {
+            thumbprints = [];
+        }
+        if (thumbprints.Length == 0 && (stored.AcceptedIssuerThumbprints.Count > 0 || configured.AcceptedIssuerThumbprints.Count > 0))
+        {
+            anchors = [];
+        }
+        return configured with
+        {
+            AcceptedIssuerThumbprints = thumbprints,
+            AcceptedIssuerSubjects = configured.AcceptedIssuerSubjects.Intersect(stored.AcceptedIssuerSubjects, StringComparer.OrdinalIgnoreCase).ToArray(),
+            CustomTrustAnchorCertificates = anchors
+        };
+    }
+
+    private static IReadOnlyList<ClientCertificateRevocationEntry> MergeRevocations(
+        IReadOnlyList<ClientCertificateRevocationEntry> stored, IReadOnlyList<ClientCertificateRevocationEntry> configured)
+    {
+        var merged = stored.ToList();
+        foreach (var entry in configured)
+        {
+            var index = merged.FindIndex(existing => Equal(existing.RevocationId, entry.RevocationId));
+            if (index < 0)
+            {
+                merged.Add(entry);
+                continue;
+            }
+            var previous = merged[index];
+            if (SameRevocationTarget(previous, entry))
+            {
+                merged[index] = previous with { Enabled = previous.Enabled || entry.Enabled };
+            }
+            else if (!previous.Enabled)
+            {
+                merged[index] = entry;
+            }
+            else if (entry.Enabled)
+            {
+                AddConfiguredRevocation(merged, entry);
+            }
+        }
+        return merged;
+    }
+
+    private static bool SameRevocationTarget(ClientCertificateRevocationEntry first, ClientCertificateRevocationEntry second)
+        => string.Equals(first.FingerprintSha256, second.FingerprintSha256, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(first.Issuer, second.Issuer, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(first.SerialNumber, second.SerialNumber, StringComparison.OrdinalIgnoreCase);
+
+    private static void AddConfiguredRevocation(List<ClientCertificateRevocationEntry> merged, ClientCertificateRevocationEntry entry)
+    {
+        // Retain an active older target under its original ID and give the additional target a stable ID.
+        var target = string.Join("\n", entry.FingerprintSha256?.ToUpperInvariant(), entry.Issuer?.ToUpperInvariant(), entry.SerialNumber?.ToUpperInvariant());
+        var id = $"{entry.RevocationId}:configured:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(target)))}";
+        var index = merged.FindIndex(existing => Equal(existing.RevocationId, id));
+        if (index < 0)
+        {
+            merged.Add(entry with { RevocationId = id });
+        }
+        else
+        {
+            merged[index] = merged[index] with { Enabled = true };
+        }
+    }
 
     private static int Strictness(X509RevocationMode mode) => mode switch
     {
