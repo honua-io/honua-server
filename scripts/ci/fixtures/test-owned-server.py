@@ -92,25 +92,47 @@ class OwnedServerTests(unittest.TestCase):
                  patch.object(OWNED.subprocess, "run", return_value=result) as execute, \
                  patch.object(OWNED.process_ports, "process_owns_listener", side_effect=PermissionError):
                 check.wait()
-                self.assertEqual(execute.call_args.args[0][:3], ["docker", "exec", "a" * 64])
+                self.assertEqual(execute.call_args.args[0],
+                                 ["docker", "exec", "a" * 64, "/app/honua-healthcheck", "--socket-handles"])
                 result.stdout = ""
                 with self.assertRaisesRegex(RuntimeError, "owned listener"):
                     check.wait()
 
+    def test_container_socket_inspection_failure_is_refused(self):
+        result = subprocess.CompletedProcess([], 1, "socket:[123]", "denied")
+        with patch.object(OWNED.subprocess, "run", return_value=result):
+            with self.assertRaisesRegex(RuntimeError, "cannot be inspected"):
+                OWNED.container_owns_listener("owned", 23456)
+
     def test_container_socket_command_reads_real_owned_descriptors(self):
-        with child(HTTP) as process, child(HTTP) as foreign:
+        source = Path(__file__).resolve().parents[3] / "docker/runtime/health-probe.c"
+        with tempfile.TemporaryDirectory() as directory, child(HTTP) as process, child(HTTP) as foreign:
             own, other = probe(process), probe(foreign)
+            root = Path(directory)
+            descriptors = root / "1/fd"
+            descriptors.mkdir(parents=True)
+            for descriptor in Path(f"/proc/{process.pid}/fd").iterdir():
+                handle = os.readlink(descriptor)
+                if handle.startswith("socket:["):
+                    (descriptors / descriptor.name).symlink_to(handle)
+            harness = root / "harness.c"
+            harness.write_text('#define main health_probe_main\n#include "' + str(source) +
+                               '"\n#undef main\nint main(int argc, char **argv) { '
+                               'return argc == 2 ? print_socket_handles(argv[1]) : 1; }\n')
+            binary = root / "probe"
+            subprocess.run(["cc", "-Wall", "-Wextra", "-Werror", str(harness), "-o", str(binary)], check=True)
             execute = subprocess.run
 
             def container_command(command, **options):
-                self.assertEqual(command[:3], ["docker", "exec", "owned"])
-                script = command[-1].replace("/proc/1/fd", f"/proc/{process.pid}/fd")
-                script = script.replace("/proc/[0-9]*/fd/*", f"/proc/{process.pid}/fd/*")
-                return execute(["/bin/sh", "-c", script], **options)
+                self.assertEqual(command, ["docker", "exec", "owned", "/app/honua-healthcheck", "--socket-handles"])
+                return execute([str(binary), str(root)], **options)
 
             with patch.object(OWNED.subprocess, "run", side_effect=container_command):
                 self.assertTrue(OWNED.container_owns_listener("owned", own.port))
                 self.assertFalse(OWNED.container_owns_listener("owned", other.port))
+                descriptors.rename(root / "unavailable")
+                with self.assertRaisesRegex(RuntimeError, "cannot be inspected"):
+                    OWNED.container_owns_listener("owned", own.port)
 
     def test_compose_defaults_isolate_projects_and_local_ports(self):
         with tempfile.TemporaryDirectory() as directory:
