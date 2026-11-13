@@ -56,22 +56,48 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
         health.Kind.Should().Be("OpsHealthSnapshot");
         health.Payload.GetProperty("overallStatus").GetString().Should().Be("Degraded");
         health.Payload.GetProperty("taskId").GetString().Should().NotBeNullOrWhiteSpace();
+        await AssertProposalDeliveryAsync(hostA, reader);
         response.Dispose();
+        await AssertTransitionReplayAsync(hostA, hostB, health.Id!);
+        await tailA.StopAsync(default);
+        await tailB.StopAsync(default);
+    }
+
+    private static async Task AssertTransitionReplayAsync(WebApplicationFactory<Program> hostA,
+        WebApplicationFactory<Program> hostB, string cursor)
+    {
         var listener = hostB.Services.GetServices<IWorkflowOperationTransitionListener>()
             .OfType<RealtimeOperationTransitionListener>().Single();
         await listener.OnTransitionAsync(BuildTransition("resume-op", WorkflowOperationTransitionKind.Submitted));
         using var clientA = hostA.CreateClient();
         clientA.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
-        clientA.DefaultRequestHeaders.Add("Last-Event-ID", health.Id);
+        clientA.DefaultRequestHeaders.Add("Last-Event-ID", cursor);
         using var replay = await clientA.GetAsync("/api/v1/admin/live?topics=deploy-operations", HttpCompletionOption.ResponseHeadersRead);
         using var replayReader = new StreamReader(await replay.Content.ReadAsStreamAsync());
         (await ReadFrameAsync(replayReader)).Kind.Should().Be("status");
         var transition = await ReadFrameAsync(replayReader);
         transition.Kind.Should().Be("DeployOperationTransition");
         transition.Payload.GetProperty("operationId").GetString().Should().Be("resume-op");
-        transition.Id.Should().NotBe(health.Id);
-        await tailA.StopAsync(default);
-        await tailB.StopAsync(default);
+        transition.Id.Should().NotBe(cursor);
+    }
+
+    private static async Task AssertProposalDeliveryAsync(WebApplicationFactory<Program> host, StreamReader reader)
+    {
+        var proposal = new OperationProposal
+        {
+            ProposalId = "live-proposal",
+            Kind = default,
+            Status = OperationProposalStatus.AwaitingApproval,
+            Plan = new OperationProposalPlan { ExecutionPayload = "private-execution-payload" }
+        };
+        var notifier = host.Services.GetRequiredService<IProposalNotifier>();
+        await notifier.NotifyPendingAsync(proposal);
+        var pending = await ReadFrameAsync(reader);
+        pending.Kind.Should().Be("ProposalPending");
+        pending.Payload.GetProperty("proposalId").GetString().Should().Be(proposal.ProposalId);
+        pending.Payload.GetRawText().Should().NotContain("private-execution-payload");
+        await notifier.NotifyResolvedAsync(proposal with { Status = OperationProposalStatus.Submitted });
+        (await ReadFrameAsync(reader)).Kind.Should().Be("ProposalResolved");
     }
 
     private static WebApplicationFactory<Program> CreateFactory(RealtimeLogHarness log, RealtimeDispatcher dispatcher)
