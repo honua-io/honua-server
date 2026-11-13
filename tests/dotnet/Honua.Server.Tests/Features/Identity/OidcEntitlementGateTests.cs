@@ -4,10 +4,12 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Honua.Infrastructure.Monitoring;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Identity;
 
@@ -86,6 +88,8 @@ public sealed class OidcEntitlementGateTests
 
             using var firstCreate = await client.PostAsJsonAsync(ProvidersRoute, CreateProviderPayload("first"));
             Assert.Equal(HttpStatusCode.Created, firstCreate.StatusCode);
+            Assert.DoesNotContain(fixture.Services.GetRequiredService<RecentErrorBuffer>().Snapshot(),
+                error => error.Path == ProvidersRoute && error.StatusCode == 402);
 
             // A second provider requires the Enterprise identity.oidc-multi-provider
             // entitlement; the 402 must name that key (not identity.oidc, which Pro has).
