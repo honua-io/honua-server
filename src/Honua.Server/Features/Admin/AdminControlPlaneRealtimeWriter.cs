@@ -6,6 +6,7 @@ using System.Text.Json;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Infrastructure.Monitoring;
+using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Realtime;
 using Npgsql;
 

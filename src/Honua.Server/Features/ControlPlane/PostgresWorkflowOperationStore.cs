@@ -5,6 +5,7 @@ using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Coordination;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -150,7 +151,7 @@ internal sealed partial class PostgresWorkflowOperationStore(
                         }, new ControlPlaneWriteContext(transaction, token)).ConfigureAwait(false);
                     }
                 }
-                await transaction.CommitAsync(token).ConfigureAwait(false);
+                await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
                 return changed;
             },
             StatementRepeat.NotAfterSend,

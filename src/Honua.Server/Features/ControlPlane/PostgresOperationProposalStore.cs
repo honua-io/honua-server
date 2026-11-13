@@ -6,6 +6,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Coordination;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
@@ -61,7 +62,7 @@ internal sealed partial class PostgresOperationProposalStore(
                 {
                     await realtime.AppendProposalAsync(created, new ControlPlaneWriteContext(transaction, token)).ConfigureAwait(false);
                 }
-                await transaction.CommitAsync(token).ConfigureAwait(false);
+                await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
                 return changed;
             },
             StatementRepeat.NotAfterSend,
@@ -126,7 +127,7 @@ internal sealed partial class PostgresOperationProposalStore(
                 {
                     await realtime.AppendProposalAsync(next, new ControlPlaneWriteContext(transaction, token)).ConfigureAwait(false);
                 }
-                await transaction.CommitAsync(token).ConfigureAwait(false);
+                await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
                 return changed;
             },
             StatementRepeat.NotAfterSend,
