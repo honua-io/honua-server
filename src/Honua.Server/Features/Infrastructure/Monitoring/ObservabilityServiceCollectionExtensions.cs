@@ -161,7 +161,9 @@ internal static class ObservabilityServiceCollectionExtensions
             options.EnableForHttps = true;
 
             // PERFORMANCE FIX: Use adaptive compression providers for content-size based optimization
+            // Equal q-values pick the first provider: Brotli stays preferred, zstd before gzip.
             options.Providers.Add<AdaptiveBrotliCompressionProvider>();
+            options.Providers.Add<AdaptiveZstdCompressionProvider>();
             options.Providers.Add<AdaptiveGzipCompressionProvider>();
 
             // Add MIME types for geospatial data formats
@@ -181,6 +183,7 @@ internal static class ObservabilityServiceCollectionExtensions
 
         // Register adaptive compression providers
         services.TryAddTransient<AdaptiveBrotliCompressionProvider>();
+        services.TryAddTransient<AdaptiveZstdCompressionProvider>();
         services.TryAddTransient<AdaptiveGzipCompressionProvider>();
     }
 }

@@ -4,8 +4,10 @@
 using System.Text;
 using FluentAssertions;
 using System.IO.Compression;
+using Honua.Core.Features.Infrastructure.IO;
 using Honua.Infrastructure.Compression;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Compression;
 
@@ -77,6 +79,35 @@ public sealed class AdaptiveCompressionProviderTests
         output.BytesWritten.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(1)]
+    [InlineData(int.MaxValue)]
+    public async Task AdaptiveZstdStream_AsyncWrites_ProduceDecodableFrameWithoutSynchronousIo(int threshold)
+    {
+        var payload = Encoding.UTF8.GetBytes(string.Concat(Enumerable.Repeat("{\"type\":\"Feature\"},", 500)));
+        var output = new AsyncOnlyBufferingStream();
+        var stream = new AdaptiveZstdStream(output, new AdaptiveCompressionOptions { FastCompressionThreshold = threshold });
+
+        await stream.WriteAsync(payload.AsMemory(0, 100));
+        await stream.FlushAsync();
+        await stream.WriteAsync(payload.AsMemory(100));
+        await stream.DisposeAsync();
+
+        output.BytesWritten.Should().BeGreaterThan(0).And.BeLessThan(payload.Length);
+        ZstdCodec.Decompress(output.ToArray(), 1 << 20).Should().Equal(payload);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void AdaptiveZstdCompressionProvider_AdvertisesZstdWithFlushSupport()
+    {
+        var provider = new AdaptiveZstdCompressionProvider(Options.Create(new AdaptiveCompressionOptions()));
+
+        provider.EncodingName.Should().Be("zstd");
+        provider.SupportsFlush.Should().BeTrue();
+    }
+
     [Theory]
     [InlineData(9, CompressionLevel.Fastest)]
     [InlineData(10, CompressionLevel.SmallestSize)]
@@ -101,6 +132,8 @@ public sealed class AdaptiveCompressionProviderTests
         private readonly MemoryStream _inner = new();
 
         public long BytesWritten => _inner.Length;
+
+        public byte[] ToArray() => _inner.ToArray();
 
         public override bool CanRead => false;
         public override bool CanSeek => false;

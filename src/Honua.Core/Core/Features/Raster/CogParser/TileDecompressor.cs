@@ -3,6 +3,7 @@
 
 using System.Buffers;
 using System.IO.Compression;
+using Honua.Core.Features.Infrastructure.IO;
 
 namespace Honua.Core.Features.Raster.CogParser;
 
@@ -142,34 +143,5 @@ public static class TileDecompressor
     }
 
     private static byte[] DecompressZstd(byte[] compressedData, int maxDecompressedBytes)
-    {
-        var declaredSize = ZstdSharp.Decompressor.GetDecompressedSize(compressedData);
-
-        // Trust the declared size only as an allocation hint after bounds-checking it — it is
-        // attacker-controlled file content, and an inflated value is a decompression-bomb vector.
-        if (declaredSize > (ulong)maxDecompressedBytes)
-        {
-            throw new InvalidDataException(
-                $"ZSTD tile declares a {declaredSize}-byte frame, exceeding the {maxDecompressedBytes}-byte limit (possible decompression bomb).");
-        }
-
-        using var decompressor = new ZstdSharp.Decompressor();
-
-        if (declaredSize > 0)
-        {
-            var exact = new byte[(int)declaredSize];
-            var written = decompressor.Unwrap(compressedData, exact, offset: 0);
-            if (written == exact.Length)
-            {
-                return exact;
-            }
-
-            var trimmed = new byte[written];
-            Buffer.BlockCopy(exact, 0, trimmed, 0, written);
-            return trimmed;
-        }
-
-        var decompressed = decompressor.Unwrap(compressedData, maxDecompressedBytes);
-        return decompressed.ToArray();
-    }
+        => ZstdCodec.Decompress(compressedData, maxDecompressedBytes);
 }
