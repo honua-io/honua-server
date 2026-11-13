@@ -186,6 +186,15 @@ public sealed class MetadataCompatibilityPrevalidationServiceTests
             return ValueTask.FromResult(snapshot);
         }
 
+        public async ValueTask<MetadataV2GraphSnapshot?> GetByEtagAsync(
+            string environment,
+            string etag,
+            CancellationToken cancellationToken = default)
+        {
+            var snapshot = await GetCurrentAsync(environment, cancellationToken).ConfigureAwait(false);
+            return snapshot is not null && string.Equals(snapshot.Etag, etag, StringComparison.Ordinal) ? snapshot : null;
+        }
+
         public async IAsyncEnumerable<MetadataV2EnvironmentRevision> ListCurrentRevisionsAsync(
             IReadOnlyList<string> environments,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)

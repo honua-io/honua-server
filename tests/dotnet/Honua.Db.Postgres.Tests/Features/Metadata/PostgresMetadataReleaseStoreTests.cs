@@ -41,16 +41,11 @@ public sealed class PostgresMetadataReleaseStoreTests(PostgresFixture fixture)
             await InsertSnapshotAsync(schema, BuildGraph("dev", 42), "new-etag");
             var reader = new PostgresMetadataV2EnvironmentSnapshotReader(
                 new TestConnectionProvider(fixture.DataSource, schema), schema);
-            var lookup = typeof(IMetadataV2EnvironmentSnapshotReader).GetMethod("GetByEtagAsync");
-            lookup.Should().NotBeNull("catalog events identify historical snapshots by environment and etag");
-
-            var historical = await (ValueTask<MetadataV2GraphSnapshot?>)lookup!.Invoke(
-                reader, ["dev", "shared-etag", CancellationToken.None])!;
+            var historical = await reader.GetByEtagAsync("dev", "shared-etag");
             historical.Should().NotBeNull();
             historical!.Revision.Should().Be(41);
             historical.Graph.Environment.Should().Be("dev");
-            var missing = await (ValueTask<MetadataV2GraphSnapshot?>)lookup.Invoke(
-                reader, ["missing", "shared-etag", CancellationToken.None])!;
+            var missing = await reader.GetByEtagAsync("missing", "shared-etag");
             missing.Should().BeNull();
         }
         finally
