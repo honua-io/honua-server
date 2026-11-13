@@ -201,7 +201,7 @@ public sealed class TwoTaskFeatureStreamTests(DatabaseFixtureAdapter database) :
             var dispatcher = new RealtimeDispatcher(log, [changes], options, NullLogger<RealtimeDispatcher>.Instance);
             var presence = new RealtimePresenceBatcher(log);
             var listener = listen
-                ? RealtimeListener.Create(null, database.ConnectionString, options, NullLogger<RealtimeListener>.Instance)
+                ? RealtimeListener.Create(database.ConnectionString, options, NullLogger<RealtimeListener>.Instance)
                 : null;
             var tail = new RealtimeTailBackgroundService(dispatcher, presence, listener, options, NullLogger<RealtimeTailBackgroundService>.Instance);
             var sessions = new FeatureStreamSessionManager(
