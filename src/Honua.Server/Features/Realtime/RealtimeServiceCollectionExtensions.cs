@@ -76,12 +76,16 @@ internal static class RealtimeServiceCollectionExtensions
         if (hostsDatabasePollingLoops)
         {
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RealtimeTailBackgroundService>(
-                provider => new RealtimeTailBackgroundService(
-                    provider.GetService<NpgsqlDataSource>() is null ? null : provider.GetRequiredService<RealtimeDispatcher>(),
-                    provider.GetRequiredService<RealtimePresenceBatcher>(),
-                    crossNode ? provider.GetRequiredService<RealtimeListener>() : null,
-                    provider.GetRequiredService<IOptions<RealtimeOptions>>(),
-                    provider.GetRequiredService<ILogger<RealtimeTailBackgroundService>>())));
+                provider =>
+                {
+                    var hasDatabase = provider.GetService<NpgsqlDataSource>() is not null;
+                    return new RealtimeTailBackgroundService(
+                        hasDatabase ? provider.GetRequiredService<RealtimeDispatcher>() : null,
+                        hasDatabase ? provider.GetRequiredService<RealtimePresenceBatcher>() : null,
+                        hasDatabase && crossNode ? provider.GetRequiredService<RealtimeListener>() : null,
+                        provider.GetRequiredService<IOptions<RealtimeOptions>>(),
+                        provider.GetRequiredService<ILogger<RealtimeTailBackgroundService>>());
+                }));
         }
 
         return services;

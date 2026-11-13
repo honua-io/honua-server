@@ -11,7 +11,7 @@ namespace Honua.Server.Features.Realtime;
 // in-process provider) it is the local poll. Presence is flushed on its own interval.
 internal sealed partial class RealtimeTailBackgroundService(
     RealtimeDispatcher? dispatcher,
-    RealtimePresenceBatcher presence,
+    RealtimePresenceBatcher? presence,
     RealtimeListener? listener,
     IOptions<RealtimeOptions> options,
     ILogger<RealtimeTailBackgroundService> logger) : BackgroundService
@@ -19,7 +19,7 @@ internal sealed partial class RealtimeTailBackgroundService(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // A host without a system database has no log to follow.
-        if (dispatcher is not { } active)
+        if (dispatcher is not { } active || presence is not { } activePresence)
         {
             return;
         }
@@ -27,7 +27,7 @@ internal sealed partial class RealtimeTailBackgroundService(
         var listening = listener is null
             ? Task.CompletedTask
             : listener.RunAsync(active.Wake, stoppingToken);
-        var flushing = FlushPresenceAsync(active, stoppingToken);
+        var flushing = FlushPresenceAsync(active, activePresence, stoppingToken);
         try
         {
             await FollowAsync(active, stoppingToken).ConfigureAwait(false);
@@ -83,7 +83,7 @@ internal sealed partial class RealtimeTailBackgroundService(
         }
     }
 
-    private async Task FlushPresenceAsync(RealtimeDispatcher active, CancellationToken stoppingToken)
+    private async Task FlushPresenceAsync(RealtimeDispatcher active, RealtimePresenceBatcher activePresence, CancellationToken stoppingToken)
     {
         try
         {
@@ -92,7 +92,7 @@ internal sealed partial class RealtimeTailBackgroundService(
             {
                 try
                 {
-                    if (await presence.FlushAsync(stoppingToken).ConfigureAwait(false) > 0)
+                    if (await activePresence.FlushAsync(stoppingToken).ConfigureAwait(false) > 0)
                     {
                         active.Wake();
                     }

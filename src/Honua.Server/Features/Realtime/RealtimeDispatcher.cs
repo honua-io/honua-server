@@ -138,9 +138,10 @@ internal sealed partial class RealtimeDispatcher(
                 }
             }
 
-            while (dispatched < head)
+            var currentHead = head;
+            while (dispatched < currentHead)
             {
-                var batch = await log.ReadAfterAsync(family, dispatched, null, options.Value.ReadBatchSize, cancellationToken)
+                var batch = await log.ReadAfterAsync(new(family, dispatched, options.Value.ReadBatchSize), cancellationToken)
                     .ConfigureAwait(false);
                 lock (_gate)
                 {
@@ -152,14 +153,18 @@ internal sealed partial class RealtimeDispatcher(
                 // resynchronize; dispatch then carries on in order. It never skips silently.
                 if (batch.Count == 0 || batch[0].Sequence != dispatched + 1)
                 {
-                    var firstAfterGap = batch.Count == 0 ? head + 1 : batch[0].Sequence;
+                    var window = await log.ReadWindowAsync(family, cancellationToken).ConfigureAwait(false);
+                    currentHead = window.Head;
+                    var firstAfterGap = batch.Count == 0 ? window.Oldest : batch[0].Sequence;
                     foreach (var subscriber in subscribers)
                     {
-                        subscriber.DeliverGap(firstAfterGap, head);
+                        subscriber.DeliverGap(firstAfterGap, currentHead);
                     }
 
                     if (batch.Count == 0)
                     {
+                        // Rows may have been appended after the empty read. Leave them for the
+                        // next probe, including for subscribers already past the retention gap.
                         dispatched = head;
                         break;
                     }
@@ -169,7 +174,7 @@ internal sealed partial class RealtimeDispatcher(
                 {
                     foreach (var subscriber in subscribers)
                     {
-                        subscriber.Deliver(realtimeEvent, head);
+                        subscriber.Deliver(realtimeEvent, currentHead);
                     }
                 }
 
@@ -384,7 +389,7 @@ internal sealed class RealtimeSubscription : IRealtimeSubscription
             while (true)
             {
                 var before = position;
-                var page = await log.ReadAfterAsync(family, position, _scopes, options.ReplayBatchSize, cancellationToken)
+                var page = await log.ReadAfterAsync(new(family, position, options.ReplayBatchSize, _scopes), cancellationToken)
                     .ConfigureAwait(false);
 
                 // The sweep may have run since the window was read. An unscoped page that starts
