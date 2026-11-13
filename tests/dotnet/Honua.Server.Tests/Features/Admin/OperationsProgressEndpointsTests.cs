@@ -192,7 +192,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         });
         await fixture.GetService<IUniversalProgressStore>().SetProgressAsync(operationId,
             GeoprocessingProgress.CreateForSubmittedJob(operationId, "cancel-in-flight") with
-            { Status = OperationStatus.Processing });
+            { WorkflowStatus = GeoprocessingWorkflowStatus.Running });
 
         var response = await fixture.Client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
 
