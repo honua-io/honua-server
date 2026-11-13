@@ -22,11 +22,11 @@ concurrency:
   cancel-in-progress: false
   queue: max
 
-# Observe until the current recipe has 20 independently corroborated heads and
-# the scoped App token is configured. A separate reviewed mode
-# change enables writes; reverting that value disables them.
+# Enforce since the 2026-11-12 v3 shadow audit (#3219): 76 valid envelopes, all
+# byte-reproduced independently, with the release App token configured.
+# Rollback is the one-value change back to `observe`.
 env:
-  NORMALIZATION_MODE: observe
+  NORMALIZATION_MODE: enforce
 
 jobs:
   validate:
@@ -289,7 +289,8 @@ jobs:
             // The pull_request workflow is intentionally unprivileged, but its
             // recipe is still PR-authored. Bind the declared orchestration to
             // default-branch policy. Transitive setup and generators remain PR
-            // inputs; independent drift gates decide output correctness.
+            // inputs; the trunk generated-files writer and merge-train
+            // regeneration stay authoritative for output bytes.
             const trustedRecipePaths = [
               '.github/workflows/normalize-derived-artifacts.yml',
               '.github/actions/setup-dotnet-ci/action.yml',
@@ -329,7 +330,7 @@ jobs:
             await core.summary
               .addHeading('Untrusted derived-artifact normalization candidate')
               .addRaw('This validated candidate is not canonical evidence and publishes no commit status. ' +
-                'Count it only after independent exact-head PR Gate corroboration.\n\n')
+                'Count it only after an independent byte regeneration at the exact source SHA.\n\n')
               .addTable([
                 [{ data: 'Field', header: true }, { data: 'Value', header: true }],
                 ['Mode', process.env.NORMALIZATION_MODE],
@@ -338,7 +339,7 @@ jobs:
                 ['Would update', String(changes.length)],
                 ['Paths', changes.join(', ') || 'none'],
                 ['Envelope bytes', String(plan.total_output_bytes)],
-                ['Audit authority', 'candidate only; independent PR Gate required'],
+                ['Audit authority', 'candidate only; independent byte regeneration required'],
               ])
               .write();
 
@@ -486,8 +487,8 @@ jobs:
             await core.summary
               .addHeading('Derived-artifact normalization commit')
               .addRaw('Only validated derived blobs were written. Exact-head review was ' +
-                're-requested on the normalized head, and the independent drift gates still ' +
-                'decide correctness.\n\n')
+                're-requested on the normalized head. The trunk generated-files writer and the ' +
+                'merge-train regeneration stay authoritative for these bytes.\n\n')
               .addTable([
                 [{ data: 'Field', header: true }, { data: 'Value', header: true }],
                 ['Mode', process.env.NORMALIZATION_MODE],

@@ -250,32 +250,17 @@ var redisCacheEntitled = await StartupConfigurationHelpers.IsRedisCacheEntitledA
     builder.Configuration,
     builder.Environment);
 var redisCacheConnectionString = redisCacheEntitled ? redisConnectionString : null;
-RedisDurabilityAttestation? redisDurabilityAttestation = null;
-DurableJobSubstrateCause? redisDurabilityFailure = null;
-string? redisDurabilityDetail = null;
-// The Redis durability attestation is INFORMATION by default (owner ruling 2026-10-10): a
-// connected Redis enables the governed control plane and the durable job runner whatever the
-// attestation says. Operators who would rather not serve at all without a CONFIG GET-proven
-// durable policy opt in here and get a typed startup refusal naming the cause
-// (honua-server#4502). The opt-in cannot be satisfied on managed Redis that blocks CONFIG.
+var systemDatabaseConfigured = !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection"));
 var requireDurableJobStore = builder.Configuration
     .GetSection(JobDurabilityOptions.SectionName)
     .GetValue<bool>(nameof(JobDurabilityOptions.RequireDurableStore));
 builder.Services.Configure<JobDurabilityOptions>(
     builder.Configuration.GetSection(JobDurabilityOptions.SectionName));
 
-// honua-release#202: record WHY the durable job substrate is or is not composed, so the typed
-// refusal and the capability manifest can give remediation that actually works. "Redis is
-// configured but unentitled" is a different fix from "Redis is absent", and telling an operator
-// running Redis to install Redis is the wrong-remediation bug this preserves the cause to avoid.
-builder.Services.Configure<DurableJobSubstrateOptions>(options =>
-{
-    options.RedisConfigured = !string.IsNullOrWhiteSpace(redisConnectionString);
-    options.RedisEntitled = redisCacheEntitled;
-    options.RedisDurabilityAttestation = redisDurabilityAttestation;
-    options.RedisDurabilityFailure = redisDurabilityFailure;
-    options.RedisDurabilityDetail = redisDurabilityDetail;
-});
+// Records why the durable job substrate is or is not composed, so refusals and the capability
+// manifest name the remediation that applies.
+builder.Services.Configure<DurableJobSubstrateOptions>(
+    options => options.SystemDatabaseConfigured = systemDatabaseConfigured);
 var redisInfrastructureConnectionString = RedisConnectionSelector.SelectInfrastructureConnectionString(
     redisConnectionString,
     redisCacheEntitled,
@@ -350,62 +335,6 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
             var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
             ProgramLog.RedisStartupConnectionInactive(startupLogger);
         }
-
-        if (connectedRedis.IsConnected)
-        {
-            var durability = await RedisDurabilityAttestor.InspectAsync(connectedRedis);
-            redisDurabilityAttestation = durability.Attestation;
-            redisDurabilityFailure = durability.FailureCause;
-            redisDurabilityDetail = durability.FailureDetail;
-
-            // The attestation is INFORMATION, never a gate (owner ruling 2026-10-10). The durable
-            // job substrate, proposal store, operation gateway and admin executors are composed
-            // for any connected, entitled Redis; the outcome is published on the capability
-            // manifest (limits.job.redisDurability) and logged once here. Managed Redis that
-            // blocks CONFIG (AWS ElastiCache, MemoryDB) reads 'unverified', not a rejection.
-            if (redisCacheEntitled && durability.Attestation is not null)
-            {
-                builder.Services.TryAddSingleton(durability.Attestation);
-                var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
-                ProgramLog.RedisDurabilityAttested(
-                    startupLogger,
-                    durability.Attestation.PersistenceMode,
-                    durability.Attestation.AcknowledgedWritePolicy,
-                    durability.Attestation.EvictionPolicy);
-            }
-            else if (redisCacheEntitled && durability.FailureCause is { } outcomeCause)
-            {
-                var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
-                var status = RedisDurabilityStatuses.For(attested: false, outcomeCause) ?? RedisDurabilityStatuses.Unverified;
-                var outcomeDetail = durability.FailureDetail ?? "no detail reported";
-                var guidance = DurableJobSubstrateRemediation.For(outcomeCause);
-                if (outcomeCause == DurableJobSubstrateCause.RedisAttestationUnavailable)
-                {
-                    ProgramLog.RedisDurabilityUnverified(
-                        startupLogger,
-                        status,
-                        outcomeDetail,
-                        DurableJobSubstrateRemediation.NonDurableConsequence,
-                        guidance);
-                }
-                else
-                {
-                    ProgramLog.RedisDurabilityNotDurable(
-                        startupLogger,
-                        status,
-                        outcomeCause,
-                        outcomeDetail,
-                        DurableJobSubstrateRemediation.NonDurableConsequence,
-                        guidance);
-                }
-            }
-        }
-        else if (redisCacheEntitled)
-        {
-            // Configured but not connected: Redis is genuinely unavailable at startup, which (unlike
-            // an attestation outcome) does withhold the Redis-backed capabilities.
-            redisDurabilityFailure = DurableJobSubstrateCause.RedisUnreachable;
-        }
     }
     catch (Exception ex)
     {
@@ -419,8 +348,6 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
         var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
         ProgramLog.RedisStartupConnectionFailed(startupLogger, ex);
         // Do not register IConnectionMultiplexer — services that request it via GetService<> will receive null
-        redisDurabilityFailure = DurableJobSubstrateCause.RedisUnreachable;
-        redisDurabilityDetail = ex.Message;
     }
 }
 
@@ -485,16 +412,8 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
 // Jobs:RequireDurableStore=true is satisfied by the system database, which holds the job store.
 // Only a host with no system database can still be stopped here.
 DurableJobSubstrateStartupGate.EnsureSatisfied(
-    new DurableJobSubstrateOptions
-    {
-        SystemDatabaseConfigured = !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection")),
-        RedisConfigured = !string.IsNullOrWhiteSpace(redisConnectionString),
-        RedisEntitled = redisCacheEntitled,
-        RedisDurabilityAttestation = redisDurabilityAttestation,
-        RedisDurabilityFailure = redisDurabilityFailure,
-    },
-    requireDurableJobStore,
-    redisDurabilityDetail);
+    new DurableJobSubstrateOptions { SystemDatabaseConfigured = systemDatabaseConfigured },
+    requireDurableJobStore);
 
 // Configure Serilog for structured logging with AOT compatibility
 builder.Host.UseSerilog((context, services, config) =>
@@ -773,7 +692,7 @@ if (hostHasSystemDatabase)
 }
 else
 {
-    // Redis-off (or unentitled) topology: compose the fail-closed proposal placeholder so the
+    // No system database: compose the fail-closed proposal placeholder so the
     // governed admin catalogs (AddOperationsToolset gates them on a proposal store) still
     // register and advertise their honua_admin_* tools. Without it the full MCP catalog silently
     // lost exactly the 20 AdminApiOperationCatalog tools on Redis-off cells (2026.1 rc.3, J1/S1).
@@ -787,8 +706,8 @@ else
 
 // The control-plane Lambda event route (POST /events) is mapped whenever
 // HONUA_CONTROL_PLANE_LAMBDA_HANDLER is set, Redis or not, so what it resolves is registered on
-// every host. On a Redis-off cell the Redis-independent ticks run and the rest refuse with a typed
-// 503 (missingDependency=redis) instead of a 500 (honua-release run 38242272260).
+// every host. Ticks whose store is absent refuse with a typed 503 that names the missing
+// dependency instead of a 500.
 builder.Services.AddHonuaControlPlaneLambdaEventTargets(builder.Configuration);
 
 // Pending-approval notification channel (#1695): emitted from the gateway/store
@@ -1270,6 +1189,7 @@ builder.Services.AddHonuaTenantSchemaRouting(builder.Configuration);
 builder.Services.AddHonuaTenantLifecycle();
 // Configure CORS policies
 builder.Services.AddCorsPolicies(builder.Configuration, builder.Environment);
+builder.Services.AddBrowserSessionSecurity();
 builder.Services.AddInputValidation(builder.Configuration);
 // App-level rate limiting services (issue #355). Off by default — operators opt in via
 // RateLimiting:Enabled. Registers options validation, the policy store backing the admin
@@ -1722,6 +1642,7 @@ app.UseHonuaClientCertificateAuthentication();
 
 // Authenticate the default scheme before hydrating additional credential types.
 app.UseAuthentication();
+app.UseBrowserSessionSecurity();
 
 // Bridge ArcGIS-style portal tokens (?token=, form POST token, X-Esri-Authorization,
 // Authorization: Bearer)
@@ -2037,6 +1958,7 @@ app.MapConsoleOpenDataEndpoints();
 app.MapConsoleOpenDataPublicEndpoints();
 app.MapStudioPackageEndpoints();
 app.MapStudioPublishedRouteEndpoints();
+app.MapStudioSessionEndpoints();
 app.MapStudioMapCollaborationEndpoints();
 app.MapWorkflowPackageEndpoints();
 Honua.Server.Features.Studio.Ai.StudioAiProxyEndpoints.MapStudioAiProxyEndpoints(app);

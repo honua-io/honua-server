@@ -70,13 +70,16 @@ jobs:
       id-token: write
     outputs:
       runner: ${{ steps.select.outputs.runner || 'ubuntu-latest' }}
+      heavy_ready: ${{ steps.select.outputs.heavy_ready || 'false' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: vars.HONUA_PR_GATE_RUNNER != '' && env.REVIEW_FIRST_MODE != 'enforce'
         continue-on-error: true
         timeout-minutes: 1
         with:
-          sparse-checkout: scripts/ci/select-gate-runner.sh
+          sparse-checkout: |
+            scripts/ci/select-gate-runner.sh
+            scripts/ci/gate-runner-heartbeat.sh
           sparse-checkout-cone-mode: false
 
       - name: Assume the build-host wake role
@@ -102,7 +105,7 @@ jobs:
     if: always() && !cancelled() && (needs.runner-select.result == 'success' || github.event.pull_request.draft == true)
     name: PR Gate / ${{ matrix.check }}
     needs: runner-select
-    runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && needs.runner-select.outputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 45
     # Format and both analyzer partitions run independently after runner selection.
     strategy:
@@ -164,7 +167,7 @@ jobs:
   fast-tests:
     name: PR Gate / Fast and architecture (${{ matrix.test-group }})
     needs: runner-select
-    runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && needs.runner-select.outputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 45
     # Each group compiles only its own test roots; the producer and the analyzer
     # job compile the diff's affected closure.
@@ -186,6 +189,10 @@ jobs:
         if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
         with:
           fetch-depth: 2
+
+      - name: Lint workflow syntax and expressions
+        if: matrix.test-group == 'architecture' && (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1)
+        run: bash scripts/ci/validate-workflows.sh
 
       # Only the immutable base supplies executable classification policy.
       # A missing or failed classifier leaves the ordinary checks enabled.
@@ -344,6 +351,7 @@ jobs:
     # Runtime toolchain proofs run in the full CI workflow.
     timeout-minutes: 75
     outputs:
+      heavy_ready: ${{ needs.runner-select.outputs.heavy_ready }}
       docs_only: ${{ steps.docs-only.outputs.docs_only }}
       generated_only: ${{ steps.generated-only.outputs.generated_only }}
       skip: ${{ (steps.docs-only.outputs.docs_only == 'true' || steps.generated-only.outputs.generated_only == 'true') && 'true' || 'false' }}
@@ -778,8 +786,8 @@ jobs:
       && needs.affected-shards-select.outputs.matrix_include != '[]'
     needs: [affected-shards-select, pr-gate, server-test-producer]
     # Even matrix indices run on the build host's honua-heavy runners when
-    # vars.HONUA_HEAVY_RUNNER holds their runner JSON; fork code never does.
-    runs-on: ${{ vars.HONUA_HEAVY_RUNNER && (endsWith(format('{0}', strategy.job-index), '0') || endsWith(format('{0}', strategy.job-index), '2') || endsWith(format('{0}', strategy.job-index), '4') || endsWith(format('{0}', strategy.job-index), '6') || endsWith(format('{0}', strategy.job-index), '8')) && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || 'ubuntu-latest' }}
+    # fresh pool proof and vars.HONUA_HEAVY_RUNNER are present; forks stay hosted.
+    runs-on: ${{ needs.pr-gate.outputs.heavy_ready == 'true' && vars.HONUA_HEAVY_RUNNER && (endsWith(format('{0}', strategy.job-index), '0') || endsWith(format('{0}', strategy.job-index), '2') || endsWith(format('{0}', strategy.job-index), '4') || endsWith(format('{0}', strategy.job-index), '6') || endsWith(format('{0}', strategy.job-index), '8')) && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || 'ubuntu-latest' }}
     # The shard's OWN outer budget from .github/ci-shards.json, exactly as
     # ci.yml::server-tests applies it. Substituting a flat cap here would make
     # this lane time out on shards the trailing matrix runs comfortably, which
@@ -907,6 +915,7 @@ jobs:
       - name: Require parallel producer success
         if: always()
         env:
+          PR_IS_DRAFT: ${{ github.event.pull_request.draft }}
           SERVER_PRODUCER_RESULT: ${{ needs.server-test-producer.result }}
         run: test "${SERVER_PRODUCER_RESULT}" = success
 
@@ -1150,6 +1159,7 @@ jobs:
     steps:
       - name: Require build, tests, format, CI router validation, and affected shards
         env:
+          PR_IS_DRAFT: ${{ github.event.pull_request.draft }}
           SERVER_PRODUCER_RESULT: ${{ needs.server-test-producer.result }}
           BUILD_AND_TEST_RESULT: ${{ needs.pr-gate.result }}
           FAST_RESULT: ${{ needs.fast-tests.result }}
@@ -1157,6 +1167,22 @@ jobs:
           CI_ROUTER_RESULT: ${{ needs.ci-router-validation.result }}
           AFFECTED_SHARDS_RESULT: ${{ needs.affected-shards.result }}
         run: |
+          # Draft admission deliberately skips heavy work. Failed or cancelled
+          # work still fails, and the lightweight Format check must succeed.
+          if [[ "${GITHUB_EVENT_NAME}" == pull_request && "${PR_IS_DRAFT:-false}" == true ]]; then
+            if [[ "${FORMAT_RESULT}" != success ]]; then
+              echo "::error::Draft PR Gate failed: format=${FORMAT_RESULT}"
+              exit 1
+            fi
+            for result in "${SERVER_PRODUCER_RESULT}" "${BUILD_AND_TEST_RESULT}" "${FAST_RESULT}" "${CI_ROUTER_RESULT}" "${AFFECTED_SHARDS_RESULT}"; do
+              if [[ "${result}" != success && "${result}" != skipped ]]; then
+                echo "::error::Draft PR Gate failed: heavy dependency=${result}"
+                exit 1
+              fi
+            done
+            echo "Draft PR Gate passed: Format succeeded; heavy work deferred until ready."
+            exit 0
+          fi
           if [[ "${GITHUB_EVENT_NAME}" == pull_request && "${AFFECTED_SHARDS_RESULT}" != success ]]; then
             echo "::error::PR Gate failed: affected-shards=${AFFECTED_SHARDS_RESULT}"
             exit 1

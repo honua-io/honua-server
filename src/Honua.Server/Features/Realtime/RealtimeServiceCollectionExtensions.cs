@@ -27,11 +27,14 @@ internal static class RealtimeServiceCollectionExtensions
         services.TryAddSingleton(provider => new PostgresRealtimeEventLog(provider.GetRequiredService<JobStoreDatabase>()));
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IExpiredRowSweep, PostgresRealtimeEventLog>(
             provider => provider.GetRequiredService<PostgresRealtimeEventLog>()));
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RealtimeRetentionStartupService>(
-            provider => new RealtimeRetentionStartupService(
-                provider.GetService<NpgsqlDataSource>() is null ? null : provider.GetRequiredService<PostgresRealtimeEventLog>(),
-                provider.GetRequiredService<IOptions<RealtimeOptions>>(),
-                provider.GetRequiredService<ILogger<RealtimeRetentionStartupService>>())));
+        if (!ControlPlaneLambdaConnectionRelease.IsEventHandlerProfile(configuration))
+        {
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, RealtimeRetentionStartupService>(
+                provider => new RealtimeRetentionStartupService(
+                    provider.GetService<NpgsqlDataSource>() is null ? null : provider.GetRequiredService<PostgresRealtimeEventLog>(),
+                    provider.GetRequiredService<IOptions<RealtimeOptions>>(),
+                    provider.GetRequiredService<ILogger<RealtimeRetentionStartupService>>())));
+        }
         return services;
     }
 

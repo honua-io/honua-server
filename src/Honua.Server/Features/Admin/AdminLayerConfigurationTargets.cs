@@ -6,71 +6,22 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Server.Features.Admin;
 
-// A layer index is service-local, so a write addresses one feature or table resource; a raster sidecar that shares the index is not a second target, and an unset identifier is not numeric.
 internal static class AdminLayerConfigurationTargets
 {
     private const int MetadataMutationMaxAttempts = 5;
 
-    // The result is a conflict when more than one resource matches the layer id.
-    internal readonly record struct AdminLayerConfigurationTarget(
-        MetadataV2Resource? Resource,
-        string? ConflictDetail)
-    {
-        public bool IsAmbiguous => ConflictDetail is not null;
-
-        public static AdminLayerConfigurationTarget Unique(MetadataV2Resource resource) => new(resource, null);
-
-        public static AdminLayerConfigurationTarget Ambiguous(string detail) => new(null, detail);
-    }
-
-    internal static AdminLayerConfigurationTarget Resolve(MetadataV2GraphSnapshot snapshot, int layerId)
+    internal static MetadataV2StorageResourceResolution Resolve(MetadataV2GraphSnapshot snapshot, int storageLayerId)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-
-        var resources = new Dictionary<string, MetadataV2Resource>(StringComparer.Ordinal);
-        var serviceNames = new List<string>();
-        var seenServices = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var publication in snapshot.Graph.Publications)
-        {
-            if (publication.LayerIndex != layerId || !snapshot.IsRoutable(publication))
-            {
-                continue;
-            }
-
-            var candidate = snapshot.ResolveResource(publication);
-            if (candidate?.Type is not (MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table))
-            {
-                continue;
-            }
-
-            resources.TryAdd(candidate.Metadata.Id, candidate);
-            if (seenServices.Add(publication.ServiceId))
-            {
-                serviceNames.Add(ServiceName(snapshot, publication));
-            }
-        }
-
-        if (resources.Count == 1)
-        {
-            return AdminLayerConfigurationTarget.Unique(resources.Values.First());
-        }
-
-        if (resources.Count == 0)
-        {
-            return default;
-        }
-
-        var listed = serviceNames.Count == 0
-            ? "multiple services"
-            : string.Join(", ", serviceNames.Select(static name => $"'{name}'"));
-        return AdminLayerConfigurationTarget.Ambiguous(
-            $"Layer {layerId} is published by more than one resource ({listed}). Update one service's layer at a time.");
+        var target = snapshot.ResolveStorageResource(storageLayerId);
+        return target.IsAmbiguous || target.Resource?.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table
+            ? target
+            : default;
     }
 
-    internal static async Task<AdminLayerConfigurationTarget> WriteAsync(
+    internal static async Task<MetadataV2StorageResourceResolution> WriteAsync(
         IMetadataV2GraphStore graphStore,
-        int layerId,
+        int storageLayerId,
         Func<MetadataV2Resource, MetadataV2Resource> mutate,
         CancellationToken cancellationToken)
     {
@@ -80,7 +31,7 @@ internal static class AdminLayerConfigurationTargets
         for (var attempt = 1; ; attempt++)
         {
             var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var target = Resolve(snapshot, layerId);
+            var target = Resolve(snapshot, storageLayerId);
             if (target.IsAmbiguous || target.Resource is null)
             {
                 return target;
@@ -120,17 +71,6 @@ internal static class AdminLayerConfigurationTargets
                 // Concurrent etag bump — re-read and re-apply.
             }
         }
-    }
-
-    private static string ServiceName(MetadataV2GraphSnapshot snapshot, MetadataV2Publication publication)
-    {
-        if (snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service)
-            && !string.IsNullOrWhiteSpace(service.Metadata.Name))
-        {
-            return service.Metadata.Name;
-        }
-
-        return publication.ServiceId;
     }
 
     private static bool IsEtagMismatch(Exception exception) =>

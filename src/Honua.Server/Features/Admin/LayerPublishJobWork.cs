@@ -183,13 +183,13 @@ internal static partial class LayerPublishJobWork
             {
                 await context.RecordCommittedEffectAsync(
                     LayerPublishCompletionReceipt.Create(
-                        summary.LayerId, observedProgress.LastSnapshot, summary.MetadataRevision),
+                        summary.StorageLayerId, observedProgress.LastSnapshot, summary.MetadataRevision),
                     CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception exception) when (exception is not OutOfMemoryException)
             {
                 // The publication transaction already committed. A rejected receipt must not retry it.
-                Log.ReceiptFailed(logger, jobId, summary.LayerId, exception);
+                Log.ReceiptFailed(logger, jobId, summary.StorageLayerId, exception);
             }
         }
 
@@ -198,7 +198,7 @@ internal static partial class LayerPublishJobWork
         // the layer id from the execution record after a transient terminal-write failure.
         try
         {
-            await WriteTerminalAsync(progressStore, jobId, OperationStatus.Completed, summary.LayerId,
+            await WriteTerminalAsync(progressStore, jobId, OperationStatus.Completed, summary.StorageLayerId,
                 errorMessage: null, observedProgress.LastSnapshot, summary.MetadataRevision).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
@@ -206,7 +206,7 @@ internal static partial class LayerPublishJobWork
             Log.TerminalWriteFailed(logger, jobId, exception);
         }
 
-        await InvalidateCatalogAsync(services, logger, summary.ServiceName, summary.LayerId).ConfigureAwait(false);
+        await InvalidateCatalogAsync(services, logger, summary.ServiceName, summary.StorageLayerId).ConfigureAwait(false);
         try
         {
             var notifications = services.GetService<IMcpNotificationPublisher>();
