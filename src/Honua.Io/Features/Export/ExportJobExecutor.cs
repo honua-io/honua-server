@@ -146,10 +146,10 @@ internal sealed class ExportJobExecutor(
             CurrentPhase = "Export completed"
         };
 
-        // A cancellation accepted while the file was written wins over the completion.
-        var completion = await progressStore.TrySetProgressAsync(
+        // Cancellation and replacement attempts must both win over this attempt's completion.
+        var completion = await progressStore.TryReplaceProgressAsync(
                 new OperationProgressWrite(request.JobId, done, ExportJobService.Retention),
-                OperationStatus.Processing,
+                run.Processing,
                 cancellationToken)
             .ConfigureAwait(false);
         if (completion.Outcome != ProgressCompareAndSetOutcome.Updated)
