@@ -14,14 +14,21 @@ public static class DescriptiveMetadataResolver
 {
     private const int Wgs84Srid = 4326;
 
-    public static DescriptiveMetadata ForDataset(
-        MetadataV2Graph graph, MetadataV2Resource resource, MetadataV2Service? service, MetadataV2Publication? layer = null)
+    public sealed record DatasetContext(
+        MetadataV2Resource Resource, MetadataV2Service? Service, MetadataV2Publication? Layer = null);
+
+    private sealed record DescriptionSource(
+        DescribedItemKind Kind, MetadataV2ObjectMetadata[] Own, MetadataV2ObjectMetadata Governance);
+
+    public static DescriptiveMetadata ForDataset(MetadataV2Graph graph, DatasetContext context)
     {
         ArgumentNullException.ThrowIfNull(graph);
+        ArgumentNullException.ThrowIfNull(context);
+        var (resource, service, layer) = context;
         ArgumentNullException.ThrowIfNull(resource);
         MetadataV2ObjectMetadata[] own = layer is null ? [resource.Metadata] : [layer.Metadata, resource.Metadata];
         var governance = GovernanceFor(graph, resource, service);
-        return Describe(graph, DescribedItemKind.Dataset, own, governance) with
+        return Describe(graph, new DescriptionSource(DescribedItemKind.Dataset, own, governance)) with
         {
             Title = First(own, metadata => metadata.Title) ?? resource.Metadata.Name,
             Publisher = Text(resource.Metadata.Publisher),
@@ -36,7 +43,7 @@ public static class DescriptiveMetadataResolver
         ArgumentNullException.ThrowIfNull(graph);
         ArgumentNullException.ThrowIfNull(service);
         MetadataV2ObjectMetadata[] chain = [service.Metadata, .. FolderChain(graph, service)];
-        return Describe(graph, DescribedItemKind.Service, [service.Metadata], Fold(chain)) with
+        return Describe(graph, new DescriptionSource(DescribedItemKind.Service, [service.Metadata], Fold(chain))) with
         {
             Title = Text(service.Metadata.Title) ?? service.EffectivePublicName,
             Publisher = First(chain, metadata => metadata.Publisher),
@@ -44,7 +51,7 @@ public static class DescriptiveMetadataResolver
     }
 
     // Capabilities documents describe the service as a whole, so an untitled service also takes its folder's,
-    // then the environment's, title, abstract and keywords (founder ruling, 2026-11-08). Catalogue records keep
+    // then the environment's, title, abstract and keywords. Catalogue records keep
     // the service's own text so untitled services stay distinguishable.
     public static DescriptiveMetadata ForCapabilities(MetadataV2Graph graph, MetadataV2Service service)
     {
@@ -62,7 +69,7 @@ public static class DescriptiveMetadataResolver
     public static DescriptiveMetadata ForCatalog(MetadataV2Graph graph)
     {
         ArgumentNullException.ThrowIfNull(graph);
-        return Describe(graph, DescribedItemKind.Catalog, [graph.Metadata], graph.Metadata) with
+        return Describe(graph, new DescriptionSource(DescribedItemKind.Catalog, [graph.Metadata], graph.Metadata)) with
         {
             Title = Text(graph.Metadata.Title) ?? Text(graph.Environment) ?? "Honua",
             Publisher = Text(graph.Metadata.Publisher),
@@ -90,9 +97,9 @@ public static class DescriptiveMetadataResolver
             : $"License: {license}";
     }
 
-    private static DescriptiveMetadata Describe(
-        MetadataV2Graph graph, DescribedItemKind kind, MetadataV2ObjectMetadata[] own, MetadataV2ObjectMetadata governance)
+    private static DescriptiveMetadata Describe(MetadataV2Graph graph, DescriptionSource source)
     {
+        var (kind, own, governance) = source;
         var item = own[0];
         var license = Text(governance.License);
         return new DescriptiveMetadata

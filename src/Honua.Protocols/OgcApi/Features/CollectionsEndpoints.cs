@@ -542,7 +542,7 @@ internal static class CollectionsEndpoints
         var itemsBaseHref = $"{baseUrl}/ogc/features/collections/{Uri.EscapeDataString(collectionId)}/items";
         var collectionSegment = Uri.EscapeDataString(collectionId);
         var collectionLinks = ImmutableArray.CreateBuilder<Link>();
-        var descriptive = DescriptiveMetadataResolver.ForDataset(snapshot.Graph, resource, service, publication);
+        var descriptive = DescriptiveMetadataResolver.ForDataset(snapshot.Graph, new(resource, service, publication));
         var governance = DescriptiveMetadataResolver.GovernanceFor(snapshot.Graph, resource, service);
 
         // Self link

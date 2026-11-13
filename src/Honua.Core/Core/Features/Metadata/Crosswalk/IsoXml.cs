@@ -101,7 +101,25 @@ internal sealed class IsoXml
 
     private XElement Bound(string name, double value) => new(Extents + name, new XElement(Gco + "Decimal", Number(value)));
 
-    private static string Number(double value) => value.ToString("R", CultureInfo.InvariantCulture);
+    private static string Number(double value)
+    {
+        var roundTrip = value.ToString("R", CultureInfo.InvariantCulture);
+        var exponentIndex = roundTrip.IndexOf('E');
+        if (exponentIndex < 0)
+        {
+            return roundTrip;
+        }
+        var negative = roundTrip[0] == '-';
+        var mantissa = roundTrip[(negative ? 1 : 0)..exponentIndex];
+        var exponent = int.Parse(roundTrip[(exponentIndex + 1)..], CultureInfo.InvariantCulture);
+        var point = mantissa.IndexOf('.');
+        var digits = mantissa.Replace(".", string.Empty, StringComparison.Ordinal);
+        var position = (point < 0 ? mantissa.Length : point) + exponent;
+        var expanded = position <= 0 ? "0." + new string('0', -position) + digits
+            : position >= digits.Length ? digits + new string('0', position - digits.Length)
+            : digits.Insert(position, ".");
+        return negative ? "-" + expanded : expanded;
+    }
 
     private static XElement TimePeriod(string identifier, MetadataV2TimeRange period)
         => new(Gml + "TimePeriod",

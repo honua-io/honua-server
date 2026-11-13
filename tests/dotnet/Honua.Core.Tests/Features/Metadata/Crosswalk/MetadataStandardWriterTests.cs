@@ -179,6 +179,75 @@ public sealed class MetadataStandardWriterTests
         errors.Should().Contain(error => error.Contains("metadata.lineage"));
     }
 
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void GraphValidation_FolderGovernance_RejectsInvalidInheritedText()
+    {
+        var graph = CrosswalkFixtures.Graph(folder: new MetadataV2ObjectMetadata
+        {
+            Id = "folder.parks", Name = "parks", Fees = "fee\u0001",
+        });
+
+        MetadataV2GraphValidator.Validate(graph).Errors.Should()
+            .Contain(error => error.Contains("folder 'folder.parks' metadata.fees"));
+    }
+
+    [UnitTheory]
+    [Operation(Operations.Metadata)]
+    [InlineData("not-an-email", "https://example.org/contact", false)]
+    [InlineData("gis@example.org", "javascript:alert(1)", false)]
+    [InlineData("gis@example.org", "https://user:secret@example.org/contact", false)]
+    [InlineData("gis@example.org", "https://example.org/contact", true)]
+    public void GraphValidation_ResponsibleParty_UsesPublicContactRules(string email, string url, bool valid)
+    {
+        var graph = CrosswalkFixtures.Graph(resource: CrosswalkFixtures.FullDataset with
+        {
+            Contacts = [new MetadataV2ResponsibleParty { Email = email, Url = url }],
+        });
+
+        var errors = MetadataV2GraphValidator.Validate(graph).Errors
+            .Where(error => error.Contains("metadata.contacts"));
+
+        errors.Any().Should().Be(!valid);
+    }
+
+    [UnitTheory]
+    [Operation(Operations.Metadata)]
+    [InlineData(MetadataStandard.Iso19139)]
+    [InlineData(MetadataStandard.Iso19115Part3)]
+    public void IsoWriters_NearZeroCoordinates_UseXmlSchemaDecimal(MetadataStandard standard)
+    {
+        var metadata = CrosswalkFixtures.FullRecord() with
+        {
+            Extent = new MetadataV2Bbox { West = -1e-7, South = 1e-8, East = 1e-7, North = 1e-6 },
+        };
+        var document = standard == MetadataStandard.Iso19139
+            ? Iso19139Writer.Write(metadata) : Iso19115Part3Writer.Write(metadata);
+        var decimalType = System.Xml.Schema.XmlSchemaType.GetBuiltInSimpleType(System.Xml.Schema.XmlTypeCode.Decimal);
+        var coordinates = document.Descendants().Where(element => element.Name.LocalName == "Decimal").ToArray();
+
+        coordinates.Should().HaveCount(4);
+        foreach (var coordinate in coordinates)
+        {
+            FluentActions.Invoking(() => decimalType.Datatype!.ParseValue(
+                coordinate.Value, new System.Xml.NameTable(), null!)).Should().NotThrow();
+        }
+        coordinates.Select(coordinate => decimal.Parse(coordinate.Value, System.Globalization.CultureInfo.InvariantCulture))
+            .Should().Equal(-0.0000001m, 0.0000001m, 0.00000001m, 0.000001m);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void Iso19139_DatasetPublisher_IsPreservedAlongsideContact()
+    {
+        var document = Iso19139Writer.Write(CrosswalkFixtures.FullRecord());
+        var publisher = document.Descendants(Gmd + "CI_ResponsibleParty")
+            .Single(party => party.Element(Gmd + "role")!.Value == "publisher");
+
+        publisher.Element(Gmd + "organisationName")!.Value.Should().Be("County of Example");
+        document.Descendants(Gmd + "individualName").Select(element => element.Value).Should().Contain("Ana Ruiz");
+    }
+
     private static string LastElement(string path)
     {
         var last = path.Split('/')[^1];

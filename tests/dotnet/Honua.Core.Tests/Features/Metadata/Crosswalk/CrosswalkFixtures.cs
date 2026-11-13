@@ -81,7 +81,7 @@ internal static class CrosswalkFixtures
     public static DescriptiveMetadata FullRecord()
     {
         var graph = Graph(resource: FullDataset);
-        return DescriptiveMetadataResolver.ForDataset(graph, graph.Resources[0], graph.Services[0]) with
+        return DescriptiveMetadataResolver.ForDataset(graph, new(graph.Resources[0], graph.Services[0])) with
         {
             Distributions = [new DescriptiveDistribution("https://maps.example.org/ogc/collections/trails", "OGC API - Features", "Trails", "application/geo+json")],
         };

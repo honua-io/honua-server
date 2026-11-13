@@ -694,6 +694,10 @@ public static class MetadataV2GraphValidator
     private static void ValidateObjectMetadataUniversals(List<string> errors, MetadataV2Graph graph)
     {
         ValidateOneMetadata(errors, "graph", graph.Metadata);
+        foreach (var folder in graph.Folders)
+        {
+            ValidateOneMetadata(errors, $"folder '{folder.Metadata.Id}'", folder.Metadata);
+        }
         foreach (var r in graph.Resources)
         {
             ValidateOneMetadata(errors, $"resource '{r.Metadata.Id}'", r.Metadata);
@@ -742,26 +746,8 @@ public static class MetadataV2GraphValidator
             errors.Add(
                 $"{ownerLabel} metadata.contactPoint.name must not exceed {MetadataV2ContactPoint.MaxNameLength} characters or contain control characters.");
         }
-        if (metadata.ContactPoint is { Email: { } email } &&
-            !string.IsNullOrWhiteSpace(email) &&
-            !HasNonEmptyEmailParts(email))
-        {
-            errors.Add($"{ownerLabel} metadata.contactPoint.email must contain non-empty local and domain parts.");
-        }
-        if (metadata.ContactPoint is { Url: { } contactUrl } &&
-            !string.IsNullOrWhiteSpace(contactUrl))
-        {
-            if (contactUrl.Length > MetadataV2ContactPoint.MaxUrlLength)
-            {
-                errors.Add(
-                    $"{ownerLabel} metadata.contactPoint.url must not exceed {MetadataV2ContactPoint.MaxUrlLength} characters.");
-            }
-            else if (!IsSafePublicHttpUrl(contactUrl))
-            {
-                errors.Add(
-                    $"{ownerLabel} metadata.contactPoint.url must be an absolute HTTP(S) URL without credentials.");
-            }
-        }
+        ValidateContactEmail(errors, $"{ownerLabel} metadata.contactPoint.email", metadata.ContactPoint?.Email);
+        ValidateContactUrl(errors, $"{ownerLabel} metadata.contactPoint.url", metadata.ContactPoint?.Url);
 
         for (var i = 0; i < metadata.Links.Count; i++)
         {
@@ -791,6 +777,30 @@ public static class MetadataV2GraphValidator
                 errors.Add(
                     $"{ownerLabel} metadata.links[{i}].href must be an absolute HTTP(S) URL without credentials for relation '{link.Rel}'.");
             }
+        }
+    }
+
+    internal static void ValidateContactEmail(List<string> errors, string field, string? email)
+    {
+        if (!string.IsNullOrWhiteSpace(email) && !HasNonEmptyEmailParts(email))
+        {
+            errors.Add($"{field} must contain non-empty local and domain parts.");
+        }
+    }
+
+    internal static void ValidateContactUrl(List<string> errors, string field, string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return;
+        }
+        if (url.Length > MetadataV2ContactPoint.MaxUrlLength)
+        {
+            errors.Add($"{field} must not exceed {MetadataV2ContactPoint.MaxUrlLength} characters.");
+        }
+        else if (!IsSafePublicHttpUrl(url))
+        {
+            errors.Add($"{field} must be an absolute HTTP(S) URL without credentials.");
         }
     }
 

@@ -108,14 +108,8 @@ internal static class CollectionEndpoints
             var collections = await OgcCommonUtilities.ProjectWithLimitedConcurrencyAsync(
                 visible,
                 (resolved, ct) => StacMappingService.MapResourceToCollectionAsync(
-                    resolved.Resource,
-                    resolved.Publication,
-                    resolved.Service,
-                    resolved.LayerIndex,
-                    resolved.StorageLayerId,
-                    featureReader,
-                    baseUrl,
-                    coordinateTransformService,
+                    resolved,
+                    new(featureReader, baseUrl, coordinateTransformService),
                     ct),
                 cancellationToken).ConfigureAwait(false);
 
@@ -194,14 +188,8 @@ internal static class CollectionEndpoints
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var collection = await StacMappingService.MapResourceToCollectionAsync(
-                resolved.Value.Resource,
-                resolved.Value.Publication,
-                resolved.Value.Service,
-                resolved.Value.LayerIndex,
-                resolved.Value.StorageLayerId,
-                featureReader,
-                baseUrl,
-                coordinateTransformService,
+                resolved.Value,
+                new(featureReader, baseUrl, coordinateTransformService),
                 cancellationToken).ConfigureAwait(false);
 
             StacTelemetry.SetResultCount(activity, 1);

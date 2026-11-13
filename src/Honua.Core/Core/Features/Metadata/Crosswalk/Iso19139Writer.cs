@@ -93,7 +93,18 @@ public static class Iso19139Writer
     }
 
     private static IEnumerable<MetadataV2ResponsibleParty> Iso19139Contacts(DescriptiveMetadata metadata)
-        => metadata.Contacts.Where(contact => MetadataV2DescriptiveCodes.Iso19139Roles.Contains(contact.Role));
+    {
+        var contacts = metadata.Contacts.Where(contact => MetadataV2DescriptiveCodes.Iso19139Roles.Contains(contact.Role));
+        if (metadata.Publisher is not null && !metadata.Contacts.Any(contact => contact.Role == MetadataV2DescriptiveCodes.PublisherRole))
+        {
+            return contacts.Append(new MetadataV2ResponsibleParty
+            {
+                Role = MetadataV2DescriptiveCodes.PublisherRole,
+                Organization = metadata.Publisher,
+            });
+        }
+        return contacts;
+    }
 
     private static MetadataV2ResponsibleParty MetadataContact(DescriptiveMetadata metadata)
     {

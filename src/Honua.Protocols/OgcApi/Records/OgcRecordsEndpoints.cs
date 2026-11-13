@@ -573,7 +573,7 @@ internal static class OgcRecordsEndpoints
             ResourceType = "Layer",
             GeometryType = resource.ReadGeometryType().ToString(),
             ExternalIds = ImmutableArray.Create(publicationId, resource.Metadata.Name)
-        }, DescriptiveMetadataResolver.ForDataset(snapshot.Graph, resource, service, publication));
+        }, DescriptiveMetadataResolver.ForDataset(snapshot.Graph, new(resource, service, publication)));
 
         return new CatalogRecord(
             new OgcRecordFeature

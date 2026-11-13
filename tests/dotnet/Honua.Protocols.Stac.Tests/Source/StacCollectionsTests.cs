@@ -9,6 +9,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
@@ -32,6 +33,50 @@ public sealed class StacCollectionsTests : IAsyncLifetime
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task GetCollection_ParentGovernance_UsesFolderOrEnvironment(bool useFolder)
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var governance = snapshot.Graph.Metadata with
+        {
+            Language = "de",
+            License = "CC-BY-4.0",
+            Contacts = [new MetadataV2ResponsibleParty { Name = "Regional GIS", Url = "https://gis.example.org" }],
+        };
+        var graph = snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Metadata = useFolder ? snapshot.Graph.Metadata : governance,
+            Folders = useFolder
+                ? [.. snapshot.Graph.Folders, new MetadataV2Folder { Metadata = governance with { Id = "folder.governance", Name = "governance" } }]
+                : snapshot.Graph.Folders,
+            Services = snapshot.Graph.Services.Select(service => service with
+            {
+                FolderId = useFolder ? "folder.governance" : null,
+                Metadata = service.Metadata with { Language = null, License = null, Contacts = [], ContactPoint = null },
+            }).ToArray(),
+            Resources = snapshot.Graph.Resources.Select(resource => resource with
+            {
+                Metadata = resource.Metadata with { Language = null, License = null, Contacts = [], ContactPoint = null },
+            }).ToArray(),
+        };
+        _fixture.GetService<TestMetadataV2GraphProvider>()!.SetGraph(graph, schema: _fixture.CurrentSchema);
+
+        var response = await _fixture.Client.GetAsync($"/stac/collections/{WebAppFixture.TestLayerId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("language").GetProperty("code").GetString().Should().Be("de");
+        json.RootElement.GetProperty("license").GetString().Should().Be("CC-BY-4.0");
+        json.RootElement.GetProperty("providers").EnumerateArray().Should().Contain(provider =>
+            provider.GetProperty("name").GetString() == "Regional GIS" &&
+            provider.GetProperty("url").GetString() == "https://gis.example.org");
+    }
 
     [IntegrationTest]
     [Operation(Operations.Query)]

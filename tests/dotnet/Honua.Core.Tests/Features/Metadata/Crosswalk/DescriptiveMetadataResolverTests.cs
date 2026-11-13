@@ -28,7 +28,7 @@ public sealed class DescriptiveMetadataResolverTests
     {
         var graph = CrosswalkFixtures.Graph(folder: Folder);
 
-        var record = DescriptiveMetadataResolver.ForDataset(graph, graph.Resources[0], graph.Services[0]);
+        var record = DescriptiveMetadataResolver.ForDataset(graph, new(graph.Resources[0], graph.Services[0]));
 
         record.License.Should().Be("ODbL-1.0");
         record.Attribution.Should().Be("Parks department");
@@ -44,7 +44,7 @@ public sealed class DescriptiveMetadataResolverTests
             service: new MetadataV2ObjectMetadata { Id = "service.parks", Name = "parks-service", License = "CC0-1.0" },
             folder: Folder);
 
-        var record = DescriptiveMetadataResolver.ForDataset(graph, graph.Resources[0], graph.Services[0]);
+        var record = DescriptiveMetadataResolver.ForDataset(graph, new(graph.Resources[0], graph.Services[0]));
 
         record.License.Should().Be("CC0-1.0");
         record.Attribution.Should().Be("Parks department");
@@ -63,7 +63,7 @@ public sealed class DescriptiveMetadataResolverTests
             },
             folder: Folder);
 
-        var record = DescriptiveMetadataResolver.ForDataset(graph, graph.Resources[0], graph.Services[0]);
+        var record = DescriptiveMetadataResolver.ForDataset(graph, new(graph.Resources[0], graph.Services[0]));
 
         record.License.Should().BeNull();
         record.MetadataLink("license").Should().Be("https://example.org/terms");
@@ -77,7 +77,7 @@ public sealed class DescriptiveMetadataResolverTests
         var graph = CrosswalkFixtures.Graph(
             service: new MetadataV2ObjectMetadata { Id = "service.parks", Name = "parks-service", Publisher = "Hosting team" });
 
-        DescriptiveMetadataResolver.ForDataset(graph, graph.Resources[0], graph.Services[0]).Publisher.Should().BeNull();
+        DescriptiveMetadataResolver.ForDataset(graph, new(graph.Resources[0], graph.Services[0])).Publisher.Should().BeNull();
         DescriptiveMetadataResolver.ForService(graph, graph.Services[0]).Publisher.Should().Be("Hosting team");
     }
 
@@ -88,7 +88,7 @@ public sealed class DescriptiveMetadataResolverTests
         var graph = CrosswalkFixtures.Graph(
             resource: new MetadataV2ObjectMetadata { Id = "dataset.trails", Name = "trails", Keywords = [" coastal ", "", "COASTAL", "survey"] });
 
-        DescriptiveMetadataResolver.ForDataset(graph, graph.Resources[0], graph.Services[0]).Keywords
+        DescriptiveMetadataResolver.ForDataset(graph, new(graph.Resources[0], graph.Services[0])).Keywords
             .Should().Equal("coastal", "survey");
     }
 
@@ -98,7 +98,7 @@ public sealed class DescriptiveMetadataResolverTests
     {
         var graph = CrosswalkFixtures.Graph(folder: Folder with { Description = "Folder text", Keywords = ["folder"] });
 
-        var record = DescriptiveMetadataResolver.ForDataset(graph, graph.Resources[0], graph.Services[0]);
+        var record = DescriptiveMetadataResolver.ForDataset(graph, new(graph.Resources[0], graph.Services[0]));
 
         record.Title.Should().Be("trails");
         record.Description.Should().BeNull();
@@ -112,7 +112,7 @@ public sealed class DescriptiveMetadataResolverTests
         var graph = CrosswalkFixtures.Graph(resource: CrosswalkFixtures.FullDataset);
         var layer = new MetadataV2Publication { Metadata = new MetadataV2ObjectMetadata { Id = "layer.trails", Name = "trails", Title = "Trails (public)" } };
 
-        var record = DescriptiveMetadataResolver.ForDataset(graph, graph.Resources[0], graph.Services[0], layer);
+        var record = DescriptiveMetadataResolver.ForDataset(graph, new(graph.Resources[0], graph.Services[0], layer));
 
         record.Title.Should().Be("Trails (public)");
         record.Keywords.Should().Equal("trails", "recreation");
@@ -124,7 +124,7 @@ public sealed class DescriptiveMetadataResolverTests
     {
         var graph = CrosswalkFixtures.Graph();
 
-        var record = DescriptiveMetadataResolver.ForDataset(graph, graph.Resources[0], graph.Services[0]);
+        var record = DescriptiveMetadataResolver.ForDataset(graph, new(graph.Resources[0], graph.Services[0]));
 
         record.Extent!.West.Should().Be(-123.5);
         record.Crs.Should().Equal("EPSG:4326", "EPSG:26910");

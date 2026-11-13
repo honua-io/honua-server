@@ -40,7 +40,8 @@ public sealed class OgcRecordsDescriptiveMetadataTests : IAsyncLifetime
             Contacts = [new MetadataV2ResponsibleParty { Role = "pointOfContact", Name = "Ana Ruiz", Email = "gis@example.org" }],
         });
 
-        var response = await _fixture.Client.GetAsync("/ogc/records/collections/honua-catalog/items/layer:0");
+        var recordId = Uri.EscapeDataString($"layer:pub-layer-{WebAppFixture.TestLayerId}");
+        var response = await _fixture.Client.GetAsync($"/ogc/records/collections/honua-catalog/items/{recordId}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());

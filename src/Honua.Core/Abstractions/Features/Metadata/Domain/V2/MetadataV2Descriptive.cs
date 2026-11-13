@@ -101,6 +101,8 @@ internal static class MetadataV2DescriptiveValidation
             RequireStatement(errors, $"{ownerLabel} metadata.contacts[].organization", contact.Organization);
             RequireStatement(errors, $"{ownerLabel} metadata.contacts[].email", contact.Email);
             RequireStatement(errors, $"{ownerLabel} metadata.contacts[].url", contact.Url);
+            MetadataV2GraphValidator.ValidateContactEmail(errors, $"{ownerLabel} metadata.contacts[].email", contact.Email);
+            MetadataV2GraphValidator.ValidateContactUrl(errors, $"{ownerLabel} metadata.contacts[].url", contact.Url);
         }
         RequireStatement(errors, $"{ownerLabel} metadata.accessConstraints", metadata.AccessConstraints);
         RequireStatement(errors, $"{ownerLabel} metadata.fees", metadata.Fees);
