@@ -56,7 +56,7 @@ Authenticated responses also include `dataStores` for connection clients:
 |---|---|
 | `installedProviders` | Sorted, distinct provider identifiers from the running server's registered feature-data providers. An empty array means no providers are registered. This is not a list inferred from image tags or referenced assemblies. |
 | `fullImageTagSuffix` | `-full`, the opt-in image suffix for additional data stores. Use a published variant for the same server revision. |
-| `documentationHref` | Link to [data-store variant guidance](../../internal/operations/nightly-images.md#data-store-variants). |
+| `documentationHref` | Link to [data-store variant guidance](../../guides/operate/nightly-images.md#data-store-variants). |
 
 Anonymous responses omit `dataStores`. Clients must treat a missing section as unknown availability, not as a default provider list. Registration does not prove connection health, access rights, or that an experimental provider is available for every operation. File-format readers used by imports are separate from data stores.
 
