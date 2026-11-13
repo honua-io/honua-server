@@ -15,6 +15,7 @@ using Honua.TestKit;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -42,11 +43,28 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
                     .ConfigurePrimaryHttpMessageHandler(provider.CreateMessageHandler);
             });
 
-    public static async Task<HumanApprovalHttpClient> AuthenticateAsync(
+    public static void Configure(IWebHostBuilder builder, AdminAuthEndpointsTests.StubHttpClientFactory provider)
+    {
+        AdminAuthEndpointsTests.ConfigureGenericOidcHost(builder);
+        builder.UseSetting("Public:BaseUrl", "http://localhost");
+        builder.ConfigureTestServices(services =>
+        {
+            services.AddSingleton<IStartupFilter>(new IsolatedApprovalClientAddress());
+            services.RemoveAll<IHttpClientFactory>();
+            services.AddHttpClient(AdminAuthEndpoints.AdminAuthHttpClient)
+                .ConfigurePrimaryHttpMessageHandler(provider.CreateMessageHandler);
+        });
+    }
+
+    public static Task<HumanApprovalHttpClient> AuthenticateAsync(
         WebAppFixture fixture, AdminAuthEndpointsTests.StubHttpClientFactory provider, string subject = "human-approver", string? tenantId = null)
+        => AuthenticateAsync(() => fixture.CreateClient(), provider, subject, tenantId);
+
+    public static async Task<HumanApprovalHttpClient> AuthenticateAsync(
+        Func<HttpClient> createClient, AdminAuthEndpointsTests.StubHttpClientFactory provider, string subject = "human-approver", string? tenantId = null)
     {
         provider.IdTokenOverride = AdminAuthEndpointsTests.CreateIdTokenForSubject(subject, subject, ["admin"], tenantId);
-        var client = fixture.CreateClient();
+        var client = createClient();
         client.BaseAddress = new Uri("https://localhost");
         try
         {
