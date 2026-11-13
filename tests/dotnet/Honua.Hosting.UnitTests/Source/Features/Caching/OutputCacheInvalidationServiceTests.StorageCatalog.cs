@@ -41,4 +41,21 @@ public sealed partial class OutputCacheInvalidationServiceTests
         await outputCache.Received().EvictByTagAsync("collection:pub-beta-9", Arg.Any<CancellationToken>());
         await metadataCache.Received().RemoveAsync(ScopedKey("layer:741"), Arg.Any<CancellationToken>());
     }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task InvalidateEditedStorageLayerAsync_BindinglessPublication_EvictsWhatTheCdnPurgeReaches()
+    {
+        var graph = CreateFeatureServerGraph(("alpha", [3]), ("beta", [9])) with { StorageBindings = [] };
+        var responseCache = Substitute.For<IResponseCache>();
+        var outputCache = Substitute.For<IOutputCacheStore>();
+        var invalidator = new OutputCacheInvalidationService(outputCache, responseCache, Substitute.For<ICacheService>(),
+            CreateScopeFactory(graph), null, NullLogger<OutputCacheInvalidationService>.Instance);
+
+        await invalidator.InvalidateEditedStorageLayerAsync(3, CancellationToken.None);
+
+        await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:alpha:layer:3:*", Arg.Any<CancellationToken>());
+        await outputCache.Received().EvictByTagAsync("collection:pub-alpha-3", Arg.Any<CancellationToken>());
+        await outputCache.DidNotReceive().EvictByTagAsync("collection:pub-beta-9", Arg.Any<CancellationToken>());
+    }
 }

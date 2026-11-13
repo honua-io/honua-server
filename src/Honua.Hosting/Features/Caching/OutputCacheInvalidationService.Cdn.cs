@@ -96,9 +96,7 @@ internal sealed partial class OutputCacheInvalidationService
         }
 
         var paths = new HashSet<string>(CdnCacheTags.InvalidationsForEditedStorageLayer(storageLayerId), StringComparer.Ordinal);
-        foreach (var publication in snapshot.Graph.Publications.Where(publication =>
-            snapshot.IsRoutable(publication)
-            && snapshot.ResolveStorageLayerId(publication, snapshot.ResolveResource(publication)) == storageLayerId))
+        foreach (var publication in PublicationsEditedWithStorageLayer(snapshot, storageLayerId))
         {
             if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service))
             {

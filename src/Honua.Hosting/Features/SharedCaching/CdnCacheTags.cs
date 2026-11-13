@@ -53,13 +53,15 @@ internal static class CdnCacheTags
         return [.. tags];
     }
 
-    // The same reach as the paths an edit invalidated before tags (CdnPaths.ForEditedLayer): the layer's own tiles, every OGC API
-    // response, and every GeoServices response of each name the layer's service is published as.
+    // The same reach as the paths an edit invalidates without tags (CdnPaths.ForEditedLayer): the layer's own tiles, every OGC API
+    // and STAC response (STAC collection extents are computed from the features), and every GeoServices response of each name
+    // the layer's service is published as. Every edit path reaches STAC, whichever protocol carried the edit.
     internal static string[] InvalidationsForEditedLayer(int layerId, IEnumerable<string> serviceNames)
         =>
         [
             InvalidationPrefix + TilesScope(layerId.ToString(CultureInfo.InvariantCulture)),
             InvalidationPrefix + OgcScope,
+            InvalidationPrefix + StacScope,
             .. serviceNames
                 .Where(serviceName => !string.IsNullOrWhiteSpace(serviceName))
                 .Select(Name)
@@ -67,9 +69,7 @@ internal static class CdnCacheTags
                 .Select(service => InvalidationPrefix + ServicesScope(service)),
         ];
 
-    // Storage edits also change the temporal extents in STAC collection documents.
-    internal static string[] InvalidationsForEditedStorageLayer(int layerId)
-        => [.. InvalidationsForEditedLayer(layerId, []), InvalidationPrefix + StacScope];
+    internal static string[] InvalidationsForEditedStorageLayer(int layerId) => InvalidationsForEditedLayer(layerId, []);
 
     internal static string[] InvalidationsForOgcSurface => [InvalidationPrefix + OgcScope];
 

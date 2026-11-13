@@ -56,7 +56,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
             await InvalidateQueryResponsesAsync(cancellationToken).ConfigureAwait(false);
             return;
         }
-        var publications = snapshot.PublicationsForStorageLayer(storageLayerId).ToArray();
+        var publications = PublicationsEditedWithStorageLayer(snapshot, storageLayerId).ToArray();
         foreach (var publication in publications.DistinctBy(static publication => (publication.ServiceId, publication.LayerIndex)))
         {
             if (snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service))
@@ -72,6 +72,13 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
         await Task.WhenAll(collectionIds.Select(collectionId => EvictCollectionAsync(collectionId, cancellationToken)))
             .ConfigureAwait(false);
     }
+
+    // The in-process eviction and the CDN purge of a storage edit must reach the same publications, including those that name
+    // their storage only through their resource or their layer index.
+    private static IEnumerable<MetadataV2Publication> PublicationsEditedWithStorageLayer(MetadataV2GraphSnapshot snapshot, int storageLayerId)
+        => snapshot.Graph.Publications.Where(publication =>
+            snapshot.IsRoutable(publication)
+            && snapshot.ResolveStorageLayerId(publication, snapshot.ResolveResource(publication)) == storageLayerId);
 
     private static string[] LayerTags(int layerId)
         => [$"layer:{layerId}", "service-metadata", "tiles", "layer-metadata", "layer-styles", "terrain", "ogc-maps", "ogc-styles"];

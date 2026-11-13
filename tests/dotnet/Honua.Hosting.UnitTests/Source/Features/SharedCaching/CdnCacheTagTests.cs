@@ -68,6 +68,7 @@ public sealed partial class CdnCacheTagTests
     [InlineData("/tiles/03/tile.json")]
     [InlineData("/ogc/tiles/tiles/WebMercatorQuad/4/5/6")]
     [InlineData("/ogc/collections/parcels/items")]
+    [InlineData("/stac/collections/parcels")]
     public void ForResponse_AnyResponseAnEditUsedToInvalidateByPath_CarriesATagTheEditInvalidates(string path)
     {
         // A MapServer tile is drawn from every layer of its service and a dataset tile may have no single subject; both are reached by scope.
@@ -140,7 +141,7 @@ public sealed partial class CdnCacheTagTests
         await invalidation.InvalidateEditedLayerAsync("Parcels", 3, CancellationToken.None);
 
         _cloudFront.Accepted.Should().ContainSingle().Which.Should().BeEquivalentTo(
-            "#honua-scope:tiles/3", "#honua-scope:ogc", "#honua-scope:rest/services/parcels");
+            "#honua-scope:tiles/3", "#honua-scope:ogc", "#honua-scope:stac", "#honua-scope:rest/services/parcels");
         _cloudFront.WildcardPathsInProgress.Should().Be(0);
     }
 
@@ -191,7 +192,7 @@ public sealed partial class CdnCacheTagTests
         await invalidation.InvalidateEditedLayerAsync("parcels", 0, CancellationToken.None);
 
         _cloudFront.Accepted.Should().ContainSingle().Which.Should().BeEquivalentTo(
-            "#honua-scope:tiles/0", "#honua-scope:ogc", "#honua-scope:rest/services/parcels", "#honua-scope:rest/services/parcels-public");
+            "#honua-scope:tiles/0", "#honua-scope:ogc", "#honua-scope:stac", "#honua-scope:rest/services/parcels", "#honua-scope:rest/services/parcels-public");
     }
 
     [UnitTest]
@@ -207,7 +208,7 @@ public sealed partial class CdnCacheTagTests
         _time.Advance(CdnInvalidationService.CoalescingWindow);
         await _cloudFront.AcceptedCountReaches(1);
         _cloudFront.Accepted[0].Should().BeEquivalentTo(
-            "#honua-scope:tiles/0", "#honua-scope:ogc", "#honua-scope:rest/services/parcels", "#honua-scope:rest/services/parcels-public");
+            "#honua-scope:tiles/0", "#honua-scope:ogc", "#honua-scope:stac", "#honua-scope:rest/services/parcels", "#honua-scope:rest/services/parcels-public");
     }
 
     [UnitTest]
@@ -228,6 +229,27 @@ public sealed partial class CdnCacheTagTests
         _cloudFront.CompleteEverythingInProgress();
         _time.Advance(CdnInvalidationService.CoalescingWindow);
         await _cloudFront.AcceptedCountReaches(1);
+    }
+
+    [UnitTest]
+    public async Task InvalidateEditedLayerAsync_CdnStillBusyAfterRetries_PurgesWithTheNextWindow()
+    {
+        var invalidation = Invalidation(Service(new SharedLeases(_time), new SharedCacheOptions()));
+        _cloudFront.OccupyEveryWildcardSlot();
+
+        var edit = invalidation.InvalidateEditedLayerAsync("parcels", 3, CancellationToken.None);
+        foreach (var delay in CdnInvalidationService.BusyRetryDelays)
+        {
+            await _time.TimerIsWaiting();
+            _time.Advance(delay);
+        }
+
+        await edit;
+        _cloudFront.Accepted.Should().BeEmpty();
+        _cloudFront.CompleteEverythingInProgress();
+        _time.Advance(CdnInvalidationService.CoalescingWindow);
+        await _cloudFront.AcceptedCountReaches(1);
+        _cloudFront.Accepted[0].Should().Contain("/tiles/3/*");
     }
 
     [UnitTest]
