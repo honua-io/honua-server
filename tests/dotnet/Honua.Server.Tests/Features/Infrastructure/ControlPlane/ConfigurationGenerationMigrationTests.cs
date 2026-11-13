@@ -70,6 +70,25 @@ public sealed class ConfigurationGenerationMigrationTests(DatabaseFixtureAdapter
         (await otherSchema.ScalarAsync<long>($"SELECT count(*) FROM {otherSchema.Table("configuration_documents")}")).Should().Be(0);
     }
 
+    [IntegrationTest]
+    public async Task ConfigurationMigration_Replayed_PreservesDataAndSingleGenerationAdvance()
+    {
+        await using var harness = await CreateHarnessAsync();
+        await harness.ExecuteAsync($"INSERT INTO {harness.Table("configuration_documents")} (kind, key, payload) VALUES ('test', 'retained', decode('01', 'hex'))");
+        var initial = await GenerationAsync(harness);
+
+        await harness.ReplayConfigurationMigrationAsync();
+        await harness.ReplayConfigurationMigrationAsync();
+
+        (await GenerationAsync(harness)).Should().Be(initial);
+        (await harness.ScalarAsync<long>($"SELECT count(*) FROM {harness.Table("configuration_documents")} WHERE key = 'retained'")).Should().Be(1);
+        await harness.ExecuteAsync($"UPDATE {harness.Table("configuration_documents")} SET revision = revision + 1 WHERE key = 'retained'");
+        (await GenerationAsync(harness)).Should().Be(initial + 1);
+        await harness.ExecuteAsync($"INSERT INTO {harness.Table("metadata_v2_snapshots")} (environment, revision, schema_version, api_version, document, etag, generated_at) VALUES ('test', 1, '2', '2', '{{}}', 'first', now())");
+        await harness.ExecuteAsync($"INSERT INTO {harness.Table("metadata_v2_current")} (environment, revision, etag) VALUES ('test', 1, 'first')");
+        (await GenerationAsync(harness)).Should().Be(initial + 2);
+    }
+
     private Task<ControlPlaneStateHarness> CreateHarnessAsync()
         => ControlPlaneStateHarness.CreateAsync(database, nameof(ConfigurationGenerationMigrationTests));
 

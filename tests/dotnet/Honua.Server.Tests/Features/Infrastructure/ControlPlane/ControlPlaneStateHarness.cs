@@ -59,6 +59,10 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
         return new ControlPlaneStateHarness(jobs);
     }
 
+    public Task ReplayConfigurationMigrationAsync()
+        => ExecuteAsync(ReadMigration("Honua.Server.Migrations.154_CreateConfigurationDocuments.sql")
+            .Replace("$HonuaSchema$", $"\"{_jobs.Schema}\"", StringComparison.Ordinal));
+
     public string Table(string tableName) => _jobs.Database.Table(tableName);
 
     public Task ExecuteAsync(string sql, params NpgsqlParameter[] parameters) => _jobs.ExecuteAsync(sql, parameters);
