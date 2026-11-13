@@ -3,6 +3,7 @@ name: Store Image Size
 on:
   pull_request:
     branches: [trunk]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - 'Dockerfile'
       - 'docker/Dockerfile.aot'
@@ -35,7 +36,8 @@ concurrency:
 jobs:
   measure:
     name: Measure ${{ matrix.profile }} (${{ matrix.compilation }})
-    runs-on: ubuntu-24.04
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 120
     # AOT promotion needs separate full/live parity proof; its old size target must
     # not hold the approved JIT fallback. Evidence is still uploaded on failure.

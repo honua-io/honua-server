@@ -177,6 +177,11 @@ code="$(curl -sS --max-time 120 -o "$OUT/legend.png" -w '%{http_code}' "http://1
   || fail "legend request failed"
 [[ "$code" == 200 ]] || fail "legend answered HTTP ${code}"
 "$format_python" "$format_assertions" legend "$OUT/legend.png"
+path="/rest/services/cng-map/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=missing&STYLES=&CRS=EPSG:4326&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=128&FORMAT=image/png&EXCEPTIONS=INIMAGE"
+code="$(curl -sS --max-time 120 -o "$OUT/exception.png" -w '%{http_code}' "http://127.0.0.1:${PORT}${path}")" \
+  || fail "WMS exception image request failed"
+[[ "$code" == 200 ]] || fail "WMS exception image answered HTTP ${code}"
+"$format_python" "$format_assertions" exception "$OUT/exception.png"
 # The container must still be serving after the encoder ran: a native crash exits the process.
 wait_healthy honua-server 60
 verify_persisted_store_refusal

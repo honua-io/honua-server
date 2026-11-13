@@ -12,7 +12,7 @@ if (honolulu.GetUtcOffset(winter) != TimeSpan.FromHours(-10)
 {
     throw new InvalidOperationException("Time-zone or ICU globalization proof failed.");
 }
-var temporary = Path.Combine(Path.GetTempPath(), "honua-runtime-probe");
+var temporary = Path.Join(Path.GetTempPath(), "honua-runtime-probe");
 File.WriteAllText(temporary, "writable");
 File.Delete(temporary);
 try

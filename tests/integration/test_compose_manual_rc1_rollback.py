@@ -36,6 +36,7 @@ def wait_ready(port):
                 if response.status == 200:
                     return
         except (urllib.error.URLError, TimeoutError):
+            # Startup can refuse connections before the readiness endpoint is available.
             pass
         time.sleep(2)
     raise AssertionError("manual deployment did not become ready")

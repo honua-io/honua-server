@@ -49,6 +49,23 @@ class ServingFormatAssertionsTests(unittest.TestCase):
     def test_opaque_background_with_label_pixels_is_accepted(self):
         self.formats.verify_legend(self.legend(50, (255, 255, 255, 255)))
 
+    def exception_image(self, text):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / 'exception.png'
+        image = Image.new('RGBA', (256, 128))
+        if text:
+            image.putpixel((4, 14), (255, 0, 0, 255))
+        image.save(path)
+        return path
+
+    def test_blank_exception_image_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self.formats.verify_exception_image(self.exception_image(False))
+
+    def test_red_exception_glyphs_are_accepted(self):
+        self.formats.verify_exception_image(self.exception_image(True))
+
     def geopackage(self, feature_count):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)

@@ -21,12 +21,9 @@ internal static class DataStoreBuildPolicy
         }
 
         var snapshot = await graphProvider.GetCurrentAsync().ConfigureAwait(false);
-        foreach (var connection in snapshot.Graph.Connections)
+        foreach (var connection in snapshot.Graph.Connections.Where(DataStoreProviderPolicy.IsDataStoreConnection))
         {
-            if (DataStoreProviderPolicy.IsDataStoreConnection(connection))
-            {
-                DataStoreProviderPolicy.EnsurePostgisProvider(connection.Provider);
-            }
+            DataStoreProviderPolicy.EnsurePostgisProvider(connection.Provider);
         }
     }
 
@@ -41,9 +38,8 @@ internal static class DataStoreBuildPolicy
     {
         DataStoreProviderPolicy.EnsurePostgisProvider(configuration["DataSource:Provider"]);
 
-        foreach (var sectionName in DataStoreProviderPolicy.AdditionalStoreSectionsByProvider.Values)
+        foreach (var section in DataStoreProviderPolicy.AdditionalStoreSectionsByProvider.Values.Select(configuration.GetSection))
         {
-            var section = configuration.GetSection(sectionName);
             if (section.GetValue<bool?>("Enabled") == false)
             {
                 continue;

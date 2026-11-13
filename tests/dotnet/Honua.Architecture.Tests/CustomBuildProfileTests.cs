@@ -152,9 +152,8 @@ public sealed class CustomBuildProfileTests
         var inheritedScopes = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         string? stage = null;
         var profileInScope = false;
-        foreach (var sourceLine in File.ReadLines(path))
+        foreach (var line in File.ReadLines(path).Select(sourceLine => sourceLine.Trim()))
         {
-            var line = sourceLine.Trim();
             if (line.StartsWith("FROM ", StringComparison.OrdinalIgnoreCase))
             {
                 if (stage is not null)

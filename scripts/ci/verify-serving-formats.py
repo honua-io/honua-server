@@ -22,6 +22,14 @@ def verify_legend(path):
             raise ValueError('Legend label glyphs did not render')
 
 
+def verify_exception_image(path):
+    with Image.open(path) as image:
+        # INIMAGE exceptions paint red text on a transparent background.
+        if not any(red > 100 and green < red / 2 and blue < red / 2 and alpha > 0
+                   for red, green, blue, alpha in image.convert('RGBA').getdata()):
+            raise ValueError('WMS exception text did not render')
+
+
 def verify_geopackage(path, feature_count=3):
     with sqlite3.connect(f'file:{path}?mode=ro', uri=True) as database:
         if database.execute('PRAGMA integrity_check').fetchone() != ('ok',):
@@ -36,7 +44,7 @@ def verify_geopackage(path, feature_count=3):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('kind', choices=['import', 'legend', 'gpkg'])
+    parser.add_argument('kind', choices=['import', 'legend', 'exception', 'gpkg'])
     parser.add_argument('path', type=Path)
     parser.add_argument('--feature-count', type=int, default=3)
     args = parser.parse_args()
@@ -44,6 +52,8 @@ def main():
         verify_import(json.loads(args.path.read_text()), args.feature_count)
     elif args.kind == 'legend':
         verify_legend(args.path)
+    elif args.kind == 'exception':
+        verify_exception_image(args.path)
     else:
         verify_geopackage(args.path, args.feature_count)
 

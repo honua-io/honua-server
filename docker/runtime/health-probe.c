@@ -23,32 +23,29 @@ static int probe_unix_socket(const char *path)
     return result == 0 ? 0 : 1;
 }
 
-int main(int argc, char **argv)
+static int probe_security(void)
 {
-    if (argc == 2 && strcmp(argv[1], "--security") == 0) {
-        struct statvfs root;
-        if (getuid() != 1001 || getgid() != 1001 ||
-            statvfs("/", &root) != 0 || !(root.f_flag & ST_RDONLY))
-            return 1;
-        const char *temporary_root = getenv("TMPDIR");
-        if (temporary_root == NULL || temporary_root[0] == '\0')
-            temporary_root = "/tmp";
-        char temporary[4096];
-        int length = snprintf(temporary, sizeof(temporary), "%s/honua-security-XXXXXX", temporary_root);
-        if (length < 0 || (size_t)length >= sizeof(temporary))
-            return 1;
-        int file = mkstemp(temporary);
-        if (file < 0)
-            return 1;
-        int written = write(file, "ok", 2) == 2;
-        close(file);
-        return unlink(temporary) == 0 && written ? 0 : 1;
-    }
-    if (argc == 3 && strcmp(argv[1], "--unix") == 0)
-        return probe_unix_socket(argv[2]);
-    if (argc > 2 || (argc == 2 && strcmp(argv[1], "--ready") != 0))
+    struct statvfs root;
+    if (getuid() != 1001 || getgid() != 1001 ||
+        statvfs("/", &root) != 0 || !(root.f_flag & ST_RDONLY))
         return 1;
-    const char *path = argc == 2 ? "/healthz/ready" : "/healthz/live";
+    const char *temporary_root = getenv("TMPDIR");
+    if (temporary_root == NULL || temporary_root[0] == '\0')
+        temporary_root = "/tmp";
+    char temporary[4096];
+    int length = snprintf(temporary, sizeof(temporary), "%s/honua-security-XXXXXX", temporary_root);
+    if (length < 0 || (size_t)length >= sizeof(temporary))
+        return 1;
+    int file = mkstemp(temporary);
+    if (file < 0)
+        return 1;
+    int written = write(file, "ok", 2) == 2;
+    close(file);
+    return unlink(temporary) == 0 && written ? 0 : 1;
+}
+
+static long health_port(void)
+{
     const char *configured_port = getenv("HONUA_HEALTH_PORT");
     char *end;
     long port = 8080;
@@ -56,18 +53,23 @@ int main(int argc, char **argv)
         errno = 0;
         port = strtol(configured_port, &end, 10);
         if (errno != 0 || end == configured_port || *end != '\0' || port < 1 || port > 65535)
-            return 1;
+            return -1;
     }
 
+    return port;
+}
+
+static int connect_http(long port)
+{
     int connection = socket(AF_INET, SOCK_STREAM, 0);
     if (connection < 0)
-        return 1;
+        return -1;
 
     struct timeval timeout = { .tv_sec = 3, .tv_usec = 0 };
     if (setsockopt(connection, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) != 0 ||
         setsockopt(connection, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) != 0) {
         close(connection);
-        return 1;
+        return -1;
     }
     struct sockaddr_in address = {
         .sin_family = AF_INET,
@@ -76,26 +78,34 @@ int main(int argc, char **argv)
     };
     if (connect(connection, (struct sockaddr *)&address, sizeof(address)) != 0) {
         close(connection);
-        return 1;
+        return -1;
     }
 
+    return connection;
+}
+
+static int send_request(int connection, const char *path)
+{
     char request[128];
     int request_length = snprintf(request, sizeof(request),
         "GET %s HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n", path);
     if (request_length < 0 || (size_t)request_length >= sizeof(request)) {
-        close(connection);
         return 1;
     }
     size_t sent = 0;
     while (sent < (size_t)request_length) {
         ssize_t count = send(connection, request + sent, (size_t)request_length - sent, MSG_NOSIGNAL);
         if (count <= 0) {
-            close(connection);
             return 1;
         }
         sent += (size_t)count;
     }
 
+    return 0;
+}
+
+static int read_response(int connection)
+{
     char response[128];
     size_t received = 0;
     while (received < sizeof(response) - 1) {
@@ -107,7 +117,6 @@ int main(int argc, char **argv)
         if (strchr(response, '\n') != NULL)
             break;
     }
-    close(connection);
     response[received] = '\0';
     unsigned int major = 0, minor = 0, status = 0;
     char separator = '\0';
@@ -116,4 +125,30 @@ int main(int argc, char **argv)
         major != 1 || (separator != ' ' && separator != '\r'))
         return 1;
     return status == 200 ? 0 : 1;
+}
+
+static int probe_http(const char *path)
+{
+    long port = health_port();
+    if (port < 0)
+        return 1;
+    int connection = connect_http(port);
+    if (connection < 0)
+        return 1;
+    int result = send_request(connection, path);
+    if (result == 0)
+        result = read_response(connection);
+    close(connection);
+    return result;
+}
+
+int main(int argc, char **argv)
+{
+    if (argc == 2 && strcmp(argv[1], "--security") == 0)
+        return probe_security();
+    if (argc == 3 && strcmp(argv[1], "--unix") == 0)
+        return probe_unix_socket(argv[2]);
+    if (argc > 2 || (argc == 2 && strcmp(argv[1], "--ready") != 0))
+        return 1;
+    return probe_http(argc == 2 ? "/healthz/ready" : "/healthz/live");
 }
