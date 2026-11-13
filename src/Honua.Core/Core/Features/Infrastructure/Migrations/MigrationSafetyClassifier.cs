@@ -242,7 +242,10 @@ public static class MigrationSafetyClassifier
 
         foreach (var (ruleName, pattern) in PotentiallyBreakingPatterns)
         {
-            if (pattern.IsMatch(normalized))
+            var executable = ruleName == "truncate-table"
+                ? MigrationTriggerEvents.ExcludeDeclarations(normalized)
+                : normalized;
+            if (pattern.IsMatch(executable))
             {
                 matchedRules.Add(ruleName);
             }
@@ -290,6 +293,14 @@ public static class MigrationSafetyClassifier
         {
             var current = sql[i];
 
+            // Quoted identifiers preserve their boundaries: comment markers and quote
+            // characters inside them are identifier text, not executable SQL syntax.
+            if (current == '"')
+            {
+                AppendQuotedIdentifier(sql, result, ref i);
+                continue;
+            }
+
             // Line comment: -- to end of line.
             if (current == '-' && i + 1 < length && sql[i + 1] == '-')
             {
@@ -331,9 +342,16 @@ public static class MigrationSafetyClassifier
                 continue;
             }
 
-            if (current == '\'')
+            var escapeString = (current is 'E' or 'e') && i + 1 < length && sql[i + 1] == '\''
+                && (i == 0 || !(char.IsAsciiLetterOrDigit(sql[i - 1]) || sql[i - 1] >= 128 || sql[i - 1] is '_' or '$'));
+            if (current == '\'' || escapeString)
             {
-                var contents = ReadSingleQuotedContents(sql, ref i);
+                if (escapeString)
+                {
+                    i++;
+                }
+
+                var contents = MigrationStringLiterals.Read(sql, ref i, escapeString);
                 if (IsRoutineBodyPrefix(result, statementStart))
                 {
                     AppendExecutableSql(contents, result, insideRoutineBody: true);
@@ -398,32 +416,26 @@ public static class MigrationSafetyClassifier
         }
     }
 
-    private static string ReadSingleQuotedContents(string sql, ref int index)
+    private static void AppendQuotedIdentifier(string sql, StringBuilder result, ref int index)
     {
-        var contents = new StringBuilder();
-        index++;
-
+        result.Append(sql[index++]);
         while (index < sql.Length)
         {
-            if (sql[index] != '\'')
+            var current = sql[index++];
+            result.Append(current);
+            if (current != '"')
             {
-                contents.Append(sql[index]);
-                index++;
                 continue;
             }
 
-            if (index + 1 < sql.Length && sql[index + 1] == '\'')
+            if (index < sql.Length && sql[index] == '"')
             {
-                contents.Append('\'');
-                index += 2;
+                result.Append(sql[index++]);
                 continue;
             }
 
-            index++;
             break;
         }
-
-        return contents.ToString();
     }
 
     private static bool IsRoutineBodyPrefix(StringBuilder result, int statementStart)

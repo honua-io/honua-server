@@ -19,6 +19,18 @@ public sealed class MigrationReaderCompatibilityTests
     private const int Reader = 135;
 
     [UnitTest]
+    public void Verify_TruncateTriggerDeclaration_IsExpandWithTheCorrectedReader()
+    {
+        const string sql = "CREATE TRIGGER guard BEFORE TRUNCATE ON honua.evidence EXECUTE FUNCTION reject();";
+        var declaration = MigrationReaderCompatibility.Declare(Name, sql);
+
+        declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Expand);
+        MigrationReaderCompatibility.Verify(declaration, Name, Reader).Accepted.Should().BeTrue();
+        var destructive = MigrationReaderCompatibility.Declare(Name, sql + " TRUNCATE honua.evidence;");
+        MigrationReaderCompatibility.Verify(destructive, Name, Reader).Accepted.Should().BeFalse();
+    }
+
+    [UnitTest]
     public void Declare_AdditiveScript_IsExpandFromAnyReader()
     {
         var declaration = MigrationReaderCompatibility.Declare(Name, Additive);
