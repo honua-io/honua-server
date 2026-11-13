@@ -211,8 +211,8 @@ def main() -> None:
     require(review_gate, "  actions: write", "trusted review transition needs actions: write")
     require(
         review_gate,
-        "group: review-resolve-pr-${{ github.event.pull_request.number || github.event.issue.number || github.event.client_payload.pr || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number) || format('{0}:{1}', github.event.workflow_run.head_repository.full_name, github.event.workflow_run.head_branch) || github.run_id }}",
-        "resolver concurrency must group events for the same PR",
+        "group: review-resolve-pr-${{ github.event.pull_request.number || github.event.issue.number || github.event.client_payload.pr || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number) || github.run_id }}",
+        "resolver concurrency must group identified PR events and isolate unidentified completions",
     )
     require(
         review_bridge,
