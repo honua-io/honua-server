@@ -11,6 +11,7 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
+using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.FileImport;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Migration;
@@ -41,11 +42,6 @@ internal sealed partial class StreamingFileImportService
             WHERE namespace.nspname = @schema_name
               AND relation.relname = @table_name)
         """;
-
-    private static string QuoteIdentifier(string identifier)
-    {
-        return $"\"{identifier.Replace("\"", "\"\"")}\"";
-    }
 
     private static string GetAllowedTableName(string tableName)
     {
@@ -373,8 +369,8 @@ internal sealed partial class StreamingFileImportService
                     connection, transaction, schemaName, liveTableName, cancellationToken);
             }
             var insertSql =
-                $"INSERT INTO {QuoteIdentifier(schemaName)}.{QuoteIdentifier(liveTableName)} (geometry, properties) " +
-                $"SELECT geometry, properties FROM {QuoteIdentifier(schemaName)}.{QuoteIdentifier(stagingTableName)}";
+                $"INSERT INTO {SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(liveTableName)} (geometry, properties) " +
+                $"SELECT geometry, properties FROM {SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(stagingTableName)}";
             await using (var insert = new NpgsqlCommand(insertSql, connection, transaction))
             {
                 await insert.ExecuteNonQueryAsync(cancellationToken);
@@ -449,7 +445,7 @@ internal sealed partial class StreamingFileImportService
             connection, transaction);
         command.Parameters.AddWithValue(
             "relation",
-            $"{QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)}");
+            $"{SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(tableName)}");
         return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is string marker
             && marker == ImportTableOwnership.Marker;
     }

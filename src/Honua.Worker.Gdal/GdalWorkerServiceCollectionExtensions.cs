@@ -62,7 +62,6 @@ internal static class GdalWorkerServiceCollectionExtensions
             services.TryAddSingleton<ILicenseEntitlementService>(sp => sp.GetRequiredService<DisabledLicenseService>());
             services.TryAddSingleton<ILicenseStatusProvider>(sp => sp.GetRequiredService<DisabledLicenseService>());
             services.TryAddSingleton<ILicenseManager>(sp => sp.GetRequiredService<DisabledLicenseService>());
-            services.TryAddSingleton<ILicenseCapacityMeter, DisabledLicenseCapacityMeter>();
         }
         else
         {

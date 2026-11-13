@@ -1321,6 +1321,17 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Several self-hosted runners share one host and its /tmp; each job keeps temp files and the
+      # app's local storage directories under its own runner temp. Set in a step because the runner
+      # context is unavailable in job env.
+      - name: Use the job's own temp directory
+        run: |
+          {
+            echo "TMPDIR=${RUNNER_TEMP}"
+            echo "TemporaryFiles__StorageDirectory=${RUNNER_TEMP}/honua-temp"
+            echo "FileStorage__LocalStorage__BasePath=${RUNNER_TEMP}/honua-storage"
+          } >> "${GITHUB_ENV}"
+
       - name: Load validated flaky-test quarantine
         env:
           GH_TOKEN: ${{ github.token }}
@@ -1607,8 +1618,8 @@ jobs:
             'Server Features Admin Alert Endpoints'| \
             'Server Features Streaming Snapshot and Conformance'| \
             'Server Features Data Enrichment and Capabilities'| \
-            'Server Features Miscellaneous'| \
-            'Server Features Studio Packaging') images+=(redis) ;;
+            'Server Features Miscellaneous '[0-9]*| \
+            'Server Features Studio Packaging '[0-9]*) images+=(redis) ;;
           esac
           if [[ "${SERVER_SHARD}" == 'Operator Eval Harness' ]]; then
             images+=(postgis17)
@@ -3342,6 +3353,29 @@ jobs:
           # outside a diff. Do not "align" this with PR Gate either.
           format-scope: full
 
+  store-image-proofs:
+    name: Store image proofs
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full_ci == true) || github.event_name == 'schedule' }}
+    uses: ./.github/workflows/store-image-size.yml
+    permissions:
+      contents: read
+      packages: read
+  # Pull requests run these two interop proofs only for Parquet/Arrow-named
+  # inputs; the full run covers every shared build, model and host change.
+  geoparquet-interop:
+    name: GeoParquet interop evidence
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full_ci == true) || github.event_name == 'schedule' }}
+    uses: ./.github/workflows/geoparquet-interop.yml
+    permissions:
+      contents: read
+      packages: read
+  geoarrow-interop:
+    name: GeoArrow interop fixture
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full_ci == true) || github.event_name == 'schedule' }}
+    uses: ./.github/workflows/geoarrow-interop-fixture.yml
+    permissions:
+      contents: read
+      packages: read
   # Scheduled runtime coverage shares the full-CI managed build producer.
   runtime-proofs:
     name: Full CI / Runtime proofs
@@ -3580,6 +3614,24 @@ jobs:
           # here would bury that step's real failure under a second one.
           if-no-files-found: ${{ steps.fidelity-proof.outcome != 'skipped' && 'error' || 'warn' }}
 
+      - name: Verify default PostGIS store profile
+        env:
+          HONUA_EXPECTED_STORE_PROFILE: postgis
+        run: |
+          started=$SECONDS
+          dotnet build src/Honua.Server/Honua.Server.csproj --configuration Release -p:HonuaStoreProfile=postgis -p:TreatWarningsAsErrors=true
+          dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj --configuration Release -p:HonuaStoreProfile=postgis --filter 'FullyQualifiedName~StoreProfileWritePolicyTests|FullyQualifiedName~ActivateRevisionAsync_StoreProfile' --logger 'trx;LogFileName=core-profile.trx' --results-directory artifacts/pr-gate/postgis-policy -- RunConfiguration.TreatNoTestsAsError=true
+          dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj --configuration Release -p:HonuaStoreProfile=postgis --filter 'FullyQualifiedName~StoreProfileWritePolicyTests|FullyQualifiedName~ActivateRevisionAsync_StoreProfile' --logger 'trx;LogFileName=persistence-profile.trx' --results-directory artifacts/pr-gate/postgis-policy -- RunConfiguration.TreatNoTestsAsError=true
+          printf 'Default PostGIS profile verification: %s seconds\n' "$((SECONDS - started))" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload PostGIS policy proof
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: postgis-policy-proof
+          path: artifacts/pr-gate/postgis-policy/
+          if-no-files-found: warn
+
   # Summary gate: a single job that branch-protection can require.
   # Add every job whose failure should block merge.
   ci-gate:
@@ -3593,7 +3645,7 @@ jobs:
     # NOT this one. Keeping CI Gate off merge_group avoids a misleading all-
     # skipped "pass" status appearing in the queue context.
     if: ${{ github.event_name != 'merge_group' && always() && !cancelled() }}
-    needs: [pr-template-check, pr-readiness, changes, targeted-shards, ci-router-validation, build, runtime-proofs, format, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build, quickstart-console-smoke]
+    needs: [pr-template-check, pr-readiness, changes, targeted-shards, ci-router-validation, build, runtime-proofs, format, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build, quickstart-console-smoke, store-image-proofs, geoparquet-interop, geoarrow-interop]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -3601,9 +3653,13 @@ jobs:
         env:
           REQUIRE_MANAGED_BUILD: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
           REQUIRE_FORMAT: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.build_changes == 'true' }}
+          REQUIRE_STORE_IMAGES: ${{ (github.event_name == 'workflow_dispatch' && inputs.full_ci == true) || github.event_name == 'schedule' }}
           RUNTIME_PROOFS_RESULT: ${{ needs.runtime-proofs.result }}
           BUILD_RESULT: ${{ needs.build.result }}
           FORMAT_RESULT: ${{ needs.format.result }}
+          STORE_IMAGE_RESULT: ${{ needs.store-image-proofs.result }}
+          GEOPARQUET_RESULT: ${{ needs.geoparquet-interop.result }}
+          GEOARROW_RESULT: ${{ needs.geoarrow-interop.result }}
         run: |
           if [[ "${REQUIRE_MANAGED_BUILD}" == true && "${BUILD_RESULT}" != success ]]; then
             echo "::error::Selected managed producer must succeed, got ${BUILD_RESULT}."
@@ -3615,6 +3671,14 @@ jobs:
           fi
           if [[ "${REQUIRE_FORMAT}" == true && "${FORMAT_RESULT}" != success ]]; then
             echo "::error::Selected full-format verification must succeed, got ${FORMAT_RESULT}."
+            exit 1
+          fi
+          if [[ "${REQUIRE_STORE_IMAGES}" == true && "${STORE_IMAGE_RESULT}" != success ]]; then
+            echo "::error::Selected store image proofs must succeed, got ${STORE_IMAGE_RESULT}."
+            exit 1
+          fi
+          if [[ "${REQUIRE_STORE_IMAGES}" == true && ( "${GEOPARQUET_RESULT}" != success || "${GEOARROW_RESULT}" != success ) ]]; then
+            echo "::error::Full-run interop proofs must succeed, got geoparquet=${GEOPARQUET_RESULT}, geoarrow=${GEOARROW_RESULT}."
             exit 1
           fi
           if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then

@@ -16,6 +16,7 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/imports/jobs/{jobId}/cancel"),
 
         // v1 admin import endpoints (primary)
+        new("GET", "/api/v1/admin/coordinate-systems"),
         new("GET", "/api/v1/admin/import/formats"),
         new("POST", "/api/v1/admin/import/formats"),
         new("PUT", "/api/v1/admin/import/formats"),

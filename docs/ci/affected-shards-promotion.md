@@ -20,7 +20,7 @@ No branch-protection setting changes. Reverting to report mode would permit
 red selected shards to merge again and requires an explicit policy decision.
 
 The Miscellaneous class split is recorded in
-[the capacity receipt](../internal/ci/miscellaneous-shard-capacity.json).
+[the capacity receipt](https://github.com/honua-io/honua-server/blob/bfe122bf627eaf570a8ed764bdb2adba1dbce0c1/docs/internal/ci/miscellaneous-shard-capacity.json).
 The completed trunk run has 223 passing cases over a serial 23.2-minute
 interval. Moving whole package, form and temporal classes predicts 10.7 minutes
 in `Server Features Packages and Temporal` and 12.5 minutes in the remaining
@@ -159,7 +159,7 @@ the required rate **below 2%**. At this denominator, at most four false-red
 runs are allowed; two are already reconciled. Do not describe the upper bound
 as a measured false-red rate. Branch protection stays unchanged.
 
-The [retained observations](affected-shards-observations-20261007.json) include
+The [retained observations](../../eng/ci/fixtures/shard-promotion/window.json) include
 only protocol verdict annotations and run identities. The
 [initial four reconciliations](https://github.com/honua-io/honua-server/blob/11f884dac9099fd1ce68ff532cb2856db8a7eea7/docs/ci/affected-shards-adjudications-20261007.json) link the
 same-shard trailing jobs for the exact merge commits. Replay the observations
@@ -167,8 +167,8 @@ with the expanded reconciliation set below:
 
 ```bash
 python3 scripts/ci/audit-affected-shards.py \
-  --observations docs/ci/affected-shards-observations-20261007.json \
-  --adjudications docs/ci/affected-shards-adjudications-20261007.json \
+  --observations eng/ci/fixtures/shard-promotion/window.json \
+  --adjudications eng/ci/fixtures/shard-promotion/decisions.json \
   --output /tmp/affected-shards-audit.json
 # Expected exit status: 1 (promotion not ready).
 ```
@@ -214,13 +214,13 @@ only five verdicts with the required evidence:
 | False-red rate lower / upper bound | 0.97% / 19.90% |
 | Promotion ready | No |
 
-The [complete reconciliation record](affected-shards-reconciliation-20261007.json)
+The [complete reconciliation record](../../eng/ci/fixtures/shard-promotion/reconciliation.json)
 retains all 51 shard verdicts, including run/attempt/head, PR, landed head,
 merge SHA, tested trunk SHA, trunk run/job, test-step conclusion, named failing
 tests, verdict and reason. The
-[accepted adjudications](affected-shards-adjudications-20261007.json) contain
+[accepted adjudications](../../eng/ci/fixtures/shard-promotion/decisions.json) contain
 only the five supported verdicts. The
-[replayed audit](affected-shards-audit-20261007.json) preserves uncertainty and
+[replayed audit](../../eng/ci/fixtures/shard-promotion/measurement.json) preserves uncertainty and
 returns `promotion_ready: false`; the replay command above exits 1.
 
 ### Comparisons requiring more evidence
@@ -300,7 +300,7 @@ receipt and on missing evidence, and `test_pass` is true only for a complete
 green table in that mode.
 
 The readback, the workflow mode, and this decision are recorded in
-[affected-shards-disposition-20261027.json](affected-shards-disposition-20261027.json).
+[affected-shards-disposition-20261027.json](../../eng/ci/fixtures/shard-promotion/mode.json).
 Offline coverage is `python3 scripts/ci/affected-shard-verdict.test.py`.
 
 PR #6663 head `a818f3421d78d65049f2b15dad9e81a25446d317`, run
