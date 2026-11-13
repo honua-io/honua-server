@@ -91,9 +91,9 @@
       ]
     },
     "serving_patterns": [
-      "Dockerfile",
       ".dockerignore",
       "docker/runtime/**",
+      "Dockerfile",
       "docker/Dockerfile.aot",
       "docker/Dockerfile.lambda.aot",
       "docker/Dockerfile.functions.aot",

@@ -126,7 +126,10 @@ def test_manual_catalog_rc1_rollback_and_return(tmp_path):
         return run(current + ["exec", "-T", "postgres", "psql", "-U", "honua", "-d", "honua",
                               "-tA", "-v", "ON_ERROR_STOP=1", "-c", statement], env=env)
     try:
-        run(current + ["up", "-d", "--wait", "postgres", "redis", "keyring-init"], env=env)
+        run(current + ["up", "-d", "--wait", "postgres", "redis"], env=env)
+        # This one-shot exits successfully; --wait expects selected services to
+        # stay running. Run it separately and require its actual exit status.
+        run(current + ["run", "--rm", "--no-deps", "keyring-init"], env=env)
         run(legacy + ["up", "-d", "--no-deps", "honua"], env=legacy_env)
         wait_ready(port)
         assert_revision(legacy, legacy_env, prior_id)
