@@ -15,6 +15,12 @@ internal sealed class PostgresOidcProviderStore(PostgresConfigurationDocuments d
     public async Task<IReadOnlyList<OidcProviderConfiguration>> ListProvidersAsync(CancellationToken cancellationToken = default)
         => (await _store.ReadAsync(cancellationToken).ConfigureAwait(false)).Documents.Select(document => document.Value).ToArray();
 
+    internal async Task<int> CountConfiguredProvidersAsync(CancellationToken cancellationToken = default)
+    {
+        var snapshot = await _store.ReadAsync(cancellationToken).ConfigureAwait(false);
+        return snapshot.Documents.Count + snapshot.UnreadableKeys.Count;
+    }
+
     public async Task<OidcProviderConfiguration?> GetProviderAsync(Guid providerId, CancellationToken cancellationToken = default)
         => (await ListProvidersAsync(cancellationToken).ConfigureAwait(false)).FirstOrDefault(provider => provider.ProviderId == providerId);
 

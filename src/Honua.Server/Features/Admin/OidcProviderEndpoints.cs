@@ -118,8 +118,10 @@ internal static partial class OidcProviderEndpoints
         try
         {
             var store = httpContext.RequestServices.GetRequiredService<IOidcProviderStore>();
-            var existing = await store.ListProvidersAsync(httpContext.RequestAborted).ConfigureAwait(false);
-            if (existing.Count >= 1)
+            var existingCount = store is PostgresOidcProviderStore sharedStore
+                ? await sharedStore.CountConfiguredProvidersAsync(httpContext.RequestAborted).ConfigureAwait(false)
+                : (await store.ListProvidersAsync(httpContext.RequestAborted).ConfigureAwait(false)).Count;
+            if (existingCount >= 1)
             {
                 var multiProviderGate = LicenseGate.RequireEntitlement(
                     httpContext,
@@ -212,14 +214,16 @@ internal static partial class OidcProviderEndpoints
                 Enabled = request.Enabled,
             };
 
-            var multiProviderGate = LicenseGate.RequireEntitlement(
-                context, FeatureCatalog.OidcMultiProviderKey, "OIDC multi-provider SSO");
-            var created = store is PostgresOidcProviderStore sharedStore && multiProviderGate is not null
+            var multiProviderDecision = LicenseGate.CheckEntitlement(
+                context.RequestServices, FeatureCatalog.OidcMultiProviderKey);
+            var created = store is PostgresOidcProviderStore sharedStore && !multiProviderDecision.IsActive
                 ? await sharedStore.CreateProviderIfBelowLimitAsync(provider, 1, context.RequestAborted)
                 : await store.CreateProviderAsync(provider, context.RequestAborted);
             if (created is null)
             {
-                return multiProviderGate!;
+                return StandardErrorHelpers.CreatePaymentRequired(
+                    context, multiProviderDecision.UpgradeMessage,
+                    [$"entitlement: {FeatureCatalog.OidcMultiProviderKey}"]);
             }
             var response = ToResponse(created);
 
