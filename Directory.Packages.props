@@ -70,10 +70,8 @@
     <!-- ASP.NET Core OpenApi 10.0.15 requires Microsoft.OpenApi >= 2.13.0;
          retain an explicit patched 2.x pin within its supported range. -->
     <PackageVersion Include="Microsoft.OpenApi" Version="2.13.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.OutputCaching.StackExchangeRedis" Version="10.0.15" />
     <PackageVersion Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="10.0.15" />
     <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.15" />
-    <PackageVersion Include="Microsoft.AspNetCore.WebUtilities" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="6.1.2" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.6" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.15" />

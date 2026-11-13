@@ -30,6 +30,7 @@
     <PackageReference Include="Parquet.Net" />
     <PackageReference Include="ParquetSharp" />
     <PackageReference Include="Apache.Arrow" />
+    <!-- Keep the explicit Snappier version that unblocked nightly container restores (50919772b9). -->
     <PackageReference Include="Snappier" />
   </ItemGroup>
 
