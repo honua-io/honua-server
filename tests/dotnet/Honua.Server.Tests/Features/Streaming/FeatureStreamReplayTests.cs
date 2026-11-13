@@ -71,11 +71,8 @@ public sealed class FeatureStreamReplayTests
 
     private static Task EnsureReplayableAfterAsync(IFeatureChangeEventStore store, long replayCursor)
         => FeatureStreamEndpoints.EnsureReplayableAfterAsync(
-            store,
+            new FeatureStreamEndpoints.FeatureStreamReplayContext(store, NullLogger.Instance, Guid.NewGuid(), "test"),
             replayCursor,
-            NullLogger.Instance,
-            Guid.NewGuid(),
-            subscriptionId: "test",
             CancellationToken.None);
 
     private static FeatureChangeEventRequest CreateRequest(long objectId)

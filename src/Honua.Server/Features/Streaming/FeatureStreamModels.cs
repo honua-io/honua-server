@@ -232,6 +232,8 @@ internal sealed record FeatureStreamSnapshotGeoJsonFeature
 // Tells the client its position cannot be resumed: resynchronize, then continue after Head.
 internal sealed record FeatureStreamResetFrame
 {
+    public string Type { get; init; } = "reset";
+
     public required string Reason { get; init; }
 
     public required string Head { get; init; }

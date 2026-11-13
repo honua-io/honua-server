@@ -56,6 +56,22 @@ public sealed class FeatureChangeLogTests(FeatureChangeDatabaseFixture database)
     }
 
     [IntegrationTest(Timeout = 120000)]
+    public async Task ReadAsync_GeometryCleared_EmitsNullCommittedGeometryAndMarksItChanged()
+    {
+        await using var layer = await FeatureChangeTestLayer.CreateAsync(database, 734206);
+        var objectId = await layer.InsertAsync("""{"name":"geometry"}""");
+        var before = await layer.HeadAsync();
+        await layer.ClearGeometryAsync(objectId);
+        var changes = await CreateLog().ReadAsync(
+            new FeatureChangeLogQuery(before, null, null, [layer.LayerId], 10), CancellationToken.None);
+
+        var change = changes.Should().ContainSingle().Which;
+        change.GeometryJson.Should().BeNull();
+        change.GeometryEnvelope.Should().BeNull();
+        change.GeometryChanged.Should().BeTrue();
+    }
+
+    [IntegrationTest(Timeout = 120000)]
     public async Task ReadAsync_BranchRows_AreNotEvents()
     {
         await using var layer = await FeatureChangeTestLayer.CreateAsync(database, 734202);

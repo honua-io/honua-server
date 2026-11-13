@@ -175,7 +175,7 @@ internal static partial class FeatureStreamEndpoints
         // Snapshot-then-delta: a baseline replaces the delta stream when the subscription is
         // fresh, or when the supplied resume cursor has fallen outside the retained window.
         string? snapshotReason = null;
-        if (IsSnapshotMode(mode) && subscriptionFilter is StreamSubscriptionFilter)
+        if ((cursor.HasValue || IsSnapshotMode(mode)) && subscriptionFilter is StreamSubscriptionFilter)
         {
             try
             {
@@ -195,6 +195,13 @@ internal static partial class FeatureStreamEndpoints
         {
             try
             {
+                if (cursor.HasValue)
+                {
+                    var head = await eventStore.GetCurrentCursorAsync(linkedCts.Token).ConfigureAwait(false);
+                    await WriteSseResetAsync(context.Response, RealtimeResetReasons.Retention, head, linkedCts.Token)
+                        .ConfigureAwait(false);
+                }
+
                 var snapshotResult = await EmitSnapshotAsync(
                     deps,
                     logger,
@@ -302,7 +309,11 @@ internal static partial class FeatureStreamEndpoints
             }
             catch (FeatureStreamReplayWindowGapException)
             {
-                sessionManager.DisconnectSession(session.SessionId);
+                await RecoverSseReplayGapAsync(
+                    new SseReplayRecovery(deps, logger, context, session),
+                    subscriptionFilter,
+                    mode,
+                    linkedCts.Token).ConfigureAwait(false);
                 return;
             }
             catch (IOException)
@@ -542,7 +553,11 @@ internal static partial class FeatureStreamEndpoints
         }
         catch (FeatureStreamReplayWindowGapException)
         {
-            sessionManager.DisconnectSession(session.SessionId);
+            await RecoverSseReplayGapAsync(
+                new SseReplayRecovery(deps, logger, context, session),
+                subscriptionFilter,
+                mode,
+                linkedCts.Token).ConfigureAwait(false);
         }
         catch (IOException)
         {
@@ -551,6 +566,69 @@ internal static partial class FeatureStreamEndpoints
         catch (ObjectDisposedException)
         {
             // Response stream already disposed.
+        }
+    }
+
+    private sealed record SseReplayRecovery(
+        FeatureStreamDependencies Dependencies,
+        ILogger Logger,
+        HttpContext Context,
+        FeatureStreamSession Session);
+
+    private static async Task RecoverSseReplayGapAsync(
+        SseReplayRecovery recovery,
+        IStreamSubscriptionFilter? subscriptionFilter,
+        FeatureStreamSubscriptionMode mode,
+        CancellationToken cancellationToken)
+    {
+        var deps = recovery.Dependencies;
+        var response = recovery.Context.Response;
+        try
+        {
+            var head = await deps.EventStore.GetCurrentCursorAsync(cancellationToken).ConfigureAwait(false);
+            await WriteSseResetAsync(response, RealtimeResetReasons.Retention, head, cancellationToken).ConfigureAwait(false);
+            if (subscriptionFilter is StreamSubscriptionFilter filter)
+            {
+                var snapshotResult = await EmitSnapshotAsync(
+                    deps,
+                    recovery.Logger,
+                    CreateSseSnapshotSink(mode, response),
+                    recovery.Session.SessionId,
+                    FeatureStreamSessionManager.DefaultSubscriptionId,
+                    deps.SessionManager.GetDefaultSubscriptionGeneration(recovery.Session.SessionId),
+                    filter,
+                    FeatureStreamSnapshotReasons.CursorExpired,
+                    cancellationToken).ConfigureAwait(false);
+                if (!snapshotResult.Complete)
+                {
+                    await WriteSseTerminalErrorAsync(
+                        response,
+                        recovery.Session.SessionId,
+                        FeatureStreamSessionManager.DefaultSubscriptionId,
+                        "The baseline snapshot was incomplete; reconnect without a cursor to take a fresh snapshot.",
+                        cancellationToken).ConfigureAwait(false);
+                }
+            }
+
+            await response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is OperationCanceledException or IOException or ObjectDisposedException)
+        {
+            // The response is ending; the last complete snapshot remains the checkpoint.
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            FeatureStreamLog.SnapshotEmitFailed(
+                recovery.Logger,
+                recovery.Session.SessionId,
+                FeatureStreamSessionManager.DefaultSubscriptionId,
+                exception);
+            await WriteSseTerminalErrorAsync(
+                response,
+                recovery.Session.SessionId,
+                FeatureStreamSessionManager.DefaultSubscriptionId,
+                "The baseline snapshot could not be completed. Reconnect to take a fresh snapshot.",
+                cancellationToken).ConfigureAwait(false);
         }
     }
 }

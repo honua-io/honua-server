@@ -202,8 +202,8 @@ internal sealed class PostgresFeatureChangeLog(
                    changes.proposal_id, COALESCE(changes.source_id, outbox.source_id),
                    outbox.service_id, outbox.protocol, outbox.request_id,
                    changes.pre_attributes::text, changes.committed_attributes::text,
-                   ST_AsEWKB(COALESCE(changes.committed_geometry, changes.pre_geometry)),
-                   changes.operation = 2 AND changes.committed_geometry IS NOT NULL
+                   ST_AsEWKB(CASE WHEN changes.operation = 3 THEN changes.pre_geometry ELSE changes.committed_geometry END),
+                   changes.operation = 2
                        AND ST_AsEWKB(changes.pre_geometry) IS DISTINCT FROM ST_AsEWKB(changes.committed_geometry)
             FROM {_changes} AS changes
             LEFT JOIN LATERAL (

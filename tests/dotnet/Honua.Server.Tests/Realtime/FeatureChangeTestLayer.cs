@@ -51,6 +51,9 @@ internal sealed class FeatureChangeTestLayer(FeatureChangeDatabaseFixture databa
             ("attributes", attributes),
             ("object", objectId));
 
+    public Task ClearGeometryAsync(long objectId)
+        => ExecuteAsync("UPDATE honua.features SET geometry = NULL WHERE objectid = @object AND layer_id = @layer", ("object", objectId));
+
     public Task DeleteAsync(long objectId)
         => ExecuteAsync("DELETE FROM honua.features WHERE objectid = @object AND layer_id = @layer", ("object", objectId));
 

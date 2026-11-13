@@ -7,6 +7,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Realtime;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
@@ -30,8 +31,14 @@ internal static partial class FeatureStreamEndpoints
         var sessionManager = deps.SessionManager;
         var eventStore = deps.EventStore;
         var options = deps.Options.Value;
-        // A position from another cursor epoch, or none, starts live at the head.
-        var cursor = FeatureStreamCursor.Parse(context.Request.Query["cursor"].ToString(), lastEventId: null).Position;
+        var requested = FeatureStreamCursor.Parse(context.Request.Query["cursor"].ToString(), lastEventId: null);
+        if (requested.Kind == FeatureStreamCursorKind.Invalid)
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        var cursor = requested.Position;
         var initialLiveCursor = cursor.HasValue ? 0
             : await eventStore.GetCurrentCursorAsync(context.RequestAborted).ConfigureAwait(false);
         using var webSocket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
@@ -52,6 +59,20 @@ internal static partial class FeatureStreamEndpoints
                 SessionId = session.SessionId
             },
             context.RequestAborted).ConfigureAwait(false);
+
+        if (requested.Kind == FeatureStreamCursorKind.Epoch)
+        {
+            await SendWebSocketJsonAsync(
+                webSocket,
+                session.WriteLock,
+                new FeatureStreamResetFrame
+                {
+                    Reason = RealtimeResetReasons.CursorEpoch,
+                    Head = FeatureStreamCursor.Format(initialLiveCursor)
+                },
+                FeatureStreamJsonContext.Default.FeatureStreamResetFrame,
+                context.RequestAborted).ConfigureAwait(false);
+        }
 
         if (announceInitialSubscription)
         {
@@ -81,7 +102,7 @@ internal static partial class FeatureStreamEndpoints
         // resume cursor has fallen outside the retained window (#3038 REQ-001).
         string? snapshotReason = null;
         if (addDefaultSubscription &&
-            IsSnapshotMode(mode) &&
+            (cursor.HasValue || IsSnapshotMode(mode)) &&
             subscriptionFilter is StreamSubscriptionFilter)
         {
             try
@@ -102,6 +123,20 @@ internal static partial class FeatureStreamEndpoints
         {
             try
             {
+                if (cursor.HasValue)
+                {
+                    await SendWebSocketJsonAsync(
+                        webSocket,
+                        session.WriteLock,
+                        new FeatureStreamResetFrame
+                        {
+                            Reason = RealtimeResetReasons.Retention,
+                            Head = FeatureStreamCursor.Format(await eventStore.GetCurrentCursorAsync(linkedCts.Token).ConfigureAwait(false))
+                        },
+                        FeatureStreamJsonContext.Default.FeatureStreamResetFrame,
+                        linkedCts.Token).ConfigureAwait(false);
+                }
+
                 var snapshotResult = await EmitSnapshotAsync(
                     deps,
                     logger,

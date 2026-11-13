@@ -26,7 +26,7 @@ internal static partial class FeatureStreamEndpoints
     {
         var cursor = fromCursor;
         var delivered = 0L;
-        await EnsureReplayableAfterAsync(eventStore, fromCursor, logger, sessionId, subscriptionId, cancellationToken)
+        await EnsureReplayableAfterAsync(new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), fromCursor, cancellationToken)
             .ConfigureAwait(false);
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -103,7 +103,7 @@ internal static partial class FeatureStreamEndpoints
 
             if (events.Count < batchSize)
             {
-                await EnsureReplayableAfterAsync(eventStore, cursor, logger, sessionId, subscriptionId, cancellationToken)
+                await EnsureReplayableAfterAsync(new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), cursor, cancellationToken)
                     .ConfigureAwait(false);
                 break;
             }
@@ -129,7 +129,7 @@ internal static partial class FeatureStreamEndpoints
     {
         var cursor = fromCursor;
         var delivered = 0L;
-        await EnsureReplayableAfterAsync(eventStore, fromCursor, logger, sessionId, subscriptionId, cancellationToken)
+        await EnsureReplayableAfterAsync(new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), fromCursor, cancellationToken)
             .ConfigureAwait(false);
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -188,7 +188,7 @@ internal static partial class FeatureStreamEndpoints
 
             if (events.Count < batchSize)
             {
-                await EnsureReplayableAfterAsync(eventStore, cursor, logger, sessionId, subscriptionId, cancellationToken)
+                await EnsureReplayableAfterAsync(new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), cursor, cancellationToken)
                     .ConfigureAwait(false);
                 break;
             }
@@ -201,38 +201,31 @@ internal static partial class FeatureStreamEndpoints
     // A replay that starts, or ends, before the first resumable position has lost changes and fails
     // closed. A short read is otherwise proof of exhaustion: generations are allocated under a lock
     // held to commit, so no change below the last one read commits later.
+    internal sealed record FeatureStreamReplayContext(
+        IFeatureChangeEventStore EventStore,
+        ILogger Logger,
+        Guid SessionId,
+        string? SubscriptionId);
+
     internal static async Task EnsureReplayableAfterAsync(
-        IFeatureChangeEventStore eventStore,
+        FeatureStreamReplayContext context,
         long replayCursor,
-        ILogger logger,
-        Guid sessionId,
-        string? subscriptionId,
         CancellationToken cancellationToken)
     {
-        var retentionWindow = await eventStore.GetRetentionWindowAsync(cancellationToken).ConfigureAwait(false);
-        if (retentionWindow.HasGapAfter(replayCursor))
+        var window = await context.EventStore.GetRetentionWindowAsync(cancellationToken).ConfigureAwait(false);
+        if (!window.HasGapAfter(replayCursor))
         {
-            var firstAvailableCursor = retentionWindow.IsEmpty
-                ? retentionWindow.CurrentCursor
-                : retentionWindow.OldestRetainedCursor;
-            ThrowReplayWindowGap(replayCursor, firstAvailableCursor, logger, sessionId, subscriptionId);
+            return;
         }
-    }
 
-    private static void ThrowReplayWindowGap(
-        long previousCursor,
-        long firstAvailableCursor,
-        ILogger logger,
-        Guid sessionId,
-        string? subscriptionId)
-    {
+        var firstAvailableCursor = window.IsEmpty ? window.CurrentCursor : window.OldestRetainedCursor;
         FeatureStreamLog.ReplayWindowGapDetected(
-            logger,
-            sessionId,
-            subscriptionId ?? FeatureStreamSessionManager.DefaultSubscriptionId,
-            previousCursor,
+            context.Logger,
+            context.SessionId,
+            context.SubscriptionId ?? FeatureStreamSessionManager.DefaultSubscriptionId,
+            replayCursor,
             firstAvailableCursor);
-        throw new FeatureStreamReplayWindowGapException(previousCursor, firstAvailableCursor);
+        throw new FeatureStreamReplayWindowGapException(replayCursor, firstAvailableCursor);
     }
 
     // The sequence stays absent when no session can honor it, and a generation that is not current is not stamped.
