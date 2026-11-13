@@ -34,7 +34,7 @@ internal static class StudioMcpSchemas
     public static readonly JsonElement SaveVersionArgumentSchema = Parse("""
         {"type":"object","required":["draftId","generation"],"additionalProperties":false,"properties":{
           "draftId":{"type":"string","format":"uuid","description":"From honua_studio_create_draft or honua_studio_get_draft."},
-          "generation":{"type":"integer","minimum":1,"description":"honua_studio_get_draft; refresh after each edit."},
+          "generation":{"type":"integer","minimum":1,"description":"From honua_studio_get_draft; refresh after each edit."},
           "changeNote":{"type":["string","null"],"maxLength":2000}}}
         """);
     public static readonly JsonElement ReopenVersionArgumentSchema = Parse("""
@@ -93,7 +93,7 @@ internal static class StudioMcpSchemas
           "additionalProperties": false,
           "properties": {
             "id": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Unique composition layer id." },
-            "sourceId": { "type": "string", "maxLength": {{StudioCatalogSourceIdentity.MaxLength}}, "description": "Catalog source: studioSourceId from honua_list_layers or honua_describe_layer, distinct from layer.id. Portable bindings and metadata.honua.source overrides are separate." },
+            "sourceId": { "type": "string", "maxLength": {{StudioCatalogSourceIdentity.MaxLength}}, "description": "studioSourceId from honua_list_layers or honua_describe_layer; not layer.id. Portable bindings and metadata.honua.source overrides are separate." },
             "type": { "type": "string", "maxLength": 100, "description": "Layer type: fill, circle, line, raster, etc." },
             "title": { "type": "string", "maxLength": 200, "description": "Display title." },
             "visible": { "type": "boolean", "default": true, "description": "Layer visibility." },
@@ -151,13 +151,13 @@ internal static class StudioMcpSchemas
           "required": ["id", "on", "do"],
           "additionalProperties": false,
           "properties": {
-            "id": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxInteractionIdLength}}, "pattern": "\\S", "description": "Unique composition interaction id; existing id replaces the binding." },
+            "id": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxInteractionIdLength}}, "pattern": "\\S", "description": "Unique interaction id; existing id replaces binding." },
             "on": {
               "type": "object",
               "required": ["ref", "event"],
               "additionalProperties": false,
               "properties": {
-                "ref": { "type": "string", "pattern": "{{ComponentRefPattern}}", "description": "Component in this document: map, layer:{id}, widget:{id} or control:{id} (controls collection)." },
+                "ref": { "type": "string", "pattern": "{{ComponentRefPattern}}", "description": "Document component: map, layer:{id}, widget:{id} or control:{id} (controls collection)." },
                 "event": { "type": "string", "enum": {{EventNameEnumJson}}, "description": "Gesture: featureSelect/featureHover (layer), selection (widget), change (control), viewportChange (map)." }
               },
               "description": "Gesture source; max {{StudioInteractionVocabulary.MaxInteractionsPerEventSource}} interactions per (ref, event)."
@@ -184,8 +184,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "interaction"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "honua_studio_create_draft: map/app/dashboard." },
-            "generation": { "type": "integer", "minimum": 1, "description": "honua_studio_get_draft; stale fails." },
+            "draftId": { "type": "string", "format": "uuid", "description": "From honua_studio_create_draft: map/app/dashboard." },
+            "generation": { "type": "integer", "minimum": 1, "description": "From honua_studio_get_draft; stale fails." },
             "interaction": {{InteractionInputSchemaJson}}
           }
         }
@@ -197,8 +197,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "interactionId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "honua_studio_create_draft: map/app/dashboard." },
-            "generation": { "type": "integer", "minimum": 1, "description": "honua_studio_get_draft; stale fails." },
+            "draftId": { "type": "string", "format": "uuid", "description": "From honua_studio_create_draft: map/app/dashboard." },
+            "generation": { "type": "integer", "minimum": 1, "description": "From honua_studio_get_draft; stale fails." },
             "interactionId": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "\\S", "description": "interaction.id from honua_studio_get_draft; unknown ids fail." }
           }
         }
@@ -215,10 +215,10 @@ internal static class StudioMcpSchemas
           "required": ["id", "kind"],
           "additionalProperties": false,
           "properties": {
-            "id": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxControlIdLength}}, "pattern": "\\S", "description": "Unique controls-block id; existing id replaces the control. Referenced by control:{id}." },
-            "kind": { "type": "string", "enum": {{ControlKindEnumJson}}, "description": "Closed enum. Data controls timeSlider, filterSelect, filterSlider, filterDateRange and opacity emit change; others are map affordances. No feature-editing kind." },
+            "id": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxControlIdLength}}, "pattern": "\\S", "description": "Unique control id; existing id replaces control. Referenced by control:{id}." },
+            "kind": { "type": "string", "enum": {{ControlKindEnumJson}}, "description": "Data controls timeSlider, filterSelect, filterSlider, filterDateRange and opacity emit change; others are map affordances. No feature-editing kind." },
             "title": { "type": "string", "maxLength": {{StudioInteractionVocabulary.MaxControlTitleLength}}, "description": "Host label; defaults per kind." },
-            "sourceId": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxControlSourceIdLength}}, "description": "Domain source: layer id or its bound sourceId in this document; invalid references fail. Normally set for data controls, omitted for presentation controls." },
+            "sourceId": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxControlSourceIdLength}}, "description": "Document layer id or bound sourceId; invalid references fail. Usually set for data controls, omitted for presentation controls." },
             "config": { "type": "object", "description": "Per-kind host configuration: data only, no expressions or additional capabilities." }
           }
         }
@@ -230,8 +230,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "control"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "honua_studio_create_draft: map/app/dashboard." },
-            "generation": { "type": "integer", "minimum": 1, "description": "honua_studio_get_draft; stale fails." },
+            "draftId": { "type": "string", "format": "uuid", "description": "From honua_studio_create_draft: map/app/dashboard." },
+            "generation": { "type": "integer", "minimum": 1, "description": "From honua_studio_get_draft; stale fails." },
             "control": {{ControlInputSchemaJson}}
           }
         }
@@ -243,8 +243,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "controlId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "honua_studio_create_draft: map/app/dashboard." },
-            "generation": { "type": "integer", "minimum": 1, "description": "honua_studio_get_draft; stale fails." },
+            "draftId": { "type": "string", "format": "uuid", "description": "From honua_studio_create_draft: map/app/dashboard." },
+            "generation": { "type": "integer", "minimum": 1, "description": "From honua_studio_get_draft; stale fails." },
             "controlId": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxControlIdLength}}, "pattern": "\\S", "description": "control.id from honua_studio_get_draft; unknown ids fail." },
             "cascadeInteractions": { "type": "boolean", "default": false, "description": "True removes interactions referencing control:{controlId} in on.ref or do.ref. False (default) rejects removal while references remain." }
           }
@@ -279,7 +279,7 @@ internal static class StudioMcpSchemas
           "required": ["draftId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "honua_studio_create_draft: map/app/dashboard." }
+            "draftId": { "type": "string", "format": "uuid", "description": "From honua_studio_create_draft: map/app/dashboard." }
           }
         }
         """;
@@ -290,8 +290,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "packageKey", "schemaVersion"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "honua_studio_create_draft: map/app/dashboard." },
-            "generation": { "type": "integer", "minimum": 1, "description": "honua_studio_get_draft; stale fails." },
+            "draftId": { "type": "string", "format": "uuid", "description": "From honua_studio_create_draft: map/app/dashboard." },
+            "generation": { "type": "integer", "minimum": 1, "description": "From honua_studio_get_draft; stale fails." },
             "packageKey": {{PackageKeyPropertyJson}},
             "schemaVersion": { "type": "string", "minLength": 1, "maxLength": 50, "description": "Caller-supplied family schema version." },
             "format": { "type": "string", "maxLength": 100, "description": "Family-specific package format." },
@@ -308,8 +308,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "layer"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "honua_studio_create_draft: map/app/dashboard." },
-            "generation": { "type": "integer", "minimum": 1, "description": "honua_studio_get_draft; stale fails." },
+            "draftId": { "type": "string", "format": "uuid", "description": "From honua_studio_create_draft: map/app/dashboard." },
+            "generation": { "type": "integer", "minimum": 1, "description": "From honua_studio_get_draft; stale fails." },
             "layer": {{LayerInputSchemaJson}},
             "beforeId": { "type": "string", "maxLength": 200, "description": "Insert before this layer id; otherwise append." }
           }
@@ -322,8 +322,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "layerId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "honua_studio_create_draft: map/app/dashboard." },
-            "generation": { "type": "integer", "minimum": 1, "description": "honua_studio_get_draft; stale fails." },
+            "draftId": { "type": "string", "format": "uuid", "description": "From honua_studio_create_draft: map/app/dashboard." },
+            "generation": { "type": "integer", "minimum": 1, "description": "From honua_studio_get_draft; stale fails." },
             "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "layer.id from honua_studio_get_draft." }
           }
         }
@@ -335,8 +335,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "layerId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "honua_studio_create_draft: map/app/dashboard." },
-            "generation": { "type": "integer", "minimum": 1, "description": "honua_studio_get_draft; stale fails." },
+            "draftId": { "type": "string", "format": "uuid", "description": "From honua_studio_create_draft: map/app/dashboard." },
+            "generation": { "type": "integer", "minimum": 1, "description": "From honua_studio_get_draft; stale fails." },
             "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "layer.id from honua_studio_get_draft." },
             "styleRef": { "type": ["string", "null"], "maxLength": 200, "description": "Catalog styleId or inline style key; omit/null clears binding." },
             "styleBody": { "type": "object", "description": "Inline paint/layout overrides keyed by layerId or '<layerId>__outline'. Not with styleRef." }
@@ -350,8 +350,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "mapSpec"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "honua_studio_create_draft: map/app/dashboard." },
-            "generation": { "type": "integer", "minimum": 1, "description": "honua_studio_get_draft; stale fails." },
+            "draftId": { "type": "string", "format": "uuid", "description": "From honua_studio_create_draft: map/app/dashboard." },
+            "generation": { "type": "integer", "minimum": 1, "description": "From honua_studio_get_draft; stale fails." },
             "mapSpec": { "type": "object", "description": "Caller-edited mapSpec from honua_studio_get_draft; only layers, name, metadata, transition, light, lights and fog may change." }
           }
         }
@@ -363,8 +363,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "layerId", "visible"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "honua_studio_create_draft: map/app/dashboard." },
-            "generation": { "type": "integer", "minimum": 1, "description": "honua_studio_get_draft; stale fails." },
+            "draftId": { "type": "string", "format": "uuid", "description": "From honua_studio_create_draft: map/app/dashboard." },
+            "generation": { "type": "integer", "minimum": 1, "description": "From honua_studio_get_draft; stale fails." },
             "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "layer.id from honua_studio_get_draft." },
             "visible": { "type": "boolean", "description": "Caller-supplied layer visibility." }
           }
@@ -377,8 +377,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "view"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "honua_studio_create_draft: map/app/dashboard." },
-            "generation": { "type": "integer", "minimum": 1, "description": "honua_studio_get_draft; stale fails." },
+            "draftId": { "type": "string", "format": "uuid", "description": "From honua_studio_create_draft: map/app/dashboard." },
+            "generation": { "type": "integer", "minimum": 1, "description": "From honua_studio_get_draft; stale fails." },
             "view": {{ViewInputSchemaJson}}
           }
         }
@@ -390,8 +390,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "widget"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "honua_studio_create_draft: map/app/dashboard." },
-            "generation": { "type": "integer", "minimum": 1, "description": "honua_studio_get_draft; stale fails." },
+            "draftId": { "type": "string", "format": "uuid", "description": "From honua_studio_create_draft: map/app/dashboard." },
+            "generation": { "type": "integer", "minimum": 1, "description": "From honua_studio_get_draft; stale fails." },
             "widget": {{WidgetInputSchemaJson}}
           }
         }
@@ -403,8 +403,8 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "widgetId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "honua_studio_create_draft: map/app/dashboard." },
-            "generation": { "type": "integer", "minimum": 1, "description": "honua_studio_get_draft; stale fails." },
+            "draftId": { "type": "string", "format": "uuid", "description": "From honua_studio_create_draft: map/app/dashboard." },
+            "generation": { "type": "integer", "minimum": 1, "description": "From honua_studio_get_draft; stale fails." },
             "widgetId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "widget.id from honua_studio_get_draft; unknown ids fail." }
           }
         }
