@@ -50,7 +50,7 @@ public sealed class PostgresConfiguredTrustRestrictionTests(DatabaseFixtureAdapt
     public async Task Bootstrap_IncompatibleChainRestrictions_DoesNotFallBackToBroaderTrust(bool disjointAnchors)
     {
         await using var harness = await CreateHarnessAsync();
-        using var certificate = ClientCertificateValidationTests.CreateCertificate("CN=Partner", "spiffe://partner");
+        using var certificate = ClientCertificateValidationTests.CreateCertificate("CN=Partner", "spiffe://partner/reader");
         var original = TrustOptions();
         original.Value.TrustProfiles[0].CustomTrustAnchorCertificates = ["anchor-a"];
         original.Value.TrustProfiles[0].AcceptedIssuerSubjects = [certificate.Issuer];
@@ -62,7 +62,8 @@ public sealed class PostgresConfiguredTrustRestrictionTests(DatabaseFixtureAdapt
             EnvironmentId = "production"
         });
         var validator = new ClientCertificateValidator(monitor, taskA);
-        (await validator.ValidateAsync(certificate)).Succeeded.Should().BeTrue();
+        var baseline = await validator.ValidateAsync(certificate);
+        baseline.Succeeded.Should().BeTrue(baseline.Detail);
         var changed = TrustOptions();
         changed.Value.TrustProfilesRevision = 2;
         changed.Value.TrustProfiles[0].AcceptedIssuerSubjects = [certificate.Issuer];
@@ -163,7 +164,7 @@ public sealed class PostgresConfiguredTrustRestrictionTests(DatabaseFixtureAdapt
             ProfileId = "partner", EnvironmentId = "production", DisplayName = "Partner", AcceptedIssuerThumbprints = ["AA"],
             PrincipalMappings = [new()
             {
-                MappingId = "reader", MatchType = ClientCertificateIdentityType.SanUri, MatchValue = "spiffe://partner",
+                MappingId = "reader", MatchType = ClientCertificateIdentityType.SanUri, MatchValue = "spiffe://partner/reader",
                 PrincipalId = "partner", DisplayName = "Partner"
             }]
         }]
