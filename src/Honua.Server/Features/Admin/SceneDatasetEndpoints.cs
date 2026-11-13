@@ -67,7 +67,7 @@ internal static partial class SceneDatasetEndpoints
         return endpoints;
     }
 
-    private static void MapSceneReadEndpoints(RouteGroupBuilder group)
+    private static void MapSceneReadEndpoints(IEndpointRouteBuilder group)
     {
         _ = group.MapGet("/", HandleListScenes)
             .WithName("ListSceneDatasets")
