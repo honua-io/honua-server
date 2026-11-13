@@ -255,7 +255,7 @@ public sealed class ServingImageBoundaryTests
     [
         new(DeployWorkflow, "- name: Build serving candidate by digest",
             "- name: Gate serving tag release on fixable HIGH/CRITICAL vulnerabilities",
-            "- name: Publish verified serving architecture tags", "steps.build.outputs.digest"),
+            "- name: Publish verified serving architecture tags", "steps.candidate.outputs.digest"),
         new(PlatformWorkflow, "- name: Build native-AOT platform candidate by digest",
             "- name: Gate native-AOT tag release on fixable HIGH/CRITICAL vulnerabilities",
             "- name: Publish verified native-AOT platform architecture tags", "steps.aot_candidate.outputs.digest"),

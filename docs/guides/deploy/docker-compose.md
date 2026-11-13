@@ -43,7 +43,7 @@ compiler, or a registry credential.
 
 The default serving image includes only the PostGIS data store and retains file-format
 import and export support. Keep the install's default image for PostGIS. Additional
-stores require the [full JIT image variant](../../ops/nightly-images.md#data-store-image-variants).
+stores require the [full JIT image variant](../../ops/nightly-images.md#data-store-variants).
 
 ## Hardened evaluation install from the shipped Compose file
 

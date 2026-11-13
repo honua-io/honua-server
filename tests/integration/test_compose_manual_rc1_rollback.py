@@ -58,12 +58,39 @@ def assert_revision(compose, env, expected):
     assert actual == expected
 
 
-def test_manual_catalog_rc1_rollback_and_return(tmp_path):
+def save_database_backup(compose, env, install):
+    dump = transfer_database(compose, env)
+    backup = install / "backups/manual-rc1.dump"
+    backup.write_bytes(dump)
+    backup.chmod(0o600)
+    receipt = backup.with_suffix(".sha256")
+    receipt.write_text(hashlib.sha256(dump).hexdigest() + "\n")
+    receipt.chmod(0o600)
+    return backup
+
+
+def restore_database_backup(compose, env, backup):
+    restored = backup.read_bytes()
+    assert hashlib.sha256(restored).hexdigest() == backup.with_suffix(".sha256").read_text().strip()
+    transfer_database(compose, env, restored)
+
+
+def assert_current_schema(sql):
+    migrations = ROOT / "src/Honua.Server/Migrations"
+    expected_schema = max(int(path.name.split("_", 1)[0]) for path in migrations.glob("[0-9]*_*.sql"))
+    assert int(sql("SELECT max(substring(scriptname from '([0-9]+)_')::int) FROM public.schema_versions")) == expected_schema
+    assert sql("SELECT PostGIS_Version()")
+
+
+def assert_secret_isolation(compose, env, install):
+    rendered = run(compose + ["config"], env=env) + run(compose + ["config", "--environment"], env=env)
+    assert not set(ALL_SECRET_KEYS) & set(env)
+    assert all(read_secret(install, key) not in rendered for key in ALL_SECRET_KEYS)
+
+
+def manual_install(tmp_path):
     candidate = os.environ["HONUA_LIFECYCLE_IMAGE"]
     executor = os.environ["HONUA_LIFECYCLE_EXECUTOR_IMAGE"]
-    retained = retained_configuration()
-    run(["docker", "pull", "--platform", "linux/amd64", RC1])
-    prior_id = run(["docker", "image", "inspect", "--format", "{{.Id}}", RC1])
     install = tmp_path / "install"
     package(install, dict(server=candidate, executor=executor, worker=candidate), "2026.1-rc.2")
     port = free_port()
@@ -72,16 +99,29 @@ def test_manual_catalog_rc1_rollback_and_return(tmp_path):
     (install / ".env").write_text("".join(f"{key}={value}\n" for key, value in settings.items()))
     env = {key: value for key, value in os.environ.items() if key not in ALL_SECRET_KEYS}
     env.update(initialize(install))
-    common = ["docker", "compose", "--project-directory", str(install),
-              "-p", env["COMPOSE_PROJECT_NAME"]]
-    current = common + ["-f", str(install / "compose.yaml")]
+    return install, port, env
+
+
+def legacy_configuration(common, install, env):
     # rc.1 has no native readiness executable. Poll its HTTP endpoint from the host.
     override = install / "rc1-host-readiness.yaml"
     override.write_text("services:\n  honua:\n    healthcheck:\n      disable: true\n")
-    legacy = common + ["-f", retained, "-f", str(override)]
+    legacy = common + ["-f", retained_configuration(), "-f", str(override)]
     legacy_env = dict(env, HONUA_IMAGE=RC1)
     for key in ("POSTGRES_PASSWORD", "HONUA_ADMIN_PASSWORD", "HONUA_MASTER_KEY", "HONUA_KEYRING_PASSWORD"):
         legacy_env[key] = read_secret(install, key)
+    return legacy, legacy_env
+
+
+def test_manual_catalog_rc1_rollback_and_return(tmp_path):
+    candidate = os.environ["HONUA_LIFECYCLE_IMAGE"]
+    run(["docker", "pull", "--platform", "linux/amd64", RC1])
+    prior_id = run(["docker", "image", "inspect", "--format", "{{.Id}}", RC1])
+    install, port, env = manual_install(tmp_path)
+    common = ["docker", "compose", "--project-directory", str(install),
+              "-p", env["COMPOSE_PROJECT_NAME"]]
+    current = common + ["-f", str(install / "compose.yaml")]
+    legacy, legacy_env = legacy_configuration(common, install, env)
     def sql(statement):
         return run(current + ["exec", "-T", "postgres", "psql", "-U", "honua", "-d", "honua",
                               "-tA", "-v", "ON_ERROR_STOP=1", "-c", statement], env=env)
@@ -93,22 +133,13 @@ def test_manual_catalog_rc1_rollback_and_return(tmp_path):
         assert sql("SELECT max(substring(scriptname from '([0-9]+)_')::int) FROM public.schema_versions") == "140"
         sql("CREATE TABLE public.manual_rollback_marker(value text); INSERT INTO public.manual_rollback_marker VALUES ('retained')")
         run(legacy + ["stop", "honua"], env=legacy_env)
-        dump = transfer_database(current, env)
-        backup = install / "backups/manual-rc1.dump"
-        backup.write_bytes(dump)
-        backup.chmod(0o600)
-        checksum = hashlib.sha256(dump).hexdigest()
-        receipt = backup.with_suffix(".sha256")
-        receipt.write_text(checksum + "\n")
-        receipt.chmod(0o600)
+        backup = save_database_backup(current, env, install)
         run(current + ["up", "-d", "--no-deps", "honua"], env=env)
         wait_ready(port)
         assert_revision(current, env, candidate)
         sql("UPDATE public.manual_rollback_marker SET value='changed-after-upgrade'")
         run(current + ["stop", "honua"], env=env)
-        restored = backup.read_bytes()
-        assert hashlib.sha256(restored).hexdigest() == receipt.read_text().strip()
-        transfer_database(current, env, restored)
+        restore_database_backup(current, env, backup)
         run(legacy + ["up", "-d", "--no-deps", "honua"], env=legacy_env)
         wait_ready(port)
         assert_revision(legacy, legacy_env, prior_id)
@@ -119,11 +150,7 @@ def test_manual_catalog_rc1_rollback_and_return(tmp_path):
         wait_ready(port)
         assert_revision(current, env, candidate)
         assert sql("SELECT value FROM public.manual_rollback_marker") == "retained"
-        rendered = run(current + ["config"], env=env) + run(current + ["config", "--environment"], env=env)
-        assert not set(ALL_SECRET_KEYS) & set(env)
-        assert all(read_secret(install, key) not in rendered for key in ALL_SECRET_KEYS)
-        expected_schema = max(int(path.name.split("_", 1)[0]) for path in (ROOT / "src/Honua.Server/Migrations").glob("[0-9]*_*.sql"))
-        assert int(sql("SELECT max(substring(scriptname from '([0-9]+)_')::int) FROM public.schema_versions")) == expected_schema
-        assert sql("SELECT PostGIS_Version()")
+        assert_secret_isolation(current, env, install)
+        assert_current_schema(sql)
     finally:
         run(current + ["down", "--volumes", "--remove-orphans"], env=env, check=False)
