@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Server.Features.Studio;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 
@@ -10,7 +11,7 @@ namespace Honua.Server.Tests.Features.Studio;
 
 public sealed class StudioSessionEndpointsTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData(null, "default")]
     [InlineData("", "default")]
     [InlineData("prod-us_1", "prod-us_1")]
@@ -22,7 +23,7 @@ public sealed class StudioSessionEndpointsTests
             .Should().Be(expected);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(null, "", "")]
     [InlineData(null, "/honua", "/honua")]
     [InlineData("/gis/api/", "/honua", "/gis/api")]

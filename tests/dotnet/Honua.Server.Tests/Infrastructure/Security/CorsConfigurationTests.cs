@@ -59,7 +59,7 @@ public sealed class CorsConfigurationTests
         Assert.Contains("Last-Modified", policy.ExposedHeaders);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task ProductionPolicy_AllowsBrowserConsoleMcpSessionAndIdempotencyHeaders()
     {
         var policy = await ResolvePolicyAsync(
@@ -75,7 +75,7 @@ public sealed class CorsConfigurationTests
         Assert.Contains("Mcp-Session-Id", policy.ExposedHeaders, StringComparer.OrdinalIgnoreCase);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task DevelopmentPolicy_ExposesMcpSessionHeader()
     {
         var policy = await ResolvePolicyAsync(
