@@ -1,59 +1,34 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Server.Features.Admin;
 
 internal sealed partial class ProposalNotifier(
-    AdminRealtimePublisher publisher,
     ILogger<ProposalNotifier> logger) : IProposalNotifier
 {
-    public async Task NotifyPendingAsync(OperationProposal proposal, CancellationToken cancellationToken = default)
+    public Task NotifyPendingAsync(OperationProposal proposal, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(proposal);
-        await SendAsync(
-                AdminRealtimeContract.ProposalPendingEventName,
-                proposal,
-                cancellationToken)
-            .ConfigureAwait(false);
         Log.ProposalPending(logger, proposal.ProposalId, proposal.Kind.ToString());
+        return Task.CompletedTask;
     }
 
-    public async Task NotifyResolvedAsync(OperationProposal proposal, CancellationToken cancellationToken = default)
+    public Task NotifyResolvedAsync(OperationProposal proposal, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(proposal);
-        await SendAsync(
-                AdminRealtimeContract.ProposalResolvedEventName,
-                proposal,
-                cancellationToken)
-            .ConfigureAwait(false);
         Log.ProposalResolved(logger, proposal.ProposalId, proposal.Status.ToString());
-    }
-
-    private Task SendAsync(string eventName, OperationProposal proposal, CancellationToken cancellationToken)
-    {
-        var payload = new ProposalRealtimeEvent(
-            proposal.ProposalId,
-            proposal.Kind.ToString(),
-            proposal.Status.ToString(),
-            proposal.RequestedBy,
-            proposal.Plan.RiskLevel.ToString(),
-            DateTimeOffset.UtcNow);
-
-        return publisher.PublishAsync(new AdminRealtimeMessage(
-            AdminRealtimeContract.ProposalsTopic, eventName, JsonSerializer.SerializeToElement(payload,
-                AdminRealtimeJsonContext.Default.ProposalRealtimeEvent)), cancellationToken);
+        return Task.CompletedTask;
     }
 
     private static partial class Log
     {
-        [LoggerMessage(9300, LogLevel.Information, "Emitted ProposalPending for {ProposalId} ({Kind})")]
+        [LoggerMessage(9300, LogLevel.Information, "Recorded ProposalPending for {ProposalId} ({Kind})")]
         public static partial void ProposalPending(ILogger logger, string proposalId, string kind);
 
-        [LoggerMessage(9301, LogLevel.Information, "Emitted ProposalResolved for {ProposalId} (status {Status})")]
+        [LoggerMessage(9301, LogLevel.Information, "Recorded ProposalResolved for {ProposalId} (status {Status})")]
         public static partial void ProposalResolved(ILogger logger, string proposalId, string status);
     }
 }

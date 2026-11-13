@@ -1,10 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
 using System.Text.Json;
 using System.Threading.Channels;
-using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Infrastructure.Monitoring;
 using Honua.Server.Features.Admin.Models;
 
@@ -30,17 +28,6 @@ internal sealed partial class AdminRealtimeBroadcaster : BackgroundService
         _flushSignal.Flushed += OnFlushed;
     }
 
-    public async Task PublishTransitionAsync(WorkflowOperationTransition transition, CancellationToken cancellationToken)
-    {
-        await _publisher.PublishAsync(new AdminRealtimeMessage(AdminRealtimeContract.DeployOperationsTopic,
-            AdminRealtimeContract.DeployOperationEventName, JsonSerializer.SerializeToElement(MapDeployEvent(transition),
-                AdminRealtimeGroupsJsonContext.Default.DeployOperationRealtimeEvent)), cancellationToken).ConfigureAwait(false);
-        var operateEvent = OperateEventResponseMapper.Map(ReleaseTimelineEventFactory.Create(transition));
-        await _publisher.PublishAsync(new AdminRealtimeMessage(AdminRealtimeContract.OperateEventsTopic,
-            AdminRealtimeContract.OperateEventEventName, JsonSerializer.SerializeToElement(operateEvent,
-                AdminRealtimeGroupsJsonContext.Default.OperateEventResponse)), cancellationToken).ConfigureAwait(false);
-    }
-
     private void OnFlushed(object? sender, OpsHealthFlushedEventArgs args) => _opsHealth.Writer.TryWrite(args.Snapshot);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -63,24 +50,6 @@ internal sealed partial class AdminRealtimeBroadcaster : BackgroundService
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
-    }
-
-    private static DeployOperationRealtimeEvent MapDeployEvent(WorkflowOperationTransition transition)
-    {
-        var occurredTicks = transition.OccurredAt.UtcTicks.ToString(CultureInfo.InvariantCulture);
-        return new DeployOperationRealtimeEvent(
-            EventId: $"deploy:{transition.OperationId}:{transition.Kind}:{occurredTicks}",
-            OperationId: transition.OperationId,
-            TransitionKind: transition.Kind.ToString(),
-            Status: transition.Operation.Status.ToString(),
-            Phase: transition.Operation.CurrentPhase,
-            TargetId: transition.TargetId,
-            ReleaseId: transition.ReleaseId,
-            CorrelationId: transition.CorrelationId,
-            OperationInstanceId: transition.Operation.Audit.OperationInstanceId,
-            AuditId: transition.Operation.Audit.AuditId,
-            ProposalId: transition.Operation.Audit.ProposalId,
-            OccurredAt: transition.OccurredAt);
     }
 
     public override void Dispose()

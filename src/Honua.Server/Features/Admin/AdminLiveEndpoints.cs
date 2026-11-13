@@ -14,8 +14,7 @@ internal static class AdminLiveEndpoints
         services.AddSingleton<AdminRealtimePublisher>();
         services.AddSingleton<AdminRealtimeBroadcaster>();
         services.AddHostedService(sp => sp.GetRequiredService<AdminRealtimeBroadcaster>());
-        services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IWorkflowOperationTransitionListener,
-            RealtimeOperationTransitionListener>();
+        services.AddSingleton<Honua.ControlPlane.IControlPlaneRealtimeWriter, AdminControlPlaneRealtimeWriter>();
         return services;
     }
 

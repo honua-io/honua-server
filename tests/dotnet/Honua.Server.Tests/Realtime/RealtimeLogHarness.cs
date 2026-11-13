@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.ControlPlane;
+using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Realtime;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
@@ -53,6 +55,17 @@ internal sealed class RealtimeLogHarness : IAsyncDisposable
         using var reader = new StreamReader(stream);
         var migration = (await reader.ReadToEndAsync()).Replace("$HonuaSchema$", $"\"{_jobs.Schema}\"", StringComparison.Ordinal);
         await _fixture.ExecuteDdlUnderLockAsync(migration);
+    }
+
+    public async Task<ControlPlaneStorage> CreateControlPlaneStorageAsync()
+    {
+        const string resource = "Honua.Server.Migrations.148_CreateControlPlaneState.sql";
+        await using var stream = typeof(PostgresRealtimeEventLog).Assembly.GetManifestResourceStream(resource)
+            ?? throw new InvalidOperationException($"Embedded migration '{resource}' was not found.");
+        using var reader = new StreamReader(stream);
+        await _fixture.ExecuteDdlUnderLockAsync((await reader.ReadToEndAsync())
+            .Replace("$HonuaSchema$", $"\"{_jobs.Schema}\"", StringComparison.Ordinal));
+        return new ControlPlaneStorage(_jobs.Database, new PostgresLeaseStore(_jobs.JobStore));
     }
 
     public static JsonElement Payload(object value) => JsonSerializer.SerializeToElement(value);

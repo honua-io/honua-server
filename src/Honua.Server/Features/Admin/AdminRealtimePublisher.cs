@@ -6,11 +6,11 @@ using Honua.Core.Features.Realtime;
 
 namespace Honua.Server.Features.Admin;
 
-internal sealed class AdminRealtimePublisher(IRealtimeFanoutProvider provider)
+internal sealed class AdminRealtimePublisher(IServiceProvider services)
 {
     public async Task PublishAsync(AdminRealtimeMessage message, CancellationToken cancellationToken)
     {
-        await provider.AppendAsync(new RealtimeEventDraft(RealtimeFamily.Admin,
+        await services.GetRequiredService<IRealtimeFanoutProvider>().AppendAsync(new RealtimeEventDraft(RealtimeFamily.Admin,
             message.Topic, message.Kind, message.Payload), null, cancellationToken).ConfigureAwait(false);
     }
 }

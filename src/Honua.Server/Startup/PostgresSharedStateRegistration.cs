@@ -48,7 +48,10 @@ internal static class PostgresSharedStateRegistration
 
         services.TryAddSingleton(provider => new ControlPlaneStorage(
             provider.GetRequiredService<JobStoreDatabase>(),
-            provider.GetRequiredService<ILeaseStore>()));
+            provider.GetRequiredService<ILeaseStore>())
+        {
+            Realtime = provider.GetService<IControlPlaneRealtimeWriter>()
+        });
         services.TryAddSingleton<WorkflowOperationRetention>();
         services.TryAddSingleton<PostgresOperationProposalStore>();
         services.TryAddSingleton<PostgresWorkflowOperationStore>();

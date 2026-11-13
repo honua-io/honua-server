@@ -27,6 +27,24 @@ public sealed class PostgresWorkflowOperationStoreTests(DatabaseFixtureAdapter d
         (await store.GetAsync(operation.OperationId)).Should().BeNull();
     }
 
+    [IntegrationTest]
+    public async Task Updates_RealtimeAppendFails_PreserveVersionAndState()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var original = harness.CreateWorkflowOperationStore();
+        var operation = Deploy(NewTargetId(), DateTimeOffset.UtcNow);
+        (await original.TryCreateAsync(operation)).Should().BeTrue();
+        var stored = (await original.GetAsync(operation.OperationId))!;
+        var failing = harness.CreateWorkflowOperationStore(new RejectingRealtimeWriter());
+        var update = stored with { Status = WorkflowOperationStatus.Succeeded };
+
+        var trySet = () => failing.TrySetAsync(update);
+        await trySet.Should().ThrowAsync<InvalidOperationException>();
+        var set = () => failing.SetAsync(update);
+        await set.Should().ThrowAsync<InvalidOperationException>();
+        (await original.GetAsync(operation.OperationId)).Should().BeEquivalentTo(stored);
+    }
+
     private sealed class RejectingRealtimeWriter : IControlPlaneRealtimeWriter
     {
         public Task AppendTransitionAsync(WorkflowOperationTransition transition, ControlPlaneWriteContext context)

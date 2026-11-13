@@ -62,7 +62,7 @@ internal sealed partial class TransitionObservingWorkflowOperationStore : IWorkf
             ? RaiseAsync(operation, kind, cancellationToken)
             : Task.CompletedTask;
 
-    private static bool TryClassify(WorkflowOperationRecord operation, out WorkflowOperationTransitionKind kind)
+    internal static bool TryClassify(WorkflowOperationRecord operation, out WorkflowOperationTransitionKind kind)
     {
         switch (operation.Status)
         {

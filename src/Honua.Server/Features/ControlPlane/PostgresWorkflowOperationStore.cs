@@ -51,7 +51,7 @@ internal sealed partial class PostgresWorkflowOperationStore(
         var created = operation with { Version = 1 };
         var inserted = await WriteAsync(
             $"INSERT INTO {_operations} ({InsertColumns}) VALUES ({InsertValues}) ON CONFLICT (operation_id) DO NOTHING",
-            new OperationWrite(created, ResolveRetention(operation, ttl), ExpectedVersion: null),
+            new OperationWrite(created, ResolveRetention(operation, ttl), ExpectedVersion: null, Created: true),
             cancellationToken).ConfigureAwait(false);
         if (inserted)
         {
@@ -75,7 +75,7 @@ internal sealed partial class PostgresWorkflowOperationStore(
             INSERT INTO {_operations} ({InsertColumns}) VALUES ({InsertValues})
             ON CONFLICT (operation_id) DO UPDATE SET {RecordAssignments}
             """,
-            new OperationWrite(stored, ResolveRetention(operation, ttl), ExpectedVersion: null),
+            new OperationWrite(stored, ResolveRetention(operation, ttl), ExpectedVersion: null, Created: false),
             cancellationToken).ConfigureAwait(false);
         LogUpdated(stored);
     }
@@ -90,7 +90,7 @@ internal sealed partial class PostgresWorkflowOperationStore(
         var stored = operation with { Version = operation.Version + 1 };
         var updated = await WriteAsync(
             $"UPDATE {_operations} SET {RecordAssignments} WHERE operation_id = @operation_id AND version = @expected_version",
-            new OperationWrite(stored, ResolveRetention(operation, ttl), operation.Version),
+            new OperationWrite(stored, ResolveRetention(operation, ttl), operation.Version, Created: false),
             cancellationToken).ConfigureAwait(false);
         if (!updated)
         {
@@ -133,9 +133,25 @@ internal sealed partial class PostgresWorkflowOperationStore(
         => _database.ExecuteAsync(
             async (connection, _, token) =>
             {
-                await using var command = new NpgsqlCommand(statement, connection);
+                await using var transaction = await connection.BeginTransactionAsync(token).ConfigureAwait(false);
+                await using var command = new NpgsqlCommand(statement, connection, transaction);
                 AddWriteParameters(command, write);
-                return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
+                var changed = await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
+                if (changed && storage.Realtime is { } realtime)
+                {
+                    var kind = WorkflowOperationTransitionKind.Created;
+                    if (write.Created || TransitionObservingWorkflowOperationStore.TryClassify(write.Operation, out kind))
+                    {
+                        await realtime.AppendTransitionAsync(new WorkflowOperationTransition
+                        {
+                            Operation = write.Operation,
+                            Kind = kind,
+                            OccurredAt = write.Operation.UpdatedAt
+                        }, new ControlPlaneWriteContext(transaction, token)).ConfigureAwait(false);
+                    }
+                }
+                await transaction.CommitAsync(token).ConfigureAwait(false);
+                return changed;
             },
             StatementRepeat.NotAfterSend,
             cancellationToken);
@@ -203,7 +219,7 @@ internal sealed partial class PostgresWorkflowOperationStore(
         }
     }
 
-    private readonly record struct OperationWrite(WorkflowOperationRecord Operation, TimeSpan Retention, long? ExpectedVersion);
+    private readonly record struct OperationWrite(WorkflowOperationRecord Operation, TimeSpan Retention, long? ExpectedVersion, bool Created);
 
     private static partial class Log
     {

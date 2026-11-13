@@ -38,7 +38,7 @@ internal sealed class AdminLiveStream(IRealtimeFanoutProvider provider, IHostEnv
 
         try
         {
-            await WriteAsync(context, "event: status\ndata: " +
+            await WriteAsync(context, "id: admin:" + after.Value.ToString(CultureInfo.InvariantCulture) + "\nevent: status\ndata: " +
                 JsonSerializer.Serialize(CreateStatus(topics), AdminRealtimeJsonContext.Default.AdminRealtimeStatus) + "\n\n").ConfigureAwait(false);
             await StreamWithResetAsync(context, channel.Reader, subscription).ConfigureAwait(false);
         }

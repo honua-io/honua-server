@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Realtime;
@@ -17,6 +18,8 @@ using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -62,14 +65,15 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
     public async Task Live_AnotherTaskPublishes_ReceivesHealthAndResumesTransitionsOnReplacementTask()
     {
         await using var log = await RealtimeLogHarness.CreateAsync(database);
+        var storage = (await log.CreateControlPlaneStorageAsync()) with { Realtime = new AdminControlPlaneRealtimeWriter(log.Log) };
         var dispatcherA = log.CreateDispatcher();
         var dispatcherB = log.CreateDispatcher();
         using var tailA = log.CreateTail(dispatcherA, null, new RealtimeOptions());
         using var tailB = log.CreateTail(dispatcherB, null, new RealtimeOptions());
         await tailA.StartAsync(default);
         await tailB.StartAsync(default);
-        using var hostA = CreateFactory(log, dispatcherA);
-        using var hostB = CreateFactory(log, dispatcherB);
+        using var hostA = CreateFactory(log, dispatcherA, storage);
+        using var hostB = CreateFactory(log, dispatcherB, storage);
         using var clientB = hostB.CreateClient();
         clientB.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
         using var response = await clientB.GetAsync("/api/v1/admin/live", HttpCompletionOption.ResponseHeadersRead);
@@ -94,9 +98,9 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
     private static async Task AssertTransitionReplayAsync(WebApplicationFactory<Program> hostA,
         WebApplicationFactory<Program> hostB, string cursor)
     {
-        var listener = hostB.Services.GetServices<IWorkflowOperationTransitionListener>()
-            .OfType<RealtimeOperationTransitionListener>().Single();
-        await listener.OnTransitionAsync(BuildTransition("resume-op", WorkflowOperationTransitionKind.Submitted));
+        var store = hostB.Services.GetRequiredService<IWorkflowOperationStore>();
+        (await store.TryCreateAsync(BuildTransition("resume-op", WorkflowOperationTransitionKind.Created).Operation))
+            .Should().BeTrue();
         using var clientA = hostA.CreateClient();
         clientA.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
         clientA.DefaultRequestHeaders.Add("Last-Event-ID", cursor);
@@ -120,24 +124,36 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
             Status = OperationProposalStatus.AwaitingApproval,
             Plan = new OperationProposalPlan { ExecutionPayload = "private-execution-payload" }
         };
-        var notifier = host.Services.GetRequiredService<IProposalNotifier>();
-        await notifier.NotifyPendingAsync(proposal);
+        var store = host.Services.GetRequiredService<IOperationProposalStore>();
+        (await store.TryCreateAsync(proposal)).Should().BeTrue();
         var pending = await ReadFrameAsync(reader);
         pending.Kind.Should().Be("ProposalPending");
         pending.Payload.GetProperty("proposalId").GetString().Should().Be(proposal.ProposalId);
         pending.Payload.GetRawText().Should().NotContain("private-execution-payload");
-        await notifier.NotifyResolvedAsync(proposal with { Status = OperationProposalStatus.Submitted });
+        (await store.TrySetAsync(proposal with { Status = OperationProposalStatus.Submitted })).Should().BeTrue();
         (await ReadFrameAsync(reader)).Kind.Should().Be("ProposalResolved");
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(RealtimeLogHarness log, RealtimeDispatcher dispatcher)
+    private static WebApplicationFactory<Program> CreateFactory(RealtimeLogHarness log, RealtimeDispatcher dispatcher, ControlPlaneStorage? storage = null)
         => new TestWebApplicationFactory().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
                 new Dictionary<string, string?> { ["HONUA_ADMIN_PASSWORD"] = AdminPassword }));
-            builder.ConfigureTestServices(services => services.Replace(ServiceDescriptor.Singleton<IRealtimeFanoutProvider>(
-                new PostgresRealtimeFanoutProvider(log.Log, dispatcher, new RealtimePresenceBatcher(log.Log)))));
+            builder.ConfigureTestServices(services =>
+            {
+                services.Replace(ServiceDescriptor.Singleton<IRealtimeFanoutProvider>(
+                    new PostgresRealtimeFanoutProvider(log.Log, dispatcher, new RealtimePresenceBatcher(log.Log))));
+                if (storage is not null)
+                {
+                    var retention = Options.Create(new ControlPlaneRetentionOptions());
+                    services.Replace(ServiceDescriptor.Singleton<IOperationProposalStore>(new PostgresOperationProposalStore(
+                        storage, retention, NullLogger<PostgresOperationProposalStore>.Instance)));
+                    services.Replace(ServiceDescriptor.Singleton<IWorkflowOperationStore>(new PostgresWorkflowOperationStore(
+                        storage, new WorkflowOperationRetention(retention, Options.Create(new MetadataReleaseOperationOptions())),
+                        NullLogger<PostgresWorkflowOperationStore>.Instance)));
+                }
+            });
         });
 
     private static async Task<SseFrame> ReadFrameAsync(StreamReader reader)
