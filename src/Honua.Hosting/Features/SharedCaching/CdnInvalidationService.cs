@@ -66,8 +66,8 @@ internal sealed partial class CdnInvalidationService(
         CdnPurgeCause? cause = null)
     {
         var result = await SendWithinLimitsAsync([.. paths], cause ?? CauseOfCurrentRequest(), cancellationToken).ConfigureAwait(false);
-        ReportOnCurrentResponse(result);
-        return result;
+        ReportOnCurrentResponse(result.Result);
+        return result.Result;
     }
 
     internal Task InvalidateAfterEditAsync(IReadOnlyCollection<string> paths, CancellationToken cancellationToken)
@@ -166,13 +166,13 @@ internal sealed partial class CdnInvalidationService(
                 return null;
             }
 
-            var stillBusy = new List<string>();
-            result = await SendWithinLimitsAsync(claimed, cause, cancellationToken, stillBusy).ConfigureAwait(false);
+            var batches = await SendWithinLimitsAsync(claimed, cause, cancellationToken).ConfigureAwait(false);
+            result = batches.Result;
 
             // This task holds the leases, so no other task will send these; a CDN still busy after the retries gets them next window.
-            if (stillBusy.Count > 0)
+            if (batches.BusyPaths.Count > 0)
             {
-                DeferToNextWindow(stillBusy, CurrentCoalescingWindow());
+                DeferToNextWindow(batches.BusyPaths, CurrentCoalescingWindow());
             }
         }
         catch (OperationCanceledException)
@@ -256,24 +256,25 @@ internal sealed partial class CdnInvalidationService(
             ? EmergencyCoalescingWindow
             : CoalescingWindow;
 
-    // stillBusy, when given, collects the items of every request the CDN refused as busy after the retries.
-    private async Task<CdnInvalidationResult> SendWithinLimitsAsync(
+    private sealed record BatchInvalidationResult(CdnInvalidationResult Result, IReadOnlyCollection<string> BusyPaths);
+
+    private async Task<BatchInvalidationResult> SendWithinLimitsAsync(
         string[] paths,
         CdnPurgeCause cause,
-        CancellationToken cancellationToken,
-        List<string>? stillBusy = null)
+        CancellationToken cancellationToken)
     {
+        var busyPaths = new List<string>();
         var distinctPaths = paths.Distinct(StringComparer.Ordinal).ToArray();
         var tags = distinctPaths.Where(CdnCacheTags.IsTagInvalidation).ToArray();
         var wildcardPaths = distinctPaths.Where(path => !CdnCacheTags.IsTagInvalidation(path)).ToArray();
         if (wildcardPaths.Length > MaxWildcardPathsPerInvalidation)
         {
-            return await SendBatchAsync(CdnPaths.Everything).ConfigureAwait(false);
+            return new(await SendBatchAsync(CdnPaths.Everything).ConfigureAwait(false), busyPaths);
         }
 
         if (tags.Length <= MaxTagsPerInvalidation)
         {
-            return await SendBatchAsync(distinctPaths).ConfigureAwait(false);
+            return new(await SendBatchAsync(distinctPaths).ConfigureAwait(false), busyPaths);
         }
 
         var combined = CdnInvalidationResult.NotConfigured;
@@ -289,14 +290,14 @@ internal sealed partial class CdnInvalidationService(
             combined = CombineBatchResults(combined, result);
         }
 
-        return combined;
+        return new(combined, busyPaths);
 
         async Task<CdnInvalidationResult> SendBatchAsync(IReadOnlyCollection<string> batch)
         {
             var result = await SendAndRecordAsync(batch, cause, cancellationToken).ConfigureAwait(false);
             if (result.Outcome is CdnInvalidationOutcome.Busy)
             {
-                stillBusy?.AddRange(batch);
+                busyPaths.AddRange(batch);
             }
 
             return result;
