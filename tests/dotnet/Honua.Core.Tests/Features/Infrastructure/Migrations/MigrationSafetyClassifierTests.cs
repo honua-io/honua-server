@@ -51,6 +51,25 @@ public sealed class MigrationSafetyClassifierTests
     }
 
     [Theory]
+    [InlineData("'", "--")]
+    [InlineData("$sql$", "--")]
+    [InlineData("'", "/*")]
+    [InlineData("$sql$", "/*")]
+    public void DetectBreakingRules_QuotedCommentBeforeConcatenatedDdl(string delimiter, string quotedMarker)
+    {
+        var sql = $$"""
+            DO $body$
+            BEGIN
+                EXECUTE {{delimiter}}SELECT 1 AS "{{quotedMarker}}"; ALTER {{delimiter}} ||
+                    {{delimiter}}/**/TABLE honua.layers DROP COLUMN legacy_name{{delimiter}};
+            END;
+            $body$;
+            """;
+
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain("drop-column");
+    }
+
+    [Theory]
     [InlineData("'")]
     [InlineData("$sql$")]
     public void DetectBreakingRules_ComputedDynamicQuotes_DoNotHideTruncate(string delimiter)

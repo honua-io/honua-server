@@ -19,6 +19,27 @@ public sealed class MigrationReaderCompatibilityTests
     private const int Reader = 135;
 
     [UnitTheory]
+    [InlineData("'", "--")]
+    [InlineData("$sql$", "--")]
+    [InlineData("'", "/*")]
+    [InlineData("$sql$", "/*")]
+    public void Verify_QuotedCommentBeforeConcatenatedDdl_RefusesContract(string delimiter, string quotedMarker)
+    {
+        var sql = $$"""
+            DO $body$
+            BEGIN
+                EXECUTE {{delimiter}}SELECT 1 AS "{{quotedMarker}}"; ALTER {{delimiter}} ||
+                    {{delimiter}}/**/TABLE honua.layers DROP COLUMN legacy_name{{delimiter}};
+            END;
+            $body$;
+            """;
+
+        var declaration = MigrationReaderCompatibility.Declare(Name, sql);
+        declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Contract);
+        MigrationReaderCompatibility.Verify(declaration, Name, Reader).Accepted.Should().BeFalse();
+    }
+
+    [UnitTheory]
     [InlineData("'")]
     [InlineData("$sql$")]
     public void Verify_CommentsSplitAcrossDynamicLiterals_RefusesContract(string delimiter)

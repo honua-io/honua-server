@@ -414,9 +414,7 @@ public static class MigrationSafetyClassifier
 
         // Keep adjacent literal fragments contiguous even when their independent lexical
         // views differ. Computed expressions cannot establish a trusted trigger header.
-        result.Append(ExecutionScopeBoundary);
-        result.Append(UntrustedDynamicScope);
-        result.Append(MigrationSqlComments.NormalizeFragment(string.Concat(fragments)));
+        AppendExecutionScope(result, ExtractUntrustedDynamicSql(string.Concat(fragments)));
         result.Append(ExecutionScopeBoundary);
         result.Append(UntrustedDynamicScope);
         foreach (var fragment in fragments)
@@ -435,32 +433,37 @@ public static class MigrationSafetyClassifier
         suffix = suffix.TrimStart();
         var completeLiteral = DirectDynamicExecutePrefix.IsMatch(prefix)
             && (suffix.IsEmpty || suffix[0] == ';');
-        var fragmentSql = new StringBuilder(contents.Length);
-        if (completeLiteral)
+        if (!completeLiteral)
         {
-            AppendExecutableSql(contents, fragmentSql, insideRoutineBody: false);
+            return ExtractUntrustedDynamicSql(contents);
         }
-        else
+
+        var literalSql = new StringBuilder(contents.Length);
+        AppendExecutableSql(contents, literalSql, insideRoutineBody: false);
+        return literalSql;
+    }
+
+    private static StringBuilder ExtractUntrustedDynamicSql(string contents)
+    {
+        var fragmentSql = new StringBuilder(contents.Length);
+        fragmentSql.Append(UntrustedDynamicScope);
+        fragmentSql.Append(contents);
+        // Computed expressions have uncertain quoting. Retain raw, quote-independent,
+        // and parsed views so comment markers inside identifiers cannot hide later SQL.
+        // No view receives trigger-header exemptions.
+        fragmentSql.Append(ExecutionScopeBoundary);
+        fragmentSql.Append(UntrustedDynamicScope);
+        fragmentSql.Append(MigrationSqlComments.NormalizeFragment(contents));
+        fragmentSql.Append(ExecutionScopeBoundary);
+        fragmentSql.Append(UntrustedDynamicScope);
+        AppendExecutableSql(contents, fragmentSql, insideRoutineBody: false);
+        // A preceding delimiter may be identifier text supplied by another expression.
+        // Start each candidate independently so that delimiter cannot erase later DDL.
+        foreach (Match candidate in BreakingStatementStart.Matches(contents))
         {
-            fragmentSql.Append(UntrustedDynamicScope);
-            fragmentSql.Append(contents);
-            // Computed expressions have uncertain quoting. Retain raw, quote-independent,
-            // and parsed views so comment markers inside identifiers cannot hide later SQL.
-            // No view receives trigger-header exemptions.
             fragmentSql.Append(ExecutionScopeBoundary);
             fragmentSql.Append(UntrustedDynamicScope);
-            fragmentSql.Append(MigrationSqlComments.NormalizeFragment(contents));
-            fragmentSql.Append(ExecutionScopeBoundary);
-            fragmentSql.Append(UntrustedDynamicScope);
-            AppendExecutableSql(contents, fragmentSql, insideRoutineBody: false);
-            // A preceding delimiter may be identifier text supplied by another expression.
-            // Start each candidate independently so that delimiter cannot erase later DDL.
-            foreach (Match candidate in BreakingStatementStart.Matches(contents))
-            {
-                fragmentSql.Append(ExecutionScopeBoundary);
-                fragmentSql.Append(UntrustedDynamicScope);
-                fragmentSql.Append(MigrationSqlComments.NormalizeStatement(contents, candidate.Index));
-            }
+            fragmentSql.Append(MigrationSqlComments.NormalizeStatement(contents, candidate.Index));
         }
 
         return fragmentSql;
