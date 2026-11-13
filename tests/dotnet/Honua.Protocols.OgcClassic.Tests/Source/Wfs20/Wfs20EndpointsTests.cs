@@ -28,14 +28,9 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Wfs20)]
-public sealed class Wfs20EndpointsTests : IAsyncLifetime
+public sealed partial class Wfs20EndpointsTests
 {
     private const string GetFeatureByIdStoredQueryId = "urn:ogc:def:query:OGC-WFS::GetFeatureById";
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Community);
-
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
@@ -1326,6 +1321,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "CreateStoredQuery")]
     public async Task Wfs_CreateStoredQuery_WithSupportedQueryLanguage_ReturnsOk()
     {
+        await using var fixture = await StartIsolatedApplicationAsync();
         var storedQueryId = $"urn:honua:test:create:{Guid.NewGuid():N}";
         var requestBody = $$"""
             <wfs:CreateStoredQuery service="WFS" version="2.0.0"
@@ -1342,7 +1338,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             """;
 
         using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
-        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+        var response = await fixture.Client.PostAsync("/wfs", requestContent);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -1356,9 +1352,10 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
     public async Task Wfs_GetFeature_XmlStoredQueryParameterIsApplied()
     {
+        await using var fixture = await StartIsolatedApplicationAsync();
         const string marker = "BH0170StoredQueryParameter";
         var storedQueryId = $"urn:honua:test:parameter:{Guid.NewGuid():N}";
-        await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, marker);
+        await fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, marker);
 
         var createBody = $$"""
             <wfs:CreateStoredQuery service="WFS" version="2.0.0"
@@ -1378,7 +1375,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             </wfs:CreateStoredQuery>
             """;
         using var createContent = new StringContent(createBody, Encoding.UTF8, "application/xml");
-        var createResponse = await _fixture.Client.PostAsync("/wfs", createContent);
+        var createResponse = await fixture.Client.PostAsync("/wfs", createContent);
         var createXml = await createResponse.Content.ReadAsStringAsync();
         createResponse.StatusCode.Should().Be(HttpStatusCode.OK, createXml);
 
@@ -1391,7 +1388,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
                 </wfs:GetFeature>
                 """;
             using var getContent = new StringContent(getBody, Encoding.UTF8, "application/xml");
-            var response = await _fixture.Client.PostAsync("/wfs", getContent);
+            var response = await fixture.Client.PostAsync("/wfs", getContent);
             var content = await response.Content.ReadAsStringAsync();
 
             response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -1400,7 +1397,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         }
         finally
         {
-            await _fixture.Client.GetAsync(
+            await fixture.Client.GetAsync(
                 $"/wfs?SERVICE=WFS&REQUEST=DropStoredQuery&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(storedQueryId)}");
         }
     }
@@ -1411,6 +1408,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "CreateStoredQuery")]
     public async Task Wfs_CreateStoredQuery_WithDuplicateId_ReturnsDuplicateIdLocator()
     {
+        await using var fixture = await StartIsolatedApplicationAsync();
         var storedQueryId = $"urn:honua:test:duplicate:{Guid.NewGuid():N}";
         var requestBody = $$"""
             <wfs:CreateStoredQuery service="WFS" version="2.0.0"
@@ -1427,12 +1425,12 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             """;
 
         using var firstRequestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
-        var firstResponse = await _fixture.Client.PostAsync("/wfs", firstRequestContent);
+        var firstResponse = await fixture.Client.PostAsync("/wfs", firstRequestContent);
         var firstContent = await firstResponse.Content.ReadAsStringAsync();
         firstResponse.StatusCode.Should().Be(HttpStatusCode.OK, firstContent);
 
         using var duplicateRequestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
-        var response = await _fixture.Client.PostAsync("/wfs", duplicateRequestContent);
+        var response = await fixture.Client.PostAsync("/wfs", duplicateRequestContent);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -1447,6 +1445,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "DropStoredQuery")]
     public async Task Wfs_DropStoredQuery_WithExistingQuery_ReturnsOk()
     {
+        await using var fixture = await StartIsolatedApplicationAsync();
         var storedQueryId = $"urn:honua:test:drop:{Guid.NewGuid():N}";
         var requestBody = $$"""
             <wfs:CreateStoredQuery service="WFS" version="2.0.0"
@@ -1463,11 +1462,11 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             """;
 
         using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
-        var createResponse = await _fixture.Client.PostAsync("/wfs", requestContent);
+        var createResponse = await fixture.Client.PostAsync("/wfs", requestContent);
         var createContent = await createResponse.Content.ReadAsStringAsync();
         createResponse.StatusCode.Should().Be(HttpStatusCode.OK, createContent);
 
-        var response = await _fixture.Client.GetAsync(
+        var response = await fixture.Client.GetAsync(
             $"/wfs?SERVICE=WFS&REQUEST=DropStoredQuery&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(storedQueryId)}");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -1565,13 +1564,14 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Wfs_Transaction_WithXmlLockId_ReturnsExceptionReport()
     {
+        await using var fixture = await StartIsolatedApplicationAsync();
         const string requestBody = """
             <wfs:Transaction service="WFS" version="2.0.0" lockId="abc123" releaseAction="ALL"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0" />
             """;
 
         using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
-        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+        var response = await fixture.Client.PostAsync("/wfs", requestContent);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -1586,6 +1586,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Wfs_Transaction_WithExplicitlyRejectedXmlAccept_ReturnsNotAcceptable()
     {
+        await using var fixture = await StartIsolatedApplicationAsync();
         const string requestBody = """
             <wfs:Transaction service="WFS" version="2.0.0"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0" />
@@ -1597,7 +1598,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         };
         request.Headers.TryAddWithoutValidation("Accept", "application/xml;q=0");
 
-        var response = await _fixture.Client.SendAsync(request);
+        var response = await fixture.Client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
     }
@@ -1608,6 +1609,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Wfs_Transaction_Insert_ReturnsTransactionResponseAndCreatesFeature()
     {
+        await using var fixture = await StartIsolatedApplicationAsync();
         const string requestBody = """
             <wfs:Transaction service="WFS" version="2.0.0"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
@@ -1627,7 +1629,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             """;
 
         using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
-        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+        var response = await fixture.Client.PostAsync("/wfs", requestContent);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -1640,7 +1642,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         resourceIdMatch.Success.Should().BeTrue(content);
         var resourceId = resourceIdMatch.Groups["rid"].Value;
 
-        var queryResponse = await _fixture.Client.GetAsync(
+        var queryResponse = await fixture.Client.GetAsync(
             $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID={resourceId}");
         var queryContent = await queryResponse.Content.ReadAsStringAsync();
 
@@ -1655,6 +1657,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Wfs_Transaction_Insert_WithUnparseableSrsName_ReturnsExceptionReport()
     {
+        await using var fixture = await StartIsolatedApplicationAsync();
         // #2737: a present but unparseable/unsupported srsName on an insert geometry is a
         // transaction failure (OGC exception), not a silent fall back to the layer CRS.
         const string requestBody = """
@@ -1676,7 +1679,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             """;
 
         using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
-        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+        var response = await fixture.Client.PostAsync("/wfs", requestContent);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -1689,9 +1692,10 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Wfs_Transaction_AllowAnonymousWritePolicy_AllowsInsertWithoutRbac()
     {
+        await using var fixture = await StartIsolatedApplicationAsync();
         // V2 cutover (#1035 72/N): per-resource access policy now lives on
         // MetadataV2Object.AccessPolicy. Seed it directly via the test fixture.
-        _fixture.UpdateV2ResourceMetadata(
+        fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
             accessPolicy: new AccessPolicy { AllowAnonymousWrite = true });
         await Task.CompletedTask;
@@ -1715,7 +1719,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             """;
 
         using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
-        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+        var response = await fixture.Client.PostAsync("/wfs", requestContent);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -1730,8 +1734,9 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [Endpoint("POST /wfs")]
     public async Task Wfs_Transaction_WithInsertUpdateAndDelete_ReturnsTransactionSummary()
     {
-        var updateId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS Transaction Update Target");
-        var deleteId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS Transaction Delete Target");
+        await using var fixture = await StartIsolatedApplicationAsync();
+        var updateId = await fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS Transaction Update Target");
+        var deleteId = await fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS Transaction Delete Target");
 
         var requestBody = $$"""
             <wfs:Transaction service="WFS" version="2.0.0"
@@ -1767,7 +1772,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             """;
 
         using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
-        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+        var response = await fixture.Client.PostAsync("/wfs", requestContent);
 
         var responseBody = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, responseBody);
@@ -1776,16 +1781,9 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         responseBody.Should().Contain("<wfs:totalUpdated>1</wfs:totalUpdated>");
         responseBody.Should().Contain("<wfs:totalDeleted>1</wfs:totalDeleted>");
 
-        var updatedFeatureResponse = await _fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID=pub-layer-0.{updateId}");
-        var updatedFeatureBody = await updatedFeatureResponse.Content.ReadAsStringAsync();
-        updatedFeatureResponse.StatusCode.Should().Be(HttpStatusCode.OK, updatedFeatureBody);
+        var updatedFeatureBody = await GetTestLayerFeatureByIdAsync(fixture, updateId);
         updatedFeatureBody.Should().Contain("WFS Transaction Updated");
-
-        var deletedFeatureResponse = await _fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID=pub-layer-0.{deleteId}");
-        var deletedFeatureBody = await deletedFeatureResponse.Content.ReadAsStringAsync();
-        deletedFeatureResponse.StatusCode.Should().Be(HttpStatusCode.OK, deletedFeatureBody);
+        var deletedFeatureBody = await GetTestLayerFeatureByIdAsync(fixture, deleteId);
         deletedFeatureBody.Should().Contain("numberMatched=\"0\"");
     }
 
@@ -1887,6 +1885,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Wfs_Transaction_MultiLayerWithoutRollback_ReturnsTransactionResponseAndCreatesFeatures()
     {
+        await using var fixture = await StartIsolatedApplicationAsync();
         const string requestBody = """
             <wfs:Transaction service="WFS" version="2.0.0" rollbackOnFailure="false"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
@@ -1917,7 +1916,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             """;
 
         using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
-        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+        var response = await fixture.Client.PostAsync("/wfs", requestContent);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -1935,13 +1934,13 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         var primaryRid = primaryRidMatch.Groups["rid"].Value;
         var relatedRid = relatedRidMatch.Groups["rid"].Value;
 
-        var primaryQueryResponse = await _fixture.Client.GetAsync(
+        var primaryQueryResponse = await fixture.Client.GetAsync(
             $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID={primaryRid}");
         var primaryQueryContent = await primaryQueryResponse.Content.ReadAsStringAsync();
         primaryQueryResponse.StatusCode.Should().Be(HttpStatusCode.OK, primaryQueryContent);
         primaryQueryContent.Should().Contain("WFS Multi Layer Primary Insert");
 
-        var relatedQueryResponse = await _fixture.Client.GetAsync(
+        var relatedQueryResponse = await fixture.Client.GetAsync(
             $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-1&RESOURCEID={relatedRid}");
         var relatedQueryContent = await relatedQueryResponse.Content.ReadAsStringAsync();
         relatedQueryResponse.StatusCode.Should().Be(HttpStatusCode.OK, relatedQueryContent);
@@ -1954,7 +1953,8 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Wfs_Transaction_UpdateGmlNameXPathReference_UpdatesStoredQueryResult()
     {
-        var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS XPath Name Original");
+        await using var fixture = await StartIsolatedApplicationAsync();
+        var featureId = await fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS XPath Name Original");
 
         var requestBody = $$"""
             <wfs:Transaction service="WFS" version="2.0.0"
@@ -1973,13 +1973,13 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             """;
 
         using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
-        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+        var response = await fixture.Client.PostAsync("/wfs", requestContent);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         content.Should().Contain("<wfs:totalUpdated>1</wfs:totalUpdated>");
 
-        var queryResponse = await _fixture.Client.GetAsync(
+        var queryResponse = await fixture.Client.GetAsync(
             $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=pub-layer-0.{featureId}");
         var queryContent = await queryResponse.Content.ReadAsStringAsync();
 
@@ -1995,10 +1995,11 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Wfs_Transaction_Replace_ReturnsReplaceSummaryAndUpdatesFeature()
     {
-        var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS Replace Original");
-        var reader = _fixture.GetService<IFeatureReader>();
+        await using var fixture = await StartIsolatedApplicationAsync();
+        var featureId = await fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS Replace Original");
+        var reader = fixture.GetService<IFeatureReader>();
         var original = (await reader.GetAsync(WebAppFixture.TestLayerId, featureId))!.Value;
-        await _fixture.GetService<IFeatureWriter>().UpdateAsync(WebAppFixture.TestLayerId,
+        await fixture.GetService<IFeatureWriter>().UpdateAsync(WebAppFixture.TestLayerId,
             original with
             {
                 Geometry = new WKBWriter().Write(new Point(-157.8, 21.3) { SRID = 4326 }),
@@ -2027,7 +2028,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             """;
 
         using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
-        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+        var response = await fixture.Client.PostAsync("/wfs", requestContent);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -2035,14 +2036,14 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         content.Should().Contain("<wfs:ReplaceResults>");
         content.Should().Contain($"rid=\"pub-layer-0.{featureId}\"");
 
-        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema!);
         await using var command = connection.CreateCommand();
         command.CommandText = "SELECT NOT (attributes ? 'population') AND geometry IS NULL FROM features WHERE layer_id = @layerId AND objectid = @objectId";
         command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
         command.Parameters.AddWithValue("objectId", featureId);
         (await command.ExecuteScalarAsync()).Should().Be(true);
 
-        var queryResponse = await _fixture.Client.GetAsync(
+        var queryResponse = await fixture.Client.GetAsync(
             $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=pub-layer-0.{featureId}");
         var queryContent = await queryResponse.Content.ReadAsStringAsync();
 
@@ -2064,11 +2065,12 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Wfs_Transaction_Replace_RoundTripsGmlDescriptionAndIdentifierCodeSpace()
     {
+        await using var fixture = await StartIsolatedApplicationAsync();
         // Mirrors the WFS 2.0 ETS ReplaceTests flow (#1433): the harness replaces a feature with
         // standard gml:description / gml:identifier properties (the identifier carrying a CITE
         // codeSpace) and then asserts they survive a GetFeatureById read-back. gml:identifier is
         // gml:CodeWithAuthorityType, so the codeSpace authority must round-trip too.
-        var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS Replace CodeSpace Original");
+        var featureId = await fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS Replace CodeSpace Original");
         var replacementIdentifier = Guid.NewGuid().ToString();
         const string codeSpace = "http://cite.opengeospatial.org/";
 
@@ -2093,13 +2095,13 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             """;
 
         using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
-        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+        var response = await fixture.Client.PostAsync("/wfs", requestContent);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         content.Should().Contain("<wfs:totalReplaced>1</wfs:totalReplaced>");
 
-        var queryResponse = await _fixture.Client.GetAsync(
+        var queryResponse = await fixture.Client.GetAsync(
             $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=pub-layer-0.{featureId}");
         var queryContent = await queryResponse.Content.ReadAsStringAsync();
 
@@ -2116,7 +2118,8 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Wfs_Transaction_Delete_DeletedFeatureStoredQueryReturns404ExceptionReport()
     {
-        var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS Delete Target");
+        await using var fixture = await StartIsolatedApplicationAsync();
+        var featureId = await fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS Delete Target");
 
         var requestBody = $$"""
             <wfs:Transaction service="WFS" version="2.0.0"
@@ -2131,13 +2134,13 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             """;
 
         using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
-        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+        var response = await fixture.Client.PostAsync("/wfs", requestContent);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         content.Should().Contain("<wfs:totalDeleted>1</wfs:totalDeleted>");
 
-        var queryResponse = await _fixture.Client.GetAsync(
+        var queryResponse = await fixture.Client.GetAsync(
             $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=pub-layer-0.{featureId}");
         var queryContent = await queryResponse.Content.ReadAsStringAsync();
 
@@ -2154,7 +2157,8 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Wfs_Transaction_UpdateBoundedBy_WithInvalidValue_ReturnsInvalidValueException()
     {
-        var updateId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS BoundedBy Target");
+        await using var fixture = await StartIsolatedApplicationAsync();
+        var updateId = await fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS BoundedBy Target");
 
         var requestBody = $$"""
             <wfs:Transaction service="WFS" version="2.0.0"
@@ -2178,7 +2182,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             """;
 
         using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
-        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+        var response = await fixture.Client.PostAsync("/wfs", requestContent);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -2606,6 +2610,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Wfs_Transaction_Delete_ZeroMatchFilter_ReturnsSuccessWithZeroDeleted()
     {
+        await using var fixture = await StartIsolatedApplicationAsync();
         const string requestBody = """
             <wfs:Transaction service="WFS" version="2.0.0"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
@@ -2619,7 +2624,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             """;
 
         using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
-        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+        var response = await fixture.Client.PostAsync("/wfs", requestContent);
 
         var content = await response.Content.ReadAsStringAsync();
         // Must be 200, not 400 — zero-match is a valid no-op per ISO 19142 §15.2.5.3.
@@ -2637,6 +2642,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Wfs_Transaction_Update_ZeroMatchFilter_ReturnsSuccessWithZeroUpdated()
     {
+        await using var fixture = await StartIsolatedApplicationAsync();
         const string requestBody = """
             <wfs:Transaction service="WFS" version="2.0.0"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
@@ -2654,7 +2660,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             """;
 
         using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
-        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+        var response = await fixture.Client.PostAsync("/wfs", requestContent);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -2672,6 +2678,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Wfs_Transaction_MultiLayer_DefaultRollbackOnFailure_CommitsEveryLayer()
     {
+        await using var fixture = await StartIsolatedApplicationAsync();
         // rollbackOnFailure defaults to true when the attribute is omitted (ISO 19142 §15.2.5.2).
         const string requestBody = """
             <wfs:Transaction service="WFS" version="2.0.0"
@@ -2703,7 +2710,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             """;
 
         using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
-        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+        var response = await fixture.Client.PostAsync("/wfs", requestContent);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -2726,9 +2733,9 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         var primaryRid = primaryRidMatch.Groups["rid"].Value;
         var relatedRid = relatedRidMatch.Groups["rid"].Value;
 
-        var primary = await _fixture.Client.GetStringAsync(
+        var primary = await fixture.Client.GetStringAsync(
             $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID={primaryRid}");
-        var related = await _fixture.Client.GetStringAsync(
+        var related = await fixture.Client.GetStringAsync(
             $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-1&RESOURCEID={relatedRid}");
         primary.Should().Contain("BH009 Primary Layer Feature");
         related.Should().Contain("BH009 Related Layer Feature");
@@ -2745,11 +2752,12 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
     public async Task Wfs_GetFeature_XmlQueryWithFilter_PagingNextLinkPreservesFilter()
     {
+        await using var fixture = await StartIsolatedApplicationAsync();
         // Insert two features with the same distinctive name so both match the filter and
         // COUNT=1 forces a next-page link.
         const string marker = "BH010PagingFilter";
-        await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, $"{marker} A");
-        await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, $"{marker} B");
+        await fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, $"{marker} A");
+        await fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, $"{marker} B");
 
         var requestBody = $"""
             <wfs:GetFeature service="WFS" version="2.0.0" count="1"
@@ -2767,7 +2775,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             """;
 
         using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
-        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+        var response = await fixture.Client.PostAsync("/wfs", requestContent);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -2793,10 +2801,11 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
     public async Task Wfs_GetFeature_MultiQueryPagingNextLinkCanBeFollowed()
     {
+        await using var fixture = await StartIsolatedApplicationAsync();
         const string firstMarker = "BH0169PagingFirst";
         const string secondMarker = "BH0169PagingSecond";
-        await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, firstMarker);
-        await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, secondMarker);
+        await fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, firstMarker);
+        await fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, secondMarker);
 
         var requestBody = $$"""
             <wfs:GetFeature service="WFS" version="2.0.0" count="1"
@@ -2817,7 +2826,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             </wfs:GetFeature>
             """;
         using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
-        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+        var response = await fixture.Client.PostAsync("/wfs", requestContent);
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
 
@@ -2827,7 +2836,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             ?? throw new InvalidOperationException(content);
         nextHref.Should().Contain("%3B", "per-query FILTER values must be encoded as a KVP multi-query list");
 
-        var nextResponse = await _fixture.Client.GetAsync(new Uri(nextHref).PathAndQuery);
+        var nextResponse = await fixture.Client.GetAsync(new Uri(nextHref).PathAndQuery);
         var nextContent = await nextResponse.Content.ReadAsStringAsync();
         nextResponse.StatusCode.Should().Be(HttpStatusCode.OK, nextContent);
         XNamespace honua = "http://honua.io/wfs";
@@ -2849,7 +2858,8 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Wfs_Transaction_Insert_3dGmlPosList_EvenVertexCount_StoresCorrectGeometry()
     {
-        _fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, spatial: new MetadataV2ObjectSpatial
+        await using var fixture = await StartIsolatedApplicationAsync();
+        fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, spatial: new MetadataV2ObjectSpatial
         {
             SpatialReference = MetadataV2SpatialReference.Wgs84,
             GeometryType = MetadataV2GeometryType.LineString,
@@ -2878,7 +2888,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             """;
 
         using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
-        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+        var response = await fixture.Client.PostAsync("/wfs", requestContent);
 
         var content = await response.Content.ReadAsStringAsync();
         // Before the fix this returned 400 or stored wrong geometry; now it must succeed.
@@ -2891,7 +2901,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         ridMatch.Success.Should().BeTrue(content);
         var rid = ridMatch.Groups["rid"].Value;
 
-        var queryResponse = await _fixture.Client.GetAsync(
+        var queryResponse = await fixture.Client.GetAsync(
             $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID={rid}&OUTPUTFORMAT=application%2Fjson");
         var queryContent = await queryResponse.Content.ReadAsStringAsync();
         queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, queryContent);
@@ -2904,7 +2914,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
 
         // Check the stored vertex order independently of GeoJSON output normalization.
         var featureId = long.Parse(rid.AsSpan("pub-layer-0.".Length), System.Globalization.CultureInfo.InvariantCulture);
-        var stored = await _fixture.GetService<IFeatureReader>().GetAsync(WebAppFixture.TestLayerId, featureId);
+        var stored = await fixture.GetService<IFeatureReader>().GetAsync(WebAppFixture.TestLayerId, featureId);
         stored.Should().NotBeNull();
         var storedLine = new WKBReader().Read(stored!.Value.Geometry)
             .Should().BeOfType<LineString>().Subject;
@@ -2950,6 +2960,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Wfs_Transaction_Delete_WithInvalidFesFilter_ReturnsBadRequest()
     {
+        await using var fixture = await StartIsolatedApplicationAsync();
         const string requestBody = """
             <wfs:Transaction service="WFS" version="2.0.0"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
@@ -2967,7 +2978,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             """;
 
         using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
-        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+        var response = await fixture.Client.PostAsync("/wfs", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
             "an unparseable FES 2.0 filter must produce 400, not 500");
@@ -2984,6 +2995,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Wfs_Transaction_Delete_WithEmptyFesFilter_ReturnsBadRequest()
     {
+        await using var fixture = await StartIsolatedApplicationAsync();
         const string requestBody = """
             <wfs:Transaction service="WFS" version="2.0.0"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
@@ -2995,7 +3007,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             """;
 
         using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
-        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+        var response = await fixture.Client.PostAsync("/wfs", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
             "an empty <fes:Filter/> must be rejected with 400, not treated as a match-all");

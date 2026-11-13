@@ -16,7 +16,7 @@
 
 ## Governing Rules
 
-Draft pull requests run Format, Clean code, and Repository hygiene only; optional PR verification and PR Gate heavy jobs wait for `ready_for_review`. Converting a ready PR back to draft cancels its previous run. The stable `PR Gate` aggregate still runs with `always()` and fails on skipped heavy dependencies, so a draft run cannot supply mergeable verification. PR Gate and native-image impact observers exclude this intentional draft failure only when the source run’s latest `PR Gate / Runner select` and `PR Gate / Build and tests` outcomes at or before the source attempt were both skipped (a partial rerun keeps earlier outcomes; a failed runner selection is a ready-run failure), preserving ready-run failures in promotion evidence even across same-SHA draft transitions. Manual and trunk verification retain their existing coverage.
+Draft pull requests run Format, Clean code, and Repository hygiene only; optional PR verification and PR Gate heavy jobs wait for `ready_for_review`. Converting a ready PR back to draft cancels its previous run. The stable `PR Gate` aggregate still runs with `always()` and accepts skipped heavy dependencies only on draft PR events after Format succeeds. Failure, cancellation and missing results still fail; ready PRs require all dependencies to succeed. GitHub draft protection prevents merging, and `ready_for_review` starts the complete verification. PR Gate and native-image impact observers exclude intentional draft admission only when the source run’s latest `PR Gate / Runner select` and `PR Gate / Build and tests` outcomes at or before the source attempt were both skipped (a partial rerun keeps earlier outcomes; a failed runner selection is a ready-run failure), preserving ready-run failures in promotion evidence even across same-SHA draft transitions. Manual and trunk verification retain their existing coverage.
 
 NuGet audit advisories (NU1901-NU1904) never fail a restore or build: `Directory.Build.props` lists them in `WarningsNotAsErrors` (projects append to that list), so a newly published advisory shows as a restore warning and `scripts/ci/dotnet-restore-retry.sh` treats any remaining restore failure as a retryable feed error. Advisories stay tracked by the NuGet vulnerability scan in `security-nightly.yml`, which annotates High/Critical findings and opens a tracking issue without failing the job (an unreadable report still fails); bumps are ordinary dependency work.
 
@@ -330,6 +330,15 @@ Main checks the chosen pool on the first ordinary combined batch using it;
 no separate branch full run is needed. Clear the variable to restore the hosted
 default for new runs. Treat existing runs as assigned to their original pool;
 main handles their completion or cancellation.
+
+Full CI and PR Gate publish PostgreSQL service container port 5432 without a
+fixed host-port binding. GitHub assigns each job its own host port, so concurrent
+jobs on the shared build host cannot collide at Docker service startup. Full-CI
+clients inherit `PGPORT` and `HONUA_TEST_DB_URL` from the assigned service port;
+server setup, SQL seeds and the host-network Docker smoke use that same port.
+Existing shard connection strings already consume the assigned port. The server
+setup action defaults to 5432 for callers without a PostgreSQL service override.
+This changes no job count, test selection, required context or runner routing.
 
 ## Full-CI producer admission
 
@@ -842,6 +851,80 @@ boundary and deterministic replay are unchanged.
 Class-scoped test applications and database infrastructure that shorten server
 test shards without changing what they run.
 
+### WFS 2.0 endpoint fixture lifetime
+
+Wfs20EndpointsTests shares one seeded Community-licensed WFS 2.0 application for
+the lifetime of the sequential test class, used by every read-only case:
+capabilities, DescribeFeatureType, GetFeature, GetPropertyValue, stored-query
+listing and description, and error-report checks. Cases that send a WFS
+Transaction, create or drop stored queries, or write features or resource
+metadata through the fixture start their own application within the case.
+Managed stored queries are held process-wide rather than per application, so a
+stored query created by one case stays visible to later cases; no case asserts
+an exact stored-query count. Cases with custom metadata providers, licenses, or
+service replacements also keep their own per-case applications.
+All cases and assertions remain in the WFS Endpoints shard on selected PR runs
+and twice-daily full trunk runs. This changes no runner count, required check
+name, required aggregate dependency, workflow, or shard definition.
+
+### Cross-protocol permission matrix fixture lifetime
+
+CrossProtocolPermissionMatrixTests starts one application for the whole class,
+configured with the wildcard query grant, and shares it across the ten
+read-denial cases for FeatureServer, OData, OData batch, OGC API Features and
+OGC API Tiles. Each of those cases creates its own HttpClient with its own user
+and role headers, so no login state or cookies are shared between cases. Every
+write case, every ApplyEdits parity case (FeatureServer and gRPC-write), and the
+layer-scoped grant cases still start their own application, because their grants
+or edits differ per test. The shared application is disposed when the class
+finishes, or when a shard finishes its share of the class.
+All cases and assertions remain in the Security and Authorization 1 and Security
+and Authorization 7 shards on selected PR runs and twice-daily full trunk runs.
+This changes no runner count, required check name, required aggregate
+dependency, workflow, or shard definition.
+
+### FeatureServer endpoint fixture lifetime
+
+FeatureServerEndpointTests starts one seeded, Pro-licensed application per test
+class, through an xUnit class fixture, and every read-only metadata and query
+case reuses it with the same schema and editing capabilities. Any case that
+edits features, adds data or changes metadata calls
+`UseIsolatedApplicationAsync()` first and gets its own application and schema,
+which is disposed when the case ends. The shared application is never written
+to, so the read-only cases do not depend on order. The class still runs one case
+at a time in the `Database.CoreEndpoints` collection, and method names are
+unchanged, so the Core Endpoints shard filter is unaffected.
+All cases and assertions remain in the Core Endpoints, Core Endpoint Queries,
+and Core Endpoint Mutations shards on selected PR runs and twice-daily full
+trunk runs. This changes no runner count, required check name, required
+aggregate dependency, workflow, or shard definition.
+
+### Feature stream default application lifetime
+
+FeatureStreamEndpointsTests creates the shared default application per case but
+starts it lazily: only cases that call `StartDefaultApplicationAsync()` start
+it, and only those cases dispose it. Cases that need a custom configuration
+build, start and dispose their own application inside the case, so they no
+longer pay for a default application they never use. Each case still gets its
+own isolated event store, sessions and credentials.
+All cases and assertions remain in the Server Features Streaming Transports and
+Server Features Streaming Endpoints 1, 2, and 4 shards on selected PR runs and
+twice-daily full trunk runs. This changes no runner count, required check name,
+required aggregate dependency, workflow, or shard definition.
+
+### FeatureServer RBAC denial fixture lifetime
+
+FeatureServerServiceRbacTests uses one application per class, built once through
+xUnit's class fixture, for cases where authorization must reject a request
+before any write. Each case still creates its own HTTP client with its own role
+headers, so no authentication state is shared between cases. Cases that write
+successfully, or that create a replica as setup, still build their own
+application and discard it when the case ends.
+All cases and assertions remain in the Security and Authorization 5 shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
 ### Routing async web tool database lifetime
 
 `RoutingAsyncWebToolTests` holds a class-level `PostgresFixture`, which keeps
@@ -956,6 +1039,13 @@ the bot App to enable GitHub auto-merge. Repository rulesets and required checks
 The workflow does not override protections. Exact-head review admission must be
 configured as a required check to be enforced by GitHub auto-merge.
 
+Admission requires both the triggering event and the live PR to be non-draft and
+free of `hold`, `train:hold` and `train:escalated`. A queued held/draft event cannot
+re-arm admission after its live state changes. Ineligible events may only revoke
+an existing request; draft-conversion and label events retain that cleanup path.
+Manually disabling auto-merge alone is not a durable hold: apply a hold label or
+keep the PR as a draft to prevent a later eligible event from enabling it again.
+
 The event-driven auto-merge workflow skips Dependabot PRs before minting App credentials. Already mergeable PRs remain with the existing merge authority because GitHub cannot arm deferred auto-merge for them.
 
 Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
@@ -988,3 +1078,98 @@ a 10 GiB user-slice budget with runner services; the OOM task dump contained
 runner. CPU quota alone did not bound those processes. No host resource limit
 changes are required. The changed action takes effect on the next PR Gate;
 that run supplies the after-change timing and memory evidence.
+
+### Workflow loader validation in the fast stage
+
+PR Gate's architecture matrix member runs pinned, checksum-verified actionlint
+before setup/build and before any docs/generated-only skip. All workflow YAML
+files receive syntax and expression checks; a job-level `runner.temp` expression
+is rejected before landing. Compatibility exceptions allow only the unsupported
+`concurrency.queue` diagnostic and two pre-existing property-reference messages
+in generated gh-aw doctor locks. No other syntax/context diagnostic is ignored.
+Regression fixtures prove queue acceptance and failure for invalid contexts,
+unknown keys and missing dependencies. Required names and `required.needs` stay
+unchanged, and the check adds zero jobs per PR. Timing evidence will come from
+the first completed run; no measured saving is claimed.
+
+### OData RBAC denial fixture lifetime
+
+`ODataServiceRbacTests` shares one authorization-denial application for the
+lifetime of the sequential test class. Only cases that expect a request to be
+rejected before any write use it, and each creates its own HTTP client with its
+own role headers. Successful edits and cases with custom policies still build
+and dispose their own application within the case.
+All cases and assertions remain in the Security and Authorization 5 shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
+### GeoServices geocode catalog fixture lifetime
+
+`GeoservicesCatalogGeocodeServerTests` shares one seeded catalog host with
+restricted features for the lifetime of the sequential test class, used by the
+read-only mount-prefix cases. Public-service collision graphs are built once per
+distinct configuration and kept apart from the unmodified catalog. Cases with
+other locator or authorization settings still create their own application
+within the case.
+All cases and assertions remain in the GeoServices Catalog and ImageServer
+Support shard on selected PR runs and twice-daily full trunk runs. This changes
+no runner count, required check name, required aggregate dependency, workflow,
+or shard definition.
+
+### Secure connection default application lifetime
+
+`SecureConnectionEndpointsTests` starts its default application lazily: only
+cases that call `InitializeDefaultApplicationAsync()` start it, and only those
+cases dispose it. Cases that build a custom host no longer pay for an unused
+default application.
+All cases and assertions remain in the Server Features Admin Platform and
+Connections shard on selected PR runs and twice-daily full trunk runs. This
+changes no runner count, required check name, required aggregate dependency,
+workflow, or shard definition.
+
+### Feature stream snapshot and conformance application lifetime
+
+`FeatureStreamSnapshotEndpointsTests` and
+`FeatureStreamConformanceEndpointsTests` start their default application lazily:
+only cases that call `StartDefaultApplicationAsync()` start it, and only those
+cases dispose it. Cases that need a custom configuration build, start and
+dispose their own application, and each case keeps its own isolated event store,
+sessions and credentials.
+All cases and assertions remain in the Server Features Streaming Snapshot and
+Conformance shard on selected PR runs and twice-daily full trunk runs. This
+changes no runner count, required check name, required aggregate dependency,
+workflow, or shard definition.
+
+### WCS endpoint fixture lifetime
+
+`Wcs10EndpointsTests` and `Wcs20EndpointsTests` each share one application with
+a substituted raster store for the lifetime of the sequential test class,
+through `SubstitutedRasterStoreApplication`. Cases that rebind the metadata
+graph or need other services still create their own application, so no rebinding
+leaks into the shared host.
+All cases and assertions remain in the WFS 3, WFS 8, and WFS 9 shards on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
+### Advanced spatial query fixture lifetime
+
+`AdvancedSpatialQueryTests` shares one seeded `WebAppFixture` for the lifetime
+of the sequential test class; every case is a read-only spatial query.
+All cases and assertions remain in the Core Spatial Query and Streaming shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
+### Input validation fixture lifetime
+
+`InputValidationIntegrationTests` shares one Pro-licensed production-mode
+application for the lifetime of the sequential test class. Edit cases add
+features to the shared host, but every assertion on edited data filters by a
+name unique to that case and no case counts all rows, so results do not depend
+on case order. A new case must keep to that rule or use its own application.
+All cases and assertions remain in the Security and Authorization 5 shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.

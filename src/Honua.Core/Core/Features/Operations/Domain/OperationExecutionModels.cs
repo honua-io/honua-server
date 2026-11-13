@@ -7,6 +7,10 @@ namespace Honua.Core.Features.Operations.Domain;
 
 public sealed record OperationRequest
 {
+    // Populated only by the canonical Studio runtime from the persisted draft.
+    [JsonIgnore]
+    public string? VerifiedStudioDraftOwnerId { get; init; }
+
     [JsonIgnore]
     public VerifiedCommittedSinkPublication? VerifiedCommittedSinkPublication { get; init; }
     public required string OperationId { get; init; }

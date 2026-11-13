@@ -113,7 +113,7 @@ public sealed class McpQueryWildcardPostgresIntegrationTests(DatabaseFixtureAdap
             NullLogger<McpDataAccessSurface>.Instance);
         using var parameters = JsonDocument.Parse("""
             {"name":"honua_query_features","arguments":{
-              "serviceId":"svc-parcels","layerId":0,"outFields":["*"],"returnGeometry":false
+              "serviceId":"svc-parcels","serviceLayerIndex":0,"outFields":["*"],"returnGeometry":false
             }}
             """);
 
