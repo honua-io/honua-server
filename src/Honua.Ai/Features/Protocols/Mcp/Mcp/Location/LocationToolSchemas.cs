@@ -29,7 +29,7 @@ internal static class LocationToolSchemas
             "address": {
               "type": "string",
               "minLength": 1,
-              "description": "Freeform single-line address text to geocode."
+              "description": "Caller-supplied. Freeform single-line address text to geocode."
             },
             "maxResults": {
               "type": "integer",
@@ -64,7 +64,7 @@ internal static class LocationToolSchemas
               "type": "array",
               "minItems": 1,
               "maxItems": 100,
-              "description": "Freeform single-line addresses to geocode, in the order results should be returned.",
+              "description": "Caller-supplied. Freeform single-line addresses to geocode, in the order results should be returned.",
               "items": {
                 "type": "string",
                 "minLength": 1
@@ -96,7 +96,7 @@ internal static class LocationToolSchemas
               "type": "array",
               "minItems": 2,
               "maxItems": 25,
-              "description": "Ordered stops to route through, in visit order.",
+              "description": "Caller-supplied ordered stop coordinates, in visit order.",
               "items": {
                 "type": "object",
                 "required": ["lon", "lat"],
