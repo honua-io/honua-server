@@ -61,7 +61,7 @@ runs:
         runtime_channel="${BASH_REMATCH[1]}"
         installer="$(mktemp "${RUNNER_TEMP}/honua-dotnet-install.XXXXXX.sh")"
         trap 'rm -f "${installer}"' EXIT
-        curl --fail --silent --show-error --location --retry 3 \
+        curl --fail --silent --show-error --location --retry 5 --retry-all-errors --retry-delay 2 \
           https://dot.net/v1/dotnet-install.sh --output "${installer}"
         # A newer producer SDK does not include older target shared frameworks.
         # Preserve its host while adding both runtimes to the same private root.

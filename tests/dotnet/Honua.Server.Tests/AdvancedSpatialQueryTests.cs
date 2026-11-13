@@ -18,18 +18,16 @@ namespace Honua.Server.Tests;
 /// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database.CoreSpatial")]
-public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
+public sealed class AdvancedSpatialQueryTests : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;
 
-    public async Task InitializeAsync()
+    public AdvancedSpatialQueryTests(WebAppFixture fixture)
     {
-        await _fixture.InitializeAsync();
+        _fixture = fixture;
     }
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     #region Distance-Based Query Tests (WithinDistance)
 
