@@ -45,7 +45,7 @@ Packages for plug-in and custom-code authors keep .NET 10 LTS working:
 
 | Package or template | Target frameworks |
 | --- | --- |
-| `Honua.Core`, `Honua.Core.Abstractions`, `Honua.Plugins.Abstractions` | `net10.0` and `net11.0` |
+| `Honua.Core` package, and the `Honua.Core.Abstractions` and `Honua.Plugins.Abstractions` libraries in the source release | `net10.0` and `net11.0` |
 | `Honua.CustomCode.Sdk` and the `gp-dotnet` process template | `net10.0` (builds with a .NET 10 or .NET 11 SDK) |
 | `Honua.Sdk.*` client packages | `net10.0` (usable from .NET 10 and .NET 11 apps) |
 
