@@ -233,7 +233,7 @@ public static class MigrationSafetyClassifier
         ArgumentNullException.ThrowIfNull(sql);
 
         var scopedSql = ExtractExecutableSql(sql);
-        var normalized = scopedSql.Replace(ExecutionScopeBoundary, ' ');
+        var normalized = scopedSql.Replace(ExecutionScopeBoundary, ' ').Replace(UntrustedDynamicScope, ' ');
         var matchedRules = new List<string>();
 
         if (DeclaredContractPhaseMarker.IsMatch(sql))
@@ -245,7 +245,9 @@ public static class MigrationSafetyClassifier
         {
             var executable = ruleName == "truncate-table"
                 ? string.Join(" ", scopedSql.Split(ExecutionScopeBoundary)
-                    .Select(MigrationTriggerEvents.ExcludeDeclarations))
+                    .Select(scope => scope.Contains(UntrustedDynamicScope)
+                        ? scope.Replace(UntrustedDynamicScope, ' ')
+                        : MigrationTriggerEvents.ExcludeDeclarations(scope)))
                 : normalized;
             if (pattern.IsMatch(executable))
             {
@@ -281,6 +283,7 @@ public static class MigrationSafetyClassifier
     // headers have been removed, so an incomplete dynamic identifier cannot consume SQL
     // from its caller, another statement, or a different literal fragment. Other rules still see all SQL.
     private const char ExecutionScopeBoundary = '\0';
+    private const char UntrustedDynamicScope = '\u0001';
 
     private static string ExtractExecutableSql(string sql)
     {
@@ -369,9 +372,8 @@ public static class MigrationSafetyClassifier
                     && IsDynamicExecutePrefix(result, statementStart)
                     && IsDynamicSqlTemplatePosition(result, statementStart))
                 {
-                    var fragmentSql = new StringBuilder(contents.Length);
-                    AppendExecutableSql(contents, fragmentSql, insideRoutineBody: false);
-                    AppendExecutionScope(dynamicSql, fragmentSql);
+                    AppendExecutionScope(dynamicSql, ExtractDynamicSql(contents,
+                        result.ToString(statementStart, result.Length - statementStart), sql.AsSpan(i)));
                 }
 
                 result.Append(' ');
@@ -396,9 +398,8 @@ public static class MigrationSafetyClassifier
                     && IsDynamicExecutePrefix(result, statementStart)
                     && IsDynamicSqlTemplatePosition(result, statementStart))
                 {
-                    var fragmentSql = new StringBuilder(contents.Length);
-                    AppendExecutableSql(contents, fragmentSql, insideRoutineBody: false);
-                    AppendExecutionScope(dynamicSql, fragmentSql);
+                    AppendExecutionScope(dynamicSql, ExtractDynamicSql(contents,
+                        result.ToString(statementStart, result.Length - statementStart), sql.AsSpan(i)));
                 }
 
                 result.Append(' ');
@@ -425,6 +426,28 @@ public static class MigrationSafetyClassifier
         {
             AppendExecutionScope(result, dynamicSql);
         }
+    }
+
+    private static StringBuilder ExtractDynamicSql(string contents, string prefix, ReadOnlySpan<char> suffix)
+    {
+        // Only a complete directly executed literal has a known lexical context. Expressions
+        // can compute quotes or comment delimiters around a fragment, so parsing that fragment
+        // in isolation can discard executable SQL as a string, comment, or trigger identifier.
+        suffix = suffix.TrimStart();
+        var completeLiteral = DirectDynamicExecutePrefix.IsMatch(prefix)
+            && (suffix.IsEmpty || suffix[0] == ';');
+        var fragmentSql = new StringBuilder(contents.Length);
+        if (completeLiteral)
+        {
+            AppendExecutableSql(contents, fragmentSql, insideRoutineBody: false);
+        }
+        else
+        {
+            fragmentSql.Append(UntrustedDynamicScope);
+            fragmentSql.Append(contents);
+        }
+
+        return fragmentSql;
     }
 
     private static void AppendExecutionScope(StringBuilder result, StringBuilder scope)
@@ -467,6 +490,10 @@ public static class MigrationSafetyClassifier
 
     private static readonly Regex RoutineBodyPrefix = new(
         @"(?:\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE)\b[^;]*\bAS\s*|\bDO(?:\s+LANGUAGE\s+[A-Za-z_][A-Za-z0-9_$]*)?\s*)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static readonly Regex DirectDynamicExecutePrefix = new(
+        @"\bEXECUTE\s*$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     private static readonly Regex DynamicExecutePrefix = new(

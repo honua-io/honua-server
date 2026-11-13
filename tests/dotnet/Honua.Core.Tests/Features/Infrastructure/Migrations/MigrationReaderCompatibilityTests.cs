@@ -21,6 +21,26 @@ public sealed class MigrationReaderCompatibilityTests
     [UnitTheory]
     [InlineData("'")]
     [InlineData("$sql$")]
+    public void Verify_ComputedDynamicQuotes_RefusesTruncate(string delimiter)
+    {
+        var sql = $$"""
+            DO $body$
+            BEGIN
+                EXECUTE {{delimiter}}SELECT 1 AS {{delimiter}} || chr(34) ||
+                    {{delimiter}}CREATE TRIGGER "; TRUNCATE honua.evidence; SELECT 1 AS " BEFORE INSERT ON{{delimiter}} ||
+                    chr(34);
+            END;
+            $body$;
+            """;
+
+        var declaration = MigrationReaderCompatibility.Declare(Name, sql);
+        declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Contract);
+        MigrationReaderCompatibility.Verify(declaration, Name, Reader).Accepted.Should().BeFalse();
+    }
+
+    [UnitTheory]
+    [InlineData("'")]
+    [InlineData("$sql$")]
     public void Verify_DynamicTriggerFragmentsInOneExecute_RefusesTruncate(string delimiter)
     {
         var sql = $$"""

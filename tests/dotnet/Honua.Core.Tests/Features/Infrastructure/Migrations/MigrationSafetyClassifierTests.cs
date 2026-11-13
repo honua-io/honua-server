@@ -11,6 +11,24 @@ public sealed class MigrationSafetyClassifierTests
     [Theory]
     [InlineData("'")]
     [InlineData("$sql$")]
+    public void DetectBreakingRules_ComputedDynamicQuotes_DoNotHideTruncate(string delimiter)
+    {
+        var sql = $$"""
+            DO $body$
+            BEGIN
+                EXECUTE {{delimiter}}SELECT 1 AS {{delimiter}} || chr(34) ||
+                    {{delimiter}}CREATE TRIGGER "; TRUNCATE honua.evidence; SELECT 1 AS " BEFORE INSERT ON{{delimiter}} ||
+                    chr(34);
+            END;
+            $body$;
+            """;
+
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain("truncate-table");
+    }
+
+    [Theory]
+    [InlineData("'")]
+    [InlineData("$sql$")]
     public void DetectBreakingRules_DynamicTriggerFragmentsInOneExecute_DoNotHideTruncate(string delimiter)
     {
         var sql = $$"""
