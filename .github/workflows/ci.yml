@@ -999,13 +999,20 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
     steps:
+      - name: Configure PostgreSQL connection
+        env:
+          PGPORT: ${{ job.services.postgres.ports['5432'] }}
+        run: |
+          echo "PGPORT=$PGPORT" >> "$GITHUB_ENV"
+          echo "HONUA_TEST_DB_URL=Host=localhost;Port=$PGPORT;Database=honua_test;Username=honua;Password=honua" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The server family runs TierTraitEnforcementTests, which compares the
@@ -2148,13 +2155,20 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
     steps:
+      - name: Configure PostgreSQL connection
+        env:
+          PGPORT: ${{ job.services.postgres.ports['5432'] }}
+        run: |
+          echo "PGPORT=$PGPORT" >> "$GITHUB_ENV"
+          echo "HONUA_TEST_DB_URL=Host=localhost;Port=$PGPORT;Database=honua_test;Username=honua;Password=honua" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Python
@@ -2288,13 +2302,20 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
     steps:
+      - name: Configure PostgreSQL connection
+        env:
+          PGPORT: ${{ job.services.postgres.ports['5432'] }}
+        run: |
+          echo "PGPORT=$PGPORT" >> "$GITHUB_ENV"
+          echo "HONUA_TEST_DB_URL=Host=localhost;Port=$PGPORT;Database=honua_test;Username=honua;Password=honua" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Python
@@ -2404,13 +2425,20 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
     steps:
+      - name: Configure PostgreSQL connection
+        env:
+          PGPORT: ${{ job.services.postgres.ports['5432'] }}
+        run: |
+          echo "PGPORT=$PGPORT" >> "$GITHUB_ENV"
+          echo "HONUA_TEST_DB_URL=Host=localhost;Port=$PGPORT;Database=honua_test;Username=honua;Password=honua" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Python
@@ -2544,13 +2572,20 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
     steps:
+      - name: Configure PostgreSQL connection
+        env:
+          PGPORT: ${{ job.services.postgres.ports['5432'] }}
+        run: |
+          echo "PGPORT=$PGPORT" >> "$GITHUB_ENV"
+          echo "HONUA_TEST_DB_URL=Host=localhost;Port=$PGPORT;Database=honua_test;Username=honua;Password=honua" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Design: skip-if-absent is intentional for cross-repo coordination.
@@ -2644,13 +2679,20 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
     steps:
+      - name: Configure PostgreSQL connection
+        env:
+          PGPORT: ${{ job.services.postgres.ports['5432'] }}
+        run: |
+          echo "PGPORT=$PGPORT" >> "$GITHUB_ENV"
+          echo "HONUA_TEST_DB_URL=Host=localhost;Port=$PGPORT;Database=honua_test;Username=honua;Password=honua" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Honua MCP environment
@@ -2742,13 +2784,20 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
     steps:
+      - name: Configure PostgreSQL connection
+        env:
+          PGPORT: ${{ job.services.postgres.ports['5432'] }}
+        run: |
+          echo "PGPORT=$PGPORT" >> "$GITHUB_ENV"
+          echo "HONUA_TEST_DB_URL=Host=localhost;Port=$PGPORT;Database=honua_test;Username=honua;Password=honua" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup .NET
@@ -2785,7 +2834,6 @@ jobs:
 
       - name: Run Postgres compatibility tests
         env:
-          HONUA_TEST_DB_URL: "Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=honua"
           HONUA_TEST_CONFIGURATION: Release
           COLLECT_COVERAGE: ${{ matrix.collect_coverage }}
           PG_IMAGE: ${{ matrix.pg_image }}
@@ -3046,13 +3094,20 @@ jobs:
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
     steps:
+      - name: Configure PostgreSQL connection
+        env:
+          PGPORT: ${{ job.services.postgres.ports['5432'] }}
+        run: |
+          echo "PGPORT=$PGPORT" >> "$GITHUB_ENV"
+          echo "HONUA_TEST_DB_URL=Host=localhost;Port=$PGPORT;Database=honua_test;Username=honua;Password=honua" >> "$GITHUB_ENV"
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -3180,7 +3235,7 @@ jobs:
           SERVER_URL="http://127.0.0.1:$SERVER_PORT"
           CONTAINER="$(docker run -d \
             --network host \
-            -e ConnectionStrings__DefaultConnection="Host=localhost;Database=honua_test;Username=honua;Password=honua" \
+            -e ConnectionStrings__DefaultConnection="Host=localhost;Port=${PGPORT};Database=honua_test;Username=honua;Password=honua" \
             -e ASPNETCORE_ENVIRONMENT=Development \
             -e HONUA_ADMIN_PASSWORD=ci-docker-admin-password \
             -e Security__ConnectionEncryption__MasterKey="0123456789abcdef0123456789abcdef" \

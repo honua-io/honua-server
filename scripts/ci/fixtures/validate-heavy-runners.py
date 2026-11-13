@@ -66,6 +66,36 @@ class ShardRunnerRoutingTests(unittest.TestCase):
                 self.assertIn("job.services.postgres.ports['5432']", urls[0])
 
 
+class ServicePortIsolationTests(unittest.TestCase):
+    def test_every_postgres_service_uses_an_assigned_host_port(self):
+        for workflow in SHARD_JOBS:
+            jobs = yaml.safe_load((ROOT / ".github/workflows" / workflow).read_text())["jobs"]
+            for name, job in jobs.items():
+                if "postgres" not in job.get("services", {}):
+                    continue
+                with self.subTest(workflow=workflow, job=name):
+                    self.assertEqual(job["services"]["postgres"]["ports"], [5432])
+                    if name == SHARD_JOBS[workflow][0]:
+                        continue  # The shard-specific connection contract is checked above.
+                    first = job["steps"][0]
+                    self.assertEqual(first["env"]["PGPORT"], "${{ job.services.postgres.ports['5432'] }}")
+                    self.assertIn('PGPORT=$PGPORT', first["run"])
+                    self.assertIn('HONUA_TEST_DB_URL=Host=localhost;Port=$PGPORT;', first["run"])
+                    for step in job["steps"]:
+                        self.assertNotIn("HONUA_TEST_DB_URL", step.get("env", {}))
+
+    def test_integration_server_and_docker_smoke_receive_the_assigned_port(self):
+        action = yaml.safe_load((ROOT / ".github/actions/setup-honua-server/action.yml").read_text())
+        connections = [step["env"]["ConnectionStrings__DefaultConnection"]
+                       for step in action["runs"]["steps"]
+                       if "ConnectionStrings__DefaultConnection" in step.get("env", {})]
+        self.assertEqual(len(connections), 1)
+        self.assertIn("Port=${{ env.PGPORT || '5432' }};", connections[0])
+        jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
+        smoke = next(step for step in jobs["docker-build"]["steps"] if step.get("name") == "Run Docker container")
+        self.assertIn('Port=${PGPORT};', smoke["run"])
+
+
 class HeavyRunnerContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
