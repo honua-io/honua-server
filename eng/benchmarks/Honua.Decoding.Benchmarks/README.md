@@ -3,7 +3,7 @@
 Run from the repository root through `remote-run` on the build host:
 
 ```bash
-remote-run bash -c 'python3 benchmarks/Honua.Decoding.Benchmarks/prepare-baseline.py && dotnet run --project benchmarks/Honua.Decoding.Benchmarks -c Release -- --filter "*" --artifacts artifacts/decoding-benchmarks'
+remote-run bash -c 'python3 eng/benchmarks/Honua.Decoding.Benchmarks/prepare-baseline.py && dotnet run --project eng/benchmarks/Honua.Decoding.Benchmarks -c Release -- --filter "*" --artifacts artifacts/decoding-benchmarks'
 ```
 
 The preparation script materializes the original production source at

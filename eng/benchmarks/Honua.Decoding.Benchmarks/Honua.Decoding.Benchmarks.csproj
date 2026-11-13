@@ -10,11 +10,11 @@
     <PackageReference Include="BenchmarkDotNet" />
     <PackageReference Include="SkiaSharp" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
-    <Compile Include="../../src/Honua.Hosting/Features/Rendering/WkbToSkiaConverter.cs" Link="Current/WkbToSkiaConverter.cs" />
-    <Compile Include="../../src/Honua.Hosting/Features/Rendering/WkbReader.cs" Link="Current/WkbReader.cs" />
-    <Compile Include="../../src/Honua.Core/Core/Features/Raster/CogParser/TilePredictor.cs" Link="Current/TilePredictor.cs" />
-    <Compile Include="../../src/Honua.Core/Core/Features/Raster/CogParser/TilePixelLayout.cs" Link="Current/TilePixelLayout.cs" />
-    <Compile Include="../../src/Honua.Core/Core/Features/Raster/CogParser/UnsupportedTileCodecException.cs" Link="Current/UnsupportedTileCodecException.cs" />
-    <Compile Include="../../artifacts/decoding-baseline/*.cs" Link="Baseline/%(Filename)%(Extension)" />
+    <Compile Include="../../../src/Honua.Hosting/Features/Rendering/WkbToSkiaConverter.cs" Link="Current/WkbToSkiaConverter.cs" />
+    <Compile Include="../../../src/Honua.Hosting/Features/Rendering/WkbReader.cs" Link="Current/WkbReader.cs" />
+    <Compile Include="../../../src/Honua.Core/Core/Features/Raster/CogParser/TilePredictor.cs" Link="Current/TilePredictor.cs" />
+    <Compile Include="../../../src/Honua.Core/Core/Features/Raster/CogParser/TilePixelLayout.cs" Link="Current/TilePixelLayout.cs" />
+    <Compile Include="../../../src/Honua.Core/Core/Features/Raster/CogParser/UnsupportedTileCodecException.cs" Link="Current/UnsupportedTileCodecException.cs" />
+    <Compile Include="../../../artifacts/decoding-baseline/*.cs" Link="Baseline/%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

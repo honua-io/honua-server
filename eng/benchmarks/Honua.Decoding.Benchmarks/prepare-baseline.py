@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-root = Path(__file__).resolve().parents[2]
+root = Path(__file__).resolve().parents[3]
 revision = sys.argv[1] if len(sys.argv) > 1 else "161420e43720e5baca66ba4e12130ed55226e6ed"
 revision = subprocess.check_output(["git", "rev-parse", "--verify", revision + "^{commit}"], cwd=root, text=True).strip()
 output = root / "artifacts/decoding-baseline"
