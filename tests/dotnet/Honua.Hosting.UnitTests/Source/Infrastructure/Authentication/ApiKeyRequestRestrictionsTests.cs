@@ -260,6 +260,15 @@ public sealed class ApiKeyRequestRestrictionsTests
             .Should().BeNull("a portal token would not carry the key's restrictions");
     }
 
+    [UnitTheory]
+    [InlineData("agent")]
+    [InlineData("Agent")]
+    [InlineData(" agent ")]
+    public void ManagedKeyExchange_AgentAdministrator_IsRefused(string agentGrant)
+    {
+        ManagedKeyExchangeAuthority.ResolveTokenRoles(["admin", agentGrant]).Should().BeNull();
+    }
+
     [UnitTest]
     public async Task InMemoryStore_RotateAndValidate_PreserveRestrictions()
     {

@@ -65,6 +65,7 @@ internal static partial class OidcProviderEndpoints
 
         group.MapPost("/", HandleCreateProvider)
             .WithDisplayName("Create OIDC Provider")
+            .RequireAdminCredentialManagementAuthorization()
             .RefuseWhenProcessLocalOnSeveralTasks<IOidcProviderStore, InMemoryOidcProviderStore>(ProviderSettingsName)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .WithMetadata(CreateProviderRoute.Instance);
@@ -75,11 +76,13 @@ internal static partial class OidcProviderEndpoints
 
         group.MapPut("/{id:guid}", HandleUpdateProvider)
             .WithDisplayName("Update OIDC Provider")
+            .RequireAdminCredentialManagementAuthorization()
             .RefuseWhenProcessLocalOnSeveralTasks<IOidcProviderStore, InMemoryOidcProviderStore>(ProviderSettingsName)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
 
         group.MapDelete("/{id:guid}", HandleDeleteProvider)
             .WithDisplayName("Delete OIDC Provider")
+            .RequireAdminCredentialManagementAuthorization()
             .RefuseWhenProcessLocalOnSeveralTasks<IOidcProviderStore, InMemoryOidcProviderStore>(ProviderSettingsName)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
 
