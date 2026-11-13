@@ -1950,6 +1950,7 @@ app.MapConsoleOpenDataEndpoints();
 app.MapConsoleOpenDataPublicEndpoints();
 app.MapStudioPackageEndpoints();
 app.MapStudioPublishedRouteEndpoints();
+app.MapStudioSessionEndpoints();
 app.MapStudioMapCollaborationEndpoints();
 app.MapWorkflowPackageEndpoints();
 Honua.Server.Features.Studio.Ai.StudioAiProxyEndpoints.MapStudioAiProxyEndpoints(app);

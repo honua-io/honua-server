@@ -6,7 +6,6 @@ using System.Data;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -487,9 +486,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         await using var session = await OpenFeatureReadSessionAsync(
             query, probeLimit: false, allowSerialPlan: false, cancellationToken).ConfigureAwait(false);
         var reader = session.Reader!;
+        var attributesReader = new FeatureAttributeReadContext();
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            yield return ReadFeature(reader, textAttributes: query.Distinct, session.NativeAttributes);
+            yield return ReadFeature(reader, session.NativeAttributes, attributesReader);
         }
     }
 
@@ -532,9 +532,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         await using var session = await OpenFeatureReadSessionAsync(
             query, probeLimit, allowSerialPlan: true, cancellationToken).ConfigureAwait(false);
         var reader = session.Reader!;
+        var attributesReader = new FeatureAttributeReadContext();
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            features.Add(ReadFeature(reader, textAttributes: query.Distinct, session.NativeAttributes));
+            features.Add(ReadFeature(reader, session.NativeAttributes, attributesReader));
         }
 
         return features.ToImmutable();
@@ -1601,7 +1602,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 : throw new ArgumentException($"Field '{fieldName}' was not found on resource '{_resource.Metadata.Name}'."));
     }
 
-    private Feature ReadFeature(NpgsqlDataReader reader, bool textAttributes, NativeAttributeDecoder? nativeAttributes)
+    private Feature ReadFeature(
+        NpgsqlDataReader reader,
+        NativeAttributeDecoder? nativeAttributes,
+        FeatureAttributeReadContext attributesReader)
     {
         var id = reader.GetInt64(0);
         var geometry = reader.IsDBNull(1) ? null : reader.GetFieldValue<byte[]>(1);
@@ -1611,15 +1615,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         {
             if (!reader.IsDBNull(2) && (nativeAttributes is null || nativeAttributes.HasJsonFallback))
             {
-                if (textAttributes)
-                {
-                    FeatureAttributeJsonReader.ReadInto(reader.GetString(2), attributesDictionary);
-                }
-                else
-                {
-                    using var document = reader.GetFieldValue<JsonDocument>(2);
-                    FeatureAttributeJsonReader.ReadInto(document.RootElement, attributesDictionary);
-                }
+                attributesReader.ReadInto(reader, 2, attributesDictionary);
             }
 
             nativeAttributes?.ReadInto(reader, attributesDictionary);
