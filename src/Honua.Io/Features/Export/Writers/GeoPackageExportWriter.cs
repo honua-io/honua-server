@@ -5,6 +5,7 @@ using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Internal;
+using Honua.Core.Queries.Filters;
 using Microsoft.Data.Sqlite;
 using NetTopologySuite.Geometries;
 using InfrastructureGeometryService = Honua.Infrastructure.Services.GeometryService;
@@ -160,15 +161,15 @@ internal static class GeoPackageExportWriter
     {
         var columns = new List<string>
         {
-            $"{QuoteIdentifier(idColumn)} INTEGER PRIMARY KEY AUTOINCREMENT",
-            $"{QuoteIdentifier(geometryColumn)} {MapGpkgGeometryType(geometryType)}"
+            $"{SqlIdentifier.QuoteIdentifier(idColumn)} INTEGER PRIMARY KEY AUTOINCREMENT",
+            $"{SqlIdentifier.QuoteIdentifier(geometryColumn)} {MapGpkgGeometryType(geometryType)}"
         };
 
         foreach (var field in fields)
         {
             var sqliteType = MapSqliteType(field.Type);
             var nullable = field.Nullable ? "" : " NOT NULL";
-            columns.Add($"{QuoteIdentifier(field.Name)} {sqliteType}{nullable}");
+            columns.Add($"{SqlIdentifier.QuoteIdentifier(field.Name)} {sqliteType}{nullable}");
         }
 
         await using var cmd = connection.CreateCommand();
@@ -223,11 +224,11 @@ internal static class GeoPackageExportWriter
         var wkbReader = new WkbReader();
 
         // Build parameterized INSERT statement
-        var fieldNames = new List<string> { QuoteIdentifier(geometryColumn) };
+        var fieldNames = new List<string> { SqlIdentifier.QuoteIdentifier(geometryColumn) };
         var paramNames = new List<string> { "$geom" };
         for (var i = 0; i < fields.Length; i++)
         {
-            fieldNames.Add(QuoteIdentifier(fields[i].Name));
+            fieldNames.Add(SqlIdentifier.QuoteIdentifier(fields[i].Name));
             paramNames.Add($"$f{i}");
         }
 
@@ -484,11 +485,6 @@ internal static class GeoPackageExportWriter
 
         return candidate;
     }
-
-    // Wraps an identifier in double-quote delimiters and escapes embedded double-quotes
-    // by doubling them, per the SQL standard and SQLite identifier quoting rules.
-    private static string QuoteIdentifier(string name)
-        => $"\"{name.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
 
     private readonly record struct FeatureInsertSummary(int TotalInserted, GeometryDimensionMetadata Dimensions);
 
