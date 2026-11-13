@@ -171,10 +171,10 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         using var human = CreateUserClient();
         var groupId = await CreateGroupAsync(human, humanToken, "Human-managed group");
         var groups = _fixture.Services.GetRequiredService<IPortalGroupStore>();
-        var sharing = _fixture.Services.GetRequiredService<IPortalItemSharingStore>();
         await groups.AddUsersAsync(groupId, ["bob"], CancellationToken.None);
-        await sharing.ShareAsync("svc-rivers", "alice",
-            new PortalItemShareRequest(false, false, [groupId]), CancellationToken.None);
+        using var shared = await PostFormAsync(human, $"/sharing/rest/content/items/svc-rivers/share?token={humanToken}",
+            ("groups", groupId));
+        (await ReadAsync<SharingPayload>(shared)).Sharing!.Groups.Should().Equal(groupId);
         var originalGroup = (await groups.GetAsync(groupId, CancellationToken.None))!;
 
         var issuer = _fixture.Services.GetRequiredService<IPortalTokenIssuer>();
@@ -206,8 +206,8 @@ public sealed class SharingCommunityTests : IAsyncLifetime
             body.Should().Contain("ask a person").And.Contain("Console");
             (await groups.GetAsync(groupId, CancellationToken.None)).Should().BeEquivalentTo(originalGroup);
             (await groups.ListAsync(CancellationToken.None)).Should().ContainSingle();
-            (await sharing.GetAsync("svc-owned", CancellationToken.None)).GroupIds.Should().BeEmpty();
-            (await sharing.GetAsync("svc-rivers", CancellationToken.None)).GroupIds.Should().Equal(groupId);
+            (await ReadSharedGroupIdsAsync("svc-owned")).Should().BeEmpty();
+            (await ReadSharedGroupIdsAsync("svc-rivers")).Should().Equal(groupId);
         }
     }
 
@@ -560,6 +560,15 @@ public sealed class SharingCommunityTests : IAsyncLifetime
         using var afterDoc = JsonDocument.Parse(await after.Content.ReadAsStringAsync());
         afterDoc.RootElement.GetProperty("items").EnumerateArray()
             .Select(item => item.GetProperty("id").GetString()).Should().Equal("content-b");
+    }
+
+    private async Task<string[]> ReadSharedGroupIdsAsync(string itemId)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var command = new NpgsqlCommand(
+            "SELECT group_ids FROM portal_item_shares WHERE tenant_key = '' AND item_id = @item", connection);
+        command.Parameters.AddWithValue("item", itemId);
+        return await command.ExecuteScalarAsync() as string[] ?? [];
     }
 
     private async Task<string> CreateGroupAsync(HttpClient client, string token, string title)
