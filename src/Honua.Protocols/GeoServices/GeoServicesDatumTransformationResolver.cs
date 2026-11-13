@@ -98,9 +98,8 @@ internal static class GeoServicesDatumTransformationResolver
             return true;
         }
 
-        // No client choice. An envelope selects the single grid whose area contains it.
-        // No match, or more than one match, leaves the pipeline unset so PROJ's
-        // 2-argument transform is used instead of the CONUS default.
+        // An envelope selects the containing grid with the highest regional priority.
+        // Missing or ambiguous coverage leaves PROJ to choose a local operation.
         if (envelope is { } area)
         {
             if (catalog.TryGetForEnvelope(fromSrid, toSrid, area.West, area.South, area.East, area.North, out var areaSelection))

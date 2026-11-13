@@ -30,7 +30,7 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
             var forward = ToSelection(entry, forward: true);
 
             // The first entry listed for a pair is its Esri default; later entries for the
-            // same pair are area alternatives, chosen only when an envelope picks exactly one.
+            // same pair are area alternatives, selected by envelope and area priority.
             byPair.TryAdd((entry.FromSrid, entry.ToSrid), forward);
             if (entry.Wkid is { } wkid)
             {
@@ -47,15 +47,16 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
                 && entry.AreaEast is double areaEast
                 && entry.AreaNorth is double areaNorth)
             {
-                AddArea(byArea, (entry.FromSrid, entry.ToSrid), forward, areaWest, areaSouth, areaEast, areaNorth);
-                AddArea(byArea, (entry.ToSrid, entry.FromSrid), inverse, areaWest, areaSouth, areaEast, areaNorth);
+                var envelope = new DatumAreaEnvelope(areaWest, areaSouth, areaEast, areaNorth);
+                AddArea(byArea, (entry.FromSrid, entry.ToSrid), new(forward, envelope, entry.AreaPriority));
+                AddArea(byArea, (entry.ToSrid, entry.FromSrid), new(inverse, envelope, entry.AreaPriority));
             }
         }
 
         _byPair = byPair.ToFrozenDictionary();
         _byArea = byArea.ToFrozenDictionary(
             pair => pair.Key,
-            pair => pair.Value.ToArray());
+            pair => pair.Value.OrderByDescending(candidate => candidate.Priority).ToArray());
         _byWkid = byWkid.ToFrozenDictionary();
     }
 
@@ -74,9 +75,15 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
             return false;
         }
 
+        int? priority = null;
         foreach (var candidate in candidates)
         {
-            if (!Contains(candidate, west, south, east, north))
+            if (priority is not null && candidate.Priority < priority)
+            {
+                break;
+            }
+
+            if (!Contains(candidate.Envelope, new(west, south, east, north)))
             {
                 continue;
             }
@@ -88,6 +95,7 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
             }
 
             selection = candidate.Selection;
+            priority = candidate.Priority;
         }
 
         return selection is not null;
@@ -99,11 +107,7 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
     private static void AddArea(
         Dictionary<(int, int), List<AreaCandidate>> byArea,
         (int From, int To) pair,
-        DatumTransformationSelection selection,
-        double west,
-        double south,
-        double east,
-        double north)
+        AreaCandidate candidate)
     {
         if (!byArea.TryGetValue(pair, out var list))
         {
@@ -111,27 +115,29 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
             byArea[pair] = list;
         }
 
-        list.Add(new AreaCandidate(selection, west, south, east, north));
+        list.Add(candidate);
     }
 
-    private static bool Contains(AreaCandidate area, double west, double south, double east, double north)
+    private static bool Contains(DatumAreaEnvelope area, DatumAreaEnvelope envelope)
     {
-        if (south < area.South || north > area.North || south > north)
+        if (!IsValid(envelope) || envelope.South < area.South || envelope.North > area.North)
         {
             return false;
         }
 
-        if (area.West <= area.East)
-        {
-            return west <= east && west >= area.West && east <= area.East;
-        }
-
-        return LongitudeInside(west, area.West, area.East)
-            && LongitudeInside(east, area.West, area.East);
+        var areaWidth = LongitudeWidth(area.West, area.East);
+        var offset = LongitudeWidth(area.West, envelope.West);
+        return offset + LongitudeWidth(envelope.West, envelope.East) <= areaWidth;
     }
 
-    private static bool LongitudeInside(double longitude, double areaWest, double areaEast)
-        => longitude >= areaWest || longitude <= areaEast;
+    private static bool IsValid(DatumAreaEnvelope envelope)
+        => double.IsFinite(envelope.West) && double.IsFinite(envelope.East)
+            && envelope.West is >= -180 and <= 180 && envelope.East is >= -180 and <= 180
+            && double.IsFinite(envelope.South) && double.IsFinite(envelope.North)
+            && envelope.South >= -90 && envelope.North <= 90 && envelope.South <= envelope.North;
+
+    private static double LongitudeWidth(double west, double east)
+        => east >= west ? east - west : east - west + 360;
 
     public bool TryGetDefault(int fromSrid, int toSrid, [NotNullWhen(true)] out DatumTransformationSelection? selection)
     {
@@ -207,10 +213,8 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
 
     private readonly record struct AreaCandidate(
         DatumTransformationSelection Selection,
-        double West,
-        double South,
-        double East,
-        double North);
+        DatumAreaEnvelope Envelope,
+        int Priority);
 }
 
 internal sealed record DatumTransformationTable
@@ -237,6 +241,8 @@ internal sealed record DatumTransformationEntry
     public double? AreaEast { get; init; }
 
     public double? AreaNorth { get; init; }
+
+    public int AreaPriority { get; init; }
 
     public int? EpsgOperationCode { get; init; }
 

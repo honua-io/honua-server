@@ -70,6 +70,14 @@ public sealed class GeoServicesDatumTransformationCatalogTests
     }
 
     [UnitTest]
+    public void TryGetForEnvelope_AleutiansAcrossAntimeridian_SelectsAlaskaGrid()
+    {
+        _catalog.TryGetForEnvelope(Nad27, Nad83, 179, 51, -179, 53, out var selection)
+            .Should().BeTrue();
+        selection!.RequiredGrids.Should().Contain("us_noaa_alaska.tif");
+    }
+
+    [UnitTest]
     public void TryGetForEnvelope_Denver_SelectsConusGrid()
     {
         var found = _catalog.TryGetForEnvelope(Nad27, Nad83, -105.1, 39.6, -104.8, 39.8, out var selection);
@@ -80,12 +88,41 @@ public sealed class GeoServicesDatumTransformationCatalogTests
     }
 
     [UnitTest]
-    public void TryGetForEnvelope_BoxInsideConusAndCanada_DoesNotUseConus()
+    public void TryGetForEnvelope_BoxInsideConusAndCanada_SelectsCanadianPriority()
     {
         var found = _catalog.TryGetForEnvelope(Nad27, Nad83, -79.6, 43.6, -79.2, 43.9, out var selection);
 
-        found.Should().BeFalse();
+        found.Should().BeTrue();
+        selection!.RequiredGrids.Should().Contain("ca_nrc_ntv2_0.tif");
+    }
+
+    [UnitTheory]
+    [InlineData(-170, 60, 170, 65)]
+    [InlineData(-180, 60, 180, 65)]
+    [InlineData(double.NaN, 60, -150, 65)]
+    [InlineData(-150, 65, -149, 60)]
+    public void TryGetForEnvelope_InvalidOrOutsideAlaskaArc_ReturnsFalse(
+        double west, double south, double east, double north)
+    {
+        _catalog.TryGetForEnvelope(Nad27, Nad83, west, south, east, north, out var selection)
+            .Should().BeFalse();
         selection.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void TryGetByWkid_ConusOperation_IgnoresRegionalPriority()
+    {
+        _catalog.TryGetByWkid(1241, Nad27, Nad83, out var selection).Should().BeTrue();
+        selection!.RequiredGrids.Should().Equal("us_noaa_conus.tif");
+    }
+
+    [UnitTest]
+    public void TryGetForEnvelope_CanadaInverse_UsesSamePriority()
+    {
+        _catalog.TryGetForEnvelope(Nad83, Nad27, -79.6, 43.6, -79.2, 43.9, out var selection)
+            .Should().BeTrue();
+        selection!.RequiredGrids.Should().Contain("ca_nrc_ntv2_0.tif");
+        selection.TransformForward.Should().BeFalse();
     }
 
     [UnitTest]

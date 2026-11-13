@@ -1,135 +1,153 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using DotNet.Testcontainers.Builders;
+using DotNet.Testcontainers.Images;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Crs;
-using Honua.Db.Postgres.Features.Infrastructure;
-using Honua.Db.Postgres.Features.Infrastructure.Transforms;
-using Honua.TestKit;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.TestKit.Attributes;
-using Microsoft.Extensions.Logging.Abstractions;
+using Honua.TestKit.Constants;
+using Npgsql;
+using Testcontainers.PostgreSql;
 
 namespace Honua.Db.Postgres.Tests.Features.Infrastructure.Transforms;
 
-/// <summary>
-/// Grid-provisioning datum-fidelity tests (issue #1501). These prove that when the
-/// canonical PROJ NADCON grid is present in the runtime PROJ data path — as provisioned
-/// by the <c>docker/proj-grids</c> image — a grid-gated reprojection actually resolves
-/// through the same shared transform path the query/import chokepoint uses, and lands
-/// within the documented NAD27↔NAD83 CONUS bound with a real (non-identity) shift.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The default Fast-tier fixture (<see cref="PostgresFixture"/>, <c>postgis/postgis:18-3.6</c>)
-/// ships only the minimal Debian libproj-data subset and does NOT bundle the canonical
-/// <c>us_noaa_conus.tif</c> grid, so these tests are gated behind <c>HONUA_PROJ_GRID_TEST</c>
-/// and run only when pointed (via <c>HONUA_TEST_DB_URL</c>) at the grid-provisioned image
-/// — see <c>docker/proj-grids/README.md</c>. Without the gate they skip, so the heavy grid
-/// image is never built/pulled on the default path. The explicit-failure / default-path
-/// contract (no grid present) stays covered by <see cref="DatumTransformationParityTests"/>.
-/// </para>
-/// <para>
-/// Reference values measured against the runtime PROJ 9.6 (PostGIS 18-3.6) with
-/// <c>us_noaa_conus.tif</c> baked in: NAD27 (-100, 40) → NAD83 ≈ (-100.0004056, 40.0000058);
-/// NAD27 (-77, 38.9) → NAD83 ≈ (-76.9996986, 38.9001112). The grid shift is ~3–4e-4 deg
-/// (~30–40 m), the expected CONUS magnitude for the NAD27↔NAD83 datum difference.
-/// </para>
-/// </remarks>
 [Collection("Database")]
+[Protocol(ProtocolNames.TestQuality)]
+[Operation(Operations.Project)]
 public sealed class DatumGridProvisioningTests : IAsyncLifetime
 {
-    private const string GridTestGateEnv = "HONUA_PROJ_GRID_TEST";
-
-    private readonly PostgresFixture _fixture = new();
     private readonly IDatumTransformationCatalog _catalog = GeoServicesDatumTransformationCatalog.Create();
-    private PostGisCoordinateTransformService? _service;
-
-    private static bool GridTestEnabled =>
-        !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(GridTestGateEnv));
+    private IFutureDockerImage? _image;
+    private PostgreSqlContainer? _container;
+    private NpgsqlDataSource? _source;
 
     public async Task InitializeAsync()
     {
-        if (!GridTestEnabled)
-        {
-            return;
-        }
-
-        await _fixture.InitializeAsync();
-        var connectionProvider = new PostgresDatabaseConnectionProvider(
-            _fixture.DataSource,
-            NullLogger<PostgresDatabaseConnectionProvider>.Instance);
-        _service = new PostGisCoordinateTransformService(
-            connectionProvider,
-            NullLogger<PostGisCoordinateTransformService>.Instance);
+        _image = new ImageFromDockerfileBuilder()
+            .WithDockerfileDirectory(FindGridContext())
+            .WithBuildArgument("BASE_IMAGE", "pgrouting/pgrouting:17-3.5-3.7.3")
+            .Build();
+        await _image.CreateAsync();
+        _container = new PostgreSqlBuilder().WithImage(_image)
+            .WithDatabase("datum_grids").WithUsername("test").WithPassword("test")
+            .Build();
+        await _container.StartAsync();
+        var network = await _container.ExecAsync(["printenv", "PROJ_NETWORK"]);
+        network.ExitCode.Should().Be(0);
+        network.Stdout.Trim().Should().Be("OFF");
+        _source = NpgsqlDataSource.Create(_container.GetConnectionString());
+        await using var command = _source.CreateCommand("CREATE EXTENSION IF NOT EXISTS postgis");
+        await command.ExecuteNonQueryAsync();
     }
 
     public async Task DisposeAsync()
     {
-        if (GridTestEnabled)
+        if (_source is not null)
         {
-            await _fixture.DisposeAsync();
+            await _source.DisposeAsync();
+        }
+        if (_container is not null)
+        {
+            await _container.DisposeAsync();
+        }
+        if (_image is not null)
+        {
+            await _image.DisposeAsync();
         }
     }
 
-    [IntegrationTest]
-    public async Task TransformPoint_Nad27ToNad83_WithProvisionedConusGrid_AppliesNadconShiftWithinTolerance()
+    [IntegrationTheory]
+    [InlineData(-100, 40, "us_noaa_conus.tif")]
+    [InlineData(-149.9, 61.2, "us_noaa_alaska.tif")]
+    [InlineData(-79.4, 43.7, "ca_nrc_ntv2_0.tif")]
+    public async Task AreaPipeline_DefaultImage_AppliesSelectedRegionalGrid(
+        double longitude, double latitude, string grid)
     {
-        if (!GridTestEnabled)
-        {
-            // Skip unless explicitly pointed at the grid-provisioned image (docker/proj-grids).
-            return;
-        }
+        _catalog.TryGetForEnvelope(4267, 4269, longitude, latitude, longitude, latitude, out var selection)
+            .Should().BeTrue();
+        selection!.RequiredGrids.Should().Contain(grid);
+        var point = FormattableString.Invariant($"ST_SetSRID(ST_MakePoint({longitude}, {latitude}), 4267)");
+        var expression = DatumTransformSql.BuildTransformExpression(point, 4269, selection);
+        await using var command = _source!.CreateCommand($"SELECT ST_X({expression}), ST_Y({expression})");
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetDouble(0).Should().NotBe(longitude);
+        reader.GetDouble(1).Should().NotBe(latitude);
+    }
 
-        // The catalog's NAD27 -> NAD83 default is the NADCON pipeline requiring us_noaa_conus.tif.
-        _catalog.TryGetDefault(4267, 4269, out var selection).Should().BeTrue();
-        selection!.RequiredGrids.Should().Contain("us_noaa_conus.tif");
-
-        // Resolve through the same default (2-argument) path the chokepoint emits for a
-        // grid-backed pipeline. With the canonical grid provisioned, PROJ resolves the
-        // high-accuracy NADCON operation rather than failing or using a low-accuracy fallback.
-        const double lon = -100.0;
-        const double lat = 40.0;
-
-        var result = await _service!.TransformPointAsync(lon, lat, 4267, 4269);
-
-        result.Should().NotBeNull(
-            "the provisioned us_noaa_conus.tif grid must let PROJ resolve the NAD27->NAD83 NADCON operation");
-        var transformed = result is { } r ? r : throw new InvalidOperationException("Expected a transform result.");
-
-        // It must be a real datum shift, not identity (NAD27 and NAD83 differ by ~30-40 m in CONUS).
-        var shiftDegrees = Math.Sqrt(
-            Math.Pow(transformed.X - lon, 2) + Math.Pow(transformed.Y - lat, 2));
-        shiftDegrees.Should().BeGreaterThan(1e-4,
-            "NAD27<->NAD83 is a real (non-identity) datum transformation in CONUS");
-
-        // And it must stay within the NAD27<->NAD83 CONUS bound (well under ~0.01 deg / ~1 km).
-        transformed.X.Should().BeApproximately(lon, 1e-3);
-        transformed.Y.Should().BeApproximately(lat, 1e-3);
-
-        // Pin the measured canonical-grid value so a regression to the low-accuracy bundled
-        // fallback (which differs at the ~1e-4 deg level) is caught.
-        transformed.X.Should().BeApproximately(-100.0004056, 5e-6);
-        transformed.Y.Should().BeApproximately(40.0000058, 5e-6);
+    [IntegrationTheory]
+    [InlineData(4135, -157.8, 21.3)]
+    [InlineData(4139, -66.1, 18.4)]
+    public async Task AreaPipeline_IslandDatum_AppliesProvisionedGrid(
+        int sourceSrid, double longitude, double latitude)
+    {
+        _catalog.TryGetForEnvelope(sourceSrid, 4269, longitude, latitude, longitude, latitude, out var selection)
+            .Should().BeTrue();
+        var point = FormattableString.Invariant($"ST_SetSRID(ST_MakePoint({longitude}, {latitude}), {sourceSrid})");
+        var expression = DatumTransformSql.BuildTransformExpression(point, 4269, selection);
+        await using var command = _source!.CreateCommand($"SELECT ST_X({expression}), ST_Y({expression})");
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetDouble(0).Should().NotBe(longitude);
+        reader.GetDouble(1).Should().NotBe(latitude);
     }
 
     [IntegrationTest]
-    public async Task TransformPoint_Nad27ToNad83_SecondConusPoint_MatchesProvisionedGridReference()
+    public Task AreaPipeline_Alaska_AgreesWithIndependentProjReference() =>
+        AssertProjReferenceAsync((-149.9, 61.2), (-149.902204940219, 61.199447934275));
+
+    [IntegrationTest]
+    public Task AreaPipeline_Canada_AgreesWithIndependentProjReference() =>
+        AssertProjReferenceAsync((-79.4, 43.7), (-79.399801388899, 43.700056900002));
+
+    [IntegrationTheory]
+    [InlineData(-100, 40)]
+    [InlineData(-149.9, 61.2)]
+    [InlineData(-79.4, 43.7)]
+    public async Task AreaPipeline_RegionalGridInverse_RestoresSourcePoint(double longitude, double latitude)
     {
-        if (!GridTestEnabled)
+        _catalog.TryGetForEnvelope(4267, 4269, longitude, latitude, longitude, latitude, out var forward)
+            .Should().BeTrue();
+        _catalog.TryGetForEnvelope(4269, 4267, longitude, latitude, longitude, latitude, out var inverse)
+            .Should().BeTrue();
+        var point = FormattableString.Invariant($"ST_SetSRID(ST_MakePoint({longitude}, {latitude}), 4267)");
+        var transformed = DatumTransformSql.BuildTransformExpression(point, 4269, forward);
+        var restored = DatumTransformSql.BuildTransformExpression(transformed, 4267, inverse);
+        await using var command = _source!.CreateCommand($"SELECT ST_X({restored}), ST_Y({restored})");
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetDouble(0).Should().BeApproximately(longitude, 1e-8);
+        reader.GetDouble(1).Should().BeApproximately(latitude, 1e-8);
+    }
+
+    private async Task AssertProjReferenceAsync(
+        (double Longitude, double Latitude) input, (double Longitude, double Latitude) expected)
+    {
+        _catalog.TryGetForEnvelope(4267, 4269, input.Longitude, input.Latitude,
+            input.Longitude, input.Latitude, out var selection).Should().BeTrue();
+        var point = FormattableString.Invariant(
+            $"ST_SetSRID(ST_MakePoint({input.Longitude}, {input.Latitude}), 4267)");
+        var expression = DatumTransformSql.BuildTransformExpression(point, 4269, selection);
+        var reference = FormattableString.Invariant(
+            $"ST_SetSRID(ST_MakePoint({expected.Longitude}, {expected.Latitude}), 4269)");
+        await using var command = _source!.CreateCommand(
+            $"SELECT ST_Distance(({expression})::geography, ({reference})::geography)");
+        var distance = (double)(await command.ExecuteScalarAsync())!;
+        distance.Should().BeLessThan(0.01, "the selected pipeline must agree with the independent PROJ reference within one centimeter");
+    }
+
+    private static string FindGridContext()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
         {
-            return;
+            var context = Path.Combine(directory.FullName, "docker", "proj-grids");
+            if (File.Exists(Path.Combine(context, "Dockerfile")))
+            {
+                return context;
+            }
         }
-
-        // A second, independent CONUS coordinate (near Washington, DC) cross-checks that the
-        // grid is applied position-dependently (not a constant offset).
-        const double lon = -77.0;
-        const double lat = 38.9;
-
-        var result = await _service!.TransformPointAsync(lon, lat, 4267, 4269);
-
-        result.Should().NotBeNull();
-        var transformed = result is { } r ? r : throw new InvalidOperationException("Expected a transform result.");
-        transformed.X.Should().BeApproximately(-76.9996986, 5e-6);
-        transformed.Y.Should().BeApproximately(38.9001112, 5e-6);
+        throw new DirectoryNotFoundException("The default datum grid image build context was not found.");
     }
 }
