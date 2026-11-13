@@ -88,19 +88,7 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
                         ?? originalAudit.ImplementationFactory?.Invoke(provider)
                         ?? ActivatorUtilities.CreateInstance(provider, originalAudit.ImplementationType!)),
                     () => _denialAuditMode));
-                // Test hosts normally use volatile operation instances. Bind the production
-                // store so approval replay can recover the original instance after restart.
-                services.RemoveAll<IOperationInstanceStore>();
-                services.AddSingleton<IOperationInstanceStore>(provider =>
-                    provider.GetRequiredService<PostgresOperationInstanceStore>());
-                services.RemoveAll<IStudioPackageStore>();
-                services.AddScoped<IStudioPackageStore>(provider => new PostgresStudioPackageStore(
-                    provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
-                    _fixture.CurrentSchema ?? throw new InvalidOperationException("Missing fixture schema.")));
-                services.RemoveAll<IContentPublicationStore>();
-                services.AddScoped<IContentPublicationStore>(provider => new PostgresContentPublicationStore(
-                    provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
-                    _fixture.CurrentSchema ?? throw new InvalidOperationException("Missing fixture schema.")));
+                ConfigurePostgresPublicationStores(services);
                 // The independent operator gate remains admitted while the human channel is verified.
                 services.RemoveAll<IOperatorAuthorizationEvaluator>();
                 services.AddSingleton<IOperatorAuthorizationEvaluator, AllowAllOperatorAuthorizationEvaluator>();
@@ -113,6 +101,23 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
             .Should().BeOfType<PostgresOperationInstanceStore>();
         scope.ServiceProvider.GetRequiredService<IOperationProposalStore>()
             .Should().BeOfType<PostgresOperationProposalStore>();
+    }
+
+    private void ConfigurePostgresPublicationStores(IServiceCollection services)
+    {
+        // Test hosts normally use volatile operation instances. Bind the production
+        // store so approval replay can recover the original instance after restart.
+        services.RemoveAll<IOperationInstanceStore>();
+        services.AddSingleton<IOperationInstanceStore>(provider =>
+            provider.GetRequiredService<PostgresOperationInstanceStore>());
+        services.RemoveAll<IStudioPackageStore>();
+        services.AddScoped<IStudioPackageStore>(provider => new PostgresStudioPackageStore(
+            provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+            _fixture.CurrentSchema ?? throw new InvalidOperationException("Missing fixture schema.")));
+        services.RemoveAll<IContentPublicationStore>();
+        services.AddScoped<IContentPublicationStore>(provider => new PostgresContentPublicationStore(
+            provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+            _fixture.CurrentSchema ?? throw new InvalidOperationException("Missing fixture schema.")));
     }
 
     public async Task DisposeAsync()
