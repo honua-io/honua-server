@@ -12,12 +12,13 @@ internal sealed partial class StreamingFileImportService
     private sealed record DirectImportGuard(ImportedDatasetSpatialMetadata.Identity Identity, double? CoordinateEpoch);
     private sealed record ImportTargetPreparation(
         string LoadTableName, bool HadExistingTarget, bool AppendUsesStaging,
-        ImportedDatasetSpatialMetadata.Identity? LiveIdentity);
+        ImportedDatasetSpatialMetadata.Identity? LiveIdentity, int StorageSrid);
 
     private async Task<ImportTargetPreparation> PrepareImportTargetAsync(
         NpgsqlConnection connection, ImportRequest request, string schema, string table,
-        double? coordinateEpoch, CancellationToken cancellationToken)
+        int sourceSrid, double? coordinateEpoch, CancellationToken cancellationToken)
     {
+        var storageSrid = request.TargetSrid ?? sourceSrid;
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         if (!await ImportedDatasetSpatialMetadata.IsAvailableAsync(
                 connection, transaction, _schemaConfiguration.MetadataSchema, cancellationToken))
@@ -46,19 +47,25 @@ internal sealed partial class StreamingFileImportService
         {
             if (!existed)
             {
-                await EnsureTableAsync(connection, schema, table, request.TargetSrid!.Value, cancellationToken, transaction);
+                await EnsureTableAsync(connection, schema, table, storageSrid, cancellationToken, transaction);
                 identity = await ImportedDatasetSpatialMetadata.LockAndResolveAsync(
                     connection, transaction, schema, table, "geometry", cancellationToken);
                 await ImportedDatasetSpatialMetadata.WriteAsync(
                     connection, transaction, _schemaConfiguration.MetadataSchema, schema, table, "geometry",
-                    identity.Value, request.TargetSrid!.Value, coordinateEpoch, cancellationToken);
+                    identity.Value, storageSrid, coordinateEpoch, cancellationToken);
             }
             else
             {
                 var facts = await ImportedDatasetSpatialMetadata.ReadAsync(
                     connection, transaction, _schemaConfiguration.MetadataSchema, schema, table, "geometry",
                     identity!.Value, cancellationToken);
-                ImportedDatasetSpatialMetadata.ValidateAppend(facts, request.TargetSrid!.Value, coordinateEpoch);
+                storageSrid = request.TargetSrid ?? facts?.StorageSrid ?? sourceSrid;
+                ImportedDatasetSpatialMetadata.ValidateAppend(facts, storageSrid, coordinateEpoch);
+                if (coordinateEpoch.HasValue && sourceSrid != storageSrid)
+                {
+                    throw new InvalidDataException(
+                        "Coordinate epoch cannot be preserved through a CRS transformation; use the source storage CRS.");
+                }
             }
             if (mode == ImportLoadMode.Upsert)
             {
@@ -75,10 +82,10 @@ internal sealed partial class StreamingFileImportService
                 "This import must commit its receipt with the rows. The target is not an importer-owned table.");
         }
         var loadTable = mode == ImportLoadMode.Replace || stagedAppend
-            ? await CreateStagingTableAsync(connection, schema, table, request.TargetSrid!.Value, cancellationToken, transaction)
+            ? await CreateStagingTableAsync(connection, schema, table, storageSrid, cancellationToken, transaction)
             : table;
         await transaction.CommitSafelyAsync(cancellationToken);
-        return new ImportTargetPreparation(loadTable, existed, stagedAppend, identity);
+        return new ImportTargetPreparation(loadTable, existed, stagedAppend, identity, storageSrid);
     }
 
     private async Task ValidateDirectImportAsync(

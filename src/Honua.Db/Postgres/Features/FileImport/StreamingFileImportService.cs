@@ -510,10 +510,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             }
 
             var targetSrid = request.TargetSrid ?? sourceSrid.Value;
-            request = request with { TargetSrid = targetSrid };
 
             if (coordinateEpoch.HasValue &&
-                (!detectedSrid.HasValue || sourceSrid.Value != request.TargetSrid ||
+                (!detectedSrid.HasValue || sourceSrid.Value != targetSrid ||
                  sourceSrid.Value != detectedSrid.Value))
             {
                 return ImportResult.CreateFailure(request.TableName, format.Value,
@@ -607,7 +606,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             string physicalTableName;
             bool replacementBlocked;
             IReadOnlyList<ImportTypedColumn> typedColumns;
-            (importedCount, failedCount, repairedCount, warnings, rowIssues, physicalTableName, replacementBlocked, typedColumns) = await ImportStreamingAsync(
+            (importedCount, failedCount, repairedCount, warnings, rowIssues, physicalTableName, replacementBlocked, typedColumns, targetSrid) = await ImportStreamingAsync(
                 request,
                 fileStream,
                 format.Value,
