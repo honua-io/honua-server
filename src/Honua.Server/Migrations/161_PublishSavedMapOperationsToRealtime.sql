@@ -23,9 +23,6 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS trg_publish_saved_map_operation_to_realtime
-    ON $HonuaSchema$.saved_map_operations;
-
 CREATE TRIGGER trg_publish_saved_map_operation_to_realtime
     AFTER INSERT ON $HonuaSchema$.saved_map_operations
     FOR EACH ROW EXECUTE FUNCTION $HonuaSchema$.publish_saved_map_operation_to_realtime();
