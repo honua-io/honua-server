@@ -600,7 +600,7 @@
       "operationId": "getAdminLayerDisplay",
       "catalogOperationId": null,
       "method": "GET",
-      "path": "/metadata/layers/{layerId}/display"
+      "path": "/metadata/layers/{storageLayerId}/display"
     },
     {
       "operationId": "getAdminLayerDrawingInfo",
@@ -636,7 +636,7 @@
       "operationId": "getAdminLayerSpatial",
       "catalogOperationId": null,
       "method": "GET",
-      "path": "/metadata/layers/{layerId}/spatial"
+      "path": "/metadata/layers/{storageLayerId}/spatial"
     },
     {
       "operationId": "getAdminLayerStyle",
@@ -1014,7 +1014,7 @@
       "operationId": "getLayerMetadata",
       "catalogOperationId": null,
       "method": "GET",
-      "path": "/services/{serviceName}/layers/{layerId}/metadata"
+      "path": "/services/{serviceName}/layers/{serviceLayerIndex}/metadata"
     },
     {
       "operationId": "getLayerPublishJobStatus",
@@ -2184,7 +2184,7 @@
       "operationId": "setAdminLayerDisplay",
       "catalogOperationId": null,
       "method": "PUT",
-      "path": "/metadata/layers/{layerId}/display"
+      "path": "/metadata/layers/{storageLayerId}/display"
     },
     {
       "operationId": "setAdminLayerDrawingInfo",
@@ -2214,7 +2214,7 @@
       "operationId": "setAdminLayerSpatial",
       "catalogOperationId": null,
       "method": "PUT",
-      "path": "/metadata/layers/{layerId}/spatial"
+      "path": "/metadata/layers/{storageLayerId}/spatial"
     },
     {
       "operationId": "setAlertRuleEnabled",
