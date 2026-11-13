@@ -22,7 +22,8 @@ internal sealed class OperationInitiationResolver(IHttpContextAccessor requests)
         var actor = CanonicalSecurityActor.Resolve(context.User);
         if (actor is not null
             && string.Equals(actor.AuthenticationScheme, OidcAuthenticationExtensions.AdminSessionScheme, StringComparison.OrdinalIgnoreCase)
-            && !RequestCredentialCatalog.HasExplicitCredential(context.Request))
+            && !RequestCredentialCatalog.HasExplicitCredential(context.Request)
+            && AdminSessionCrossSiteRequestGuard.HasTrustedOrigin(context.Request))
         {
             var sessions = context.RequestServices.GetService<AdminAuthSessionStore>();
             var session = sessions is null ? null : await sessions.GetInteractiveSessionForApprovalAsync(
