@@ -60,7 +60,7 @@ internal sealed class McpNotificationPublisher : IMcpNotificationPublisher
     private async ValueTask<int> BroadcastAsync(string method)
     {
         await AppendAsync("*", method, Serialize(method, parameters: null)).ConfigureAwait(false);
-        var localSessions = _sessions.ActiveSessionIds.Count();
+        var localSessions = _sessions.ActiveSessionIds.Count;
         McpLog.NotificationBroadcast(_logger, method, localSessions);
         return localSessions;
     }

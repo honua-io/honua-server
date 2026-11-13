@@ -357,6 +357,26 @@ public sealed partial class McpServiceCollectionExtensionsTests
     }
 
     [UnitTest]
+    public async Task AddMcpDataAccessSurface_WithoutASystemDatabase_PublishesLocalNotifications()
+    {
+        var services = BuildBaseServices();
+        services.AddMcpDataAccessSurface(new ConfigurationBuilder().Build());
+        using var provider = services.BuildServiceProvider();
+        var sessions = provider.GetRequiredService<McpSessionManager>();
+        var sessionId = sessions.CreateSession();
+        sessions.TryGetReader(sessionId, out var reader).Should().BeTrue();
+        var publisher = provider.GetRequiredService<IMcpNotificationPublisher>();
+
+        (await publisher.PublishProgress(sessionId, "local-job", 42, 100, "Running")).Should().BeTrue();
+        reader.TryRead(out var progress).Should().BeTrue();
+        progress.Should().Contain("notifications/progress");
+        (await publisher.BroadcastResourcesListChanged()).Should().Be(1);
+        reader.TryRead(out var broadcast).Should().BeTrue();
+        broadcast.Should().Contain("notifications/resources/list_changed");
+        (await publisher.PublishProgress("unknown-session", "local-job", 42, 100, null)).Should().BeFalse();
+    }
+
+    [UnitTest]
     public void AddMcpDataAccessSurface_WithCallerSuppliedStore_KeepsThatStore()
     {
         var custom = Substitute.For<IPackageDraftStore>();
