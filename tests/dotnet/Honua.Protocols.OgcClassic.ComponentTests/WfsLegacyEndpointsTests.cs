@@ -89,13 +89,13 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WfsComponentFixture>
     public async Task Wfs11_DescribeFeatureType_ReturnsGml31Schema()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=DescribeFeatureType&VERSION=1.1.0&TYPENAME=test_layer");
+            "/wfs?SERVICE=WFS&REQUEST=DescribeFeatureType&VERSION=1.1.0&TYPENAME=pub-test-ogc-0");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         content.Should().Contain("xmlns:gml=\"http://www.opengis.net/gml\"");
         content.Should().Contain("http://schemas.opengis.net/gml/3.1.1/base/gml.xsd");
-        content.Should().Contain("name=\"test_layer\"");
+        content.Should().Contain("name=\"pub-test-ogc-0\"");
     }
 
     [IntegrationTest]
@@ -106,7 +106,7 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WfsComponentFixture>
     public async Task Wfs11_GetFeature_ReturnsGml31FeatureCollection()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0&TYPENAME=test_layer&MAXFEATURES=1");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0&TYPENAME=pub-test-ogc-0&MAXFEATURES=1");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -114,7 +114,7 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WfsComponentFixture>
         content.Should().Contain("<wfs:FeatureCollection");
         content.Should().Contain("xmlns:gml=\"http://www.opengis.net/gml\"");
         content.Should().Contain("<gml:featureMember>");
-        content.Should().Contain("gml:id=\"test_layer.");
+        content.Should().Contain("gml:id=\"pub-test-ogc-0.");
     }
 
     [IntegrationTest]
@@ -126,13 +126,13 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WfsComponentFixture>
     {
         var outputFormat = Uri.EscapeDataString("text/xml; subtype=gml/3.1.1");
         var response = await _fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0&TYPENAME=test_layer&OUTPUTFORMAT={outputFormat}&MAXFEATURES=1");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0&TYPENAME=pub-test-ogc-0&OUTPUTFORMAT={outputFormat}&MAXFEATURES=1");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/gml+xml");
         content.Should().Contain("<wfs:FeatureCollection");
-        content.Should().Contain("gml:id=\"test_layer.");
+        content.Should().Contain("gml:id=\"pub-test-ogc-0.");
     }
 
     [IntegrationTest]
@@ -143,7 +143,7 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WfsComponentFixture>
     public async Task Wfs11_GetFeature_MaxFeaturesZero_ReportsNoReturnedFeatures()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0&TYPENAME=test_layer&MAXFEATURES=0");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0&TYPENAME=pub-test-ogc-0&MAXFEATURES=0");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -161,7 +161,7 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WfsComponentFixture>
         const string body = """
             <wfs:GetFeature service="WFS" version="1.1.0" maxFeatures="1"
                 xmlns:wfs="http://www.opengis.net/wfs">
-              <wfs:Query typeName="test_layer" />
+              <wfs:Query typeName="pub-test-ogc-0" />
             </wfs:GetFeature>
             """;
         using var content = new StringContent(body, Encoding.UTF8, "application/xml");
@@ -171,7 +171,7 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WfsComponentFixture>
         var responseBody = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, responseBody);
         responseBody.Should().Contain("<wfs:FeatureCollection");
-        responseBody.Should().Contain("gml:id=\"test_layer.");
+        responseBody.Should().Contain("gml:id=\"pub-test-ogc-0.");
     }
 
     [IntegrationTest]
@@ -218,7 +218,7 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WfsComponentFixture>
         // unlike WFS 2.0 which uses the layer CRS's axis order (lat,lon for EPSG:4326). The
         // "Fifth Feature" sits near lon -122.3, lat 37.8, so a lon,lat box must match it.
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0&TYPENAME=test_layer&MAXFEATURES=5&BBOX=-122.5,37.7,-122.3,37.8");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0&TYPENAME=pub-test-ogc-0&MAXFEATURES=5&BBOX=-122.5,37.7,-122.3,37.8");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -234,7 +234,7 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WfsComponentFixture>
     {
         // #2737: WFS 1.0.0 KVP BBOX is always longitude,latitude.
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.0.0&TYPENAME=test_layer&MAXFEATURES=5&BBOX=-122.5,37.7,-122.3,37.8");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.0.0&TYPENAME=pub-test-ogc-0&MAXFEATURES=5&BBOX=-122.5,37.7,-122.3,37.8");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -279,7 +279,7 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WfsComponentFixture>
     public async Task Wfs11_GetFeature_MalformedFeatureId_ReturnsOws10ExceptionReport()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0&TYPENAME=test_layer&FEATUREID=test_layer.bad");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0&TYPENAME=pub-test-ogc-0&FEATUREID=pub-test-ogc-0.bad");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -288,7 +288,7 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WfsComponentFixture>
         content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
         content.Should().Contain("locator=\"RESOURCEID\"");
         content.Should().Contain("resourceId");
-        content.Should().Contain("test_layer.bad");
+        content.Should().Contain("pub-test-ogc-0.bad");
         content.Should().Contain("is malformed.");
         content.Should().NotContain("NoApplicableCode");
     }
@@ -300,7 +300,7 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WfsComponentFixture>
     public async Task Wfs11_GetFeature_UnsupportedSrsName_ReturnsOws10ExceptionReport()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0&TYPENAME=test_layer&SRSNAME=EPSG:999999");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0&TYPENAME=pub-test-ogc-0&SRSNAME=EPSG:999999");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -368,13 +368,13 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WfsComponentFixture>
     public async Task Wfs10_DescribeFeatureType_ReturnsGml2Schema()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=DescribeFeatureType&VERSION=1.0.0&TYPENAME=test_layer");
+            "/wfs?SERVICE=WFS&REQUEST=DescribeFeatureType&VERSION=1.0.0&TYPENAME=pub-test-ogc-0");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         content.Should().Contain("xmlns:gml=\"http://www.opengis.net/gml\"");
         content.Should().Contain("http://schemas.opengis.net/gml/2.1.2/feature.xsd");
-        content.Should().Contain("name=\"test_layer\"");
+        content.Should().Contain("name=\"pub-test-ogc-0\"");
     }
 
     [IntegrationTest]
@@ -385,7 +385,7 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WfsComponentFixture>
     public async Task Wfs10_GetFeature_ReturnsGml2FeatureCollection()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.0.0&TYPENAME=test_layer&MAXFEATURES=1");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.0.0&TYPENAME=pub-test-ogc-0&MAXFEATURES=1");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -404,7 +404,7 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WfsComponentFixture>
     {
         var outputFormat = Uri.EscapeDataString("text/xml; subtype=gml/2.1.2");
         var response = await _fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.0.0&TYPENAME=test_layer&OUTPUTFORMAT={outputFormat}&MAXFEATURES=1");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.0.0&TYPENAME=pub-test-ogc-0&OUTPUTFORMAT={outputFormat}&MAXFEATURES=1");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -421,7 +421,7 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WfsComponentFixture>
     public async Task Wfs10_GetFeature_MaxFeaturesZero_ReportsNoReturnedFeatures()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.0.0&TYPENAME=test_layer&MAXFEATURES=0");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.0.0&TYPENAME=pub-test-ogc-0&MAXFEATURES=0");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -500,7 +500,7 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WfsComponentFixture>
     public async Task Wfs10_GetFeature_MalformedFeatureId_ReturnsServiceExceptionReport()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.0.0&TYPENAME=test_layer&FEATUREID=test_layer.bad");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.0.0&TYPENAME=pub-test-ogc-0&FEATUREID=pub-test-ogc-0.bad");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -509,7 +509,7 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WfsComponentFixture>
         content.Should().Contain("code=\"InvalidParameterValue\"");
         content.Should().Contain("locator=\"RESOURCEID\"");
         content.Should().Contain("resourceId");
-        content.Should().Contain("test_layer.bad");
+        content.Should().Contain("pub-test-ogc-0.bad");
         content.Should().Contain("is malformed.");
         content.Should().NotContain("NoApplicableCode");
     }
@@ -521,7 +521,7 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WfsComponentFixture>
     public async Task Wfs10_GetFeature_UnsupportedSrsName_ReturnsServiceExceptionReport()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.0.0&TYPENAME=test_layer&SRSNAME=EPSG:999999");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.0.0&TYPENAME=pub-test-ogc-0&SRSNAME=EPSG:999999");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -537,7 +537,7 @@ public sealed class WfsLegacyEndpointsTests : IClassFixture<WfsComponentFixture>
     private async Task AssertLegacyFilterReturnsFifthFeatureAsync(string version, string filter)
     {
         var response = await _fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION={version}&TYPENAME=test_layer&MAXFEATURES=5&FILTER={Uri.EscapeDataString(filter)}");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION={version}&TYPENAME=pub-test-ogc-0&MAXFEATURES=5&FILTER={Uri.EscapeDataString(filter)}");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);

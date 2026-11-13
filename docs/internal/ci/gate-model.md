@@ -136,7 +136,8 @@ shared lean gate was 18m09s, split roughly:
 
 The build is now separated from test execution. Pristine outputs are packaged
 once before tests or coverage can modify them. Downstream consumers verify the
-same-run source, SDK, platform and build-property identity, then compile only
+same-run source, SDK, platform and build-property identity, relocate staged MVC
+and static-asset content roots to their own checkout, then compile only
 missing projects as one scoped fallback graph. Both architecture suites run
 after projection regeneration; the full collector remains intact. Full CI also
 uses a managed producer and an independent, required full-solution format job.
@@ -158,7 +159,7 @@ MSBuild resolves each listed project's `<ProjectReference>` graph itself, so
 forward dependencies are built without being enumerated. A filter is used rather
 than a project list because `dotnet build a.csproj b.csproj` is rejected outright
 (MSB1008); the filter also keeps the build to a single MSBuild invocation with
-full cross-project parallelism.
+cross-project parallelism bounded to four MSBuild workers.
 
 The current build floor is the forward dependency closure of that explicit
 producer plan, rather than a fixed count of test projects. Isolated unit projects
@@ -311,7 +312,7 @@ is one runner label, such as a GitHub-hosted larger-runner name; it is not a JSO
 label array. Main owns configuring the variable after the runner is available
 to this repository and the combined batch has passed build-host preflight.
 
-The switch covers build, format, foundation-family tests, server shards, MCP
+The switch covers format, foundation-family tests, server shards, MCP
 certification and LLM smoke, PostgreSQL and core-package compatibility, AOT,
 Docker build, and Console quickstart smoke. Admission, routing, receipt
 aggregation and final verdict jobs remain on standard hosted runners so a
@@ -330,11 +331,62 @@ no separate branch full run is needed. Clear the variable to restore the hosted
 default for new runs. Treat existing runs as assigned to their original pool;
 main handles their completion or cancellation.
 
+## Full-CI producer admission
+
+`Build & Format Check` has separate, producer-only admission. The hosted
+`CI producer / Runner select` job defaults to `ubuntu-latest`. MAIN can enable
+`HONUA_CI_PRODUCER_RUNNER=honua-build` only after compatible-pool preflight.
+Same-repository events can assume `HONUA_CI_PRODUCER_READ_ROLE_ARN` via OIDC,
+using `HONUA_PR_GATE_RUNNER_REGION`. That role needs only
+`autoscaling:DescribeAutoScalingGroups` and `ssm:GetParameter` for
+`/honua-lane-build-host/gate-runner/heartbeat`; its trust must cover the intended
+trunk schedule/dispatch events. It must have no wake or host-mutation rights.
+Fork events never request credentials or self-hosted admission.
+
+The selector makes one current InService instance read and one heartbeat read.
+It requires the same instance, an integer timestamp no more than 90 seconds old
+and not in the future, and integer gate `idle >= 2`. Heavy-pool idle counts do
+not qualify. Missing configuration, credentials, checkout, API access, malformed
+proof, stale proof, or busy/stopped capacity falls back hosted. There is no
+wake, wait, polling or retry loop. A snapshot is admission evidence, not a
+capacity reservation; a later queue remains possible.
+
+The producer skips hosted sudo cleanup on self-hosted runners and installs its
+SDK into `${{ runner.temp }}/honua-ci-producer-sdk`. Every producer restore,
+build and nested MSBuild evaluation uses at most four workers; job-wide
+`DOTNET_PROCESSOR_COUNT=4`, disabled MSBuild servers and disabled node reuse
+also apply to child tooling. Required checks, warning/analyzer policy, artifact
+selection and consumers remain unchanged. Other compute jobs retain their
+existing switch; this change does not activate the global heavy-runner variable.
+
+Source merge does not install or activate a runner. MAIN owns configuration
+and a runner-context preflight on the actual gate accounts: verify the private
+SDK host/runtime and native dependencies, writable SDK/tool/cache/temp paths,
+setup action compatibility without sudo, and the bounded full producer graph
+within the parent slice's 10 GiB/6 CPU limits. Preserve active workers; use the
+next authorized ordinary run for build evidence, without a new full-CI dispatch
+or rerun. Record producer/restore/build minutes and memory evidence separately
+from the earlier PR producer; no full-trunk speedup is established by that PR.
+Keep the variable unset until these prerequisites pass. A current-instance
+heartbeat with two idle gate runners is still required for each later admission.
+Clear the producer variable to restore hosted selection for new runs. Existing
+jobs keep their assigned runner.
+
+Both producer and PR Gate selectors use `scripts/ci/gate-runner-heartbeat.sh`
+for the read-only heartbeat proof. It requires exactly one JSON object, the
+current instance, an integer timestamp no older than 90 seconds, and two idle
+gate runners. Heavy-pool readiness remains independent of gate-pool admission.
+The producer takes one snapshot; the existing PR selector retains its bounded
+wake/wait orchestration. Both sparse checkouts include the shared validator.
+
 ## PR Gate compute runner selection
 
-`PR Gate / Runner select` decides where `pr-gate` (Build and tests),
-`fast-tests` and `format` run. With the repository variable
-`HONUA_PR_GATE_RUNNER` unset, its steps skip and those jobs stay on
+`PR Gate / Runner select` decides where `pr-gate` (Build and tests) and
+`server-test-producer` run. Format/analyzers and all four Fast/architecture
+groups use the fork-guarded `HONUA_LIGHT_RUNNER` JSON selector with
+`ubuntu-latest` fallback, independently of gate admission or heavy settings.
+These eight jobs never inherit the producer label. With the repository variable
+`HONUA_PR_GATE_RUNNER` unset, its steps skip and the two producers stay on
 `ubuntu-latest`. Set it to `honua-build` to use the ephemeral runners on the lane
 build host (honua-iac `bootstrap/aws-build-host`, "PR Gate runners"). It also
 needs the variable `HONUA_PR_GATE_RUNNER_REGION` and the secret
@@ -343,15 +395,25 @@ needs the variable `HONUA_PR_GATE_RUNNER_REGION` and the secret
 host and read its heartbeat, nothing else) and runs
 `scripts/ci/select-gate-runner.sh`:
 
-- When the host's heartbeat is fresh and shows two idle runners, the three jobs
-  use the label.
-- When the host is busy, or no heartbeat arrives within three minutes, they use
-  `ubuntu-latest`. A stopped host is still woken for later runs.
+- When the current instance's heartbeat is fresh and shows two idle gate runners,
+  Build and tests and Server test producer use the selected gate label.
+- When the host is busy, or no heartbeat arrives within three minutes, the two
+  producers use `ubuntu-latest`. A stopped host is still woken for later runs.
 - Any failure selects `ubuntu-latest`. Every selection step is
   `continue-on-error`, so the job cannot fail and skip the required producer,
   which carries no job condition.
 
-Shards, admission, routing and aggregate jobs always stay hosted. Under
+Draft Format and admission/control jobs also use the fork-guarded light selector;
+with `HONUA_LIGHT_RUNNER` unset they stay hosted. The existing
+even-index affected-shard split additionally requires independent version-1 heavy
+availability from the same current-instance heartbeat. An integer idle-heavy count
+from 1 through 8 permits the configured heavy JSON selector; absent, invalid,
+stale, future-dated or replaced-instance proof keeps shards hosted. Producer
+admission still requires two idle gate runners. The selector forwards heavy proof
+through the existing Build and tests dependency, without adding aggregate needs.
+The heartbeat records availability at selection time; it does not reserve runners.
+Until MAIN activates the reviewed additive honua-iac heartbeat, heavy shards fall
+back to hosted. Under
 `REVIEW_FIRST_MODE: enforce` the selection steps skip and the gate stays hosted:
 the review release reruns only failed jobs, so attempt 2 would reuse a choice
 made at admission and could queue on a host that has since stopped.
@@ -745,7 +807,7 @@ future gate skip. Local receipts do not currently skip hosted tests. Compiled
 output caching remains opt-in; no cross-phase promotion is authorized by the
 observational sample.
 
-Each affected shard selects the SDK and workflow-attempt identity exported by its own managed producer. A shard spanning both producers rebuilds its projects locally instead of combining independently resolved SDK outputs. Fast-test selection reads imported build documents through the shared project parser; unresolved imports or linked inputs retain all four groups.
+Each affected shard selects the SDK and workflow-attempt identity exported by its own managed producer. Managed consumers also install the target framework’s .NET and ASP.NET shared runtimes into that private SDK root using the supported runtime bootstrap. The target channel comes from `HonuaTargetFramework`; non-versioned host files are preserved and exact producer SDK identity is verified afterward. This allows a newer producer SDK to execute older target artifacts without major runtime roll-forward or artifact changes. It adds no jobs and changes no required checks. The 12 November baseline aborted net10.0 tests and projection regeneration before execution when only the SDK 11 runtimes were present; recovery timing awaits a fresh eligible gate. A shard spanning both producers rebuilds its projects locally instead of combining independently resolved SDK outputs. Fast-test selection reads imported build documents through the shared project parser; unresolved imports or linked inputs retain all four groups.
 
 ### Test analyzer compilation roots
 
@@ -779,6 +841,153 @@ boundary and deterministic replay are unchanged.
 
 Class-scoped test applications and database infrastructure that shorten server
 test shards without changing what they run.
+
+### Routing async web tool database lifetime
+
+`RoutingAsyncWebToolTests` holds a class-level `PostgresFixture`, which keeps
+the shared, reference-counted PostgreSQL container and data source alive for the
+whole class instead of rebuilding them for each case. Each case still creates
+its own no-Redis `WebAppFixture` host with an isolated schema, cleared job
+tables, its own substitute routing provider and its own durable worker.
+All cases and assertions remain in the GeoServices GPServer and NAServer shard
+on selected PR runs and twice-daily full trunk runs. This changes no runner
+count, required check name, required aggregate dependency, workflow, or shard
+definition.
+
+### Capability manifest endpoint fixture lifetime
+
+`CapabilityManifestEndpointTests` starts its default manifest application once
+per class through an `IClassFixture` and disposes it when the class finishes.
+Each case still makes its own anonymous and admin `HttpClient` against that
+host, and only cases that read without writing use it. Cases that need a
+different license, configuration or set of services build, start and dispose
+their own `WebAppFixture` inside the test, so configured applications stay
+isolated from each other and from the shared one.
+All cases and assertions remain in the Server Features Capabilities shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
+### ImageServer raw pixel export database lifetime
+
+`ImageServerRawPixelExportTests` holds an `IClassFixture<PostgresFixture>`
+reference, so the shared PostgreSQL infrastructure starts once per class and
+stays up across its integration cases instead of restarting for each one. Each
+case still creates its own `WebAppFixture` host and isolated schema, and seeds
+the raster under the schema-mutation lock. The pure LERC/BIP encoder unit tests
+live in `ImageServerPixelBlockEncoderTests`, which has no fixture, so running
+only unit tests never starts a database.
+All cases and assertions remain in the GeoServices ImageServer Raster Rendering
+and GeoServices ImageServer Rendering and Support shards on selected PR runs and
+twice-daily full trunk runs. This changes no runner count, required check name,
+required aggregate dependency, workflow, or shard definition.
+
+### ImageServer mosaic integration database lifetime
+
+`ImageServerMosaicIntegrationTests` takes a class-scoped `PostgresFixture`,
+which holds a reference to the shared, reference-counted PostgreSQL/PostGIS
+infrastructure from the first case to the last instead of letting it be torn
+down and rebuilt between cases. Each case still builds a fresh `WebAppFixture`
+host with its own isolated application schema, raster seed and license
+entitlement configuration.
+All cases and assertions remain in the GeoServices ImageServer Raster Rendering
+shard on selected PR runs and twice-daily full trunk runs. This changes no
+runner count, required check name, required aggregate dependency, workflow, or
+shard definition.
+
+### GPServer endpoint application lifetime
+
+`GPServerEndpointTests` holds a `PostgresFixture` class fixture, so the
+reference-counted PostgreSQL infrastructure starts once and stays alive until
+the last case in the class has run. The default `WebAppFixture` application
+starts only in cases that use the shared client, fixture or job store, and is
+disposed only if it was started. Every case still builds its own hosts, isolated
+schemas, in-memory job store and service replacements.
+All cases and assertions remain in the GeoServices GPServer Endpoints shard on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow, or shard
+definition.
+
+## OGC release-candidate qualification
+
+External OGC conformance runs through individual manual dispatchers and, after the
+RC image build of a promotable candidate, through `ogc-rc-conformance.yml`. The RC
+manifest waits for success; non-candidate rc dispatches skip it because they produce no manifest.
+Optional integration flags do not bypass it. See the [workflow inventory](workflow-inventory.md#ogc-cite--conformance)
+for the complete dispatchers, source/image binding and separate certification policy.
+
+## Trailing affected CI selection
+
+Trailing affected CI refreshes its completed-ancestor base when the selection job starts,
+so queued dispatches do not retain an obsolete range. Dispatch and execution use the same completed-run selector; execution never regresses behind the dispatched base. Selections above 30 shards
+fall back to the newest merge; the summary records the older range deferred to
+the twice-daily full run. A broad newest merge retains every selected shard.
+Affected shard concurrency is six, or twelve when more than 30 shards remain
+selected (`scripts/ci/trailing_selection.py` owns both numbers and the
+threshold), including full-coverage routing fallbacks; manual and scheduled
+full runs run 16 at once. On 12 Nov (03:30-04:00 UTC) a full run at 24 held
+28 of the org's 60 hosted runners while other pull request workflows held
+20-35, and PR Gate jobs waited a median 7.3 minutes (3 seconds before and after).
+Sixteen gives PR Gate eight more runners; the 1,272 shard-minutes of a full
+matrix then take about 79 minutes instead of 53. A
+134-shard affected run took 214 minutes at six while PR Gate job queueing stayed
+at a two-second median; twelve halves that so a broad run finishes before the
+next full run. Required PR gates
+and shard definitions are unchanged.
+
+### Covered trunk runs
+
+A full trunk run covers every merge up to its head. Its first job,
+`supersede-trailing-runs` (`scripts/ci/supersede_trailing_runs.py`), cancels
+queued or running `CI affected ...` runs at that head or an earlier one; a
+selective run cancels itself when a started scheduled run has a head that
+contains its own. Dispatched runs never cancel a selective run, because the
+runs API does not expose the inputs that decide their scope.
+Ancestry comes from the compare API. A full run held by the concurrency group
+never cancels anything, and unreadable run history cancels nothing. On
+11 Nov a 164-job affected run and a manual full run tested the same head
+together, leaving 130 affected and 37 full jobs queued while every open PR
+Gate had six to nine jobs waiting for hosted runners.
+
+## Automatic merge admission
+
+[Automatic merge admission](workflow-inventory.md#automatic-merge-admission) uses
+the bot App to enable GitHub auto-merge. Repository rulesets and required checks decide when a PR merges.
+The workflow does not override protections. Exact-head review admission must be
+configured as a required check to be enforced by GitHub auto-merge.
+
+The event-driven auto-merge workflow skips Dependabot PRs before minting App credentials. Already mergeable PRs remain with the existing merge authority because GitHub cannot arm deferred auto-merge for them.
+
+Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
+`edited`. Dependabot PRs skip this workflow entirely, including hold-label
+revocation: a human or drain lane owns any manually armed dependency PR.
+If mergeability becomes clean between the live query and enable mutation, only
+GitHub's specific clean-status response ends neutrally; other API errors fail.
+
+## Admin authentication capacity split (12 November 2026)
+
+The former authentication/credentials shard now has four jobs: authentication
+and operator bearer; OAuth and OIDC; API keys; client certificates. Each retains
+the original routing paths, project and 22/32-minute budgets. Required checks
+are unchanged. Children inherit the parent's conservative 21.7-minute dispatch
+rank, including existing PR budget deferral, until scheduled trunk CI measures
+them. The coverage guard proves exact ownership of the former selection.
+See [the capacity evidence and qualification requirement](shard-timeout-budgets.md#admin-authentication-capacity-split-12-november-2026).
+
+### Managed producer memory budget
+
+The shared lean gate bounds restore and build to four MSBuild workers and sets
+`DOTNET_PROCESSOR_COUNT=4` for each child runtime. These steps disable the
+persistent MSBuild server and node reuse so restore workers cannot accumulate
+alongside the graph build. Both full and filtered builds retain their complete
+project graphs, warnings-as-errors and existing timeouts.
+
+This corrects the 12 November PR #7457 producer cancellation: its runner shared
+a 10 GiB user-slice budget with runner services; the OOM task dump contained
+25 MSBuild processes and 16 compiler processes before systemd restarted the
+runner. CPU quota alone did not bound those processes. No host resource limit
+changes are required. The changed action takes effect on the next PR Gate;
+that run supplies the after-change timing and memory evidence.
 
 ### OData RBAC denial fixture lifetime
 
@@ -888,32 +1097,3 @@ matrix then take about 79 minutes instead of 53. A
 at a two-second median; twelve halves that so a broad run finishes before the
 next full run. Required PR gates
 and shard definitions are unchanged.
-
-### Covered trunk runs
-
-A full trunk run covers every merge up to its head. Its first job,
-`supersede-trailing-runs` (`scripts/ci/supersede_trailing_runs.py`), cancels
-queued or running `CI affected ...` runs at that head or an earlier one; a
-selective run cancels itself when a started scheduled run has a head that
-contains its own. Dispatched runs never cancel a selective run, because the
-runs API does not expose the inputs that decide their scope.
-Ancestry comes from the compare API. A full run held by the concurrency group
-never cancels anything, and unreadable run history cancels nothing. On
-11 Nov a 164-job affected run and a manual full run tested the same head
-together, leaving 130 affected and 37 full jobs queued while every open PR
-Gate had six to nine jobs waiting for hosted runners.
-
-## Automatic merge admission
-
-[Automatic merge admission](workflow-inventory.md#automatic-merge-admission) uses
-the bot App to enable GitHub auto-merge. Repository rulesets and required checks decide when a PR merges.
-The workflow does not override protections. Exact-head review admission must be
-configured as a required check to be enforced by GitHub auto-merge.
-
-The event-driven auto-merge workflow skips Dependabot PRs before minting App credentials. Already mergeable PRs remain with the existing merge authority because GitHub cannot arm deferred auto-merge for them.
-
-Retargeting an admitted PR away from `trunk` revokes its auto-merge request on
-`edited`. Dependabot PRs skip this workflow entirely, including hold-label
-revocation: a human or drain lane owns any manually armed dependency PR.
-If mergeability becomes clean between the live query and enable mutation, only
-GitHub's specific clean-status response ends neutrally; other API errors fail.
