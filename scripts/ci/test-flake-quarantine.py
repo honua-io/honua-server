@@ -216,7 +216,9 @@ class RunnerTests(unittest.TestCase):
                                          'HONUA_TEST_QUARANTINE_OBSERVE': 'true',
                                          'HONUA_SERVER_TEST_TIMEOUT_FOREGROUND': str(foreground).lower()}):
                 try:
-                    result = subprocess.run(command, timeout=5, capture_output=True)
+                    # Interpreter start-up on a loaded hosted runner can use most of a few seconds; a
+                    # descendant that escaped the kill would still hold the pipe for its full 30 s sleep.
+                    result = subprocess.run(command, timeout=20, capture_output=True)
                 except BaseException:
                     cleanup()
                     raise
