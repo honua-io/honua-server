@@ -75,8 +75,11 @@ internal static class OperationSecretKeyRingProtection
         // user can read it, lets one pre-create the path as a symlink, and lets two
         // Honua processes overwrite each other's certificate. UnixCreateMode applies
         // 0600 at open(2) time and CreateNew (O_EXCL) refuses an existing path.
+        // A tmpfs mounted over /tmp hides the root pre-created by the image.
+        var temporaryRoot = Path.GetTempPath();
+        Directory.CreateDirectory(temporaryRoot);
         var path = Path.Join(
-            Path.GetTempPath(),
+            temporaryRoot,
             $"honua-operation-keyring-{Guid.NewGuid():N}.pfx");
         var options = new FileStreamOptions
         {

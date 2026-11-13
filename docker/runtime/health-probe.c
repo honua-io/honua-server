@@ -1,0 +1,199 @@
+#include <arpa/inet.h>
+#include <errno.h>
+#include <dirent.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/un.h>
+#include <sys/statvfs.h>
+#include <unistd.h>
+
+/* Inspect procfs as the image user, without requiring a shell or coreutils. */
+static int print_process_sockets(const char *path)
+{
+    DIR *descriptors = opendir(path);
+    if (descriptors == NULL)
+        return 1;
+    struct dirent *entry;
+    while ((entry = readdir(descriptors)) != NULL) {
+        char handle[128];
+        ssize_t length = readlinkat(dirfd(descriptors), entry->d_name, handle, sizeof(handle) - 1);
+        if (length <= 0 || (size_t)length >= sizeof(handle) - 1)
+            continue;
+        handle[length] = '\0';
+        if (strncmp(handle, "socket:[", 8) == 0 && handle[length - 1] == ']')
+            puts(handle);
+    }
+    closedir(descriptors);
+    return 0;
+}
+
+static int print_socket_handles(const char *root)
+{
+    char path[4096];
+    int length = snprintf(path, sizeof(path), "%s/1/fd", root);
+    if (length < 0 || (size_t)length >= sizeof(path) || print_process_sockets(path) != 0)
+        return 1;
+    DIR *processes = opendir(root);
+    if (processes == NULL)
+        return 1;
+    struct dirent *entry;
+    while ((entry = readdir(processes)) != NULL) {
+        if (entry->d_name[0] == '\0' || strspn(entry->d_name, "0123456789") != strlen(entry->d_name) ||
+            strcmp(entry->d_name, "1") == 0)
+            continue;
+        length = snprintf(path, sizeof(path), "%s/%s/fd", root, entry->d_name);
+        if (length >= 0 && (size_t)length < sizeof(path))
+            print_process_sockets(path); /* Other users and exiting processes may be inaccessible. */
+    }
+    closedir(processes);
+    return ferror(stdout) ? 1 : 0;
+}
+
+static int probe_unix_socket(const char *path)
+{
+    struct sockaddr_un address = { .sun_family = AF_UNIX };
+    if (strlen(path) >= sizeof(address.sun_path))
+        return 1;
+    memcpy(address.sun_path, path, strlen(path) + 1);
+    int connection = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (connection < 0)
+        return 1;
+    int result = connect(connection, (struct sockaddr *)&address, sizeof(address));
+    close(connection);
+    return result == 0 ? 0 : 1;
+}
+
+static int probe_security(void)
+{
+    struct statvfs root;
+    if (getuid() != 1001 || getgid() != 1001 ||
+        statvfs("/", &root) != 0 || !(root.f_flag & ST_RDONLY))
+        return 1;
+    const char *temporary_root = getenv("TMPDIR");
+    if (temporary_root == NULL || temporary_root[0] == '\0')
+        temporary_root = "/tmp";
+    char temporary[4096];
+    int length = snprintf(temporary, sizeof(temporary), "%s/honua-security-XXXXXX", temporary_root);
+    if (length < 0 || (size_t)length >= sizeof(temporary))
+        return 1;
+    int file = mkstemp(temporary);
+    if (file < 0)
+        return 1;
+    int written = write(file, "ok", 2) == 2;
+    close(file);
+    return unlink(temporary) == 0 && written ? 0 : 1;
+}
+
+static long health_port(void)
+{
+    const char *configured_port = getenv("HONUA_HEALTH_PORT");
+    char *end;
+    long port = 8080;
+    if (configured_port != NULL) {
+        errno = 0;
+        port = strtol(configured_port, &end, 10);
+        if (errno != 0 || end == configured_port || *end != '\0' || port < 1 || port > 65535)
+            return -1;
+    }
+
+    return port;
+}
+
+static int connect_http(long port)
+{
+    int connection = socket(AF_INET, SOCK_STREAM, 0);
+    if (connection < 0)
+        return -1;
+
+    struct timeval timeout = { .tv_sec = 3, .tv_usec = 0 };
+    if (setsockopt(connection, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) != 0 ||
+        setsockopt(connection, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) != 0) {
+        close(connection);
+        return -1;
+    }
+    struct sockaddr_in address = {
+        .sin_family = AF_INET,
+        .sin_port = htons((unsigned short)port),
+        .sin_addr.s_addr = htonl(INADDR_LOOPBACK)
+    };
+    if (connect(connection, (struct sockaddr *)&address, sizeof(address)) != 0) {
+        close(connection);
+        return -1;
+    }
+
+    return connection;
+}
+
+static int send_request(int connection, const char *path)
+{
+    char request[128];
+    int request_length = snprintf(request, sizeof(request),
+        "GET %s HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n", path);
+    if (request_length < 0 || (size_t)request_length >= sizeof(request)) {
+        return 1;
+    }
+    size_t sent = 0;
+    while (sent < (size_t)request_length) {
+        ssize_t count = send(connection, request + sent, (size_t)request_length - sent, MSG_NOSIGNAL);
+        if (count <= 0) {
+            return 1;
+        }
+        sent += (size_t)count;
+    }
+
+    return 0;
+}
+
+static int read_response(int connection)
+{
+    char response[128];
+    size_t received = 0;
+    while (received < sizeof(response) - 1) {
+        ssize_t count = recv(connection, response + received, sizeof(response) - 1 - received, 0);
+        if (count <= 0)
+            break;
+        received += (size_t)count;
+        response[received] = '\0';
+        if (strchr(response, '\n') != NULL)
+            break;
+    }
+    response[received] = '\0';
+    unsigned int major = 0, minor = 0, status = 0;
+    char separator = '\0';
+    if (strchr(response, '\n') == NULL ||
+        sscanf(response, "HTTP/%u.%u %u%c", &major, &minor, &status, &separator) != 4 ||
+        major != 1 || (separator != ' ' && separator != '\r'))
+        return 1;
+    return status == 200 ? 0 : 1;
+}
+
+static int probe_http(const char *path)
+{
+    long port = health_port();
+    if (port < 0)
+        return 1;
+    int connection = connect_http(port);
+    if (connection < 0)
+        return 1;
+    int result = send_request(connection, path);
+    if (result == 0)
+        result = read_response(connection);
+    close(connection);
+    return result;
+}
+
+int main(int argc, char **argv)
+{
+    if (argc == 2 && strcmp(argv[1], "--socket-handles") == 0)
+        return print_socket_handles("/proc");
+    if (argc == 2 && strcmp(argv[1], "--security") == 0)
+        return probe_security();
+    if (argc == 3 && strcmp(argv[1], "--unix") == 0)
+        return probe_unix_socket(argv[2]);
+    if (argc > 2 || (argc == 2 && strcmp(argv[1], "--ready") != 0))
+        return 1;
+    return probe_http(argc == 2 ? "/healthz/ready" : "/healthz/live");
+}

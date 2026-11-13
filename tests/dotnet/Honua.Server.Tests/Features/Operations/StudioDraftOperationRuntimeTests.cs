@@ -151,7 +151,9 @@ public sealed class StudioDraftOperationRuntimeTests
         first.Operation.Status.Should().Be(OperationHandleStatus.Completed);
         retry.Operation.Status.Should().Be(OperationHandleStatus.Completed);
         retry.Operation.OperationInstanceId.Should().Be(first.Operation.OperationInstanceId);
-        retry.Value.Should().BeEquivalentTo(first.Value);
+        retry.Value.Should().BeEquivalentTo(first.Value, options => options
+            .Using<JsonElement>(context => JsonElement.DeepEquals(context.Subject, context.Expectation).Should().BeTrue())
+            .WhenTypeIs<JsonElement>());
         (await store.GetDraftAsync(draft.DraftId))!.Generation.Should().Be(draft.Generation + 1);
     }
 

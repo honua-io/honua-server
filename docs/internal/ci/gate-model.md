@@ -339,6 +339,15 @@ no separate branch full run is needed. Clear the variable to restore the hosted
 default for new runs. Treat existing runs as assigned to their original pool;
 main handles their completion or cancellation.
 
+Full CI and PR Gate publish PostgreSQL service container port 5432 without a
+fixed host-port binding. GitHub assigns each job its own host port, so concurrent
+jobs on the shared build host cannot collide at Docker service startup. Full-CI
+clients inherit `PGPORT` and `HONUA_TEST_DB_URL` from the assigned service port;
+server setup, SQL seeds and the host-network Docker smoke use that same port.
+Existing shard connection strings already consume the assigned port. The server
+setup action defaults to 5432 for callers without a PostgreSQL service override.
+This changes no job count, test selection, required context or runner routing.
+
 ## Full-CI producer admission
 
 `Build & Format Check` has separate, producer-only admission. The hosted
