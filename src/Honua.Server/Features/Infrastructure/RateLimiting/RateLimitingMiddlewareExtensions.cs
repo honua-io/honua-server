@@ -7,7 +7,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 
 namespace Honua.Infrastructure.RateLimiting;
 
@@ -35,21 +34,17 @@ public static class RateLimitingMiddlewareExtensions
     {
         ArgumentNullException.ThrowIfNull(app);
 
-        // Construct the middleware explicitly rather than via UseMiddleware<T> so the
-        // optional IConnectionMultiplexer can be resolved with GetService (it is registered
-        // only when durable coordination is configured; UseMiddleware<T> would call
-        // GetRequiredService and throw on single-node hosts). The policy store and options
-        // are singletons, so a single middleware instance is safe to reuse across requests.
+        // The policy store and options are singletons, so a single middleware instance is safe
+        // to reuse across requests.
         var services = app.ApplicationServices;
         var policyStore = services.GetRequiredService<IRateLimitPolicyStore>();
         var options = services.GetRequiredService<IOptions<RateLimitingOptions>>();
         var logger = services.GetRequiredService<ILogger<RateLimitingMiddleware>>();
-        var redis = services.GetService<IConnectionMultiplexer>();
         var timeProvider = services.GetService<TimeProvider>() ?? TimeProvider.System;
 
         return app.Use(next =>
         {
-            var middleware = new RateLimitingMiddleware(next, policyStore, options, logger, redis, timeProvider);
+            var middleware = new RateLimitingMiddleware(next, policyStore, options, logger, timeProvider);
             return middleware.InvokeAsync;
         });
     }
@@ -86,12 +81,6 @@ internal sealed class RateLimitingOptionsValidator : IValidateOptions<RateLimiti
         if (options.MetadataRequestsPerMinute <= 0)
         {
             errors.Add("MetadataRequestsPerMinute must be greater than 0");
-        }
-
-        // Validate key prefix
-        if (string.IsNullOrWhiteSpace(options.KeyPrefix))
-        {
-            errors.Add("KeyPrefix must not be empty");
         }
 
         // Validate status code
