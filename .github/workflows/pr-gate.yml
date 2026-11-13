@@ -905,7 +905,9 @@ jobs:
 
   affected-shards:
     # Enforce measured execution receipts before the required gate can succeed.
-    name: PR Gate / Affected shards
+    # A draft run reports under a draft-only name, so its skipped result never
+    # stands in for this required context; see the `required` job.
+    name: ${{ github.event.pull_request.draft && 'PR Gate / Affected shards (draft)' || 'PR Gate / Affected shards' }}
     if: always() && github.event_name == 'pull_request' && !github.event.pull_request.draft
     needs: [affected-shards-select, affected-shard, server-test-producer]
     runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
@@ -1155,8 +1157,11 @@ jobs:
 
   required:
     # Keep the exact branch-protection context stable while both independent
-    # verification paths fail closed into it.
-    name: PR Gate
+    # verification paths fail closed into it. A draft run reports its light
+    # verdict as `PR Gate (draft)`: the ready run creates this check only when
+    # its needs finish, so a draft success under the required name would let a
+    # PR marked ready merge before its heavy jobs ran. Ready runs keep the name.
+    name: ${{ github.event.pull_request.draft && 'PR Gate (draft)' || 'PR Gate' }}
     if: always()
     needs: [pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer]
     runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}

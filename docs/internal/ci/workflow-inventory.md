@@ -64,11 +64,18 @@ CodeQL, Compose Release Lifecycle, GeoArrow/GeoParquet interop, OGC API
 building-block conformance, and serving/GDAL image verification defer heavy jobs
 until the PR is ready. They subscribe to `ready_for_review` and ready-head
 `synchronize` events; conversion back to draft cancels the active verification run.
-Drafts run Format, Clean code, and Repository hygiene. The `PR Gate` aggregate
-accepts intentionally skipped heavy dependencies only for a draft event, requires
-Format success, and rejects failures, cancellations or missing results. Ready PRs
-require every heavy dependency to succeed and run the complete gate, waking
-the trusted Claude observer after exact-head verification completes.
+Drafts run Format, Clean code, and Repository hygiene. The aggregate accepts
+intentionally skipped heavy dependencies only for a draft event, requires Format
+success, and rejects failures, cancellations or missing results. A draft run
+reports it as `PR Gate (draft)` and its skipped shard verdict as
+`PR Gate / Affected shards (draft)`, never under the required contexts. GitHub
+creates a ready run's `PR Gate` check only when its needs finish (11 to 20
+minutes), so a draft success under the required name let a PR marked ready merge
+in that window without its heavy jobs. A head that has only draft runs now shows
+both required contexts as expected, and blocks merging until the ready run
+reports them. Ready PRs require every heavy dependency to succeed and run the
+complete gate, waking the trusted Claude observer after exact-head verification
+completes.
 
 Verification workflows cancel superseded admission per PR; automation helpers
 queue superseding events without cancellation. Trusted observers resolve the

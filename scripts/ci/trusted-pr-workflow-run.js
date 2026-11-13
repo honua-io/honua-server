@@ -136,6 +136,18 @@ async function resolveOrThrow({
   if (canonicalJobs.length !== 1) {
     const message = 'source run does not identify exactly one canonical workflow job';
     if (canonicalJobs.length === 0) {
+      // A draft run reports its aggregate as `<job> (draft)` so it can never
+      // satisfy the required context; classify it as draft admission.
+      const draftAggregate = jobs.some((job) =>
+        job.run_id === id &&
+        job.run_attempt === run.run_attempt &&
+        job.workflow_name === workflowName &&
+        job.name === `${jobName} (draft)` &&
+        job.head_sha === run.head_sha);
+      if (draftAggregate) {
+        throw new UnresolvedTrustedWorkflowRunError(
+          'source-run-draft-admission', 'the source run reported only the draft aggregate');
+      }
       throw new UnresolvedTrustedWorkflowRunError('source-run-job-absent', message);
     }
     throw new Error(message);
