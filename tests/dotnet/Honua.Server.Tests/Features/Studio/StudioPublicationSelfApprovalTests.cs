@@ -13,6 +13,7 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Guardrails;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Security.Domain;
@@ -86,6 +87,11 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
                         ?? originalAudit.ImplementationFactory?.Invoke(provider)
                         ?? ActivatorUtilities.CreateInstance(provider, originalAudit.ImplementationType!)),
                     () => _denialAuditMode));
+                // Test hosts normally use volatile operation instances. Bind the production
+                // store so approval replay can recover the original instance after restart.
+                services.RemoveAll<IOperationInstanceStore>();
+                services.AddSingleton<IOperationInstanceStore>(provider =>
+                    provider.GetRequiredService<PostgresOperationInstanceStore>());
                 services.RemoveAll<IStudioPackageStore>();
                 services.AddScoped<IStudioPackageStore>(provider => new PostgresStudioPackageStore(
                     provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
@@ -102,6 +108,8 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
         await StudioPostgresTestSchema.ApplyAsync(_fixture);
         NoRedisJobHost.AssertJobsRunWithoutRedis(_fixture);
         using var scope = _fixture.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IOperationInstanceStore>()
+            .Should().BeOfType<PostgresOperationInstanceStore>();
         scope.ServiceProvider.GetRequiredService<IOperationProposalStore>()
             .Should().BeOfType<PostgresOperationProposalStore>();
     }
@@ -256,7 +264,7 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
         var approvalBody = await approval.Content.ReadAsStringAsync();
         approval.StatusCode.Should().Be(HttpStatusCode.OK, approvalBody);
         using var approved = JsonDocument.Parse(approvalBody);
-        approved.RootElement.GetProperty("status").GetString().Should().Be("Succeeded");
+        approved.RootElement.GetProperty("status").GetString().Should().Be("Succeeded", approvalBody);
 
         await _fixture.RestartHostAsync();
         NoRedisJobHost.AssertJobsRunWithoutRedis(_fixture);
