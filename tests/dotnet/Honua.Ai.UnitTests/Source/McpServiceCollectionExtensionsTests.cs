@@ -361,7 +361,7 @@ public sealed partial class McpServiceCollectionExtensionsTests
     {
         var services = BuildBaseServices();
         services.AddMcpDataAccessSurface(new ConfigurationBuilder().Build());
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var sessions = provider.GetRequiredService<McpSessionManager>();
         var sessionId = sessions.CreateSession();
         sessions.TryGetReader(sessionId, out var reader).Should().BeTrue();
