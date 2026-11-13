@@ -34,6 +34,43 @@ public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : 
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/live")]
+    public async Task Live_WorkflowTransitions_ShareEventIdentityWithRestTimeline()
+    {
+        await using var log = await RealtimeLogHarness.CreateAsync(database);
+        var storage = (await log.CreateControlPlaneStorageAsync()) with { Realtime = new AdminControlPlaneRealtimeWriter(log.Log) };
+        var dispatcher = log.CreateDispatcher();
+        using var tail = log.CreateTail(dispatcher, null, new RealtimeOptions());
+        await tail.StartAsync(default);
+        using var host = CreateFactory(log, dispatcher, storage);
+        using var client = host.CreateClient();
+        client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
+        using var response = await client.GetAsync("/api/v1/admin/live?topics=operate-events", HttpCompletionOption.ResponseHeadersRead);
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
+        (await ReadFrameAsync(reader)).Kind.Should().Be("status");
+        var timeline = new ReleaseTimelineBuffer();
+        var store = new TransitionObservingWorkflowOperationStore(
+            host.Services.GetRequiredService<IWorkflowOperationStore>(),
+            [new ReleaseTimelineTransitionListener(timeline)],
+            NullLogger<TransitionObservingWorkflowOperationStore>.Instance);
+        var operation = BuildTransition("timeline-identity", WorkflowOperationTransitionKind.Created).Operation;
+        operation = operation with { UpdatedAt = operation.UpdatedAt.AddMinutes(-1) };
+
+        (await store.TryCreateAsync(operation)).Should().BeTrue();
+        var created = await ReadFrameAsync(reader);
+        created.Payload.GetProperty("eventId").GetString().Should().Be(timeline.Snapshot()[0].EventId);
+        created.Payload.GetProperty("occurredAt").GetDateTimeOffset().Should().Be(operation.UpdatedAt);
+        var persisted = (await store.GetAsync(operation.OperationId))!;
+        var updated = persisted with { Status = WorkflowOperationStatus.Succeeded, UpdatedAt = operation.UpdatedAt.AddSeconds(1) };
+
+        (await store.TrySetAsync(updated)).Should().BeTrue();
+        var promoted = await ReadFrameAsync(reader);
+        promoted.Payload.GetProperty("eventId").GetString().Should().Be(timeline.Snapshot()[0].EventId);
+        promoted.Payload.GetProperty("eventId").GetString().Should().NotBe(created.Payload.GetProperty("eventId").GetString());
+        await tail.StopAsync(default);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/live")]
     public async Task Live_StatusOnlyConnection_ReplaysEventsAfterDisconnect()
     {
         await using var log = await RealtimeLogHarness.CreateAsync(database);
