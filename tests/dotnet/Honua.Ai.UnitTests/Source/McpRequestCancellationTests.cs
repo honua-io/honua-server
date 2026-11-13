@@ -37,10 +37,12 @@ public sealed partial class McpRequestCancellationTests
         var manager = new McpSessionManager(store: store);
         var session = (await manager.TryCreateSessionAsync(Alice, false, null, CancellationToken.None))!;
 
+        manager.GetLifetimeToken(session);
+        Assert.True(manager.TryGetReader(session, out _));
         await manager.PollOnceAsync(CancellationToken.None);
         Assert.Equal(0, store.Polls);
 
-        manager.GetLifetimeToken(session);
+        using var watch = manager.WatchSession(session);
         await manager.PollOnceAsync(CancellationToken.None);
         Assert.True(store.Polls >= 1);
     }

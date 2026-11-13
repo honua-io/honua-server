@@ -139,6 +139,7 @@ internal sealed partial class McpSessionManager
     {
         private readonly McpSessionManager _owner;
         private readonly CancellationTokenSource _work;
+        private readonly object _completionGate = new();
         private bool _finished;
 
         internal McpRequestLease(McpSessionManager owner, McpActiveRequest request, CancellationToken requestToken)
@@ -155,6 +156,17 @@ internal sealed partial class McpSessionManager
         internal CancellationToken Token => _work.Token;
 
         internal void Stop()
+        {
+            lock (_completionGate)
+            {
+                if (!_finished)
+                {
+                    CancelWork();
+                }
+            }
+        }
+
+        private void CancelWork()
         {
             try
             {
@@ -173,12 +185,16 @@ internal sealed partial class McpSessionManager
 
         internal async Task<bool> CompleteAsync()
         {
-            if (_finished)
+            lock (_completionGate)
             {
-                return false;
+                if (_finished)
+                {
+                    return false;
+                }
+
+                _finished = true;
             }
 
-            _finished = true;
             _owner.UnwatchRequest(this);
             var healthy = true;
             var state = McpRequestState.Missing;

@@ -61,6 +61,7 @@ internal sealed class McpJobProgressBridge
         {
             try
             {
+                using var watch = _sessions.WatchSession(sessionId);
                 using var scope = _scopeFactory.CreateScope();
                 var jobService = scope.ServiceProvider.GetRequiredService<IGeoprocessingJobService>();
                 using var linked = CancellationTokenSource.CreateLinkedTokenSource(

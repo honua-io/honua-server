@@ -497,7 +497,6 @@ internal sealed partial class McpSessionManager
             }
 
             session.Touch(now);
-            WatchSession(session);
             reader = session.Channel.Reader;
             return true;
         }
@@ -506,7 +505,6 @@ internal sealed partial class McpSessionManager
         return false;
     }
 
-    // Work bound to the token ends when the session ends anywhere, so this node starts polling for it.
     public CancellationToken GetLifetimeToken(string sessionId)
     {
         if (string.IsNullOrEmpty(sessionId) || !_sessions.TryGetValue(sessionId, out var session))
@@ -514,7 +512,6 @@ internal sealed partial class McpSessionManager
             return CancellationToken.None;
         }
 
-        WatchSession(session);
         return session.Lifetime.Token;
     }
 
@@ -713,8 +710,9 @@ internal sealed partial class McpSessionManager
 
         public void Touch(DateTimeOffset now) => LastAccessUtc = now;
 
-        // This node holds a stream or work bound to the session's lifetime.
-        public bool Watched { get; set; }
+        public int WatchCount;
+
+        public bool Watched => Volatile.Read(ref WatchCount) > 0;
 
         public Channel<string> Channel { get; } = System.Threading.Channels.Channel.CreateBounded<string>(
             new BoundedChannelOptions(NotificationBufferCapacity)

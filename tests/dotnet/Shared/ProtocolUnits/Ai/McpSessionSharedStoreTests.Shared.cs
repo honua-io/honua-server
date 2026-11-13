@@ -33,6 +33,8 @@ public sealed partial class McpSessionSharedStoreTests
 
         public Func<CancellationToken, Task>? BeforeRegister { get; set; }
 
+        public Func<CancellationToken, Task>? AfterFinish { get; set; }
+
         public async Task<McpRequestState> UpdateRequestAsync(
             McpActiveRequest request, McpRequestOperation operation, CancellationToken cancellationToken)
         {
@@ -49,7 +51,13 @@ public sealed partial class McpSessionSharedStoreTests
 
             var requests = LazyInitializer.EnsureInitialized(ref _requests, () => new McpMemoryRequestStore(
                 (id, principal) => TryGetLive(id, out var record) && record.PrincipalKey == principal, time));
-            return await requests.UpdateRequestAsync(request, operation, cancellationToken);
+            var state = await requests.UpdateRequestAsync(request, operation, cancellationToken);
+            if (operation == McpRequestOperation.Finish && AfterFinish is { } afterFinish)
+            {
+                await afterFinish(cancellationToken);
+            }
+
+            return state;
         }
 
 

@@ -86,6 +86,7 @@ public sealed partial class McpSessionSharedStoreTests
         var id = await a.TryCreateSessionAsync("sub:alice", false, "setup", CancellationToken.None);
         (await b.ValidateAccessAsync(id!, "sub:alice", CancellationToken.None)).Should().Be(McpSessionValidation.Valid);
 
+        using var watch = a.WatchSession(id!);
         var lifetimeOnA = a.GetLifetimeToken(id!);
         lifetimeOnA.IsCancellationRequested.Should().BeFalse();
 
@@ -114,6 +115,7 @@ public sealed partial class McpSessionSharedStoreTests
         (await reader.ValidateAccessAsync(id!, "sub:alice", CancellationToken.None))
             .Should().Be(McpSessionValidation.Valid);
         store.OnRead = null;
+        using var watch = reader.WatchSession(id!);
         var lifetime = reader.GetLifetimeToken(id!);
 
         await reader.PollOnceAsync(CancellationToken.None);
